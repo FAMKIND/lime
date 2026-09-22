@@ -162,6 +162,28 @@ body {
 .lime-avatar-frame--md { width: 32px; height: 32px; }
 .lime-avatar-frame--lg { width: 40px; height: 40px; }
 
+/* ── Story ring ──
+   Visual indicator only — no story viewer exists. The ring is a
+   same-shaped circle sitting *behind* the avatar at a negative z-index
+   and slightly larger (inset: -3px), so the opaque avatar disc covers
+   its center and only the outer band shows — no mask/cutout needed,
+   and it looks correct on any background the avatar sits on. */
+.lime-avatar-frame::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  z-index: -1;
+}
+
+.lime-avatar-frame--story-unseen::before {
+  background: linear-gradient(135deg, var(--good-bg-bold-default), #14b8a6);
+}
+
+.lime-avatar-frame--story-seen::before {
+  background: var(--soil-text-disabled);
+}
+
 /* ── Presence badge ──
    Four states, not a boolean. Color alone never carries the meaning —
    every instance also carries role="img" + aria-label in markup.
@@ -1048,8 +1070,10 @@ body {
   background: var(--calm-bg-subtle-hover);
 }
 
+/* Same token as :hover — the default-selected row (Jean Chung, on load)
+   should read as if it's currently hovered, not a separate flatter shade. */
 .lime-contact--active {
-  background: var(--calm-bg-subtle-default);
+  background: var(--calm-bg-subtle-hover);
 }
 
 .lime-contact__body {
