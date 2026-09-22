@@ -1525,6 +1525,127 @@ body {
   color: var(--soil-text-muted);
 }
 
+/* ── Reply thread panel ──
+   Replaces (rather than overlays) the profile panel — toggled purely by
+   #right-panel's own data-panel attribute, no inline styles from JS. */
+#right-panel[data-panel="replies"] .lime-profile-panel {
+  display: none;
+}
+
+.lime-replies-panel {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+}
+
+#right-panel[data-panel="replies"] .lime-replies-panel {
+  display: flex;
+}
+
+.lime-replies-panel__header {
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  padding: 0 var(--seed-space-2) 0 var(--seed-space-1);
+  border-bottom: 1px solid var(--soil-border-subtle);
+}
+
+.lime-replies-panel__title {
+  font-size: var(--seed-text-base);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+  margin: 0;
+}
+
+.lime-replies-panel__quote {
+  display: flex;
+  gap: var(--seed-space-2);
+  padding: var(--seed-space-4);
+  border-bottom: 1px solid var(--soil-border-subtle);
+  flex-shrink: 0;
+}
+
+.lime-replies-panel__quote-body {
+  min-width: 0;
+}
+
+.lime-replies-panel__quote-sender {
+  display: block;
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+  margin-bottom: var(--seed-space-1);
+}
+
+.lime-replies-panel__quote-text {
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+  line-height: var(--seed-leading-relaxed);
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.lime-replies-panel__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--seed-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--seed-space-4);
+  scrollbar-width: none;
+}
+
+.lime-replies-panel__list::-webkit-scrollbar {
+  display: none;
+}
+
+.lime-reply {
+  display: flex;
+  gap: var(--seed-space-2);
+}
+
+.lime-reply__body {
+  min-width: 0;
+}
+
+.lime-reply__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--seed-space-2);
+  margin-bottom: var(--seed-space-1);
+}
+
+.lime-reply__sender {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+}
+
+.lime-reply__time {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.lime-reply__text {
+  font-size: var(--seed-text-sm);
+  line-height: var(--seed-leading-relaxed);
+  color: var(--soil-text);
+  margin: 0;
+}
+
+.lime-replies-panel__composer {
+  flex-shrink: 0;
+  display: flex;
+  padding: var(--seed-space-3);
+  border-top: 1px solid var(--soil-border-subtle);
+}
+
 /* Clickable participant identity in the center top row — opens the
    profile panel, same as the fixed toggle. */
 .lime-topbar__identity {

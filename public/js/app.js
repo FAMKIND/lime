@@ -285,6 +285,29 @@ function wireHoverPreviewToggle(toggle, initial, paint, apply) {
     });
 })();
 
+// ── Reply thread panel ────────────────────────────────────
+// #right-panel's data-panel attribute ("profile" | "replies") is the
+// single source of truth for which view shows — CSS reads it, this just
+// flips it. Opening replies reuses the same "force the right panel open"
+// step as the profile triggers above.
+(function () {
+  const layout       = document.getElementById('layout');
+  const rightToggle   = document.getElementById('right-panel-toggle');
+  const rightPanel    = document.getElementById('right-panel');
+  const openReplies   = document.getElementById('open-replies');
+  const backBtn       = document.getElementById('replies-back');
+  if (!layout || !rightToggle || !rightPanel || !openReplies || !backBtn) return;
+
+  openReplies.addEventListener('click', () => {
+    if (layout.classList.contains('seed-layout--right-hidden')) rightToggle.click();
+    rightPanel.setAttribute('data-panel', 'replies');
+  });
+
+  backBtn.addEventListener('click', () => {
+    rightPanel.setAttribute('data-panel', 'profile');
+  });
+})();
+
 // ── Compose toggle (center panel pencil icon) ───────────
 (function () {
   const toggle = document.getElementById('compose-toggle');

@@ -32,3 +32,10 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Floating composer (absolute-positioned, messages scroll underneath, bottom fade gradient) already existed before this brief — no changes needed.
 - Added the top-of-thread fade gradient (`.lime-chat-body::before`), matching the same pinned-overlay convention already used for the composer's fade and the contact list's bottom fade (`.lime-list-col::after`) — kept the app internally consistent rather than inventing a new gradient style, which is what "match seed panel gradient style" was read to mean (Seed's own layout.css has no gradient/fade utility of its own to match).
 - Map placeholder: added a centered inline SVG map-pin (teardrop with a punched hole matching the gray background) inside `.lime-message__map`. No pin icon exists in the vendored `dew` icon set (53 icons, none location-related) and there's no real maps integration, so a hand-drawn pin was the closest fit to the brief's two offered options.
+
+## LIME-03e — Reply Thread Panel
+
+- Added `.lime-replies-panel` as a sibling of `.lime-profile-panel` inside `#right-panel`, toggled purely via `#right-panel[data-panel]` ("profile" | "replies") — no inline styles set from JS, CSS reads the attribute.
+- "4 Replies" (`#open-replies`) forces the right panel open (reusing the existing `seed-layout--right-hidden` toggle) then flips `data-panel` to "replies"; `#replies-back` flips it back to "profile".
+- Chose "replaces" over "overlays" for the profile panel (brief offered either) — matches the brief's own single-panel ASCII diagram.
+- Reply panel content (quoted original message, 4 mock replies from Mary Lee/Valene Rajoon/Shem R×2, a separate non-functional reply composer) is invented placeholder copy — the brief specified structure, not content.

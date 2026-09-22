@@ -571,7 +571,7 @@
                       <p class="lime-message__text">Vestibulum id ligula porta felis euismod semper. Nullam quis risus eget urna mollis ornare vel eu leo. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
                     </div>
                     <div class="lime-message__footer">
-                      <button class="lime-message__replies">
+                      <button type="button" class="lime-message__replies" id="open-replies">
                         <span class="seed-avatar-group lime-replies__avatars">
                           <span class="seed-avatar seed-avatar--xs lime-avatar" data-name="Mary Lee"></span>
                           <span class="seed-avatar seed-avatar--xs lime-avatar" data-name="Valene Rajoon"></span>
@@ -660,8 +660,8 @@
       </div>
     </main>
 
-    <!-- Panel 3: Right profile -->
-    <aside class="seed-layout__right seed-layout__panel--no-bg" id="right-panel">
+    <!-- Panel 3: Right profile / reply thread -->
+    <aside class="seed-layout__right seed-layout__panel--no-bg" id="right-panel" data-panel="profile">
       <div class="lime-profile-panel">
         <div class="lime-profile">
           <div class="lime-profile__header">
@@ -683,6 +683,73 @@
             <p><span class="lime-presence lime-presence--inline" data-presence="busy" role="img" aria-label="Busy"></span> Busy</p>
           </section>
         </div>
+      </div>
+
+      <div class="lime-replies-panel">
+        <header class="lime-replies-panel__header">
+          <button type="button" class="lime-icon-btn" id="replies-back" title="Back to profile">
+            <span class="dew dew-chevron-left"></span>
+          </button>
+          <h2 class="lime-replies-panel__title">Thread</h2>
+        </header>
+
+        <div class="lime-replies-panel__quote">
+          <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Jean Chung"></span>
+          <div class="lime-replies-panel__quote-body">
+            <span class="lime-replies-panel__quote-sender">Jean C</span>
+            <p class="lime-replies-panel__quote-text">Vestibulum id ligula porta felis euismod semper. Nullam quis risus eget urna mollis ornare vel eu leo. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
+          </div>
+        </div>
+
+        <div class="lime-replies-panel__list">
+          <div class="lime-reply">
+            <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Mary Lee"></span>
+            <div class="lime-reply__body">
+              <div class="lime-reply__meta">
+                <span class="lime-reply__sender">Mary Lee</span>
+                <span class="lime-reply__time">11:32 PM</span>
+              </div>
+              <p class="lime-reply__text">Same here — should we loop in the office too?</p>
+            </div>
+          </div>
+          <div class="lime-reply">
+            <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Valene Rajoon"></span>
+            <div class="lime-reply__body">
+              <div class="lime-reply__meta">
+                <span class="lime-reply__sender">Valene Rajoon</span>
+                <span class="lime-reply__time">11:33 PM</span>
+              </div>
+              <p class="lime-reply__text">I can help chaperone if needed!</p>
+            </div>
+          </div>
+          <div class="lime-reply">
+            <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Shem R"></span>
+            <div class="lime-reply__body">
+              <div class="lime-reply__meta">
+                <span class="lime-reply__sender">Shem R</span>
+                <span class="lime-reply__time">11:36 PM</span>
+              </div>
+              <p class="lime-reply__text">That'd be great, thanks Valene.</p>
+            </div>
+          </div>
+          <div class="lime-reply">
+            <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Shem R"></span>
+            <div class="lime-reply__body">
+              <div class="lime-reply__meta">
+                <span class="lime-reply__sender">Shem R</span>
+                <span class="lime-reply__time">11:40 PM</span>
+              </div>
+              <p class="lime-reply__text">I'll add it to the calendar invite.</p>
+            </div>
+          </div>
+        </div>
+
+        <footer class="lime-replies-panel__composer">
+          <div class="lime-composer__field">
+            <input type="text" class="lime-composer__input" id="replies-composer-input" placeholder="Reply...">
+            <button type="button" class="lime-composer__send" title="Send"><span class="dew dew-chevron-up"></span></button>
+          </div>
+        </footer>
       </div>
     </aside>
 
