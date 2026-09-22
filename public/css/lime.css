@@ -618,33 +618,22 @@ body {
   display: flex;
   align-items: center;
   gap: var(--seed-space-1);
+  min-width: 0;
+  overflow: hidden;
 }
 
-/* Back chevron: mobile-only step-back control, separate from the
-   desktop "switch conversation" caret below. Hidden by default —
-   .lime-topbar__crumb-back only shows at the mobile breakpoint. */
-.lime-topbar__crumb-back {
-  display: none;
+.lime-topbar__crumb .seed-breadcrumbs {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  border-radius: var(--seed-radius-sm);
-  color: var(--soil-text-muted);
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
+  min-width: 0;
+  overflow: hidden;
 }
 
-.lime-topbar__crumb-back:hover {
-  background: var(--calm-bg-subtle-hover);
-  color: var(--soil-text);
-}
-
-.lime-topbar__crumb-back .dew {
-  font-size: 18px;
+.lime-topbar__crumb .seed-breadcrumb {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* Breadcrumbs are a mobile-only back-navigation affordance — tablet and
@@ -659,9 +648,21 @@ body {
   }
 }
 
+/* .lime-center-top__spacer's empty flex:1 box shrinks to 0 before an
+   overflowing .lime-topbar__crumb (flex-basis:auto resists shrinking
+   more than flex-basis:0) ever gets squeezed — so on a narrow viewport
+   the crumb just overflows instead of truncating. Giving it the same
+   flex-basis:0 as the spacer, and zeroing the spacer outright since it
+   has nothing left to do once the crumb itself absorbs the growing
+   role, makes the crumb the one thing that actually yields. */
 @media (max-width: 767px) {
-  .lime-topbar__crumb-back {
-    display: flex;
+  .lime-topbar__crumb {
+    flex: 1 1 0%;
+    min-width: 0;
+  }
+
+  .lime-center-top__spacer {
+    flex: 0 0 0px;
   }
 }
 
@@ -979,8 +980,11 @@ body {
   background: var(--good-border-bold-default);
 }
 
+/* Top padding matches .lime-messages's own top padding so the tabs
+   and the first message bubble start at the same Y position — this
+   panel had none before, while the chat side always had 16px. */
 .lime-contacts {
-  padding: 0 var(--seed-space-4) var(--seed-space-4);
+  padding: var(--seed-space-4) var(--seed-space-4) var(--seed-space-4);
 }
 
 .lime-search-field {
@@ -1485,7 +1489,7 @@ body {
   left: 0;
   right: 0;
   bottom: 100%;
-  height: 36px;
+  height: 24px;
   background: linear-gradient(to bottom, transparent, var(--soil-bg-canvas));
   pointer-events: none;
 }

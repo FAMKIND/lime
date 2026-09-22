@@ -483,11 +483,11 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
 // full-width view shows below 768px (see the [data-mobile-view] rules
 // in lime.css); above that breakpoint the attribute is simply inert.
 // Triggers here layer onto elements that already have their own
-// desktop-oriented click handlers (open-profile-avatars, open-replies,
-// etc.) rather than replacing them. #crumb-thread ("Jean Chung" in the
-// breadcrumb) is the exception — LIME-03g gave it its own distinct
-// meaning ("go to thread"), so it's wired here only, not treated as a
-// profile-opening trigger the way it used to be.
+// desktop-oriented click handlers (open-profile-avatars, open-replies)
+// rather than replacing them. #crumb-thread ("Jean Chung" in the
+// breadcrumb) now opens the panel too, matching "clicking Jean's name,
+// photo, or right toggle should show panel" — this supersedes the
+// prior LIME-03g pass, which had it navigate to the thread instead.
 (function () {
   const layout = document.getElementById('layout');
   if (!layout) return;
@@ -500,22 +500,25 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
     el.addEventListener('click', () => setView('thread'));
   });
 
-  [document.getElementById('open-profile-avatars'), document.getElementById('open-replies')]
+  [document.getElementById('open-profile-avatars'), document.getElementById('open-replies'), document.getElementById('crumb-thread')]
     .filter(Boolean)
     .forEach((btn) => btn.addEventListener('click', () => setView('panel')));
 
-  const crumbThread = document.getElementById('crumb-thread');
-  if (crumbThread) crumbThread.addEventListener('click', () => setView('thread'));
+  // right-panel-toggle is excluded from the list above on purpose: it's
+  // a toggle (open AND close), not a one-way "go to panel" trigger like
+  // the others. Lumping it in there meant every click forced the view
+  // back to "panel", even one meant to close it — the toggle could
+  // never actually close the mobile panel. This mirrors its own
+  // open/close state instead.
+  const rightToggle = document.getElementById('right-panel-toggle');
+  if (rightToggle) {
+    rightToggle.addEventListener('click', () => {
+      setView(layout.getAttribute('data-mobile-view') === 'panel' ? 'thread' : 'panel');
+    });
+  }
 
   const crumbTeachers = document.getElementById('crumb-teachers');
   if (crumbTeachers) crumbTeachers.addEventListener('click', () => setView('contacts'));
-
-  const backBtn = document.getElementById('mobile-back');
-  if (backBtn) {
-    backBtn.addEventListener('click', () => {
-      setView(layout.getAttribute('data-mobile-view') === 'panel' ? 'thread' : 'contacts');
-    });
-  }
 })();
 
 // ── Auto-collapse on shrink ────────────────────────────────
