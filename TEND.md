@@ -10,3 +10,9 @@ Record of work landed via the `tend` skill.
 - Collapsed-rail toggle: hidden by default (`opacity:0; pointer-events:none`) and revealed on `:hover` of `.lime-sidebar__top`, mirroring Claude's sidebar. Used opacity/pointer-events rather than `display` so the existing hover-preview icon swap in `app.js` (`wireHoverPreviewToggle`) kept working with no JS changes.
 
 Deviation from literal brief text: the brief's placeholder mark request ("simple lime-colored circle") is visually simpler than the sunburst-ray mark it replaced — flagged to the user at the gate; no objection raised before the next brief arrived, taken as approval.
+
+## LIME-03b — Search Field + Avatar Status
+
+- Center panel search field (`.lime-search-field .seed-input`): fixed height to 36px (`box-sizing: border-box` + `line-height: 36px`) to match the nav search button. Focus state now overrides `box-shadow: none` and uses `border-color: var(--soil-border)` instead of Seed's base `--seed-shadow-focus` green glow. Added a `:hover` rule (`--calm-bg-normal-hover`) to match the nav search's hover feedback, which the field previously lacked.
+- Avatar status: asked the user whether to switch the presence cutout to a true CSS `mask`/`clip-path` technique or keep the existing box-shadow-ring illusion (documented in `lime.css` as a deliberate choice to avoid inconsistent transparency across the app's varying row backgrounds). User chose to keep the box-shadow technique.
+- Fixed a real bug found during survey: DND was reusing Away's gray hollow-ring styling almost verbatim (plus a stray "z"), not resembling Busy at all. Changed DND to Busy's solid-fill pattern with `--bad-bg-bold-default` (red) and a knocked-out "–" glyph instead of "z" — the dash was an unspecified choice since the brief didn't say what DND's icon should be; flagged at the gate, no objection.
