@@ -23,7 +23,14 @@
 </head>
 <body>
 
-  <div class="seed-layout seed-layout--left-flush seed-layout--right-flush" id="layout" style="--left-width: 200px; --right-width: 300px;">
+  <!-- Mobile nav drawer backdrop + trigger — siblings of #layout so they
+       survive regardless of which mobile view/panel is currently shown. -->
+  <div class="lime-mobile-nav-backdrop" id="mobile-nav-backdrop"></div>
+  <button type="button" class="lime-mobile-nav-toggle" id="mobile-nav-toggle" title="Open navigation" aria-label="Open navigation" aria-expanded="false" aria-controls="left-panel">
+    <span class="dew dew-menu-lines"></span>
+  </button>
+
+  <div class="seed-layout seed-layout--left-flush seed-layout--right-flush" id="layout" data-mobile-view="contacts" style="--left-width: 200px; --right-width: 300px;">
 
     <div class="seed-layout__handle seed-layout__handle--left" id="left-handle" aria-hidden="true"></div>
     <div class="seed-layout__handle seed-layout__handle--right" id="right-handle" aria-hidden="true"></div>
@@ -79,10 +86,13 @@
         <!-- Top row: breadcrumbs left, participants + actions right -->
         <header class="lime-center-top">
           <div class="lime-topbar__crumb">
+            <button type="button" class="lime-topbar__crumb-back" id="mobile-back" title="Back" aria-label="Back">
+              <span class="dew dew-chevron-left"></span>
+            </button>
             <nav class="seed-breadcrumbs">
-              <span class="seed-breadcrumb">Link</span>
+              <button type="button" class="seed-breadcrumb" id="crumb-link">Link</button>
               <span class="seed-breadcrumbs__separator"><span class="dew dew-chevron-right"></span></span>
-              <span class="seed-breadcrumb">Teachers</span>
+              <button type="button" class="seed-breadcrumb" id="crumb-teachers">Teachers</button>
               <span class="seed-breadcrumbs__separator"><span class="dew dew-chevron-right"></span></span>
               <button type="button" class="seed-breadcrumb seed-breadcrumb--active" id="open-profile-name" title="View profile">Jean Chung</button>
             </nav>

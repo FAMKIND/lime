@@ -576,10 +576,12 @@ body {
   font-weight: var(--seed-weight-semibold);
 }
 
-/* The active crumb doubles as a profile-panel trigger — Seed's base
-   .seed-breadcrumb--active sets pointer-events:none since it's normally
-   just a "you are here" label; overridden here since ours is a real button. */
-.lime-center-top button.seed-breadcrumb--active {
+/* Every crumb is a real button now — Link/Teachers step mobile
+   navigation back to the contact list; the active crumb doubles as a
+   profile-panel trigger. Seed's base .seed-breadcrumb--active sets
+   pointer-events:none since it's normally just a "you are here" label;
+   overridden here since ours are real buttons. */
+.lime-center-top .seed-breadcrumbs button.seed-breadcrumb {
   pointer-events: auto;
   border: none;
   background: transparent;
@@ -587,11 +589,13 @@ body {
   margin: -2px calc(-1 * var(--seed-space-1));
   border-radius: var(--seed-radius-sm);
   font-family: inherit;
+  font-size: inherit;
+  color: inherit;
   cursor: pointer;
   transition: background 80ms ease;
 }
 
-.lime-center-top button.seed-breadcrumb--active:hover {
+.lime-center-top .seed-breadcrumbs button.seed-breadcrumb:hover {
   background: var(--calm-bg-subtle-hover);
 }
 
@@ -614,6 +618,48 @@ body {
   display: flex;
   align-items: center;
   gap: var(--seed-space-1);
+}
+
+/* Back chevron: mobile-only step-back control, separate from the
+   desktop "switch conversation" caret below. Hidden by default —
+   .lime-topbar__crumb-back only shows at the mobile breakpoint. */
+.lime-topbar__crumb-back {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--seed-radius-sm);
+  color: var(--soil-text-muted);
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.lime-topbar__crumb-back:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
+.lime-topbar__crumb-back .dew {
+  font-size: 18px;
+}
+
+/* Breadcrumbs are a mobile-only back-navigation affordance — tablet and
+   desktop show both/all panels at once, so "where am I" is already
+   visible without them. */
+@media (min-width: 768px) {
+  .lime-topbar__crumb {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .lime-topbar__crumb-back {
+    display: flex;
+  }
 }
 
 .lime-topbar__crumb-caret {
@@ -693,6 +739,63 @@ body {
 
 .lime-search-modal-backdrop.is-open {
   display: block;
+}
+
+/* ─────────────────────────────────────────────────────
+   MOBILE NAV DRAWER — hamburger + backdrop, both fixed and
+   outside #layout so they stay reachable regardless of which
+   mobile view (contacts/thread/panel) is currently showing.
+   Reuses Seed's own .seed-layout--mobile-open overlay for
+   .seed-layout__left (already fully styled in layout.css);
+   this only adds the trigger button and a click-outside backdrop,
+   which Seed's mechanism doesn't itself provide.
+───────────────────────────────────────────────────── */
+
+.lime-mobile-nav-toggle {
+  display: none;
+  position: fixed;
+  top: var(--seed-space-4);
+  left: var(--seed-space-4);
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--seed-radius-full);
+  background: var(--soil-bg-surface);
+  box-shadow: var(--seed-shadow-sm);
+  color: var(--soil-text);
+  cursor: pointer;
+  z-index: var(--seed-z-sticky);
+}
+
+.lime-mobile-nav-toggle .dew {
+  font-size: 20px;
+}
+
+.lime-mobile-nav-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(19, 27, 23, 0.3);
+  z-index: var(--seed-z-overlay);
+}
+
+.lime-mobile-nav-backdrop.is-open {
+  display: block;
+}
+
+@media (max-width: 767px) {
+  .lime-mobile-nav-toggle {
+    display: flex;
+  }
+
+  /* Collapsing to a 56px icon rail makes no sense inside a fixed-width
+     mobile drawer overlay — the drawer's own width doesn't shrink with
+     it, just its content, leaving a broken-looking gap. */
+  #left-panel-toggle {
+    display: none;
+  }
 }
 
 .lime-search-modal {
@@ -1669,4 +1772,85 @@ body {
   font-size: var(--seed-text-sm);
   font-weight: var(--seed-weight-medium);
   color: var(--soil-text);
+}
+
+/* ─────────────────────────────────────────────────────
+   MOBILE (<768px) — single full-width panel at a time.
+   Placed last on purpose: .lime-list-col/.lime-conversation's own
+   unconditional width/min-width/display rules live earlier in this file
+   at equal selector specificity, so this block must come after them in
+   source order to actually win at this breakpoint.
+   #layout's data-mobile-view ("contacts" | "thread" | "panel") is the
+   single source of truth for which of the three regions shows; JS only
+   ever sets the attribute, never touches display directly. Seed's own
+   ≤1024px/≤768px rules already display:none .seed-layout__right — the
+   "panel" override below deliberately outranks that (specificity +
+   !important) to bring it back as a full-screen view instead of a
+   column.
+───────────────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  /* Desktop/tablet floors (800px center, 200/56px left, 240px right)
+     don't apply once panels stack full-width instead of sitting side by
+     side in a grid track. */
+  .seed-layout__center,
+  .seed-layout__left,
+  .seed-layout__right {
+    min-width: 0;
+  }
+
+  .seed-layout {
+    grid-template-columns: 1fr !important;
+    padding: 0;
+  }
+
+  .lime-center-body {
+    flex-direction: column;
+  }
+
+  .lime-list-col {
+    width: 100%;
+  }
+
+  .lime-conversation {
+    min-width: 0;
+  }
+
+  /* No draggable list|chat split on mobile — only one of the two is
+     ever visible at once, so there's nothing to divide. */
+  .lime-center-handle {
+    display: none;
+  }
+
+  /* Default view: contacts. Thread hides the list; showing it again
+     when data-mobile-view="thread" restores .lime-conversation's own
+     display:flex rather than a generic display:block. */
+  .lime-conversation {
+    display: none;
+  }
+
+  #layout[data-mobile-view="thread"] .lime-list-col {
+    display: none;
+  }
+
+  #layout[data-mobile-view="thread"] .lime-conversation {
+    display: flex;
+  }
+
+  /* "panel" reuses #right-panel exactly as built for LIME-03e (its own
+     data-panel attribute still governs profile vs. replies inside it) —
+     it just becomes a full-screen overlay here instead of a column. */
+  #layout[data-mobile-view="panel"] .lime-list-col,
+  #layout[data-mobile-view="panel"] .lime-conversation {
+    display: none;
+  }
+
+  #layout[data-mobile-view="panel"] .seed-layout__right {
+    display: flex !important;
+    position: fixed;
+    inset: 0;
+    z-index: var(--seed-z-overlay);
+    width: 100%;
+    border-radius: 0;
+  }
 }

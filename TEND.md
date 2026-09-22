@@ -39,3 +39,13 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - "4 Replies" (`#open-replies`) forces the right panel open (reusing the existing `seed-layout--right-hidden` toggle) then flips `data-panel` to "replies"; `#replies-back` flips it back to "profile".
 - Chose "replaces" over "overlays" for the profile panel (brief offered either) — matches the brief's own single-panel ASCII diagram.
 - Reply panel content (quoted original message, 4 mock replies from Mary Lee/Valene Rajoon/Shem R×2, a separate non-functional reply composer) is invented placeholder copy — the brief specified structure, not content.
+
+## LIME-03f — Mobile-First Responsive
+
+- Asked the user how mobile should handle viewing a teacher's profile, since the brief only named Contacts/Thread/Reply-panel as mobile views. Decision: profile and replies share one "panel" mobile screen (the existing right-sidebar region from LIME-03e), rather than inventing a 4th named view.
+- `#layout[data-mobile-view]` ("contacts"|"thread"|"panel") is the single source of truth for which full-width region shows below 768px; JS only ever sets the attribute, CSS reads it. Existing triggers (contact rows, `open-profile-name`/`open-profile-avatars`/`open-replies`) got an *additional* listener layered on top of their existing LIME-03e behavior, rather than being rewritten.
+- Reused Seed's own dormant `.seed-layout--mobile-open` overlay mechanism (already fully built in vendored `layout.css`, just never wired up) for the hamburger nav drawer, instead of building a parallel system. Added the hamburger trigger + a click-outside/Esc backdrop, which Seed's mechanism doesn't itself provide.
+- Found and had to work around a real ordering bug: `.lime-list-col`/`.lime-conversation` have unconditional width/display rules elsewhere in the file at equal specificity to my new mobile overrides — moved the whole mobile media-query block to the end of the file so it reliably wins in the cascade, rather than reaching for `!important` everywhere.
+- Auto-collapse (right panel + sidebar) is scoped to *crossing down through 1024px only*, as a one-shot nudge — doesn't attempt every possible resize path (e.g. growing from mobile back into tablet doesn't force a re-collapse). Flagged as a bounded-scope choice for this prototype, not full robustness.
+- "Toolbar icons shift left with center panel" and "sidebar icons align to panel edge" were concluded to already happen for free via the existing CSS Grid reflow — no new code added for these; flagged as unverified-by-new-code at the gate.
+- Hid the desktop collapse-to-rail sidebar toggle while the mobile drawer is open (collapsing to a rail inside a fixed-width overlay would look broken) — inferred fix, not explicitly requested.

@@ -436,3 +436,95 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
     contact.classList.add('lime-recent__item--active');
   });
 });
+
+// ── Mobile nav drawer ─────────────────────────────────────
+// Reuses Seed's own .seed-layout--mobile-open overlay for
+// .seed-layout__left (already fully styled in layout.css) — this just
+// adds the hamburger trigger and a click-outside/Esc-to-close backdrop,
+// which Seed's mechanism doesn't itself provide.
+(function () {
+  const layout   = document.getElementById('layout');
+  const toggle   = document.getElementById('mobile-nav-toggle');
+  const backdrop = document.getElementById('mobile-nav-backdrop');
+  if (!layout || !toggle || !backdrop) return;
+
+  function open() {
+    layout.classList.add('seed-layout--mobile-open');
+    backdrop.classList.add('is-open');
+    toggle.setAttribute('aria-expanded', 'true');
+  }
+
+  function close() {
+    layout.classList.remove('seed-layout--mobile-open');
+    backdrop.classList.remove('is-open');
+    toggle.setAttribute('aria-expanded', 'false');
+  }
+
+  toggle.addEventListener('click', () => {
+    if (layout.classList.contains('seed-layout--mobile-open')) close(); else open();
+  });
+  backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && layout.classList.contains('seed-layout--mobile-open')) close();
+  });
+})();
+
+// ── Mobile view router (contacts / thread / panel) ───────
+// #layout's data-mobile-view is the single source of truth for which
+// full-width view shows below 768px (see the [data-mobile-view] rules
+// in lime.css); above that breakpoint the attribute is simply inert.
+// Triggers here layer onto elements that already have their own
+// desktop-oriented click handlers (open-profile-name, open-replies,
+// etc.) rather than replacing them.
+(function () {
+  const layout = document.getElementById('layout');
+  if (!layout) return;
+
+  function setView(view) {
+    layout.setAttribute('data-mobile-view', view);
+  }
+
+  document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((el) => {
+    el.addEventListener('click', () => setView('thread'));
+  });
+
+  [document.getElementById('open-profile-name'), document.getElementById('open-profile-avatars'), document.getElementById('open-replies')]
+    .filter(Boolean)
+    .forEach((btn) => btn.addEventListener('click', () => setView('panel')));
+
+  [document.getElementById('crumb-link'), document.getElementById('crumb-teachers')]
+    .filter(Boolean)
+    .forEach((btn) => btn.addEventListener('click', () => setView('contacts')));
+
+  const backBtn = document.getElementById('mobile-back');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      setView(layout.getAttribute('data-mobile-view') === 'panel' ? 'thread' : 'contacts');
+    });
+  }
+})();
+
+// ── Auto-collapse on shrink ────────────────────────────────
+// One-shot nudges fired only on the downward crossing of a breakpoint —
+// not a persistently forced state. The user's own toggle stays
+// authoritative afterward; resizing back up never re-expands
+// automatically. Scoped to the 1024px crossing only (desktop → tablet
+// or steeper); this doesn't attempt to cover every possible resize
+// path (e.g. mobile growing back into tablet range).
+(function () {
+  const rightToggle = document.getElementById('right-panel-toggle');
+  const leftToggle   = document.getElementById('left-panel-toggle');
+  let prevWidth = window.innerWidth;
+
+  window.addEventListener('resize', () => {
+    const width = window.innerWidth;
+    const crossedDownInto1024 = width <= 1024 && prevWidth > 1024;
+
+    if (crossedDownInto1024) {
+      if (rightToggle && rightToggle.getAttribute('aria-expanded') === 'true') rightToggle.click();
+      if (leftToggle && leftToggle.getAttribute('aria-expanded') === 'true') leftToggle.click();
+    }
+
+    prevWidth = width;
+  });
+})();
