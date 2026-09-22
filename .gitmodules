@@ -1,0 +1,3 @@
+[submodule "vendor/seed"]
+	path = vendor/seed
+	url = https://github.com/FAMKIND/seed.git

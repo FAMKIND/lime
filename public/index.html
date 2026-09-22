@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lime — Link</title>
+  <!-- Font: Seed's --seed-font-ui token points to Montserrat, but the family itself
+       isn't bundled — consumers load it. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap">
   <!-- Seed tokens + components -->
   <link rel="stylesheet" href="../vendor/seed/tokens/tokens.css">
   <link rel="stylesheet" href="../vendor/seed/components/layout/layout.css">
@@ -18,276 +23,709 @@
 </head>
 <body>
 
-  <div class="seed-layout" id="layout" style="--left-width: 360px; --right-width: 280px;">
+  <div class="seed-layout seed-layout--left-flush seed-layout--right-flush" id="layout" style="--left-width: 200px; --right-width: 300px;">
 
-    <!-- Left Panel: Sidebar + Contacts -->
-    <aside class="seed-layout__left">
-      <div class="lime-left-inner">
+    <div class="seed-layout__handle seed-layout__handle--left" id="left-handle" aria-hidden="true"></div>
+    <div class="seed-layout__handle seed-layout__handle--right" id="right-handle" aria-hidden="true"></div>
 
-        <!-- Sidebar Nav -->
-        <nav class="lime-sidebar">
-          <div class="lime-logo">
-            <span class="lime-logo__icon">🍋</span>
+    <!-- Panel 1: Nav -->
+    <aside class="seed-layout__left seed-layout__panel--no-bg" id="left-panel">
+      <nav class="lime-sidebar">
+
+        <!-- Top row: brand + toggle, 56px, matches the other two panels -->
+        <div class="lime-sidebar__top">
+          <div class="lime-sidebar__brand">
+            <span data-brand-mark aria-hidden="true"></span>
+            <span data-brand-wordmark aria-hidden="true"></span>
           </div>
-          <ul class="lime-nav">
-            <li><button class="lime-nav__btn" title="Search"><span class="dew dew-search"></span></button></li>
-            <li><button class="lime-nav__btn" title="Notifications"><span class="dew dew-bell-on"></span></button></li>
-            <li><button class="lime-nav__btn lime-nav__btn--active" title="Link"><span class="dew dew-chat"></span></button></li>
-            <li><button class="lime-nav__btn" title="Jam"><span class="dew dew-pencil"></span></button></li>
+          <button class="lime-icon-btn" id="left-panel-toggle" title="Toggle navigation" aria-expanded="true" aria-controls="left-panel">
+            <span class="dew dew-sidebar-left-open"></span>
+          </button>
+        </div>
+
+        <div class="lime-nav">
+          <button class="lime-nav-search" id="nav-search-trigger" type="button" aria-haspopup="dialog" title="Search">
+            <span class="dew dew-search"></span>
+            <span class="lime-nav-search__label">Search</span>
+          </button>
+          <ul class="lime-nav__group">
+            <li><button class="lime-nav__btn" title="Notifications"><span class="dew dew-bell-on"></span><span class="lime-nav__label">Notifications</span></button></li>
           </ul>
-          <div class="lime-sidebar__footer">
-            <span class="seed-avatar seed-avatar--sm seed-avatar--neutral">SR</span>
-          </div>
-        </nav>
+          <ul class="lime-nav__group">
+            <li><button class="lime-nav__btn lime-nav__btn--active" title="Link"><span class="dew dew-chat"></span><span class="lime-nav__label">Link</span></button></li>
+            <li><button class="lime-nav__btn" title="Jam"><span class="dew dew-pencil"></span><span class="lime-nav__label">Jam</span></button></li>
+          </ul>
+        </div>
 
-        <!-- Contacts Panel -->
-        <div class="lime-contacts">
-          <header class="lime-contacts__header">
+        <div class="lime-sidebar__footer">
+          <span class="lime-sidebar__user-icon"><span class="dew dew-person"></span></span>
+          <span class="lime-sidebar__user-name">Shem R</span>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Panel 2: Center (conversation list + chat) -->
+    <main class="seed-layout__center seed-layout__panel--no-bg" id="center-panel">
+      <div class="lime-center-inner">
+
+        <!-- Top row: breadcrumbs left, participants + actions right -->
+        <header class="lime-center-top">
+          <div class="lime-topbar__crumb">
             <nav class="seed-breadcrumbs">
               <span class="seed-breadcrumb">Link</span>
               <span class="seed-breadcrumbs__separator"><span class="dew dew-chevron-right"></span></span>
               <span class="seed-breadcrumb">Teachers</span>
               <span class="seed-breadcrumbs__separator"><span class="dew dew-chevron-right"></span></span>
-              <span class="seed-breadcrumb seed-breadcrumb--active">Jean Chung</span>
+              <button type="button" class="seed-breadcrumb seed-breadcrumb--active" id="open-profile-name" title="View profile">Jean Chung</button>
             </nav>
-          </header>
-
-          <div class="lime-contacts__search">
-            <input type="search" class="seed-input seed-input--sm" placeholder="Search">
+            <button class="lime-topbar__crumb-caret" title="Switch conversation"><span class="dew dew-chevron-down"></span></button>
           </div>
 
-          <div class="seed-tabs seed-tabs--pill seed-tabs--sm">
-            <button class="seed-tab seed-tab--active">Teachers</button>
-            <button class="seed-tab">Group Chat</button>
-            <button class="seed-tab">Community</button>
-          </div>
+          <div class="lime-center-top__spacer"></div>
 
-          <!-- Recent -->
-          <section class="lime-section">
-            <h3 class="lime-section__title">Recent</h3>
-            <div class="lime-recent">
-              <div class="lime-recent__item">
-                <span class="seed-avatar seed-avatar--lg seed-avatar--neutral">ME
-                  <span class="seed-avatar__status seed-avatar__status--online"></span>
-                </span>
-                <span class="lime-recent__name">Me</span>
-              </div>
-              <div class="lime-recent__item lime-recent__item--active">
-                <span class="seed-avatar seed-avatar--lg seed-avatar--neutral">JC
-                  <span class="seed-avatar__status seed-avatar__status--online"></span>
-                </span>
-                <span class="lime-recent__name">Jean Chung</span>
-              </div>
-              <div class="lime-recent__item">
-                <span class="seed-avatar seed-avatar--lg seed-avatar--neutral">VR
-                  <span class="seed-avatar__status seed-avatar__status--online"></span>
-                </span>
-                <span class="lime-recent__name">Valene Rajoon</span>
-              </div>
-              <div class="lime-recent__item">
-                <span class="seed-avatar seed-avatar--lg seed-avatar--neutral">ML</span>
-                <span class="lime-recent__name">Mary Lee</span>
-              </div>
-            </div>
-          </section>
+          <button type="button" class="lime-avatar-trigger" id="open-profile-avatars" title="View profile">
+            <span class="seed-avatar-group lime-topbar__avatars">
+              <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Shem R"></span>
+              <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Jean Chung"></span>
+            </span>
+          </button>
 
-          <!-- Starred -->
-          <section class="lime-section">
-            <button class="lime-section__toggle">
-              <span class="dew dew-chevron-down"></span>
-              <h3>Starred</h3>
-            </button>
-            <ul class="lime-contact-list">
-              <li class="lime-contact lime-contact--active">
-                <span class="seed-avatar seed-avatar--lg seed-avatar--neutral">JC
-                  <span class="seed-avatar__status seed-avatar__status--online"></span>
-                </span>
-                <div class="lime-contact__body">
-                  <span class="lime-contact__name">Jean Chung</span>
-                  <span class="lime-contact__preview"><span class="dew dew-microphone"></span> Voice message</span>
-                </div>
-                <div class="lime-contact__meta">
-                  <span class="lime-contact__time">11:30 PM</span>
-                  <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
-                </div>
-              </li>
-              <li class="lime-contact">
-                <span class="seed-avatar seed-avatar--lg seed-avatar--neutral">VR</span>
-                <div class="lime-contact__body">
-                  <span class="lime-contact__name">Valene Rajoon</span>
-                  <span class="lime-contact__preview">Voice message</span>
-                </div>
-                <div class="lime-contact__meta">
-                  <span class="lime-contact__time">11:30</span>
-                  <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
-                </div>
-              </li>
-              <li class="lime-contact">
-                <span class="seed-avatar seed-avatar--lg seed-avatar--neutral">ML</span>
-                <div class="lime-contact__body">
-                  <span class="lime-contact__name">Mary Lee</span>
-                  <span class="lime-contact__preview">Voice message</span>
-                </div>
-                <div class="lime-contact__meta">
-                  <span class="lime-contact__time">11:30</span>
-                  <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
-                </div>
-              </li>
-            </ul>
-          </section>
-
-          <!-- All Teachers -->
-          <section class="lime-section">
-            <button class="lime-section__toggle">
-              <span class="dew dew-chevron-down"></span>
-              <h3>All Teachers</h3>
-            </button>
-            <ul class="lime-contact-list">
-              <li class="lime-contact">
-                <span class="seed-avatar seed-avatar--lg seed-avatar--neutral">AD</span>
-                <div class="lime-contact__body">
-                  <span class="lime-contact__name">Alexi Daily</span>
-                  <span class="lime-contact__preview">Voice message</span>
-                </div>
-                <div class="lime-contact__meta">
-                  <span class="lime-contact__time">11:30</span>
-                  <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
-                </div>
-              </li>
-              <li class="lime-contact">
-                <span class="seed-avatar seed-avatar--lg seed-avatar--neutral">AC</span>
-                <div class="lime-contact__body">
-                  <span class="lime-contact__name">Amanda Civilian</span>
-                  <span class="lime-contact__preview">Voice message</span>
-                </div>
-                <div class="lime-contact__meta">
-                  <span class="lime-contact__time">11:30</span>
-                  <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
-                </div>
-              </li>
-            </ul>
-          </section>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Center Panel: Conversation -->
-    <main class="seed-layout__center">
-      <div class="lime-conversation">
-
-        <header class="lime-conversation__header">
-          <div class="seed-avatar-group">
-            <span class="seed-avatar seed-avatar--md seed-avatar--neutral">JC</span>
-            <span class="seed-avatar seed-avatar--md seed-avatar--neutral">SR</span>
-          </div>
-          <span class="lime-conversation__name">Jean Chung</span>
-          <div class="lime-conversation__actions">
-            <button class="lime-icon-btn" title="Compose"><span class="dew dew-pencil"></span></button>
-            <button class="lime-icon-btn" title="Video"><span class="dew dew-camera-on"></span></button>
-            <button class="lime-icon-btn" title="More"><span class="dew dew-ellipsis-menu"></span></button>
-          </div>
+          <button class="lime-icon-btn" id="compose-toggle" title="Compose"><span class="dew dew-pencil"></span></button>
+          <button class="lime-icon-btn" title="Video"><span class="dew dew-camera-on"></span></button>
+          <button class="lime-icon-btn" id="right-panel-toggle" title="Toggle profile panel" aria-expanded="true" aria-controls="right-panel">
+            <span class="dew dew-sidebar-right-open"></span>
+          </button>
         </header>
 
-        <div class="lime-messages">
-          <!-- Sent message -->
-          <div class="lime-message lime-message--sent">
-            <span class="seed-avatar seed-avatar--md seed-avatar--neutral">SR
-              <span class="seed-avatar__status seed-avatar__status--online"></span>
-            </span>
-            <div class="lime-message__content">
-              <div class="lime-message__meta">
-                <span class="lime-message__sender">Shem R</span>
-                <span class="lime-message__time">11:30 PM</span>
+        <div class="lime-center-body">
+
+          <!-- 2a: Conversation list -->
+          <div class="lime-list-col" id="list-col">
+            <div class="lime-contacts">
+              <div class="lime-contacts__search">
+                <div class="lime-search-field">
+                  <span class="dew dew-search"></span>
+                  <input type="search" class="seed-input seed-input--sm" id="local-search-input" placeholder="Search">
+                </div>
               </div>
-              <p class="lime-message__text">Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
+
+              <div class="seed-tabs seed-tabs--pill seed-tabs--sm lime-segmented" role="tablist" aria-label="Link scope" id="scope-tablist" style="--active-index: 0;">
+                <div class="lime-segmented__pill" aria-hidden="true"></div>
+                <button class="seed-tab seed-tab--active" role="tab" aria-selected="true" data-scope="teachers">Teachers</button>
+                <button class="seed-tab" role="tab" aria-selected="false" data-scope="groups">Group Chat</button>
+                <button class="seed-tab" role="tab" aria-selected="false" data-scope="communities">Community</button>
+              </div>
+
+              <!-- Teachers scope -->
+              <div data-scope-panel="teachers">
+                <section class="lime-section" data-section-id="recent">
+                  <button class="lime-section__toggle" aria-expanded="true">
+                    <span class="dew dew-chevron-down"></span>
+                    <h3>Recent</h3>
+                  </button>
+                  <div class="lime-section__body">
+                    <div class="lime-section__body-inner">
+                      <div class="lime-recent">
+                        <div class="lime-recent__item" data-search-text="me shem r">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Shem R"></span>
+                            <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                          </span>
+                          <span class="lime-recent__name">Me</span>
+                        </div>
+                        <div class="lime-recent__item lime-recent__item--active lime-recent__item--unread" data-search-text="jean chung">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Jean Chung"></span>
+                            <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
+                          </span>
+                          <span class="lime-recent__name">Jean Chung</span>
+                        </div>
+                        <div class="lime-recent__item lime-recent__item--unread" data-search-text="valene rajoon">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Valene Rajoon"></span>
+                            <span class="lime-presence" data-presence="away" role="img" aria-label="Away"></span>
+                          </span>
+                          <span class="lime-recent__name">Valene Rajoon</span>
+                        </div>
+                        <div class="lime-recent__item lime-recent__item--unread" data-search-text="mary lee">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Mary Lee"></span>
+                            <span class="lime-presence" data-presence="dnd" role="img" aria-label="Do not disturb"></span>
+                          </span>
+                          <span class="lime-recent__name">Mary Lee</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="lime-section" data-section-id="starred">
+                  <button class="lime-section__toggle" aria-expanded="true">
+                    <span class="dew dew-chevron-down"></span>
+                    <h3>Starred</h3>
+                  </button>
+                  <div class="lime-section__body">
+                    <div class="lime-section__body-inner">
+                      <ul class="lime-contact-list">
+                        <li class="lime-contact lime-contact--active" data-search-text="jean chung">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Jean Chung"></span>
+                            <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Jean Chung</span>
+                            <span class="lime-contact__preview"><span class="dew dew-microphone"></span> Voice message</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">11:30 PM</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
+                          </div>
+                          <span class="dew dew-chevron-right lime-contact__chevron"></span>
+                        </li>
+                        <li class="lime-contact" data-search-text="valene rajoon">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Valene Rajoon"></span>
+                            <span class="lime-presence" data-presence="away" role="img" aria-label="Away"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Valene Rajoon</span>
+                            <span class="lime-contact__preview">Voice message</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">11:30</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="mary lee">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Mary Lee"></span>
+                            <span class="lime-presence" data-presence="dnd" role="img" aria-label="Do not disturb"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Mary Lee</span>
+                            <span class="lime-contact__preview">Voice message</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">11:30</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
+                          </div>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="lime-section" data-section-id="all-teachers">
+                  <button class="lime-section__toggle" aria-expanded="true">
+                    <span class="dew dew-chevron-down"></span>
+                    <h3>All Teachers</h3>
+                  </button>
+                  <div class="lime-section__body">
+                    <div class="lime-section__body-inner">
+                      <ul class="lime-contact-list">
+                        <li class="lime-contact" data-search-text="alexi daily">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Alexi Daily"></span>
+                            <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Alexi Daily</span>
+                            <span class="lime-contact__preview"><span class="dew dew-microphone"></span> Voice message</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">11:30</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="amanda civilian">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Amanda Civilian"></span>
+                            <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Amanda Civilian</span>
+                            <span class="lime-contact__preview"><span class="dew dew-camera-on"></span> Photo</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Sat</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="eun jean">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Eun Jean"></span>
+                            <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Eun Jean</span>
+                            <span class="lime-contact__preview">See you at 3pm!</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">9:14 AM</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="kai nakamura">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Kai Nakamura"></span>
+                            <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Kai Nakamura</span>
+                            <span class="lime-contact__preview"><span class="dew dew-microphone"></span> Voice message</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Yesterday</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">1</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="priya osei">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Priya Osei"></span>
+                            <span class="lime-presence" data-presence="away" role="img" aria-label="Away"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Priya Osei</span>
+                            <span class="lime-contact__preview"><span class="dew dew-camera-on"></span> Photo</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Mon</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">12</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="tomás villareal tomas villareal">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Tomás Villareal"></span>
+                            <span class="lime-presence" data-presence="dnd" role="img" aria-label="Do not disturb"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Tomás Villareal</span>
+                            <span class="lime-contact__preview">Thanks so much!</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Tue</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="ingrid solberg">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Ingrid Solberg"></span>
+                            <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Ingrid Solberg</span>
+                            <span class="lime-contact__preview"><span class="dew dew-microphone"></span> Voice message</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Wed</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">3</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="malik thompson-reyes malik thompson reyes">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Malik Thompson-Reyes"></span>
+                            <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Malik Thompson-Reyes</span>
+                            <span class="lime-contact__preview">Can we reschedule?</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Sep 15</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">1</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="nia abernathy">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Nia Abernathy"></span>
+                            <span class="lime-presence" data-presence="away" role="img" aria-label="Away"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Nia Abernathy</span>
+                            <span class="lime-contact__preview"><span class="dew dew-camera-on"></span> Photo</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Thu</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="devon okafor">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Devon Okafor"></span>
+                            <span class="lime-presence" data-presence="dnd" role="img" aria-label="Do not disturb"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Devon Okafor</span>
+                            <span class="lime-contact__preview"><span class="dew dew-microphone"></span> Voice message</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Fri</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="yuki tanaka">
+                          <span class="lime-avatar-frame lime-avatar-frame--lg">
+                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Yuki Tanaka"></span>
+                            <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                          </span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Yuki Tanaka</span>
+                            <span class="lime-contact__preview">Sounds good!</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">10:02 AM</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">4</span>
+                          </div>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <!-- Groups scope -->
+              <div data-scope-panel="groups" hidden>
+                <section class="lime-section" data-section-id="all-groups">
+                  <button class="lime-section__toggle" aria-expanded="true">
+                    <span class="dew dew-chevron-down"></span>
+                    <h3>All Groups</h3>
+                  </button>
+                  <div class="lime-section__body">
+                    <div class="lime-section__body-inner">
+                      <ul class="lime-contact-list">
+                        <li class="lime-contact" data-search-text="grade three">
+                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Grade Three"></span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Grade Three</span>
+                            <span class="lime-contact__preview">12 members</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Mon</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="staff lounge">
+                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Staff Lounge"></span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Staff Lounge</span>
+                            <span class="lime-contact__preview">28 members</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Fri</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">5</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="kindergarten crew">
+                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Kindergarten Crew"></span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Kindergarten Crew</span>
+                            <span class="lime-contact__preview"><span class="dew dew-camera-on"></span> Photo</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Yesterday</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="field trip planning">
+                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Field Trip Planning"></span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Field Trip Planning</span>
+                            <span class="lime-contact__preview">Bus is confirmed for Friday</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Sep 14</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">9</span>
+                          </div>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <!-- Communities scope -->
+              <div data-scope-panel="communities" hidden>
+                <section class="lime-section" data-section-id="all-communities">
+                  <button class="lime-section__toggle" aria-expanded="true">
+                    <span class="dew dew-chevron-down"></span>
+                    <h3>All Communities</h3>
+                  </button>
+                  <div class="lime-section__body">
+                    <div class="lime-section__body-inner">
+                      <ul class="lime-contact-list">
+                        <li class="lime-contact" data-search-text="fam wide">
+                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="FAM Wide"></span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">FAM Wide</span>
+                            <span class="lime-contact__preview">312 members</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Wed</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="district news">
+                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="District News"></span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">District News</span>
+                            <span class="lime-contact__preview">1.2k members</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Tue</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">21</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="parent volunteers">
+                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Parent Volunteers"></span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">Parent Volunteers</span>
+                            <span class="lime-contact__preview">Thank you all for today!</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Thu</span>
+                          </div>
+                        </li>
+                        <li class="lime-contact" data-search-text="pta board">
+                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="PTA Board"></span>
+                          <div class="lime-contact__body">
+                            <span class="lime-contact__name">PTA Board</span>
+                            <span class="lime-contact__preview"><span class="dew dew-microphone"></span> Voice message</span>
+                          </div>
+                          <div class="lime-contact__meta">
+                            <span class="lime-contact__time">Sep 10</span>
+                            <span class="seed-badge seed-badge--neutral seed-badge--sm">3</span>
+                          </div>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+              </div>
             </div>
           </div>
 
-          <!-- Received message with replies -->
-          <div class="lime-message lime-message--received">
-            <span class="seed-avatar seed-avatar--md seed-avatar--neutral">JC
-              <span class="seed-avatar__status seed-avatar__status--online"></span>
-            </span>
-            <div class="lime-message__content">
-              <div class="lime-message__meta">
-                <span class="lime-message__sender">Jean C</span>
-                <span class="lime-message__time">11:30 PM</span>
+          <div class="lime-center-handle" id="center-handle" aria-hidden="true"></div>
+
+          <!-- 2b: Chat -->
+          <div class="lime-conversation">
+            <div class="lime-chat-body">
+              <div class="lime-messages">
+                <!-- Sent message -->
+                <div class="lime-message lime-message--sent">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Shem R"></span>
+                    <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Shem R</span>
+                      <span class="lime-message__time">11:30 PM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Received message with replies -->
+                <div class="lime-message lime-message--received">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Jean Chung"></span>
+                    <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Jean C</span>
+                      <span class="lime-message__time">11:30 PM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Vestibulum id ligula porta felis euismod semper. Nullam quis risus eget urna mollis ornare vel eu leo. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
+                    </div>
+                    <div class="lime-message__footer">
+                      <button class="lime-message__replies">
+                        <span class="seed-avatar-group lime-replies__avatars">
+                          <span class="seed-avatar seed-avatar--xs lime-avatar" data-name="Mary Lee"></span>
+                          <span class="seed-avatar seed-avatar--xs lime-avatar" data-name="Valene Rajoon"></span>
+                          <span class="seed-avatar seed-avatar--xs lime-avatar" data-name="Shem R"></span>
+                        </span>
+                        4 Replies
+                      </button>
+                      <span class="lime-message__date">Jul 7 at 11:11pm 2025</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Sent message with map -->
+                <div class="lime-message lime-message--sent">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Shem R"></span>
+                    <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Shem R</span>
+                      <span class="lime-message__time">11:30 PM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Here is my location</p>
+                      <div class="lime-message__map" role="img" aria-label="Map placeholder"></div>
+                      <div class="lime-message__reactions">
+                        <span class="lime-reaction">😍 5</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Sent message -->
+                <div class="lime-message lime-message--sent">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Shem R"></span>
+                    <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Shem R</span>
+                      <span class="lime-message__time">11:30 PM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Received message with reaction -->
+                <div class="lime-message lime-message--received">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Valene Rajoon"></span>
+                    <span class="lime-presence" data-presence="away" role="img" aria-label="Away"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Valene R</span>
+                      <span class="lime-message__time">11:42 PM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Can we push the field trip permission slips to Friday? A few parents asked for more time.</p>
+                      <div class="lime-message__reactions">
+                        <span class="lime-reaction">👍 3</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Sent message -->
+                <div class="lime-message lime-message--sent">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Shem R"></span>
+                    <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Shem R</span>
+                      <span class="lime-message__time">11:45 PM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Works for me — I'll send the updated date to the group tonight.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Received message with replies -->
+                <div class="lime-message lime-message--received">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Alexi Daily"></span>
+                    <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Alexi D</span>
+                      <span class="lime-message__time">Yesterday</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Sharing the field trip packing list for anyone who wants to get ahead on supplies.</p>
+                    </div>
+                    <div class="lime-message__footer">
+                      <button class="lime-message__replies">
+                        <span class="seed-avatar-group lime-replies__avatars">
+                          <span class="seed-avatar seed-avatar--xs lime-avatar" data-name="Amanda Civilian"></span>
+                          <span class="seed-avatar seed-avatar--xs lime-avatar" data-name="Kai Nakamura"></span>
+                        </span>
+                        2 Replies
+                      </button>
+                      <span class="lime-message__date">Sep 14 at 4:20pm 2025</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Sent message -->
+                <div class="lime-message lime-message--sent">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Shem R"></span>
+                    <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Shem R</span>
+                      <span class="lime-message__time">9:02 AM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Morning! Just confirming the bus is booked for Friday.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <p class="lime-message__text">Vestibulum id ligula porta felis euismod semper. Nullam quis risus eget urna mollis ornare vel eu leo. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
-              <div class="lime-message__footer">
-                <button class="lime-message__replies"><span class="dew dew-chat"></span> 4 Replies</button>
-                <span class="lime-message__date">Jul 7 at 11:11pm 2025</span>
-              </div>
+
+              <footer class="lime-composer">
+                <div class="lime-composer__field">
+                  <button class="lime-composer__aux" title="Attach"><span class="dew dew-plus"></span></button>
+                  <input type="text" class="lime-composer__input" placeholder="Say something meaningful...">
+                  <button class="lime-composer__aux" title="Voice message"><span class="dew dew-microphone"></span></button>
+                  <button class="lime-composer__send" title="Send"><span class="dew dew-chevron-up"></span></button>
+                </div>
+              </footer>
             </div>
           </div>
 
-          <!-- Sent message with map -->
-          <div class="lime-message lime-message--sent">
-            <span class="seed-avatar seed-avatar--md seed-avatar--neutral">SR
-              <span class="seed-avatar__status seed-avatar__status--online"></span>
-            </span>
-            <div class="lime-message__content">
-              <div class="lime-message__meta">
-                <span class="lime-message__sender">Shem R</span>
-                <span class="lime-message__time">11:30 PM</span>
-              </div>
-              <p class="lime-message__text">Here is my location</p>
-              <div class="lime-message__map"></div>
-              <div class="lime-message__reactions">
-                <span class="lime-reaction">😍 5</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Sent message -->
-          <div class="lime-message lime-message--sent">
-            <span class="seed-avatar seed-avatar--md seed-avatar--neutral">SR
-              <span class="seed-avatar__status seed-avatar__status--online"></span>
-            </span>
-            <div class="lime-message__content">
-              <div class="lime-message__meta">
-                <span class="lime-message__sender">Shem R</span>
-                <span class="lime-message__time">11:30 PM</span>
-              </div>
-              <p class="lime-message__text">Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
-            </div>
-          </div>
         </div>
-
-        <footer class="lime-composer">
-          <button class="lime-icon-btn"><span class="dew dew-plus"></span></button>
-          <input type="text" class="lime-composer__input" placeholder="Say something meaningful...">
-          <button class="lime-icon-btn"><span class="dew dew-microphone"></span></button>
-          <button class="lime-composer__send"><span class="dew dew-chevron-up"></span></button>
-        </footer>
-
       </div>
     </main>
 
-    <!-- Right Panel: Profile -->
-    <aside class="seed-layout__right">
-      <div class="lime-profile">
-        <div class="lime-profile__header">
-          <span class="seed-avatar seed-avatar--xl seed-avatar--neutral" style="width: 120px; height: 120px; font-size: 36px;">JC</span>
+    <!-- Panel 3: Right profile -->
+    <aside class="seed-layout__right seed-layout__panel--no-bg" id="right-panel">
+      <div class="lime-profile-panel">
+        <div class="lime-profile">
+          <div class="lime-profile__header">
+            <span class="seed-avatar seed-avatar--xl lime-avatar lime-profile__avatar" data-name="Jean Chung"></span>
+          </div>
+          <h2 class="lime-profile__name">Jean Chung</h2>
+          <p class="lime-profile__title">Head of FAM</p>
+          <p class="lime-profile__pronouns">she/her/hers</p>
+
+          <section class="lime-profile__section">
+            <h3>About me</h3>
+            <p>Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
+          </section>
+
+          <section class="lime-profile__section">
+            <h3>Contact Information</h3>
+            <p><span class="dew dew-chat"></span> jean@chungrajoon.com</p>
+            <p><span class="dew dew-calendar"></span> 9:51 PM ET local time</p>
+            <p><span class="lime-presence lime-presence--inline" data-presence="busy" role="img" aria-label="Busy"></span> Busy</p>
+          </section>
         </div>
-        <h2 class="lime-profile__name">Jean Chung</h2>
-        <p class="lime-profile__title">Head of FAM</p>
-        <p class="lime-profile__pronouns">she/her/hers</p>
-
-        <section class="lime-profile__section">
-          <h3>About me</h3>
-          <p>Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
-        </section>
-
-        <section class="lime-profile__section">
-          <h3>Contact Information</h3>
-          <p><span class="dew dew-chat"></span> jean@chungrajoon.com</p>
-          <p><span class="dew dew-calendar"></span> 9:51 PM ET local time</p>
-          <p><span class="seed-avatar__status seed-avatar__status--online" style="position: static; display: inline-block; width: 8px; height: 8px; border: none;"></span> Online</p>
-        </section>
       </div>
     </aside>
 
+  </div>
+
+  <!-- Global search modal: nav "Search" opens this. Distinct from the
+       center panel's local list filter — this one is app-wide. -->
+  <div class="lime-search-modal-backdrop" id="search-modal-backdrop"></div>
+  <div class="lime-search-modal" id="search-modal" role="dialog" aria-modal="true" aria-label="Search">
+    <div class="lime-search-modal__field">
+      <span class="dew dew-search"></span>
+      <input type="search" class="lime-search-modal__input" id="search-modal-input" placeholder="Search people, messages, jams...">
+    </div>
+    <div class="lime-search-modal__results">
+      <div class="lime-search-modal__label">Recent searches</div>
+      <button class="lime-search-modal__item" type="button"><span class="dew dew-person"></span> Jean Chung</button>
+      <button class="lime-search-modal__item" type="button"><span class="dew dew-people"></span> Grade Three</button>
+      <button class="lime-search-modal__item" type="button"><span class="dew dew-chat"></span> "voice message"</button>
+      <button class="lime-search-modal__item" type="button"><span class="dew dew-person"></span> Alexi Daily</button>
+    </div>
   </div>
 
   <script src="js/app.js"></script>

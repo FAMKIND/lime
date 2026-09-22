@@ -1,55 +1,438 @@
 /* Lime — messenger styles extending seed */
 
 /* ─────────────────────────────────────────────────────
-   LEFT PANEL: Sidebar + Contacts
+   BRAND TOKENS
+   Lime's real ramp, mapped into Seed's semantic token
+   structure (not used raw) so every component that already
+   reads --soil-bg-surface / --soil-text / --good-bg-bold-default
+   picks these up automatically. Light theme only — no dark
+   equivalents were specified, so dark keeps Seed's originals.
+   --seed-soil-900 is overridden at the raw tier (not just the
+   --soil-text semantic wrapper) since a few components — the
+   avatar identity system in particular — read the raw token
+   directly for a theme-invariant ink color.
 ───────────────────────────────────────────────────── */
 
-.lime-left-inner {
-  display: flex;
+:root {
+  --seed-soil-900: #131b17; /* --lime-ink */
+}
+
+[data-theme="light"] {
+  --soil-bg-canvas:  #f9f8f4; /* --lime-canvas */
+  --soil-bg-surface: #f0eee6; /* --lime-warm — message bubbles, composer, search fields */
+}
+
+html, body {
+  margin: 0;
   height: 100%;
 }
 
-/* Sidebar nav strip */
-.lime-sidebar {
-  width: 56px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--seed-space-3) 0;
-  border-right: 1px solid var(--soil-border-subtle);
+body {
+  font-family: var(--seed-font-ui);
+  height:      100vh;
+  overflow-x:  auto;
+  overflow-y:  hidden;
+  /* Every panel's top row shares this so nothing reads as a
+     separately-colored component stacked on top of another. */
+  background:  var(--soil-bg-canvas);
 }
 
-.lime-logo {
-  margin-bottom: var(--seed-space-6);
+/* Seed's layout ships height: 100vh for standalone use; here it's the only
+   thing in body (no separate global header), so it just needs to fill it. */
+#layout {
+  height: 100vh;
+  /* Seed's base rule sets overflow: hidden on the grid container itself,
+     which silently crops anything that spills past its fixed 100vw width
+     before it can reach body's scrollbar. Overridden so a viewport too
+     narrow for all three panels' minimums scrolls instead of clipping. */
+  overflow-x: auto;
+  /* Seed's base rule also paints its own opaque canvas background here —
+     since #layout covers the full viewport, that fully hides body's
+     background beneath it. The single source of truth for the app's
+     background is body; this is groundwork for a future user-selectable
+     background (color/image/pattern) that must show through every panel. */
+  background: transparent;
 }
 
-.lime-logo__icon {
-  font-size: 24px;
+/* Seed's grid-template-columns transition (200ms) is meant for toggle
+   open/close — during an active drag it fights the per-frame width
+   updates and produces visible lag. Suppressed only while dragging. */
+#layout.is-resizing {
+  transition: none;
 }
 
-.lime-nav {
-  list-style: none;
+/* Panel dividers: Seed's flush mode ships an always-visible hairline.
+   The wireframe wants dividers to appear only on hover/drag — colors
+   (soil-border-subtle default, lime on hover/drag) already come from
+   layout.css; this just fades them in instead of showing them at rest. */
+.seed-layout--left-flush  .seed-layout__handle--left::after,
+.seed-layout--right-flush .seed-layout__handle--right::after {
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease;
+}
+
+.seed-layout--left-flush  .seed-layout__handle--left:hover::after,
+.seed-layout--right-flush .seed-layout__handle--right:hover::after,
+.seed-layout--left-flush  .seed-layout__handle--left.is-dragging::after,
+.seed-layout--right-flush .seed-layout__handle--right.is-dragging::after {
+  opacity: 1;
+}
+
+/* Seed's left/right panels ship their own 16px internal padding (card
+   breathing room) that the center panel doesn't get — with all three top
+   rows meant to align at the same y, that extra padding pushes nav's and
+   profile's rows 16px lower than center's. Removed; nav/profile/list
+   manage their own internal spacing already. */
+.seed-layout__left,
+.seed-layout__right {
   padding: 0;
-  margin: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--seed-space-2);
 }
 
-.lime-nav__btn {
-  width: 40px;
-  height: 40px;
+/* Avatar rings: Seed's avatar-group and status-dot rings default to
+   --soil-bg-surface, sized for avatars sitting on a card. Panels here are
+   transparent (canvas shows through), so the ring color is switched to match. */
+.seed-avatar-group .seed-avatar,
+.seed-avatar__status {
+  border-color: var(--soil-bg-canvas);
+}
+
+/* ─────────────────────────────────────────────────────
+   AVATAR IDENTITY SYSTEM
+   Every named avatar gets initials + a background color derived
+   deterministically from the person's name (see hashPalette() in app.js).
+   Palette built from Seed's raw brand ramps (lime/meadow/yellow/brick/soil)
+   since there's no semantic "identity" token tier — these are intentionally
+   theme-invariant (same hex in light/dark) so a person's color stays
+   recognizable regardless of theme, the same way their name doesn't change.
+   A single near-black text token passes AA against every light-tint entry.
+───────────────────────────────────────────────────── */
+
+.lime-avatar {
+  color: var(--seed-soil-900);
+}
+
+/* 12 pastel hues, deliberately similar lightness/saturation so no single
+   avatar shouts louder than its neighbors. Exactly one (p3, mint) reads
+   as green — green is the brand's, not identity's. Values are new
+   --lime-avatar-* tokens (Seed's palette has nowhere near this range)
+   rather than hardcoding hex directly into each rule. */
+:root {
+  --lime-avatar-blush:      #F9D8DA;
+  --lime-avatar-peach:      #FCDCC5;
+  --lime-avatar-butter:     #FBEFB8;
+  --lime-avatar-mint:       #D3F0DE;
+  --lime-avatar-sky:        #D2E9F7;
+  --lime-avatar-periwinkle: #DBDEF7;
+  --lime-avatar-lavender:   #E8DCF5;
+  --lime-avatar-lilac:      #F0D9EE;
+  --lime-avatar-sand:       #F0E6D2;
+  --lime-avatar-teal:       #CFEEEA;
+  --lime-avatar-apricot:    #FBE0B0;
+  --lime-avatar-rose:       #F5DCE2;
+}
+
+.lime-avatar--p0  { background: var(--lime-avatar-blush); }
+.lime-avatar--p1  { background: var(--lime-avatar-peach); }
+.lime-avatar--p2  { background: var(--lime-avatar-butter); }
+.lime-avatar--p3  { background: var(--lime-avatar-mint); }
+.lime-avatar--p4  { background: var(--lime-avatar-sky); }
+.lime-avatar--p5  { background: var(--lime-avatar-periwinkle); }
+.lime-avatar--p6  { background: var(--lime-avatar-lavender); }
+.lime-avatar--p7  { background: var(--lime-avatar-lilac); }
+.lime-avatar--p8  { background: var(--lime-avatar-sand); }
+.lime-avatar--p9  { background: var(--lime-avatar-teal); }
+.lime-avatar--p10 { background: var(--lime-avatar-apricot); }
+.lime-avatar--p11 { background: var(--lime-avatar-rose); }
+
+.lime-avatar img {
+  border-radius: inherit;
+}
+
+/* Frame: a non-clipping wrapper so the presence badge can overlap the
+   avatar's edge instead of being cut off by the avatar's own
+   overflow:hidden circle mask. Sized to match its avatar exactly. */
+.lime-avatar-frame {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.lime-avatar-frame--xs { width: 20px; height: 20px; }
+.lime-avatar-frame--sm { width: 24px; height: 24px; }
+.lime-avatar-frame--md { width: 32px; height: 32px; }
+.lime-avatar-frame--lg { width: 40px; height: 40px; }
+
+/* ── Presence badge ──
+   Four states, not a boolean. Color alone never carries the meaning —
+   every instance also carries role="img" + aria-label in markup.
+   box-shadow (not border) draws the constant separation ring in the app
+   background color, independent of the border used for the away/dnd
+   outline-only treatment. */
+.lime-presence {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--soil-bg-canvas);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--seed-font-ui);
+  font-weight: var(--seed-weight-semibold);
+  line-height: 1;
+}
+
+.lime-avatar-frame--xs .lime-presence { width: 6px;  height: 6px;  font-size: 5px;  }
+.lime-avatar-frame--sm .lime-presence { width: 7px;  height: 7px;  font-size: 6px;  }
+.lime-avatar-frame--md .lime-presence { width: 9px;  height: 9px;  font-size: 7px;  }
+.lime-avatar-frame--lg .lime-presence { width: 11px; height: 11px; font-size: 8px;  }
+
+.lime-presence[data-presence="active"] {
+  background: var(--good-bg-bold-default);
+}
+
+.lime-presence[data-presence="busy"] {
+  background: var(--good-bg-bold-default);
+  color: var(--soil-bg-canvas); /* knocked-out "z", reads as cut from the fill */
+}
+
+.lime-presence[data-presence="busy"]::after { content: 'z'; }
+
+.lime-presence[data-presence="away"] {
+  background: var(--soil-bg-canvas);
+  border: 1.5px solid var(--soil-text-disabled);
+}
+
+.lime-presence[data-presence="dnd"] {
+  background: var(--soil-bg-canvas);
+  border: 1.5px solid var(--soil-text-disabled);
+  color: var(--soil-text-disabled);
+}
+
+.lime-presence[data-presence="dnd"]::after { content: 'z'; }
+
+/* Standalone presence badge — same states/colors, used inline in text
+   (e.g. the profile panel's contact-info row) rather than overlapping
+   an avatar's edge. */
+.lime-presence--inline {
+  position: static;
+  box-shadow: none;
+  width: 10px;
+  height: 10px;
+  font-size: 8px;
+  flex-shrink: 0;
+}
+
+/* Shared icon button — used in all three panel top rows, the conversation
+   list, the message thread, and the profile footer. */
+.lime-icon-btn {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
   background: transparent;
-  border-radius: var(--seed-radius-md);
+  border-radius: 50%;
   color: var(--soil-text-muted);
   cursor: pointer;
   transition: background 80ms ease, color 80ms ease;
+}
+
+.lime-icon-btn:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
+.lime-icon-btn.is-active {
+  background: var(--soil-bg-surface);
+  box-shadow: var(--seed-shadow-sm);
+  color: var(--soil-text);
+}
+
+.lime-icon-btn .dew {
+  font-size: 18px;
+}
+
+/* ─────────────────────────────────────────────────────
+   PANEL 1 — NAV
+───────────────────────────────────────────────────── */
+
+.lime-sidebar {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.lime-sidebar__top {
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Left inset matches .lime-nav's padding + .lime-nav__btn's own padding
+     below (space-3 + space-3 = 24px) so the logomark's optical center
+     lands on the same x-axis as the nav icons underneath it. */
+  padding: 0 var(--seed-space-2) 0 24px;
+}
+
+.seed-layout--collapsed-left .lime-sidebar__top {
+  justify-content: center;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.lime-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+}
+
+/* Collapsed rail: logomark only (no wordmark) — the toggle still shares
+   the row, so both shrink slightly to fit the 56px width. */
+.seed-layout--collapsed-left [data-brand-wordmark] {
+  display: none;
+}
+
+.seed-layout--collapsed-left [data-brand-mark] {
+  width: 18px;
+  height: 18px;
+}
+
+.seed-layout--collapsed-left .lime-sidebar__top .lime-icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
+/* Brand mark + wordmark — ported from Seed's own brand customizer
+   (vendor/seed/components/layout/layout.html): elements carrying
+   [data-brand-mark] / [data-brand-wordmark] have their innerHTML
+   replaced wholesale by app.js's setBrandMark()/setBrandWordmark(),
+   mirroring Seed's setMarkContent()/setBrandName() exactly. Swapping the
+   asset means changing what gets broadcast to those attributes — no
+   markup edits. Sizing lives here since the swapped-in content (an SVG)
+   carries no size opinion of its own. */
+[data-brand-mark] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--good-bg-bold-default);
+}
+
+[data-brand-mark] svg {
+  width: 100%;
+  height: 100%;
+}
+
+[data-brand-wordmark] {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  color: var(--soil-text);
+}
+
+[data-brand-wordmark] svg {
+  height: 100%;
+  width: auto;
+}
+
+.lime-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--seed-space-6);
+  padding: var(--seed-space-2) var(--seed-space-3);
+}
+
+.seed-layout--collapsed-left .lime-nav {
+  align-items: center;
+  padding: var(--seed-space-2) var(--seed-space-2);
+}
+
+/* Nav "Search" is a field-styled trigger, not a nav row — clicking it
+   opens the global search modal, but it never accepts typed input
+   itself (see #nav-search-trigger in app.js). */
+.lime-nav-search {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  width: 100%;
+  height: 36px;
+  flex-shrink: 0;
+  margin-bottom: var(--seed-space-4);
+  padding: 0 var(--seed-space-3);
+  border: none;
+  border-radius: var(--seed-radius-full);
+  background: var(--calm-bg-normal-default);
+  color: var(--soil-text-muted);
+  font-family: var(--seed-font-ui);
+  font-size: var(--seed-text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.lime-nav-search:hover {
+  background: var(--calm-bg-normal-hover);
+}
+
+.lime-nav-search .dew {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.seed-layout--collapsed-left .lime-nav-search {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 12px;
+  background: transparent;
+  margin-bottom: var(--seed-space-2);
+}
+
+.seed-layout--collapsed-left .lime-nav-search:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.seed-layout--collapsed-left .lime-nav-search__label {
+  display: none;
+}
+
+.lime-nav__group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--seed-space-1);
+}
+
+.lime-nav__btn {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  padding: 0 var(--seed-space-3);
+  border: none;
+  background: transparent;
+  border-radius: 12px;
+  color: var(--soil-text-muted);
+  font-family: var(--seed-font-ui);
+  font-size: var(--seed-text-sm);
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.seed-layout--collapsed-left .lime-nav__btn {
+  width: 40px;
+  justify-content: center;
+  padding: 0;
 }
 
 .lime-nav__btn:hover {
@@ -58,49 +441,448 @@
 }
 
 .lime-nav__btn--active {
-  background: var(--calm-bg-subtle-default);
+  background: var(--selected-bg-subtle-default);
   color: var(--soil-text);
 }
 
 .lime-nav__btn .dew {
   font-size: 20px;
+  flex-shrink: 0;
+}
+
+.lime-nav__label {
+  white-space: nowrap;
+}
+
+.seed-layout--collapsed-left .lime-nav__label {
+  display: none;
 }
 
 .lime-sidebar__footer {
-  margin-top: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  padding: var(--seed-space-3) var(--seed-space-4);
 }
 
-/* Contacts panel */
-.lime-contacts {
-  flex: 1;
+.seed-layout--collapsed-left .lime-sidebar__footer {
+  padding: var(--seed-space-3) 0;
+  justify-content: center;
+}
+
+.lime-sidebar__user-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--calm-bg-subtle-default);
+  color: var(--soil-text-muted);
+}
+
+.lime-sidebar__user-icon .dew {
+  font-size: 16px;
+}
+
+.lime-sidebar__user-name {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seed-layout--collapsed-left .lime-sidebar__user-name {
+  display: none;
+}
+
+/* A 56px icon rail isn't resizable — dragging it would grow the grid
+   column without anywhere for the extra width to go, since the
+   conversation list lives in the center panel, not here. */
+.seed-layout--collapsed-left .seed-layout__handle--left {
+  display: none;
+}
+
+/* ─────────────────────────────────────────────────────
+   PANEL 2 — CENTER (conversation list + chat)
+───────────────────────────────────────────────────── */
+
+.lime-center-inner {
+  height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.lime-center-top {
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  padding: 0 var(--seed-space-4);
+}
+
+.lime-center-top .seed-breadcrumb--active {
+  font-weight: var(--seed-weight-semibold);
+}
+
+/* The active crumb doubles as a profile-panel trigger — Seed's base
+   .seed-breadcrumb--active sets pointer-events:none since it's normally
+   just a "you are here" label; overridden here since ours is a real button. */
+.lime-center-top button.seed-breadcrumb--active {
+  pointer-events: auto;
+  border: none;
+  background: transparent;
+  padding: 2px var(--seed-space-1);
+  margin: -2px calc(-1 * var(--seed-space-1));
+  border-radius: var(--seed-radius-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.lime-center-top button.seed-breadcrumb--active:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-avatar-trigger {
+  display: flex;
+  border: none;
+  background: transparent;
+  padding: var(--seed-space-1);
+  margin: calc(-1 * var(--seed-space-1));
+  border-radius: var(--seed-radius-full);
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.lime-avatar-trigger:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-topbar__crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-1);
+}
+
+.lime-topbar__crumb-caret {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  border-radius: var(--seed-radius-sm);
+  color: var(--soil-text-muted);
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.lime-topbar__crumb-caret:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
+.lime-topbar__crumb-caret .dew {
+  font-size: 12px;
+}
+
+.lime-center-top__spacer {
+  flex: 1;
+}
+
+.lime-topbar__avatars {
+  margin-right: var(--seed-space-2);
+}
+
+.lime-center-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Grid items with overflow != visible get an automatic min-width of 0
+   (CSS Grid sizing spec) — Seed's center panel sets overflow:hidden, so a
+   min-width on a descendant (.lime-center-body) is ignored by the track
+   sizing algorithm. It has to be set here, on the grid item itself, or
+   the center column silently shrinks below its content's minimum and
+   clips chat text instead of triggering the grid's own horizontal
+   overflow (which body's overflow-x:auto turns into a scrollbar). */
+.seed-layout__center {
+  min-width: 800px; /* 320px list + 480px chat — matches app.js's MIN_CENTER */
+}
+
+.seed-layout__left {
+  min-width: 200px; /* matches app.js's MIN_LEFT */
+}
+
+/* Collapsed-left intentionally shrinks the column to a 56px icon rail —
+   the 200px floor above only applies to the expanded state. */
+.seed-layout--collapsed-left .seed-layout__left {
+  min-width: 56px;
+}
+
+.seed-layout__right {
+  min-width: 240px; /* matches app.js's MIN_RIGHT */
+}
+
+/* ─────────────────────────────────────────────────────
+   NAV SEARCH — global modal (distinct from the center panel's
+   local list filter; this one searches everything, everywhere).
+───────────────────────────────────────────────────── */
+
+.lime-search-modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(19, 27, 23, 0.3);
+  z-index: var(--seed-z-modal);
+}
+
+.lime-search-modal-backdrop.is-open {
+  display: block;
+}
+
+.lime-search-modal {
+  display: none;
+  position: fixed;
+  top: 15vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 64px));
+  max-height: 60vh;
+  flex-direction: column;
+  background: var(--soil-bg-elevated);
+  border-radius: var(--seed-radius-lg);
+  box-shadow: var(--seed-shadow-xl);
+  z-index: var(--seed-z-modal);
   overflow: hidden;
 }
 
-.lime-contacts__header {
-  padding: var(--seed-space-3) var(--seed-space-4);
+.lime-search-modal.is-open {
+  display: flex;
+}
+
+.lime-search-modal__field {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  padding: var(--seed-space-4);
   border-bottom: 1px solid var(--soil-border-subtle);
 }
 
-.lime-contacts__search {
-  padding: var(--seed-space-3) var(--seed-space-4);
+.lime-search-modal__field .dew {
+  font-size: 16px;
+  color: var(--soil-text-muted);
+  flex-shrink: 0;
+}
+
+.lime-search-modal__input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: var(--seed-font-ui);
+  font-size: var(--seed-text-base);
+  color: var(--soil-text);
+}
+
+.lime-search-modal__input:focus {
+  outline: none;
+}
+
+.lime-search-modal__input::placeholder {
+  color: var(--soil-text-muted);
+}
+
+.lime-search-modal__results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--seed-space-2) var(--seed-space-2) var(--seed-space-4);
+}
+
+.lime-search-modal__label {
+  padding: var(--seed-space-2) var(--seed-space-2) var(--seed-space-1);
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text-muted);
+}
+
+.lime-search-modal__item {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  width: 100%;
+  padding: var(--seed-space-2);
+  border: none;
+  background: none;
+  border-radius: var(--seed-radius-md);
+  font-family: var(--seed-font-ui);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lime-search-modal__item:hover,
+.lime-search-modal__item:focus-visible {
+  background: var(--calm-bg-subtle-hover);
+  outline: none;
+}
+
+.lime-search-modal__item .dew {
+  font-size: 14px;
+  color: var(--soil-text-muted);
+}
+
+/* ── 2a. Conversation list ── */
+
+.lime-list-col {
+  position: relative;
+  width: var(--list-width, 320px);
+  flex-shrink: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.lime-list-col::-webkit-scrollbar {
+  display: none;
+}
+
+/* Same bottom-fade treatment as the chat composer — an absolutely
+   positioned overlay pinned to .lime-list-col's own box stays fixed in
+   the viewport while the (in-flow) content scrolls beneath it. */
+.lime-list-col::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 36px;
+  background: linear-gradient(to bottom, transparent, var(--soil-bg-canvas));
+  pointer-events: none;
+}
+
+/* Center divider — same hover-hairline / lime-on-drag treatment as the
+   outer panel handles, just scoped to the inner list|chat split. */
+.lime-center-handle {
+  position: relative;
+  width: var(--seed-space-4);
+  flex-shrink: 0;
+  cursor: col-resize;
+  z-index: var(--seed-z-raised);
+}
+
+.lime-center-handle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 1px;
+  margin: 0 auto;
+  background: var(--soil-border-subtle);
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease;
+}
+
+.lime-center-handle:hover::after {
+  opacity: 1;
+  background: var(--good-border-subtle-default);
+}
+
+.lime-center-handle.is-dragging::after {
+  opacity: 1;
+  background: var(--good-border-bold-default);
+}
+
+.lime-contacts {
+  padding: 0 var(--seed-space-4) var(--seed-space-4);
+}
+
+.lime-search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: var(--seed-space-3) 0;
+}
+
+.lime-search-field .dew {
+  position: absolute;
+  left: var(--seed-space-3);
+  font-size: 14px;
+  color: var(--soil-text-muted);
+  pointer-events: none;
+}
+
+.lime-search-field .seed-input {
+  width: 100%;
+  padding-left: calc(var(--seed-space-3) + 14px + var(--seed-space-2));
+  background: var(--calm-bg-normal-default);
+  border-color: transparent;
+  border-radius: var(--seed-radius-full);
+}
+
+.lime-search-field .seed-input:focus {
+  background: var(--soil-bg-surface);
+  border-color: var(--calm-border-normal-default);
 }
 
 .lime-contacts .seed-tabs {
-  margin: 0 var(--seed-space-4) var(--seed-space-3);
+  margin: 0 0 var(--seed-space-3);
+}
+
+/* Segmented control (Teachers / Group Chat / Community) — extends Seed's
+   .seed-tabs--pill primitive with a single sliding pill element instead
+   of each tab drawing its own background, so the active indicator can
+   animate its position rather than snapping between segments. */
+.lime-segmented {
+  position: relative;
+  background: var(--soil-bg-surface); /* --lime-warm track fill */
+  justify-content: stretch;
+}
+
+.lime-segmented .seed-tab {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  justify-content: center;
+  background: transparent;
+  box-shadow: none;
+  color: var(--soil-text-muted);
+  transition: color 150ms ease;
+}
+
+.lime-segmented .seed-tab:hover {
+  background: transparent;
+}
+
+.lime-segmented .seed-tab--active {
+  background: transparent;
+  color: var(--soil-text);
+}
+
+.lime-segmented__pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 3);
+  background: var(--soil-bg-canvas);
+  border-radius: var(--seed-radius-sm);
+  box-shadow: var(--seed-shadow-xs);
+  transform: translateX(calc(var(--active-index, 0) * 100%));
+  transition: transform 150ms ease;
 }
 
 /* Section headers */
 .lime-section {
-  padding: 0 var(--seed-space-4);
-}
-
-.lime-section__title {
-  font-size: var(--seed-text-xs);
-  font-weight: var(--seed-weight-medium);
-  color: var(--soil-text-muted);
-  margin: var(--seed-space-3) 0 var(--seed-space-2);
+  padding: 0;
 }
 
 .lime-section__toggle {
@@ -123,14 +905,63 @@
 
 .lime-section__toggle .dew {
   font-size: 12px;
+  transition: transform 150ms ease;
 }
 
-/* Recent contacts row */
+.lime-section__toggle[aria-expanded="false"] .dew {
+  transform: rotate(-90deg);
+}
+
+/* Collapsible body — CSS grid-rows trick animates to/from the content's
+   natural height without JS measuring scrollHeight. The inner wrapper's
+   overflow:hidden clips during the transition; the outer grid is what
+   actually animates. */
+.lime-section__body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 200ms ease;
+}
+
+.lime-section__body-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.lime-section[data-collapsed="true"] .lime-section__body {
+  grid-template-rows: 0fr;
+}
+
+/* Recent contacts row — track transparent by default, thumb fades in only
+   while hovering the scroller itself. */
 .lime-recent {
   display: flex;
   gap: var(--seed-space-4);
   padding: var(--seed-space-2) 0;
   overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 150ms ease;
+}
+
+.lime-recent:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+.lime-recent::-webkit-scrollbar {
+  height: 6px;
+}
+
+.lime-recent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lime-recent::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--seed-radius-full);
+}
+
+.lime-recent:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .lime-recent__item {
@@ -139,6 +970,10 @@
   align-items: center;
   gap: var(--seed-space-1);
   cursor: pointer;
+}
+
+.lime-recent__item--unread .seed-avatar {
+  box-shadow: 0 0 0 2px var(--selected-border-bold-default);
 }
 
 .lime-recent__name {
@@ -159,27 +994,27 @@
   margin: 0;
 }
 
+/* Fixed gutters on all four states (rest/hover/active) — the row's
+   background never changes shape, only color, so hovering one row can
+   never visually bleed into its neighbors. The right gutter always
+   reserves the active-row chevron's width, whether or not it's shown,
+   so switching active state doesn't reflow the row either. */
 .lime-contact {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--seed-space-3);
-  padding: var(--seed-space-3) 0;
-  cursor: pointer;
+  padding: var(--seed-space-3) calc(var(--seed-space-2) + var(--seed-space-4)) var(--seed-space-3) var(--seed-space-2);
   border-radius: var(--seed-radius-md);
+  cursor: pointer;
 }
 
 .lime-contact:hover {
   background: var(--calm-bg-subtle-hover);
-  margin: 0 calc(-1 * var(--seed-space-2));
-  padding-left: var(--seed-space-2);
-  padding-right: var(--seed-space-2);
 }
 
 .lime-contact--active {
   background: var(--calm-bg-subtle-default);
-  margin: 0 calc(-1 * var(--seed-space-2));
-  padding-left: var(--seed-space-2);
-  padding-right: var(--seed-space-2);
 }
 
 .lime-contact__body {
@@ -194,15 +1029,26 @@
   color: var(--soil-text);
 }
 
+/* text-overflow has no effect on a flex container per spec — only on
+   block containers — so ellipsis has to live on a nested span
+   (.lime-contact__preview-text, wrapped around the trailing text node by
+   app.js) rather than on this element itself, which stays flex purely to
+   line up an optional leading icon with the text. */
 .lime-contact__preview {
   display: flex;
   align-items: center;
   gap: var(--seed-space-1);
+  min-width: 0;
   font-size: var(--seed-text-xs);
   color: var(--soil-text-muted);
-  white-space: nowrap;
+}
+
+.lime-contact__preview-text {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 
 .lime-contact__preview .dew {
@@ -221,108 +1067,111 @@
   color: var(--soil-text-muted);
 }
 
-/* ─────────────────────────────────────────────────────
-   CONVERSATION
-───────────────────────────────────────────────────── */
+.lime-contact__chevron {
+  position: absolute;
+  right: var(--seed-space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--soil-text-muted);
+}
+
+/* ── 2b. Chat ── */
 
 .lime-conversation {
+  flex: 1;
+  min-width: 480px;
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
-.lime-conversation__header {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-3);
-  padding: var(--seed-space-4);
-  border-bottom: 1px solid var(--soil-border-subtle);
+/* Positioning context for the floating composer + its fade. */
+.lime-chat-body {
+  position:   relative;
+  flex:       1;
+  min-height: 0;
 }
 
-.lime-conversation__name {
-  flex: 1;
-  font-size: var(--seed-text-base);
-  font-weight: var(--seed-weight-medium);
-}
-
-.lime-conversation__actions {
-  display: flex;
-  gap: var(--seed-space-2);
-}
-
-.lime-icon-btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  border-radius: var(--seed-radius-md);
-  color: var(--soil-text-muted);
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.lime-icon-btn:hover {
-  background: var(--calm-bg-subtle-hover);
-  color: var(--soil-text);
-}
-
-.lime-icon-btn .dew {
-  font-size: 18px;
-}
-
-/* Messages */
+/* Messages — absolutely fills .lime-chat-body so the floating composer can
+   overlay it. padding-bottom (composer's ~72px height + a small gap)
+   lets the last message scroll fully clear of the input. No mask here:
+   a permanent viewport-relative mask faded content even on short threads
+   with nothing left to scroll — the composer's own ::before gradient
+   (below) only reads as a fade when content actually passes beneath it. */
 .lime-messages {
-  flex: 1;
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   padding: var(--seed-space-4);
+  padding-bottom: 88px;
   display: flex;
   flex-direction: column;
-  gap: var(--seed-space-4);
+  gap: var(--seed-space-5);
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.lime-messages:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+.lime-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.lime-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lime-messages::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--seed-radius-full);
+}
+
+.lime-messages:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .lime-message {
   display: flex;
+  align-items: flex-start;
   gap: var(--seed-space-3);
-  max-width: 85%;
+  max-width: min(70ch, 640px);
 }
 
-.lime-message--sent {
-  align-self: flex-start;
-}
-
+.lime-message--sent,
 .lime-message--received {
   align-self: flex-start;
 }
 
-.lime-message__content {
-  background: var(--soil-bg-subtle);
-  padding: var(--seed-space-3) var(--seed-space-4);
-  border-radius: var(--seed-radius-lg);
-}
-
-.lime-message--sent .lime-message__content {
-  background: var(--calm-bg-subtle-default);
+.lime-message__col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--seed-space-1);
+  min-width: 0;
 }
 
 .lime-message__meta {
   display: flex;
   align-items: baseline;
   gap: var(--seed-space-2);
-  margin-bottom: var(--seed-space-1);
 }
 
 .lime-message__sender {
   font-size: var(--seed-text-sm);
-  font-weight: var(--seed-weight-medium);
+  font-weight: var(--seed-weight-semibold);
   color: var(--soil-text);
 }
 
 .lime-message__time {
   font-size: var(--seed-text-xs);
   color: var(--soil-text-muted);
+}
+
+.lime-message__content {
+  background: var(--soil-bg-surface);
+  padding: 14px 18px;
+  border-radius: var(--seed-radius-md);
 }
 
 .lime-message__text {
@@ -335,24 +1184,28 @@
 .lime-message__footer {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: var(--seed-space-4);
-  margin-top: var(--seed-space-2);
 }
 
 .lime-message__replies {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: var(--seed-space-1);
   font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-semibold);
+  text-decoration: underline;
   color: var(--calm-text-bold-default);
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.lime-message__replies .dew {
-  font-size: 14px;
+.lime-replies__avatars .seed-avatar {
+  border-width: 1.5px;
 }
 
 .lime-message__date {
@@ -361,9 +1214,17 @@
 }
 
 .lime-message__map {
+  max-width: 100%;
   width: 100%;
-  height: 200px;
-  background: var(--soil-bg-muted);
+  /* .lime-message__content shrink-wraps to its text ("Here is my
+     location" is short) — without a floor here, width:100% just matches
+     that narrow text line instead of a reasonable image size. A
+     min-width forces the shrink-wrapped bubble to grow to contain it. */
+  min-width: 320px;
+  aspect-ratio: 16 / 9;
+  max-height: 320px;
+  object-fit: cover;
+  background: var(--calm-bg-normal-default);
   border-radius: var(--seed-radius-md);
   margin-top: var(--seed-space-2);
 }
@@ -383,22 +1244,58 @@
   font-size: var(--seed-text-sm);
 }
 
-/* Composer */
+/* Composer — floats over the messages list. A 48px gradient fade sits just
+   above it (::before) so scrolled content dissolves into the canvas color
+   rather than being clipped by the composer's opaque edge. */
 .lime-composer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: var(--seed-space-2);
   padding: var(--seed-space-4);
-  border-top: 1px solid var(--soil-border-subtle);
+  background: var(--soil-bg-canvas);
+}
+
+.lime-composer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 36px;
+  background: linear-gradient(to bottom, transparent, var(--soil-bg-canvas));
+  pointer-events: none;
+}
+
+/* The pill: + / input / mic / send all live inside this one rounded
+   container, rather than as separate boxes floating beside it. */
+.lime-composer__field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-1);
+  padding: var(--seed-space-1);
+  padding-left: var(--seed-space-4);
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-full);
+  background: var(--soil-bg-surface);
+}
+
+.lime-composer__field:focus-within {
+  border-color: var(--calm-border-normal-default);
 }
 
 .lime-composer__input {
   flex: 1;
-  padding: var(--seed-space-3) var(--seed-space-4);
-  border: 1px solid var(--soil-border-subtle);
-  border-radius: var(--seed-radius-full);
+  min-width: 0;
+  padding: var(--seed-space-2) 0;
+  border: none;
+  background: transparent;
+  font-family: var(--seed-font-ui);
   font-size: var(--seed-text-sm);
-  background: var(--soil-bg-surface);
   color: var(--soil-text);
 }
 
@@ -408,25 +1305,49 @@
 
 .lime-composer__input:focus {
   outline: none;
-  border-color: var(--calm-border-normal-default);
+}
+
+.lime-composer__aux {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  color: var(--soil-text-muted);
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.lime-composer__aux:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
+.lime-composer__aux .dew {
+  font-size: 18px;
 }
 
 .lime-composer__send {
   width: 36px;
   height: 36px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  background: var(--selected-bg-bold-default);
+  background: var(--warn-bg-bold-default);
   border-radius: 50%;
-  color: var(--selected-text-bold-default);
+  color: var(--warn-text-bold-default);
   cursor: pointer;
   transition: background 80ms ease;
 }
 
 .lime-composer__send:hover {
-  background: var(--selected-bg-bold-hover);
+  background: var(--warn-bg-bold-hover);
 }
 
 .lime-composer__send .dew {
@@ -434,16 +1355,40 @@
 }
 
 /* ─────────────────────────────────────────────────────
-   PROFILE PANEL
+   PANEL 3 — RIGHT PROFILE
 ───────────────────────────────────────────────────── */
 
+.lime-profile-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 .lime-profile {
-  padding: var(--seed-space-6) var(--seed-space-4);
-  text-align: center;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* 56px top padding keeps content aligned with nav/center's top rows —
+     the toggle that used to live in its own row here is now a
+     position:fixed button (see .lime-fixed-toggle) so it survives the
+     panel being hidden entirely. */
+  padding: 56px var(--seed-space-4) var(--seed-space-6);
+  scrollbar-width: none;
+}
+
+.lime-profile::-webkit-scrollbar {
+  display: none;
 }
 
 .lime-profile__header {
-  margin-bottom: var(--seed-space-4);
+  margin-bottom: var(--seed-space-5);
+}
+
+.lime-profile__avatar {
+  width: 85%;
+  max-width: 220px;
+  aspect-ratio: 1 / 1;
+  height: auto;
 }
 
 .lime-profile__name {
@@ -462,17 +1407,17 @@
 .lime-profile__pronouns {
   font-size: var(--seed-text-sm);
   color: var(--soil-text-muted);
-  margin: 0 0 var(--seed-space-4);
+  margin: 0 0 var(--seed-space-5);
 }
 
 .lime-profile__section {
   text-align: left;
-  margin-bottom: var(--seed-space-4);
+  margin-bottom: var(--seed-space-5);
 }
 
 .lime-profile__section h3 {
   font-size: var(--seed-text-sm);
-  font-weight: var(--seed-weight-medium);
+  font-weight: var(--seed-weight-semibold);
   color: var(--soil-text);
   margin: 0 0 var(--seed-space-2);
 }
@@ -490,4 +1435,29 @@
 .lime-profile__section .dew {
   font-size: 16px;
   color: var(--soil-text-muted);
+}
+
+/* Clickable participant identity in the center top row — opens the
+   profile panel, same as the fixed toggle. */
+.lime-topbar__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  border: none;
+  background: transparent;
+  border-radius: var(--seed-radius-full);
+  padding: var(--seed-space-1) var(--seed-space-2) var(--seed-space-1) var(--seed-space-1);
+  margin-right: var(--seed-space-1);
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.lime-topbar__identity:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-topbar__identity-name {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
 }
