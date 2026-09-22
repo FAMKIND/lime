@@ -735,7 +735,23 @@ body {
 }
 
 .lime-topbar__avatars {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-right: var(--seed-space-2);
+}
+
+/* Seed's own -8px overlap (for its default 24px avatar size) leaves two
+   28px avatars wider than the 36px total footprint asked for here —
+   more overlap is needed to fit both inside it. :last-child's own
+   margin-left:0 (Seed's rule) still wins over this by specificity, so
+   only the non-last avatar(s) actually shift. */
+.lime-topbar__avatars .seed-avatar {
+  width: 28px;
+  height: 28px;
+  margin-left: -20px;
 }
 
 .lime-center-body {
@@ -1489,7 +1505,7 @@ body {
   left: 0;
   right: 0;
   bottom: 100%;
-  height: 24px;
+  height: 48px;
   background: linear-gradient(to bottom, transparent, var(--soil-bg-canvas));
   pointer-events: none;
 }
@@ -1841,12 +1857,41 @@ body {
     flex-direction: column;
   }
 
+  /* .lime-contacts's 16px top padding (added in LIME-03h) exists to
+     align its tabs with .lime-messages's first bubble when both panels
+     sit side by side on desktop/tablet — that alignment concern doesn't
+     exist on mobile, where only one panel is ever visible at once. The
+     local search field (the actual first visible thing here on mobile)
+     can sit higher instead. */
+  .lime-contacts {
+    padding-top: var(--seed-space-2);
+  }
+
+  /* Flipping .lime-center-body to column direction makes flex:1/min-height
+     the axis that actually constrains height now (width did that job in
+     the desktop row layout) — without this, whichever of these two is
+     visible grows to its content's natural height instead of the
+     available space, so its own overflow-y:auto never has anything to
+     scroll and the page grows past the viewport instead. This, not a
+     stray overflow:hidden, was the real cause of "can't scroll on
+     mobile" — .lime-messages/.lime-list-col already had overflow-y:auto. */
+  .lime-list-col,
+  .lime-conversation {
+    flex: 1;
+    min-height: 0;
+  }
+
   .lime-list-col {
     width: 100%;
+    -webkit-overflow-scrolling: touch;
   }
 
   .lime-conversation {
     min-width: 0;
+  }
+
+  .lime-messages {
+    -webkit-overflow-scrolling: touch;
   }
 
   /* No draggable list|chat split on mobile — only one of the two is
@@ -1885,5 +1930,16 @@ body {
     z-index: var(--seed-z-overlay);
     width: 100%;
     border-radius: 0;
+  }
+
+  /* Context-aware header: contacts view has no selected person, so the
+     right-panel toggle and Jean Chung's avatar have nothing to act on
+     yet — only "Me" (Shem R) shows. Thread/panel views restore both. */
+  #layout[data-mobile-view="contacts"] #right-panel-toggle {
+    display: none;
+  }
+
+  #layout[data-mobile-view="contacts"] .lime-topbar__avatars .seed-avatar:not([data-name="Shem R"]) {
+    display: none;
   }
 }

@@ -397,16 +397,27 @@ function wireHoverPreviewToggle(toggle, initial, paint, apply) {
     });
   }
 
+  const crumbTeachers = document.getElementById('crumb-teachers');
+
   function setScope(scope) {
+    let activeLabel = null;
     tabs.forEach((tab, index) => {
       const active = tab.dataset.scope === scope;
       tab.classList.toggle('seed-tab--active', active);
       tab.setAttribute('aria-selected', String(active));
-      if (active) tablist.style.setProperty('--active-index', index);
+      if (active) {
+        tablist.style.setProperty('--active-index', index);
+        activeLabel = tab.textContent.trim();
+      }
     });
     document.querySelectorAll('[data-scope-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.scopePanel !== scope;
     });
+    // The mobile breadcrumb's first segment tracks whichever scope tab
+    // is active ("Teachers"/"Group Chat"/"Community") rather than
+    // always reading "Teachers" — id stays #crumb-teachers regardless
+    // of the label it's currently showing.
+    if (crumbTeachers && activeLabel) crumbTeachers.textContent = activeLabel;
     filter();
   }
 
