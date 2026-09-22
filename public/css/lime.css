@@ -639,9 +639,15 @@ body {
   overflow: hidden;
 }
 
+/* Seed's own .seed-breadcrumbs defaults to flex-wrap:wrap — every
+   ellipsis/shrink rule below only controls HOW content is cut off
+   within a single line, but does nothing to stop it wrapping to a
+   second line in the first place if it doesn't fit. This was the gap
+   that let the crumb wrap instead of truncating. */
 .lime-topbar__crumb .seed-breadcrumbs {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   min-width: 0;
   overflow: hidden;
 }
@@ -651,6 +657,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+/* "Bio" is the shortest, least-important-to-truncate segment (it's
+   also the current location, already bolded) — it shouldn't be the
+   one that gets squeezed down to nothing when space is tight. */
+#crumb-bio {
+  flex-shrink: 0;
 }
 
 /* Breadcrumbs are a mobile-only back-navigation affordance — tablet and
@@ -1501,6 +1514,193 @@ body {
   font-size: var(--seed-text-sm);
 }
 
+/* ── System message — centered, no avatar/bubble, distinct from the
+   sent/received layout every other message uses. ── */
+.lime-message--system {
+  display: flex;
+  justify-content: center;
+}
+
+.lime-message--system__text {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+  background: var(--calm-bg-subtle-default);
+  padding: var(--seed-space-1) var(--seed-space-3);
+  border-radius: var(--seed-radius-full);
+}
+
+/* ── Image attachment — camera-icon placeholder, not a live external
+   image, matching the map placeholder's precedent (no real third-party
+   dependency for a mocked prototype). ── */
+.lime-message__content--media {
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.lime-message__image {
+  width: 240px;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--calm-bg-normal-default);
+  color: var(--soil-text-muted);
+}
+
+.lime-message__image .dew {
+  font-size: 32px;
+}
+
+/* ── Voice message ── */
+.lime-message__voice {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  min-width: 220px;
+}
+
+.lime-voice__play {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--seed-radius-full);
+  background: var(--selected-bg-bold-default);
+  color: var(--selected-text-bold-default);
+  cursor: pointer;
+}
+
+.lime-voice__play .dew {
+  font-size: 14px;
+}
+
+.lime-voice__waveform {
+  flex: 1;
+  height: 24px;
+  border-radius: var(--seed-radius-sm);
+  background: repeating-linear-gradient(
+    to right,
+    var(--soil-text-disabled) 0,
+    var(--soil-text-disabled) 2px,
+    transparent 2px,
+    transparent 5px
+  );
+  background-size: 100% 60%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.lime-voice__duration {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Link preview ── */
+.lime-link-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  margin-top: var(--seed-space-2);
+  padding: var(--seed-space-2);
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-md);
+}
+
+.lime-link-preview__thumb {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--seed-radius-sm);
+  background: var(--calm-bg-normal-default);
+  color: var(--soil-text-muted);
+}
+
+.lime-link-preview__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lime-link-preview__title {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lime-link-preview__domain {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+/* ── Emoji-only message — no bubble background, larger glyphs. ── */
+.lime-message__content--bare {
+  background: transparent;
+  padding: 0;
+}
+
+.lime-message__text--emoji {
+  font-size: 32px;
+  line-height: 1;
+}
+
+/* ── Long message with multiple paragraphs — a small gap between
+   consecutive <p class="lime-message__text"> siblings, which otherwise
+   touch (each has margin:0). ── */
+.lime-message__text + .lime-message__text {
+  margin-top: var(--seed-space-2);
+}
+
+/* ── File attachment ── */
+.lime-message__file {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+}
+
+.lime-message__file > .dew {
+  font-size: 24px;
+  color: var(--soil-text-muted);
+  flex-shrink: 0;
+}
+
+.lime-message__file-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.lime-message__file-name {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lime-message__file-size {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.lime-message__file-download {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
 /* Composer — floats over the messages list. A 64px gradient fade sits just
    above it (::before) so scrolled content dissolves into the canvas color
    rather than being clipped by the composer's opaque edge. */
@@ -1869,6 +2069,24 @@ body {
 ───────────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
+  /* Header icons (avatar group, pen, video) were cramped against the
+     hamburger + breadcrumb on narrow phones — tighten the row's own
+     padding/gap and shrink the icon buttons + avatar group slightly. */
+  .lime-center-top {
+    padding: var(--seed-space-2) var(--seed-space-3);
+    gap: var(--seed-space-2);
+  }
+
+  .lime-topbar__avatars {
+    width: 32px;
+    height: 32px;
+  }
+
+  .lime-icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+
   /* Desktop/tablet floors (800px center, 200/56px left, 240px right)
      don't apply once panels stack full-width instead of sitting side by
      side in a grid track. */

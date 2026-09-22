@@ -650,6 +650,136 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- System message — swapped from the brief's "added you to
+                     the group" example, which doesn't fit: this thread is
+                     Shem↔Jean 1:1 only (LIME-03d), no group exists here. -->
+                <div class="lime-message--system">
+                  <span class="lime-message--system__text">You and Jean Chung are connected on Lime</span>
+                </div>
+
+                <!-- Image attachment — a camera-icon placeholder rather than
+                     a live external image URL, matching the map placeholder's
+                     precedent of avoiding real third-party dependencies. -->
+                <div class="lime-message lime-message--received">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Jean Chung"></span>
+                    <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Jean C</span>
+                      <span class="lime-message__time">9:15 AM</span>
+                    </div>
+                    <div class="lime-message__content lime-message__content--media">
+                      <div class="lime-message__image" role="img" aria-label="Shared photo">
+                        <span class="dew dew-camera-on"></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Voice message -->
+                <div class="lime-message lime-message--sent">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Shem R"></span>
+                    <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Shem R</span>
+                      <span class="lime-message__time">9:22 AM</span>
+                    </div>
+                    <div class="lime-message__content lime-message__voice">
+                      <button type="button" class="lime-voice__play" aria-label="Play voice message"><span class="dew dew-play"></span></button>
+                      <div class="lime-voice__waveform" aria-hidden="true"></div>
+                      <span class="lime-voice__duration">0:42</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Link preview -->
+                <div class="lime-message lime-message--received">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Jean Chung"></span>
+                    <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Jean C</span>
+                      <span class="lime-message__time">9:30 AM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Check out the district's new supply list portal!</p>
+                      <div class="lime-link-preview">
+                        <div class="lime-link-preview__thumb" aria-hidden="true"><span class="dew dew-link"></span></div>
+                        <div class="lime-link-preview__body">
+                          <span class="lime-link-preview__title">District Supply Portal</span>
+                          <span class="lime-link-preview__domain">supplies.district.edu</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Emoji-only message -->
+                <div class="lime-message lime-message--sent">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Shem R"></span>
+                    <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Shem R</span>
+                      <span class="lime-message__time">9:31 AM</span>
+                    </div>
+                    <div class="lime-message__content lime-message__content--bare">
+                      <p class="lime-message__text lime-message__text--emoji">🎉👏🔥</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Long message with multiple paragraphs -->
+                <div class="lime-message lime-message--received">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Jean Chung"></span>
+                    <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Jean C</span>
+                      <span class="lime-message__time">9:40 AM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <p class="lime-message__text">Quick recap for anyone catching up: the bus leaves at 8am sharp from the north lot, permission slips are due Thursday, and we still need two more chaperones.</p>
+                      <p class="lime-message__text">If you can help supervise, just reply here and I'll add you to the list. Thanks everyone for pulling this together so quickly!</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- File attachment -->
+                <div class="lime-message lime-message--sent">
+                  <span class="lime-avatar-frame lime-avatar-frame--lg">
+                    <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Shem R"></span>
+                    <span class="lime-presence" data-presence="active" role="img" aria-label="Active"></span>
+                  </span>
+                  <div class="lime-message__col">
+                    <div class="lime-message__meta">
+                      <span class="lime-message__sender">Shem R</span>
+                      <span class="lime-message__time">9:44 AM</span>
+                    </div>
+                    <div class="lime-message__content">
+                      <div class="lime-message__file">
+                        <span class="dew dew-file" aria-hidden="true"></span>
+                        <div class="lime-message__file-info">
+                          <span class="lime-message__file-name">Field_Trip_Permission.pdf</span>
+                          <span class="lime-message__file-size">212 KB</span>
+                        </div>
+                        <button type="button" class="lime-icon-btn lime-message__file-download" title="Download"><span class="dew dew-download"></span></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <footer class="lime-composer">
