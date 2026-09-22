@@ -1151,6 +1151,23 @@ body {
   min-height: 0;
 }
 
+/* Top fade — same pinned-overlay convention as the composer's and
+   .lime-list-col's fades (::before generates before .lime-messages in
+   DOM, so it needs z-index to actually paint above the scrolling
+   content rather than under it). Content scrolls up and dissolves
+   under the header instead of being clipped at a hard edge. */
+.lime-chat-body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  z-index: 2;
+  background: linear-gradient(to bottom, var(--soil-bg-canvas), transparent);
+  pointer-events: none;
+}
+
 /* Messages — absolutely fills .lime-chat-body so the floating composer can
    overlay it. padding-bottom (composer's ~72px height + a small gap)
    lets the last message scroll fully clear of the input. No mask here:
@@ -1282,10 +1299,22 @@ body {
   min-width: 320px;
   aspect-ratio: 16 / 9;
   max-height: 320px;
-  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--calm-bg-normal-default);
   border-radius: var(--seed-radius-md);
   margin-top: var(--seed-space-2);
+}
+
+.lime-message__map-pin {
+  width: 40px;
+  height: 40px;
+  color: var(--soil-text-muted);
+}
+
+.lime-message__map-pin-hole {
+  fill: var(--calm-bg-normal-default);
 }
 
 .lime-message__reactions {

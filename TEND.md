@@ -24,3 +24,11 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Fixed the three bare "11:30" contact-list times (Valene Rajoon, Mary Lee, Alexi Daily) to "11:30 PM". Left weekday abbreviations ("Sat", "Mon", etc.) and the conversation pane's own timestamps untouched — brief's example list only forbids bare clock times, and its title scopes this brief to the recent row + contact list, not the message thread.
 - `.lime-contact--active` now uses the same background token as `:hover` (`--calm-bg-subtle-hover`) instead of a separate `--calm-bg-subtle-default`, so Jean Chung's default-selected row reads as already-hovered on load, per the brief.
 - Horizontal scroll + hidden scrollbar on the recent row already existed before this brief (hover-to-reveal thin thumb) — no change needed there.
+
+## LIME-03d — Chat Thread + Floating Composer
+
+- Removed Valene Rajoon's and Alexi Daily's standalone messages from Jean's 1:1 thread, keeping Jean's "4 Replies" footer (and its avatar stack, which still references Mary Lee/Valene as repliers) per "keep reply indicators."
+- Scope note: also removed Shem's "Works for me — I'll send the updated date to the group tonight" message, which the brief didn't name — it was a direct reply to Valene's deleted question and would've read as a non-sequitur left in place. Flagged at the gate, no objection.
+- Floating composer (absolute-positioned, messages scroll underneath, bottom fade gradient) already existed before this brief — no changes needed.
+- Added the top-of-thread fade gradient (`.lime-chat-body::before`), matching the same pinned-overlay convention already used for the composer's fade and the contact list's bottom fade (`.lime-list-col::after`) — kept the app internally consistent rather than inventing a new gradient style, which is what "match seed panel gradient style" was read to mean (Seed's own layout.css has no gradient/fade utility of its own to match).
+- Map placeholder: added a centered inline SVG map-pin (teardrop with a punched hole matching the gray background) inside `.lime-message__map`. No pin icon exists in the vendored `dew` icon set (53 icons, none location-related) and there's no real maps integration, so a hand-drawn pin was the closest fit to the brief's two offered options.
