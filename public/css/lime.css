@@ -255,7 +255,7 @@ body {
   justify-content: center;
   border: none;
   background: transparent;
-  border-radius: 50%;
+  border-radius: var(--seed-radius-full);
   color: var(--soil-text-muted);
   cursor: pointer;
   transition: background 80ms ease, color 80ms ease;
@@ -649,9 +649,12 @@ body {
 
 /* Breadcrumbs are a mobile-only back-navigation affordance — tablet and
    desktop show both/all panels at once, so "where am I" is already
-   visible without them. */
+   visible without them. Same reasoning applies to the local contacts
+   search field: desktop/tablet use the nav sidebar's global search
+   instead, so this one only needs to exist on mobile. */
 @media (min-width: 768px) {
-  .lime-topbar__crumb {
+  .lime-topbar__crumb,
+  .lime-contacts__search {
     display: none;
   }
 }
@@ -660,6 +663,47 @@ body {
   .lime-topbar__crumb-back {
     display: flex;
   }
+}
+
+/* Breadcrumb content tracks the current mobile view — "Teachers" is
+   always shown; "Jean Chung" (+ its separator) appears once you're at
+   least in the thread; "Bio" (+ its separator) appears only in the
+   profile/replies panel. #crumb-bio already gets its "current
+   location" bold treatment for free from Seed's own
+   .seed-breadcrumb--active class; Teachers/Jean Chung need it added
+   here since which one is "current" changes with the view. */
+#crumb-thread,
+[data-crumb-sep="thread"] {
+  display: none;
+}
+
+#crumb-bio,
+[data-crumb-sep="bio"] {
+  display: none;
+}
+
+#layout[data-mobile-view="thread"] #crumb-thread,
+#layout[data-mobile-view="panel"]  #crumb-thread {
+  display: inline-block;
+}
+
+#layout[data-mobile-view="thread"] [data-crumb-sep="thread"],
+#layout[data-mobile-view="panel"]  [data-crumb-sep="thread"] {
+  display: inline-flex;
+}
+
+#layout[data-mobile-view="panel"] #crumb-bio {
+  display: inline;
+}
+
+#layout[data-mobile-view="panel"] [data-crumb-sep="bio"] {
+  display: inline-flex;
+}
+
+#layout[data-mobile-view="contacts"] #crumb-teachers,
+#layout[data-mobile-view="thread"]   #crumb-thread {
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
 }
 
 .lime-topbar__crumb-caret {
@@ -742,35 +786,20 @@ body {
 }
 
 /* ─────────────────────────────────────────────────────
-   MOBILE NAV DRAWER — hamburger + backdrop, both fixed and
-   outside #layout so they stay reachable regardless of which
-   mobile view (contacts/thread/panel) is currently showing.
-   Reuses Seed's own .seed-layout--mobile-open overlay for
-   .seed-layout__left (already fully styled in layout.css);
-   this only adds the trigger button and a click-outside backdrop,
-   which Seed's mechanism doesn't itself provide.
+   MOBILE NAV DRAWER — inline toggle (aligned with the breadcrumbs row
+   in .lime-center-top, styled like #right-panel-toggle) + a fixed
+   backdrop outside #layout so it survives regardless of which mobile
+   view/panel is currently showing. Reuses Seed's own
+   .seed-layout--mobile-open overlay for .seed-layout__left (already
+   fully styled in layout.css); this only adds the trigger and a
+   click-outside backdrop, which Seed's mechanism doesn't itself provide.
 ───────────────────────────────────────────────────── */
 
+/* .lime-icon-btn already supplies size/shape/hover — this just hides
+   it outside mobile, where the sidebar is a normal docked column and
+   needs no drawer trigger. */
 .lime-mobile-nav-toggle {
   display: none;
-  position: fixed;
-  top: var(--seed-space-4);
-  left: var(--seed-space-4);
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: var(--seed-radius-full);
-  background: var(--soil-bg-surface);
-  box-shadow: var(--seed-shadow-sm);
-  color: var(--soil-text);
-  cursor: pointer;
-  z-index: var(--seed-z-sticky);
-}
-
-.lime-mobile-nav-toggle .dew {
-  font-size: 20px;
 }
 
 .lime-mobile-nav-backdrop {
@@ -1507,7 +1536,7 @@ body {
   justify-content: center;
   border: none;
   background: transparent;
-  border-radius: 50%;
+  border-radius: var(--seed-radius-full);
   color: var(--soil-text-muted);
   cursor: pointer;
   transition: background 80ms ease, color 80ms ease;
@@ -1531,7 +1560,7 @@ body {
   justify-content: center;
   border: none;
   background: var(--warn-bg-bold-default);
-  border-radius: 50%;
+  border-radius: var(--seed-radius-full);
   color: var(--warn-text-bold-default);
   cursor: pointer;
   transition: background 80ms ease;

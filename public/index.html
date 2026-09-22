@@ -23,12 +23,10 @@
 </head>
 <body>
 
-  <!-- Mobile nav drawer backdrop + trigger — siblings of #layout so they
-       survive regardless of which mobile view/panel is currently shown. -->
+  <!-- Mobile nav drawer backdrop — sibling of #layout so it survives
+       regardless of which mobile view/panel is currently shown. The
+       trigger itself now lives inline in .lime-center-top (see below). -->
   <div class="lime-mobile-nav-backdrop" id="mobile-nav-backdrop"></div>
-  <button type="button" class="lime-mobile-nav-toggle" id="mobile-nav-toggle" title="Open navigation" aria-label="Open navigation" aria-expanded="false" aria-controls="left-panel">
-    <span class="dew dew-menu-lines"></span>
-  </button>
 
   <div class="seed-layout seed-layout--left-flush seed-layout--right-flush" id="layout" data-mobile-view="contacts" style="--left-width: 200px; --right-width: 300px;">
 
@@ -83,18 +81,22 @@
     <main class="seed-layout__center seed-layout__panel--no-bg" id="center-panel">
       <div class="lime-center-inner">
 
-        <!-- Top row: breadcrumbs left, participants + actions right -->
+        <!-- Top row: nav toggle + breadcrumbs left, participants + actions right -->
         <header class="lime-center-top">
+          <button type="button" class="lime-icon-btn lime-mobile-nav-toggle" id="mobile-nav-toggle" title="Open navigation" aria-label="Open navigation" aria-expanded="false" aria-controls="left-panel">
+            <span class="dew dew-sidebar-left-open"></span>
+          </button>
+
           <div class="lime-topbar__crumb">
             <button type="button" class="lime-topbar__crumb-back" id="mobile-back" title="Back" aria-label="Back">
               <span class="dew dew-chevron-left"></span>
             </button>
             <nav class="seed-breadcrumbs">
-              <button type="button" class="seed-breadcrumb" id="crumb-link">Link</button>
-              <span class="seed-breadcrumbs__separator"><span class="dew dew-chevron-right"></span></span>
               <button type="button" class="seed-breadcrumb" id="crumb-teachers">Teachers</button>
-              <span class="seed-breadcrumbs__separator"><span class="dew dew-chevron-right"></span></span>
-              <button type="button" class="seed-breadcrumb seed-breadcrumb--active" id="open-profile-name" title="View profile">Jean Chung</button>
+              <span class="seed-breadcrumbs__separator" data-crumb-sep="thread"><span class="dew dew-chevron-right"></span></span>
+              <button type="button" class="seed-breadcrumb" id="crumb-thread">Jean Chung</button>
+              <span class="seed-breadcrumbs__separator" data-crumb-sep="bio"><span class="dew dew-chevron-right"></span></span>
+              <span class="seed-breadcrumb seed-breadcrumb--active" id="crumb-bio">Bio</span>
             </nav>
             <button class="lime-topbar__crumb-caret" title="Switch conversation"><span class="dew dew-chevron-down"></span></button>
           </div>

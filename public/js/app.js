@@ -273,16 +273,18 @@ function wireHoverPreviewToggle(toggle, initial, paint, apply) {
   applyOpen(isOpen);
   wireHoverPreviewToggle(toggle, isOpen, paintIcon, applyOpen);
 
-  // Second trigger: the participant avatar or name in the center top row
-  // opens the panel (never closes it — those live outside the panel and
-  // aren't a natural "toggle" affordance).
-  [document.getElementById('open-profile-name'), document.getElementById('open-profile-avatars')]
-    .filter(Boolean)
-    .forEach((btn) => {
-      btn.addEventListener('click', () => {
-        if (layout.classList.contains('seed-layout--right-hidden')) toggle.click();
-      });
+  // Second trigger: the participant avatar in the center top row opens
+  // the panel (never closes it — it lives outside the panel and isn't a
+  // natural "toggle" affordance). The breadcrumb's "Jean Chung" segment
+  // (#crumb-thread) used to double as this same trigger, but LIME-03g
+  // redefined it to mean "go to thread" instead — it no longer opens
+  // the profile panel.
+  const openProfileAvatars = document.getElementById('open-profile-avatars');
+  if (openProfileAvatars) {
+    openProfileAvatars.addEventListener('click', () => {
+      if (layout.classList.contains('seed-layout--right-hidden')) toggle.click();
     });
+  }
 })();
 
 // ── Reply thread panel ────────────────────────────────────
@@ -440,32 +442,39 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
 // ── Mobile nav drawer ─────────────────────────────────────
 // Reuses Seed's own .seed-layout--mobile-open overlay for
 // .seed-layout__left (already fully styled in layout.css) — this just
-// adds the hamburger trigger and a click-outside/Esc-to-close backdrop,
-// which Seed's mechanism doesn't itself provide.
+// adds the trigger and a click-outside/Esc-to-close backdrop, which
+// Seed's mechanism doesn't itself provide. The trigger is now styled
+// and wired like the existing left/right panel toggles (icon swaps
+// open/closed, hover previews the alternate) rather than a plain
+// hamburger with its own bespoke click handler.
 (function () {
   const layout   = document.getElementById('layout');
   const toggle   = document.getElementById('mobile-nav-toggle');
   const backdrop = document.getElementById('mobile-nav-backdrop');
   if (!layout || !toggle || !backdrop) return;
 
-  function open() {
-    layout.classList.add('seed-layout--mobile-open');
-    backdrop.classList.add('is-open');
-    toggle.setAttribute('aria-expanded', 'true');
+  const icon = toggle.querySelector('.dew');
+
+  function paintIcon(isOpen) {
+    icon.classList.toggle('dew-sidebar-left-open',   !isOpen);
+    icon.classList.toggle('dew-sidebar-left-closed',  isOpen);
   }
 
-  function close() {
-    layout.classList.remove('seed-layout--mobile-open');
-    backdrop.classList.remove('is-open');
-    toggle.setAttribute('aria-expanded', 'false');
+  function applyOpen(isOpen) {
+    layout.classList.toggle('seed-layout--mobile-open', isOpen);
+    backdrop.classList.toggle('is-open', isOpen);
+    toggle.setAttribute('aria-expanded', String(isOpen));
   }
 
-  toggle.addEventListener('click', () => {
-    if (layout.classList.contains('seed-layout--mobile-open')) close(); else open();
-  });
-  backdrop.addEventListener('click', close);
+  applyOpen(false);
+  wireHoverPreviewToggle(toggle, false, paintIcon, applyOpen);
+
+  backdrop.addEventListener('click', () => { applyOpen(false); paintIcon(false); });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && layout.classList.contains('seed-layout--mobile-open')) close();
+    if (e.key === 'Escape' && layout.classList.contains('seed-layout--mobile-open')) {
+      applyOpen(false);
+      paintIcon(false);
+    }
   });
 })();
 
@@ -474,8 +483,11 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
 // full-width view shows below 768px (see the [data-mobile-view] rules
 // in lime.css); above that breakpoint the attribute is simply inert.
 // Triggers here layer onto elements that already have their own
-// desktop-oriented click handlers (open-profile-name, open-replies,
-// etc.) rather than replacing them.
+// desktop-oriented click handlers (open-profile-avatars, open-replies,
+// etc.) rather than replacing them. #crumb-thread ("Jean Chung" in the
+// breadcrumb) is the exception — LIME-03g gave it its own distinct
+// meaning ("go to thread"), so it's wired here only, not treated as a
+// profile-opening trigger the way it used to be.
 (function () {
   const layout = document.getElementById('layout');
   if (!layout) return;
@@ -488,13 +500,15 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
     el.addEventListener('click', () => setView('thread'));
   });
 
-  [document.getElementById('open-profile-name'), document.getElementById('open-profile-avatars'), document.getElementById('open-replies')]
+  [document.getElementById('open-profile-avatars'), document.getElementById('open-replies')]
     .filter(Boolean)
     .forEach((btn) => btn.addEventListener('click', () => setView('panel')));
 
-  [document.getElementById('crumb-link'), document.getElementById('crumb-teachers')]
-    .filter(Boolean)
-    .forEach((btn) => btn.addEventListener('click', () => setView('contacts')));
+  const crumbThread = document.getElementById('crumb-thread');
+  if (crumbThread) crumbThread.addEventListener('click', () => setView('thread'));
+
+  const crumbTeachers = document.getElementById('crumb-teachers');
+  if (crumbTeachers) crumbTeachers.addEventListener('click', () => setView('contacts'));
 
   const backBtn = document.getElementById('mobile-back');
   if (backBtn) {
