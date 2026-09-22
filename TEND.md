@@ -83,3 +83,7 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Task 6 (avatar sizing): the brief's exact numbers (36px wrapper, 28px avatars, Seed's default -8px overlap) don't fit geometrically — two 28px avatars at -8px overlap are 48px wide, wider than the 36px wrapper. Used -20px overlap instead so they actually fit.
 - Task 7 (breadcrumbs single line): already fully satisfied by LIME-03g/03h's existing CSS — no change made.
 - Process note: committed the logo-asset swap, LIME-03g-revision, and LIME-03h as three separate commits, but the latter two had landed in the same files (`lime.css`, `app.js`) without an intermediate commit between them, so they were combined into one commit rather than risk a bad split.
+
+## LIME-03j — Composer Gradient + Scroll
+
+- Task 3 (`.lime-composer`'s `position:absolute; bottom:0;` + canvas background) was already in place from earlier work — no change needed. Only Tasks 1/2 required edits: `.lime-messages` padding-bottom 88px→80px, `.lime-composer::before` gradient 48px→64px.
