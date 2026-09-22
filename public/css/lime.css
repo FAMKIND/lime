@@ -329,8 +329,8 @@ body {
 }
 
 .seed-layout--collapsed-left [data-brand-mark] {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
 }
 
 /* Collapsed rail: the toggle overlays the mark exactly (inset:0 of
@@ -367,8 +367,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
 }
 
@@ -1615,6 +1615,19 @@ body {
    PANEL 3 — RIGHT PROFILE
 ───────────────────────────────────────────────────── */
 
+/* Close button — moved here from .lime-center-top (LIME-03l): it now
+   lives inside the panel it closes rather than as an external toggle.
+   Opening the panel still happens elsewhere (avatar/replies/breadcrumb
+   triggers) — this button is close-only, no open state or icon-swap.
+   .seed-layout__right already has position:relative from Seed's own
+   base rule, so no extra positioning context is needed here. */
+.lime-right-panel__toggle {
+  position: absolute;
+  top: var(--seed-space-3);
+  right: var(--seed-space-3);
+  z-index: 1;
+}
+
 .lime-profile-panel {
   height: 100%;
   display: flex;
@@ -1949,13 +1962,12 @@ body {
     border-radius: 0;
   }
 
-  /* Context-aware header: contacts view has no selected person, so the
-     right-panel toggle and Jean Chung's avatar have nothing to act on
-     yet — only "Me" (Shem R) shows. Thread/panel views restore both. */
-  #layout[data-mobile-view="contacts"] #right-panel-toggle {
-    display: none;
-  }
-
+  /* Context-aware header: contacts view has no selected person, so
+     Jean Chung's avatar has nothing to act on yet — only "Me" (Shem R)
+     shows. Thread/panel views restore both. (#right-panel-toggle no
+     longer needs its own rule here — LIME-03l moved it inside
+     #right-panel itself, which is already hidden in contacts view via
+     the rules above, so hiding the button too would be redundant.) */
   #layout[data-mobile-view="contacts"] .lime-topbar__avatars .seed-avatar:not([data-name="Shem R"]) {
     display: none;
   }

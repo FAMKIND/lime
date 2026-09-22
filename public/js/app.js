@@ -211,6 +211,22 @@ function wireHoverPreviewToggle(toggle, initial, paint, apply) {
   });
 }
 
+// Shared by every trigger that opens/closes the right panel
+// (open-profile-avatars, open-replies, #right-panel-toggle itself, the
+// mobile router, auto-collapse-on-shrink). #right-panel-toggle moved
+// inside #right-panel in LIME-03l and became close-only — it can no
+// longer serve as the thing other triggers ".click()" to open the
+// panel, since clicking it now always closes. This is the single
+// place that actually flips the panel's open/closed state.
+function setRightPanelOpen(isOpen) {
+  const layout = document.getElementById('layout');
+  const toggle = document.getElementById('right-panel-toggle');
+  if (!layout) return;
+  layout.classList.toggle('seed-layout--right-hidden', !isOpen);
+  if (toggle) toggle.setAttribute('aria-expanded', String(isOpen));
+  localStorage.setItem('lime-right-panel-open', String(isOpen));
+}
+
 // ── Left nav panel toggle ────────────────────────────────
 // Expanded (icon + label, full conversation list) is the default. The
 // header toggle collapses it to Seed's 56px icon rail — it does not hide
@@ -248,41 +264,29 @@ function wireHoverPreviewToggle(toggle, initial, paint, apply) {
 })();
 
 // ── Right profile panel toggle ──────────────────────────
-// The toggle button lives outside #layout (position:fixed) so it stays
-// reachable even while the panel itself is display:none.
+// #right-panel-toggle now lives inside #right-panel itself (LIME-03l)
+// and is close-only — no icon-swap, no hover-preview, since there's
+// nothing to preview toward. Restores its persisted open/closed state
+// on load, same as before.
 (function () {
   const layout = document.getElementById('layout');
   const toggle = document.getElementById('right-panel-toggle');
   if (!layout || !toggle) return;
 
-  const icon = toggle.querySelector('.dew');
-
-  function paintIcon(isOpen) {
-    icon.classList.toggle('dew-sidebar-right-open',   isOpen);
-    icon.classList.toggle('dew-sidebar-right-closed', !isOpen);
-  }
-
-  function applyOpen(isOpen) {
-    layout.classList.toggle('seed-layout--right-hidden', !isOpen);
-    toggle.setAttribute('aria-expanded', String(isOpen));
-    localStorage.setItem('lime-right-panel-open', String(isOpen));
-  }
-
   const saved = localStorage.getItem('lime-right-panel-open');
-  const isOpen = saved === null ? true : saved === 'true';
-  applyOpen(isOpen);
-  wireHoverPreviewToggle(toggle, isOpen, paintIcon, applyOpen);
+  setRightPanelOpen(saved === null ? true : saved === 'true');
+
+  toggle.addEventListener('click', () => setRightPanelOpen(false));
 
   // Second trigger: the participant avatar in the center top row opens
-  // the panel (never closes it — it lives outside the panel and isn't a
-  // natural "toggle" affordance). The breadcrumb's "Jean Chung" segment
-  // (#crumb-thread) used to double as this same trigger, but LIME-03g
-  // redefined it to mean "go to thread" instead — it no longer opens
-  // the profile panel.
+  // the panel (never closes it — closing is the dedicated button's job
+  // now). The breadcrumb's "Jean Chung" segment (#crumb-thread) used to
+  // double as this same trigger, but LIME-03g redefined it to mean "go
+  // to thread" instead — it no longer opens the profile panel.
   const openProfileAvatars = document.getElementById('open-profile-avatars');
   if (openProfileAvatars) {
     openProfileAvatars.addEventListener('click', () => {
-      if (layout.classList.contains('seed-layout--right-hidden')) toggle.click();
+      if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
     });
   }
 })();
@@ -294,14 +298,13 @@ function wireHoverPreviewToggle(toggle, initial, paint, apply) {
 // step as the profile triggers above.
 (function () {
   const layout       = document.getElementById('layout');
-  const rightToggle   = document.getElementById('right-panel-toggle');
   const rightPanel    = document.getElementById('right-panel');
   const openReplies   = document.getElementById('open-replies');
   const backBtn       = document.getElementById('replies-back');
-  if (!layout || !rightToggle || !rightPanel || !openReplies || !backBtn) return;
+  if (!layout || !rightPanel || !openReplies || !backBtn) return;
 
   openReplies.addEventListener('click', () => {
-    if (layout.classList.contains('seed-layout--right-hidden')) rightToggle.click();
+    if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
     rightPanel.setAttribute('data-panel', 'replies');
   });
 
@@ -515,18 +518,12 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
     .filter(Boolean)
     .forEach((btn) => btn.addEventListener('click', () => setView('panel')));
 
-  // right-panel-toggle is excluded from the list above on purpose: it's
-  // a toggle (open AND close), not a one-way "go to panel" trigger like
-  // the others. Lumping it in there meant every click forced the view
-  // back to "panel", even one meant to close it — the toggle could
-  // never actually close the mobile panel. This mirrors its own
-  // open/close state instead.
+  // right-panel-toggle is excluded from the "go to panel" list above —
+  // LIME-03l made it close-only (it lives inside #right-panel now), so
+  // on mobile it should only ever step back to "thread", never open
+  // "panel" itself.
   const rightToggle = document.getElementById('right-panel-toggle');
-  if (rightToggle) {
-    rightToggle.addEventListener('click', () => {
-      setView(layout.getAttribute('data-mobile-view') === 'panel' ? 'thread' : 'panel');
-    });
-  }
+  if (rightToggle) rightToggle.addEventListener('click', () => setView('thread'));
 
   const crumbTeachers = document.getElementById('crumb-teachers');
   if (crumbTeachers) crumbTeachers.addEventListener('click', () => setView('contacts'));
