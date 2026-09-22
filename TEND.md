@@ -87,3 +87,9 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 ## LIME-03j — Composer Gradient + Scroll
 
 - Task 3 (`.lime-composer`'s `position:absolute; bottom:0;` + canvas background) was already in place from earlier work — no change needed. Only Tasks 1/2 required edits: `.lime-messages` padding-bottom 88px→80px, `.lime-composer::before` gradient 48px→64px.
+
+## LIME-03k — Logo Size + Hover Toggle
+
+- Moved `#left-panel-toggle` inside `.lime-sidebar__brand` per the brief; `.lime-sidebar__brand` now owns the space-between/flex:1 role `.lime-sidebar__top` used to provide (toggle is no longer its sibling).
+- **Deviation**: the brief's own CSS set `.lime-sidebar__toggle { display: none; }` as the unconditional default, only becoming visible when `.seed-layout--collapsed-left` was already active — meaning, taken literally, there would be no way to collapse the sidebar in the first place once expanded. The brief's "Expected Result" section only describes the collapsed→hover→expand direction, so this reads as an oversight, not an intentional removal. Kept the toggle a normal, always-visible `.lime-icon-btn` while expanded (unchanged from before); the new absolute-overlay hover-fade-swap only applies when collapsed. Flagged at the gate, no objection.
+- Collapsed mark size: 18px → 24px, per the brief.

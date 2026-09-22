@@ -291,7 +291,6 @@ body {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   /* Left inset matches .lime-nav's padding + .lime-nav__btn's own padding
      below (space-3 + space-3 = 24px) so the logomark's optical center
      lands on the same x-axis as the nav icons underneath it. */
@@ -300,45 +299,63 @@ body {
 
 .seed-layout--collapsed-left .lime-sidebar__top {
   justify-content: center;
-  gap: 4px;
   padding: 0 4px;
 }
 
+/* The toggle now lives inside .lime-sidebar__brand (not as
+   .lime-sidebar__top's sibling), so brand itself takes over the
+   space-between/flex:1 role .lime-sidebar__top used to provide —
+   expanded, this keeps mark+wordmark left and the toggle pinned to the
+   row's right edge, unchanged from before this brief. */
 .lime-sidebar__brand {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--seed-space-2);
+  flex: 1;
+  justify-content: space-between;
 }
 
-/* Collapsed rail: logomark only (no wordmark) — the toggle still shares
-   the row, so both shrink slightly to fit the 56px width. */
+/* Collapsed rail: logomark only (no wordmark). Brand shrinks to fit
+   its content instead of stretching, so .lime-sidebar__top's
+   justify-content:center actually centers something meaningful. */
+.seed-layout--collapsed-left .lime-sidebar__brand {
+  flex: 0;
+  justify-content: center;
+}
+
 .seed-layout--collapsed-left [data-brand-wordmark] {
   display: none;
 }
 
 .seed-layout--collapsed-left [data-brand-mark] {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
-.seed-layout--collapsed-left .lime-sidebar__top .lime-icon-btn {
-  width: 28px;
-  height: 28px;
-}
-
-/* Collapsed rail: the toggle stays invisible until the mark area is
-   hovered, so the rail reads as just a logo at rest — Claude's sidebar
-   does the same. Opacity/pointer-events (not display) so the existing
-   hover-preview icon swap in app.js keeps working unmodified. */
-.seed-layout--collapsed-left .lime-sidebar__top .lime-icon-btn {
+/* Collapsed rail: the toggle overlays the mark exactly (inset:0 of
+   .lime-sidebar__brand, which shrinks to the mark's own footprint
+   above) and stays invisible until hovered, at which point it cross-
+   fades in as the mark fades out — Claude's sidebar does the same.
+   Expanded, the toggle is a normal, always-visible .lime-icon-btn (see
+   markup) with no absolute positioning or opacity logic at all — this
+   only changes collapsed-state behavior. */
+.seed-layout--collapsed-left .lime-sidebar__toggle {
+  position: absolute;
+  inset: 0;
   opacity: 0;
   pointer-events: none;
   transition: opacity 100ms ease;
 }
 
-.seed-layout--collapsed-left .lime-sidebar__top:hover .lime-icon-btn {
+.seed-layout--collapsed-left .lime-sidebar__brand:hover .lime-sidebar__toggle {
   opacity: 1;
   pointer-events: auto;
+}
+
+.seed-layout--collapsed-left .lime-sidebar__brand:hover [data-brand-mark] {
+  opacity: 0;
+  transition: opacity 100ms ease;
 }
 
 /* Brand mark + wordmark — static files (public/assets/logo-mark.svg,

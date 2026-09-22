@@ -37,15 +37,16 @@
     <aside class="seed-layout__left seed-layout__panel--no-bg" id="left-panel">
       <nav class="lime-sidebar">
 
-        <!-- Top row: brand + toggle, 56px, matches the other two panels -->
+        <!-- Top row: brand (+ toggle, now nested inside it), 56px,
+             matches the other two panels -->
         <div class="lime-sidebar__top">
           <div class="lime-sidebar__brand">
             <span data-brand-mark aria-hidden="true"><img src="assets/logo-mark.svg" alt=""></span>
             <span data-brand-wordmark aria-hidden="true"><img src="assets/logo-wordmark.svg" alt=""></span>
+            <button class="lime-icon-btn lime-sidebar__toggle" id="left-panel-toggle" title="Toggle navigation" aria-expanded="true" aria-controls="left-panel">
+              <span class="dew dew-sidebar-left-open"></span>
+            </button>
           </div>
-          <button class="lime-icon-btn" id="left-panel-toggle" title="Toggle navigation" aria-expanded="true" aria-controls="left-panel">
-            <span class="dew dew-sidebar-left-open"></span>
-          </button>
         </div>
 
         <div class="lime-nav">
