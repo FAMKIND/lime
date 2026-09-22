@@ -35,8 +35,8 @@
         <!-- Top row: brand + toggle, 56px, matches the other two panels -->
         <div class="lime-sidebar__top">
           <div class="lime-sidebar__brand">
-            <span data-brand-mark aria-hidden="true"></span>
-            <span data-brand-wordmark aria-hidden="true"></span>
+            <span data-brand-mark aria-hidden="true"><img src="assets/logo-mark.svg" alt=""></span>
+            <span data-brand-wordmark aria-hidden="true"><img src="assets/logo-wordmark.svg" alt=""></span>
           </div>
           <button class="lime-icon-btn" id="left-panel-toggle" title="Toggle navigation" aria-expanded="true" aria-controls="left-panel">
             <span class="dew dew-sidebar-left-open"></span>
@@ -49,7 +49,15 @@
             <span class="lime-nav-search__label">Search</span>
           </button>
           <ul class="lime-nav__group">
-            <li><button class="lime-nav__btn" title="Notifications"><span class="dew dew-bell-on"></span><span class="lime-nav__label">Notifications</span></button></li>
+            <li>
+              <button class="lime-nav__btn" title="Notifications, 3 unread">
+                <span class="lime-nav__icon-wrap">
+                  <span class="dew dew-bell-on"></span>
+                  <span class="seed-badge seed-badge--bad seed-badge--sm lime-nav__badge" aria-hidden="true">3</span>
+                </span>
+                <span class="lime-nav__label">Notifications</span>
+              </button>
+            </li>
           </ul>
           <ul class="lime-nav__group">
             <li><button class="lime-nav__btn lime-nav__btn--active" title="Link"><span class="dew dew-chat"></span><span class="lime-nav__label">Link</span></button></li>

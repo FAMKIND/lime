@@ -305,14 +305,26 @@ body {
   height: 28px;
 }
 
-/* Brand mark + wordmark — ported from Seed's own brand customizer
-   (vendor/seed/components/layout/layout.html): elements carrying
-   [data-brand-mark] / [data-brand-wordmark] have their innerHTML
-   replaced wholesale by app.js's setBrandMark()/setBrandWordmark(),
-   mirroring Seed's setMarkContent()/setBrandName() exactly. Swapping the
-   asset means changing what gets broadcast to those attributes — no
-   markup edits. Sizing lives here since the swapped-in content (an SVG)
-   carries no size opinion of its own. */
+/* Collapsed rail: the toggle stays invisible until the mark area is
+   hovered, so the rail reads as just a logo at rest — Claude's sidebar
+   does the same. Opacity/pointer-events (not display) so the existing
+   hover-preview icon swap in app.js keeps working unmodified. */
+.seed-layout--collapsed-left .lime-sidebar__top .lime-icon-btn {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.seed-layout--collapsed-left .lime-sidebar__top:hover .lime-icon-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Brand mark + wordmark — static files (public/assets/logo-mark.svg,
+   logo-wordmark.svg) loaded via <img>. Sizing lives here since the
+   images carry no layout opinion of their own; color is baked into
+   each SVG file rather than set here, since an <img> can't be
+   recolored through CSS `color`/currentColor. */
 [data-brand-mark] {
   display: inline-flex;
   align-items: center;
@@ -320,24 +332,24 @@ body {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
-  color: var(--good-bg-bold-default);
 }
 
-[data-brand-mark] svg {
+[data-brand-mark] img {
   width: 100%;
   height: 100%;
+  display: block;
 }
 
 [data-brand-wordmark] {
   display: inline-flex;
   align-items: center;
   height: 16px;
-  color: var(--soil-text);
 }
 
-[data-brand-wordmark] svg {
+[data-brand-wordmark] img {
   height: 100%;
   width: auto;
+  display: block;
 }
 
 .lime-nav {
@@ -381,7 +393,7 @@ body {
 }
 
 .lime-nav-search .dew {
-  font-size: 14px;
+  font-size: 20px;
   flex-shrink: 0;
 }
 
@@ -448,6 +460,19 @@ body {
 .lime-nav__btn .dew {
   font-size: 20px;
   flex-shrink: 0;
+}
+
+.lime-nav__icon-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.lime-nav__badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  box-shadow: 0 0 0 2px var(--soil-bg-canvas);
 }
 
 .lime-nav__label {

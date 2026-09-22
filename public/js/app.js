@@ -4,48 +4,6 @@
 const theme = localStorage.getItem('lime-theme');
 if (theme) document.documentElement.setAttribute('data-theme', theme);
 
-// ── Brand config ──────────────────────────────────────────
-// Ported from Seed's own brand customizer (vendor/seed/components/layout/
-// layout.html): elements carry [data-brand-mark] / [data-brand-wordmark],
-// and setting the brand means broadcasting new innerHTML to every element
-// carrying that attribute — the exact shape of Seed's setMarkContent() /
-// setBrandName(), just with a second slot since Lime's wordmark is a
-// drawn asset rather than editable text. A different logo drops in by
-// changing what these two functions are called with — never by editing
-// markup. Swap the asset here, or wire a real localStorage-backed
-// picker later using the same functions Seed's does.
-(function () {
-  const LIME_MARK = `<svg viewBox="0 0 24 24" role="img" aria-label="Lime">
-    <circle cx="12" cy="12" r="11" fill="#09a950"/>
-    <circle cx="12" cy="12" r="8.5" fill="#a3e18a"/>
-    <g stroke="#e4f9be" stroke-width="1" stroke-linecap="round">
-      <line x1="12" y1="12" x2="12" y2="4"/>
-      <line x1="12" y1="12" x2="18.2" y2="8"/>
-      <line x1="12" y1="12" x2="18.2" y2="16"/>
-      <line x1="12" y1="12" x2="12" y2="20"/>
-      <line x1="12" y1="12" x2="5.8" y2="16"/>
-      <line x1="12" y1="12" x2="5.8" y2="8"/>
-    </g>
-  </svg>`;
-
-  const LIME_WORDMARK = `<svg viewBox="0 0 60 20" role="img" aria-label="lime">
-    <text x="0" y="15" font-family="Montserrat, sans-serif" font-size="16" font-weight="600" fill="currentColor">lime</text>
-  </svg>`;
-
-  function setBrandMark(html) {
-    document.querySelectorAll('[data-brand-mark]').forEach((el) => { el.innerHTML = html; });
-  }
-
-  function setBrandWordmark(html) {
-    document.querySelectorAll('[data-brand-wordmark]').forEach((el) => { el.innerHTML = html; });
-  }
-
-  const savedMark     = localStorage.getItem('lime-brand-mark');
-  const savedWordmark = localStorage.getItem('lime-brand-wordmark');
-  setBrandMark(savedMark || LIME_MARK);
-  setBrandWordmark(savedWordmark || LIME_WORDMARK);
-})();
-
 // ── Contact preview truncation ───────────────────────────
 // text-overflow: ellipsis has no effect on a flex container (only on
 // block containers per spec) — .lime-contact__preview is flex so an
