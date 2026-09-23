@@ -2287,12 +2287,18 @@ body {
   gap: 4px;
 }
 
-.lime-composer__aux {
+/* :not(.lime-composer__voice) — LIME-10-fix11 keeps the circle for the
+   plus button only; .lime-composer__voice overrides shape/size below
+   rather than relying on source-order to win over this rule. */
+.lime-composer__aux:not(.lime-composer__voice) {
   width: 28px;
   height: 28px;
+  border-radius: 50%;
+}
+
+.lime-composer__aux {
   border: none;
   background: none;
-  border-radius: 50%;
   color: var(--soil-text-muted);
   display: flex;
   align-items: center;
@@ -2304,9 +2310,10 @@ body {
   background: var(--calm-bg-subtle-hover);
 }
 
-/* 16px, not the toolbar tools' 18px (LIME-10-fix5) — also covers the
-   voice button's icon-audio-waveform <i> (a Lucide glyph, no .dew
-   class), same reasoning as the toolbar's list/quote icons. */
+/* 16px, not the toolbar tools' 18px (LIME-10-fix5). The [class^="icon-"]
+   half is now unused here (the voice button's Lucide waveform icon was
+   reverted to dew-microphone in LIME-10-fix10) but harmless to leave —
+   kept in case a future aux button ever uses a Lucide icon again. */
 .lime-composer__aux .dew,
 .lime-composer__aux [class^="icon-"] {
   font-size: 16px;
@@ -2316,11 +2323,27 @@ body {
   position: relative;
 }
 
-/* waveform (mic) + chevron grouped */
+/* Mic + chevron grouped in one rounded-rect pill, not a circle
+   (LIME-10-fix11) — --soil-bg-subtle doesn't exist (checked; real
+   soil-bg tiers are only canvas/surface/elevated), so using
+   --calm-bg-subtle-default instead: it's exactly one step lighter than
+   the --calm-bg-subtle-hover this brief already specifies for :hover. */
 .lime-composer__voice {
+  display: inline-flex;
+  align-items: center;
   gap: 2px;
   width: auto;
-  padding: 0 4px;
+  padding: 6px 10px;
+  border-radius: var(--seed-radius-md);
+  background: var(--calm-bg-subtle-default);
+}
+
+.lime-composer__voice:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-composer__voice .dew-microphone {
+  font-size: 18px;
 }
 
 .lime-composer__voice .dew-chevron-down {
