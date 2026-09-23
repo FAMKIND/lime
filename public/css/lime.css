@@ -671,6 +671,16 @@ body {
   display: none;
 }
 
+/* The "Soon" badge belongs with the label conceptually (extra info,
+   not essential in icon-only mode) — without this it stayed visible
+   as the button's only other child besides the icon, and
+   justify-content:center tried to center that icon+badge pair
+   together in a fixed 40px button, pushing the icon out of the
+   visible rail entirely rather than actually centering it. */
+.seed-layout--collapsed-left .lime-badge--soon {
+  display: none;
+}
+
 /* position:relative is no longer load-bearing for #user-dropdown's
    own positioning (LIME-03w made it position:fixed) but left in place
    since harmless. The actual clickable content moved into
