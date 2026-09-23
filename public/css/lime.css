@@ -2116,8 +2116,19 @@ body {
   background: var(--soil-bg-canvas);
 }
 
-.lime-composer__toolbar,
-.lime-composer__actions {
+/* Toolbar is hidden at rest, shown only while #composer.is-expanded
+   (LIME-10 — app.js toggles that class on focusin/focusout). */
+.lime-composer__toolbar {
+  display: none;
+  align-items: center;
+  gap: var(--seed-space-1);
+}
+
+#composer.is-expanded .lime-composer__toolbar {
+  display: flex;
+}
+
+.lime-composer__bottom {
   display: flex;
   align-items: center;
   gap: var(--seed-space-1);
@@ -2130,20 +2141,34 @@ body {
   background: var(--soil-border-subtle);
 }
 
-.lime-composer__spacer {
+.lime-composer__voice-dropdown {
+  position: relative;
+}
+
+.lime-composer__voice-dropdown .lime-composer__aux {
+  width: auto;
+  padding: 0 var(--seed-space-2);
+  gap: 2px;
+}
+
+.lime-composer__voice-dropdown .lime-composer__aux .dew + .dew {
+  font-size: 12px;
+}
+
+.lime-composer__privacy {
   flex: 1;
+  min-width: 0;
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Plain-glyph fallbacks for icons dew doesn't have (see the HTML
-   comment above the composer markup) — sized/weighted to sit visually
-   level with the 18px dew icons beside them. */
-.lime-composer__glyph {
-  font-size: 13px;
-  font-weight: var(--seed-weight-semibold);
-}
-
-/* Now just the input pill — Attach/mic/Send moved out to
-   .lime-composer__actions below. */
+/* Still used by the reply panel's own composer (a plain <input>,
+   untouched by LIME-10) — the main composer no longer wraps its
+   textarea in this pill (see textarea.lime-composer__input below). */
 .lime-composer__field {
   display: flex;
   align-items: center;
@@ -2174,6 +2199,30 @@ body {
 
 .lime-composer__input:focus {
   outline: none;
+}
+
+/* Main composer's textarea (LIME-10) — no .lime-composer__field wrapper
+   around it any more, so it needs its own full pill styling instead of
+   borrowing the wrapper's. Scoped to the tag so the reply panel's plain
+   <input class="lime-composer__input"> (still inside .lime-composer__field)
+   is completely unaffected. */
+textarea.lime-composer__input {
+  display: block;
+  flex: none;
+  width: 100%;
+  min-height: 40px;
+  max-height: 160px;
+  padding: var(--seed-space-2) var(--seed-space-4);
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-lg);
+  background: var(--soil-bg-surface);
+  resize: none;
+  line-height: var(--seed-leading-snug);
+  overflow-y: auto;
+}
+
+textarea.lime-composer__input:focus {
+  border-color: var(--calm-border-normal-default);
 }
 
 .lime-composer__aux,

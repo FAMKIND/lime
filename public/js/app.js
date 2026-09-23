@@ -244,6 +244,7 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
     thread.insertAdjacentHTML('beforeend', messageHtml(message, me, true));
 
     composerInput.value = '';
+    composerInput.style.height = ''; // drop the auto-grow inline height (LIME-10)
     thread.scrollTop = thread.scrollHeight;
   }
 
@@ -650,6 +651,32 @@ function wireDropdownToggle(toggleId, dropdownId, { fixed = false } = {}) {
 wireDropdownToggle('more-menu-toggle', 'more-menu');
 wireDropdownToggle('notif-btn', 'notif-dropdown', { fixed: true });
 wireDropdownToggle('user-btn', 'user-dropdown', { fixed: true });
+// Decorative placeholder, not a real navigator.mediaDevices list — per
+// the LIME-10 gate, real device enumeration needs a live mic-permission
+// prompt for a feature that still can't record anything.
+wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
+
+// ── Expandable composer (LIME-10) ────────────────────────
+// Toolbar shows only while #composer.is-expanded; textarea grows with
+// content up to the CSS max-height (then scrolls). focusin/focusout
+// (not focus/blur) because they bubble — needed to tell "focus moved to
+// a toolbar button inside #composer" (stay expanded) apart from "focus
+// left the composer entirely" (collapse, but only if it's empty).
+(function () {
+  const composer = document.getElementById('composer');
+  const input = document.getElementById('composer-input');
+  if (!composer || !input) return;
+
+  composer.addEventListener('focusin', () => composer.classList.add('is-expanded'));
+  composer.addEventListener('focusout', (e) => {
+    if (composer.contains(e.relatedTarget)) return;
+    if (!input.value.trim()) composer.classList.remove('is-expanded');
+  });
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+  });
+})();
 
 // ── Sign out ───────────────────────────────────────────────
 // Clears the mock session login.html stores on a successful sign-in
