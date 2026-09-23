@@ -1754,6 +1754,16 @@ body {
   gap: var(--seed-space-4);
 }
 
+.lime-replies__avatars {
+  flex-shrink: 0;
+}
+
+.lime-replies__avatars .seed-avatar--xs {
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+}
+
 .lime-message__replies {
   display: flex;
   align-items: center;
@@ -1805,28 +1815,40 @@ body {
 }
 
 /* :not(:empty) so the container added to every message (LIME-03v)
-   doesn't add a phantom gap under messages that have no reactions yet
-   — the negative margin-top here would otherwise slightly compress
-   the bubble's own bottom spacing even with nothing to show. */
+   doesn't add a phantom gap under messages that have no reactions yet.
+   LIME-04a: moved from inside .lime-message__content to a sibling
+   below it (Slack-style, not overlapping the bubble) — margin-top is
+   now a small positive gap instead of the negative overlap it used to
+   pull it up into the bubble's bottom edge. */
 .lime-message__reactions:not(:empty) {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--seed-space-1);
-  margin-top: calc(-1 * var(--seed-space-2));
+  margin-top: var(--seed-space-1);
   margin-left: var(--seed-space-3);
-  position: relative;
-  z-index: 1;
 }
 
 .lime-reaction {
   display: inline-flex;
   align-items: center;
   gap: var(--seed-space-1);
-  background: var(--soil-bg-canvas);
+  background: var(--soil-bg-surface);
   border: 1px solid var(--soil-border-subtle);
   box-shadow: var(--seed-shadow-sm);
-  padding: var(--seed-space-1) var(--seed-space-2);
+  padding: 2px 8px;
   border-radius: var(--seed-radius-full);
   font-size: var(--seed-text-sm);
+  cursor: pointer;
+}
+
+.lime-reaction:hover {
+  background: var(--calm-bg-subtle-hover);
+  border-color: var(--calm-border-normal-default);
+}
+
+.lime-reaction__count {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
 }
 
 /* ── System message — centered, no avatar/bubble, distinct from the

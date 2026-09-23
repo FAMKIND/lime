@@ -214,3 +214,11 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Skipped adding `#right-panel { position: relative; }` -- already true from Seed's own `.seed-layout__right` base rule, a no-op.
 - Fifth relocation of this button across recent briefs (LIME-03l in, 03n out, 03p in, 03t out, 03z in again). Moved back into `#right-panel`, close-only, no icon-swap -- exact same pattern as LIME-03p. Updated the mobile router's handler back to close-only and removed the `[data-mobile-view="contacts"] #right-panel-toggle` hide rule (redundant again, since the button's parent panel is already hidden there).
 - Flagged the repeated back-and-forth pattern at the gate; no response yet on settling a final placement.
+
+
+## LIME-04a — Slack-style reactions below bubble + avatar stack on replies
+
+- Moved all 15 `.lime-message__reactions` containers from inside `.lime-message__content` to siblings below it, via a Python script with div-depth tracking (same approach as LIME-03v -- manual edits at this volume risk getting nested HTML wrong). Reversed LIME-03x's negative-margin overlap for a small positive gap, per this brief.
+- Converted the existing map-message reaction from a plain non-clickable `<span>` to a `<button>` with a `.lime-reaction__count` span, and updated the LIME-03v picker's dynamic reaction-creation JS to match, so newly-added reactions are consistent buttons too.
+- **Content substitution**: the brief named "Maya Rodriguez, Devon Park" for the new inline avatar-stack on the reply-count preview, but neither person is among the actual repliers shown in the reply panel (Mary Lee, Valene Rajoon, Shem R x2) -- showing different people in the preview than what's actually in the thread read as a real coherence bug. Used Mary Lee and Valene Rajoon (the first two real repliers) instead. Flagged at the gate, no objection.
+- Kept `box-shadow` on `.lime-reaction` -- the brief only listed properties to change, not a full replacement.

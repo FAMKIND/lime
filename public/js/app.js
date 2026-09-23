@@ -401,9 +401,13 @@ document.addEventListener('click', (e) => {
   if (emoji) {
     const msg = emoji.closest('.lime-message');
     const container = msg.querySelector('.lime-message__reactions');
-    const reaction = document.createElement('span');
+    // <button>, not <span> — matches the static reaction markup
+    // (LIME-04a made .lime-reaction a real clickable button) rather
+    // than the plain non-interactive span this used to create.
+    const reaction = document.createElement('button');
+    reaction.type = 'button';
     reaction.className = 'lime-reaction';
-    reaction.innerHTML = emoji.dataset.emoji + ' <span>1</span>';
+    reaction.innerHTML = emoji.dataset.emoji + ' <span class="lime-reaction__count">1</span>';
     container.appendChild(reaction);
     emoji.closest('.lime-reaction-picker').classList.remove('is-open');
   }
