@@ -1764,17 +1764,25 @@ body {
 }
 
 /* :not(:empty) so the container added to every message (LIME-03v)
-   doesn't add a phantom gap under messages that have no reactions yet. */
+   doesn't add a phantom gap under messages that have no reactions yet
+   — the negative margin-top here would otherwise slightly compress
+   the bubble's own bottom spacing even with nothing to show. */
 .lime-message__reactions:not(:empty) {
-  margin-top: var(--seed-space-2);
+  display: flex;
+  gap: var(--seed-space-1);
+  margin-top: calc(-1 * var(--seed-space-2));
+  margin-left: var(--seed-space-3);
+  position: relative;
+  z-index: 1;
 }
 
 .lime-reaction {
   display: inline-flex;
   align-items: center;
   gap: var(--seed-space-1);
-  background: var(--soil-bg-surface);
+  background: var(--soil-bg-canvas);
   border: 1px solid var(--soil-border-subtle);
+  box-shadow: var(--seed-shadow-sm);
   padding: var(--seed-space-1) var(--seed-space-2);
   border-radius: var(--seed-radius-full);
   font-size: var(--seed-text-sm);

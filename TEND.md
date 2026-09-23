@@ -191,3 +191,8 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Real fix instead of the brief's proposed one: traced "dropdown layering" through Seed's own `layout.css`, which has an explicit comment confirming `.seed-layout__left` has `overflow-x: hidden`, and Seed's own native dropdown works around this with `position: fixed` + JS-computed coordinates -- because z-index has no effect on overflow clipping. The notification dropdown (`min-width: 220px`) is wider than the sidebar and was being clipped, not covered by something else, so bumping z-index to 1000 (the brief's literal fix) would not have solved anything. Applied Seed's own documented pattern instead: `.lime-nav-dropdown` is now `position: fixed`, with `wireDropdownToggle()` computing on-screen position from the trigger's rect at open time. Kept `z-index: 1000` too since it's harmless, just not the actual fix.
 - Rich notifications implemented as given -- the brief's own avatar markup omits the `.lime-notif__avatar` class its CSS defines (harmless dead rule; `.seed-avatar` already sets `flex-shrink: 0` on its own).
 - Notification click only closes the dropdown, matching the brief's actual JS -- "select that contact" (the brief's prose) isn't implemented, since the given code doesn't do it and the thread has no real per-contact switching to hook into.
+
+
+## LIME-03x — Reactions Outside Bubble
+
+- Applied the brief's rules as given, but scoped them to the existing `:not(:empty)` selector from LIME-03v rather than the bare `.lime-message__reactions` -- the new negative `margin-top` would otherwise slightly compress the bubble's bottom spacing even on the ~14 messages that have no reactions yet.
