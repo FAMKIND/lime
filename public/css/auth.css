@@ -1,0 +1,187 @@
+/* auth.css — Sign up / log in split-layout pages (LIME-05a). */
+
+.lime-auth {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100vh;
+}
+
+.lime-auth__marketing {
+  position: relative;
+  background: var(--good-bg-subtle-default);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: var(--seed-space-8);
+  text-align: center;
+  gap: var(--seed-space-6);
+}
+
+.lime-auth__marketing-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+}
+
+.lime-auth__marketing-logo [data-brand-mark] {
+  width: 40px;
+  height: 40px;
+}
+
+.lime-auth__marketing-logo [data-brand-wordmark] img {
+  height: 20px;
+}
+
+.lime-auth__tagline {
+  font-size: var(--seed-text-lg);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+  max-width: 320px;
+  margin: 0;
+}
+
+.lime-auth__illustration {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--seed-radius-lg);
+  background: var(--good-bg-subtle-hover);
+}
+
+.lime-auth__form {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--seed-space-8);
+  background: var(--soil-bg-canvas);
+}
+
+.lime-auth__toggle {
+  position: absolute;
+  top: var(--seed-space-4);
+  right: var(--seed-space-4);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+}
+
+.lime-auth__toggle a {
+  color: var(--calm-text-bold-default);
+  font-weight: var(--seed-weight-medium);
+  text-decoration: none;
+}
+
+.lime-auth__toggle a:hover {
+  text-decoration: underline;
+}
+
+.lime-auth__form-inner {
+  max-width: 400px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.lime-auth__form-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  margin-bottom: var(--seed-space-6);
+}
+
+.lime-auth__form-logo [data-brand-mark] {
+  width: 32px;
+  height: 32px;
+}
+
+.lime-auth__form-logo [data-brand-wordmark] img {
+  height: 16px;
+}
+
+.lime-auth__heading {
+  font-size: var(--seed-text-xl);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+  margin: 0 0 var(--seed-space-6);
+}
+
+.lime-auth__field {
+  margin-bottom: var(--seed-space-4);
+}
+
+.lime-auth__terms {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--seed-space-2);
+  margin-bottom: var(--seed-space-4);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+}
+
+.lime-auth__terms a {
+  color: var(--calm-text-bold-default);
+  text-decoration: none;
+}
+
+.lime-auth__terms a:hover {
+  text-decoration: underline;
+}
+
+.lime-auth__submit {
+  width: 100%;
+  margin-bottom: var(--seed-space-4);
+}
+
+.lime-auth__error {
+  display: none;
+  background: var(--bad-bg-subtle-default);
+  color: var(--bad-text-bold-default);
+  border: 1px solid var(--bad-border-subtle-default);
+  border-radius: var(--seed-radius-md);
+  padding: var(--seed-space-2) var(--seed-space-3);
+  font-size: var(--seed-text-sm);
+  margin-bottom: var(--seed-space-4);
+}
+
+.lime-auth__error.is-visible {
+  display: block;
+}
+
+.lime-auth__divider {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  margin: var(--seed-space-4) 0;
+  color: var(--soil-text-muted);
+  font-size: var(--seed-text-xs);
+}
+
+.lime-auth__divider::before,
+.lime-auth__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--soil-border-subtle);
+}
+
+.lime-auth__alt {
+  display: block;
+  text-align: center;
+  font-size: var(--seed-text-sm);
+  color: var(--calm-text-bold-default);
+  text-decoration: none;
+}
+
+.lime-auth__alt:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .lime-auth {
+    grid-template-columns: 1fr;
+  }
+
+  .lime-auth__marketing {
+    display: none;
+  }
+}

@@ -229,3 +229,13 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Badge color: `#e4f9be` is an exact match for Seed's own `--seed-lime-100` -- pointed `--lime-badge-light` at that token instead of updating it to a second hardcoded hex.
 - Soon badge: `--soil-bg-disabled` doesn't exist. Background was already `--calm-bg-subtle-default` (LIME-03u), a neutral muted gray that already reads as disabled-looking, so left unchanged -- only applied the real `--soil-text-disabled` token for text color.
 - Follow-up: user reported the notification badge still showed a visible red-ish border after this brief. Root cause: `seed-badge--bad`'s own `border-color` (meant for a subtle red background) was still active independent of the `box-shadow: none` change. Added `border-color: transparent` to fully remove it.
+
+
+## LIME-05a — Sign up page + Supabase auth setup
+
+- **Stopped and asked before writing anything**: the brief's own README (Decisions section, from the project's first commit) explicitly says "Prototype: mocked auth" and "Stack: HTML/CSS/vanilla JS" -- this brief wanted a real Supabase client wired into `app.js`'s load path with a `getSession()`-redirect to a non-existent `login.html`. Since there's no real Supabase project configured (placeholder credentials only), every future `index.html` open -- the exact workflow used for every prior gate check in this project -- would have immediately redirected to a missing page. User chose: build the signup page as scaffolding, skip the auth-gate redirect in `app.js` entirely.
+- Fixed a real bug in the brief's own snippet: `const supabase = supabase.createClient(...)` is a self-reference that throws `ReferenceError` (the `const` binding isn't initialized until the statement completes). Named the client `supabaseClient` instead.
+- `SUPABASE_URL`/`SUPABASE_ANON_KEY` are literal placeholder strings -- no real project exists, so `signUp()` will throw if actually submitted. Expected scaffolding, not a working integration.
+- Skipped adding `supabase.js` to `index.html` and any redirect logic to `app.js`, per the user's choice -- nothing on that page needs it now.
+- The "Log in" link on the signup page points to `login.html`, which doesn't exist (this brief only creates `signup.html`) -- a dead link if clicked, but doesn't break page load like the app.js redirect would have.
+- Reused Seed's existing `seed-input`/`seed-button--primary`/`seed-label`/`seed-checkbox` components rather than inventing new form styles.
