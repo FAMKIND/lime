@@ -2335,17 +2335,28 @@ body {
    the textarea itself stays borderless/transparent. Scoped to the tag
    so the reply panel's plain <input class="lime-composer__input">
    (still inside .lime-composer__field) is completely unaffected. */
+/* LIME-10-fix7: the JS auto-grow (app.js) already shrinks this back down
+   whenever the content is deleted, so in practice it already reads as
+   single-line at rest — but that's incidental (depends on the input
+   handler firing on every keystroke), not declared. Capping max-height
+   at 24px when collapsed makes "single line while collapsed" a real CSS
+   guarantee instead of a side effect of JS timing. */
 textarea.lime-composer__input {
   display: block;
   flex: none;
   width: 100%;
   min-height: 24px;
-  max-height: 160px;
+  max-height: 24px;
   padding: var(--seed-space-1) 0;
   border: none;
   background: transparent;
   resize: none;
   line-height: var(--seed-leading-snug);
+  overflow: hidden;
+}
+
+#composer.is-expanded textarea.lime-composer__input {
+  max-height: 160px;
   overflow-y: auto;
 }
 
