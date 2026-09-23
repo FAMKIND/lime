@@ -343,13 +343,24 @@ function setRightPanelOpen(isOpen) {
   });
 })();
 
-// ── More menu dropdown (center panel ellipsis icon) ─────
-// Replaces the old compose/pencil toggle (LIME-03r).
-document.getElementById('more-menu-toggle')?.addEventListener('click', (e) => {
-  e.stopPropagation();
-  document.getElementById('more-menu')?.classList.toggle('is-open');
-});
-document.addEventListener('click', () => document.getElementById('more-menu')?.classList.remove('is-open'));
+// ── Dropdown toggles (more menu, notifications, user menu) ──
+// Same shape three times now (LIME-03r's more-menu, LIME-03u's
+// notif/user menus) — one toggle button opens one dropdown, closes on
+// any outside click. Generalized rather than copy-pasted a third time.
+function wireDropdownToggle(toggleId, dropdownId) {
+  const toggle = document.getElementById(toggleId);
+  const dropdown = document.getElementById(dropdownId);
+  if (!toggle || !dropdown) return;
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.classList.toggle('is-open');
+  });
+  document.addEventListener('click', () => dropdown.classList.remove('is-open'));
+}
+
+wireDropdownToggle('more-menu-toggle', 'more-menu');
+wireDropdownToggle('notif-btn', 'notif-dropdown');
+wireDropdownToggle('user-btn', 'user-dropdown');
 
 // ── Nav search → global modal ────────────────────────────
 // Distinct from the center panel's local filter: this searches everywhere

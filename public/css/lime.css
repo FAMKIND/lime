@@ -408,7 +408,7 @@ body {
   width: 100%;
   height: 36px;
   flex-shrink: 0;
-  margin-bottom: var(--seed-space-4);
+  margin-bottom: var(--seed-space-2);
   padding: 0 var(--seed-space-3);
   border: none;
   border-radius: var(--seed-radius-full);
@@ -501,11 +501,80 @@ body {
   flex-shrink: 0;
 }
 
+/* Notification button's <li> — positioning context for #notif-dropdown
+   (bottom: 100%), matching the same "wrapper needed for absolute
+   dropdown positioning" pattern as .lime-more-menu (LIME-03r) and
+   .lime-sidebar__footer (below, for #user-dropdown). */
+.lime-nav__item-wrap {
+  position: relative;
+}
+
 .lime-nav__badge {
   position: absolute;
   top: -6px;
   right: -10px;
+  background: var(--good-bg-bold-default);
   box-shadow: 0 0 0 2px var(--soil-bg-canvas);
+}
+
+.lime-badge--soon {
+  font-size: var(--seed-text-xs);
+  padding: 2px 6px;
+  background: var(--calm-bg-subtle-default);
+  color: var(--soil-text-muted);
+  border-radius: var(--seed-radius-full);
+  margin-left: var(--seed-space-2);
+}
+
+/* ── Nav dropdowns (notifications, user menu) ──
+   Both need a position:relative ancestor sized to the trigger, not
+   the dropdown's own box — see .lime-nav__item-wrap and
+   .lime-sidebar__footer respectively. min-width guards against the
+   collapsed 56px icon rail: left:0/right:0 alone would size the
+   dropdown to the trigger's own tiny width there, badly wrapping its
+   text content. */
+.lime-nav-dropdown {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  min-width: 220px;
+  background: var(--soil-bg-surface);
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-md);
+  box-shadow: var(--seed-shadow-md);
+  padding: var(--seed-space-2);
+  margin-bottom: var(--seed-space-2);
+  z-index: 20;
+}
+
+.lime-nav-dropdown.is-open {
+  display: block;
+}
+
+.lime-nav-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  padding: var(--seed-space-2) var(--seed-space-3);
+  border: none;
+  background: none;
+  width: 100%;
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+  cursor: pointer;
+  border-radius: var(--seed-radius-sm);
+}
+
+.lime-nav-dropdown__item:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-nav-dropdown__divider {
+  height: 1px;
+  background: var(--soil-border-subtle);
+  margin: var(--seed-space-2) 0;
 }
 
 .lime-nav__label {
@@ -516,33 +585,36 @@ body {
   display: none;
 }
 
+/* Positioning context for #user-dropdown, which sits above this
+   (bottom: 100%) — the actual clickable content moved into
+   .lime-sidebar__user-trigger, a real <button> now instead of a
+   plain <div>, matching .lime-nav__btn's semantics. */
 .lime-sidebar__footer {
+  position: relative;
   flex-shrink: 0;
+}
+
+.lime-sidebar__user-trigger {
   display: flex;
   align-items: center;
   gap: var(--seed-space-2);
+  width: 100%;
+  border: none;
+  background: none;
   padding: var(--seed-space-3) var(--seed-space-4);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--seed-radius-md);
 }
 
-.seed-layout--collapsed-left .lime-sidebar__footer {
+.lime-sidebar__user-trigger:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.seed-layout--collapsed-left .lime-sidebar__user-trigger {
   padding: var(--seed-space-3) 0;
   justify-content: center;
-}
-
-.lime-sidebar__user-icon {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--calm-bg-subtle-default);
-  color: var(--soil-text-muted);
-}
-
-.lime-sidebar__user-icon .dew {
-  font-size: 16px;
 }
 
 .lime-sidebar__user-name {

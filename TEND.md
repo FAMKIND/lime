@@ -165,3 +165,12 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Icon fix: the brief's own JS snippet used `dew-sidebar-right-close` (missing the trailing "d") -- same typo pattern as LIME-03l -- corrected to the real `dew-sidebar-right-closed`.
 - "Video call" was already first in the dropdown from LIME-03r -- only the standalone topbar video button needed removing.
 - Toggle relocation: fourth move across recent briefs (in/out/in/out). Restored the full bidirectional open/close icon-swap toggle (removed in LIME-03p), the mobile router's toggle-both-ways handler, and the `[data-mobile-view="contacts"] #right-panel-toggle` hide rule -- same pattern as the LIME-03n revert. Removed the now-unused `.lime-panel-close` positioning CSS.
+
+
+## LIME-03u — Left Nav Polish
+
+- `.lime-sidebar__brand`'s gap was already `var(--seed-space-2)` (exactly 8px) from LIME-03k -- the "tighten logo gap" task was already satisfied, no change made.
+- Icon fixes: `dew-settings` doesn't exist -- used the real `dew-gear`. `dew-logout` doesn't exist and nothing in the 53-icon set is a reasonable semantic substitute for "sign out" -- left it as plain text with no icon rather than force a misleading one.
+- Same "dropdown needs a positioned wrapper sized to the trigger, not a larger ancestor" issue hit for the third time (after LIME-03r's more-menu) -- added `position: relative` to the notification `<li>` and the user-menu footer respectively. Also added `min-width: 220px` to the dropdown itself, since without it the notification dropdown would size to the collapsed sidebar's 56px rail and badly wrap its text -- an edge case the brief didn't address.
+- Three near-identical "toggle button opens a dropdown, closes on outside click" pairs now (more-menu from LIME-03r, notifications, user menu) -- generalized into one `wireDropdownToggle()` helper instead of copy-pasting a third time, migrating the existing more-menu onto it too.
+- Converted the user footer from a plain `<div>` to a real `<button id="user-btn">`, and swapped the generic person-icon placeholder for the same initials-based `.lime-avatar` system used everywhere else (colored circle, "SR").

@@ -56,25 +56,39 @@
             <span class="lime-nav-search__label">Search</span>
           </button>
           <ul class="lime-nav__group">
-            <li>
-              <button class="lime-nav__btn" title="Notifications, 3 unread">
+            <li class="lime-nav__item-wrap">
+              <button class="lime-nav__btn" id="notif-btn" title="Notifications, 3 unread">
                 <span class="lime-nav__icon-wrap">
                   <span class="dew dew-bell-on"></span>
                   <span class="seed-badge seed-badge--bad seed-badge--sm lime-nav__badge" aria-hidden="true">3</span>
                 </span>
                 <span class="lime-nav__label">Notifications</span>
               </button>
+              <div class="lime-nav-dropdown" id="notif-dropdown">
+                <div class="lime-nav-dropdown__item">Jean replied to your message</div>
+                <div class="lime-nav-dropdown__item">Mary Lee sent a photo</div>
+                <div class="lime-nav-dropdown__item">Valene mentioned you</div>
+              </div>
             </li>
           </ul>
           <ul class="lime-nav__group">
             <li><button class="lime-nav__btn lime-nav__btn--active" title="Link"><span class="dew dew-chat"></span><span class="lime-nav__label">Link</span></button></li>
-            <li><button class="lime-nav__btn" title="Jam"><span class="dew dew-pencil"></span><span class="lime-nav__label">Jam</span></button></li>
+            <li><button class="lime-nav__btn" title="Jam"><span class="dew dew-pencil"></span><span class="lime-nav__label">Jam</span><span class="lime-badge--soon">Soon</span></button></li>
           </ul>
         </div>
 
         <div class="lime-sidebar__footer">
-          <span class="lime-sidebar__user-icon"><span class="dew dew-person"></span></span>
-          <span class="lime-sidebar__user-name">Shem R</span>
+          <div class="lime-nav-dropdown" id="user-dropdown">
+            <div class="lime-nav-dropdown__item">shem@example.com</div>
+            <div class="lime-nav-dropdown__item">+1 555-0123</div>
+            <div class="lime-nav-dropdown__divider"></div>
+            <div class="lime-nav-dropdown__item"><span class="dew dew-gear"></span>Settings</div>
+            <div class="lime-nav-dropdown__item">Sign out</div>
+          </div>
+          <button type="button" class="lime-sidebar__user-trigger" id="user-btn">
+            <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Shem R"></span>
+            <span class="lime-sidebar__user-name">Shem R</span>
+          </button>
         </div>
       </nav>
     </aside>
