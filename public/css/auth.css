@@ -6,6 +6,21 @@
   min-height: 100vh;
 }
 
+/* Seed's .seed-input and .seed-button--md share the same padding and
+   font-size, but .seed-button sets its own line-height
+   (--seed-leading-tight) while .seed-input doesn't — it falls back to
+   the browser's default line-height for the font, which isn't the
+   same value. That mismatch is what made the input and button look
+   inconsistently sized despite "matching" padding/font-size. Pinning
+   both to an identical explicit height (scoped to auth pages only,
+   not a global Seed override) sidesteps the em-based arithmetic
+   entirely instead of trying to reverse-engineer it into alignment. */
+.lime-auth .seed-input,
+.lime-auth .seed-button--md {
+  height: 44px;
+  box-sizing: border-box;
+}
+
 .lime-auth__marketing {
   position: relative;
   background: var(--good-bg-subtle-default);
