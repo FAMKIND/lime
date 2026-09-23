@@ -62,9 +62,16 @@ body {
 }
 
 /* Panel dividers: Seed's flush mode ships an always-visible hairline.
-   The wireframe wants dividers to appear only on hover/drag — colors
-   (soil-border-subtle default, lime on hover/drag) already come from
-   layout.css; this just fades them in instead of showing them at rest. */
+   The wireframe wants dividers to appear only on hover/drag — this
+   just fades them in instead of showing them at rest. Color: matches
+   --lime-nav-hover (the same token the nav hover/active state uses),
+   not Seed's own "good" semantic scale — a first attempt at
+   "consistent with the center divider" used --good-border-* here,
+   which is a different green than the nav's --lime-nav-hover, so it
+   still didn't actually match anything else in the app. Dragging gets
+   a bolder step on the same scale (--seed-lime-300) instead of the
+   hover shade — the pale hover color didn't read clearly enough once
+   you're actually grabbing the line to move it. */
 .seed-layout--left-flush  .seed-layout__handle--left::after,
 .seed-layout--right-flush .seed-layout__handle--right::after {
   opacity: 0;
@@ -72,10 +79,15 @@ body {
 }
 
 .seed-layout--left-flush  .seed-layout__handle--left:hover::after,
-.seed-layout--right-flush .seed-layout__handle--right:hover::after,
+.seed-layout--right-flush .seed-layout__handle--right:hover::after {
+  opacity: 1;
+  background: var(--lime-nav-hover);
+}
+
 .seed-layout--left-flush  .seed-layout__handle--left.is-dragging::after,
 .seed-layout--right-flush .seed-layout__handle--right.is-dragging::after {
   opacity: 1;
+  background: var(--seed-lime-300);
 }
 
 /* Seed's left/right panels ship their own 16px internal padding (card
@@ -1260,12 +1272,12 @@ body {
 
 .lime-center-handle:hover::after {
   opacity: 1;
-  background: var(--good-border-subtle-default);
+  background: var(--lime-nav-hover);
 }
 
 .lime-center-handle.is-dragging::after {
   opacity: 1;
-  background: var(--good-border-bold-default);
+  background: var(--seed-lime-300);
 }
 
 /* Top padding matches .lime-messages's own top padding so the tabs
