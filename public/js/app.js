@@ -584,3 +584,48 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
     prevWidth = width;
   });
 })();
+
+// ── Scroll-edge fades ─────────────────────────────────────
+// A fade should only be visible when there's actually hidden content
+// past that edge — not a permanent overlay that dims content even at
+// rest. Toggles is-scrolled-* classes (read by gradients.css) on
+// `fadeHost`, which may be a different element than the one that
+// actually scrolls (e.g. the chat/profile fades live on a non-
+// scrolling parent, not the scroller itself — see gradients.css).
+function wireScrollFades(scrollEl, fadeHost, { horizontal = false } = {}) {
+  if (!scrollEl || !fadeHost) return;
+
+  function update() {
+    if (horizontal) {
+      const atStart = scrollEl.scrollLeft <= 0;
+      const atEnd = scrollEl.scrollLeft + scrollEl.clientWidth >= scrollEl.scrollWidth - 1;
+      fadeHost.classList.toggle('is-scrolled-start', !atStart);
+      fadeHost.classList.toggle('is-scrolled-end', !atEnd);
+    } else {
+      const atTop = scrollEl.scrollTop <= 0;
+      const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1;
+      fadeHost.classList.toggle('is-scrolled-top', !atTop);
+      fadeHost.classList.toggle('is-scrolled-bottom', !atBottom);
+    }
+  }
+
+  scrollEl.addEventListener('scroll', update);
+  // ResizeObserver (not just window resize) matters here: on mobile,
+  // .lime-messages/.lime-profile start hidden (display:none) behind
+  // whichever view isn't active, so scrollHeight/clientHeight read as
+  // 0 at page load. Switching mobile views doesn't fire a window
+  // resize, but it does change these elements' box from 0×0 to real
+  // dimensions, which ResizeObserver does catch — keeping the fade
+  // state from going stale after a view switch.
+  if (window.ResizeObserver) {
+    new ResizeObserver(update).observe(scrollEl);
+  } else {
+    window.addEventListener('resize', update);
+  }
+  update();
+}
+
+wireScrollFades(document.querySelector('.lime-list-col'), document.querySelector('.lime-list-col'));
+wireScrollFades(document.querySelector('.lime-messages'), document.querySelector('.lime-chat-body'));
+wireScrollFades(document.querySelector('.lime-profile'), document.querySelector('.lime-profile-panel'));
+wireScrollFades(document.querySelector('.lime-recent'), document.querySelector('.lime-recent'), { horizontal: true });

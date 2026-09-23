@@ -972,19 +972,8 @@ body {
   display: none;
 }
 
-/* Same bottom-fade treatment as the chat composer — an absolutely
-   positioned overlay pinned to .lime-list-col's own box stays fixed in
-   the viewport while the (in-flow) content scrolls beneath it. */
-.lime-list-col::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 36px;
-  background: linear-gradient(to bottom, transparent, var(--soil-bg-canvas));
-  pointer-events: none;
-}
+/* Top/bottom fades for this list live in gradients.css (LIME-03o),
+   which also added a matching top fade this used to lack. */
 
 /* Center divider — same hover-hairline / lime-on-drag treatment as the
    outer panel handles, just scoped to the inner list|chat split. */
@@ -1164,6 +1153,7 @@ body {
 /* Recent contacts row — track transparent by default, thumb fades in only
    while hovering the scroller itself. */
 .lime-recent {
+  position: relative;
   display: flex;
   gap: var(--seed-space-4);
   padding: var(--seed-space-2) 0;
@@ -1324,22 +1314,12 @@ body {
   min-height: 0;
 }
 
-/* Top fade — same pinned-overlay convention as the composer's and
-   .lime-list-col's fades (::before generates before .lime-messages in
-   DOM, so it needs z-index to actually paint above the scrolling
-   content rather than under it). Content scrolls up and dissolves
-   under the header instead of being clipped at a hard edge. */
-.lime-chat-body::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 36px;
-  z-index: 2;
-  background: linear-gradient(to bottom, var(--soil-bg-canvas), transparent);
-  pointer-events: none;
-}
+/* The top fade used to live here (absolute-positioned overlay on
+   .lime-chat-body). LIME-03o replaced it with .lime-messages::before
+   in gradients.css — a sticky flex child of the scroller itself,
+   rather than an absolute overlay on its non-scrolling parent — so
+   this rule was removed rather than left active alongside the new one
+   (both would have painted in the same spot, doubling the fade). */
 
 /* Messages — absolutely fills .lime-chat-body so the floating composer can
    overlay it. padding-bottom (composer's ~72px height + a small gap)
@@ -1807,6 +1787,7 @@ body {
 ───────────────────────────────────────────────────── */
 
 .lime-profile-panel {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
