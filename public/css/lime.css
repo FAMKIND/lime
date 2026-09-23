@@ -1616,6 +1616,16 @@ body {
   scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }
 
+/* Shown for a real conversation with no messages yet (LIME-06) — .lime-messages
+   is already flex/column with no fixed height, so an empty div collapses to
+   nothing on its own; this just gives that state visible, centered content
+   instead of a blank panel. */
+.lime-messages__empty {
+  margin: auto;
+  color: var(--soil-text-muted);
+  font-size: var(--seed-text-sm);
+}
+
 .lime-messages::-webkit-scrollbar {
   width: 6px;
 }

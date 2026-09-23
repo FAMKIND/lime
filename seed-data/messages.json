@@ -1,0 +1,518 @@
+{
+  "messages": [
+    {
+      "id": "msg-001",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-002",
+      "content": "Hey Jean! Quick question about the interdisciplinary project we discussed. Do you have time to meet this week?",
+      "type": "text",
+      "created_at": "2025-07-07T11:30:00Z"
+    },
+    {
+      "id": "msg-002",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-001",
+      "content": "Hi Shem! Yes, I'd love to connect. How about Wednesday during our shared prep period?",
+      "type": "text",
+      "created_at": "2025-07-07T11:32:00Z"
+    },
+    {
+      "id": "msg-003",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-002",
+      "content": "Perfect! I was thinking we could do a unit where students calculate nutritional values and budgets for meal planning. Combines your life skills with my math curriculum.",
+      "type": "text",
+      "created_at": "2025-07-07T11:35:00Z",
+      "reply_count": 4,
+      "last_reply_at": "2025-07-07T11:45:00Z"
+    },
+    {
+      "id": "msg-004",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-001",
+      "content": "I love that idea! We could even have them present their meal plans to the class. Real-world application of percentages and budgeting.",
+      "type": "text",
+      "reply_to": "msg-003",
+      "created_at": "2025-07-07T11:38:00Z"
+    },
+    {
+      "id": "msg-005",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-002",
+      "content": "Exactly what I was thinking. Here is my location for our Wednesday meeting.",
+      "type": "text",
+      "created_at": "2025-07-08T11:30:00Z"
+    },
+    {
+      "id": "msg-006",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-002",
+      "content": null,
+      "type": "location",
+      "metadata": {
+        "latitude": 40.7128,
+        "longitude": -74.0060,
+        "place_name": "Room 204, PS 113"
+      },
+      "created_at": "2025-07-08T11:30:15Z",
+      "reactions": [{"emoji": "😍", "count": 5}]
+    },
+    {
+      "id": "msg-007",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-001",
+      "content": "See you there! I'll bring some sample meal planning worksheets I've used before.",
+      "type": "text",
+      "created_at": "2025-07-08T11:32:00Z"
+    },
+
+    {
+      "id": "msg-020",
+      "conversation_id": "conv-002",
+      "sender_id": "teacher-003",
+      "content": "Jean! Did you see the email about the new curriculum guidelines?",
+      "type": "text",
+      "created_at": "2025-07-07T09:00:00Z"
+    },
+    {
+      "id": "msg-021",
+      "conversation_id": "conv-002",
+      "sender_id": "teacher-001",
+      "content": "Just read it. I'm concerned about the timeline they're giving us to implement changes.",
+      "type": "text",
+      "created_at": "2025-07-07T09:15:00Z"
+    },
+    {
+      "id": "msg-022",
+      "conversation_id": "conv-002",
+      "sender_id": "teacher-003",
+      "content": "Same. Want to draft a response together? I think if we come from multiple departments it'll carry more weight.",
+      "type": "text",
+      "created_at": "2025-07-07T09:20:00Z"
+    },
+    {
+      "id": "msg-023",
+      "conversation_id": "conv-002",
+      "sender_id": "teacher-001",
+      "content": "Great idea. Let's loop in Mary too - she mentioned similar concerns at lunch yesterday.",
+      "type": "text",
+      "created_at": "2025-07-07T09:25:00Z"
+    },
+
+    {
+      "id": "msg-030",
+      "conversation_id": "conv-003",
+      "sender_id": "teacher-004",
+      "content": "Thanks so much for sharing your classroom management strategies last week. I tried the 'choice board' approach and it worked wonders!",
+      "type": "text",
+      "created_at": "2025-07-06T14:00:00Z"
+    },
+    {
+      "id": "msg-031",
+      "conversation_id": "conv-003",
+      "sender_id": "teacher-001",
+      "content": "So glad to hear that! Which options did your students gravitate toward?",
+      "type": "text",
+      "created_at": "2025-07-06T14:30:00Z"
+    },
+    {
+      "id": "msg-032",
+      "conversation_id": "conv-003",
+      "sender_id": "teacher-004",
+      "content": "Mostly the creative writing prompts and the partner discussion option. They really responded to having autonomy.",
+      "type": "text",
+      "created_at": "2025-07-06T14:45:00Z"
+    },
+
+    {
+      "id": "msg-040",
+      "conversation_id": "conv-004",
+      "sender_id": "teacher-006",
+      "content": "Hey Shem, I have a student who's really struggling with word problems. Any strategies you'd recommend?",
+      "type": "text",
+      "created_at": "2025-07-08T08:30:00Z"
+    },
+    {
+      "id": "msg-041",
+      "conversation_id": "conv-004",
+      "sender_id": "teacher-002",
+      "content": "Absolutely! I use a 'CUBES' strategy - Circle numbers, Underline the question, Box key words, Evaluate steps, Solve and check.",
+      "type": "text",
+      "created_at": "2025-07-08T08:45:00Z"
+    },
+    {
+      "id": "msg-042",
+      "conversation_id": "conv-004",
+      "sender_id": "teacher-002",
+      "content": null,
+      "type": "voice",
+      "metadata": {
+        "duration_seconds": 45,
+        "transcript": "I also find it helpful to have students draw a picture or diagram of the problem first. For students with IEPs, I often provide a graphic organizer that breaks down each step..."
+      },
+      "created_at": "2025-07-08T08:47:00Z"
+    },
+    {
+      "id": "msg-043",
+      "conversation_id": "conv-004",
+      "sender_id": "teacher-006",
+      "content": "This is so helpful! Would you mind if I observed your class sometime?",
+      "type": "text",
+      "created_at": "2025-07-08T09:00:00Z"
+    },
+    {
+      "id": "msg-044",
+      "conversation_id": "conv-004",
+      "sender_id": "teacher-002",
+      "content": "Of course! I'm doing a word problem unit next week. Come by Tuesday 3rd period.",
+      "type": "text",
+      "created_at": "2025-07-08T09:15:00Z"
+    },
+
+    {
+      "id": "msg-100",
+      "conversation_id": "conv-006",
+      "sender_id": "teacher-001",
+      "content": "Team meeting reminder: Tomorrow at 3:15 in my room. We need to discuss the parent-teacher conference schedule.",
+      "type": "text",
+      "created_at": "2025-07-07T16:00:00Z"
+    },
+    {
+      "id": "msg-101",
+      "conversation_id": "conv-006",
+      "sender_id": "teacher-002",
+      "content": "I'll be there! Should we also talk about the field trip logistics?",
+      "type": "text",
+      "created_at": "2025-07-07T16:15:00Z"
+    },
+    {
+      "id": "msg-102",
+      "conversation_id": "conv-006",
+      "sender_id": "teacher-010",
+      "content": "Good idea. I have the permission slip template ready to share.",
+      "type": "text",
+      "created_at": "2025-07-07T16:30:00Z"
+    },
+    {
+      "id": "msg-103",
+      "conversation_id": "conv-006",
+      "sender_id": "teacher-013",
+      "content": "Can we add student progress reports to the agenda? I'm seeing some concerning patterns in a few students.",
+      "type": "text",
+      "created_at": "2025-07-07T17:00:00Z"
+    },
+    {
+      "id": "msg-104",
+      "conversation_id": "conv-006",
+      "sender_id": "teacher-001",
+      "content": "Absolutely. Updated agenda: 1) P-T conferences, 2) Field trip, 3) Student progress. See everyone tomorrow!",
+      "type": "text",
+      "created_at": "2025-07-08T08:00:00Z"
+    },
+
+    {
+      "id": "msg-200",
+      "conversation_id": "conv-007",
+      "sender_id": "teacher-018",
+      "content": "Has anyone tried the new Desmos activities for quadratics? My students loved them!",
+      "type": "text",
+      "created_at": "2025-07-07T10:00:00Z"
+    },
+    {
+      "id": "msg-201",
+      "conversation_id": "conv-007",
+      "sender_id": "teacher-002",
+      "content": "Yes! The marble slides activity is a game changer. Even my reluctant learners were engaged.",
+      "type": "text",
+      "created_at": "2025-07-07T10:30:00Z"
+    },
+    {
+      "id": "msg-202",
+      "conversation_id": "conv-007",
+      "sender_id": "teacher-022",
+      "content": "I'm putting together a PD session on Desmos for our school. Would either of you want to co-facilitate?",
+      "type": "text",
+      "created_at": "2025-07-07T11:00:00Z"
+    },
+    {
+      "id": "msg-203",
+      "conversation_id": "conv-007",
+      "sender_id": "teacher-015",
+      "content": "Count me in! I use it for physics simulations too - could show cross-curricular applications.",
+      "type": "text",
+      "created_at": "2025-07-07T14:00:00Z"
+    },
+    {
+      "id": "msg-204",
+      "conversation_id": "conv-007",
+      "sender_id": "teacher-018",
+      "content": "This is turning into something great! Let's set up a Jam session to plan it out?",
+      "type": "text",
+      "created_at": "2025-07-07T16:30:00Z"
+    },
+
+    {
+      "id": "msg-300",
+      "conversation_id": "conv-008",
+      "sender_id": "teacher-007",
+      "content": "Big news: Our robotics team made it to regionals! 🎉",
+      "type": "text",
+      "created_at": "2025-07-08T09:00:00Z"
+    },
+    {
+      "id": "msg-301",
+      "conversation_id": "conv-008",
+      "sender_id": "teacher-025",
+      "content": "Congratulations Amanda! That's incredible! What challenge are they competing in?",
+      "type": "text",
+      "created_at": "2025-07-08T09:15:00Z"
+    },
+    {
+      "id": "msg-302",
+      "conversation_id": "conv-008",
+      "sender_id": "teacher-007",
+      "content": "The sustainability challenge - they built a robot that sorts recyclables. The kids designed the whole sorting algorithm themselves.",
+      "type": "text",
+      "created_at": "2025-07-08T09:30:00Z"
+    },
+    {
+      "id": "msg-303",
+      "conversation_id": "conv-008",
+      "sender_id": "teacher-009",
+      "content": "That's amazing! Would love to have them present to my coding class. Great real-world application.",
+      "type": "text",
+      "created_at": "2025-07-08T09:45:00Z"
+    },
+    {
+      "id": "msg-304",
+      "conversation_id": "conv-008",
+      "sender_id": "teacher-021",
+      "content": "Carlos here - I could tie this into our environmental science unit! Cross-school collaboration?",
+      "type": "text",
+      "created_at": "2025-07-08T10:00:00Z"
+    },
+    {
+      "id": "msg-305",
+      "conversation_id": "conv-008",
+      "sender_id": "teacher-007",
+      "content": "Love it! Let's set something up. This is exactly why I love this community.",
+      "type": "text",
+      "created_at": "2025-07-08T10:45:00Z"
+    },
+
+    {
+      "id": "msg-400",
+      "conversation_id": "conv-009",
+      "sender_id": "teacher-014",
+      "content": "First year survival check-in: How's everyone holding up as we approach the end of the year?",
+      "type": "text",
+      "created_at": "2025-07-05T15:00:00Z"
+    },
+    {
+      "id": "msg-401",
+      "conversation_id": "conv-009",
+      "sender_id": "teacher-008",
+      "content": "Honestly? Exhausted but proud. My students have grown so much. Still struggling with work-life balance though.",
+      "type": "text",
+      "created_at": "2025-07-05T15:30:00Z"
+    },
+    {
+      "id": "msg-402",
+      "conversation_id": "conv-009",
+      "sender_id": "teacher-016",
+      "content": "That's so normal for year one. Remember: you can't pour from an empty cup. What's one thing you're doing for yourself this weekend?",
+      "type": "text",
+      "created_at": "2025-07-05T16:00:00Z"
+    },
+    {
+      "id": "msg-403",
+      "conversation_id": "conv-009",
+      "sender_id": "teacher-006",
+      "content": "Aisha's right. Self-care isn't selfish - it's necessary. I'm going to the botanical garden Saturday if anyone wants to join!",
+      "type": "text",
+      "created_at": "2025-07-05T16:30:00Z"
+    },
+    {
+      "id": "msg-404",
+      "conversation_id": "conv-009",
+      "sender_id": "teacher-022",
+      "content": "I'd love that! Count me in. Teacher meetups outside of school have been so helpful for my mental health.",
+      "type": "text",
+      "created_at": "2025-07-06T09:00:00Z"
+    },
+
+    {
+      "id": "msg-500",
+      "conversation_id": "conv-010",
+      "sender_id": "teacher-002",
+      "content": "Anyone up for trivia night next Friday? Found a place in the Village that does education-themed rounds 😂",
+      "type": "text",
+      "created_at": "2025-07-07T17:00:00Z"
+    },
+    {
+      "id": "msg-501",
+      "conversation_id": "conv-010",
+      "sender_id": "teacher-004",
+      "content": "Education-themed trivia?! I'm definitely in. We're going to crush the literary questions.",
+      "type": "text",
+      "created_at": "2025-07-07T17:15:00Z"
+    },
+    {
+      "id": "msg-502",
+      "conversation_id": "conv-010",
+      "sender_id": "teacher-005",
+      "content": "Count me in! I'll bring my A-game for any art history questions 🎨",
+      "type": "text",
+      "created_at": "2025-07-07T17:30:00Z"
+    },
+    {
+      "id": "msg-503",
+      "conversation_id": "conv-010",
+      "sender_id": "teacher-001",
+      "content": "This sounds like so much fun! I need a night out. What time?",
+      "type": "text",
+      "created_at": "2025-07-07T18:00:00Z"
+    },
+
+    {
+      "id": "msg-600",
+      "conversation_id": "conv-community-001",
+      "sender_id": "teacher-013",
+      "content": "Excited to announce our summer book study! We'll be reading 'We Want to Do More Than Survive' by Bettina Love. First discussion July 20th.",
+      "type": "text",
+      "created_at": "2025-07-08T10:00:00Z"
+    },
+    {
+      "id": "msg-601",
+      "conversation_id": "conv-community-001",
+      "sender_id": "teacher-016",
+      "content": "Such an important book! I'll be there. Will there be virtual options for those traveling?",
+      "type": "text",
+      "created_at": "2025-07-08T10:30:00Z"
+    },
+    {
+      "id": "msg-602",
+      "conversation_id": "conv-community-001",
+      "sender_id": "teacher-013",
+      "content": "Yes! We'll have a hybrid option. I'll share the Zoom link closer to the date.",
+      "type": "text",
+      "created_at": "2025-07-08T11:00:00Z"
+    },
+    {
+      "id": "msg-603",
+      "conversation_id": "conv-community-001",
+      "sender_id": "teacher-022",
+      "content": "This community keeps me grounded. Thank you for organizing this, Marcus. 🙏🏾",
+      "type": "text",
+      "created_at": "2025-07-08T14:00:00Z"
+    },
+
+    {
+      "id": "msg-700",
+      "conversation_id": "conv-community-002",
+      "sender_id": "teacher-001",
+      "content": "Reminder: Staff meeting moved to Thursday this week due to PD on Wednesday.",
+      "type": "text",
+      "created_at": "2025-07-08T08:00:00Z"
+    },
+    {
+      "id": "msg-701",
+      "conversation_id": "conv-community-002",
+      "sender_id": "teacher-002",
+      "content": "Thanks for the heads up! Will the agenda be shared beforehand?",
+      "type": "text",
+      "created_at": "2025-07-08T08:30:00Z"
+    },
+    {
+      "id": "msg-702",
+      "conversation_id": "conv-community-002",
+      "sender_id": "teacher-001",
+      "content": "Yes, I'll post it by end of day today. Main topics: budget updates and summer school planning.",
+      "type": "text",
+      "created_at": "2025-07-08T09:00:00Z"
+    },
+
+    {
+      "id": "msg-800",
+      "conversation_id": "conv-community-003",
+      "sender_id": "teacher-004",
+      "content": "Just finished Chapter 3 and I'm blown away by the research on the brain-culture connection. Who else is caught up?",
+      "type": "text",
+      "created_at": "2025-07-05T19:00:00Z"
+    },
+    {
+      "id": "msg-801",
+      "conversation_id": "conv-community-003",
+      "sender_id": "teacher-020",
+      "content": "Just started! Already highlighting everything. The section on 'cognitive load' is making me rethink my lesson structure.",
+      "type": "text",
+      "created_at": "2025-07-05T19:30:00Z"
+    },
+    {
+      "id": "msg-802",
+      "conversation_id": "conv-community-003",
+      "sender_id": "teacher-016",
+      "content": "The 'ready for rigor' framework is gold. I'm creating a one-pager to share with my department.",
+      "type": "text",
+      "created_at": "2025-07-05T20:00:00Z"
+    },
+
+    {
+      "id": "msg-900",
+      "conversation_id": "conv-community-004",
+      "sender_id": "teacher-009",
+      "content": "Just uploaded my full coding curriculum for middle school - 12 weeks of lessons, all free to use and modify! Link in the resources folder.",
+      "type": "text",
+      "created_at": "2025-07-08T10:00:00Z"
+    },
+    {
+      "id": "msg-901",
+      "conversation_id": "conv-community-004",
+      "sender_id": "teacher-007",
+      "content": "Kai, you're amazing! I've been looking for something exactly like this. Can't wait to adapt it for my robotics kids.",
+      "type": "text",
+      "created_at": "2025-07-08T10:30:00Z"
+    },
+    {
+      "id": "msg-902",
+      "conversation_id": "conv-community-004",
+      "sender_id": "teacher-003",
+      "content": "This is why I love Lime. Teachers helping teachers. ❤️",
+      "type": "text",
+      "created_at": "2025-07-08T11:15:00Z"
+    },
+
+    {
+      "id": "msg-1000",
+      "conversation_id": "conv-community-005",
+      "sender_id": "teacher-025",
+      "content": "Who's going to the Maker Faire this weekend? Would be great to connect in person!",
+      "type": "text",
+      "created_at": "2025-07-07T14:00:00Z"
+    },
+    {
+      "id": "msg-1001",
+      "conversation_id": "conv-community-005",
+      "sender_id": "teacher-015",
+      "content": "I'll be there with some of my physics students! We're presenting our Rube Goldberg machine.",
+      "type": "text",
+      "created_at": "2025-07-07T14:30:00Z"
+    },
+    {
+      "id": "msg-1002",
+      "conversation_id": "conv-community-005",
+      "sender_id": "teacher-017",
+      "content": "Chemistry demo booth here! Come see some controlled explosions 💥 (all safety-approved, I promise)",
+      "type": "text",
+      "created_at": "2025-07-07T15:00:00Z"
+    },
+    {
+      "id": "msg-1003",
+      "conversation_id": "conv-community-005",
+      "sender_id": "teacher-025",
+      "content": "Let's do a Lime meetup at 2pm by the main stage? We can all connect and maybe get a group photo.",
+      "type": "text",
+      "created_at": "2025-07-07T16:45:00Z"
+    }
+  ]
+}

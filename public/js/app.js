@@ -4,6 +4,188 @@
 const theme = localStorage.getItem('lime-theme');
 if (theme) document.documentElement.setAttribute('data-theme', theme);
 
+// ── Seed data: contacts list + thread (LIME-06) ──────────
+// Runs first, before every other top-level binding below — several of
+// them (avatar identity system, contact-preview truncation, message
+// avatar-click, contact click, mobile view router) scan the DOM once
+// with querySelectorAll rather than delegating, so the elements this
+// renders have to exist before those run or they'd be missed on their
+// only pass.
+(function () {
+  const list = document.getElementById('contacts-list');
+  const thread = document.getElementById('thread-messages');
+  if (!list || !thread) return;
+
+  const me = getTeacherById(CURRENT_USER_ID);
+  const crumbThread = document.getElementById('crumb-thread');
+
+  const PRESENCE = { online: 'active', busy: 'busy', offline: 'away' };
+  const PRESENCE_LABEL = { active: 'Active', busy: 'Busy', away: 'Away' };
+
+  function presenceFor(status) {
+    return PRESENCE[status] || 'away';
+  }
+
+  function shortName(name) {
+    const parts = name.trim().split(/\s+/);
+    return parts.length < 2 ? name : parts[0] + ' ' + parts[parts.length - 1][0];
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+
+  function formatTime(iso) {
+    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function formatDay(iso) {
+    return new Date(iso).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  function formatDuration(seconds) {
+    return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+  }
+
+  function otherParticipant(conversation) {
+    const otherId = conversation.participants.find((id) => id !== CURRENT_USER_ID);
+    return getTeacherById(otherId);
+  }
+
+  function previewFor(message) {
+    if (!message) return '';
+    if (message.type === 'voice') return '<span class="dew dew-microphone"></span><span class="lime-contact__preview-text">Voice message</span>';
+    if (message.type === 'location') return '<span class="dew dew-camera-on"></span><span class="lime-contact__preview-text">' + escapeHtml(message.metadata && message.metadata.place_name || 'Location') + '</span>';
+    return '<span class="lime-contact__preview-text">' + escapeHtml(message.content || '') + '</span>';
+  }
+
+  const REACTION_PICKER_HTML = '<div class="lime-reaction-picker">'
+    + '<button data-emoji="👍">👍</button>'
+    + '<button data-emoji="❤️">❤️</button>'
+    + '<button data-emoji="😂">😂</button>'
+    + '<button data-emoji="😮">😮</button>'
+    + '<button data-emoji="🎉">🎉</button>'
+    + '<button class="lime-reaction-picker__add" title="More"><span class="dew dew-plus"></span></button>'
+    + '</div>';
+
+  function reactionsHtml(message) {
+    if (!message.reactions || message.reactions.length === 0) return '';
+    return message.reactions
+      .map((r) => '<button type="button" class="lime-reaction">' + r.emoji + ' <span class="lime-reaction__count">' + r.count + '</span></button>')
+      .join('');
+  }
+
+  function contentHtml(message) {
+    if (message.type === 'voice') {
+      const duration = message.metadata && message.metadata.duration_seconds || 0;
+      return '<div class="lime-message__content lime-message__voice">'
+        + '<button type="button" class="lime-voice__play" aria-label="Play voice message"><span class="dew dew-play"></span></button>'
+        + '<div class="lime-voice__waveform" aria-hidden="true"></div>'
+        + '<span class="lime-voice__duration">' + formatDuration(duration) + '</span>'
+        + '</div>';
+    }
+    if (message.type === 'location') {
+      const placeName = message.metadata && message.metadata.place_name || 'Location';
+      return '<div class="lime-message__content">'
+        + '<div class="lime-message__map" role="img" aria-label="' + escapeHtml(placeName) + '">'
+        + '<svg class="lime-message__map-pin" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+        + '<path fill="currentColor" d="M12 2C7.58 2 4 5.58 4 10c0 5.25 6.34 11.4 7.06 12.06a1.34 1.34 0 0 0 1.88 0C13.66 21.4 20 15.25 20 10c0-4.42-3.58-8-8-8z"/>'
+        + '<circle class="lime-message__map-pin-hole" cx="12" cy="10" r="3"/>'
+        + '</svg>'
+        + '</div>'
+        + '</div>';
+    }
+    return '<div class="lime-message__content"><p class="lime-message__text">' + escapeHtml(message.content || '') + '</p></div>';
+  }
+
+  function messageHtml(message, sender, isSent) {
+    const presence = presenceFor(sender.status);
+    return '<div class="lime-message ' + (isSent ? 'lime-message--sent' : 'lime-message--received') + '">'
+      + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
+      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>'
+      + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
+      + '</span>'
+      + '<div class="lime-message__col">'
+      + '<div class="lime-message__meta">'
+      + '<span class="lime-message__sender">' + escapeHtml(shortName(sender.display_name)) + '</span>'
+      + '<span class="lime-message__time">' + formatTime(message.created_at) + '</span>'
+      + '</div>'
+      + contentHtml(message)
+      + '<div class="lime-message__reactions">' + reactionsHtml(message) + '</div>'
+      + '</div>'
+      + '<div class="lime-message__actions">'
+      + '<button title="React"><span>🙂</span></button>'
+      + '<button title="Reply"><span class="dew dew-chat"></span></button>'
+      + '<button title="More"><span class="dew dew-ellipsis-menu"></span></button>'
+      + '</div>'
+      + REACTION_PICKER_HTML
+      + '</div>';
+  }
+
+  function renderThread(conversationId, teacher) {
+    const msgs = getMessagesByConversation(conversationId);
+    thread.innerHTML = '';
+    if (msgs.length === 0) {
+      thread.innerHTML = '<p class="lime-messages__empty">No messages yet.</p>';
+      return;
+    }
+    let lastDay = null;
+    msgs.forEach((m) => {
+      const day = formatDay(m.created_at);
+      if (day !== lastDay) {
+        thread.insertAdjacentHTML('beforeend', '<div class="lime-date-divider"><span>' + day + '</span></div>');
+        lastDay = day;
+      }
+      const isSent = m.sender_id === CURRENT_USER_ID;
+      const sender = isSent ? me : teacher;
+      thread.insertAdjacentHTML('beforeend', messageHtml(m, sender, isSent));
+    });
+  }
+
+  function selectConversation(conversation, teacher) {
+    list.querySelectorAll('.lime-contact').forEach((el) => el.classList.remove('lime-contact--active'));
+    const li = list.querySelector('[data-conversation-id="' + conversation.id + '"]');
+    if (li) li.classList.add('lime-contact--active');
+    if (crumbThread) crumbThread.textContent = teacher.display_name;
+    renderThread(conversation.id, teacher);
+  }
+
+  const directConversations = getDirectConversations();
+  list.innerHTML = '';
+  directConversations.forEach((conversation) => {
+    const teacher = otherParticipant(conversation);
+    if (!teacher) return;
+    const msgs = getMessagesByConversation(conversation.id);
+    const last = msgs[msgs.length - 1];
+    const presence = presenceFor(teacher.status);
+
+    const li = document.createElement('li');
+    li.className = 'lime-contact';
+    li.dataset.conversationId = conversation.id;
+    li.dataset.searchText = teacher.display_name.toLowerCase();
+    li.innerHTML = '<span class="lime-avatar-frame lime-avatar-frame--lg">'
+      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(teacher.display_name) + '"></span>'
+      + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
+      + '</span>'
+      + '<div class="lime-contact__body">'
+      + '<span class="lime-contact__name">' + escapeHtml(teacher.display_name) + '</span>'
+      + '<span class="lime-contact__preview">' + previewFor(last) + '</span>'
+      + '</div>'
+      + '<div class="lime-contact__meta">'
+      + '<span class="lime-contact__time">' + (last ? formatTime(last.created_at) : '') + '</span>'
+      + '</div>';
+    li.addEventListener('click', () => selectConversation(conversation, teacher));
+    list.appendChild(li);
+  });
+
+  if (directConversations.length > 0) {
+    const first = directConversations[0];
+    selectConversation(first, otherParticipant(first));
+  }
+})();
+
 // ── Contact preview truncation ───────────────────────────
 // text-overflow: ellipsis has no effect on a flex container (only on
 // block containers per spec) — .lime-contact__preview is flex so an
