@@ -51,11 +51,16 @@
       "type": "location",
       "metadata": {
         "latitude": 40.7128,
-        "longitude": -74.0060,
+        "longitude": -74.006,
         "place_name": "Room 204, PS 113"
       },
       "created_at": "2025-07-08T11:30:15Z",
-      "reactions": [{"emoji": "😍", "count": 5}]
+      "reactions": [
+        {
+          "emoji": "\ud83d\ude0d",
+          "count": 5
+        }
+      ]
     },
     {
       "id": "msg-007",
@@ -65,7 +70,6 @@
       "type": "text",
       "created_at": "2025-07-08T11:32:00Z"
     },
-
     {
       "id": "msg-020",
       "conversation_id": "conv-002",
@@ -98,7 +102,6 @@
       "type": "text",
       "created_at": "2025-07-07T09:25:00Z"
     },
-
     {
       "id": "msg-030",
       "conversation_id": "conv-003",
@@ -123,7 +126,6 @@
       "type": "text",
       "created_at": "2025-07-06T14:45:00Z"
     },
-
     {
       "id": "msg-040",
       "conversation_id": "conv-004",
@@ -168,7 +170,6 @@
       "type": "text",
       "created_at": "2025-07-08T09:15:00Z"
     },
-
     {
       "id": "msg-100",
       "conversation_id": "conv-006",
@@ -209,7 +210,6 @@
       "type": "text",
       "created_at": "2025-07-08T08:00:00Z"
     },
-
     {
       "id": "msg-200",
       "conversation_id": "conv-007",
@@ -250,12 +250,11 @@
       "type": "text",
       "created_at": "2025-07-07T16:30:00Z"
     },
-
     {
       "id": "msg-300",
       "conversation_id": "conv-008",
       "sender_id": "teacher-007",
-      "content": "Big news: Our robotics team made it to regionals! 🎉",
+      "content": "Big news: Our robotics team made it to regionals! \ud83c\udf89",
       "type": "text",
       "created_at": "2025-07-08T09:00:00Z"
     },
@@ -299,7 +298,6 @@
       "type": "text",
       "created_at": "2025-07-08T10:45:00Z"
     },
-
     {
       "id": "msg-400",
       "conversation_id": "conv-009",
@@ -340,12 +338,11 @@
       "type": "text",
       "created_at": "2025-07-06T09:00:00Z"
     },
-
     {
       "id": "msg-500",
       "conversation_id": "conv-010",
       "sender_id": "teacher-002",
-      "content": "Anyone up for trivia night next Friday? Found a place in the Village that does education-themed rounds 😂",
+      "content": "Anyone up for trivia night next Friday? Found a place in the Village that does education-themed rounds \ud83d\ude02",
       "type": "text",
       "created_at": "2025-07-07T17:00:00Z"
     },
@@ -361,7 +358,7 @@
       "id": "msg-502",
       "conversation_id": "conv-010",
       "sender_id": "teacher-005",
-      "content": "Count me in! I'll bring my A-game for any art history questions 🎨",
+      "content": "Count me in! I'll bring my A-game for any art history questions \ud83c\udfa8",
       "type": "text",
       "created_at": "2025-07-07T17:30:00Z"
     },
@@ -373,7 +370,6 @@
       "type": "text",
       "created_at": "2025-07-07T18:00:00Z"
     },
-
     {
       "id": "msg-600",
       "conversation_id": "conv-community-001",
@@ -402,11 +398,10 @@
       "id": "msg-603",
       "conversation_id": "conv-community-001",
       "sender_id": "teacher-022",
-      "content": "This community keeps me grounded. Thank you for organizing this, Marcus. 🙏🏾",
+      "content": "This community keeps me grounded. Thank you for organizing this, Marcus. \ud83d\ude4f\ud83c\udffe",
       "type": "text",
       "created_at": "2025-07-08T14:00:00Z"
     },
-
     {
       "id": "msg-700",
       "conversation_id": "conv-community-002",
@@ -431,7 +426,6 @@
       "type": "text",
       "created_at": "2025-07-08T09:00:00Z"
     },
-
     {
       "id": "msg-800",
       "conversation_id": "conv-community-003",
@@ -456,7 +450,6 @@
       "type": "text",
       "created_at": "2025-07-05T20:00:00Z"
     },
-
     {
       "id": "msg-900",
       "conversation_id": "conv-community-004",
@@ -477,11 +470,10 @@
       "id": "msg-902",
       "conversation_id": "conv-community-004",
       "sender_id": "teacher-003",
-      "content": "This is why I love Lime. Teachers helping teachers. ❤️",
+      "content": "This is why I love Lime. Teachers helping teachers. \u2764\ufe0f",
       "type": "text",
       "created_at": "2025-07-08T11:15:00Z"
     },
-
     {
       "id": "msg-1000",
       "conversation_id": "conv-community-005",
@@ -502,7 +494,7 @@
       "id": "msg-1002",
       "conversation_id": "conv-community-005",
       "sender_id": "teacher-017",
-      "content": "Chemistry demo booth here! Come see some controlled explosions 💥 (all safety-approved, I promise)",
+      "content": "Chemistry demo booth here! Come see some controlled explosions \ud83d\udca5 (all safety-approved, I promise)",
       "type": "text",
       "created_at": "2025-07-07T15:00:00Z"
     },
@@ -513,6 +505,24 @@
       "content": "Let's do a Lime meetup at 2pm by the main stage? We can all connect and maybe get a group photo.",
       "type": "text",
       "created_at": "2025-07-07T16:45:00Z"
+    },
+    {
+      "id": "msg-1004",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-002",
+      "content": "Perfect, I'll draft a rubric for the budget component this week.",
+      "type": "text",
+      "reply_to": "msg-003",
+      "created_at": "2025-07-07T11:41:00Z"
+    },
+    {
+      "id": "msg-1005",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-001",
+      "content": "Sounds great \u2014 let's sync on it Wednesday.",
+      "type": "text",
+      "reply_to": "msg-003",
+      "created_at": "2025-07-07T11:45:00Z"
     }
   ]
 }

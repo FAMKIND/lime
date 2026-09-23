@@ -11,6 +11,57 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
 // with querySelectorAll rather than delegating, so the elements this
 // renders have to exist before those run or they'd be missed on their
 // only pass.
+// Promoted to top-level (LIME-11), not IIFE-private — the new replies
+// panel needs these same pure helpers and can't reach inside the LIME-06
+// closure's scope. None of them depend on that closure's own state
+// (list/thread/me/etc.), so hoisting changes nothing about how the
+// contacts/thread code below already uses them.
+const PRESENCE = { online: 'active', busy: 'busy', offline: 'away' };
+const PRESENCE_LABEL = { active: 'Active', busy: 'Busy', away: 'Away' };
+
+function presenceFor(status) {
+  return PRESENCE[status] || 'away';
+}
+
+function shortName(name) {
+  const parts = name.trim().split(/\s+/);
+  return parts.length < 2 ? name : parts[0] + ' ' + parts[parts.length - 1][0];
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function formatTime(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDay(iso) {
+  return new Date(iso).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+function formatDuration(seconds) {
+  return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+}
+
+function previewFor(message) {
+  if (!message) return '';
+  if (message.type === 'voice') return '<span class="dew dew-microphone"></span><span class="lime-contact__preview-text">Voice message</span>';
+  if (message.type === 'location') return '<span class="dew dew-camera-on"></span><span class="lime-contact__preview-text">' + escapeHtml(message.metadata && message.metadata.place_name || 'Location') + '</span>';
+  return '<span class="lime-contact__preview-text">' + escapeHtml(message.content || '') + '</span>';
+}
+
+// Plain-text-only variant of previewFor, for contexts (the reply quote)
+// that need a readable label rather than previewFor's icon+span HTML.
+function plainPreviewFor(message) {
+  if (!message) return '';
+  if (message.type === 'voice') return 'Voice message';
+  if (message.type === 'location') return message.metadata && message.metadata.place_name || 'Location';
+  return message.content || '';
+}
+
 (function () {
   const list = document.getElementById('contacts-list');
   const thread = document.getElementById('thread-messages');
@@ -24,46 +75,9 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
   let currentConversationId = null;
   let lastRenderedDay = null;
 
-  const PRESENCE = { online: 'active', busy: 'busy', offline: 'away' };
-  const PRESENCE_LABEL = { active: 'Active', busy: 'Busy', away: 'Away' };
-
-  function presenceFor(status) {
-    return PRESENCE[status] || 'away';
-  }
-
-  function shortName(name) {
-    const parts = name.trim().split(/\s+/);
-    return parts.length < 2 ? name : parts[0] + ' ' + parts[parts.length - 1][0];
-  }
-
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-    }[c]));
-  }
-
-  function formatTime(iso) {
-    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  }
-
-  function formatDay(iso) {
-    return new Date(iso).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
-  }
-
-  function formatDuration(seconds) {
-    return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
-  }
-
   function otherParticipant(conversation) {
     const otherId = conversation.participants.find((id) => id !== CURRENT_USER_ID);
     return getTeacherById(otherId);
-  }
-
-  function previewFor(message) {
-    if (!message) return '';
-    if (message.type === 'voice') return '<span class="dew dew-microphone"></span><span class="lime-contact__preview-text">Voice message</span>';
-    if (message.type === 'location') return '<span class="dew dew-camera-on"></span><span class="lime-contact__preview-text">' + escapeHtml(message.metadata && message.metadata.place_name || 'Location') + '</span>';
-    return '<span class="lime-contact__preview-text">' + escapeHtml(message.content || '') + '</span>';
   }
 
   const REACTION_PICKER_HTML = '<div class="lime-reaction-picker">'
@@ -242,6 +256,8 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
       lastRenderedDay = day;
     }
     thread.insertAdjacentHTML('beforeend', messageHtml(message, me, true));
+    const newAvatar = thread.querySelector('.lime-message:last-child .lime-avatar[data-name]');
+    if (newAvatar) paintAvatar(newAvatar); // real bug (LIME-11): paintAvatar only ran once at load, missing every sent message's avatar since LIME-07
 
     composerInput.value = '';
     composerInput.style.height = ''; // drop the auto-grow inline height (LIME-10)
@@ -318,40 +334,49 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
 // Every .lime-avatar[data-name] gets initials + a color deterministically
 // derived from the name (same input always yields the same output, so a
 // person's color is stable across the whole app and across reloads).
-(function () {
-  const PALETTE_SIZE = 12;
+// paintAvatar is a top-level function, not IIFE-private (LIME-11) — the
+// forEach below only ever runs once, at parse time, so it only reached
+// elements that already existed by then (the initial contacts list +
+// default thread, both rendered earlier in this same script). Any
+// .lime-avatar added afterward — a sent message (LIME-07) or a reply
+// (LIME-11) — never got painted at all: a real, pre-existing gap this
+// brief's own "replies show avatars" requirement forced into the open.
+// Anything that appends a new .lime-avatar[data-name] now has to call
+// this itself.
+const PALETTE_SIZE = 12;
 
-  function hashName(name) {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = (hash * 31 + name.charCodeAt(i)) | 0;
-    }
-    return Math.abs(hash) % PALETTE_SIZE;
+function hashName(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) | 0;
   }
+  return Math.abs(hash) % PALETTE_SIZE;
+}
 
-  function initialsFor(name) {
-    const parts = name.trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return '';
-    const first = parts[0][0];
-    const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
-    return (first + last).toUpperCase();
-  }
+function initialsFor(name) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  const first = parts[0][0];
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (first + last).toUpperCase();
+}
 
-  document.querySelectorAll('.lime-avatar[data-name]').forEach((el) => {
-    const name = el.dataset.name;
-    if (el.dataset.image) {
-      const img = document.createElement('img');
-      img.src = el.dataset.image;
-      img.alt = '';
-      el.appendChild(img);
-      el.setAttribute('aria-label', name);
-      return;
-    }
-    el.classList.add('lime-avatar--p' + hashName(name));
-    el.textContent = initialsFor(name);
+function paintAvatar(el) {
+  const name = el.dataset.name;
+  if (el.dataset.image) {
+    const img = document.createElement('img');
+    img.src = el.dataset.image;
+    img.alt = '';
+    el.appendChild(img);
     el.setAttribute('aria-label', name);
-  });
-})();
+    return;
+  }
+  el.classList.add('lime-avatar--p' + hashName(name));
+  el.textContent = initialsFor(name);
+  el.setAttribute('aria-label', name);
+}
+
+document.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
 
 // ── Panel resize (outer left/right dividers) ─────────────
 (function () {
@@ -610,25 +635,129 @@ function setRightPanelOpen(isOpen) {
 })();
 
 // ── Reply thread panel ────────────────────────────────────
-// #right-panel's data-panel attribute ("profile" | "replies") is the
-// single source of truth for which view shows — CSS reads it, this just
-// flips it. Opening replies reuses the same "force the right panel open"
-// step as the profile triggers above.
+// #open-replies (the old trigger this listened for) was deleted from the
+// markup back in LIME-06, when the hardcoded thread messages it lived on
+// were removed — this whole handler, including the back button, has
+// been dead code ever since (its early-return guard always fired since
+// that id no longer existed). Rebuilt for LIME-11 as a delegated click
+// on any thread message's real "Reply" action instead of a one-time
+// forEach, so it keeps working after switching conversations replaces
+// #thread-messages's content entirely.
 (function () {
-  const layout       = document.getElementById('layout');
-  const rightPanel    = document.getElementById('right-panel');
-  const openReplies   = document.getElementById('open-replies');
-  const backBtn       = document.getElementById('replies-back');
-  if (!layout || !rightPanel || !openReplies || !backBtn) return;
+  const layout      = document.getElementById('layout');
+  const rightPanel  = document.getElementById('right-panel');
+  const quoteEl     = document.getElementById('replies-quote');
+  const listEl      = document.getElementById('replies-list');
+  const backBtn     = document.getElementById('replies-back');
+  const replyInput  = document.getElementById('replies-composer-input');
+  const replySend   = document.getElementById('replies-composer-send');
+  if (!layout || !rightPanel || !quoteEl || !listEl) return;
 
-  openReplies.addEventListener('click', () => {
+  let currentReplyParentId = null;
+
+  function replyHtml(message, sender) {
+    return '<div class="lime-reply">'
+      + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>'
+      + '<div class="lime-reply__col">'
+      + '<div class="lime-reply__meta">'
+      + '<span class="lime-reply__sender">' + escapeHtml(shortName(sender.display_name)) + '</span>'
+      + '<span class="lime-reply__time">' + formatTime(message.created_at) + '</span>'
+      + '</div>'
+      + '<p class="lime-reply__text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function renderQuote(message, sender) {
+    quoteEl.innerHTML = '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>'
+      + '<div class="lime-replies-panel__quote-body">'
+      + '<span class="lime-replies-panel__quote-sender">' + escapeHtml(shortName(sender.display_name)) + '</span>'
+      + '<p class="lime-replies-panel__quote-text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
+      + '</div>';
+    const avatar = quoteEl.querySelector('.lime-avatar[data-name]');
+    if (avatar) paintAvatar(avatar);
+  }
+
+  // reply_count/last_reply_at on the parent message are stale seed
+  // metadata (see data.js) — this always renders the real, live list.
+  function renderReplies(parentId) {
+    const replies = getRepliesForMessage(parentId);
+    listEl.innerHTML = '';
+    if (replies.length === 0) {
+      listEl.innerHTML = '<p class="lime-replies-panel__empty">No replies yet.</p>';
+      return;
+    }
+    replies.forEach((reply) => {
+      const sender = getTeacherById(reply.sender_id);
+      if (!sender) return;
+      listEl.insertAdjacentHTML('beforeend', replyHtml(reply, sender));
+    });
+    listEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+  }
+
+  function openReplies(messageId) {
+    const message = findMessageById(messageId);
+    if (!message) return;
+    const sender = getTeacherById(message.sender_id);
+    if (!sender) return;
+    currentReplyParentId = messageId;
+    renderQuote(message, sender);
+    renderReplies(messageId);
     if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
     rightPanel.setAttribute('data-panel', 'replies');
+    layout.setAttribute('data-mobile-view', 'panel');
+  }
+
+  document.addEventListener('click', (e) => {
+    const replyBtn = e.target.closest('#thread-messages .lime-message__actions [title="Reply"]');
+    if (!replyBtn) return;
+    const msg = replyBtn.closest('.lime-message');
+    const messageId = msg && msg.dataset.messageId;
+    if (messageId) openReplies(messageId);
   });
 
-  backBtn.addEventListener('click', () => {
-    rightPanel.setAttribute('data-panel', 'profile');
-  });
+  if (backBtn) {
+    backBtn.addEventListener('click', () => rightPanel.setAttribute('data-panel', 'profile'));
+  }
+
+  function submitReply() {
+    if (!replyInput || !currentReplyParentId) return;
+    const content = replyInput.value.trim();
+    if (!content) return;
+    sendReply(currentReplyParentId, content);
+    renderReplies(currentReplyParentId);
+    listEl.scrollTop = listEl.scrollHeight;
+    replyInput.value = '';
+    replyInput.style.height = '';
+    if (replySend) replySend.classList.remove('is-active');
+  }
+
+  // Reply composer: same expand/collapse + auto-grow + is-active pattern
+  // as the main composer (LIME-10 through LIME-10-fix14). Duplicated
+  // rather than shared — this brief's scope explicitly excludes touching
+  // the main composer, and merging the two into one shared function
+  // would mean editing that already-working code too.
+  const repliesComposer = document.getElementById('replies-composer');
+  if (repliesComposer && replyInput) {
+    repliesComposer.addEventListener('focusin', () => repliesComposer.classList.add('is-expanded'));
+    repliesComposer.addEventListener('focusout', (e) => {
+      if (repliesComposer.contains(e.relatedTarget)) return;
+      if (!replyInput.value.trim()) repliesComposer.classList.remove('is-expanded');
+    });
+    replyInput.addEventListener('input', () => {
+      replyInput.style.height = 'auto';
+      replyInput.style.height = replyInput.scrollHeight + 'px';
+      if (replySend) replySend.classList.toggle('is-active', replyInput.value.trim().length > 0);
+    });
+    replyInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitReply();
+      }
+    });
+  }
+
+  if (replySend) replySend.addEventListener('click', submitReply);
 })();
 
 // ── Dropdown toggles (more menu, notifications, user menu) ──

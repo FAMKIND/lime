@@ -108,3 +108,31 @@ function removeReaction(messageId, emoji) {
 function toggleReaction(messageId, emoji) {
   return hasUserReacted(messageId, emoji) ? removeReaction(messageId, emoji) : addReaction(messageId, emoji);
 }
+
+// LIME-11. reply_count/last_reply_at on a parent message are seed-data
+// metadata, not derived from anything — msg-003 claims reply_count:4 but
+// only 1 real reply (msg-004) existed until this brief added 2 more, and
+// even now the true count is 3, not 4. Never trusted for a displayed
+// count; always computed live from the real reply_to relationships,
+// same principle already applied to reactions (LIME-08).
+function getRepliesForMessage(parentMessageId) {
+  return messages
+    .filter((m) => m.reply_to === parentMessageId)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+}
+
+function sendReply(parentMessageId, content) {
+  const parent = findMessageById(parentMessageId);
+  const nextId = Math.max(...messages.map((m) => Number(m.id.split('-')[1]))) + 1;
+  const reply = {
+    id: 'msg-' + String(nextId).padStart(3, '0'),
+    conversation_id: parent ? parent.conversation_id : null,
+    sender_id: CURRENT_USER_ID,
+    content,
+    type: 'text',
+    reply_to: parentMessageId,
+    created_at: new Date().toISOString(),
+  };
+  messages.push(reply);
+  return reply;
+}

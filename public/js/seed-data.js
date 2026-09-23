@@ -1325,6 +1325,24 @@ window.LIME_SEED_DATA = {
       "content": "Let's do a Lime meetup at 2pm by the main stage? We can all connect and maybe get a group photo.",
       "type": "text",
       "created_at": "2025-07-07T16:45:00Z"
+    },
+    {
+      "id": "msg-1004",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-002",
+      "content": "Perfect, I'll draft a rubric for the budget component this week.",
+      "type": "text",
+      "reply_to": "msg-003",
+      "created_at": "2025-07-07T11:41:00Z"
+    },
+    {
+      "id": "msg-1005",
+      "conversation_id": "conv-001",
+      "sender_id": "teacher-001",
+      "content": "Sounds great — let's sync on it Wednesday.",
+      "type": "text",
+      "reply_to": "msg-003",
+      "created_at": "2025-07-07T11:45:00Z"
     }
   ]
 };

@@ -2151,6 +2151,13 @@ body {
   padding: var(--seed-space-2) var(--seed-space-3);
 }
 
+/* The reply composer (LIME-11) reuses this same class inside a much
+   narrower sidebar footer, not the wide centered chat panel the 75%
+   above was tuned for — needs the full width of its own container instead. */
+#replies-composer .lime-composer__box {
+  width: 100%;
+}
+
 .lime-composer__box:focus-within {
   border-color: var(--calm-border-normal-default);
 }
@@ -2179,7 +2186,8 @@ body {
   margin-top: 8px;
 }
 
-#composer.is-expanded .lime-composer__toolbar {
+#composer.is-expanded .lime-composer__toolbar,
+#replies-composer.is-expanded .lime-composer__toolbar {
   display: flex;
 }
 
@@ -2460,7 +2468,8 @@ textarea.lime-composer__input {
   overflow: hidden;
 }
 
-#composer.is-expanded textarea.lime-composer__input {
+#composer.is-expanded textarea.lime-composer__input,
+#replies-composer.is-expanded textarea.lime-composer__input {
   height: auto;
   max-height: 160px;
   overflow-y: auto;
@@ -2679,10 +2688,52 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
   display: none;
 }
 
-/* Reply items reuse .lime-message/.lime-message__* wholesale now
-   (LIME-03s's "mirror chat UI") instead of their own .lime-reply__*
-   classes, so they automatically pick up bubble styling and hover
-   actions for free — no panel-specific overrides needed. */
+/* LIME-11 reverses LIME-03s's "reuse .lime-message wholesale" decision —
+   this brief explicitly asks for a distinct, more compact style
+   ("smaller/compact" than the full message bubble), and real replies
+   don't carry reactions or a react/reply/more actions bar the way a
+   real thread message does, so the full .lime-message markup would be
+   mostly-dead weight here anyway. */
+.lime-reply {
+  display: flex;
+  gap: var(--seed-space-2);
+}
+
+.lime-reply__col {
+  flex: 1;
+  min-width: 0;
+}
+
+.lime-reply__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--seed-space-2);
+}
+
+.lime-reply__sender {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+}
+
+.lime-reply__time {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.lime-reply__text {
+  margin: var(--seed-space-1) 0 0;
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+  line-height: var(--seed-leading-relaxed);
+}
+
+.lime-replies-panel__empty {
+  margin: auto;
+  color: var(--soil-text-muted);
+  font-size: var(--seed-text-sm);
+  text-align: center;
+}
 
 .lime-replies-panel__composer {
   flex-shrink: 0;

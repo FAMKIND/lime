@@ -571,125 +571,37 @@
           <h2 class="lime-replies-panel__title">Thread</h2>
         </header>
 
-        <div class="lime-replies-panel__quote">
-          <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Jean Chung"></span>
-          <div class="lime-replies-panel__quote-body">
-            <span class="lime-replies-panel__quote-sender">Jean C</span>
-            <p class="lime-replies-panel__quote-text">Vestibulum id ligula porta felis euismod semper. Nullam quis risus eget urna mollis ornare vel eu leo. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
-          </div>
-        </div>
+        <!-- Rendered from real seed data by app.js (LIME-11): quote is
+             whichever message's "Reply" action was clicked; list is that
+             message's actual replies (getRepliesForMessage). -->
+        <div class="lime-replies-panel__quote" id="replies-quote"></div>
 
-        <div class="lime-replies-panel__list">
-          <div class="lime-message lime-message--received">
-            <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Mary Lee"></span>
-            <div class="lime-message__col">
-              <div class="lime-message__meta">
-                <span class="lime-message__sender">Mary Lee</span>
-                <span class="lime-message__time">11:32 PM</span>
-              </div>
-              <div class="lime-message__content">
-                <p class="lime-message__text">Same here — should we loop in the office too?</p>
-              </div>
-                <div class="lime-message__reactions"></div>
-            </div>
-            <div class="lime-message__actions">
-              <button title="React"><span>🙂</span></button>
-              <button title="Reply"><span class="dew dew-chat"></span></button>
-              <button title="More"><span class="dew dew-ellipsis-menu"></span></button>
-            </div>
-            <div class="lime-reaction-picker">
-              <button data-emoji="👍">👍</button>
-              <button data-emoji="❤️">❤️</button>
-              <button data-emoji="😂">😂</button>
-              <button data-emoji="😮">😮</button>
-              <button data-emoji="🎉">🎉</button>
-              <button class="lime-reaction-picker__add" title="More"><span class="dew dew-plus"></span></button>
-            </div>
-          </div>
-          <div class="lime-message lime-message--received">
-            <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Valene Rajoon"></span>
-            <div class="lime-message__col">
-              <div class="lime-message__meta">
-                <span class="lime-message__sender">Valene Rajoon</span>
-                <span class="lime-message__time">11:33 PM</span>
-              </div>
-              <div class="lime-message__content">
-                <p class="lime-message__text">I can help chaperone if needed!</p>
-              </div>
-                <div class="lime-message__reactions"></div>
-            </div>
-            <div class="lime-message__actions">
-              <button title="React"><span>🙂</span></button>
-              <button title="Reply"><span class="dew dew-chat"></span></button>
-              <button title="More"><span class="dew dew-ellipsis-menu"></span></button>
-            </div>
-            <div class="lime-reaction-picker">
-              <button data-emoji="👍">👍</button>
-              <button data-emoji="❤️">❤️</button>
-              <button data-emoji="😂">😂</button>
-              <button data-emoji="😮">😮</button>
-              <button data-emoji="🎉">🎉</button>
-              <button class="lime-reaction-picker__add" title="More"><span class="dew dew-plus"></span></button>
-            </div>
-          </div>
-          <div class="lime-message lime-message--sent">
-            <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Shem R"></span>
-            <div class="lime-message__col">
-              <div class="lime-message__meta">
-                <span class="lime-message__sender">Shem R</span>
-                <span class="lime-message__time">11:36 PM</span>
-              </div>
-              <div class="lime-message__content">
-                <p class="lime-message__text">That'd be great, thanks Valene.</p>
-              </div>
-                <div class="lime-message__reactions"></div>
-            </div>
-            <div class="lime-message__actions">
-              <button title="React"><span>🙂</span></button>
-              <button title="Reply"><span class="dew dew-chat"></span></button>
-              <button title="More"><span class="dew dew-ellipsis-menu"></span></button>
-            </div>
-            <div class="lime-reaction-picker">
-              <button data-emoji="👍">👍</button>
-              <button data-emoji="❤️">❤️</button>
-              <button data-emoji="😂">😂</button>
-              <button data-emoji="😮">😮</button>
-              <button data-emoji="🎉">🎉</button>
-              <button class="lime-reaction-picker__add" title="More"><span class="dew dew-plus"></span></button>
-            </div>
-          </div>
-          <div class="lime-message lime-message--sent">
-            <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Shem R"></span>
-            <div class="lime-message__col">
-              <div class="lime-message__meta">
-                <span class="lime-message__sender">Shem R</span>
-                <span class="lime-message__time">11:40 PM</span>
-              </div>
-              <div class="lime-message__content">
-                <p class="lime-message__text">I'll add it to the calendar invite.</p>
-              </div>
-                <div class="lime-message__reactions"></div>
-            </div>
-            <div class="lime-message__actions">
-              <button title="React"><span>🙂</span></button>
-              <button title="Reply"><span class="dew dew-chat"></span></button>
-              <button title="More"><span class="dew dew-ellipsis-menu"></span></button>
-            </div>
-            <div class="lime-reaction-picker">
-              <button data-emoji="👍">👍</button>
-              <button data-emoji="❤️">❤️</button>
-              <button data-emoji="😂">😂</button>
-              <button data-emoji="😮">😮</button>
-              <button data-emoji="🎉">🎉</button>
-              <button class="lime-reaction-picker__add" title="More"><span class="dew dew-plus"></span></button>
-            </div>
-          </div>
-        </div>
+        <div class="lime-replies-panel__list" id="replies-list"></div>
 
-        <footer class="lime-replies-panel__composer">
-          <div class="lime-composer__field">
-            <input type="text" class="lime-composer__input" id="replies-composer-input" placeholder="Reply...">
-            <button type="button" class="lime-composer__send" title="Send"><span class="dew dew-chevron-up"></span></button>
+        <!-- Same box/row/toolbar structure as the main composer (LIME-09
+             through LIME-10-fix14) so it gets the identical single-line/
+             expand/Send-disabled-until-typed behavior for free — just a
+             narrower box (100% width here, not 75%) and no actions row
+             (Attach/voice/privacy weren't asked for on a reply composer). -->
+        <footer class="lime-replies-panel__composer" id="replies-composer">
+          <div class="lime-composer__box">
+            <div class="lime-composer__row">
+              <textarea class="lime-composer__input" id="replies-composer-input" placeholder="Reply..." rows="1"></textarea>
+              <button type="button" class="lime-composer__return" id="replies-composer-send" title="Send">&#8629;</button>
+            </div>
+            <div class="lime-composer__toolbar">
+              <button type="button" class="lime-composer__tool" title="Bold"><b>B</b></button>
+              <button type="button" class="lime-composer__tool" title="Italic"><i>I</i></button>
+              <button type="button" class="lime-composer__tool" title="Underline"><u>U</u></button>
+              <button type="button" class="lime-composer__tool" title="Strikethrough"><s>S</s></button>
+              <span class="lime-composer__divider"></span>
+              <button type="button" class="lime-composer__tool" title="Link"><span class="dew dew-link"></span></button>
+              <button type="button" class="lime-composer__tool" title="Numbered list"><i class="icon-list-ordered"></i></button>
+              <button type="button" class="lime-composer__tool" title="Bulleted list"><i class="icon-list"></i></button>
+              <span class="lime-composer__divider"></span>
+              <button type="button" class="lime-composer__tool" title="Quote"><i class="icon-text-quote"></i></button>
+              <button type="button" class="lime-composer__tool" title="Code">&lt;/&gt;</button>
+            </div>
           </div>
         </footer>
       </div>
