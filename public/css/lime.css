@@ -117,12 +117,10 @@ body {
    --lime-avatar-* tokens (Seed's palette has nowhere near this range)
    rather than hardcoding hex directly into each rule. */
 :root {
-  /* Not in Seed's own lime scale (closest, --seed-lime-300, is a
-     different, more pastel green) — a new token rather than
-     hardcoding the hex inline, same reasoning as the avatar palette
-     below: the project's own README requires token grammar throughout,
-     not raw hex values scattered into rules. */
-  --lime-badge-light: #a3e635;
+  /* LIME-04b's requested #e4f9be is an exact match for Seed's own
+     --seed-lime-100 — referencing that directly instead of updating
+     this to a second hardcoded hex value. */
+  --lime-badge-light: var(--seed-lime-100);
   --lime-avatar-blush:      #F9D8DA;
   --lime-avatar-peach:      #FCDCC5;
   --lime-avatar-butter:     #FBEFB8;
@@ -540,17 +538,23 @@ body {
   right: -10px;
   background: var(--lime-badge-light);
   /* Its seed-badge--bad class still supplies a dark-red text color
-     (meant for a subtle red background) — overridden to a dark green
-     so the "3" doesn't clash against this lighter green fill. */
+     and border-color (both meant for a subtle red background) —
+     overridden so neither clashes against this lighter green fill. */
   color: var(--good-text-bold-default);
-  box-shadow: 0 0 0 2px var(--soil-bg-canvas);
+  border-color: transparent;
+  box-shadow: none;
 }
 
+/* --soil-bg-disabled (the brief's requested token) doesn't exist —
+   the background was already --calm-bg-subtle-default (LIME-03u), a
+   neutral muted gray that already reads as "disabled"-looking, so
+   it's left as-is. --soil-text-disabled does exist and is the one
+   real change here (was --soil-text-muted). */
 .lime-badge--soon {
   font-size: var(--seed-text-xs);
   padding: 2px 6px;
   background: var(--calm-bg-subtle-default);
-  color: var(--soil-text-muted);
+  color: var(--soil-text-disabled);
   border-radius: var(--seed-radius-full);
   margin-left: var(--seed-space-2);
 }

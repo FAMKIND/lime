@@ -222,3 +222,10 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Converted the existing map-message reaction from a plain non-clickable `<span>` to a `<button>` with a `.lime-reaction__count` span, and updated the LIME-03v picker's dynamic reaction-creation JS to match, so newly-added reactions are consistent buttons too.
 - **Content substitution**: the brief named "Maya Rodriguez, Devon Park" for the new inline avatar-stack on the reply-count preview, but neither person is among the actual repliers shown in the reply panel (Mary Lee, Valene Rajoon, Shem R x2) -- showing different people in the preview than what's actually in the thread read as a real coherence bug. Used Mary Lee and Valene Rajoon (the first two real repliers) instead. Flagged at the gate, no objection.
 - Kept `box-shadow` on `.lime-reaction` -- the brief only listed properties to change, not a full replacement.
+
+
+## LIME-04b — Notification badge color + disabled Soon badge
+
+- Badge color: `#e4f9be` is an exact match for Seed's own `--seed-lime-100` -- pointed `--lime-badge-light` at that token instead of updating it to a second hardcoded hex.
+- Soon badge: `--soil-bg-disabled` doesn't exist. Background was already `--calm-bg-subtle-default` (LIME-03u), a neutral muted gray that already reads as disabled-looking, so left unchanged -- only applied the real `--soil-text-disabled` token for text color.
+- Follow-up: user reported the notification badge still showed a visible red-ish border after this brief. Root cause: `seed-badge--bad`'s own `border-color` (meant for a subtle red background) was still active independent of the `box-shadow: none` change. Added `border-color: transparent` to fully remove it.
