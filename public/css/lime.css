@@ -1904,18 +1904,6 @@ body {
    PANEL 3 — RIGHT PROFILE
 ───────────────────────────────────────────────────── */
 
-/* Close button — lives inside the panel it closes (LIME-03p), not as
-   an external toggle in .lime-center-top. Close-only: opening still
-   happens elsewhere (avatar/replies/breadcrumb/message-sender
-   triggers). .seed-layout__right already has position:relative from
-   Seed's own base rule, so no extra positioning context is needed. */
-.lime-panel-close {
-  position: absolute;
-  top: var(--seed-space-3);
-  right: var(--seed-space-3);
-  z-index: 1;
-}
-
 .lime-profile-panel {
   height: 100%;
   display: flex;
@@ -2239,12 +2227,16 @@ body {
     border-radius: 0;
   }
 
-  /* Context-aware header: contacts view has no selected person, so
-     Jean Chung's avatar has nothing to act on yet — only "Me" (Shem R)
-     shows. Thread/panel views restore both. (#right-panel-toggle no
-     longer needs its own rule here — LIME-03p moved it back inside
-     #right-panel, which is already hidden in contacts view via the
-     rules above, making a separate rule for the button redundant.) */
+  /* Context-aware header: contacts view has no selected person, so the
+     right-panel toggle and Jean Chung's avatar have nothing to act on
+     yet — only "Me" (Shem R) shows. Thread/panel views restore both.
+     (LIME-03t moved the toggle back to .lime-center-top, so this rule
+     is needed again — it was briefly redundant while LIME-03p had the
+     toggle living inside #right-panel itself.) */
+  #layout[data-mobile-view="contacts"] #right-panel-toggle {
+    display: none;
+  }
+
   #layout[data-mobile-view="contacts"] .lime-topbar__avatars .seed-avatar:not([data-name="Shem R"]) {
     display: none;
   }

@@ -158,3 +158,10 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Reply panel now genuinely mirrors the main chat structure: rewrote all 4 reply items from their own `.lime-reply__*` markup to the same `.lime-message`/`.lime-message--sent|received`/`.lime-message__content` bubble structure the main thread uses -- they now pick up the new hover-actions toolbar automatically, matching "mirror chat UI" literally rather than just visually. Removed the now-dead `.lime-reply__*` CSS.
 - Added hover actions + two date dividers ("Monday, July 7" / "Tuesday, July 8") across all 10 real messages in the main thread (skipped the system message, which has no author to react to). The two dates are inferred from the reply thread's original "Jul 7" anchor plus the existing AM/PM day-jump in the timestamps -- no other date was given, and there's only one real day-boundary in the existing content.
 - Reply-count button simplified per the brief's own literal replacement (dropped the avatar-stack and separate date span) -- removed the now-orphaned `.lime-message__date`/`.lime-replies__avatars` CSS left dead by that change.
+
+
+## LIME-03t — Video to Dropdown, Sidebar Toggle in Header
+
+- Icon fix: the brief's own JS snippet used `dew-sidebar-right-close` (missing the trailing "d") -- same typo pattern as LIME-03l -- corrected to the real `dew-sidebar-right-closed`.
+- "Video call" was already first in the dropdown from LIME-03r -- only the standalone topbar video button needed removing.
+- Toggle relocation: fourth move across recent briefs (in/out/in/out). Restored the full bidirectional open/close icon-swap toggle (removed in LIME-03p), the mobile router's toggle-both-ways handler, and the `[data-mobile-view="contacts"] #right-panel-toggle` hide rule -- same pattern as the LIME-03n revert. Removed the now-unused `.lime-panel-close` positioning CSS.
