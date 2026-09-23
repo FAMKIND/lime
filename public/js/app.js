@@ -18,6 +18,11 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
 
   const me = getTeacherById(CURRENT_USER_ID);
   const crumbThread = document.getElementById('crumb-thread');
+  const composerInput = document.getElementById('composer-input');
+  const composerSend = document.getElementById('composer-send');
+
+  let currentConversationId = null;
+  let lastRenderedDay = null;
 
   const PRESENCE = { online: 'active', busy: 'busy', offline: 'away' };
   const PRESENCE_LABEL = { active: 'Active', busy: 'Busy', away: 'Away' };
@@ -125,18 +130,19 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
   }
 
   function renderThread(conversationId, teacher) {
+    currentConversationId = conversationId;
+    lastRenderedDay = null;
     const msgs = getMessagesByConversation(conversationId);
     thread.innerHTML = '';
     if (msgs.length === 0) {
       thread.innerHTML = '<p class="lime-messages__empty">No messages yet.</p>';
       return;
     }
-    let lastDay = null;
     msgs.forEach((m) => {
       const day = formatDay(m.created_at);
-      if (day !== lastDay) {
+      if (day !== lastRenderedDay) {
         thread.insertAdjacentHTML('beforeend', '<div class="lime-date-divider"><span>' + day + '</span></div>');
-        lastDay = day;
+        lastRenderedDay = day;
       }
       const isSent = m.sender_id === CURRENT_USER_ID;
       const sender = isSent ? me : teacher;
@@ -151,6 +157,37 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
     if (crumbThread) crumbThread.textContent = teacher.display_name;
     renderThread(conversation.id, teacher);
   }
+
+  // ── Send message (LIME-07) ─────────────────────────────
+  function handleSend() {
+    if (!composerInput || !currentConversationId) return;
+    const content = composerInput.value.trim();
+    if (!content) return;
+
+    const message = sendMessage(currentConversationId, content);
+    const emptyState = thread.querySelector('.lime-messages__empty');
+    if (emptyState) emptyState.remove();
+
+    const day = formatDay(message.created_at);
+    if (day !== lastRenderedDay) {
+      thread.insertAdjacentHTML('beforeend', '<div class="lime-date-divider"><span>' + day + '</span></div>');
+      lastRenderedDay = day;
+    }
+    thread.insertAdjacentHTML('beforeend', messageHtml(message, me, true));
+
+    composerInput.value = '';
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  if (composerInput) {
+    composerInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    });
+  }
+  if (composerSend) composerSend.addEventListener('click', handleSend);
 
   const directConversations = getDirectConversations();
   list.innerHTML = '';
