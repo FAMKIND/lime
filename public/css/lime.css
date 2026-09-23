@@ -2146,13 +2146,23 @@ body {
    LIME-10-fix3 gate rather than silently reversing it). Only the
    individual .lime-composer__tool buttons/dividers hide/show with
    #composer.is-expanded — same mechanism as before, just restyled. */
+/* .lime-composer__return (Send) always lives in this row and has to stay
+   visible collapsed, so the row itself can't be display:none — but its
+   padding-top/margin-top were unconditional (LIME-10-fix3), reserving
+   ~24px of vertical space even with every other child hidden. Measured:
+   this alone made the "single line" collapsed box 106px tall. Made both
+   conditional on #composer.is-expanded (LIME-10-fix9) so Send sits flush
+   under the textarea at rest instead. */
 .lime-composer__toolbar {
   display: flex;
   flex-wrap: nowrap; /* already the flex default; stated explicitly per the brief */
   align-items: center;
+  gap: 2px;
+}
+
+#composer.is-expanded .lime-composer__toolbar {
   padding-top: 16px;
   margin-top: 8px;
-  gap: 2px;
 }
 
 .lime-composer__tool,
@@ -2371,6 +2381,12 @@ textarea.lime-composer__input {
   display: block;
   flex: none;
   width: 100%;
+  /* height, not just min/max-height — already fully pinned to 24px by
+     min=max (LIME-10-fix7), so this is a no-op given the current CSS;
+     stated explicitly anyway (LIME-10-fix9's literal ask) since the JS
+     auto-grow's inline style always wins over either once you actually
+     type, regardless of which is present. */
+  height: 24px;
   min-height: 24px;
   max-height: 24px;
   padding: var(--seed-space-1) 0;
@@ -2382,6 +2398,7 @@ textarea.lime-composer__input {
 }
 
 #composer.is-expanded textarea.lime-composer__input {
+  height: auto;
   max-height: 160px;
   overflow-y: auto;
 }

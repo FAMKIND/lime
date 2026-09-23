@@ -561,8 +561,12 @@ function setRightPanelOpen(isOpen) {
   const toggle = document.getElementById('right-panel-toggle');
   if (!layout || !toggle) return;
 
+  // Default flipped true -> false (LIME-10-fix9) — only changes first-ever
+  // load with no saved preference; setRightPanelOpen always persists
+  // whatever it's given, so anyone who already has a saved value (true or
+  // false) from before this brief keeps seeing that, not this new default.
   const saved = localStorage.getItem('lime-right-panel-open');
-  setRightPanelOpen(saved === null ? true : saved === 'true');
+  setRightPanelOpen(saved === null ? false : saved === 'true');
 
   toggle.addEventListener('click', () => setRightPanelOpen(false));
 
