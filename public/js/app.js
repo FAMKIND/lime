@@ -364,6 +364,18 @@ wireDropdownToggle('more-menu-toggle', 'more-menu');
 wireDropdownToggle('notif-btn', 'notif-dropdown', { fixed: true });
 wireDropdownToggle('user-btn', 'user-dropdown', { fixed: true });
 
+// ── Sign out ───────────────────────────────────────────────
+// Clears the mock session login.html stores on a successful sign-in
+// and sends the user back there. index.html has no auth-gate check on
+// load (a deliberate LIME-05a decision — a real gate would redirect
+// here on every direct open, breaking this whole workflow without a
+// real backend), so this only ends the *current* session; nothing
+// stops opening index.html directly again afterward.
+document.getElementById('sign-out-btn')?.addEventListener('click', () => {
+  localStorage.removeItem('lime-demo-session');
+  window.location.href = 'login.html';
+});
+
 // ── Notification click ───────────────────────────────────
 // Closes the dropdown. "select that contact" (per the brief's prose)
 // isn't actually implemented beyond that — the given behavior only
