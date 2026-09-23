@@ -124,6 +124,40 @@
   margin-bottom: var(--seed-space-4);
 }
 
+.lime-password-field {
+  position: relative;
+}
+
+.lime-password-field .seed-input {
+  padding-right: 40px;
+}
+
+.lime-password-field__toggle {
+  position: absolute;
+  top: 50%;
+  right: var(--seed-space-2);
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--soil-text-muted);
+  cursor: pointer;
+  border-radius: var(--seed-radius-sm);
+}
+
+.lime-password-field__toggle:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
+.lime-password-field__toggle .dew {
+  font-size: 16px;
+}
+
 .lime-auth__terms {
   display: flex;
   align-items: flex-start;
