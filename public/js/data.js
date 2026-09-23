@@ -59,3 +59,52 @@ function sendMessage(conversationId, content) {
   messages.push(message);
   return message;
 }
+
+function findMessageById(messageId) {
+  return messages.find((m) => m.id === messageId) || null;
+}
+
+// Seed reactions ({emoji, count}) don't record *who* reacted, so "did the
+// current user react with this emoji" can't be derived from the data
+// itself (LIME-08) — tracked here instead, keyed per message+emoji.
+const userReactedKeys = new Set();
+
+function reactionKey(messageId, emoji) {
+  return messageId + ':' + emoji;
+}
+
+function hasUserReacted(messageId, emoji) {
+  return userReactedKeys.has(reactionKey(messageId, emoji));
+}
+
+function addReaction(messageId, emoji) {
+  const message = findMessageById(messageId);
+  if (!message) return null;
+  if (!message.reactions) message.reactions = [];
+  const existing = message.reactions.find((r) => r.emoji === emoji);
+  if (existing) {
+    existing.count += 1;
+  } else {
+    message.reactions.push({ emoji, count: 1 });
+  }
+  userReactedKeys.add(reactionKey(messageId, emoji));
+  return message.reactions;
+}
+
+function removeReaction(messageId, emoji) {
+  const message = findMessageById(messageId);
+  if (!message || !message.reactions) return null;
+  const existing = message.reactions.find((r) => r.emoji === emoji);
+  if (existing) {
+    existing.count -= 1;
+    if (existing.count <= 0) {
+      message.reactions = message.reactions.filter((r) => r.emoji !== emoji);
+    }
+  }
+  userReactedKeys.delete(reactionKey(messageId, emoji));
+  return message.reactions;
+}
+
+function toggleReaction(messageId, emoji) {
+  return hasUserReacted(messageId, emoji) ? removeReaction(messageId, emoji) : addReaction(messageId, emoji);
+}

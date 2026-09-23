@@ -75,12 +75,80 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
     + '<button class="lime-reaction-picker__add" title="More"><span class="dew dew-plus"></span></button>'
     + '</div>';
 
-  function reactionsHtml(message) {
-    if (!message.reactions || message.reactions.length === 0) return '';
-    return message.reactions
-      .map((r) => '<button type="button" class="lime-reaction">' + r.emoji + ' <span class="lime-reaction__count">' + r.count + '</span></button>')
+  function reactionsHtml(messageId, reactions) {
+    if (!reactions || reactions.length === 0) return '';
+    return reactions
+      .map((r) => {
+        const active = hasUserReacted(messageId, r.emoji) ? ' lime-reaction--active' : '';
+        return '<button type="button" class="lime-reaction' + active + '" data-emoji="' + r.emoji + '">' + r.emoji + ' <span class="lime-reaction__count">' + r.count + '</span></button>';
+      })
       .join('');
   }
+
+  // Re-renders one message's reaction pills in place (LIME-08) — messageEl
+  // needs data-message-id (set by messageHtml below) since active-state
+  // depends on which message/emoji pair this is.
+  function renderReactions(messageEl, reactions) {
+    const container = messageEl.querySelector('.lime-message__reactions');
+    if (container) container.innerHTML = reactionsHtml(messageEl.dataset.messageId, reactions);
+  }
+
+  // ── Reaction picker (add) + reaction pill (toggle) ───────
+  // Each .lime-message has its own local .lime-reaction-picker (a shared
+  // single-instance picker wouldn't work with the closest()/querySelector()
+  // lookup below, and a shared id would also be invalid HTML repeated
+  // across every message — the markup only carries the class, not an id).
+  //
+  // data-message-id only exists on messages rendered from real seed data
+  // (this thread + Kai's/Alexi's). The reply panel's 4 messages are still
+  // the static markup LIME-06 deliberately left untouched — they have no
+  // backing message object, so addReaction/toggleReaction have nothing to
+  // look up; the `if (!messageId) return;` guards below leave their old
+  // (data-less, LIME-04a-era) click behavior alone rather than breaking it.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.lime-message__actions [title="React"]');
+    if (btn) {
+      // stopImmediatePropagation, not stopPropagation: both this and the
+      // "close all open pickers" listener below are bound to the same
+      // document target, so stopPropagation (which only blocks moving to
+      // a *different* element) wouldn't stop that second listener from
+      // firing right after this one and immediately closing what this
+      // just opened.
+      e.stopImmediatePropagation();
+      const picker = btn.closest('.lime-message').querySelector('.lime-reaction-picker');
+      picker?.classList.toggle('is-open');
+      return;
+    }
+
+    const pickerEmoji = e.target.closest('.lime-reaction-picker [data-emoji]');
+    if (pickerEmoji) {
+      const msg = pickerEmoji.closest('.lime-message');
+      const messageId = msg.dataset.messageId;
+      if (messageId) {
+        const reactions = addReaction(messageId, pickerEmoji.dataset.emoji);
+        renderReactions(msg, reactions);
+      } else {
+        const container = msg.querySelector('.lime-message__reactions');
+        const reaction = document.createElement('button');
+        reaction.type = 'button';
+        reaction.className = 'lime-reaction';
+        reaction.innerHTML = pickerEmoji.dataset.emoji + ' <span class="lime-reaction__count">1</span>';
+        container.appendChild(reaction);
+      }
+      pickerEmoji.closest('.lime-reaction-picker').classList.remove('is-open');
+      return;
+    }
+
+    const pill = e.target.closest('.lime-message__reactions .lime-reaction');
+    if (pill) {
+      const msg = pill.closest('.lime-message');
+      const messageId = msg.dataset.messageId;
+      if (!messageId) return;
+      const reactions = toggleReaction(messageId, pill.dataset.emoji);
+      renderReactions(msg, reactions);
+    }
+  });
+  document.addEventListener('click', () => document.querySelectorAll('.lime-reaction-picker.is-open').forEach((p) => p.classList.remove('is-open')));
 
   function contentHtml(message) {
     if (message.type === 'voice') {
@@ -107,7 +175,7 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
 
   function messageHtml(message, sender, isSent) {
     const presence = presenceFor(sender.status);
-    return '<div class="lime-message ' + (isSent ? 'lime-message--sent' : 'lime-message--received') + '">'
+    return '<div class="lime-message ' + (isSent ? 'lime-message--sent' : 'lime-message--received') + '" data-message-id="' + message.id + '">'
       + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
       + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>'
       + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
@@ -118,7 +186,7 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
       + '<span class="lime-message__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
       + contentHtml(message)
-      + '<div class="lime-message__reactions">' + reactionsHtml(message) + '</div>'
+      + '<div class="lime-message__reactions">' + reactionsHtml(message.id, message.reactions) + '</div>'
       + '</div>'
       + '<div class="lime-message__actions">'
       + '<button title="React"><span>🙂</span></button>'
@@ -606,44 +674,6 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
     document.getElementById('notif-dropdown')?.classList.remove('is-open');
   });
 });
-
-// ── Reaction picker ────────────────────────────────────────
-// Each .lime-message has its own local .lime-reaction-picker (a
-// shared single-instance picker wouldn't work with the closest()/
-// querySelector() lookup below, and a shared id would also be invalid
-// HTML repeated across every message — the markup only carries the
-// class, not an id).
-document.addEventListener('click', (e) => {
-  const btn = e.target.closest('.lime-message__actions [title="React"]');
-  if (btn) {
-    // stopImmediatePropagation, not stopPropagation: both this and the
-    // "close all open pickers" listener below are bound to the same
-    // document target, so stopPropagation (which only blocks moving to
-    // a *different* element) wouldn't stop that second listener from
-    // firing right after this one and immediately closing what this
-    // just opened.
-    e.stopImmediatePropagation();
-    const picker = btn.closest('.lime-message').querySelector('.lime-reaction-picker');
-    picker?.classList.toggle('is-open');
-    return;
-  }
-
-  const emoji = e.target.closest('.lime-reaction-picker [data-emoji]');
-  if (emoji) {
-    const msg = emoji.closest('.lime-message');
-    const container = msg.querySelector('.lime-message__reactions');
-    // <button>, not <span> — matches the static reaction markup
-    // (LIME-04a made .lime-reaction a real clickable button) rather
-    // than the plain non-interactive span this used to create.
-    const reaction = document.createElement('button');
-    reaction.type = 'button';
-    reaction.className = 'lime-reaction';
-    reaction.innerHTML = emoji.dataset.emoji + ' <span class="lime-reaction__count">1</span>';
-    container.appendChild(reaction);
-    emoji.closest('.lime-reaction-picker').classList.remove('is-open');
-  }
-});
-document.addEventListener('click', () => document.querySelectorAll('.lime-reaction-picker.is-open').forEach((p) => p.classList.remove('is-open')));
 
 // ── Nav search → global modal ────────────────────────────
 // Distinct from the center panel's local filter: this searches everywhere

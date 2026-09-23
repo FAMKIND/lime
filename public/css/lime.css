@@ -1891,6 +1891,19 @@ body {
   border-color: var(--calm-border-normal-default);
 }
 
+/* Reactions the current user has added (LIME-08) — Seed's --selected-*
+   scale (its own "toggled on by the user" semantic tier) rather than the
+   --calm hover tokens above, so this reads as a persistent state and not
+   just a hover echo. */
+.lime-reaction--active {
+  background: var(--selected-bg-subtle-default);
+  border-color: var(--selected-border-subtle-default);
+}
+
+.lime-reaction--active:hover {
+  background: var(--selected-bg-subtle-hover);
+}
+
 .lime-reaction__count {
   font-size: var(--seed-text-xs);
   color: var(--soil-text-muted);
