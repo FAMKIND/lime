@@ -347,20 +347,43 @@ function setRightPanelOpen(isOpen) {
 // Same shape three times now (LIME-03r's more-menu, LIME-03u's
 // notif/user menus) — one toggle button opens one dropdown, closes on
 // any outside click. Generalized rather than copy-pasted a third time.
-function wireDropdownToggle(toggleId, dropdownId) {
+// `fixed: true` (notif/user menus) computes the dropdown's on-screen
+// position from the trigger's own rect before opening it — required
+// now that .lime-nav-dropdown is position:fixed (LIME-03w), which has
+// no relative-to-trigger anchor of its own the way position:absolute
+// did. Opens upward, left-aligned with the trigger, matching the
+// dropdown's old bottom:100%/left:0 behavior.
+function wireDropdownToggle(toggleId, dropdownId, { fixed = false } = {}) {
   const toggle = document.getElementById(toggleId);
   const dropdown = document.getElementById(dropdownId);
   if (!toggle || !dropdown) return;
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (fixed && !dropdown.classList.contains('is-open')) {
+      const rect = toggle.getBoundingClientRect();
+      dropdown.style.left = rect.left + 'px';
+      dropdown.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+    }
     dropdown.classList.toggle('is-open');
   });
   document.addEventListener('click', () => dropdown.classList.remove('is-open'));
 }
 
 wireDropdownToggle('more-menu-toggle', 'more-menu');
-wireDropdownToggle('notif-btn', 'notif-dropdown');
-wireDropdownToggle('user-btn', 'user-dropdown');
+wireDropdownToggle('notif-btn', 'notif-dropdown', { fixed: true });
+wireDropdownToggle('user-btn', 'user-dropdown', { fixed: true });
+
+// ── Notification click ───────────────────────────────────
+// Closes the dropdown. "select that contact" (per the brief's prose)
+// isn't actually implemented beyond that — the given behavior only
+// closes the dropdown, and the thread has no real per-contact
+// switching to hook into (it's a static Shem↔Jean 1:1 throughout).
+document.querySelectorAll('.lime-notif').forEach((n) => {
+  n.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('notif-dropdown')?.classList.remove('is-open');
+  });
+});
 
 // ── Reaction picker ────────────────────────────────────────
 // Each .lime-message has its own local .lime-reaction-picker (a

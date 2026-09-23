@@ -311,7 +311,7 @@ body {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--seed-space-2);
+  gap: var(--seed-space-4);
   flex: 1;
   justify-content: space-between;
 }
@@ -501,10 +501,10 @@ body {
   flex-shrink: 0;
 }
 
-/* Notification button's <li> — positioning context for #notif-dropdown
-   (bottom: 100%), matching the same "wrapper needed for absolute
-   dropdown positioning" pattern as .lime-more-menu (LIME-03r) and
-   .lime-sidebar__footer (below, for #user-dropdown). */
+/* No longer load-bearing for #notif-dropdown's own positioning since
+   LIME-03w made it position:fixed (JS-computed coordinates instead of
+   a relative-ancestor anchor) — left in place since harmless and this
+   <li> may want a positioning context again for something else later. */
 .lime-nav__item-wrap {
   position: relative;
 }
@@ -527,26 +527,27 @@ body {
 }
 
 /* ── Nav dropdowns (notifications, user menu) ──
-   Both need a position:relative ancestor sized to the trigger, not
-   the dropdown's own box — see .lime-nav__item-wrap and
-   .lime-sidebar__footer respectively. min-width guards against the
-   collapsed 56px icon rail: left:0/right:0 alone would size the
-   dropdown to the trigger's own tiny width there, badly wrapping its
-   text content. */
+   position:fixed, not absolute — .seed-layout__left has
+   overflow-x:hidden (Seed's own layout.css), so an absolutely
+   positioned dropdown wider than the sidebar gets CLIPPED by that
+   overflow, not hidden behind something else. This is the same
+   problem Seed's own .seed-layout__menu solves the same way (see its
+   comment: "position:fixed so they clear overflow:hidden bounds").
+   z-index alone (the brief's literal fix) cannot solve this — it has
+   no effect on overflow clipping. left/bottom are set by JS
+   (wireDropdownToggle in app.js) at open time from the trigger's own
+   position, since position:fixed has no relative-to-trigger anchor of
+   its own the way position:absolute did. */
 .lime-nav-dropdown {
   display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
+  position: fixed;
   min-width: 220px;
   background: var(--soil-bg-surface);
   border: 1px solid var(--soil-border-subtle);
   border-radius: var(--seed-radius-md);
   box-shadow: var(--seed-shadow-md);
   padding: var(--seed-space-2);
-  margin-bottom: var(--seed-space-2);
-  z-index: 20;
+  z-index: 1000;
 }
 
 .lime-nav-dropdown.is-open {
@@ -577,6 +578,56 @@ body {
   margin: var(--seed-space-2) 0;
 }
 
+/* ── Rich notifications (Apple-style: avatar/name/time/preview) ── */
+.lime-notif {
+  display: flex;
+  gap: var(--seed-space-3);
+  padding: var(--seed-space-3);
+  border-radius: var(--seed-radius-md);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.lime-notif:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-notif__avatar {
+  flex-shrink: 0;
+}
+
+.lime-notif__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.lime-notif__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--seed-space-2);
+}
+
+.lime-notif__name {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+}
+
+.lime-notif__time {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.lime-notif__preview {
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
 .lime-nav__label {
   white-space: nowrap;
 }
@@ -585,10 +636,11 @@ body {
   display: none;
 }
 
-/* Positioning context for #user-dropdown, which sits above this
-   (bottom: 100%) — the actual clickable content moved into
-   .lime-sidebar__user-trigger, a real <button> now instead of a
-   plain <div>, matching .lime-nav__btn's semantics. */
+/* position:relative is no longer load-bearing for #user-dropdown's
+   own positioning (LIME-03w made it position:fixed) but left in place
+   since harmless. The actual clickable content moved into
+   .lime-sidebar__user-trigger, a real <button> now instead of a plain
+   <div>, matching .lime-nav__btn's semantics. */
 .lime-sidebar__footer {
   position: relative;
   flex-shrink: 0;
