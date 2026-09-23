@@ -494,7 +494,11 @@
                 <div class="lime-composer__actions">
                   <button type="button" class="lime-composer__aux" title="Attach"><span class="dew dew-plus"></span></button>
                   <div class="lime-composer__voice-dropdown">
-                    <button type="button" class="lime-composer__aux lime-composer__voice" id="voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
+                    <!-- dew has no waveform icon (checked the full 53-icon set); icon-audio-waveform
+                         is a real Lucide class (already loaded for the toolbar's list/quote icons,
+                         LIME-10-fix4) matching the brief's requested name exactly, just without the
+                         non-existent lucide- prefix. -->
+                    <button type="button" class="lime-composer__aux lime-composer__voice" id="voice-mode-toggle" title="Voice mode"><i class="icon-audio-waveform"></i><span class="dew dew-chevron-down"></span></button>
                     <div class="lime-nav-dropdown" id="voice-mode-dropdown">
                       <div class="lime-nav-dropdown__item">Default microphone</div>
                       <div class="lime-nav-dropdown__item">Built-in Microphone</div>

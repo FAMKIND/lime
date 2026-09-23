@@ -63,6 +63,16 @@
   pointer-events: none;
 }
 
+/* LIME-10-fix5: the brief diagnosed this as the fade gradient being too
+   tall, but the fade (.lime-composer::before above) is a purely
+   decorative overlay that doesn't occupy any layout space — reducing
+   its height can't move the composer at all. Measured the real cause
+   instead: .lime-composer grew from one row to three across LIME-10
+   through LIME-10-fix4 (toolbar + input box + actions row) and is now
+   182px tall, but this padding-bottom was never revisited — verified
+   the last message's bottom edge sitting 82px *behind* the composer's
+   top edge before this fix. 100px -> 220px (182px composer + ~40px
+   breathing room). */
 .lime-messages {
-  padding-bottom: 100px;
+  padding-bottom: 220px;
 }

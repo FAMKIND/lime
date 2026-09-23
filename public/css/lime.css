@@ -2230,6 +2230,11 @@ body {
   cursor: pointer;
 }
 
+.lime-composer__return:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
 .lime-composer__actions {
   display: flex;
   align-items: center;
@@ -2255,8 +2260,12 @@ body {
   background: var(--calm-bg-subtle-hover);
 }
 
-.lime-composer__aux .dew {
-  font-size: 18px;
+/* 16px, not the toolbar tools' 18px (LIME-10-fix5) — also covers the
+   voice button's icon-audio-waveform <i> (a Lucide glyph, no .dew
+   class), same reasoning as the toolbar's list/quote icons. */
+.lime-composer__aux .dew,
+.lime-composer__aux [class^="icon-"] {
+  font-size: 16px;
 }
 
 .lime-composer__voice-dropdown {
