@@ -565,24 +565,28 @@
 
       <div class="lime-replies-panel">
         <header class="lime-replies-panel__header">
-          <button type="button" class="lime-icon-btn" id="replies-back" title="Back to profile">
-            <span class="dew dew-chevron-left"></span>
-          </button>
           <h2 class="lime-replies-panel__title">Thread</h2>
         </header>
 
-        <!-- Rendered from real seed data by app.js (LIME-11): quote is
-             whichever message's "Reply" action was clicked; list is that
-             message's actual replies (getRepliesForMessage). -->
+        <!-- Rendered from real seed data by app.js (LIME-11/fix2): quote is
+             whichever message's "Reply" action was clicked; meta is a live
+             count + last-reply time (getRepliesForMessage — reply_count/
+             last_reply_at on the seed message itself are stale, never
+             trusted); list is that message's actual replies. Quote and
+             each reply carry data-message-id and reuse .lime-message__actions/
+             .lime-reaction-picker/.lime-message__reactions so the existing
+             reaction system (generalized in app.js) works on them too. -->
         <div class="lime-replies-panel__quote" id="replies-quote"></div>
+        <div class="lime-replies-panel__meta" id="replies-meta"></div>
 
         <div class="lime-replies-panel__list" id="replies-list"></div>
 
-        <!-- Same box/row/toolbar structure as the main composer (LIME-09
-             through LIME-10-fix14) so it gets the identical single-line/
-             expand/Send-disabled-until-typed behavior for free — just a
-             narrower box (100% width here, not 75%) and no actions row
-             (Attach/voice/privacy weren't asked for on a reply composer). -->
+        <!-- Same box/row/toolbar/actions structure as the main composer
+             (LIME-09 through LIME-10-fix14) so it gets the identical
+             single-line/expand/Send-disabled-until-typed behavior for
+             free — narrower box (100% width here, not 75%), and its own
+             unique voice-dropdown ids (can't reuse the main composer's,
+             duplicate ids are invalid HTML). -->
         <footer class="lime-replies-panel__composer" id="replies-composer">
           <div class="lime-composer__box">
             <div class="lime-composer__row">
@@ -602,6 +606,28 @@
               <button type="button" class="lime-composer__tool" title="Quote"><i class="icon-text-quote"></i></button>
               <button type="button" class="lime-composer__tool" title="Code">&lt;/&gt;</button>
             </div>
+          </div>
+          <div class="lime-composer__actions">
+            <button type="button" class="lime-composer__aux" title="Attach"><span class="dew dew-plus"></span></button>
+            <div class="lime-composer__voice-dropdown">
+              <button type="button" class="lime-composer__aux lime-composer__voice" id="replies-voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
+              <div class="lime-nav-dropdown" id="replies-voice-mode-dropdown">
+                <div class="lime-nav-dropdown__item lime-nav-dropdown__item--active">
+                  <span class="dew dew-check"></span>
+                  Default - MacBook Pro Microphone
+                </div>
+                <div class="lime-nav-dropdown__item">
+                  MacBook Pro Microphone (Built-in)
+                </div>
+                <div class="lime-nav-dropdown__item">
+                  iPhone Microphone
+                </div>
+                <div class="lime-nav-dropdown__item">
+                  Microsoft Teams Audio Device (Virtual)
+                </div>
+              </div>
+            </div>
+            <span class="lime-composer__privacy"><span class="dew dew-shield-check"></span> Your messages are always secure and encrypted, we never sell your data.</span>
           </div>
         </footer>
       </div>

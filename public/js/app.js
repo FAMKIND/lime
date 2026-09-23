@@ -62,6 +62,36 @@ function plainPreviewFor(message) {
   return message.content || '';
 }
 
+// Also promoted (LIME-11-fix2) — the reply panel's quote/reply items
+// reuse this exact reaction markup/rendering, same reasoning as the
+// other promoted helpers above.
+const REACTION_PICKER_HTML = '<div class="lime-reaction-picker">'
+  + '<button data-emoji="👍">👍</button>'
+  + '<button data-emoji="❤️">❤️</button>'
+  + '<button data-emoji="😂">😂</button>'
+  + '<button data-emoji="😮">😮</button>'
+  + '<button data-emoji="🎉">🎉</button>'
+  + '<button class="lime-reaction-picker__add" title="More"><span class="dew dew-plus"></span></button>'
+  + '</div>';
+
+function reactionsHtml(messageId, reactions) {
+  if (!reactions || reactions.length === 0) return '';
+  return reactions
+    .map((r) => {
+      const active = hasUserReacted(messageId, r.emoji) ? ' lime-reaction--active' : '';
+      return '<button type="button" class="lime-reaction' + active + '" data-emoji="' + r.emoji + '">' + r.emoji + ' <span class="lime-reaction__count">' + r.count + '</span></button>';
+    })
+    .join('');
+}
+
+// Re-renders one message's reaction pills in place (LIME-08) — messageEl
+// needs data-message-id since active-state depends on which
+// message/emoji pair this is.
+function renderReactions(messageEl, reactions) {
+  const container = messageEl.querySelector('.lime-message__reactions');
+  if (container) container.innerHTML = reactionsHtml(messageEl.dataset.messageId, reactions);
+}
+
 (function () {
   const list = document.getElementById('contacts-list');
   const thread = document.getElementById('thread-messages');
@@ -80,45 +110,23 @@ function plainPreviewFor(message) {
     return getTeacherById(otherId);
   }
 
-  const REACTION_PICKER_HTML = '<div class="lime-reaction-picker">'
-    + '<button data-emoji="👍">👍</button>'
-    + '<button data-emoji="❤️">❤️</button>'
-    + '<button data-emoji="😂">😂</button>'
-    + '<button data-emoji="😮">😮</button>'
-    + '<button data-emoji="🎉">🎉</button>'
-    + '<button class="lime-reaction-picker__add" title="More"><span class="dew dew-plus"></span></button>'
-    + '</div>';
-
-  function reactionsHtml(messageId, reactions) {
-    if (!reactions || reactions.length === 0) return '';
-    return reactions
-      .map((r) => {
-        const active = hasUserReacted(messageId, r.emoji) ? ' lime-reaction--active' : '';
-        return '<button type="button" class="lime-reaction' + active + '" data-emoji="' + r.emoji + '">' + r.emoji + ' <span class="lime-reaction__count">' + r.count + '</span></button>';
-      })
-      .join('');
-  }
-
-  // Re-renders one message's reaction pills in place (LIME-08) — messageEl
-  // needs data-message-id (set by messageHtml below) since active-state
-  // depends on which message/emoji pair this is.
-  function renderReactions(messageEl, reactions) {
-    const container = messageEl.querySelector('.lime-message__reactions');
-    if (container) container.innerHTML = reactionsHtml(messageEl.dataset.messageId, reactions);
-  }
-
   // ── Reaction picker (add) + reaction pill (toggle) ───────
-  // Each .lime-message has its own local .lime-reaction-picker (a shared
-  // single-instance picker wouldn't work with the closest()/querySelector()
-  // lookup below, and a shared id would also be invalid HTML repeated
-  // across every message — the markup only carries the class, not an id).
+  // Each reactable container (.lime-message, and — since LIME-11-fix2 —
+  // .lime-reply and .lime-replies-panel__quote) has its own local
+  // .lime-reaction-picker (a shared single-instance picker wouldn't work
+  // with the closest()/querySelector() lookup below, and a shared id
+  // would also be invalid HTML repeated across every instance — the
+  // markup only carries the class, not an id).
   //
-  // data-message-id only exists on messages rendered from real seed data
-  // (this thread + Kai's/Alexi's). The reply panel's 4 messages are still
-  // the static markup LIME-06 deliberately left untouched — they have no
-  // backing message object, so addReaction/toggleReaction have nothing to
-  // look up; the `if (!messageId) return;` guards below leave their old
-  // (data-less, LIME-04a-era) click behavior alone rather than breaking it.
+  // REACTABLE used to be just '.lime-message' — the reply panel's old
+  // hardcoded messages (LIME-06 left them static) had no real message
+  // object to look up, so an `if (!messageId)` fallback quietly created
+  // a plain, unpersisted DOM button instead. LIME-11 removed those
+  // hardcoded messages entirely and LIME-11-fix2 gave .lime-reply/the
+  // quote real data-message-id attributes, so every matched container
+  // now always has one — the fallback branch was dead code and is gone.
+  const REACTABLE = '.lime-message, .lime-reply, .lime-replies-panel__quote';
+
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.lime-message__actions [title="React"]');
     if (btn) {
@@ -129,25 +137,18 @@ function plainPreviewFor(message) {
       // firing right after this one and immediately closing what this
       // just opened.
       e.stopImmediatePropagation();
-      const picker = btn.closest('.lime-message').querySelector('.lime-reaction-picker');
+      const picker = btn.closest(REACTABLE).querySelector('.lime-reaction-picker');
       picker?.classList.toggle('is-open');
       return;
     }
 
     const pickerEmoji = e.target.closest('.lime-reaction-picker [data-emoji]');
     if (pickerEmoji) {
-      const msg = pickerEmoji.closest('.lime-message');
+      const msg = pickerEmoji.closest(REACTABLE);
       const messageId = msg.dataset.messageId;
       if (messageId) {
         const reactions = addReaction(messageId, pickerEmoji.dataset.emoji);
         renderReactions(msg, reactions);
-      } else {
-        const container = msg.querySelector('.lime-message__reactions');
-        const reaction = document.createElement('button');
-        reaction.type = 'button';
-        reaction.className = 'lime-reaction';
-        reaction.innerHTML = pickerEmoji.dataset.emoji + ' <span class="lime-reaction__count">1</span>';
-        container.appendChild(reaction);
       }
       pickerEmoji.closest('.lime-reaction-picker').classList.remove('is-open');
       return;
@@ -155,7 +156,7 @@ function plainPreviewFor(message) {
 
     const pill = e.target.closest('.lime-message__reactions .lime-reaction');
     if (pill) {
-      const msg = pill.closest('.lime-message');
+      const msg = pill.closest(REACTABLE);
       const messageId = msg.dataset.messageId;
       if (!messageId) return;
       const reactions = toggleReaction(messageId, pill.dataset.emoji);
@@ -642,13 +643,16 @@ function setRightPanelOpen(isOpen) {
 // that id no longer existed). Rebuilt for LIME-11 as a delegated click
 // on any thread message's real "Reply" action instead of a one-time
 // forEach, so it keeps working after switching conversations replaces
-// #thread-messages's content entirely.
+// #thread-messages's content entirely. LIME-11-fix2 removed the back
+// button from the markup entirely (no JS reference needed any more) and
+// added reactions to the quote/replies, reusing .lime-message__actions/
+// .lime-reaction-picker — see the generalized delegate further down.
 (function () {
   const layout      = document.getElementById('layout');
   const rightPanel  = document.getElementById('right-panel');
   const quoteEl     = document.getElementById('replies-quote');
+  const metaEl      = document.getElementById('replies-meta');
   const listEl      = document.getElementById('replies-list');
-  const backBtn     = document.getElementById('replies-back');
   const replyInput  = document.getElementById('replies-composer-input');
   const replySend   = document.getElementById('replies-composer-send');
   if (!layout || !rightPanel || !quoteEl || !listEl) return;
@@ -656,7 +660,7 @@ function setRightPanelOpen(isOpen) {
   let currentReplyParentId = null;
 
   function replyHtml(message, sender) {
-    return '<div class="lime-reply">'
+    return '<div class="lime-reply" data-message-id="' + message.id + '">'
       + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>'
       + '<div class="lime-reply__col">'
       + '<div class="lime-reply__meta">'
@@ -664,24 +668,47 @@ function setRightPanelOpen(isOpen) {
       + '<span class="lime-reply__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
       + '<p class="lime-reply__text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
+      + '<div class="lime-message__reactions">' + reactionsHtml(message.id, message.reactions) + '</div>'
       + '</div>'
+      + '<div class="lime-message__actions">'
+      + '<button title="React"><span>🙂</span></button>'
+      + '</div>'
+      + REACTION_PICKER_HTML
       + '</div>';
   }
 
   function renderQuote(message, sender) {
+    quoteEl.dataset.messageId = message.id;
     quoteEl.innerHTML = '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>'
       + '<div class="lime-replies-panel__quote-body">'
       + '<span class="lime-replies-panel__quote-sender">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<p class="lime-replies-panel__quote-text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
-      + '</div>';
+      + '<div class="lime-message__reactions">' + reactionsHtml(message.id, message.reactions) + '</div>'
+      + '</div>'
+      + '<div class="lime-message__actions">'
+      + '<button title="React"><span>🙂</span></button>'
+      + '</div>'
+      + REACTION_PICKER_HTML;
     const avatar = quoteEl.querySelector('.lime-avatar[data-name]');
     if (avatar) paintAvatar(avatar);
   }
 
   // reply_count/last_reply_at on the parent message are stale seed
-  // metadata (see data.js) — this always renders the real, live list.
+  // metadata (see data.js) — this always computes the real, live count.
+  function renderMeta(replies) {
+    if (!metaEl) return;
+    if (replies.length === 0) {
+      metaEl.textContent = '';
+      return;
+    }
+    const last = replies[replies.length - 1];
+    metaEl.textContent = replies.length + (replies.length === 1 ? ' reply' : ' replies')
+      + ' · last reply ' + formatTime(last.created_at);
+  }
+
   function renderReplies(parentId) {
     const replies = getRepliesForMessage(parentId);
+    renderMeta(replies);
     listEl.innerHTML = '';
     if (replies.length === 0) {
       listEl.innerHTML = '<p class="lime-replies-panel__empty">No replies yet.</p>';
@@ -715,10 +742,6 @@ function setRightPanelOpen(isOpen) {
     const messageId = msg && msg.dataset.messageId;
     if (messageId) openReplies(messageId);
   });
-
-  if (backBtn) {
-    backBtn.addEventListener('click', () => rightPanel.setAttribute('data-panel', 'profile'));
-  }
 
   function submitReply() {
     if (!replyInput || !currentReplyParentId) return;
@@ -758,6 +781,11 @@ function setRightPanelOpen(isOpen) {
   }
 
   if (replySend) replySend.addEventListener('click', submitReply);
+
+  // Decorative placeholder, not real navigator.mediaDevices (LIME-10 gate)
+  // — a second instance for the reply composer, own unique ids since the
+  // main composer's voice-mode-toggle/-dropdown ids are already taken.
+  wireDropdownToggle('replies-voice-mode-toggle', 'replies-voice-mode-dropdown', { fixed: true });
 })();
 
 // ── Dropdown toggles (more menu, notifications, user menu) ──

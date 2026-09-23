@@ -2316,6 +2316,11 @@ body {
   gap: 4px;
 }
 
+/* Same override reasoning as #replies-composer .lime-composer__box above (LIME-11-fix2). */
+#replies-composer .lime-composer__actions {
+  width: 100%;
+}
+
 /* :not(.lime-composer__voice) — LIME-10-fix11 keeps the circle for the
    plus button only; .lime-composer__voice overrides shape/size below
    rather than relying on source-order to win over this rule. */
@@ -2631,7 +2636,7 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
   display: flex;
   align-items: center;
   gap: var(--seed-space-2);
-  padding: 0 var(--seed-space-2) 0 var(--seed-space-1);
+  padding: 0 var(--seed-space-4); /* was asymmetric (4px left), tuned for the now-removed back button */
   border-bottom: 1px solid var(--soil-border-subtle);
 }
 
@@ -2643,10 +2648,21 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
 }
 
 .lime-replies-panel__quote {
+  position: relative; /* anchors .lime-message__actions/.lime-reaction-picker, reused here (LIME-11-fix2) */
   display: flex;
   gap: var(--seed-space-2);
-  padding: var(--seed-space-4);
-  border-bottom: 1px solid var(--soil-border-subtle);
+  padding: var(--seed-space-4) var(--seed-space-4) var(--seed-space-2);
+  flex-shrink: 0;
+}
+
+.lime-replies-panel__quote:hover .lime-message__actions {
+  display: flex;
+}
+
+.lime-replies-panel__meta {
+  padding: 0 var(--seed-space-4) var(--seed-space-4);
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
   flex-shrink: 0;
 }
 
@@ -2695,8 +2711,13 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
    real thread message does, so the full .lime-message markup would be
    mostly-dead weight here anyway. */
 .lime-reply {
+  position: relative; /* anchors .lime-message__actions/.lime-reaction-picker, reused here (LIME-11-fix2) */
   display: flex;
   gap: var(--seed-space-2);
+}
+
+.lime-reply:hover .lime-message__actions {
+  display: flex;
 }
 
 .lime-reply__col {
@@ -2738,8 +2759,13 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
 .lime-replies-panel__composer {
   flex-shrink: 0;
   display: flex;
+  /* flex-direction:column, not the row default — this footer now has two
+     stacked children (.lime-composer__box, .lime-composer__actions,
+     LIME-11-fix2), where before it had only one (the old plain input
+     pill), so the missing direction was never visible as a bug until now. */
+  flex-direction: column;
+  gap: var(--seed-space-1);
   padding: var(--seed-space-3);
-  border-top: 1px solid var(--soil-border-subtle);
 }
 
 /* Clickable participant identity in the center top row — opens the
