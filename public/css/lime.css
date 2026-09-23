@@ -2130,13 +2130,19 @@ body {
   border-color: var(--calm-border-normal-default);
 }
 
-/* This row always shows — .lime-composer__submit (Send) has to stay
-   visible at rest. Only the individual tool buttons/dividers hide until
-   #composer.is-expanded (app.js toggles that class on focusin/focusout). */
+/* This row always shows (not display:none at rest, unlike the brief's
+   literal rule) — .lime-composer__return (Send) lives inside it and has
+   to stay visible even when collapsed, per the explicit "Send always
+   visible" requirement from LIME-10/LIME-10-fix (confirmed again at the
+   LIME-10-fix3 gate rather than silently reversing it). Only the
+   individual .lime-composer__tool buttons/dividers hide/show with
+   #composer.is-expanded — same mechanism as before, just restyled. */
 .lime-composer__toolbar {
   display: flex;
   align-items: center;
-  gap: var(--seed-space-1);
+  padding-top: 16px;
+  margin-top: 8px;
+  gap: 2px;
 }
 
 .lime-composer__tool,
@@ -2145,50 +2151,118 @@ body {
 }
 
 #composer.is-expanded .lime-composer__tool {
-  display: flex;
+  display: inline-flex;
 }
 
 #composer.is-expanded .lime-composer__toolbar > .lime-composer__divider {
   display: block;
 }
 
-.lime-composer__spacer {
-  flex: 1;
+.lime-composer__tool {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  color: var(--soil-text-muted);
+  font-size: 15px;
+  font-family: var(--seed-font-ui);
+}
+
+.lime-composer__tool:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
+.lime-composer__tool b { font-weight: 700; font-style: normal; }
+.lime-composer__tool i { font-style: italic; font-weight: 400; }
+.lime-composer__tool u { text-decoration: underline; }
+.lime-composer__tool s { text-decoration: line-through; }
+
+.lime-composer__tool .dew {
+  font-size: 16px;
 }
 
 .lime-composer__divider {
   width: 1px;
   height: 16px;
-  margin: 0 var(--seed-space-2);
   background: var(--soil-border-subtle);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+.lime-composer__spacer {
+  flex: 1;
+}
+
+.lime-composer__return {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  color: var(--soil-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.lime-composer__return .dew {
+  font-size: 18px;
 }
 
 .lime-composer__actions {
   display: flex;
   align-items: center;
-  gap: var(--seed-space-1);
+  padding: 12px 4px 0;
+  gap: 4px;
+}
+
+.lime-composer__aux {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  color: var(--soil-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.lime-composer__aux:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-composer__aux .dew {
+  font-size: 18px;
 }
 
 .lime-composer__voice-dropdown {
   position: relative;
 }
 
-.lime-composer__voice-dropdown .lime-composer__aux {
-  width: auto;
-  padding: 0 var(--seed-space-2);
+/* waveform (mic) + chevron grouped */
+.lime-composer__voice {
   gap: 2px;
+  width: auto;
+  padding: 0 4px;
 }
 
-.lime-composer__voice-dropdown .lime-composer__aux .dew + .dew {
+.lime-composer__voice .dew-chevron-down {
   font-size: 12px;
 }
 
 .lime-composer__privacy {
   flex: 1;
   min-width: 0;
-  font-size: var(--seed-text-xs);
-  color: var(--soil-text-muted);
   text-align: center;
+  font-size: 13px;
+  color: var(--soil-text-disabled);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2251,70 +2325,6 @@ textarea.lime-composer__input {
 
 textarea.lime-composer__input:focus {
   outline: none;
-}
-
-/* No `display` here on purpose — .lime-composer__tool's default (none,
-   shown only when #composer.is-expanded, set earlier in this file) would
-   otherwise be overridden by this unconditional `display: flex`, since
-   both rules are single-class specificity and this one comes later in
-   source order. .lime-composer__aux (always visible) gets its own
-   display: flex right below instead. */
-.lime-composer__aux,
-.lime-composer__tool {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  border-radius: var(--seed-radius-full);
-  color: var(--soil-text-muted);
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.lime-composer__aux {
-  display: flex;
-}
-
-.lime-composer__aux:hover,
-.lime-composer__tool:hover {
-  background: var(--calm-bg-subtle-hover);
-  color: var(--soil-text);
-}
-
-.lime-composer__aux .dew,
-.lime-composer__tool .dew {
-  font-size: 20px;
-}
-
-/* Plain icon button, no background pill — the brief only named this
-   for .lime-composer__tool/.lime-composer__aux explicitly, but 16px
-   here would have left the one icon in the toolbar inconsistent with
-   the 20px unification everywhere else, undercutting the point of it. */
-.lime-composer__submit {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  border-radius: var(--seed-radius-full);
-  color: var(--soil-text-muted);
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.lime-composer__submit:hover {
-  background: var(--calm-bg-subtle-hover);
-  color: var(--soil-text);
-}
-
-.lime-composer__submit .dew {
-  font-size: 20px;
 }
 
 .lime-composer__send {
