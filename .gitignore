@@ -1,6 +1,7 @@
 .claude/
 .DS_Store
 *.local
+*.local.js
 .vscode/
 .idea/
 node_modules/
