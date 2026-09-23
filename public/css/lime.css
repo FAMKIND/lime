@@ -2100,6 +2100,9 @@ body {
    sitting just above it) lives entirely in gradients.css now, since
    it's a bespoke rule that doesn't fit the reusable .has-fade-y
    pattern — see the comment there for why. */
+/* Stacked toolbar / input / actions (LIME-09) — was a single row with
+   Attach+input+mic+Send all in one pill; the toolbar and actions bars
+   are new sibling rows above/below that same pill. */
 .lime-composer {
   position: absolute;
   left: 0;
@@ -2107,20 +2110,44 @@ body {
   bottom: 0;
   z-index: 2;
   display: flex;
-  align-items: center;
-  padding: var(--seed-space-4);
+  flex-direction: column;
+  gap: var(--seed-space-2);
+  padding: var(--seed-space-3) var(--seed-space-4) var(--seed-space-4);
   background: var(--soil-bg-canvas);
 }
 
-/* The pill: + / input / mic / send all live inside this one rounded
-   container, rather than as separate boxes floating beside it. */
-.lime-composer__field {
-  flex: 1;
+.lime-composer__toolbar,
+.lime-composer__actions {
   display: flex;
   align-items: center;
   gap: var(--seed-space-1);
-  padding: var(--seed-space-1);
-  padding-left: var(--seed-space-4);
+}
+
+.lime-composer__divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 var(--seed-space-1);
+  background: var(--soil-border-subtle);
+}
+
+.lime-composer__spacer {
+  flex: 1;
+}
+
+/* Plain-glyph fallbacks for icons dew doesn't have (see the HTML
+   comment above the composer markup) — sized/weighted to sit visually
+   level with the 18px dew icons beside them. */
+.lime-composer__glyph {
+  font-size: 13px;
+  font-weight: var(--seed-weight-semibold);
+}
+
+/* Now just the input pill — Attach/mic/Send moved out to
+   .lime-composer__actions below. */
+.lime-composer__field {
+  display: flex;
+  align-items: center;
+  padding: var(--seed-space-2) var(--seed-space-4);
   border: 1px solid var(--soil-border-subtle);
   border-radius: var(--seed-radius-full);
   background: var(--soil-bg-surface);
@@ -2149,7 +2176,8 @@ body {
   outline: none;
 }
 
-.lime-composer__aux {
+.lime-composer__aux,
+.lime-composer__tool {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
@@ -2164,12 +2192,14 @@ body {
   transition: background 80ms ease, color 80ms ease;
 }
 
-.lime-composer__aux:hover {
+.lime-composer__aux:hover,
+.lime-composer__tool:hover {
   background: var(--calm-bg-subtle-hover);
   color: var(--soil-text);
 }
 
-.lime-composer__aux .dew {
+.lime-composer__aux .dew,
+.lime-composer__tool .dew {
   font-size: 18px;
 }
 
