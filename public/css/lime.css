@@ -626,6 +626,20 @@ body {
   background: var(--calm-bg-subtle-hover);
 }
 
+/* Currently-selected device in the voice-mode dropdown (LIME-10-fix10) —
+   Seed's --selected-* scale, same "toggled on" language already used for
+   .lime-reaction--active, rather than reusing the plain :hover token. */
+.lime-nav-dropdown__item--active {
+  background: var(--selected-bg-subtle-default);
+  color: var(--selected-text-normal-default);
+  font-weight: var(--seed-weight-medium);
+}
+
+.lime-nav-dropdown__item--active .dew-check {
+  color: var(--selected-icon-normal-default);
+  font-size: 14px;
+}
+
 .lime-nav-dropdown__divider {
   height: 1px;
   background: var(--soil-border-subtle);

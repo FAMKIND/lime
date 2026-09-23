@@ -494,14 +494,25 @@
                 <div class="lime-composer__actions">
                   <button type="button" class="lime-composer__aux" title="Attach"><span class="dew dew-plus"></span></button>
                   <div class="lime-composer__voice-dropdown">
-                    <!-- dew has no waveform icon (checked the full 53-icon set); icon-audio-waveform
-                         is a real Lucide class (already loaded for the toolbar's list/quote icons,
-                         LIME-10-fix4) matching the brief's requested name exactly, just without the
-                         non-existent lucide- prefix. -->
-                    <button type="button" class="lime-composer__aux lime-composer__voice" id="voice-mode-toggle" title="Voice mode"><i class="icon-audio-waveform"></i><span class="dew dew-chevron-down"></span></button>
+                    <!-- Back to a real mic icon (LIME-10-fix10 reverses the LIME-10-fix5 swap
+                         to icon-audio-waveform) — dew-microphone exists directly, no substitute
+                         needed. Sizing already comes from the existing
+                         .lime-composer__aux .dew { font-size: 16px } rule (LIME-10-fix5). -->
+                    <button type="button" class="lime-composer__aux lime-composer__voice" id="voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
                     <div class="lime-nav-dropdown" id="voice-mode-dropdown">
-                      <div class="lime-nav-dropdown__item">Default microphone</div>
-                      <div class="lime-nav-dropdown__item">Built-in Microphone</div>
+                      <div class="lime-nav-dropdown__item lime-nav-dropdown__item--active">
+                        <span class="dew dew-check"></span>
+                        Default - MacBook Pro Microphone
+                      </div>
+                      <div class="lime-nav-dropdown__item">
+                        MacBook Pro Microphone (Built-in)
+                      </div>
+                      <div class="lime-nav-dropdown__item">
+                        iPhone Microphone
+                      </div>
+                      <div class="lime-nav-dropdown__item">
+                        Microsoft Teams Audio Device (Virtual)
+                      </div>
                     </div>
                   </div>
                   <!-- dew has no lock icon (checked the full 53-icon set) — dew-shield-check
