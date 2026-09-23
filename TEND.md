@@ -150,3 +150,11 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Added a `.lime-more-menu` wrapper (`position: relative`) around the button+dropdown pair. The brief's markup placed them as plain siblings inside `.lime-center-top`, which has no `position` set -- without a positioned ancestor, the dropdown's `top: 100%; right: 0` would resolve against a much larger box and render in the wrong spot. Necessary for the feature to work at all, not optional polish.
 - Video stays as both a standalone topbar icon and a "Video call" item inside the new dropdown -- intentional per the brief's own "keep video... icons" instruction, not a redundancy to fix.
 - Removed the now-dead `#compose-toggle` click handler (a no-op cosmetic toggle with no real action) since that button no longer exists.
+
+
+## LIME-03s — Replies UI + Message Actions + Date Dividers
+
+- Icon fixes: `dew-emoji` doesn't exist -- used a literal 🙂 emoji character (consistent with how reactions already render as literal emoji elsewhere, not icon glyphs). `dew-ellipsis-horizontal` doesn't exist -- used the real `dew-ellipsis-menu` (same fix as LIME-03r).
+- Reply panel now genuinely mirrors the main chat structure: rewrote all 4 reply items from their own `.lime-reply__*` markup to the same `.lime-message`/`.lime-message--sent|received`/`.lime-message__content` bubble structure the main thread uses -- they now pick up the new hover-actions toolbar automatically, matching "mirror chat UI" literally rather than just visually. Removed the now-dead `.lime-reply__*` CSS.
+- Added hover actions + two date dividers ("Monday, July 7" / "Tuesday, July 8") across all 10 real messages in the main thread (skipped the system message, which has no author to react to). The two dates are inferred from the reply thread's original "Jul 7" anchor plus the existing AM/PM day-jump in the timestamps -- no other date was given, and there's only one real day-boundary in the existing content.
+- Reply-count button simplified per the brief's own literal replacement (dropped the avatar-stack and separate date span) -- removed the now-orphaned `.lime-message__date`/`.lime-replies__avatars` CSS left dead by that change.

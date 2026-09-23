@@ -1434,10 +1434,69 @@ body {
 }
 
 .lime-message {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: var(--seed-space-3);
   max-width: min(70ch, 640px);
+}
+
+/* ── Hover actions ── */
+.lime-message__actions {
+  display: none;
+  position: absolute;
+  top: -16px;
+  right: 8px;
+  background: var(--soil-bg-surface);
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-md);
+  box-shadow: var(--seed-shadow-sm);
+  padding: 2px;
+  gap: 2px;
+}
+
+.lime-message:hover .lime-message__actions {
+  display: flex;
+}
+
+.lime-message__actions button {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  border-radius: var(--seed-radius-sm);
+  cursor: pointer;
+  color: var(--soil-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lime-message__actions button:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
+.lime-message__actions button span {
+  font-size: 14px;
+}
+
+/* ── Date dividers ── */
+.lime-date-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  margin: var(--seed-space-4) 0;
+  color: var(--soil-text-muted);
+  font-size: var(--seed-text-xs);
+}
+
+.lime-date-divider::before,
+.lime-date-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--soil-border-subtle);
 }
 
 .lime-message--sent,
@@ -1505,13 +1564,10 @@ body {
   white-space: nowrap;
 }
 
-.lime-replies__avatars .seed-avatar {
-  border-width: 1.5px;
-}
-
-.lime-message__date {
-  font-size: var(--seed-text-xs);
+.lime-replies__time {
   color: var(--soil-text-muted);
+  margin-left: var(--seed-space-2);
+  font-weight: normal;
 }
 
 .lime-message__map {
@@ -2019,39 +2075,10 @@ body {
   display: none;
 }
 
-.lime-reply {
-  display: flex;
-  gap: var(--seed-space-2);
-}
-
-.lime-reply__body {
-  min-width: 0;
-}
-
-.lime-reply__meta {
-  display: flex;
-  align-items: baseline;
-  gap: var(--seed-space-2);
-  margin-bottom: var(--seed-space-1);
-}
-
-.lime-reply__sender {
-  font-size: var(--seed-text-sm);
-  font-weight: var(--seed-weight-semibold);
-  color: var(--soil-text);
-}
-
-.lime-reply__time {
-  font-size: var(--seed-text-xs);
-  color: var(--soil-text-muted);
-}
-
-.lime-reply__text {
-  font-size: var(--seed-text-sm);
-  line-height: var(--seed-leading-relaxed);
-  color: var(--soil-text);
-  margin: 0;
-}
+/* Reply items reuse .lime-message/.lime-message__* wholesale now
+   (LIME-03s's "mirror chat UI") instead of their own .lime-reply__*
+   classes, so they automatically pick up bubble styling and hover
+   actions for free — no panel-specific overrides needed. */
 
 .lime-replies-panel__composer {
   flex-shrink: 0;
