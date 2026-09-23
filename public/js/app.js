@@ -231,6 +231,11 @@ function renderReactions(messageEl, reactions) {
       const sender = isSent ? me : teacher;
       thread.insertAdjacentHTML('beforeend', messageHtml(m, sender, isSent));
     });
+    // LIME-11-fix3: covers both the initial page-load render (default
+    // conversation) and every subsequent conversation switch, since both
+    // paths call this same function — renderThread never scrolled at all
+    // before this, always leaving the view at the top of the thread.
+    thread.scrollTop = thread.scrollHeight;
   }
 
   function selectConversation(conversation, teacher) {

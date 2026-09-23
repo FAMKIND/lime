@@ -441,3 +441,11 @@ No brief IDs; these landed from direct chat requests/bug reports rather than for
 - Added a live "X replies · last reply TIME" line below the quote, computed from `getRepliesForMessage()` every time the panel opens — like reactions and the reply list itself, never trusts the seed message's own stale `reply_count`/`last_reply_at` fields.
 - **Known limitation, not fixed**: reacting to the quote (visible in the right panel) doesn't live-update that same message's bubble in the main thread if it's simultaneously visible in the center panel (or vice versa) — `renderReactions()` only touches the one DOM element that was actually clicked, not every element sharing that message's id. Would need to fix by re-rendering all matching elements, not the code path yet.
 - Verified via source inspection only (brace/tag balance, `app.js`/`data.js` syntax checks) — no live introspection available. Opened in Firefox for the user's visual gate check; this is the second largest, least-verified change of the session after LIME-11 itself.
+
+
+## LIME-11-fix3 — Scroll to bottom on conversation open
+
+- Verified before touching anything: `renderThread()` — used for both the initial page-load render of the default conversation and every subsequent conversation switch, since both paths call this same function — never scrolled at all, always leaving the view at the top of the thread. Matches this brief's premise exactly, unlike several earlier "fix" briefs this session that described already-corrected state.
+- Item 3 (scroll after sending) was already in place from LIME-07, confirmed unchanged rather than re-added.
+- Added `thread.scrollTop = thread.scrollHeight` at the end of `renderThread()`, after the message-rendering loop — the empty-conversation branch (`msgs.length === 0`) returns before reaching it, so an empty thread is correctly left alone (nothing to scroll to).
+- Brief's own gate was "No — behavioral check only"; no browser check performed for this one.
