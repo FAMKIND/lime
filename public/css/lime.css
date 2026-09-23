@@ -1152,6 +1152,48 @@ body {
   #left-panel-toggle {
     display: none;
   }
+
+  /* LIME-12: overrides Seed's own mobile treatment for this panel
+     (vendor/seed/components/layout/layout.css) — Seed's version is a
+     floating, inset "card" (top/left/bottom: 16px, not flush against
+     any edge) toggled via display:none/flex, which can't be animated
+     at all (display changes are instant, never transitionable). That
+     combination — no slide, inset on every side — is what read as
+     "floating icons over content" rather than an actual drawer.
+     Overridden here with a real edge-to-edge panel that's always
+     "displayed" but parked off-screen via `left`, so `left`'s own
+     transition can actually animate the slide-in/out. No separate
+     stray-positioned elements were found causing the same symptom —
+     nothing in this app's own nav/sidebar CSS sets position:fixed or
+     :absolute; Seed's own unused .seed-layout__reveal-*/__backdrop
+     rules are inert since Lime's markup never includes those elements. */
+  .seed-layout__left {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: -100%;
+    bottom: 0;
+    width: 280px;
+    z-index: 100;
+    background: var(--soil-bg-canvas);
+    transition: left 0.2s ease;
+  }
+
+  /* Seed's own .seed-layout--mobile-open .seed-layout__left rule
+     (layout.css) is 2-class specificity, higher than the single-class
+     rule above — its top/bottom/width/z-index (the 16px-inset "card"
+     values) would win over source order alone. Restating every
+     property here, not just `left`, so nothing falls through to a
+     hybrid of Seed's card insets + this rule's edge-to-edge position. */
+  .seed-layout--mobile-open .seed-layout__left {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 100;
+  }
 }
 
 .lime-search-modal {
