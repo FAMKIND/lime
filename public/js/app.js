@@ -669,6 +669,7 @@ wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
 (function () {
   const composer = document.getElementById('composer');
   const input = document.getElementById('composer-input');
+  const thread = document.getElementById('thread-messages');
   if (!composer || !input) return;
 
   composer.addEventListener('focusin', () => composer.classList.add('is-expanded'));
@@ -679,6 +680,11 @@ wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
+    // As the textarea grows taller (LIME-10-fix13), it eats into
+    // .lime-messages's vertical space from the bottom — rescrolling to
+    // the thread's own bottom keeps the latest message in view instead
+    // of it sliding out from under the now-taller composer.
+    if (thread) thread.scrollTop = thread.scrollHeight;
   });
 })();
 
