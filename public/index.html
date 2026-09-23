@@ -459,36 +459,40 @@
                    voice-mode dropdown is a decorative placeholder (not a
                    real navigator.mediaDevices list) per the LIME-10 gate:
                    real enumeration needs a live mic-permission prompt for
-                   a feature that still can't record anything. Send icon:
-                   the brief's dew-corner-down-left doesn't exist in dew's
-                   53-icon set; kept dew-chevron-up, already used for Send
-                   everywhere else in this app (main + reply composer). -->
+                   a feature that still can't record anything. Icons not
+                   in dew's 53-icon set (list-ordered, list, quote, mic,
+                   corner-down-left) are substituted per the same pattern
+                   as LIME-09/10: a real equivalent (microphone, chevron-up)
+                   where one exists, a plain glyph where none does. -->
               <footer class="lime-composer" id="composer">
-                <div class="lime-composer__toolbar">
-                  <button type="button" class="lime-composer__tool" title="Bold"><b>B</b></button>
-                  <button type="button" class="lime-composer__tool" title="Italic"><i>I</i></button>
-                  <button type="button" class="lime-composer__tool" title="Underline"><u>U</u></button>
-                  <button type="button" class="lime-composer__tool" title="Strikethrough"><s>S</s></button>
-                  <span class="lime-composer__divider"></span>
-                  <button type="button" class="lime-composer__tool" title="Link"><span class="dew dew-link"></span></button>
-                  <button type="button" class="lime-composer__tool" title="Numbered list">1.</button>
-                  <button type="button" class="lime-composer__tool" title="Bulleted list">&bull;</button>
-                  <span class="lime-composer__divider"></span>
-                  <button type="button" class="lime-composer__tool" title="Quote">&rdquo;</button>
-                  <button type="button" class="lime-composer__tool" title="Code">&lt;/&gt;</button>
+                <div class="lime-composer__box">
+                  <textarea class="lime-composer__input" id="composer-input" placeholder="Say something meaningful..." rows="1"></textarea>
+                  <div class="lime-composer__toolbar">
+                    <button type="button" class="lime-composer__tool" title="Bold"><b>B</b></button>
+                    <button type="button" class="lime-composer__tool" title="Italic"><i>I</i></button>
+                    <button type="button" class="lime-composer__tool" title="Underline"><u>U</u></button>
+                    <button type="button" class="lime-composer__tool" title="Strikethrough"><s>S</s></button>
+                    <span class="lime-composer__divider"></span>
+                    <button type="button" class="lime-composer__tool" title="Link"><span class="dew dew-link"></span></button>
+                    <button type="button" class="lime-composer__tool" title="Numbered list">1.</button>
+                    <button type="button" class="lime-composer__tool" title="Bulleted list">&bull;</button>
+                    <span class="lime-composer__divider"></span>
+                    <button type="button" class="lime-composer__tool" title="Quote">&rdquo;</button>
+                    <button type="button" class="lime-composer__tool" title="Code">&lt;/&gt;</button>
+                    <span class="lime-composer__spacer"></span>
+                    <button type="button" class="lime-composer__submit" id="composer-send" title="Send"><span class="dew dew-chevron-up"></span></button>
+                  </div>
                 </div>
-                <textarea class="lime-composer__input" id="composer-input" placeholder="Say something meaningful..." rows="1"></textarea>
-                <div class="lime-composer__bottom">
+                <div class="lime-composer__actions">
                   <button type="button" class="lime-composer__aux" title="Attach"><span class="dew dew-plus"></span></button>
                   <div class="lime-composer__voice-dropdown">
-                    <button type="button" class="lime-composer__aux" id="voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
+                    <button type="button" class="lime-composer__aux lime-composer__voice" id="voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
                     <div class="lime-nav-dropdown" id="voice-mode-dropdown">
                       <div class="lime-nav-dropdown__item">Default microphone</div>
                       <div class="lime-nav-dropdown__item">Built-in Microphone</div>
                     </div>
                   </div>
                   <span class="lime-composer__privacy">Your messages are always secure and encrypted, we never sell your data.</span>
-                  <button type="button" class="lime-composer__send" id="composer-send" title="Send"><span class="dew dew-chevron-up"></span></button>
                 </div>
               </footer>
             </div>

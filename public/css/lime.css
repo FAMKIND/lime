@@ -2100,9 +2100,10 @@ body {
    sitting just above it) lives entirely in gradients.css now, since
    it's a bespoke rule that doesn't fit the reusable .has-fade-y
    pattern — see the comment there for why. */
-/* Stacked toolbar / input / actions (LIME-09) — was a single row with
-   Attach+input+mic+Send all in one pill; the toolbar and actions bars
-   are new sibling rows above/below that same pill. */
+/* Box (textarea + toolbar, one bordered container) above, actions row
+   outside/below it (LIME-10-fix — matches the Claude reference
+   screenshots the brief gave; LIME-10's version had the textarea as
+   its own pill with the toolbar as a separate sibling row instead). */
 .lime-composer {
   position: absolute;
   left: 0;
@@ -2116,29 +2117,56 @@ body {
   background: var(--soil-bg-canvas);
 }
 
-/* Toolbar is hidden at rest, shown only while #composer.is-expanded
-   (LIME-10 — app.js toggles that class on focusin/focusout). */
+.lime-composer__box {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-lg);
+  background: var(--soil-bg-surface);
+  padding: var(--seed-space-2) var(--seed-space-3);
+}
+
+.lime-composer__box:focus-within {
+  border-color: var(--calm-border-normal-default);
+}
+
+/* This row always shows — .lime-composer__submit (Send) has to stay
+   visible at rest. Only the individual tool buttons/dividers hide until
+   #composer.is-expanded (app.js toggles that class on focusin/focusout). */
 .lime-composer__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-1);
+}
+
+.lime-composer__tool,
+.lime-composer__toolbar > .lime-composer__divider {
   display: none;
-  align-items: center;
-  gap: var(--seed-space-1);
 }
 
-#composer.is-expanded .lime-composer__toolbar {
+#composer.is-expanded .lime-composer__tool {
   display: flex;
 }
 
-.lime-composer__bottom {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-1);
+#composer.is-expanded .lime-composer__toolbar > .lime-composer__divider {
+  display: block;
+}
+
+.lime-composer__spacer {
+  flex: 1;
 }
 
 .lime-composer__divider {
   width: 1px;
-  height: 20px;
-  margin: 0 var(--seed-space-1);
+  height: 16px;
+  margin: 0 var(--seed-space-2);
   background: var(--soil-border-subtle);
+}
+
+.lime-composer__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-1);
 }
 
 .lime-composer__voice-dropdown {
@@ -2167,8 +2195,9 @@ body {
 }
 
 /* Still used by the reply panel's own composer (a plain <input>,
-   untouched by LIME-10) — the main composer no longer wraps its
-   textarea in this pill (see textarea.lime-composer__input below). */
+   untouched by LIME-10/LIME-10-fix) — the main composer no longer
+   wraps its textarea in this pill (see textarea.lime-composer__input
+   below). */
 .lime-composer__field {
   display: flex;
   align-items: center;
@@ -2201,32 +2230,70 @@ body {
   outline: none;
 }
 
-/* Main composer's textarea (LIME-10) — no .lime-composer__field wrapper
-   around it any more, so it needs its own full pill styling instead of
-   borrowing the wrapper's. Scoped to the tag so the reply panel's plain
-   <input class="lime-composer__input"> (still inside .lime-composer__field)
-   is completely unaffected. */
+/* Main composer's textarea (LIME-10) — lives inside .lime-composer__box
+   now (LIME-10-fix), which supplies the border/background/radius, so
+   the textarea itself stays borderless/transparent. Scoped to the tag
+   so the reply panel's plain <input class="lime-composer__input">
+   (still inside .lime-composer__field) is completely unaffected. */
 textarea.lime-composer__input {
   display: block;
   flex: none;
   width: 100%;
-  min-height: 40px;
+  min-height: 24px;
   max-height: 160px;
-  padding: var(--seed-space-2) var(--seed-space-4);
-  border: 1px solid var(--soil-border-subtle);
-  border-radius: var(--seed-radius-lg);
-  background: var(--soil-bg-surface);
+  padding: var(--seed-space-1) 0;
+  border: none;
+  background: transparent;
   resize: none;
   line-height: var(--seed-leading-snug);
   overflow-y: auto;
 }
 
 textarea.lime-composer__input:focus {
-  border-color: var(--calm-border-normal-default);
+  outline: none;
 }
 
+/* No `display` here on purpose — .lime-composer__tool's default (none,
+   shown only when #composer.is-expanded, set earlier in this file) would
+   otherwise be overridden by this unconditional `display: flex`, since
+   both rules are single-class specificity and this one comes later in
+   source order. .lime-composer__aux (always visible) gets its own
+   display: flex right below instead. */
 .lime-composer__aux,
 .lime-composer__tool {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--seed-radius-full);
+  color: var(--soil-text-muted);
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.lime-composer__aux {
+  display: flex;
+}
+
+.lime-composer__aux:hover,
+.lime-composer__tool:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
+.lime-composer__aux .dew,
+.lime-composer__tool .dew {
+  font-size: 20px;
+}
+
+/* Plain icon button, no background pill — the brief only named this
+   for .lime-composer__tool/.lime-composer__aux explicitly, but 16px
+   here would have left the one icon in the toolbar inconsistent with
+   the 20px unification everywhere else, undercutting the point of it. */
+.lime-composer__submit {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
@@ -2241,15 +2308,13 @@ textarea.lime-composer__input:focus {
   transition: background 80ms ease, color 80ms ease;
 }
 
-.lime-composer__aux:hover,
-.lime-composer__tool:hover {
+.lime-composer__submit:hover {
   background: var(--calm-bg-subtle-hover);
   color: var(--soil-text);
 }
 
-.lime-composer__aux .dew,
-.lime-composer__tool .dew {
-  font-size: 18px;
+.lime-composer__submit .dew {
+  font-size: 20px;
 }
 
 .lime-composer__send {
