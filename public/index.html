@@ -18,6 +18,14 @@
   <link rel="stylesheet" href="../vendor/seed/components/input/input.css">
   <link rel="stylesheet" href="../vendor/seed/components/nav/nav.css">
   <link rel="stylesheet" href="../vendor/seed/icons/dew/dist/dew.css">
+  <!-- Lucide (LIME-10-fix4) for 3 composer icons dew doesn't have — list
+       numbers/bullets/quote. Real classes are icon-<name>, not lucide-<name>
+       (checked against the actual resolved CSS, not assumed); the trigger
+       class is icon- itself, no separate base "lucide" class exists. This
+       is a live network dependency in an otherwise fully offline app (the
+       README lists "local-first/offline" as a constraint) — flagged, kept
+       as @latest per this brief's explicit instruction. -->
+  <link rel="stylesheet" href="https://unpkg.com/lucide-static@latest/font/lucide.css">
   <!-- Lime-specific -->
   <link rel="stylesheet" href="css/lime.css">
   <link rel="stylesheet" href="css/gradients.css">
@@ -474,13 +482,13 @@
                     <button type="button" class="lime-composer__tool" title="Strikethrough"><s>S</s></button>
                     <span class="lime-composer__divider"></span>
                     <button type="button" class="lime-composer__tool" title="Link"><span class="dew dew-link"></span></button>
-                    <button type="button" class="lime-composer__tool" title="Numbered list">1.</button>
-                    <button type="button" class="lime-composer__tool" title="Bulleted list">&bull;</button>
+                    <button type="button" class="lime-composer__tool" title="Numbered list"><i class="icon-list-ordered"></i></button>
+                    <button type="button" class="lime-composer__tool" title="Bulleted list"><i class="icon-list"></i></button>
                     <span class="lime-composer__divider"></span>
-                    <button type="button" class="lime-composer__tool" title="Quote">&rdquo;</button>
+                    <button type="button" class="lime-composer__tool" title="Quote"><i class="icon-text-quote"></i></button>
                     <button type="button" class="lime-composer__tool" title="Code">&lt;/&gt;</button>
                     <span class="lime-composer__spacer"></span>
-                    <button type="button" class="lime-composer__return" id="composer-send" title="Send"><span class="dew dew-chevron-up"></span></button>
+                    <button type="button" class="lime-composer__return" id="composer-send" title="Send">&#8629;</button>
                   </div>
                 </div>
                 <div class="lime-composer__actions">

@@ -2112,6 +2112,7 @@ body {
   z-index: 2;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: var(--seed-space-2);
   padding: var(--seed-space-3) var(--seed-space-4) var(--seed-space-4);
   background: var(--soil-bg-canvas);
@@ -2120,6 +2121,14 @@ body {
 .lime-composer__box {
   display: flex;
   flex-direction: column;
+  /* width, not just max-width: .lime-composer now has align-items:center
+     (LIME-10-fix4), which makes flex children shrink-to-fit their content
+     by default — max-width alone only caps growth, it doesn't make a
+     shrink-to-fit box actually claim 75%. Verified empirically: with only
+     max-width this rendered at ~34% (the textarea's small intrinsic
+     shrink-to-fit width), not the ~75% the brief's own goal/verification
+     steps call for. */
+  width: 75%;
   border: 1px solid var(--soil-border-subtle);
   border-radius: var(--seed-radius-lg);
   background: var(--soil-bg-surface);
@@ -2159,16 +2168,16 @@ body {
 }
 
 .lime-composer__tool {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border: none;
   background: none;
-  border-radius: 4px;
+  border-radius: 50%;
   cursor: pointer;
   align-items: center;
   justify-content: center;
   color: var(--soil-text-muted);
-  font-size: 15px;
+  font-size: 18px;
   font-family: var(--seed-font-ui);
 }
 
@@ -2178,11 +2187,16 @@ body {
 }
 
 .lime-composer__tool b { font-weight: 700; font-style: normal; }
-.lime-composer__tool i { font-style: italic; font-weight: 400; }
+/* :not([class]) — only the plain <i>I</i> in the Italic button itself;
+   the icon-list-ordered/icon-list/icon-text-quote <i> tags (LIME-10-fix4)
+   are icon-font glyphs, not text, and rendering those italic/slanted
+   would just look broken, not "italic". */
+.lime-composer__tool i:not([class]) { font-style: italic; font-weight: 400; }
 .lime-composer__tool u { text-decoration: underline; }
 .lime-composer__tool s { text-decoration: line-through; }
 
-.lime-composer__tool .dew {
+.lime-composer__tool .dew,
+.lime-composer__tool [class^="icon-"] {
   font-size: 16px;
 }
 
@@ -2198,25 +2212,28 @@ body {
   flex: 1;
 }
 
+/* Content is now a plain ↵ character, not a wrapped .dew icon (LIME-10-fix4
+   swapped the chevron-up dew icon for the return symbol directly) — so
+   font-size lives on the button itself; the old .lime-composer__return .dew
+   rule is dead and was removed rather than left pointing at nothing. */
 .lime-composer__return {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border: none;
   background: none;
+  border-radius: 50%;
   color: var(--soil-text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-}
-
-.lime-composer__return .dew {
   font-size: 18px;
+  cursor: pointer;
 }
 
 .lime-composer__actions {
   display: flex;
   align-items: center;
+  width: 75%; /* same shrink-to-fit fix as .lime-composer__box above */
   padding: 12px 4px 0;
   gap: 4px;
 }
@@ -2226,12 +2243,12 @@ body {
   height: 28px;
   border: none;
   background: none;
+  border-radius: 50%;
   color: var(--soil-text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  border-radius: 4px;
 }
 
 .lime-composer__aux:hover {
