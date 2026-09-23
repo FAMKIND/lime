@@ -117,6 +117,12 @@ body {
    --lime-avatar-* tokens (Seed's palette has nowhere near this range)
    rather than hardcoding hex directly into each rule. */
 :root {
+  /* Not in Seed's own lime scale (closest, --seed-lime-300, is a
+     different, more pastel green) — a new token rather than
+     hardcoding the hex inline, same reasoning as the avatar palette
+     below: the project's own README requires token grammar throughout,
+     not raw hex values scattered into rules. */
+  --lime-badge-light: #a3e635;
   --lime-avatar-blush:      #F9D8DA;
   --lime-avatar-peach:      #FCDCC5;
   --lime-avatar-butter:     #FBEFB8;
@@ -307,13 +313,26 @@ body {
    space-between/flex:1 role .lime-sidebar__top used to provide —
    expanded, this keeps mark+wordmark left and the toggle pinned to the
    row's right edge, unchanged from before this brief. */
+/* justify-content:space-between (removed) was the real reason none of
+   the previous gap changes (8px, 16px, back and forth) ever visibly
+   did anything: with 3 children in a flex:1 container, space-between
+   distributes ALL the row's leftover width evenly between them —
+   gap only adds to that distribution, it doesn't govern the spacing
+   by itself. Mark/wordmark/toggle were never tightly grouped at all;
+   they were spread across the row's full width regardless of gap's
+   value. margin-left:auto on the toggle alone (below) now does the
+   "pin it to the right edge" job instead, letting gap actually
+   control the mark-to-wordmark spacing. */
 .lime-sidebar__brand {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--seed-space-4);
+  gap: var(--seed-space-2);
   flex: 1;
-  justify-content: space-between;
+}
+
+.lime-sidebar__brand .lime-sidebar__toggle {
+  margin-left: auto;
 }
 
 /* Collapsed rail: logomark only (no wordmark). Brand shrinks to fit
@@ -373,14 +392,20 @@ body {
   display: block;
 }
 
+/* height:auto per the brief's literal fix — the fixed height moved
+   onto the img itself instead. Doing it the other way (leaving the
+   img at height:100% of an auto-height parent) would be a circular
+   percentage that CSS resolves back to the img's own intrinsic size —
+   the real exported logo-wordmark.svg has a ~2.55:1 aspect ratio, so
+   it would render far larger than intended, not smaller. */
 [data-brand-wordmark] {
   display: inline-flex;
   align-items: center;
-  height: 16px;
+  height: auto;
 }
 
 [data-brand-wordmark] img {
-  height: 100%;
+  height: 16px;
   width: auto;
   display: block;
 }
@@ -513,7 +538,11 @@ body {
   position: absolute;
   top: -6px;
   right: -10px;
-  background: var(--good-bg-bold-default);
+  background: var(--lime-badge-light);
+  /* Its seed-badge--bad class still supplies a dark-red text color
+     (meant for a subtle red background) — overridden to a dark green
+     so the "3" doesn't clash against this lighter green fill. */
+  color: var(--good-text-bold-default);
   box-shadow: 0 0 0 2px var(--soil-bg-canvas);
 }
 
@@ -658,6 +687,18 @@ body {
   text-align: left;
   cursor: pointer;
   border-radius: var(--seed-radius-md);
+}
+
+/* .lime-sidebar__user-icon (the brief's target) no longer exists —
+   LIME-03u replaced the person-icon placeholder it wrapped with the
+   .lime-avatar initials system, inside .lime-sidebar__user-trigger.
+   Width/height (24px) already match seed-avatar--sm's own default;
+   only the font-size (10px there) actually needed the bump this asked
+   for, so initials stay legible at this size. */
+.lime-sidebar__user-trigger .lime-avatar {
+  width: 24px;
+  height: 24px;
+  font-size: var(--seed-text-xs);
 }
 
 .lime-sidebar__user-trigger:hover {

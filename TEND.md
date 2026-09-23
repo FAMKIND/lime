@@ -196,3 +196,13 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 ## LIME-03x — Reactions Outside Bubble
 
 - Applied the brief's rules as given, but scoped them to the existing `:not(:empty)` selector from LIME-03v rather than the bare `.lime-message__reactions` -- the new negative `margin-top` would otherwise slightly compress the bubble's bottom spacing even on the ~14 messages that have no reactions yet.
+
+
+## LIME-03y — Mobile Nav Fix, Badge Color, Avatar Size, Logo Spacing
+
+- Logo gap: reversed 16px->8px per the brief's own explicit, knowing call-back ("tighter than 16px since wordmark is small") -- not a stale reference.
+- Wordmark height: the brief correctly identified a real bug (fixed 16px height on the wrapper while its img was height:100%), but its literal fix (bare `height:auto` on the wrapper) would have created a circular percentage -- the real exported logo-wordmark.svg has a ~2.55:1 aspect ratio and would render far larger than intended. Fixed correctly by moving the fixed height onto the img itself, leaving the wrapper at auto.
+- Skipped the brief's mobile media-query block entirely -- checked all three properties it wanted to add against the current CSS and found all three already match the unconditional, existing rules exactly (a pure no-op). No visible mobile-nav bug was identified from these properties.
+- Badge color: `#a3e635` doesn't match any Seed token, and hardcoding it inline would violate this project's own README constraint ("use seed... token grammar"). Followed the same precedent as the avatar-identity palette -- added a named `--lime-badge-light` custom property instead of inline hex. Also added a matching dark-green text-color override, since `seed-badge--bad` was still supplying dark-red text meant for a red background.
+- Avatar sizing: `.lime-sidebar__user-icon` no longer exists (renamed in LIME-03u) -- targeted the current `.lime-sidebar__user-trigger .lime-avatar` instead. Width/height already matched 24px by default; only the font-size (10px->12px) was a real change.
+- **Real bug found after a user screenshot, unrelated to any single task above**: none of the many prior `gap` changes on `.lime-sidebar__brand` (LIME-03k, 03u, 03w, 03y) had ever visibly done anything, because `justify-content: space-between` was distributing the row's entire leftover width evenly across mark/wordmark/toggle -- gap only added to that distribution, it never governed the spacing by itself. Removed `space-between`, added `margin-left: auto` to the toggle alone to keep it pinned right, so gap finally actually controls mark-to-wordmark spacing. User tested both 16px and 8px live and picked 8px as final.
