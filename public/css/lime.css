@@ -328,11 +328,6 @@ body {
   display: none;
 }
 
-.seed-layout--collapsed-left [data-brand-mark] {
-  width: 32px;
-  height: 32px;
-}
-
 /* Collapsed rail: the toggle overlays the mark exactly (inset:0 of
    .lime-sidebar__brand, which shrinks to the mark's own footprint
    above) and stays invisible until hovered, at which point it cross-
@@ -367,8 +362,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
 }
 
@@ -666,13 +661,12 @@ body {
   flex-shrink: 0;
 }
 
-/* Breadcrumbs are a mobile-only back-navigation affordance — tablet and
-   desktop show both/all panels at once, so "where am I" is already
-   visible without them. Same reasoning applies to the local contacts
-   search field: desktop/tablet use the nav sidebar's global search
-   instead, so this one only needs to exist on mobile. */
+/* The local contacts search field stays mobile-only — desktop/tablet
+   use the nav sidebar's global search instead. Breadcrumbs used to be
+   mobile-only too (tablet/desktop showed both/all panels at once, so
+   "where am I" felt redundant there), but LIME-03n restored them at
+   every size. */
 @media (min-width: 768px) {
-  .lime-topbar__crumb,
   .lime-contacts__search {
     display: none;
   }
@@ -684,16 +678,17 @@ body {
    the crumb just overflows instead of truncating. Giving it the same
    flex-basis:0 as the spacer, and zeroing the spacer outright since it
    has nothing left to do once the crumb itself absorbs the growing
-   role, makes the crumb the one thing that actually yields. */
-@media (max-width: 767px) {
-  .lime-topbar__crumb {
-    flex: 1 1 0%;
-    min-width: 0;
-  }
+   role, makes the crumb the one thing that actually yields. Was mobile-
+   only while breadcrumbs were mobile-only; now unconditional since
+   LIME-03n shows them at every size and the same overflow risk applies
+   everywhere. */
+.lime-topbar__crumb {
+  flex: 1 1 0%;
+  min-width: 0;
+}
 
-  .lime-center-top__spacer {
-    flex: 0 0 0px;
-  }
+.lime-center-top__spacer {
+  flex: 0 0 0px;
 }
 
 /* Breadcrumb content tracks the current mobile view — "Teachers" is
@@ -758,10 +753,6 @@ body {
 
 .lime-topbar__crumb-caret .dew {
   font-size: 12px;
-}
-
-.lime-center-top__spacer {
-  flex: 1;
 }
 
 .lime-topbar__avatars {
@@ -1815,19 +1806,6 @@ body {
    PANEL 3 — RIGHT PROFILE
 ───────────────────────────────────────────────────── */
 
-/* Close button — moved here from .lime-center-top (LIME-03l): it now
-   lives inside the panel it closes rather than as an external toggle.
-   Opening the panel still happens elsewhere (avatar/replies/breadcrumb
-   triggers) — this button is close-only, no open state or icon-swap.
-   .seed-layout__right already has position:relative from Seed's own
-   base rule, so no extra positioning context is needed here. */
-.lime-right-panel__toggle {
-  position: absolute;
-  top: var(--seed-space-3);
-  right: var(--seed-space-3);
-  z-index: 1;
-}
-
 .lime-profile-panel {
   height: 100%;
   display: flex;
@@ -2180,12 +2158,16 @@ body {
     border-radius: 0;
   }
 
-  /* Context-aware header: contacts view has no selected person, so
-     Jean Chung's avatar has nothing to act on yet — only "Me" (Shem R)
-     shows. Thread/panel views restore both. (#right-panel-toggle no
-     longer needs its own rule here — LIME-03l moved it inside
-     #right-panel itself, which is already hidden in contacts view via
-     the rules above, so hiding the button too would be redundant.) */
+  /* Context-aware header: contacts view has no selected person, so the
+     right-panel toggle and Jean Chung's avatar have nothing to act on
+     yet — only "Me" (Shem R) shows. Thread/panel views restore both.
+     (LIME-03l had moved the toggle inside #right-panel itself, making
+     this specific rule briefly redundant; LIME-03n moved it back to
+     .lime-center-top, so it's needed again.) */
+  #layout[data-mobile-view="contacts"] #right-panel-toggle {
+    display: none;
+  }
+
   #layout[data-mobile-view="contacts"] .lime-topbar__avatars .seed-avatar:not([data-name="Shem R"]) {
     display: none;
   }

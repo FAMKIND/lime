@@ -213,11 +213,10 @@ function wireHoverPreviewToggle(toggle, initial, paint, apply) {
 
 // Shared by every trigger that opens/closes the right panel
 // (open-profile-avatars, open-replies, #right-panel-toggle itself, the
-// mobile router, auto-collapse-on-shrink). #right-panel-toggle moved
-// inside #right-panel in LIME-03l and became close-only — it can no
-// longer serve as the thing other triggers ".click()" to open the
-// panel, since clicking it now always closes. This is the single
-// place that actually flips the panel's open/closed state.
+// mobile router, auto-collapse-on-shrink, and the LIME-03n message
+// sender/avatar triggers below) — the single place that actually flips
+// the panel's open/closed state, so every trigger stays correct
+// regardless of how #right-panel-toggle itself is currently wired.
 function setRightPanelOpen(isOpen) {
   const layout = document.getElementById('layout');
   const toggle = document.getElementById('right-panel-toggle');
@@ -264,31 +263,59 @@ function setRightPanelOpen(isOpen) {
 })();
 
 // ── Right profile panel toggle ──────────────────────────
-// #right-panel-toggle now lives inside #right-panel itself (LIME-03l)
-// and is close-only — no icon-swap, no hover-preview, since there's
-// nothing to preview toward. Restores its persisted open/closed state
-// on load, same as before.
+// LIME-03l had briefly moved #right-panel-toggle inside #right-panel
+// and made it close-only; LIME-03n moved it back to .lime-center-top
+// and restored the full open/close icon-swap toggle, same as before
+// LIME-03l.
 (function () {
   const layout = document.getElementById('layout');
   const toggle = document.getElementById('right-panel-toggle');
   if (!layout || !toggle) return;
 
-  const saved = localStorage.getItem('lime-right-panel-open');
-  setRightPanelOpen(saved === null ? true : saved === 'true');
+  const icon = toggle.querySelector('.dew');
 
-  toggle.addEventListener('click', () => setRightPanelOpen(false));
+  function paintIcon(isOpen) {
+    icon.classList.toggle('dew-sidebar-right-open',   isOpen);
+    icon.classList.toggle('dew-sidebar-right-closed', !isOpen);
+  }
+
+  const saved = localStorage.getItem('lime-right-panel-open');
+  const isOpen = saved === null ? true : saved === 'true';
+  setRightPanelOpen(isOpen);
+  wireHoverPreviewToggle(toggle, isOpen, paintIcon, setRightPanelOpen);
 
   // Second trigger: the participant avatar in the center top row opens
-  // the panel (never closes it — closing is the dedicated button's job
-  // now). The breadcrumb's "Jean Chung" segment (#crumb-thread) used to
-  // double as this same trigger, but LIME-03g redefined it to mean "go
-  // to thread" instead — it no longer opens the profile panel.
+  // the panel (never closes it — that's the toggle's own job). The
+  // breadcrumb's "Jean Chung" segment (#crumb-thread) used to double as
+  // this same trigger, but LIME-03g redefined it to mean "go to thread"
+  // instead — it no longer opens the profile panel.
   const openProfileAvatars = document.getElementById('open-profile-avatars');
   if (openProfileAvatars) {
     openProfileAvatars.addEventListener('click', () => {
       if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
     });
   }
+})();
+
+// ── Profile panel opens from any message's sender name/avatar ──
+// LIME-03n: clicking a sender name or avatar anywhere in the thread
+// (not just the topbar avatar-group/breadcrumb) opens the profile view
+// specifically (not replies). Uses setRightPanelOpen directly rather
+// than simulating a click on #right-panel-toggle, since that button's
+// own semantics have changed more than once across recent briefs.
+(function () {
+  const layout     = document.getElementById('layout');
+  const rightPanel = document.getElementById('right-panel');
+  if (!layout || !rightPanel) return;
+
+  document.querySelectorAll('.lime-message__sender, .lime-message .lime-avatar').forEach((el) => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
+      rightPanel.setAttribute('data-panel', 'profile');
+      layout.setAttribute('data-mobile-view', 'panel');
+    });
+  });
 })();
 
 // ── Reply thread panel ────────────────────────────────────
@@ -518,12 +545,16 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
     .filter(Boolean)
     .forEach((btn) => btn.addEventListener('click', () => setView('panel')));
 
-  // right-panel-toggle is excluded from the "go to panel" list above —
-  // LIME-03l made it close-only (it lives inside #right-panel now), so
-  // on mobile it should only ever step back to "thread", never open
-  // "panel" itself.
+  // right-panel-toggle is excluded from the "go to panel" list above:
+  // LIME-03n restored it to a real open/close toggle (undoing LIME-03l's
+  // close-only version), so on mobile it needs to mirror both
+  // directions too rather than a one-way "go to panel" trigger.
   const rightToggle = document.getElementById('right-panel-toggle');
-  if (rightToggle) rightToggle.addEventListener('click', () => setView('thread'));
+  if (rightToggle) {
+    rightToggle.addEventListener('click', () => {
+      setView(layout.getAttribute('data-mobile-view') === 'panel' ? 'thread' : 'panel');
+    });
+  }
 
   const crumbTeachers = document.getElementById('crumb-teachers');
   if (crumbTeachers) crumbTeachers.addEventListener('click', () => setView('contacts'));
