@@ -362,6 +362,40 @@ wireDropdownToggle('more-menu-toggle', 'more-menu');
 wireDropdownToggle('notif-btn', 'notif-dropdown');
 wireDropdownToggle('user-btn', 'user-dropdown');
 
+// ── Reaction picker ────────────────────────────────────────
+// Each .lime-message has its own local .lime-reaction-picker (a
+// shared single-instance picker wouldn't work with the closest()/
+// querySelector() lookup below, and a shared id would also be invalid
+// HTML repeated across every message — the markup only carries the
+// class, not an id).
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.lime-message__actions [title="React"]');
+  if (btn) {
+    // stopImmediatePropagation, not stopPropagation: both this and the
+    // "close all open pickers" listener below are bound to the same
+    // document target, so stopPropagation (which only blocks moving to
+    // a *different* element) wouldn't stop that second listener from
+    // firing right after this one and immediately closing what this
+    // just opened.
+    e.stopImmediatePropagation();
+    const picker = btn.closest('.lime-message').querySelector('.lime-reaction-picker');
+    picker?.classList.toggle('is-open');
+    return;
+  }
+
+  const emoji = e.target.closest('.lime-reaction-picker [data-emoji]');
+  if (emoji) {
+    const msg = emoji.closest('.lime-message');
+    const container = msg.querySelector('.lime-message__reactions');
+    const reaction = document.createElement('span');
+    reaction.className = 'lime-reaction';
+    reaction.innerHTML = emoji.dataset.emoji + ' <span>1</span>';
+    container.appendChild(reaction);
+    emoji.closest('.lime-reaction-picker').classList.remove('is-open');
+  }
+});
+document.addEventListener('click', () => document.querySelectorAll('.lime-reaction-picker.is-open').forEach((p) => p.classList.remove('is-open')));
+
 // ── Nav search → global modal ────────────────────────────
 // Distinct from the center panel's local filter: this searches everywhere
 // (people, messages, jams), opens as a dialog, traps focus, and closes on

@@ -1553,6 +1553,47 @@ body {
   font-size: 14px;
 }
 
+/* ── Reaction picker ── .lime-message already has position:relative
+   (added for .lime-message__actions above), so no extra wrapper is
+   needed here — unlike the nav dropdowns (LIME-03r/03u), which needed
+   one added specifically for this. */
+.lime-reaction-picker {
+  display: none;
+  position: absolute;
+  top: -48px;
+  right: 0;
+  background: var(--soil-bg-surface);
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-full);
+  box-shadow: var(--seed-shadow-md);
+  padding: 4px;
+  gap: 2px;
+  z-index: 20;
+}
+
+.lime-reaction-picker.is-open {
+  display: flex;
+}
+
+.lime-reaction-picker button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  border-radius: var(--seed-radius-full);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.lime-reaction-picker button:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-reaction-picker__add {
+  color: var(--soil-text-muted);
+  font-size: 14px;
+}
+
 /* ── Date dividers ── */
 .lime-date-divider {
   display: flex;
@@ -1670,7 +1711,9 @@ body {
   fill: var(--calm-bg-normal-default);
 }
 
-.lime-message__reactions {
+/* :not(:empty) so the container added to every message (LIME-03v)
+   doesn't add a phantom gap under messages that have no reactions yet. */
+.lime-message__reactions:not(:empty) {
   margin-top: var(--seed-space-2);
 }
 
