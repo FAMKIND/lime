@@ -206,3 +206,11 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Badge color: `#a3e635` doesn't match any Seed token, and hardcoding it inline would violate this project's own README constraint ("use seed... token grammar"). Followed the same precedent as the avatar-identity palette -- added a named `--lime-badge-light` custom property instead of inline hex. Also added a matching dark-green text-color override, since `seed-badge--bad` was still supplying dark-red text meant for a red background.
 - Avatar sizing: `.lime-sidebar__user-icon` no longer exists (renamed in LIME-03u) -- targeted the current `.lime-sidebar__user-trigger .lime-avatar` instead. Width/height already matched 24px by default; only the font-size (10px->12px) was a real change.
 - **Real bug found after a user screenshot, unrelated to any single task above**: none of the many prior `gap` changes on `.lime-sidebar__brand` (LIME-03k, 03u, 03w, 03y) had ever visibly done anything, because `justify-content: space-between` was distributing the row's entire leftover width evenly across mark/wordmark/toggle -- gap only added to that distribution, it never governed the spacing by itself. Removed `space-between`, added `margin-left: auto` to the toggle alone to keep it pinned right, so gap finally actually controls mark-to-wordmark spacing. User tested both 16px and 8px live and picked 8px as final.
+
+
+## LIME-03z — Sidebar Toggle in Right Panel
+
+- Icon fix: same typo pattern as LIME-03l/03t -- the brief's `dew-sidebar-right-close` doesn't exist, used the real `dew-sidebar-right-closed`.
+- Skipped adding `#right-panel { position: relative; }` -- already true from Seed's own `.seed-layout__right` base rule, a no-op.
+- Fifth relocation of this button across recent briefs (LIME-03l in, 03n out, 03p in, 03t out, 03z in again). Moved back into `#right-panel`, close-only, no icon-swap -- exact same pattern as LIME-03p. Updated the mobile router's handler back to close-only and removed the `[data-mobile-view="contacts"] #right-panel-toggle` hide rule (redundant again, since the button's parent panel is already hidden there).
+- Flagged the repeated back-and-forth pattern at the gate; no response yet on settling a final placement.

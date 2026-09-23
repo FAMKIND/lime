@@ -158,9 +158,6 @@
               <button class="lime-dropdown__item"><span class="dew dew-link"></span>Share link</button>
             </div>
           </div>
-          <button class="lime-icon-btn" id="right-panel-toggle" title="Toggle profile panel" aria-expanded="true" aria-controls="right-panel">
-            <span class="dew dew-sidebar-right-open"></span>
-          </button>
         </header>
 
         <div class="lime-center-body">
@@ -1004,6 +1001,9 @@
 
     <!-- Panel 3: Right profile / reply thread -->
     <aside class="seed-layout__right seed-layout__panel--no-bg" id="right-panel" data-panel="profile">
+      <button class="lime-icon-btn lime-panel-close" id="right-panel-toggle" title="Close panel">
+        <span class="dew dew-sidebar-right-closed"></span>
+      </button>
       <div class="lime-profile-panel">
         <div class="lime-profile has-fade-y">
           <div class="fade-top" aria-hidden="true"></div>
