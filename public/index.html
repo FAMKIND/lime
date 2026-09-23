@@ -474,7 +474,15 @@
                    where one exists, a plain glyph where none does. -->
               <footer class="lime-composer" id="composer">
                 <div class="lime-composer__box">
-                  <textarea class="lime-composer__input" id="composer-input" placeholder="Say something meaningful..." rows="1"></textarea>
+                  <!-- Send moved here from inside .lime-composer__toolbar (LIME-10-fix12) —
+                       it needed to stay visible collapsed, which meant the toolbar container
+                       itself could never be display:none, only its individual children
+                       (LIME-10-fix3's workaround). With Send living here instead, the toolbar
+                       can just be display:none as a whole. -->
+                  <div class="lime-composer__row">
+                    <textarea class="lime-composer__input" id="composer-input" placeholder="Say something meaningful..." rows="1"></textarea>
+                    <button type="button" class="lime-composer__return" id="composer-send" title="Send">&#8629;</button>
+                  </div>
                   <div class="lime-composer__toolbar">
                     <button type="button" class="lime-composer__tool" title="Bold"><b>B</b></button>
                     <button type="button" class="lime-composer__tool" title="Italic"><i>I</i></button>
@@ -487,8 +495,6 @@
                     <span class="lime-composer__divider"></span>
                     <button type="button" class="lime-composer__tool" title="Quote"><i class="icon-text-quote"></i></button>
                     <button type="button" class="lime-composer__tool" title="Code">&lt;/&gt;</button>
-                    <span class="lime-composer__spacer"></span>
-                    <button type="button" class="lime-composer__return" id="composer-send" title="Send">&#8629;</button>
                   </div>
                 </div>
                 <div class="lime-composer__actions">

@@ -624,6 +624,7 @@ body {
 
 .lime-nav-dropdown__item:hover {
   background: var(--calm-bg-subtle-hover);
+  cursor: pointer; /* already on the base rule (line above); redundant here but added per the brief's literal ask — couldn't identify or reproduce an actual defect via static review */
 }
 
 /* Currently-selected device in the voice-mode dropdown (LIME-10-fix10) —
@@ -2153,46 +2154,35 @@ body {
   border-color: var(--calm-border-normal-default);
 }
 
-/* This row always shows (not display:none at rest, unlike the brief's
-   literal rule) — .lime-composer__return (Send) lives inside it and has
-   to stay visible even when collapsed, per the explicit "Send always
-   visible" requirement from LIME-10/LIME-10-fix (confirmed again at the
-   LIME-10-fix3 gate rather than silently reversing it). Only the
-   individual .lime-composer__tool buttons/dividers hide/show with
-   #composer.is-expanded — same mechanism as before, just restyled. */
-/* .lime-composer__return (Send) always lives in this row and has to stay
-   visible collapsed, so the row itself can't be display:none — but its
-   padding-top/margin-top were unconditional (LIME-10-fix3), reserving
-   ~24px of vertical space even with every other child hidden. Measured:
-   this alone made the "single line" collapsed box 106px tall. Made both
-   conditional on #composer.is-expanded (LIME-10-fix9) so Send sits flush
-   under the textarea at rest instead. */
-.lime-composer__toolbar {
+/* .lime-composer__row (new, LIME-10-fix12) — Send moved here from inside
+   the toolbar. That's what makes the simplification below possible: the
+   old per-child .lime-composer__tool/.divider display:none workaround
+   (LIME-10-fix3) existed *only* because Send used to live inside the
+   toolbar and had to stay visible collapsed, so the toolbar container
+   itself could never be display:none. With Send moved out, the whole
+   container can be display:none directly — a real container-level
+   toggle, not individual children faking one. */
+.lime-composer__row {
   display: flex;
-  flex-wrap: nowrap; /* already the flex default; stated explicitly per the brief */
-  align-items: center;
-  gap: 2px;
+  align-items: flex-end;
+  gap: 8px;
 }
 
-#composer.is-expanded .lime-composer__toolbar {
+.lime-composer__toolbar {
+  display: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
   padding-top: 16px;
   margin-top: 8px;
 }
 
-.lime-composer__tool,
-.lime-composer__toolbar > .lime-composer__divider {
-  display: none;
-}
-
-#composer.is-expanded .lime-composer__tool {
-  display: inline-flex;
-}
-
-#composer.is-expanded .lime-composer__toolbar > .lime-composer__divider {
-  display: block;
+#composer.is-expanded .lime-composer__toolbar {
+  display: flex;
 }
 
 .lime-composer__tool {
+  display: inline-flex;
   width: 32px;
   height: 32px;
   flex-shrink: 0;
@@ -2245,15 +2235,12 @@ body {
 }
 
 .lime-composer__divider {
+  display: block; /* a <span> — needs this for width/height to apply. Visibility now controlled solely by the parent .lime-composer__toolbar's own display:none/flex. */
   width: 1px;
   height: 16px;
   background: var(--soil-border-subtle);
   margin: 0 6px;
   flex-shrink: 0;
-}
-
-.lime-composer__spacer {
-  flex: 1;
 }
 
 /* Content is now a plain ↵ character, not a wrapped .dew icon (LIME-10-fix4
@@ -2263,6 +2250,7 @@ body {
 .lime-composer__return {
   width: 32px;
   height: 32px;
+  flex-shrink: 0; /* now a sibling of the flex:1 textarea in .lime-composer__row (LIME-10-fix12) */
   border: none;
   background: none;
   border-radius: 50%;
@@ -2343,7 +2331,7 @@ body {
 }
 
 .lime-composer__voice .dew-microphone {
-  font-size: 18px;
+  font-size: 16px; /* was 18px (LIME-10-fix11) — smaller per this brief */
 }
 
 .lime-composer__voice .dew-chevron-down {
@@ -2416,8 +2404,11 @@ body {
    guarantee instead of a side effect of JS timing. */
 textarea.lime-composer__input {
   display: block;
-  flex: none;
-  width: 100%;
+  /* flex:1, not flex:none — LIME-10-fix12 puts this inside
+     .lime-composer__row alongside Send, so it needs to grow and fill
+     the remaining width instead of shrink-to-fit. */
+  flex: 1;
+  min-width: 0;
   /* height, not just min/max-height — already fully pinned to 24px by
      min=max (LIME-10-fix7), so this is a no-op given the current CSS;
      stated explicitly anyway (LIME-10-fix9's literal ask) since the JS
