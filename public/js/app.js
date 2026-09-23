@@ -334,12 +334,13 @@ function setRightPanelOpen(isOpen) {
   });
 })();
 
-// ── Compose toggle (center panel pencil icon) ───────────
-(function () {
-  const toggle = document.getElementById('compose-toggle');
-  if (!toggle) return;
-  toggle.addEventListener('click', () => toggle.classList.toggle('is-active'));
-})();
+// ── More menu dropdown (center panel ellipsis icon) ─────
+// Replaces the old compose/pencil toggle (LIME-03r).
+document.getElementById('more-menu-toggle')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.getElementById('more-menu')?.classList.toggle('is-open');
+});
+document.addEventListener('click', () => document.getElementById('more-menu')?.classList.remove('is-open'));
 
 // ── Nav search → global modal ────────────────────────────
 // Distinct from the center panel's local filter: this searches everywhere

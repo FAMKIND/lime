@@ -142,3 +142,11 @@ Deviation from literal brief text: the brief's placeholder mark request ("simple
 - Put the new system in `gradients.css`, not `lime.css` as instructed -- the brief seems unaware that file exists (it was created in LIME-03o specifically to consolidate gradient logic out of `lime.css`). Editing `lime.css` here would have re-fragmented what was just consolidated.
 - Real technical conflict: the composer's bottom fade is positioned relative to the composer's OWN box (`bottom: 100%`), not the chat area's box, because the composer itself sits at the bottom of `.lime-chat-body`. Forcing it into the generic `.fade-bottom { bottom: 0 }` pattern would render it entirely underneath the opaque composer bar, invisible. Kept it as its own bespoke rule, documented why.
 - Moved the profile fade from `.lime-profile-panel` (parent) directly onto `.lime-profile` itself -- unlike chat's `.lime-messages` (already `position: absolute` for unrelated reasons, so it can't also host positioned children), `.lime-profile` has no such conflict, matching the brief's own naming more literally. Cleaned up the now-dead `position: relative` left on `.lime-profile-panel`.
+
+
+## LIME-03r — Ellipsis Menu + Dropdown
+
+- Icon fix: `dew-ellipsis-horizontal` doesn't exist -- used the real `dew-ellipsis-menu`.
+- Added a `.lime-more-menu` wrapper (`position: relative`) around the button+dropdown pair. The brief's markup placed them as plain siblings inside `.lime-center-top`, which has no `position` set -- without a positioned ancestor, the dropdown's `top: 100%; right: 0` would resolve against a much larger box and render in the wrong spot. Necessary for the feature to work at all, not optional polish.
+- Video stays as both a standalone topbar icon and a "Video call" item inside the new dropdown -- intentional per the brief's own "keep video... icons" instruction, not a redundancy to fix.
+- Removed the now-dead `#compose-toggle` click handler (a no-op cosmetic toggle with no real action) since that button no longer exists.

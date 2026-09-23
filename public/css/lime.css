@@ -626,6 +626,55 @@ body {
   background: var(--calm-bg-subtle-hover);
 }
 
+/* Wrapper needed for .lime-dropdown's top:100%/right:0 to anchor under
+   the ellipsis button specifically — .lime-center-top itself has no
+   position set, so without this the dropdown's containing block would
+   bubble up to a much larger ancestor and render in the wrong spot. */
+.lime-more-menu {
+  position: relative;
+}
+
+.lime-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  min-width: 160px;
+  background: var(--soil-bg-surface);
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-md);
+  box-shadow: var(--seed-shadow-md);
+  padding: var(--seed-space-2);
+  z-index: 100;
+}
+
+.lime-dropdown.is-open {
+  display: block;
+}
+
+.lime-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  width: 100%;
+  padding: var(--seed-space-2) var(--seed-space-3);
+  border: none;
+  background: none;
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+  cursor: pointer;
+  border-radius: var(--seed-radius-sm);
+}
+
+.lime-dropdown__item:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-dropdown__item .dew {
+  font-size: 16px;
+  color: var(--soil-text-muted);
+}
+
 .lime-topbar__crumb {
   display: flex;
   align-items: center;
