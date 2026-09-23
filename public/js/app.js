@@ -245,6 +245,11 @@ if (theme) document.documentElement.setAttribute('data-theme', theme);
 
     composerInput.value = '';
     composerInput.style.height = ''; // drop the auto-grow inline height (LIME-10)
+    // Setting .value directly doesn't fire an 'input' event, so the
+    // is-active toggle (LIME-10-fix14, wired to that event elsewhere)
+    // never sees this clear on its own — reset it here explicitly,
+    // otherwise Send stays looking "active" after a message is sent.
+    if (composerSend) composerSend.classList.remove('is-active');
     thread.scrollTop = thread.scrollHeight;
   }
 
@@ -670,6 +675,7 @@ wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
   const composer = document.getElementById('composer');
   const input = document.getElementById('composer-input');
   const thread = document.getElementById('thread-messages');
+  const sendBtn = document.getElementById('composer-send');
   if (!composer || !input) return;
 
   composer.addEventListener('focusin', () => composer.classList.add('is-expanded'));
@@ -685,6 +691,8 @@ wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
     // the thread's own bottom keeps the latest message in view instead
     // of it sliding out from under the now-taller composer.
     if (thread) thread.scrollTop = thread.scrollHeight;
+    // LIME-10-fix14: Send visually greys out when there's nothing to send.
+    if (sendBtn) sendBtn.classList.toggle('is-active', input.value.trim().length > 0);
   });
 })();
 

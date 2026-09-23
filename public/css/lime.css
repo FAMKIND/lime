@@ -2134,6 +2134,7 @@ body {
 }
 
 .lime-composer__box {
+  position: relative; /* anchors the absolutely-positioned .lime-composer__return (LIME-10-fix14) */
   display: flex;
   flex-direction: column;
   /* width, not just max-width: .lime-composer now has align-items:center
@@ -2174,6 +2175,7 @@ body {
   align-items: center;
   gap: 2px;
   padding-top: 16px;
+  padding-right: 40px; /* same reservation as the textarea above — keeps the Code button from rendering under the corner-anchored Send button */
   margin-top: 8px;
 }
 
@@ -2248,11 +2250,26 @@ body {
    swapped the chevron-up dew icon for the return symbol directly) — so
    font-size lives on the button itself; the old .lime-composer__return .dew
    rule is dead and was removed rather than left pointing at nothing. */
+/* LIME-10-fix14: the brief wants this living in .lime-composer__row when
+   collapsed and at the end of .lime-composer__toolbar when expanded —
+   two different DOM parents for one element isn't something CSS can do,
+   and this brief's own scope doesn't list index.html (no markup change
+   expected). Used position:absolute anchored to .lime-composer__box's
+   corner instead, with no markup move needed: since box height is auto
+   and this is the ONLY thing pinned to its bottom-right, whichever row
+   is currently last (the input row alone, or input row + toolbar once
+   expanded) ends up flush against it either way — it *looks* like part
+   of "the last row" in both states without actually moving in the DOM.
+   right/bottom match the box's own padding (var(--seed-space-3)/-2)
+   rather than 0, since the containing block for an absolute child is the
+   ancestor's padding-box edge, not its content edge — 0 would sit the
+   button flush against the border, ignoring the padding entirely. */
 .lime-composer__return {
+  position: absolute;
+  right: var(--seed-space-3);
+  bottom: var(--seed-space-2);
   width: 32px;
   height: 32px;
-  flex-shrink: 0; /* now a sibling of the flex:1 textarea in .lime-composer__row (LIME-10-fix12) */
-  align-self: flex-end; /* redundant with .lime-composer__row's own align-items:flex-end, stated explicitly per this brief */
   border: none;
   background: none;
   border-radius: 50%;
@@ -2261,7 +2278,21 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 18px;
+  opacity: 0.4;
+  cursor: default;
+}
+
+.lime-composer__return.is-active {
+  opacity: 1;
   cursor: pointer;
+  /* --soil-bg-subtle doesn't exist (checked, same gap already found and
+     substituted in LIME-10-fix11) — --calm-bg-subtle-default instead,
+     exactly one step lighter than the :hover value below. */
+  background: var(--calm-bg-subtle-default);
+}
+
+.lime-composer__return.is-active:hover {
+  background: var(--calm-bg-subtle-hover);
 }
 
 .lime-composer__return:hover {
@@ -2406,9 +2437,11 @@ body {
    guarantee instead of a side effect of JS timing. */
 textarea.lime-composer__input {
   display: block;
-  /* flex:1, not flex:none — LIME-10-fix12 puts this inside
-     .lime-composer__row alongside Send, so it needs to grow and fill
-     the remaining width instead of shrink-to-fit. */
+  /* flex:1, not flex:none — LIME-10-fix12 put this inside
+     .lime-composer__row so it grows to fill the row's width. Now that
+     Send is position:absolute (LIME-10-fix14, no longer a flex sibling
+     here), it's the row's only child either way — flex:1 still just
+     means "fill available width." */
   flex: 1;
   min-width: 0;
   /* height, not just min/max-height — already fully pinned to 24px by
@@ -2419,7 +2452,7 @@ textarea.lime-composer__input {
   height: 24px;
   min-height: 24px;
   max-height: 24px;
-  padding: var(--seed-space-1) 0;
+  padding: var(--seed-space-1) 40px var(--seed-space-1) 0; /* right: reserves room for the corner-anchored Send button so typed text doesn't render under it */
   border: none;
   background: transparent;
   resize: none;
@@ -2435,6 +2468,16 @@ textarea.lime-composer__input {
 
 textarea.lime-composer__input:focus {
   outline: none;
+}
+
+textarea.lime-composer__input::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+
+textarea.lime-composer__input::-webkit-scrollbar-thumb {
+  background: var(--soil-border-subtle);
+  border-radius: 4px;
 }
 
 .lime-composer__send {
