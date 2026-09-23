@@ -654,10 +654,11 @@ body {
   min-width: 0;
 }
 
-/* "Bio" is the shortest, least-important-to-truncate segment (it's
-   also the current location, already bolded) — it shouldn't be the
-   one that gets squeezed down to nothing when space is tight. */
-#crumb-bio {
+/* "Details" (renamed from "Bio" in LIME-03p) is the shortest,
+   least-important-to-truncate segment (it's also the current
+   location, already bolded) — it shouldn't be the one that gets
+   squeezed down to nothing when space is tight. */
+#crumb-details {
   flex-shrink: 0;
 }
 
@@ -693,18 +694,19 @@ body {
 
 /* Breadcrumb content tracks the current mobile view — "Teachers" is
    always shown; "Jean Chung" (+ its separator) appears once you're at
-   least in the thread; "Bio" (+ its separator) appears only in the
-   profile/replies panel. #crumb-bio already gets its "current
-   location" bold treatment for free from Seed's own
-   .seed-breadcrumb--active class; Teachers/Jean Chung need it added
-   here since which one is "current" changes with the view. */
+   least in the thread; "Details" (+ its separator, renamed from "Bio"
+   in LIME-03p) appears only in the profile/replies panel. #crumb-
+   details already gets its "current location" bold treatment for free
+   from Seed's own .seed-breadcrumb--active class; Teachers/Jean Chung
+   need it added here since which one is "current" changes with the
+   view. */
 #crumb-thread,
 [data-crumb-sep="thread"] {
   display: none;
 }
 
-#crumb-bio,
-[data-crumb-sep="bio"] {
+#crumb-details,
+[data-crumb-sep="details"] {
   display: none;
 }
 
@@ -718,11 +720,34 @@ body {
   display: inline-flex;
 }
 
-#layout[data-mobile-view="panel"] #crumb-bio {
+/* Desktop/tablet always show list+thread together (no view-routing
+   there), so "Jean Chung" should always be present rather than gated
+   on data-mobile-view (which mobile alone ever changes away from its
+   "contacts" default). */
+@media (min-width: 768px) {
+  #crumb-thread {
+    display: inline-block;
+  }
+
+  [data-crumb-sep="thread"] {
+    display: inline-flex;
+  }
+}
+
+/* "Details" shows on mobile via the same data-mobile-view="panel"
+   condition as before, OR on any breakpoint the moment the right
+   panel is actually open (:not(.seed-layout--right-hidden)) — the
+   two conditions have to be OR'd because mobile forces the panel
+   fullscreen via data-mobile-view independent of that class, while
+   desktop/tablet only ever use the class, never the attribute (it
+   stays stuck at its "contacts" default there). */
+#layout[data-mobile-view="panel"] #crumb-details,
+.seed-layout:not(.seed-layout--right-hidden) #crumb-details {
   display: inline;
 }
 
-#layout[data-mobile-view="panel"] [data-crumb-sep="bio"] {
+#layout[data-mobile-view="panel"] [data-crumb-sep="details"],
+.seed-layout:not(.seed-layout--right-hidden) [data-crumb-sep="details"] {
   display: inline-flex;
 }
 
@@ -1786,6 +1811,18 @@ body {
    PANEL 3 — RIGHT PROFILE
 ───────────────────────────────────────────────────── */
 
+/* Close button — lives inside the panel it closes (LIME-03p), not as
+   an external toggle in .lime-center-top. Close-only: opening still
+   happens elsewhere (avatar/replies/breadcrumb/message-sender
+   triggers). .seed-layout__right already has position:relative from
+   Seed's own base rule, so no extra positioning context is needed. */
+.lime-panel-close {
+  position: absolute;
+  top: var(--seed-space-3);
+  right: var(--seed-space-3);
+  z-index: 1;
+}
+
 .lime-profile-panel {
   position: relative;
   height: 100%;
@@ -2139,16 +2176,12 @@ body {
     border-radius: 0;
   }
 
-  /* Context-aware header: contacts view has no selected person, so the
-     right-panel toggle and Jean Chung's avatar have nothing to act on
-     yet — only "Me" (Shem R) shows. Thread/panel views restore both.
-     (LIME-03l had moved the toggle inside #right-panel itself, making
-     this specific rule briefly redundant; LIME-03n moved it back to
-     .lime-center-top, so it's needed again.) */
-  #layout[data-mobile-view="contacts"] #right-panel-toggle {
-    display: none;
-  }
-
+  /* Context-aware header: contacts view has no selected person, so
+     Jean Chung's avatar has nothing to act on yet — only "Me" (Shem R)
+     shows. Thread/panel views restore both. (#right-panel-toggle no
+     longer needs its own rule here — LIME-03p moved it back inside
+     #right-panel, which is already hidden in contacts view via the
+     rules above, making a separate rule for the button redundant.) */
   #layout[data-mobile-view="contacts"] .lime-topbar__avatars .seed-avatar:not([data-name="Shem R"]) {
     display: none;
   }
