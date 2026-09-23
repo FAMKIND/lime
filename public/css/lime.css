@@ -121,6 +121,13 @@ body {
      --seed-lime-100 — referencing that directly instead of updating
      this to a second hardcoded hex value. */
   --lime-badge-light: var(--seed-lime-100);
+  /* #a3e18a (requested for nav hover/active) is an exact match for
+     --seed-lime-300 — these are lighter steps on that same raw scale.
+     Wrapped in named tokens rather than referencing --seed-lime-* raw
+     values directly in the component rules below, since Seed's own
+     README says Tier 1 raw palette tokens should never be referenced
+     directly in components, only through a semantic layer. */
+  --lime-nav-hover: var(--seed-lime-100);
   --lime-avatar-blush:      #F9D8DA;
   --lime-avatar-peach:      #FCDCC5;
   --lime-avatar-butter:     #FBEFB8;
@@ -504,12 +511,12 @@ body {
 }
 
 .lime-nav__btn:hover {
-  background: var(--calm-bg-subtle-hover);
+  background: var(--lime-nav-hover);
   color: var(--soil-text);
 }
 
 .lime-nav__btn--active {
-  background: var(--selected-bg-subtle-default);
+  background: var(--lime-nav-hover);
   color: var(--soil-text);
 }
 
