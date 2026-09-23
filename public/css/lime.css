@@ -1339,12 +1339,10 @@ body {
   min-height: 0;
 }
 
-/* The top fade used to live here (absolute-positioned overlay on
-   .lime-chat-body). LIME-03o replaced it with .lime-messages::before
-   in gradients.css — a sticky flex child of the scroller itself,
-   rather than an absolute overlay on its non-scrolling parent — so
-   this rule was removed rather than left active alongside the new one
-   (both would have painted in the same spot, doubling the fade). */
+/* The top fade lives in gradients.css now, as a real .fade-top child
+   div (LIME-03q's reusable .has-fade-y system) rather than a ::before
+   pseudo-element — see gradients.css for why it's a child of
+   .lime-chat-body specifically, not .lime-messages (the scroller). */
 
 /* Messages — absolutely fills .lime-chat-body so the floating composer can
    overlay it. padding-bottom (composer's ~72px height + a small gap)
@@ -1697,9 +1695,10 @@ body {
   flex-shrink: 0;
 }
 
-/* Composer — floats over the messages list. A 64px gradient fade sits just
-   above it (::before) so scrolled content dissolves into the canvas color
-   rather than being clipped by the composer's opaque edge. */
+/* Composer — floats over the messages list. Its ::before fade (48px,
+   sitting just above it) lives entirely in gradients.css now, since
+   it's a bespoke rule that doesn't fit the reusable .has-fade-y
+   pattern — see the comment there for why. */
 .lime-composer {
   position: absolute;
   left: 0;
@@ -1710,17 +1709,6 @@ body {
   align-items: center;
   padding: var(--seed-space-4);
   background: var(--soil-bg-canvas);
-}
-
-.lime-composer::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  height: 64px;
-  background: linear-gradient(to bottom, transparent, var(--soil-bg-canvas));
-  pointer-events: none;
 }
 
 /* The pill: + / input / mic / send all live inside this one rounded
@@ -1824,7 +1812,6 @@ body {
 }
 
 .lime-profile-panel {
-  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;

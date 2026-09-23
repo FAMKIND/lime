@@ -578,10 +578,13 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
 // ── Scroll-edge fades ─────────────────────────────────────
 // A fade should only be visible when there's actually hidden content
 // past that edge — not a permanent overlay that dims content even at
-// rest. Toggles is-scrolled-* classes (read by gradients.css) on
-// `fadeHost`, which may be a different element than the one that
-// actually scrolls (e.g. the chat/profile fades live on a non-
-// scrolling parent, not the scroller itself — see gradients.css).
+// rest. Toggles is-scrolled-* classes (read by gradients.css's
+// .has-fade-y/.has-fade-x system) on `fadeHost`, which may be a
+// different element than the one that actually scrolls: the chat fade
+// lives on .lime-chat-body (the non-scrolling parent), not
+// .lime-messages (the scroller) itself, because .lime-messages is
+// already position:absolute for other reasons and can't also host its
+// own positioned children — see gradients.css.
 function wireScrollFades(scrollEl, fadeHost, { horizontal = false } = {}) {
   if (!scrollEl || !fadeHost) return;
 
@@ -617,5 +620,5 @@ function wireScrollFades(scrollEl, fadeHost, { horizontal = false } = {}) {
 
 wireScrollFades(document.querySelector('.lime-list-col'), document.querySelector('.lime-list-col'));
 wireScrollFades(document.querySelector('.lime-messages'), document.querySelector('.lime-chat-body'));
-wireScrollFades(document.querySelector('.lime-profile'), document.querySelector('.lime-profile-panel'));
+wireScrollFades(document.querySelector('.lime-profile'), document.querySelector('.lime-profile'));
 wireScrollFades(document.querySelector('.lime-recent'), document.querySelector('.lime-recent'), { horizontal: true });

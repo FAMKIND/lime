@@ -1,100 +1,68 @@
-/* gradients.css — Fade gradients for scrollable areas.
+/* gradients.css — Reusable fade gradient system (LIME-03q).
+ *
+ * Any scrollable container gets `.has-fade-y` (top+bottom) or
+ * `.has-fade-x` (left+right) plus matching `.fade-top`/`.fade-bottom`/
+ * `.fade-left`/`.fade-right` child divs — real elements, not
+ * ::before/::after, so one pattern covers every area instead of a
+ * bespoke pseudo-element rule per container.
  *
  * Each fade is opacity:0 at rest and only fades in once there's
  * actually hidden content in that direction — not a permanent overlay
- * that dims content even when nothing is cut off. JS (wireScrollFades
- * in app.js) tracks each scrollable element's scroll position and
- * toggles the is-scrolled-* classes below.
- *
- * These are absolute overlays hosted on a non-scrolling ANCESTOR of
- * the actual scroll container, not sticky children within it — a
- * sticky pseudo-element competing with the scroller's own flex `gap`
- * rendered as a hard-edged block instead of a smooth fade, so this
- * intentionally avoids that technique.
+ * that dims content even when nothing is cut off (a user-reported
+ * regression in an earlier pass). JS (wireScrollFades in app.js)
+ * tracks each scroll container's position and toggles the
+ * is-scrolled-* classes below; the fade divs themselves never move —
+ * only their opacity changes.
  */
 
-/* Contact list — fade lives directly on the scroll container itself. */
-.lime-list-col::before,
-.lime-list-col::after {
+.has-fade-y,
+.has-fade-x {
+  position: relative;
+}
+
+.has-fade-y > .fade-top,
+.has-fade-y > .fade-bottom,
+.has-fade-x > .fade-left,
+.has-fade-x > .fade-right {
   content: '';
   position: absolute;
-  left: 0;
-  right: 0;
-  height: 32px;
   pointer-events: none;
-  z-index: 2;
+  z-index: 10;
   opacity: 0;
   transition: opacity 150ms ease;
 }
-.lime-list-col::before { top: 0; background: linear-gradient(to bottom, var(--soil-bg-canvas), transparent); }
-.lime-list-col::after { bottom: 0; background: linear-gradient(to top, var(--soil-bg-canvas), transparent); }
-.lime-list-col.is-scrolled-top::before { opacity: 1; }
-.lime-list-col.is-scrolled-bottom::after { opacity: 1; }
 
-/* Chat thread top — hosted on .lime-chat-body (the non-scrolling
-   positioning parent), not on .lime-messages (the scroller) itself. */
-.lime-chat-body::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 32px;
-  z-index: 2;
-  background: linear-gradient(to bottom, var(--soil-bg-canvas), transparent);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-.lime-chat-body.is-scrolled-top::before {
-  opacity: 1;
-}
+.has-fade-y > .fade-top { top: 0; left: 0; right: 0; height: 32px; background: linear-gradient(to bottom, var(--soil-bg-canvas), transparent); }
+.has-fade-y > .fade-bottom { bottom: 0; left: 0; right: 0; height: 48px; background: linear-gradient(to top, var(--soil-bg-canvas), transparent); }
+.has-fade-x > .fade-left { left: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to right, var(--soil-bg-canvas), transparent); }
+.has-fade-x > .fade-right { right: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to left, var(--soil-bg-canvas), transparent); }
 
-/* Composer bottom fade — deliberately NOT scroll-gated: the composer
-   is a permanent, opaque bar always sitting over the thread, not an
-   overflow indicator, so it stays visible regardless of scroll
-   position (matches its original, pre-LIME-03o behavior). */
+.is-scrolled-top > .fade-top { opacity: 1; }
+.is-scrolled-bottom > .fade-bottom { opacity: 1; }
+.is-scrolled-start > .fade-left { opacity: 1; }
+.is-scrolled-end > .fade-right { opacity: 1; }
+
+/* Composer bottom fade is deliberately NOT part of the reusable
+ * system above: it sits above the composer's OWN box (bottom: 100%
+ * relative to .lime-composer, not the chat area's box), since the
+ * composer itself occupies the bottom of .lime-chat-body — a generic
+ * .fade-bottom anchored to the container's own bottom edge would
+ * render entirely underneath the opaque composer bar, invisible. It's
+ * also deliberately NOT scroll-gated: the composer is a permanent bar
+ * always sitting over the thread, not an overflow indicator, so it
+ * stays visible regardless of scroll position.
+ */
 .lime-composer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
   height: 48px;
+  background: linear-gradient(to bottom, transparent, var(--soil-bg-canvas));
+  pointer-events: none;
 }
 
 .lime-messages {
   padding-bottom: 80px;
 }
-
-/* Right panel — hosted on .lime-profile-panel (the non-scrolling
-   parent), not on .lime-profile (the scroller) itself. */
-.lime-profile-panel::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 24px;
-  z-index: 2;
-  background: linear-gradient(to bottom, var(--soil-bg-canvas), transparent);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-.lime-profile-panel.is-scrolled-top::before {
-  opacity: 1;
-}
-
-/* Recent teachers horizontal */
-.lime-recent::before,
-.lime-recent::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 24px;
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-.lime-recent::before { left: 0; background: linear-gradient(to right, var(--soil-bg-canvas), transparent); }
-.lime-recent::after { right: 0; background: linear-gradient(to left, var(--soil-bg-canvas), transparent); }
-.lime-recent.is-scrolled-start::before { opacity: 1; }
-.lime-recent.is-scrolled-end::after { opacity: 1; }
