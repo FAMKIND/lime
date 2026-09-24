@@ -1153,63 +1153,26 @@ body {
     display: none;
   }
 
-  /* LIME-12: overrides Seed's own mobile treatment for this panel
-     (vendor/seed/components/layout/layout.css) — Seed's version is a
-     floating, inset "card" (top/left/bottom: 16px, not flush against
-     any edge) toggled via display:none/flex, which can't be animated
-     at all (display changes are instant, never transitionable). That
-     combination — no slide, inset on every side — is what read as
-     "floating icons over content" rather than an actual drawer.
-     Overridden here with a real edge-to-edge panel that's always
-     "displayed" but parked off-screen via `left`, so `left`'s own
-     transition can actually animate the slide-in/out. No separate
-     stray-positioned elements were found causing the same symptom —
-     nothing in this app's own nav/sidebar CSS sets position:fixed or
-     :absolute; Seed's own unused .seed-layout__reveal-*/__backdrop
-     rules are inert since Lime's markup never includes those elements.
-
-     z-index: --seed-z-modal (400), not the brief's literal 100 — real
-     bug found after the first pass: 100 is below
-     --seed-z-overlay (300), which .lime-mobile-nav-backdrop already
-     uses. The backdrop was rendering ON TOP of the drawer whenever it
-     opened, its semi-transparent dark tint washing out everything in
-     the drawer except whatever had enough fill-color contrast to
-     still read through it (the user avatar's solid pastel background,
-     not the lower-contrast icons/text around it) — exactly what LIME-12-fix
-     was reported as "floating icons over [dimmed] content." */
+  /* LIME-12-fix2 reverses LIME-12 entirely: the user explicitly doesn't
+     want an overlay-with-dark-backdrop drawer at all — they want the
+     sidebar to reveal in its own grid column and push the center panel
+     over, matching how the desktop collapse/expand toggle already
+     feels, just without the icon-only collapsed state. So the sidebar
+     goes back to being a normal grid item (Seed's own display:flex, no
+     position:fixed/overlay) — the grid's own column width animates
+     0 -> 280px instead (see .seed-layout--mobile-open.seed-layout
+     further down, in the other mobile media query block). overflow:hidden
+     clips the sidebar's content while its column is 0px wide. */
   .seed-layout__left {
     display: flex;
-    position: fixed;
-    top: 0;
-    left: -100%;
-    bottom: 0;
-    width: 280px;
-    z-index: var(--seed-z-modal);
-    background: var(--soil-bg-canvas);
-    /* Seed's base panel rule (layout.css) gives every panel rounded
-       corners + a card shadow — looks broken on a flush, edge-to-edge
-       drawer (a visible notch where the rounded corner meets the
-       screen edge). Not asked for explicitly, but directly undermines
-       this brief's own "proper drawer" goal if left in. */
-    border-radius: 0;
-    box-shadow: none;
-    transition: left 0.2s ease;
+    overflow: hidden;
   }
 
-  /* Seed's own .seed-layout--mobile-open .seed-layout__left rule
-     (layout.css) is 2-class specificity, higher than the single-class
-     rule above — its top/bottom/width/z-index (the 16px-inset "card"
-     values) would win over source order alone. Restating every
-     property here, not just `left`, so nothing falls through to a
-     hybrid of Seed's card insets + this rule's edge-to-edge position. */
-  .seed-layout--mobile-open .seed-layout__left {
-    display: flex;
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 280px;
-    z-index: var(--seed-z-modal);
+  /* No backdrop in a push model — the center panel stays fully visible
+     and interactive next to the open sidebar, just narrower, so there's
+     nothing to dim and no overlay region to tap-to-close. */
+  .lime-mobile-nav-backdrop {
+    display: none !important;
   }
 }
 
@@ -2888,16 +2851,52 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
 
   /* Desktop/tablet floors (800px center, 200/56px left, 240px right)
      don't apply once panels stack full-width instead of sitting side by
-     side in a grid track. */
+     side in a grid track. .seed-layout--collapsed-left .seed-layout__left
+     (unconditional, min-width:56px) needs its own matching-specificity
+     override too (LIME-12-fix2) — a mobile user should never see the
+     icon-only collapsed rail at all (that state is desktop-only, and its
+     toggle button is already hidden here), but the class itself can
+     still be sitting on #layout from an earlier desktop session
+     (persisted via localStorage) when the viewport narrows. Without
+     this, that leftover class's higher-specificity min-width kept
+     winning over the plain .seed-layout__left rule below, forcing the
+     "closed" grid column wider than the 0px this brief needs. */
+  .seed-layout--collapsed-left .seed-layout__left,
   .seed-layout__center,
   .seed-layout__left,
   .seed-layout__right {
     min-width: 0;
   }
 
+  /* 0px 1fr, not Seed's own bare 1fr (LIME-12-fix2) — both the closed
+     and open (.seed-layout--mobile-open) states need the SAME number
+     of grid tracks for grid-template-columns to actually animate
+     between them; changing the track *count* (1 vs 2) doesn't
+     interpolate reliably across browsers, only changing a track's
+     *size* does. */
   .seed-layout {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: 0px 1fr !important;
     padding: 0;
+    transition: grid-template-columns 0.2s ease;
+  }
+
+  /* Explicit grid-column, not relying on DOM-order auto-placement —
+     measured via live introspection that .seed-layout__center was
+     landing in column 1 (same position as .seed-layout__left, visibly
+     overlapping it) despite neither element having any grid-column,
+     order, or display override that should have caused that. Rather
+     than keep chasing why auto-placement was doing this, explicit
+     placement sidesteps it regardless of the underlying cause. */
+  .seed-layout__left {
+    grid-column: 1;
+  }
+
+  .seed-layout__center {
+    grid-column: 2;
+  }
+
+  .seed-layout.seed-layout--mobile-open {
+    grid-template-columns: 280px 1fr !important;
   }
 
   .lime-center-body {
