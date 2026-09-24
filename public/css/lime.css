@@ -1188,14 +1188,23 @@ body {
     max-width: 0;
   }
 
-  /* Reset the collapsed-state width/max-width/padding constraints once
-     actually open — 280px matches the grid column set below (this
-     media query's second block); padding restores breathing room so
-     content isn't flush against the revealed sidebar's edges. */
+  /* Reset the collapsed-state width/max-width constraints once
+     actually open — 240px matches the grid column set below (this
+     media query's second block; narrowed from an earlier 280px per
+     LIME-12-fix6's explicit "doesn't take up a lot of width" ask).
+     No padding here — desktop's own .seed-layout__left is flush (0
+     padding, confirmed via LIME-12-fix3's own note); every row
+     inside manages its own inset (.lime-sidebar__top, .lime-nav,
+     etc.), same pattern kept here rather than adding a second,
+     stacking layer of "breathing room" padding on top of theirs —
+     the original 280px version's padding here is what pushed the
+     logo 12px further right than the mobile hamburger toggle it
+     replaces (LIME-12-fix6's alignment ask). box-sizing:border-box
+     kept so width:240px stays the true rendered box regardless. */
   .seed-layout--mobile-open .seed-layout__left {
-    width: 280px;
-    max-width: 280px;
-    padding: var(--seed-space-4);
+    box-sizing: border-box;
+    width: 240px;
+    max-width: 240px;
   }
 
   /* No backdrop in a push model — the center panel stays fully visible
@@ -2984,7 +2993,7 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
   }
 
   .seed-layout.seed-layout--mobile-open {
-    grid-template-columns: 280px 1fr !important;
+    grid-template-columns: 240px 1fr !important;
   }
 
   /* LIME-12-fix5. The stale .seed-layout--collapsed-left class (from an
@@ -3001,9 +3010,17 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
      to match the specificity fight already documented above and in
      LIME-12-fix3 — plain declarations here lost to the collapsed-left
      rules in testing. */
+  /* LIME-12-fix6: applies whether or not the stale collapsed-left
+     class from fix5 is present — the drawer's logo should sit at the
+     same left inset as the hamburger toggle it replaces (12px,
+     .lime-center-top's own mobile padding and .lime-nav's existing
+     horizontal padding below), not desktop's wider 24px (sized there
+     to optically center the logo over nav icons in a permanent rail —
+     not relevant once the drawer is a temporary push-open panel). */
+  .seed-layout--mobile-open .lime-sidebar__top,
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__top {
     justify-content: flex-start !important;
-    padding: 0 var(--seed-space-2) 0 24px !important;
+    padding: 0 var(--seed-space-2) 0 var(--seed-space-3) !important;
   }
 
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__brand {

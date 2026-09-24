@@ -24,6 +24,22 @@ open public/index.html
 - Stack: HTML/CSS/vanilla JS
 - Consume seed: submodule
 
+## Decisions (2026-09-23)
+
+- Mobile nav (<768px): push model, not overlay. Opening the drawer resizes
+  the grid (`.seed-layout__left` 0 → 240px) and shifts the center panel
+  over — no `position: fixed`, no dark backdrop, no tap-to-close scrim.
+  Confirmed explicitly (twice) after briefs repeatedly proposed reverting
+  to an overlay+backdrop; do not revert without asking first.
+- Mobile drawer shows the full sidebar (text labels, wordmark, user name),
+  never the desktop icon-only collapsed rail — that collapse state is
+  desktop-only.
+- Mobile drawer is narrower than desktop's sidebar (240px, not 280px) and
+  its logo mark aligns horizontally with the hamburger toggle it replaces
+  (`.lime-center-top`'s own icon inset) — not desktop's wider logo inset,
+  which exists there to optically center the logo over nav icons in a
+  permanent rail.
+
 ## Open
 
 - [ ] Icon gaps in dew (send, mic, paperclip)
