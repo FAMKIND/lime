@@ -2987,6 +2987,75 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
     grid-template-columns: 280px 1fr !important;
   }
 
+  /* LIME-12-fix5. The stale .seed-layout--collapsed-left class (from an
+     earlier desktop session, persisted via localStorage) can still be
+     sitting on #layout when the mobile drawer opens. Its ~10 icon-only
+     descendant rules (hiding labels, centering icons in a 40px rail)
+     were never scoped to desktop-only, so they kept applying even
+     though the panel itself renders at the full 280px mobile-open
+     width — the drawer opened as a blank icon rail instead of the
+     full labeled sidebar this brief calls for. Restoring each
+     collapsed-left override back to its expanded/base value here,
+     scoped to the mobile-open+collapsed-left combination specifically
+     so desktop's actual icon-only collapse is untouched. !important
+     to match the specificity fight already documented above and in
+     LIME-12-fix3 — plain declarations here lost to the collapsed-left
+     rules in testing. */
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__top {
+    justify-content: flex-start !important;
+    padding: 0 var(--seed-space-2) 0 24px !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__brand {
+    flex: 1 !important;
+    justify-content: flex-start !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left [data-brand-wordmark] {
+    display: block !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav {
+    align-items: stretch !important;
+    padding: var(--seed-space-2) var(--seed-space-3) !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-search {
+    width: 100% !important;
+    height: 36px !important;
+    padding: 0 var(--seed-space-3) !important;
+    justify-content: flex-start !important;
+    border-radius: var(--seed-radius-full) !important;
+    background: var(--calm-bg-normal-default) !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-search__label {
+    display: inline !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav__btn {
+    width: 100% !important;
+    justify-content: flex-start !important;
+    padding: 0 var(--seed-space-3) !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav__label {
+    display: inline !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-badge--soon {
+    display: inline !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__user-trigger {
+    padding: var(--seed-space-3) var(--seed-space-4) !important;
+    justify-content: flex-start !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__user-name {
+    display: block !important;
+  }
+
   .lime-center-body {
     flex-direction: column;
   }
