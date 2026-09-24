@@ -817,6 +817,8 @@ function setRightPanelOpen(isOpen) {
   // — a second instance for the reply composer, own unique ids since the
   // main composer's voice-mode-toggle/-dropdown ids are already taken.
   wireDropdownToggle('replies-voice-mode-toggle', 'replies-voice-mode-dropdown', { fixed: true });
+  // Same reasoning as the main composer's toolbar overflow menu (LIME-12-fix4).
+  wireDropdownToggle('replies-composer-toolbar-overflow', 'replies-composer-toolbar-overflow-dropdown', { fixed: true });
 })();
 
 // ── Dropdown toggles (more menu, notifications, user menu) ──
@@ -852,6 +854,11 @@ wireDropdownToggle('user-btn', 'user-dropdown', { fixed: true });
 // the LIME-10 gate, real device enumeration needs a live mic-permission
 // prompt for a feature that still can't record anything.
 wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
+// Decorative relisting of the toolbar tools .lime-composer__tool--overflow
+// hides at narrow widths (LIME-12-fix4) — none of those tools have any
+// real formatting behavior wired regardless of width, so this dropdown
+// doesn't need to either.
+wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropdown', { fixed: true });
 
 // ── Expandable composer (LIME-10) ────────────────────────
 // Toolbar shows only while #composer.is-expanded; textarea grows with
@@ -882,6 +889,27 @@ wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
     // LIME-10-fix14: Send visually greys out when there's nothing to send.
     if (sendBtn) sendBtn.classList.toggle('is-active', input.value.trim().length > 0);
   });
+})();
+
+// ── Shorter composer placeholder on narrow screens (LIME-12-fix4) ──
+// A <textarea> placeholder has no native ellipsis truncation the way
+// a single-line <input>'s does — "Say something meaningful..." simply
+// wraps onto a second line in a narrow mobile viewport, which the
+// fixed single-line collapsed height (LIME-10-fix9) then crudely
+// clips. A CSS font-size tweak wouldn't have helped: the placeholder
+// already inherits --seed-text-sm (14px), the exact value this
+// brief's own literal CSS asked for — so this brief's other offered
+// option (shorter text via JS) is the one that actually does
+// something. Runs once at load, not on resize — the placeholder is
+// only ever visible while the textarea is empty and unfocused, a
+// state a live-resizing viewport doesn't really encounter.
+(function () {
+  if (window.innerWidth > 480) return;
+  // Only the main composer's placeholder ("Say something meaningful...")
+  // is long enough to wrap — the reply composer's ("Reply...") is
+  // already short, nothing to shorten there.
+  const input = document.getElementById('composer-input');
+  if (input) input.placeholder = 'Message...';
 })();
 
 // ── Sign out ───────────────────────────────────────────────

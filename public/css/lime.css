@@ -2284,6 +2284,24 @@ body {
   font-family: var(--seed-font-ui);
 }
 
+/* .lime-composer__overflow ("...") is always in the DOM but only
+   relevant once .lime-composer__tool--overflow starts hiding
+   (LIME-12-fix4) — display:none by default so it's inert everywhere
+   above that breakpoint (desktop included). */
+.lime-composer__overflow {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .lime-composer__tool--overflow {
+    display: none;
+  }
+
+  .lime-composer__overflow {
+    display: inline-flex;
+  }
+}
+
 /* The right panel narrows the center panel (and this composer along
    with it) — rather than guessing a viewport breakpoint, key directly
    off the actual state that causes it, per the brief's own "open right

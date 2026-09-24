@@ -483,18 +483,34 @@
                     <textarea class="lime-composer__input" id="composer-input" placeholder="Say something meaningful..." rows="1"></textarea>
                     <button type="button" class="lime-composer__return" id="composer-send" title="Send">&#8629;</button>
                   </div>
+                  <!-- Tools after Bold/Italic/Underline/Strikethrough hide under
+                       .lime-composer__tool--overflow at narrow widths (LIME-12-fix4)
+                       — dew-more-horizontal doesn't exist (checked); dew-ellipsis-menu
+                       (already used for every other "More" button in this app) instead.
+                       The dropdown just relists the same options as plain, decorative
+                       labels — none of these tools have any real formatting behavior
+                       wired regardless of screen width, so there's nothing functional
+                       to preserve by cloning/moving the actual buttons. -->
                   <div class="lime-composer__toolbar">
                     <button type="button" class="lime-composer__tool" title="Bold"><b>B</b></button>
                     <button type="button" class="lime-composer__tool" title="Italic"><i>I</i></button>
                     <button type="button" class="lime-composer__tool" title="Underline"><u>U</u></button>
                     <button type="button" class="lime-composer__tool" title="Strikethrough"><s>S</s></button>
-                    <span class="lime-composer__divider"></span>
-                    <button type="button" class="lime-composer__tool" title="Link"><span class="dew dew-link"></span></button>
-                    <button type="button" class="lime-composer__tool" title="Numbered list"><i class="icon-list-ordered"></i></button>
-                    <button type="button" class="lime-composer__tool" title="Bulleted list"><i class="icon-list"></i></button>
-                    <span class="lime-composer__divider"></span>
-                    <button type="button" class="lime-composer__tool" title="Quote"><i class="icon-text-quote"></i></button>
-                    <button type="button" class="lime-composer__tool" title="Code">&lt;/&gt;</button>
+                    <span class="lime-composer__divider lime-composer__tool--overflow"></span>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Link"><span class="dew dew-link"></span></button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Numbered list"><i class="icon-list-ordered"></i></button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Bulleted list"><i class="icon-list"></i></button>
+                    <span class="lime-composer__divider lime-composer__tool--overflow"></span>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Quote"><i class="icon-text-quote"></i></button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Code">&lt;/&gt;</button>
+                    <button type="button" class="lime-composer__tool lime-composer__overflow" id="composer-toolbar-overflow" title="More"><span class="dew dew-ellipsis-menu"></span></button>
+                    <div class="lime-nav-dropdown" id="composer-toolbar-overflow-dropdown">
+                      <div class="lime-nav-dropdown__item"><span class="dew dew-link"></span>Link</div>
+                      <div class="lime-nav-dropdown__item"><i class="icon-list-ordered"></i>Numbered list</div>
+                      <div class="lime-nav-dropdown__item"><i class="icon-list"></i>Bulleted list</div>
+                      <div class="lime-nav-dropdown__item"><i class="icon-text-quote"></i>Quote</div>
+                      <div class="lime-nav-dropdown__item">&lt;/&gt; Code</div>
+                    </div>
                   </div>
                 </div>
                 <div class="lime-composer__actions">
@@ -598,13 +614,21 @@
               <button type="button" class="lime-composer__tool" title="Italic"><i>I</i></button>
               <button type="button" class="lime-composer__tool" title="Underline"><u>U</u></button>
               <button type="button" class="lime-composer__tool" title="Strikethrough"><s>S</s></button>
-              <span class="lime-composer__divider"></span>
-              <button type="button" class="lime-composer__tool" title="Link"><span class="dew dew-link"></span></button>
-              <button type="button" class="lime-composer__tool" title="Numbered list"><i class="icon-list-ordered"></i></button>
-              <button type="button" class="lime-composer__tool" title="Bulleted list"><i class="icon-list"></i></button>
-              <span class="lime-composer__divider"></span>
-              <button type="button" class="lime-composer__tool" title="Quote"><i class="icon-text-quote"></i></button>
-              <button type="button" class="lime-composer__tool" title="Code">&lt;/&gt;</button>
+              <span class="lime-composer__divider lime-composer__tool--overflow"></span>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Link"><span class="dew dew-link"></span></button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Numbered list"><i class="icon-list-ordered"></i></button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Bulleted list"><i class="icon-list"></i></button>
+              <span class="lime-composer__divider lime-composer__tool--overflow"></span>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Quote"><i class="icon-text-quote"></i></button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Code">&lt;/&gt;</button>
+              <button type="button" class="lime-composer__tool lime-composer__overflow" id="replies-composer-toolbar-overflow" title="More"><span class="dew dew-ellipsis-menu"></span></button>
+              <div class="lime-nav-dropdown" id="replies-composer-toolbar-overflow-dropdown">
+                <div class="lime-nav-dropdown__item"><span class="dew dew-link"></span>Link</div>
+                <div class="lime-nav-dropdown__item"><i class="icon-list-ordered"></i>Numbered list</div>
+                <div class="lime-nav-dropdown__item"><i class="icon-list"></i>Bulleted list</div>
+                <div class="lime-nav-dropdown__item"><i class="icon-text-quote"></i>Quote</div>
+                <div class="lime-nav-dropdown__item">&lt;/&gt; Code</div>
+              </div>
             </div>
           </div>
           <div class="lime-composer__actions">
