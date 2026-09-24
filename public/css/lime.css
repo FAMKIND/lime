@@ -1910,6 +1910,30 @@ body {
   margin-left: var(--seed-space-3);
 }
 
+/* "X replies" under a main-thread message with real replies (LIME-11-fix5). */
+.lime-message__reply-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-1);
+  margin-top: var(--seed-space-1);
+  margin-left: var(--seed-space-3);
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+  cursor: pointer;
+}
+
+.lime-message__reply-indicator:hover {
+  color: var(--soil-text);
+  text-decoration: underline;
+}
+
+.lime-message__reply-indicator .dew {
+  font-size: 12px;
+}
+
 .lime-reaction {
   display: inline-flex;
   align-items: center;
@@ -2735,7 +2759,13 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
 .lime-reply {
   position: relative; /* anchors .lime-message__actions/.lime-reaction-picker, reused here (LIME-11-fix2) */
   display: flex;
-  gap: var(--seed-space-2);
+  gap: var(--seed-space-3);
+  /* Missing before (LIME-11-fix5) — flex's default align-items:stretch
+     would force the fixed-size avatar to stretch to match
+     .lime-reply__col's height (taller on any multi-line reply, or one
+     with reactions attached), instead of sitting at a fixed size
+     pinned to the top. */
+  align-items: flex-start;
 }
 
 .lime-reply:hover .lime-message__actions {
@@ -2769,6 +2799,16 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
   font-size: var(--seed-text-sm);
   color: var(--soil-text);
   line-height: var(--seed-leading-relaxed);
+}
+
+/* .lime-message__reactions's shared rule (main thread) adds a 12px
+   left-margin, nudging reactions to align under the bubble's own text
+   inset — .lime-reply has no such bubble/inset to align with, so that
+   margin just reads as an unexplained indent here. Zeroed out,
+   scoped to replies only (LIME-11-fix5) so the main thread/quote are
+   untouched. */
+.lime-reply .lime-message__reactions:not(:empty) {
+  margin-left: 0;
 }
 
 .lime-replies-panel__empty {

@@ -202,6 +202,7 @@ function renderReactions(messageEl, reactions) {
       + '</div>'
       + contentHtml(message)
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id, message.reactions) + '</div>'
+      + replyIndicatorHtml(message.id)
       + '</div>'
       + '<div class="lime-message__actions">'
       + '<button title="React"><span>🙂</span></button>'
@@ -210,6 +211,22 @@ function renderReactions(messageEl, reactions) {
       + '</div>'
       + REACTION_PICKER_HTML
       + '</div>';
+  }
+
+  // LIME-11-fix5: "X replies" under any main-thread message that has
+  // real replies — like reactions, the count is computed live from
+  // getRepliesForMessage rather than trusted from the seed message's
+  // own stale reply_count field. Click reuses the exact same
+  // openReplies() the "Reply" action button already calls (see the
+  // "Reply thread panel" closure further down) via a second delegated
+  // listener on this button's own class.
+  function replyIndicatorHtml(messageId) {
+    const count = getRepliesForMessage(messageId).length;
+    if (count === 0) return '';
+    return '<button type="button" class="lime-message__reply-indicator" data-message-id="' + messageId + '">'
+      + '<span class="dew dew-chat"></span>'
+      + count + (count === 1 ? ' reply' : ' replies')
+      + '</button>';
   }
 
   function renderThread(conversationId, teacher) {
@@ -742,10 +759,19 @@ function setRightPanelOpen(isOpen) {
 
   document.addEventListener('click', (e) => {
     const replyBtn = e.target.closest('#thread-messages .lime-message__actions [title="Reply"]');
-    if (!replyBtn) return;
-    const msg = replyBtn.closest('.lime-message');
-    const messageId = msg && msg.dataset.messageId;
-    if (messageId) openReplies(messageId);
+    if (replyBtn) {
+      const msg = replyBtn.closest('.lime-message');
+      const messageId = msg && msg.dataset.messageId;
+      if (messageId) openReplies(messageId);
+      return;
+    }
+
+    // LIME-11-fix5: the "X replies" indicator under a message is a
+    // second trigger for the exact same panel — carries its own
+    // data-message-id directly (see replyIndicatorHtml in messageHtml),
+    // so no .closest('.lime-message') lookup needed here.
+    const indicator = e.target.closest('#thread-messages .lime-message__reply-indicator');
+    if (indicator) openReplies(indicator.dataset.messageId);
   });
 
   function submitReply() {
