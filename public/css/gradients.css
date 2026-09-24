@@ -58,26 +58,17 @@
   left: 0;
   right: 0;
   bottom: 100%;
-  height: 32px;
+  height: 40px; /* was 32px (LIME-09) — taller per this brief's explicit ask */
   background: linear-gradient(to bottom, transparent, var(--soil-bg-canvas));
   pointer-events: none;
 }
 
-/* LIME-10-fix5 raised this to 220px to match the composer's real height
-   at the time (182px, measured via live DOM introspection). Since then
-   LIME-10-fix9/fix12 both shrank the collapsed composer significantly
-   (toolbar padding made conditional, then Send moved out of the toolbar
-   entirely) — this value was never revisited to match. Reduced to 150px
-   here, but this one is a REASONED ESTIMATE, not a measurement: the user
-   asked this session to stop using Chrome for previews, and Firefox has
-   no scripting interface this sandbox can read results back from (no
-   AppleScript dictionary, no System Events access either), so the live
-   getBoundingClientRect() checks used for every prior composer-height
-   fix (LIME-10-fix5, fix9) weren't available this time. Erred generous
-   (current collapsed height is roughly ~100-110px by manual CSS
-   arithmetic) rather than risk reintroducing the clipping bug fixed
-   twice already. Flagged for a visual check rather than asserted as
-   correct. */
+/* LIME-10-fix13's 150px was a reasoned estimate (Chrome unavailable for
+   previews at the time) — measured live for real this time (LIME-10-fix15):
+   .lime-composer is 107px collapsed, 163px with the toolbar expanded.
+   Calibrated against the taller expanded state, not just the resting
+   height, so growing the composer while already scrolled to the bottom
+   can never newly clip the last message — 163px + ~37px breathing room. */
 .lime-messages {
-  padding-bottom: 150px;
+  padding-bottom: 200px;
 }
