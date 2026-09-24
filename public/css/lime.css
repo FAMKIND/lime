@@ -1162,10 +1162,40 @@ body {
      position:fixed/overlay) — the grid's own column width animates
      0 -> 280px instead (see .seed-layout--mobile-open.seed-layout
      further down, in the other mobile media query block). overflow:hidden
-     clips the sidebar's content while its column is 0px wide. */
+     clips the sidebar's content while its column is 0px wide.
+
+     LIME-12-fix3: a real, visually-confirmed bug (not just a
+     getBoundingClientRect() geometry artifact — checked via
+     elementFromPoint() at the collapsed panel's own coordinates and
+     genuinely got sidebar content back, e.g. the logo <img>) — content
+     was rendering/clickable outside the intended 0px-wide clip region.
+     Padding wasn't the cause (this file already zeroes it
+     unconditionally elsewhere, line ~98 — that first theory was wrong).
+     Root cause, confirmed via getComputedStyle: `overflow` kept
+     resolving to `visible` here despite this rule's plain
+     `overflow: hidden` — something else (never fully identified; most
+     likely Seed's own overflow-y/overflow-x LONGHAND split fighting
+     this SHORTHAND declaration in a way plain specificity/source-order
+     reasoning didn't predict) kept winning. `!important` is the one
+     change that actually flipped the computed value to `hidden` and
+     made elementFromPoint() stop returning sidebar content — added
+     explicit width/max-width:0 too, a harder constraint than relying
+     on the grid track's inherited sizing alone. */
   .seed-layout__left {
     display: flex;
-    overflow: hidden;
+    overflow: hidden !important;
+    width: 0;
+    max-width: 0;
+  }
+
+  /* Reset the collapsed-state width/max-width/padding constraints once
+     actually open — 280px matches the grid column set below (this
+     media query's second block); padding restores breathing room so
+     content isn't flush against the revealed sidebar's edges. */
+  .seed-layout--mobile-open .seed-layout__left {
+    width: 280px;
+    max-width: 280px;
+    padding: var(--seed-space-4);
   }
 
   /* No backdrop in a push model — the center panel stays fully visible
