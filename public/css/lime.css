@@ -1166,7 +1166,17 @@ body {
      stray-positioned elements were found causing the same symptom —
      nothing in this app's own nav/sidebar CSS sets position:fixed or
      :absolute; Seed's own unused .seed-layout__reveal-*/__backdrop
-     rules are inert since Lime's markup never includes those elements. */
+     rules are inert since Lime's markup never includes those elements.
+
+     z-index: --seed-z-modal (400), not the brief's literal 100 — real
+     bug found after the first pass: 100 is below
+     --seed-z-overlay (300), which .lime-mobile-nav-backdrop already
+     uses. The backdrop was rendering ON TOP of the drawer whenever it
+     opened, its semi-transparent dark tint washing out everything in
+     the drawer except whatever had enough fill-color contrast to
+     still read through it (the user avatar's solid pastel background,
+     not the lower-contrast icons/text around it) — exactly what LIME-12-fix
+     was reported as "floating icons over [dimmed] content." */
   .seed-layout__left {
     display: flex;
     position: fixed;
@@ -1174,8 +1184,15 @@ body {
     left: -100%;
     bottom: 0;
     width: 280px;
-    z-index: 100;
+    z-index: var(--seed-z-modal);
     background: var(--soil-bg-canvas);
+    /* Seed's base panel rule (layout.css) gives every panel rounded
+       corners + a card shadow — looks broken on a flush, edge-to-edge
+       drawer (a visible notch where the rounded corner meets the
+       screen edge). Not asked for explicitly, but directly undermines
+       this brief's own "proper drawer" goal if left in. */
+    border-radius: 0;
+    box-shadow: none;
     transition: left 0.2s ease;
   }
 
@@ -1192,7 +1209,7 @@ body {
     left: 0;
     bottom: 0;
     width: 280px;
-    z-index: 100;
+    z-index: var(--seed-z-modal);
   }
 }
 
