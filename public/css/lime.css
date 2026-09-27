@@ -331,11 +331,14 @@ body {
 }
 
 /* Thread header (#open-profile-avatars): muted total-member label after
-   a group's overlapping avatar row (DMs never get this). */
+   a group's overlapping avatar row (DMs never get this). LIME-19b-fix:
+   spacing now comes entirely from .lime-avatar-trigger's own `gap` — the
+   old fixed margin-left here was sized to clear one specific group's
+   overflow (a symptom of the avatar box being fixed-width, fixed below),
+   so it was wrong by a different amount for every other group size. */
 .lime-topbar__member-count {
   font-size: var(--seed-text-xs);
   color: var(--soil-text-muted);
-  margin-left: 20px;
   white-space: nowrap;
 }
 
@@ -973,13 +976,12 @@ body {
 .lime-avatar-trigger {
   display: flex;
   align-items: center;
-  /* Only matters once a group's member-count label (LIME-19b) sits next to
-     the avatar row — a DM's lone .seed-avatar-group has no sibling here,
-     so this is a no-op for it. Without it the label collided with the
-     avatar-group's own rendered width, which (thanks to the negative
-     overlap margins .seed-avatar-group's avatars use) extends further
-     right than the group span's own box model suggests. */
-  gap: var(--seed-space-1);
+  /* Only matters once a group's member-count label sits next to the
+     avatar row — a DM's lone .seed-avatar-group has no sibling here, so
+     this is a no-op for it. LIME-19b-fix: now that the group avatars use
+     `width: auto` instead of a fixed box, this gap is the label's only
+     spacing (no margin-left hack needed on the label itself). */
+  gap: var(--seed-space-2);
   border: none;
   background: transparent;
   padding: var(--seed-space-1);
@@ -991,6 +993,8 @@ body {
 
 .lime-avatar-trigger:hover {
   background: var(--calm-bg-subtle-hover);
+  /* Group avatar rings (LIME-19b-fix) track this same hover tint. */
+  --lime-cluster-ring: var(--calm-bg-subtle-hover);
 }
 
 /* .lime-more-menu's own CSS rule (position:relative, anchoring the old
@@ -1171,6 +1175,31 @@ body {
   width: 28px;
   height: 28px;
   margin-left: -20px;
+}
+
+/* Group header avatars (LIME-19b-fix) — the DM rules above were sized for
+   exactly 2 avatars and squeezed a group's 5-6 down to a sliver each,
+   overflowing the fixed 36px box (the actual cause of "hover is broken":
+   the highlight only ever covered that 36px box, not the spilled-out
+   avatars). `width: auto` here lets the box size to its real content, so
+   Seed's standard -8px overlap (~20px visible per avatar) applies with no
+   overflow and no more per-group-size overlap math needed downstream.
+   Chained with the base class (equal specificity to the 1024px media
+   query's own `.lime-topbar__avatars` rule below) so this wins at every
+   width, not just desktop. */
+.lime-topbar__avatars.lime-topbar__avatars--group {
+  width: auto;
+  margin-right: 0;
+}
+
+.lime-topbar__avatars--group .seed-avatar {
+  width: 28px;
+  height: 28px;
+  margin-left: -8px;
+  /* Ring color tracks the trigger's hover state (set below) instead of a
+     fixed --soil-bg-surface, so the overlap rings blend into the hover
+     pill instead of showing a mismatched color against it. */
+  border-color: var(--lime-cluster-ring, var(--soil-bg-canvas));
 }
 
 .lime-center-body {
@@ -1676,16 +1705,6 @@ body {
   min-width: 0;
 }
 
-/* Wraps name + group member-count (LIME-19b) so the count sits on the
-   same line as the name without stopping the name itself from truncating
-   — a plain block .lime-contact__name would just push the count below. */
-.lime-contact__name-row {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  min-width: 0;
-}
-
 .lime-contact__name {
   display: block;
   overflow: hidden;
@@ -1695,14 +1714,6 @@ body {
   font-size: var(--seed-text-sm);
   font-weight: var(--seed-weight-medium);
   color: var(--soil-text);
-}
-
-/* KakaoTalk-style member count after a group's name — never the DM's
-   single other participant, which carries no count at all. */
-.lime-contact__count {
-  flex-shrink: 0;
-  font-size: var(--seed-text-sm);
-  color: var(--soil-text-muted);
 }
 
 /* text-overflow has no effect on a flex container per spec — only on

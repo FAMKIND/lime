@@ -464,10 +464,11 @@ const registeredDropdowns = new Set();
     const isGroup = conversation.type === 'group';
     const title = getConversationTitle(conversation);
     const avatarHtml = isGroup ? avatarClusterHtml(conversation) : directAvatarHtml(conversation);
-    const countHtml = isGroup ? '<span class="lime-contact__count">' + conversation.participants.length + '</span>' : '';
+    // LIME-19b-fix: the member count read as an unread/comment count here
+    // and was removed from the list — it still shows in the thread header.
     return avatarHtml
       + '<div class="lime-contact__body">'
-      + '<span class="lime-contact__name-row"><span class="lime-contact__name">' + escapeHtml(title) + '</span>' + countHtml + '</span>'
+      + '<span class="lime-contact__name">' + escapeHtml(title) + '</span>'
       + '<span class="lime-contact__preview">' + rowPreviewHtml(conversation, latest) + '</span>'
       + '</div>'
       + '<div class="lime-contact__meta">'
@@ -500,12 +501,17 @@ const registeredDropdowns = new Set();
     const others = orderedOthers(conversation);
     const shown = others.slice(0, HEADER_AVATAR_CAP);
     const extra = others.length - HEADER_AVATAR_CAP;
-    let avatarsHtml = shown.map((t) => '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(t.display_name) + '"></span>').join('');
+    // LIME-19b-fix: seed-avatar-group is row-reverse (first DOM child
+    // renders rightmost), so to read left-to-right as "most recent
+    // speaker … 5th speaker, then +N", the DOM order has to be built
+    // backwards — +N first, then the shown avatars from last to first.
+    let avatarsHtml = '';
     if (extra > 0) {
       avatarsHtml += '<span class="seed-avatar seed-avatar--sm lime-avatar-cluster__more" aria-hidden="true">+' + extra + '</span>';
     }
+    avatarsHtml += [...shown].reverse().map((t) => '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(t.display_name) + '"></span>').join('');
     const allNames = others.map((t) => t.display_name).join(', ');
-    return '<span class="seed-avatar-group lime-topbar__avatars" title="' + escapeHtml(allNames) + '">' + avatarsHtml + '</span>'
+    return '<span class="seed-avatar-group lime-topbar__avatars lime-topbar__avatars--group" title="' + escapeHtml(allNames) + '">' + avatarsHtml + '</span>'
       + '<span class="lime-topbar__member-count">' + conversation.participants.length + ' members</span>';
   }
 
