@@ -18,7 +18,18 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - LIME-21b `505e0e3` then replaced it with the search-modal pattern. **The user's gate check on 21b is pending**, plus three lime questions tend raised: the Jam "Soon" badge, the unread ring on Recent avatars (`--selected-border-bold-default`), and the voice-message play button (`--selected-bg-bold-default`).
   - Leftover from LIME-21: `index.html` still links Seed's `dropdown.css` (~line 20), but nothing uses `seed-dropdown` any more. Fold its removal into the next cleanup.
   - **Next queue:** the user checks 21b and answers the lime questions → LIME-22 (search close ×) → the LIME-19 redraft (needs the tab-merge answers) → the backlog (disabled/focus states, 768px breakpoint, border-box reset, `STATUS.md`, upstreaming to Seed).
-  - `PLOT.md` is still untracked. Gather it at the next clean pause. Its gate feedback led to 18-fix5: vertical alignment of the two composers and the right-panel gutter.
+  - `PLOT.md` is still untracked. Gather it at the next clean pause.
+- **Update, end of 2026-09-27:**
+  - `PLOT.md` committed (`724c6ee`).
+  - LIME-22 `e69cf50` (search close ×) landed.
+  - LIME-23 `e4c647b` (neutral "Soon" pill) landed; its gate check is pending.
+  - The user chose to keep lime on the unread ring and the voice play button.
+  - **The queue is empty.** Next: LIME-19 (needs the tab-merge answers), then the backlog.
+- **Paused mid-LIME-19b (2026-09-27, tend hit its usage limit):**
+  - All of 19b is implemented and verified but **uncommitted**, and `TEND.md` has no 19b entry yet. Uncommitted files: `lime.css`, `index.html`, `app.js`, `data.js`, `seed-data.js`, and `seed-data/conversations.json` + `messages.json`.
+  - Plot sanity-checked the tree: no diagnostic script left in `index.html`, `node --check` passes on both JS files, `lime.css` braces balance (434/434), and conv-011 is present in the JSON and the embedded copy.
+  - **`PLOT.md` is also modified (plot's edits). It must NOT go into the 19b commit.** Commit it separately as `chore: update PLOT.md`.
+  - **Resume:** a fresh tend session writes the `TEND.md` entry, commits 19b (excluding `PLOT.md`), then runs the gate. **No `git checkout` or `git stash`**: the only copy of this work is the working tree. Its gate feedback led to 18-fix5: vertical alignment of the two composers and the right-panel gutter.
 - **Minor, not urgent:** 18-fix3 swaps the reply disclaimer text in JS at load instead of just changing the words in `index.html`. It works but is roundabout. Fold it into a later cleanup.
 - LIME-17, 18 and 19 were drafted from the user's thread and chat-list QA. **LIME-19 is ON HOLD, don't send it:** it will be redrafted to be conversation-based once the tab-merge decision below lands.
 
@@ -26,7 +37,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 
 - **The user's proposal:** two tabs instead of three. Teachers (1:1 and group chats together) and Community.
 - **Plot agrees.** Proposed rule: first tab = "conversations I'm in" (private, invite-only, small: DMs, ad-hoc groups, named teams); Community = "spaces I've joined" (open or joinable, topic-based, many members).
-- **Waiting on the user:** (1) whether that rule matches their view; (2) the first tab's name ("Teachers" vs "Messages"/"Chats"; plot leans slightly to "Messages").
+- **DECIDED 2026-09-27:** the tabs are "Messages" and "Communities". Briefs LIME-19b (merged live list) and 19c (Starred) are drafted. **Later briefs:** make Communities live from the seed data (it's a static mockup today), make the Recent row data-driven, and make the profile panel group-aware.
 - **Leans for the redraft:**
   - group rows get a stacked two-avatar mark, the group name (or "Jean, Mary & Jimin" if unnamed), and a sender-prefixed preview ("Jean: …");
   - sections become Recent / Starred / All, and groups can be starred.
@@ -71,6 +82,160 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ---
 
 ## Drafted briefs
+
+> **Shared context for LIME-19b and 19c: the merged "Messages" list.**
+>
+> **User decisions (2026-09-27):**
+> - The tabs become **"Messages"** (1:1 and group chats together) and **"Communities"**. The "Group Chat" tab goes away.
+> - Earlier decisions still stand: chats with the newest activity move to the top, Starred becomes real (data-driven), and the fake unread "2" badges are removed.
+> - The "conversations I'm in" versus "spaces I've joined" split was presented. The user went straight to naming the tabs, which plot reads as acceptance.
+>
+> **Survey (plot, read-only, 2026-09-27).** Seed data for the current user (teacher-002):
+> - **Messages = 6 conversations:**
+>   - DMs: conv-001 (Jean, 9 messages, including 3 replies), conv-004 (Alexi, 5), conv-005 (Kai, **0 messages**)
+>   - groups: conv-006 "PS 113 7th Grade Team" (5), conv-007 "Math Teachers NYC" (5), conv-010 "Jean, Mary, Jimin & Me" (4)
+> - Communities: 3 of 9 include the current user. They're **out of scope here.**
+>
+> **The code today:**
+> - The list IIFE (`app.js` ~220–470) renders only direct conversations into `#contacts-list`, via `otherParticipant()`.
+> - `renderThread(conversationId, teacher)` uses **one `teacher` as the sender of every non-me message.** That's wrong for groups.
+> - `selectConversation` sets `#crumb-thread` to the teacher's name.
+> - The header avatars (`#open-profile-avatars`, `index.html` ~152) are static "Shem R" + "Jean Chung".
+> - Tabs (`index.html` ~185–187): `data-scope="teachers|groups|communities"`. The segmented pill width is `calc((100% - 6px) / 3)` (`lime.css` ~1437).
+> - The Group Chat panel (~335) and Community panel (~393) are **static mockups** with names that aren't in the seed data. The Recent row and Starred section are static too.
+> - **Listener constraint:** `app.js` binds click listeners **once at load** to every `.lime-contact` (~1245, the recent highlight; ~1310, mobile `setView('thread')`). Rows must be **created once at init** (the list IIFE runs earlier in the file), then **updated in place and reordered by moving the existing nodes. Never re-created.**
+> - The contact-preview truncation pass (~475) only wraps bare text nodes. JS-built rows already use `.lime-contact__preview-text`, so it isn't needed for them.
+>
+> **Capability assumptions for both briefs:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). Use headless Chrome for visual and position checks (see Patterns). The user previews at `file:///Users/shem/Sites/lime/public/index.html`.
+
+### LIME-19b → `tend`: "Messages" tab: DMs and groups in one live, recency-sorted list
+
+**Goal:**
+- The first tab, "Messages", lists all of the user's DM and group conversations (6 in the seed, plus the new 10-person conv-011) in one "All" section, newest activity first. Each row shows its latest message or reply, and updates and reorders immediately when you send a message or reply.
+- Opening a group shows the right sender on every message, the group's name in the breadcrumb, and its members in the header.
+- Two tabs: Messages and Communities.
+
+**Scope:**
+- **May touch:** `public/js/data.js`; `public/js/app.js` (the list IIFE, `renderThread`, `selectConversation`, `handleSend`, `submitReply`, the scope/tab code if it hard-codes scope names); `public/index.html` (tabs, the Messages panel's "All" section heading, removing the Group Chat panel, the header avatar group's initial markup, the breadcrumb's initial text); `public/css/lime.css` (segmented pill width, a new group avatar mark); and `TEND.md`.
+- **May not touch:** the Starred section and Recent row (still static; 19c handles Starred), the Communities panel (still static), the profile panel's contents, the reply panel, or the seed data, **except adding conv-011 as specified.** (`seed-data/*.json` and `public/js/seed-data.js` may be touched for that alone.)
+
+**Phase 1 — Survey:**
+1. Confirm the facts above, especially the listener constraint's line order, and every place that names the scopes `teachers`/`groups` (the JS scope filter ~1190–1225, CSS, `index.html`).
+2. Report how the profile panel behaves when the header avatars are clicked. Plot expects a static Jean mockup. **Don't change it.** For groups, just note in `TEND.md` that the profile panel isn't group-aware yet.
+3. If anything differs, stop and ask **the user**.
+
+**Phase 2 — The change:**
+1. **`data.js`:**
+   - `getMessageConversations()`: the current user's conversations of type `direct` or `group`.
+   - `getConversationTitle(conversation)`:
+     - a group's `name`;
+     - for a DM, the other participant's `display_name`;
+     - for an unnamed group, the other participants' first names joined as "Jean, Mary & Jimin".
+   - `getLatestActivity(conversationId)`: the last item of `getMessagesByConversation` (which **includes** replies), or `null`.
+2. **One row builder, `conversationRowHtml(conversation)`:**
+   - **DM:** the current avatar-with-presence markup.
+   - **Group:** a group avatar **cluster** (see "Group avatar cluster" below) at list size, plus the group's member count after the title (see below).
+   - **Name:** `getConversationTitle`.
+   - **Preview:** `previewFor(latest)`. For **groups** only, prefix it with the sender's short first name, or "You", plus ": ". Otherwise "No messages yet".
+   - **Time:** `formatTime(latest.created_at)`, or empty.
+   - **Attributes:** `data-conversation-id`, and `data-search-text` = the title plus every participant's display name, lowercase.
+   - **Group avatar cluster, a system that scales to large groups** (user direction, 2026-09-27, with Apple Messages and KakaoTalk as references; "3 is not the max… large group chats… systemize"): a group gets **one avatar made of its members' circles**, not one person's avatar. Build it as **one reusable component** (`<span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="…">` containing `<span class="seed-avatar lime-avatar lime-avatar-cluster__member" data-name="…">` elements).
+     - **Members shown:** the other participants (never the current user), most recent speaker first, then participant order.
+     - **Layout by the number of *other* members, in a 40px square** (matching `.lime-avatar-frame--lg`, so group and DM rows align):
+       - **2:** two 26px circles on a diagonal (`0,0` and `14,14`).
+       - **3:** a triangle of 22px circles (top-centre `9,0`; bottom `0,18` and `18,18`).
+       - **4 or more:** a 2×2 grid of 20px circles (KakaoTalk style), overlapping by about 1px so the rings merge. With exactly 4, all four are faces. **With more than 4, the 4th tile is a neutral "+N" tile** (N = others − 3): `--calm-bg-normal-default` fill, `--calm-text-normal-default` text, 9px medium. So a 10-person group (9 others) shows 3 faces and "+6".
+       - Initials 9–10px medium. **The list cluster caps at 4 tiles on purpose.** 5 or more circles in 40px aren't legible. The larger "5–7" preview lives in the thread header (below).
+     - **Ring:** each circle has a 2px ring, `box-shadow: 0 0 0 2px var(--lime-cluster-ring, var(--soil-bg-canvas))`. Set `--lime-cluster-ring` on hovered and active rows to that row's background.
+     - Paint every member with `paintAvatar`.
+     - **Tune offsets by measuring in headless Chrome,** and report the final values for each layout.
+   - **Thread header for a group** (#open-profile-avatars, user direction: "maybe 5–7 max we show, then we tell the total number"):
+     - An overlapping row of **up to 5** member avatars (a Seed `seed-avatar-group` at `seed-avatar--sm`, as the header uses today), others first by most recent speaker.
+     - If there are more, a neutral "+N" circle in the same style as the list's +N tile.
+     - Then a muted `N members` label (the total, including the current user), `--soil-text-muted`, `--seed-text-xs`.
+     - **5, not 7:** the header shares its row with the breadcrumb and the "…" button, and has to fit at mobile width. Flag this at the gate; the user may want more.
+     - The `title` attribute lists every member's name.
+     - DMs keep today's header exactly.
+   - **Seed data example of a large group:** the seed has no group bigger than 5. Add **one** 10-member group for the current user, so the system is exercised:
+     - `conv-011`, "PS 113 Staff Room", `type: 'group'`
+     - participants teacher-002 (the current user) plus teacher-001, 010, 013, 014, 015, 016, 018, 022, 024
+     - 5–6 plausible short staff-room messages from at least 4 different members, with timestamps within the seed's date range; make the newest one of the most recent in the whole seed, so it sorts near the top.
+     - **Add it to both `seed-data/conversations.json` and `seed-data/messages.json` (the source of truth) and the embedded copy in `public/js/seed-data.js`.** Keep them in sync, and match the existing record shapes exactly (read a few records first).
+     - This is the only seed data change allowed in this brief.
+   - **Member count:** for groups, show the total member count, including the current user, after the title as `<span class="lime-contact__count">N</span>` in `--soil-text-muted`, regular weight, 4px gap, the way KakaoTalk shows "4". DMs don't get a count.
+3. **Render and sort:**
+   - At init, render every Messages conversation into `#contacts-list`: newest `latest.created_at` first, no-activity rows last in title order.
+   - Paint avatars (the later one-time sweep also covers this; confirm).
+   - The default selection on load is the top row.
+4. **Live updates:**
+   - After `sendMessage` in `handleSend` and after `sendReply` in `submitReply`, dispatch `document.dispatchEvent(new CustomEvent('lime:activity', { detail: { conversationId } }))`. This decouples the replies IIFE from the list IIFE.
+   - The list IIFE listens for it, updates that row's preview and time **in place**, and re-sorts by **moving existing nodes** (`appendChild` in sorted order). It never re-creates rows.
+5. **Opening a conversation:**
+   - `selectConversation(conversation)` takes just the conversation. It sets `#crumb-thread` to the title and marks the active row.
+   - It rebuilds `#open-profile-avatars`'s contents. For a **DM**, keep today's avatar group (the current user plus the other person). For a **group**, use the group header treatment above (up to 5 avatars, then +N, then "N members").
+   - `renderThread(conversationId)` resolves each message's sender with `getTeacherById(m.sender_id)`, falling back to a placeholder name if missing. It no longer takes a single `teacher`.
+6. **Tabs and markup:**
+   - Tabs become `data-scope="messages"` "Messages" and `data-scope="communities"` "Communities".
+   - The first panel's `data-scope-panel` becomes `messages`.
+   - Delete the Group Chat tab and its static panel (~335–392).
+   - Rename the "All Teachers" heading to "All" (keep its `data-section-id` unless something depends on the text).
+   - The breadcrumb's initial text becomes "Messages".
+   - Update any JS or CSS that names the old scopes.
+   - Segmented pill width: `calc((100% - 6px) / 2)`.
+7. **Comments:** a short header comment on the list IIFE describing the merged, conversation-based list and the listener constraint.
+
+**Phase 3 — Verification:**
+1. `node --check` passes on both JS files, the brace counts in `lime.css` are equal, and the real app loads in jsdom with zero errors.
+2. **In jsdom:**
+   - The "All" list has 7 rows (6 existing plus conv-011), sorted by latest activity; Kai (no messages) is last.
+   - Group rows show "Name: preview".
+   - Opening "PS 113 7th Grade Team" renders messages whose sender names match each message's `sender_id` (report 3 examples), and the breadcrumb shows the group name.
+   - After sending in Alexi's DM, Alexi's row moves to the top with the new text. After replying in Jean's thread, Jean's row shows the reply.
+   - **Listener check:** at mobile width, clicking a row still sets `data-mobile-view="thread"`.
+3. **Headless Chrome:**
+   - The two tabs split the control evenly, with the pill under the active tab.
+   - Group clusters fit inside a 40px square, lined up with the DM avatars. Report the rects for each layout: 3-member groups (triangle), and conv-011 (2×2 with "+6"). With conv-011 open, the header shows 5 avatars, "+4" (the 9 other members minus the 5 shown) and "10 members", and fits on one line at 1567px and at 767px.
+   - No row overflows its list.
+4. `grep -rn 'data-scope="groups"\|Group Chat' public/` returns nothing.
+
+**Gate:** the user checks in Firefox:
+- **Tabs:** just "Messages" and "Communities".
+- **One list:** Messages shows people and groups together, newest first. Groups show a small cluster of member avatars (like Apple Messages or KakaoTalk): a triangle for small groups, and a 2×2 grid with "+N" for big ones like the new 10-person "PS 113 Staff Room". A member count follows the name. **Open the big group:** the header shows 5 faces, "+4" and "10 members". Ask whether 5 faces is the right cap.
+- **Groups:** open one. Each message shows who actually sent it, and the header shows the group name.
+- **Live:** send a message or reply, and the list updates and reorders straight away.
+- **Still placeholders:** Starred, the Recent row and Communities are unchanged for now. Starred is next (19c).
+
+**Record:** add a `## LIME-19b` entry to `TEND.md`. Commit: `feat: merged Messages list (DMs + groups), live and recency-sorted`, trailer `Brief: LIME-19b`, plus the attribution trailer.
+
+---
+
+### LIME-19c → `tend` (after LIME-19b): a real Starred section
+
+**Goal:** Starred shows real, live conversation rows (DMs or groups), identical to their rows in "All", and kept in sync when you send or reply. There are no fake badges.
+
+**Plot's choice, flagged at the gate:** stars now belong to *conversations*, not people. Starring UI (adding or removing stars) is out of scope. The starting set is `STARRED_CONVERSATION_IDS = ['conv-001', 'conv-010']`: Jean's DM, and "Jean, Mary, Jimin & Me", which covers Mary. The old static Starred list had Valene, but the current user has no conversation with her, so she drops out. The user can name a different set at the gate.
+
+**Scope:**
+- **May touch:** `public/index.html` (replace the static Starred `<li>`s with `<ul class="lime-contact-list" id="starred-list"></ul>`), `public/js/app.js` (the list IIFE only), and `TEND.md`.
+- **May not touch:** the Recent row, Communities, or star/unstar UI.
+
+**The change:**
+- Render Starred rows at init using 19b's `conversationRowHtml`, into `#starred-list`, sorted by the same rule. This is before the load-time listeners bind, the same constraint as 19b.
+- The `lime:activity` handler updates and re-sorts **every** row for that conversation, in both lists.
+- The active state marks every row for that conversation in both lists.
+- Remove the static rows' fake "2" badges and chevron (the markup is being replaced anyway).
+
+**Verification:**
+- The real app loads in jsdom with zero errors. Starred has 2 rows showing real previews.
+- Sending in Jean's DM updates Jean's row in **both** Starred and All, and both move to the top of their sections.
+- Clicking a Starred row opens the conversation and highlights both copies.
+- At mobile width, tapping a Starred row goes to the thread view.
+
+**Gate:** in Firefox, Starred shows Jean and "Jean, Mary, Jimin & Me" with real previews and times, and updates when you send. Ask the user whether that's the starred set they want.
+
+**Record:** add a `## LIME-19c` entry to `TEND.md`. Commit: `feat: data-driven Starred section`, trailer `Brief: LIME-19c`, plus the attribution trailer.
+
+---
 
 ### LIME-23 → `tend`: a legible "Soon" badge (neutral grey pill)
 
@@ -575,60 +740,9 @@ Plot suspects the two composers sit in different containers whose bottom edges d
 
 ---
 
-### LIME-19 → `tend`: live chat list (after LIME-18)
+### LIME-19 → SUPERSEDED (never executed)
 
-**User decisions (2026-09-27):**
-- Chats with the newest activity move to the top.
-- The "Starred" section becomes real (data-driven), with the same 3 people starred. Adding or removing stars stays out of scope.
-
-**Goal:** both "Starred" and "All Teachers" show each chat's true latest activity (message **or** reply) with its preview and time, sorted newest first, and update immediately when you send a message or reply.
-
-**Scope:**
-- **May touch:** `public/js/app.js` (the contact-list code inside the first IIFE, `handleSend`, `submitReply`), `public/js/data.js`, `public/index.html` (replace only the 3 static Starred `<li>`s with an empty `<ul id="starred-list">`), `public/css/lime.css` (one chevron rule), and `TEND.md`.
-- **May not touch:** the "Recent" avatar row (still static), Group Chat and Community lists, unread-count logic, or star/unstar UI.
-
-**Plot's design choices, flagged at the gate:**
-- **Unread badges:** the "2" badges are fake, and no unread data exists. They're removed, not faked. Real unread counts would be their own feature.
-- **Starred people with no conversation yet:** Valene Rajoon and Mary Lee have no direct conversation with the current user in the seed data. Their rows show "No messages yet" and no time, and they sort below chats with activity. Clicking one opens an empty thread you can message into. That's done by `getOrCreateDirectConversation(teacherId)` in `data.js`: it returns the existing direct conversation, or pushes a new in-memory one (`id: 'conv-new-' + teacherId`, `type: 'direct'`, participants `[CURRENT_USER_ID, teacherId]`, `created_at`/`updated_at` now). The list shows this as a new chat; no seed data changes.
-- **Preview of a reply:** a reply's text is the preview, the same as a normal message.
-
-**Phase 1 — Survey:**
-1. Confirm LIME-17 and LIME-18 have landed.
-2. **Important listener constraint:** `app.js` binds click listeners **once at load** to every `.lime-contact` (~1065, the recent-item highlight; ~1129, mobile `setView('thread')`). Rows must therefore be **created once at init**, before those lines run (the list IIFE already runs earlier in the file; confirm), and afterwards only **updated in place and reordered by moving the existing nodes** (`appendChild`/`insertBefore`). Never re-create them, or mobile navigation silently breaks. Confirm the line order.
-3. Confirm the local search filter (~1010) works on `[data-search-text]`, so rows keep that attribute.
-4. If anything doesn't match, stop and ask **the user**.
-
-**Phase 2 — The change:**
-1. **`data.js`:**
-   - Add `getOrCreateDirectConversation(teacherId)`, as described above.
-   - Add `getLatestActivity(conversationId)`: the last item of `getMessagesByConversation` (which includes replies), or `null`.
-2. **`app.js` list code:**
-   - Factor the row markup into one `contactRowHtml(teacher)`. Its preview is `previewFor(latest)` or "No messages yet", and its time is `formatTime(latest.created_at)` or empty. Include `<span class="dew dew-chevron-right lime-contact__chevron"></span>` in every row.
-   - Each row carries `data-teacher-id` and `data-conversation-id` (when a conversation exists) plus `data-search-text`.
-   - Add a hard-coded `STARRED_TEACHER_IDS = ['teacher-001', 'teacher-003', 'teacher-004']` with a comment: star/unstar isn't built yet.
-   - Render the Starred rows into `#starred-list` and the existing direct conversations into `#contacts-list`, both at init. Clicking a row calls `selectConversation(getOrCreateDirectConversation(teacherId), teacher)`, then sets the row's `data-conversation-id` if it was missing.
-   - Add `refreshContactRows(conversationId)`. It updates the preview and time in place for **every** row of that conversation (Jean appears in both sections), then re-sorts each list by moving existing nodes: newest first, no-activity rows last in name order.
-   - Call `refreshContactRows` after `sendMessage` in `handleSend` and after `sendReply` in `submitReply`.
-   - `selectConversation` marks `lime-contact--active` on every matching row in **both** lists, matched by `data-teacher-id`, and clears it from all the others.
-   - Re-apply the contact preview truncation treatment (~app.js 345) to updated previews, if it depends on a one-time pass. Survey how it works first.
-3. **`index.html`:** replace the three static Starred `<li>`s with `<ul class="lime-contact-list" id="starred-list"></ul>`. Add an HTML comment like the one on `#contacts-list`.
-4. **`lime.css`:** add `.lime-contact:not(.lime-contact--active) .lime-contact__chevron { display: none; }` after the `.lime-contact__chevron` rule (~1669), so the chevron shows only on the active row.
-
-**Phase 3 — Verification:**
-1. `node --check` passes on both JS files. The brace counts in `lime.css` are equal.
-2. On load: Starred shows Jean (real latest preview and time), then Valene and Mary with "No messages yet". There are no "2" badges. All Teachers is sorted newest first.
-3. Send a message to Alexi: Alexi's row jumps to the top of All Teachers, showing your text and the current time.
-4. Reply in Jean's thread: Jean's rows in **both** sections show the reply text and time.
-5. Click Valene: an empty thread opens. Send a message: Valene's row shows it and moves above Mary.
-6. The local search still filters the rows. On mobile width, tapping a row still switches to the thread view (that tests the listener constraint).
-7. If Chrome isn't available, say so and verify by reading the source.
-
-**Gate:** the user checks in Firefox:
-- **Sending:** send a message and a reply, and the chat list updates and reorders straight away.
-- **Starred:** shows real previews.
-- **Two choices to confirm:** the fake "2" badges are gone, and Valene and Mary show "No messages yet".
-
-**Record:** add a `## LIME-19` entry to `TEND.md`. Commit: `feat: live, recency-sorted chat list with data-driven Starred section`, trailer `Brief: LIME-19`, plus the attribution trailer.
+Replaced by LIME-19b and 19c (drafted near the top of this section) after the user merged the Teachers and Group Chat tabs.
 
 ### LIME-15 → Claude Code, `tend` session
 
