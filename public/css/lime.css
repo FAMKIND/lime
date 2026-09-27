@@ -2891,17 +2891,6 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
 }
 
 .lime-replies-panel__composer {
-  /* Positioning context for #replies-composer.lime-composer
-     (position:absolute; inset:0 on left/right/bottom) — without this,
-     it skips past this element and .lime-replies-panel (neither
-     positioned) and anchors to #right-panel/.seed-layout__right
-     instead, whose own 16px padding sits *inside* that containing
-     block for an absolutely positioned child, not outside it — so the
-     composer rendered flush against the panel's outer edge instead of
-     inset like the rest of the panel's content. .lime-chat-body plays
-     the identical role for the main composer, already position:relative
-     with no padding of its own for the same reason. */
-  position: relative;
   flex-shrink: 0;
   display: flex;
   /* flex-direction:column, not the row default — this footer now has two
@@ -2910,7 +2899,22 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
      pill), so the missing direction was never visible as a bug until now. */
   flex-direction: column;
   gap: var(--seed-space-1);
-  padding: var(--seed-space-3);
+  /* LIME-18-fix5: this element is a normal flex child — #replies-composer
+     never carried .lime-composer's class (checked directly; a fix2
+     comment here wrongly assumed it did), so nothing here is or was
+     absolutely positioned. The real gap: #right-panel/.seed-layout__right
+     carries its own 16px padding on every side, which the main composer
+     never pays — it escapes its own panel's padding entirely via
+     position:absolute against an unpadded .lime-chat-body. Left at
+     --seed-space-4 to match .lime-replies-panel__header's own left
+     padding (so this box's left edge lines up with the "Thread" title
+     above it); right/bottom margins cancel #right-panel's 16px on those
+     sides, landing the box exactly at #right-panel-toggle's own 12px
+     right inset and the main composer's 8px (--seed-space-2) bottom
+     padding. */
+  padding: var(--seed-space-3) var(--seed-space-3) var(--seed-space-2) var(--seed-space-4);
+  margin-right: calc(-1 * var(--seed-space-4));
+  margin-bottom: calc(-1 * var(--seed-space-4));
 }
 
 /* Clickable participant identity in the center top row — opens the
