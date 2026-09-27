@@ -1884,6 +1884,11 @@ body {
   align-items: center;
   flex-wrap: nowrap;
   gap: var(--seed-space-4);
+  /* Matches .lime-message__reactions:not(:empty)'s own left margin
+     directly above it (LIME-18-fix2) — this restored rule (LIME-18)
+     had none, so the reply summary sat flush left while the reaction
+     pill above it sat indented 12px. */
+  margin-left: var(--seed-space-3);
 }
 
 .lime-replies__avatars {
@@ -2866,6 +2871,17 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
 }
 
 .lime-replies-panel__composer {
+  /* Positioning context for #replies-composer.lime-composer
+     (position:absolute; inset:0 on left/right/bottom) — without this,
+     it skips past this element and .lime-replies-panel (neither
+     positioned) and anchors to #right-panel/.seed-layout__right
+     instead, whose own 16px padding sits *inside* that containing
+     block for an absolutely positioned child, not outside it — so the
+     composer rendered flush against the panel's outer edge instead of
+     inset like the rest of the panel's content. .lime-chat-body plays
+     the identical role for the main composer, already position:relative
+     with no padding of its own for the same reason. */
+  position: relative;
   flex-shrink: 0;
   display: flex;
   /* flex-direction:column, not the row default — this footer now has two
