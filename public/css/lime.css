@@ -1960,30 +1960,6 @@ body {
   margin-left: var(--seed-space-3);
 }
 
-/* "X replies" under a main-thread message with real replies (LIME-11-fix5). */
-.lime-message__reply-indicator {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-1);
-  margin-top: var(--seed-space-1);
-  margin-left: var(--seed-space-3);
-  padding: 0;
-  border: none;
-  background: none;
-  font-size: var(--seed-text-xs);
-  color: var(--soil-text-muted);
-  cursor: pointer;
-}
-
-.lime-message__reply-indicator:hover {
-  color: var(--soil-text);
-  text-decoration: underline;
-}
-
-.lime-message__reply-indicator .dew {
-  font-size: 12px;
-}
-
 .lime-reaction {
   display: inline-flex;
   align-items: center;

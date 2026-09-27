@@ -42,6 +42,20 @@ function formatDay(iso) {
   return new Date(iso).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+// The text after "Last reply " in the reply summary (LIME-18) — compares
+// calendar days, not elapsed hours, so a reply from 11pm yesterday reads
+// "yesterday", not "23 hours ago".
+function formatLastReply(iso) {
+  const date = new Date(iso);
+  const now = new Date();
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((startOfDay(now) - startOfDay(date)) / 86400000);
+  if (diffDays <= 0) return 'today at ' + formatTime(iso);
+  if (diffDays === 1) return 'yesterday at ' + formatTime(iso);
+  if (diffDays <= 29) return diffDays + ' days ago';
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 function formatDuration(seconds) {
   return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 }
@@ -92,31 +106,54 @@ function renderReactions(messageEl, reactions) {
   if (container) container.innerHTML = reactionsHtml(messageEl.dataset.messageId, reactions);
 }
 
-// LIME-11-fix5: "X replies" under any main-thread message that has
-// real replies — like reactions, the count is computed live from
-// getRepliesForMessage rather than trusted from the seed message's
-// own stale reply_count field. Click reuses the exact same
+// LIME-18: restores the original Slack-style summary (replier avatars,
+// "N replies", "Last reply {when}") in place of LIME-11-fix5's plainer
+// "💬 N replies" — like reactions, the count and senders are computed
+// live from getRepliesForMessage rather than trusted from the seed
+// message's own stale reply_count field. Click reuses the exact same
 // openReplies() the "Reply" action button already calls (see the
 // "Reply thread panel" closure further down) via a second delegated
-// listener on this button's own class.
+// listener on this button's own class. Avatars are the distinct reply
+// senders, most recent first, capped at 5 — .seed-avatar-group (Seed's
+// own, unmodified) lays them out row-reverse with the last DOM child
+// frontmost, so as implemented the *oldest* of the shown avatars ends
+// up frontmost/leftmost, not the most recent; flagged at the gate.
 function replyIndicatorHtml(messageId) {
-  const count = getRepliesForMessage(messageId).length;
-  if (count === 0) return '';
-  return '<button type="button" class="lime-message__reply-indicator" data-message-id="' + messageId + '">'
-    + '<span class="dew dew-chat"></span>'
-    + count + (count === 1 ? ' reply' : ' replies')
-    + '</button>';
+  const replies = getRepliesForMessage(messageId);
+  if (replies.length === 0) return '';
+  const seenSenders = new Set();
+  const avatars = [];
+  for (let i = replies.length - 1; i >= 0 && avatars.length < 5; i--) {
+    const senderId = replies[i].sender_id;
+    if (seenSenders.has(senderId)) continue;
+    seenSenders.add(senderId);
+    const sender = getTeacherById(senderId);
+    if (sender) avatars.push('<span class="seed-avatar seed-avatar--xs lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>');
+  }
+  const last = replies[replies.length - 1];
+  return '<div class="lime-message__footer">'
+    + '<button type="button" class="lime-message__replies" data-message-id="' + messageId + '">'
+    + '<span class="seed-avatar-group lime-replies__avatars">' + avatars.join('') + '</span>'
+    + replies.length + (replies.length === 1 ? ' reply' : ' replies')
+    + '<span class="lime-replies__time">Last reply ' + formatLastReply(last.created_at) + '</span>'
+    + '</button>'
+    + '</div>';
 }
 
-// Keeps the main thread's "N replies" indicator correct after a reply
-// is sent anywhere (the thread panel), without a full re-render (LIME-17).
+// Keeps the main thread's reply summary correct after a reply is sent
+// anywhere (the thread panel), without a full re-render (LIME-17).
+// Replaces the whole .lime-message__footer (avatars + count + time all
+// change together), not just a count, and paints the fresh avatars —
+// they're inserted after the one-time load-time paint pass has already
+// run, the same reason handleSend needs its own paintAvatar call.
 function refreshReplyIndicator(messageId) {
   const messageEl = document.querySelector('#thread-messages .lime-message[data-message-id="' + messageId + '"]');
   if (!messageEl) return;
-  const existing = messageEl.querySelector('.lime-message__reply-indicator');
+  const existing = messageEl.querySelector('.lime-message__footer');
   if (existing) existing.remove();
   const reactionsEl = messageEl.querySelector('.lime-message__reactions');
   if (reactionsEl) reactionsEl.insertAdjacentHTML('afterend', replyIndicatorHtml(messageId));
+  messageEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
 }
 
 (function () {
@@ -279,6 +316,12 @@ function refreshReplyIndicator(messageId) {
       const sender = isSent ? me : teacher;
       thread.insertAdjacentHTML('beforeend', messageHtml(m, sender, isSent));
     });
+    // LIME-18: needed for a conversation switch, not just the initial
+    // load — the one-time document-wide paintAvatar pass (below, in
+    // script order) only ever runs once, so anything renderThread
+    // inserts afterward (every subsequent selectConversation call) is
+    // otherwise left unpainted, same root cause as LIME-11's handleSend fix.
+    thread.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
     // LIME-11-fix3: covers both the initial page-load render (default
     // conversation) and every subsequent conversation switch, since both
     // paths call this same function — renderThread never scrolled at all
@@ -766,7 +809,7 @@ function setRightPanelOpen(isOpen) {
     }
     const last = replies[replies.length - 1];
     metaEl.textContent = replies.length + (replies.length === 1 ? ' reply' : ' replies')
-      + ' · last reply ' + formatTime(last.created_at);
+      + ' · last reply ' + formatLastReply(last.created_at);
   }
 
   function renderReplies(parentId) {
@@ -807,11 +850,11 @@ function setRightPanelOpen(isOpen) {
       return;
     }
 
-    // LIME-11-fix5: the "X replies" indicator under a message is a
-    // second trigger for the exact same panel — carries its own
-    // data-message-id directly (see replyIndicatorHtml in messageHtml),
-    // so no .closest('.lime-message') lookup needed here.
-    const indicator = e.target.closest('#thread-messages .lime-message__reply-indicator');
+    // LIME-11-fix5, renamed by LIME-18: the reply summary under a
+    // message is a second trigger for the exact same panel — carries
+    // its own data-message-id directly (see replyIndicatorHtml in
+    // messageHtml), so no .closest('.lime-message') lookup needed here.
+    const indicator = e.target.closest('#thread-messages .lime-message__replies');
     if (indicator) openReplies(indicator.dataset.messageId);
   });
 
