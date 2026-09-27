@@ -511,7 +511,7 @@ const registeredDropdowns = new Set();
     }
     avatarsHtml += [...shown].reverse().map((t) => '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(t.display_name) + '"></span>').join('');
     const allNames = others.map((t) => t.display_name).join(', ');
-    return '<span class="seed-avatar-group lime-topbar__avatars lime-topbar__avatars--group" title="' + escapeHtml(allNames) + '">' + avatarsHtml + '</span>'
+    return '<span class="seed-avatar-group lime-topbar__avatars" title="' + escapeHtml(allNames) + '">' + avatarsHtml + '</span>'
       + '<span class="lime-topbar__member-count">' + conversation.participants.length + ' members</span>';
   }
 

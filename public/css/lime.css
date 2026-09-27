@@ -1157,42 +1157,20 @@ body {
   font-size: 12px;
 }
 
+/* Header avatars (#open-profile-avatars), DM and group alike (unified by
+   LIME-19b-fix's own follow-up — this used to be a fixed 36px box tuned
+   only for a DM's exactly-2-avatar case, which squeezed a group's 5-6
+   avatars down to a sliver each and overflowed the box (the actual cause
+   of "hover is broken": the highlight only ever covered that fixed box,
+   not the spilled-out avatars). `width: auto` lets the box size to its
+   real content instead, for any avatar count. */
 .lime-topbar__avatars {
-  width: 36px;
-  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-right: var(--seed-space-2);
 }
 
-/* Seed's own -8px overlap (for its default 24px avatar size) leaves two
-   28px avatars wider than the 36px total footprint asked for here —
-   more overlap is needed to fit both inside it. :last-child's own
-   margin-left:0 (Seed's rule) still wins over this by specificity, so
-   only the non-last avatar(s) actually shift. */
 .lime-topbar__avatars .seed-avatar {
-  width: 28px;
-  height: 28px;
-  margin-left: -20px;
-}
-
-/* Group header avatars (LIME-19b-fix) — the DM rules above were sized for
-   exactly 2 avatars and squeezed a group's 5-6 down to a sliver each,
-   overflowing the fixed 36px box (the actual cause of "hover is broken":
-   the highlight only ever covered that 36px box, not the spilled-out
-   avatars). `width: auto` here lets the box size to its real content, so
-   Seed's standard -8px overlap (~20px visible per avatar) applies with no
-   overflow and no more per-group-size overlap math needed downstream.
-   Chained with the base class (equal specificity to the 1024px media
-   query's own `.lime-topbar__avatars` rule below) so this wins at every
-   width, not just desktop. */
-.lime-topbar__avatars.lime-topbar__avatars--group {
-  width: auto;
-  margin-right: 0;
-}
-
-.lime-topbar__avatars--group .seed-avatar {
   width: 28px;
   height: 28px;
   margin-left: -8px;
@@ -3086,15 +3064,14 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
 @media (max-width: 767px) {
   /* Header icons (avatar group, pen, video) were cramped against the
      hamburger + breadcrumb on narrow phones — tighten the row's own
-     padding/gap and shrink the icon buttons + avatar group slightly. */
+     padding/gap and shrink the icon buttons slightly. The avatar group
+     itself no longer has its own fixed size to shrink (LIME-19b-fix's
+     follow-up made it `width: auto` at every breakpoint, so a mobile
+     override here would just reintroduce the same clamp-and-overflow bug
+     that fix removed). */
   .lime-center-top {
     padding: var(--seed-space-2) var(--seed-space-3);
     gap: var(--seed-space-2);
-  }
-
-  .lime-topbar__avatars {
-    width: 32px;
-    height: 32px;
   }
 
   .lime-icon-btn {
