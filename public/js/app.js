@@ -941,7 +941,7 @@ function setRightPanelOpen(isOpen) {
 // document when switching between two open menus. Fixed-mode menus
 // also flip to whichever side of the trigger actually has room instead
 // of always opening upward, and Escape closes whichever is open.
-function wireDropdownToggle(toggleId, dropdownId, { fixed = false } = {}) {
+function wireDropdownToggle(toggleId, dropdownId, { fixed = false, placement = 'vertical' } = {}) {
   const toggle = document.getElementById(toggleId);
   const dropdown = document.getElementById(dropdownId);
   if (!toggle || !dropdown) return;
@@ -963,6 +963,19 @@ function wireDropdownToggle(toggleId, dropdownId, { fixed = false } = {}) {
       const gap = 8;
       const h = dropdown.offsetHeight;
       const w = dropdown.offsetWidth;
+
+      // LIME-20-fix: notifications opens beside the bell instead of
+      // covering the nav items below it — only when there's actually
+      // room on the right (a narrow mobile drawer falls back to the
+      // same vertical flip-and-clamp every other fixed menu uses).
+      const fitsRight = placement === 'right' && rect.right + gap + w <= window.innerWidth - 8;
+      if (fitsRight) {
+        dropdown.style.left = (rect.right + gap) + 'px';
+        dropdown.style.top = Math.max(8, Math.min(rect.top, window.innerHeight - h - 8)) + 'px';
+        dropdown.style.bottom = '';
+        return;
+      }
+
       const fitsBelow = rect.bottom + gap + h <= window.innerHeight - 8;
       const fitsAbove = rect.top - gap - h >= 8;
       // Neither fits (a very short viewport): use whichever side has
@@ -997,7 +1010,9 @@ document.addEventListener('keydown', (e) => {
 // LIME-21 gives it the shared position:fixed .lime-menu CSS, at which
 // point this can switch too.
 wireDropdownToggle('more-menu-toggle', 'more-menu');
-wireDropdownToggle('notif-btn', 'notif-dropdown', { fixed: true });
+// Opens beside the bell, not below it, so the nav items under it (Link,
+// Jam) stay visible instead of getting covered (LIME-20-fix).
+wireDropdownToggle('notif-btn', 'notif-dropdown', { fixed: true, placement: 'right' });
 wireDropdownToggle('user-btn', 'user-dropdown', { fixed: true });
 // Decorative placeholder, not a real navigator.mediaDevices list — per
 // the LIME-10 gate, real device enumeration needs a live mic-permission
