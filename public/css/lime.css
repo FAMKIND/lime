@@ -258,6 +258,87 @@ body {
 
 .lime-presence[data-presence="dnd"]::after { content: '–'; }
 
+/* ── Group avatar cluster (LIME-19b) ──
+   Sits in the same 40px square a DM's single .lime-avatar-frame--lg
+   occupies. data-count picks the layout; a >4-member group still shows
+   only 4 tiles, the last becoming a neutral "+N" instead of a 5th face.
+   Ring color defaults to the list's own canvas background and switches
+   to the hover/active row tint below, same reasoning as .lime-presence's
+   box-shadow ring just above. */
+.lime-avatar-cluster {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.lime-avatar-cluster--lg {
+  width: 40px;
+  height: 40px;
+}
+
+.lime-avatar-cluster__member {
+  position: absolute;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--lime-cluster-ring, var(--soil-bg-canvas));
+}
+
+.lime-contact:hover .lime-avatar-cluster__member,
+.lime-contact--active .lime-avatar-cluster__member {
+  --lime-cluster-ring: var(--calm-bg-subtle-hover);
+}
+
+.lime-avatar-cluster--lg[data-count="2"] .lime-avatar-cluster__member {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+}
+.lime-avatar-cluster--lg[data-count="2"] .lime-avatar-cluster__member:nth-child(1) { top: 0;   left: 0; }
+.lime-avatar-cluster--lg[data-count="2"] .lime-avatar-cluster__member:nth-child(2) { top: 14px; left: 14px; }
+
+.lime-avatar-cluster--lg[data-count="3"] .lime-avatar-cluster__member {
+  width: 22px;
+  height: 22px;
+  font-size: 9px;
+}
+.lime-avatar-cluster--lg[data-count="3"] .lime-avatar-cluster__member:nth-child(1) { top: 0;    left: 9px; }
+.lime-avatar-cluster--lg[data-count="3"] .lime-avatar-cluster__member:nth-child(2) { top: 18px; left: 0; }
+.lime-avatar-cluster--lg[data-count="3"] .lime-avatar-cluster__member:nth-child(3) { top: 18px; left: 18px; }
+
+.lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+}
+.lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member:nth-child(1) { top: 0;    left: 0; }
+.lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member:nth-child(2) { top: 0;    left: 19px; }
+.lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member:nth-child(3) { top: 19px; left: 0; }
+.lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member:nth-child(4) { top: 19px; left: 19px; }
+
+/* Neutral "+N" tile — the cluster's own overflow tile and the thread
+   header's overflow circle both use this (the header one also gets
+   seed-avatar--sm's 24px sizing since it isn't inside a cluster frame). */
+.lime-avatar-cluster__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--calm-bg-normal-default);
+  color: var(--calm-text-normal-default);
+  font-weight: var(--seed-weight-medium);
+  font-size: 9px;
+}
+
+.lime-topbar__avatars .lime-avatar-cluster__more {
+  font-size: 10px;
+}
+
+/* Thread header (#open-profile-avatars): muted total-member label after
+   a group's overlapping avatar row (DMs never get this). */
+.lime-topbar__member-count {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+  margin-left: 20px;
+  white-space: nowrap;
+}
+
 /* Standalone presence badge — same states/colors, used inline in text
    (e.g. the profile panel's contact-info row) rather than overlapping
    an avatar's edge. */
@@ -891,6 +972,14 @@ body {
 
 .lime-avatar-trigger {
   display: flex;
+  align-items: center;
+  /* Only matters once a group's member-count label (LIME-19b) sits next to
+     the avatar row — a DM's lone .seed-avatar-group has no sibling here,
+     so this is a no-op for it. Without it the label collided with the
+     avatar-group's own rendered width, which (thanks to the negative
+     overlap margins .seed-avatar-group's avatars use) extends further
+     right than the group span's own box model suggests. */
+  gap: var(--seed-space-1);
   border: none;
   background: transparent;
   padding: var(--seed-space-1);
@@ -1399,7 +1488,7 @@ body {
   margin: 0 0 var(--seed-space-3);
 }
 
-/* Segmented control (Teachers / Group Chat / Community) — extends Seed's
+/* Segmented control (Messages / Communities) — extends Seed's
    .seed-tabs--pill primitive with a single sliding pill element instead
    of each tab drawing its own background, so the active indicator can
    animate its position rather than snapping between segments. */
@@ -1434,7 +1523,7 @@ body {
   top: 3px;
   bottom: 3px;
   left: 3px;
-  width: calc((100% - 6px) / 3);
+  width: calc((100% - 6px) / 2);
   background: var(--soil-bg-canvas);
   border-radius: var(--seed-radius-sm);
   box-shadow: var(--seed-shadow-xs);
@@ -1587,11 +1676,33 @@ body {
   min-width: 0;
 }
 
+/* Wraps name + group member-count (LIME-19b) so the count sits on the
+   same line as the name without stopping the name itself from truncating
+   — a plain block .lime-contact__name would just push the count below. */
+.lime-contact__name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
 .lime-contact__name {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
   font-size: var(--seed-text-sm);
   font-weight: var(--seed-weight-medium);
   color: var(--soil-text);
+}
+
+/* KakaoTalk-style member count after a group's name — never the DM's
+   single other participant, which carries no count at all. */
+.lime-contact__count {
+  flex-shrink: 0;
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
 }
 
 /* text-overflow has no effect on a flex container per spec — only on

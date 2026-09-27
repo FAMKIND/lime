@@ -223,15 +223,32 @@ const registeredDropdowns = new Set();
 
   const me = getTeacherById(CURRENT_USER_ID);
   const crumbThread = document.getElementById('crumb-thread');
+  const openProfileAvatars = document.getElementById('open-profile-avatars');
   const composerInput = document.getElementById('composer-input');
   const composerSend = document.getElementById('composer-send');
 
   let currentConversationId = null;
   let lastRenderedDay = null;
 
-  function otherParticipant(conversation) {
-    const otherId = conversation.participants.find((id) => id !== CURRENT_USER_ID);
-    return getTeacherById(otherId);
+  // Other participants ordered most-recent-speaker first, then by
+  // conversation.participants order for anyone who hasn't spoken (LIME-19b).
+  // Drives both the list's avatar cluster and the thread header's avatar
+  // row — a group's "who's shown first" should track who's actually been
+  // talking, not just seed-data participant order.
+  function orderedOthers(conversation) {
+    const others = otherParticipants(conversation);
+    const lastSentAt = new Map();
+    getMessagesByConversation(conversation.id).forEach((m) => {
+      if (m.sender_id !== CURRENT_USER_ID) lastSentAt.set(m.sender_id, m.created_at);
+    });
+    return [...others].sort((a, b) => {
+      const at = lastSentAt.get(a.id);
+      const bt = lastSentAt.get(b.id);
+      if (at && bt) return new Date(bt) - new Date(at);
+      if (at) return -1;
+      if (bt) return 1;
+      return 0;
+    });
   }
 
   // ── Reaction picker (add) + reaction pill (toggle) ───────
@@ -357,7 +374,12 @@ const registeredDropdowns = new Set();
       + '</div>';
   }
 
-  function renderThread(conversationId, teacher) {
+  // Placeholder for a sender id that doesn't resolve to a real teacher
+  // record — shouldn't happen with today's seed data, but getTeacherById
+  // can return null, and messageHtml needs a display_name/status either way.
+  const UNKNOWN_SENDER = { display_name: 'Unknown', status: 'offline' };
+
+  function renderThread(conversationId) {
     currentConversationId = conversationId;
     lastRenderedDay = null;
     const msgs = getThreadMessages(conversationId);
@@ -373,7 +395,9 @@ const registeredDropdowns = new Set();
         lastRenderedDay = day;
       }
       const isSent = m.sender_id === CURRENT_USER_ID;
-      const sender = isSent ? me : teacher;
+      // LIME-19b: a group thread has a different sender per message, not
+      // one fixed "teacher" for the whole conversation.
+      const sender = isSent ? me : (getTeacherById(m.sender_id) || UNKNOWN_SENDER);
       thread.insertAdjacentHTML('beforeend', messageHtml(m, sender, isSent));
     });
     // LIME-18: needed for a conversation switch, not just the initial
@@ -389,12 +413,111 @@ const registeredDropdowns = new Set();
     thread.scrollTop = thread.scrollHeight;
   }
 
-  function selectConversation(conversation, teacher) {
-    list.querySelectorAll('.lime-contact').forEach((el) => el.classList.remove('lime-contact--active'));
-    const li = list.querySelector('[data-conversation-id="' + conversation.id + '"]');
-    if (li) li.classList.add('lime-contact--active');
-    if (crumbThread) crumbThread.textContent = teacher.display_name;
-    renderThread(conversation.id, teacher);
+  // ── Group avatar cluster (LIME-19b) ─────────────────────
+  // A reusable "who's in this" mark for group rows, sized to sit inside
+  // the same 40px frame a DM's single avatar uses. data-count selects the
+  // layout (2 diagonal / 3 triangle / 4 grid); at 5+ others the cluster
+  // still caps at 4 tiles — the last becomes a neutral "+N" tile rather
+  // than trying to fit a 5th face at this size.
+  function avatarClusterMemberHtml(teacher) {
+    return '<span class="seed-avatar lime-avatar lime-avatar-cluster__member" data-name="' + escapeHtml(teacher.display_name) + '"></span>';
+  }
+
+  function avatarClusterHtml(conversation) {
+    const others = orderedOthers(conversation);
+    const count = Math.min(others.length, 4);
+    let tilesHtml;
+    if (others.length > 4) {
+      const extra = others.length - 3;
+      tilesHtml = others.slice(0, 3).map(avatarClusterMemberHtml).join('')
+        + '<span class="lime-avatar-cluster__member lime-avatar-cluster__more">+' + extra + '</span>';
+    } else {
+      tilesHtml = others.map(avatarClusterMemberHtml).join('');
+    }
+    return '<span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="' + count + '">' + tilesHtml + '</span>';
+  }
+
+  function directAvatarHtml(conversation) {
+    const other = otherParticipants(conversation)[0];
+    const presence = presenceFor(other ? other.status : 'offline');
+    return '<span class="lime-avatar-frame lime-avatar-frame--lg">'
+      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(other ? other.display_name : '') + '"></span>'
+      + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
+      + '</span>';
+  }
+
+  // For a group, prefixes the preview with who sent it ("Jean: " / "You: ")
+  // — previewFor already wraps its text in one .lime-contact__preview-text
+  // span (for all three message types), so the prefix is spliced into that
+  // same span rather than duplicating previewFor's icon/voice/location
+  // branching here.
+  function rowPreviewHtml(conversation, latest) {
+    if (!latest) return '<span class="lime-contact__preview-text">No messages yet</span>';
+    if (conversation.type !== 'group') return previewFor(latest);
+    const sender = latest.sender_id === CURRENT_USER_ID ? null : getTeacherById(latest.sender_id);
+    const label = sender ? firstName(sender.display_name) : 'You';
+    const prefix = escapeHtml(label + ': ');
+    return previewFor(latest).replace('<span class="lime-contact__preview-text">', '<span class="lime-contact__preview-text">' + prefix);
+  }
+
+  function conversationRowHtml(conversation, latest) {
+    const isGroup = conversation.type === 'group';
+    const title = getConversationTitle(conversation);
+    const avatarHtml = isGroup ? avatarClusterHtml(conversation) : directAvatarHtml(conversation);
+    const countHtml = isGroup ? '<span class="lime-contact__count">' + conversation.participants.length + '</span>' : '';
+    return avatarHtml
+      + '<div class="lime-contact__body">'
+      + '<span class="lime-contact__name-row"><span class="lime-contact__name">' + escapeHtml(title) + '</span>' + countHtml + '</span>'
+      + '<span class="lime-contact__preview">' + rowPreviewHtml(conversation, latest) + '</span>'
+      + '</div>'
+      + '<div class="lime-contact__meta">'
+      + '<span class="lime-contact__time">' + (latest ? formatTime(latest.created_at) : '') + '</span>'
+      + '</div>';
+  }
+
+  function conversationSearchText(conversation) {
+    const names = conversation.participants.map((id) => getTeacherById(id)).filter(Boolean).map((t) => t.display_name);
+    return (getConversationTitle(conversation) + ' ' + names.join(' ')).toLowerCase();
+  }
+
+  // Header avatars for whichever conversation is open (#open-profile-avatars).
+  // DMs keep the existing two-avatar seed-avatar-group exactly; groups get
+  // up to 5 most-recent-speaker-first faces (fits beside the breadcrumb and
+  // the "…" button, even at mobile width — the brief flags this 5 cap as
+  // something the user may want raised) plus a neutral "+N" tile and a
+  // muted total-member-count label. Rebuilt on every selectConversation —
+  // this used to be static "Shem R"/"Jean Chung" markup that never changed.
+  const HEADER_AVATAR_CAP = 5;
+
+  function conversationHeaderAvatarsHtml(conversation) {
+    if (conversation.type !== 'group') {
+      const other = otherParticipants(conversation)[0];
+      return '<span class="seed-avatar-group lime-topbar__avatars">'
+        + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(me.display_name) + '"></span>'
+        + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(other ? other.display_name : '') + '"></span>'
+        + '</span>';
+    }
+    const others = orderedOthers(conversation);
+    const shown = others.slice(0, HEADER_AVATAR_CAP);
+    const extra = others.length - HEADER_AVATAR_CAP;
+    let avatarsHtml = shown.map((t) => '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(t.display_name) + '"></span>').join('');
+    if (extra > 0) {
+      avatarsHtml += '<span class="seed-avatar seed-avatar--sm lime-avatar-cluster__more" aria-hidden="true">+' + extra + '</span>';
+    }
+    const allNames = others.map((t) => t.display_name).join(', ');
+    return '<span class="seed-avatar-group lime-topbar__avatars" title="' + escapeHtml(allNames) + '">' + avatarsHtml + '</span>'
+      + '<span class="lime-topbar__member-count">' + conversation.participants.length + ' members</span>';
+  }
+
+  function selectConversation(conversation) {
+    document.querySelectorAll('.lime-contact').forEach((el) => el.classList.remove('lime-contact--active'));
+    document.querySelectorAll('[data-conversation-id="' + conversation.id + '"]').forEach((el) => el.classList.add('lime-contact--active'));
+    if (crumbThread) crumbThread.textContent = getConversationTitle(conversation);
+    if (openProfileAvatars) {
+      openProfileAvatars.innerHTML = conversationHeaderAvatarsHtml(conversation);
+      openProfileAvatars.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+    }
+    renderThread(conversation.id);
   }
 
   // ── Send message (LIME-07) ─────────────────────────────
@@ -404,6 +527,7 @@ const registeredDropdowns = new Set();
     if (!content) return;
 
     const message = sendMessage(currentConversationId, content);
+    document.dispatchEvent(new CustomEvent('lime:activity', { detail: { conversationId: currentConversationId } }));
     const emptyState = thread.querySelector('.lime-messages__empty');
     if (emptyState) emptyState.remove();
 
@@ -436,37 +560,66 @@ const registeredDropdowns = new Set();
   }
   if (composerSend) composerSend.addEventListener('click', handleSend);
 
-  const directConversations = getDirectConversations();
-  list.innerHTML = '';
-  directConversations.forEach((conversation) => {
-    const teacher = otherParticipant(conversation);
-    if (!teacher) return;
-    const msgs = getMessagesByConversation(conversation.id);
-    const last = msgs[msgs.length - 1];
-    const presence = presenceFor(teacher.status);
+  // ── Merged Messages list (LIME-19b) ─────────────────────
+  // Direct + group conversations in one list, newest activity first
+  // (no-activity conversations last, alphabetical among themselves).
+  // Rows are built once here and only ever updated/reordered in place
+  // afterward (see the lime:activity listener below) — later code
+  // (recent-highlight and the mobile view router, both further down this
+  // file) binds its own click listeners to .lime-contact once at load and
+  // assumes these nodes already exist and are never replaced.
+  function sortConversations(conversations) {
+    return [...conversations].sort((a, b) => {
+      const la = getLatestActivity(a.id);
+      const lb = getLatestActivity(b.id);
+      if (la && lb) return new Date(lb.created_at) - new Date(la.created_at);
+      if (la) return -1;
+      if (lb) return 1;
+      return getConversationTitle(a).localeCompare(getConversationTitle(b));
+    });
+  }
 
+  const messageConversations = sortConversations(getMessageConversations());
+  list.innerHTML = '';
+  messageConversations.forEach((conversation) => {
+    const latest = getLatestActivity(conversation.id);
     const li = document.createElement('li');
     li.className = 'lime-contact';
     li.dataset.conversationId = conversation.id;
-    li.dataset.searchText = teacher.display_name.toLowerCase();
-    li.innerHTML = '<span class="lime-avatar-frame lime-avatar-frame--lg">'
-      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(teacher.display_name) + '"></span>'
-      + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
-      + '</span>'
-      + '<div class="lime-contact__body">'
-      + '<span class="lime-contact__name">' + escapeHtml(teacher.display_name) + '</span>'
-      + '<span class="lime-contact__preview">' + previewFor(last) + '</span>'
-      + '</div>'
-      + '<div class="lime-contact__meta">'
-      + '<span class="lime-contact__time">' + (last ? formatTime(last.created_at) : '') + '</span>'
-      + '</div>';
-    li.addEventListener('click', () => selectConversation(conversation, teacher));
+    li.dataset.searchText = conversationSearchText(conversation);
+    li.innerHTML = conversationRowHtml(conversation, latest);
+    li.addEventListener('click', () => selectConversation(conversation));
     list.appendChild(li);
   });
 
-  if (directConversations.length > 0) {
-    const first = directConversations[0];
-    selectConversation(first, otherParticipant(first));
+  // Live update (LIME-19b): sendMessage/sendReply dispatch this instead of
+  // calling back into the list directly, so this IIFE doesn't need to know
+  // about the separate replies IIFE further down the file (or vice versa).
+  document.addEventListener('lime:activity', (e) => {
+    const conversationId = e.detail && e.detail.conversationId;
+    const conversation = messageConversations.find((c) => c.id === conversationId);
+    if (!conversation) return; // e.g. a community conversation — not this list's concern
+
+    const li = list.querySelector('[data-conversation-id="' + conversation.id + '"]');
+    if (li) {
+      const latest = getLatestActivity(conversation.id);
+      const previewEl = li.querySelector('.lime-contact__preview');
+      const timeEl = li.querySelector('.lime-contact__time');
+      if (previewEl) previewEl.innerHTML = rowPreviewHtml(conversation, latest);
+      if (timeEl) timeEl.textContent = latest ? formatTime(latest.created_at) : '';
+    }
+
+    // Re-sort by moving the existing <li> nodes (appendChild on an
+    // already-attached node moves it) — never recreated, per the
+    // load-time-listener constraint above.
+    sortConversations(messageConversations).forEach((c) => {
+      const row = list.querySelector('[data-conversation-id="' + c.id + '"]');
+      if (row) list.appendChild(row);
+    });
+  });
+
+  if (messageConversations.length > 0) {
+    selectConversation(messageConversations[0]);
   }
 })();
 
@@ -881,7 +1034,9 @@ function setRightPanelOpen(isOpen) {
     if (!replyInput || !currentReplyParentId) return;
     const content = replyInput.value.trim();
     if (!content) return;
+    const parent = findMessageById(currentReplyParentId);
     sendReply(currentReplyParentId, content);
+    if (parent) document.dispatchEvent(new CustomEvent('lime:activity', { detail: { conversationId: parent.conversation_id } }));
     refreshReplyIndicator(currentReplyParentId);
     renderReplies(currentReplyParentId);
     listEl.scrollTop = listEl.scrollHeight;
@@ -1213,7 +1368,7 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
       panel.hidden = panel.dataset.scopePanel !== scope;
     });
     // The mobile breadcrumb's first segment tracks whichever scope tab
-    // is active ("Teachers"/"Group Chat"/"Community") rather than
+    // is active ("Messages"/"Communities") rather than
     // always reading "Teachers" — id stays #crumb-teachers regardless
     // of the label it's currently showing.
     if (crumbTeachers && activeLabel) crumbTeachers.textContent = activeLabel;

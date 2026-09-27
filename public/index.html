@@ -138,7 +138,7 @@
 
           <div class="lime-topbar__crumb">
             <nav class="seed-breadcrumbs">
-              <button type="button" class="seed-breadcrumb" id="crumb-teachers">Teachers</button>
+              <button type="button" class="seed-breadcrumb" id="crumb-teachers">Messages</button>
               <span class="seed-breadcrumbs__separator" data-crumb-sep="thread">/</span>
               <button type="button" class="seed-breadcrumb" id="crumb-thread">Jean Chung</button>
               <span class="seed-breadcrumbs__separator" data-crumb-sep="details">/</span>
@@ -182,13 +182,13 @@
 
               <div class="seed-tabs seed-tabs--pill seed-tabs--sm lime-segmented" role="tablist" aria-label="Link scope" id="scope-tablist" style="--active-index: 0;">
                 <div class="lime-segmented__pill" aria-hidden="true"></div>
-                <button class="seed-tab seed-tab--active" role="tab" aria-selected="true" data-scope="teachers">Teachers</button>
-                <button class="seed-tab" role="tab" aria-selected="false" data-scope="groups">Group Chat</button>
-                <button class="seed-tab" role="tab" aria-selected="false" data-scope="communities">Community</button>
+                <button class="seed-tab seed-tab--active" role="tab" aria-selected="true" data-scope="messages">Messages</button>
+                <button class="seed-tab" role="tab" aria-selected="false" data-scope="communities">Communities</button>
               </div>
 
-              <!-- Teachers scope -->
-              <div data-scope-panel="teachers">
+              <!-- Messages scope: direct + group conversations, one merged
+                   list (LIME-19b) -->
+              <div data-scope-panel="messages">
                 <section class="lime-section" data-section-id="recent">
                   <button class="lime-section__toggle" aria-expanded="true">
                     <span class="dew dew-chevron-down"></span>
@@ -319,71 +319,14 @@
                 <section class="lime-section" data-section-id="all-teachers">
                   <button class="lime-section__toggle" aria-expanded="true">
                     <span class="dew dew-chevron-down"></span>
-                    <h3>All Teachers</h3>
+                    <h3>All</h3>
                   </button>
                   <div class="lime-section__body">
                     <div class="lime-section__body-inner">
-                      <!-- Rendered from seed-data by app.js (LIME-06): direct-message
-                           conversations for the current user (teacher-002). -->
+                      <!-- Rendered from seed-data by app.js (LIME-19b): every direct
+                           + group conversation for the current user (teacher-002),
+                           newest activity first. -->
                       <ul class="lime-contact-list" id="contacts-list"></ul>
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <!-- Groups scope -->
-              <div data-scope-panel="groups" hidden>
-                <section class="lime-section" data-section-id="all-groups">
-                  <button class="lime-section__toggle" aria-expanded="true">
-                    <span class="dew dew-chevron-down"></span>
-                    <h3>All Groups</h3>
-                  </button>
-                  <div class="lime-section__body">
-                    <div class="lime-section__body-inner">
-                      <ul class="lime-contact-list">
-                        <li class="lime-contact" data-search-text="grade three">
-                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Grade Three"></span>
-                          <div class="lime-contact__body">
-                            <span class="lime-contact__name">Grade Three</span>
-                            <span class="lime-contact__preview">12 members</span>
-                          </div>
-                          <div class="lime-contact__meta">
-                            <span class="lime-contact__time">Mon</span>
-                          </div>
-                        </li>
-                        <li class="lime-contact" data-search-text="staff lounge">
-                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Staff Lounge"></span>
-                          <div class="lime-contact__body">
-                            <span class="lime-contact__name">Staff Lounge</span>
-                            <span class="lime-contact__preview">28 members</span>
-                          </div>
-                          <div class="lime-contact__meta">
-                            <span class="lime-contact__time">Fri</span>
-                            <span class="seed-badge seed-badge--neutral seed-badge--sm">5</span>
-                          </div>
-                        </li>
-                        <li class="lime-contact" data-search-text="kindergarten crew">
-                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Kindergarten Crew"></span>
-                          <div class="lime-contact__body">
-                            <span class="lime-contact__name">Kindergarten Crew</span>
-                            <span class="lime-contact__preview"><span class="dew dew-camera-on"></span> Photo</span>
-                          </div>
-                          <div class="lime-contact__meta">
-                            <span class="lime-contact__time">Yesterday</span>
-                          </div>
-                        </li>
-                        <li class="lime-contact" data-search-text="field trip planning">
-                          <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Field Trip Planning"></span>
-                          <div class="lime-contact__body">
-                            <span class="lime-contact__name">Field Trip Planning</span>
-                            <span class="lime-contact__preview">Bus is confirmed for Friday</span>
-                          </div>
-                          <div class="lime-contact__meta">
-                            <span class="lime-contact__time">Sep 14</span>
-                            <span class="seed-badge seed-badge--neutral seed-badge--sm">9</span>
-                          </div>
-                        </li>
-                      </ul>
                     </div>
                   </div>
                 </section>

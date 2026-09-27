@@ -666,6 +666,27 @@ window.LIME_SEED_DATA = {
       "updated_at": "2025-07-07T18:00:00Z"
     },
     {
+      "id": "conv-011",
+      "type": "group",
+      "name": "PS 113 Staff Room",
+      "description": "Staff room banter and building logistics",
+      "participants": [
+        "teacher-002",
+        "teacher-001",
+        "teacher-010",
+        "teacher-013",
+        "teacher-014",
+        "teacher-015",
+        "teacher-016",
+        "teacher-018",
+        "teacher-022",
+        "teacher-024"
+      ],
+      "created_by": "teacher-001",
+      "created_at": "2025-05-15T08:00:00Z",
+      "updated_at": "2025-07-08T12:15:00Z"
+    },
+    {
       "id": "conv-community-001",
       "type": "community",
       "name": "Black Teachers NY",
@@ -1189,6 +1210,54 @@ window.LIME_SEED_DATA = {
       "content": "This sounds like so much fun! I need a night out. What time?",
       "type": "text",
       "created_at": "2025-07-07T18:00:00Z"
+    },
+    {
+      "id": "msg-110",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-013",
+      "content": "Heads up — the copier on the 2nd floor is out of toner again. Front office has more.",
+      "type": "text",
+      "created_at": "2025-07-07T15:00:00Z"
+    },
+    {
+      "id": "msg-111",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-016",
+      "content": "Thank you for the warning! Also does anyone have a stapler I can borrow for 3rd period?",
+      "type": "text",
+      "created_at": "2025-07-07T15:10:00Z"
+    },
+    {
+      "id": "msg-112",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-010",
+      "content": "I've got one in my mailbox slot, help yourself!",
+      "type": "text",
+      "created_at": "2025-07-07T15:12:00Z"
+    },
+    {
+      "id": "msg-113",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-024",
+      "content": "Potluck signup sheet is on the staff room fridge — we're still short on desserts!",
+      "type": "text",
+      "created_at": "2025-07-08T09:00:00Z"
+    },
+    {
+      "id": "msg-114",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-002",
+      "content": "I'll bring brownies 🍫",
+      "type": "text",
+      "created_at": "2025-07-08T09:05:00Z"
+    },
+    {
+      "id": "msg-115",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-001",
+      "content": "Can't wait — see everyone at 3:15 for the PD session too.",
+      "type": "text",
+      "created_at": "2025-07-08T12:15:00Z"
     },
     {
       "id": "msg-600",

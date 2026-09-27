@@ -44,6 +44,51 @@ function getCommunityConversations() {
   return getConversationsForUser(CURRENT_USER_ID).filter((c) => c.type === 'community');
 }
 
+// LIME-19b: the "Messages" tab merges direct + group into one list —
+// communities stay a separate tab/scope, out of this brief.
+function getMessageConversations() {
+  return getConversationsForUser(CURRENT_USER_ID).filter((c) => c.type === 'direct' || c.type === 'group');
+}
+
+// Participants excluding the current user, in the conversation's own
+// participant order — direct conversations resolve to exactly one.
+function otherParticipants(conversation) {
+  return conversation.participants
+    .filter((id) => id !== CURRENT_USER_ID)
+    .map(getTeacherById)
+    .filter(Boolean);
+}
+
+function firstName(displayName) {
+  return displayName.trim().split(/\s+/)[0];
+}
+
+// "Jean", "Jean & Mary", "Jean, Mary & Jimin" — never used by today's seed
+// data (every group so far has an explicit name) but required for any
+// group created without one.
+function joinNames(names) {
+  if (names.length <= 1) return names[0] || '';
+  if (names.length === 2) return names[0] + ' & ' + names[1];
+  return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1];
+}
+
+function getConversationTitle(conversation) {
+  if (conversation.type === 'direct') {
+    const other = otherParticipants(conversation)[0];
+    return other ? other.display_name : 'Unknown';
+  }
+  if (conversation.name) return conversation.name;
+  return joinNames(otherParticipants(conversation).map((t) => firstName(t.display_name)));
+}
+
+// Last item of the conversation's full message list, replies included
+// (getMessagesByConversation doesn't filter reply_to) — or null for a
+// conversation with no activity yet (conv-005, Kai).
+function getLatestActivity(conversationId) {
+  const msgs = getMessagesByConversation(conversationId);
+  return msgs.length ? msgs[msgs.length - 1] : null;
+}
+
 function getCurrentUser() {
   return getTeacherById(CURRENT_USER_ID);
 }

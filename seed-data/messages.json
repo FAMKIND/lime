@@ -371,6 +371,54 @@
       "created_at": "2025-07-07T18:00:00Z"
     },
     {
+      "id": "msg-110",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-013",
+      "content": "Heads up — the copier on the 2nd floor is out of toner again. Front office has more.",
+      "type": "text",
+      "created_at": "2025-07-07T15:00:00Z"
+    },
+    {
+      "id": "msg-111",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-016",
+      "content": "Thank you for the warning! Also does anyone have a stapler I can borrow for 3rd period?",
+      "type": "text",
+      "created_at": "2025-07-07T15:10:00Z"
+    },
+    {
+      "id": "msg-112",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-010",
+      "content": "I've got one in my mailbox slot, help yourself!",
+      "type": "text",
+      "created_at": "2025-07-07T15:12:00Z"
+    },
+    {
+      "id": "msg-113",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-024",
+      "content": "Potluck signup sheet is on the staff room fridge — we're still short on desserts!",
+      "type": "text",
+      "created_at": "2025-07-08T09:00:00Z"
+    },
+    {
+      "id": "msg-114",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-002",
+      "content": "I'll bring brownies 🍫",
+      "type": "text",
+      "created_at": "2025-07-08T09:05:00Z"
+    },
+    {
+      "id": "msg-115",
+      "conversation_id": "conv-011",
+      "sender_id": "teacher-001",
+      "content": "Can't wait — see everyone at 3:15 for the PD session too.",
+      "type": "text",
+      "created_at": "2025-07-08T12:15:00Z"
+    },
+    {
       "id": "msg-600",
       "conversation_id": "conv-community-001",
       "sender_id": "teacher-013",
