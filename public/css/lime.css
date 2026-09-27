@@ -2231,8 +2231,11 @@ body {
 /* The reply composer (LIME-11) reuses this same class inside a much
    narrower sidebar footer, not the wide centered chat panel the 75%
    above was tuned for — needs the full width of its own container instead. */
+/* width:100% + padding/border overflowed the panel — no global
+   border-box reset in this app (LIME-18-fix4). */
 #replies-composer .lime-composer__box {
   width: 100%;
+  box-sizing: border-box;
 }
 
 .lime-composer__box:focus-within {
@@ -2433,6 +2436,7 @@ body {
 /* Same override reasoning as #replies-composer .lime-composer__box above (LIME-11-fix2). */
 #replies-composer .lime-composer__actions {
   width: 100%;
+  box-sizing: border-box;
 }
 
 /* :not(.lime-composer__voice) — LIME-10-fix11 keeps the circle for the

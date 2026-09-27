@@ -932,12 +932,23 @@ function wireDropdownToggle(toggleId, dropdownId, { fixed = false } = {}) {
   if (!toggle || !dropdown) return;
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (fixed && !dropdown.classList.contains('is-open')) {
+    const opening = fixed && !dropdown.classList.contains('is-open');
+    if (opening) {
       const rect = toggle.getBoundingClientRect();
       dropdown.style.left = rect.left + 'px';
       dropdown.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
     }
     dropdown.classList.toggle('is-open');
+    // Clamp after opening, not before — offsetWidth is 0 until the
+    // dropdown is actually visible (LIME-18-fix4). Left-aligning to the
+    // trigger with no viewport check ran a narrow panel's "…" menu off
+    // the right edge; this only nudges it left when there isn't room,
+    // so dropdowns with plenty of space (desktop) land exactly where
+    // they always did.
+    if (opening) {
+      const maxLeft = window.innerWidth - dropdown.offsetWidth - 8;
+      dropdown.style.left = Math.max(8, Math.min(parseFloat(dropdown.style.left), maxLeft)) + 'px';
+    }
   });
   document.addEventListener('click', () => dropdown.classList.remove('is-open'));
 }
