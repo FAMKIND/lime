@@ -207,6 +207,15 @@ function paintAvatar(el) {
   el.setAttribute('aria-label', name);
 }
 
+// LIME-20: shared registry for wireDropdownToggle (defined much later
+// in this file), so every registered menu can close every *other* one.
+// Declared here, not next to the function itself — the reply-composer
+// IIFE below calls wireDropdownToggle during this script's very first
+// pass, before a later `const` would otherwise be initialized. Exactly
+// the LIME-18-fix TDZ crash again; caught this time by actually running
+// the app in jsdom before committing, not by reasoning about it.
+const registeredDropdowns = new Set();
+
 (function () {
   const list = document.getElementById('contacts-list');
   const thread = document.getElementById('thread-messages');
@@ -924,35 +933,69 @@ function setRightPanelOpen(isOpen) {
 // position from the trigger's own rect before opening it — required
 // now that .lime-nav-dropdown is position:fixed (LIME-03w), which has
 // no relative-to-trigger anchor of its own the way position:absolute
-// did. Opens upward, left-aligned with the trigger, matching the
-// dropdown's old bottom:100%/left:0 behavior.
+// did. LIME-20: every registered dropdown now shares one Set (declared
+// near the top of this file — see the comment there for why) so
+// opening any of them closes whichever other one was open — the old
+// per-call document listener alone couldn't do this, since each
+// trigger's own stopPropagation() kept that click from ever reaching
+// document when switching between two open menus. Fixed-mode menus
+// also flip to whichever side of the trigger actually has room instead
+// of always opening upward, and Escape closes whichever is open.
 function wireDropdownToggle(toggleId, dropdownId, { fixed = false } = {}) {
   const toggle = document.getElementById(toggleId);
   const dropdown = document.getElementById(dropdownId);
   if (!toggle || !dropdown) return;
+  registeredDropdowns.add(dropdown);
+
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
-    const opening = fixed && !dropdown.classList.contains('is-open');
+    const opening = !dropdown.classList.contains('is-open');
     if (opening) {
-      const rect = toggle.getBoundingClientRect();
-      dropdown.style.left = rect.left + 'px';
-      dropdown.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+      registeredDropdowns.forEach((d) => { if (d !== dropdown) d.classList.remove('is-open'); });
     }
     dropdown.classList.toggle('is-open');
-    // Clamp after opening, not before — offsetWidth is 0 until the
-    // dropdown is actually visible (LIME-18-fix4). Left-aligning to the
-    // trigger with no viewport check ran a narrow panel's "…" menu off
-    // the right edge; this only nudges it left when there isn't room,
-    // so dropdowns with plenty of space (desktop) land exactly where
-    // they always did.
-    if (opening) {
-      const maxLeft = window.innerWidth - dropdown.offsetWidth - 8;
-      dropdown.style.left = Math.max(8, Math.min(parseFloat(dropdown.style.left), maxLeft)) + 'px';
+    // Position after opening, not before — offsetHeight/offsetWidth are
+    // 0 until the dropdown is actually visible (LIME-18-fix4 already
+    // established this for the horizontal clamp; the same now applies
+    // to the vertical flip added here).
+    if (fixed && opening) {
+      const rect = toggle.getBoundingClientRect();
+      const gap = 8;
+      const h = dropdown.offsetHeight;
+      const w = dropdown.offsetWidth;
+      const fitsBelow = rect.bottom + gap + h <= window.innerHeight - 8;
+      const fitsAbove = rect.top - gap - h >= 8;
+      // Neither fits (a very short viewport): use whichever side has
+      // more room rather than picking one arbitrarily.
+      const openBelow = fitsBelow ? true : fitsAbove ? false : (window.innerHeight - rect.bottom) >= rect.top;
+      // Clear the opposite property explicitly — a stale value from a
+      // previous opening (when this same menu flipped the other way)
+      // would otherwise still apply alongside the new one.
+      dropdown.style.top = openBelow ? (rect.bottom + gap) + 'px' : '';
+      dropdown.style.bottom = openBelow ? '' : (window.innerHeight - rect.top + gap) + 'px';
+      const maxLeft = window.innerWidth - w - 8;
+      dropdown.style.left = Math.max(8, Math.min(rect.left, maxLeft)) + 'px';
     }
   });
   document.addEventListener('click', () => dropdown.classList.remove('is-open'));
 }
 
+// One shared listener — Escape closes whichever registered dropdown is
+// currently open (at most one, per the close-others logic above).
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    registeredDropdowns.forEach((d) => d.classList.remove('is-open'));
+  }
+});
+
+// LIME-20 tried switching more-menu to fixed mode too, so every menu
+// would share one positioning path — checked live (headless Chrome):
+// its own .lime-dropdown CSS is still position:absolute, and applying
+// inline top/left computed for a position:fixed element against that
+// different containing block rendered it off-screen (left: 2896 in a
+// 1567px viewport). Left non-fixed per the brief's own fallback;
+// LIME-21 gives it the shared position:fixed .lime-menu CSS, at which
+// point this can switch too.
 wireDropdownToggle('more-menu-toggle', 'more-menu');
 wireDropdownToggle('notif-btn', 'notif-dropdown', { fixed: true });
 wireDropdownToggle('user-btn', 'user-dropdown', { fixed: true });
