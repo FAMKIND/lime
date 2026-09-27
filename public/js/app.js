@@ -1166,7 +1166,10 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
 
   trigger.addEventListener('click', open);
   backdrop.addEventListener('click', close);
-  modal.querySelectorAll('.lime-search-modal__item').forEach((item) => {
+  // .lime-menu__item, not the old .lime-search-modal__item (LIME-21b
+  // unified them) — scoped to modal's own children, so this still only
+  // ever matches these 4 result buttons, nothing from any other menu.
+  modal.querySelectorAll('.lime-menu__item').forEach((item) => {
     item.addEventListener('click', close);
   });
 })();

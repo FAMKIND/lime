@@ -68,8 +68,8 @@
                 </span>
                 <span class="lime-nav__label">Notifications</span>
               </button>
-              <div class="seed-dropdown__menu seed-dropdown__menu--wide lime-menu" id="notif-dropdown">
-                <a href="#" class="seed-dropdown__item lime-notif" data-contact="jean-chung">
+              <div class="lime-menu lime-menu--wide" id="notif-dropdown">
+                <a href="#" class="lime-menu__item lime-notif" data-contact="jean-chung">
                   <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Jean Chung"></span>
                   <div class="lime-notif__body">
                     <div class="lime-notif__header">
@@ -79,7 +79,7 @@
                     <p class="lime-notif__preview">Can we push the field trip to Friday?</p>
                   </div>
                 </a>
-                <a href="#" class="seed-dropdown__item lime-notif" data-contact="mary-lee">
+                <a href="#" class="lime-menu__item lime-notif" data-contact="mary-lee">
                   <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Mary Lee"></span>
                   <div class="lime-notif__body">
                     <div class="lime-notif__header">
@@ -89,7 +89,7 @@
                     <p class="lime-notif__preview">Sent a photo</p>
                   </div>
                 </a>
-                <a href="#" class="seed-dropdown__item lime-notif" data-contact="valene-rajoon">
+                <a href="#" class="lime-menu__item lime-notif" data-contact="valene-rajoon">
                   <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Valene Rajoon"></span>
                   <div class="lime-notif__body">
                     <div class="lime-notif__header">
@@ -109,14 +109,14 @@
         </div>
 
         <div class="lime-sidebar__footer">
-          <div class="seed-dropdown__menu lime-menu" id="user-dropdown">
+          <div class="lime-menu" id="user-dropdown">
             <div class="lime-menu__header">
               <div>shem@example.com</div>
               <div>+1 555-0123</div>
             </div>
-            <div class="seed-dropdown__divider"></div>
-            <div class="seed-dropdown__item"><span class="dew dew-gear"></span>Settings</div>
-            <button type="button" class="seed-dropdown__item seed-dropdown__item--danger" id="sign-out-btn">Sign Out</button>
+            <div class="lime-menu__divider"></div>
+            <button type="button" class="lime-menu__item"><span class="dew dew-gear"></span>Settings</button>
+            <button type="button" class="lime-menu__item" id="sign-out-btn">Sign Out</button>
           </div>
           <button type="button" class="lime-sidebar__user-trigger" id="user-btn">
             <span class="seed-avatar seed-avatar--sm lime-avatar" data-name="Shem R"></span>
@@ -158,10 +158,10 @@
 
           <div class="lime-more-menu">
             <button class="lime-icon-btn" id="more-menu-toggle" title="More"><span class="dew dew-ellipsis-menu"></span></button>
-            <div class="seed-dropdown__menu lime-menu" id="more-menu">
-              <button class="seed-dropdown__item"><span class="dew dew-camera-on"></span>Video call</button>
-              <button class="seed-dropdown__item"><span class="dew dew-pencil"></span>Jam</button>
-              <button class="seed-dropdown__item"><span class="dew dew-link"></span>Share link</button>
+            <div class="lime-menu" id="more-menu">
+              <button type="button" class="lime-menu__item"><span class="dew dew-camera-on"></span>Video call</button>
+              <button type="button" class="lime-menu__item"><span class="dew dew-pencil"></span>Jam</button>
+              <button type="button" class="lime-menu__item"><span class="dew dew-link"></span>Share link</button>
             </div>
           </div>
         </header>
@@ -502,12 +502,12 @@
                     <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Quote"><i class="icon-text-quote"></i></button>
                     <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Code">&lt;/&gt;</button>
                     <button type="button" class="lime-composer__tool lime-composer__overflow" id="composer-toolbar-overflow" title="More"><span class="dew dew-ellipsis-menu"></span></button>
-                    <div class="seed-dropdown__menu lime-menu" id="composer-toolbar-overflow-dropdown">
-                      <div class="seed-dropdown__item"><span class="dew dew-link"></span>Link</div>
-                      <div class="seed-dropdown__item"><i class="icon-list-ordered"></i>Numbered list</div>
-                      <div class="seed-dropdown__item"><i class="icon-list"></i>Bulleted list</div>
-                      <div class="seed-dropdown__item"><i class="icon-text-quote"></i>Quote</div>
-                      <div class="seed-dropdown__item">&lt;/&gt; Code</div>
+                    <div class="lime-menu" id="composer-toolbar-overflow-dropdown">
+                      <button type="button" class="lime-menu__item"><span class="dew dew-link"></span>Link</button>
+                      <button type="button" class="lime-menu__item"><i class="icon-list-ordered"></i>Numbered list</button>
+                      <button type="button" class="lime-menu__item"><i class="icon-list"></i>Bulleted list</button>
+                      <button type="button" class="lime-menu__item"><i class="icon-text-quote"></i>Quote</button>
+                      <button type="button" class="lime-menu__item">&lt;/&gt; Code</button>
                     </div>
                   </div>
                 </div>
@@ -519,23 +519,23 @@
                          needed. Sizing already comes from the existing
                          .lime-composer__aux .dew { font-size: 16px } rule (LIME-10-fix5). -->
                     <button type="button" class="lime-composer__aux lime-composer__voice" id="voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
-                    <div class="seed-dropdown__menu seed-dropdown__menu--wide lime-menu" id="voice-mode-dropdown">
-                      <div class="seed-dropdown__item seed-dropdown__item--active">
-                        <span class="lime-menu__check-slot"><span class="dew dew-check"></span></span>
+                    <div class="lime-menu lime-menu--wide" id="voice-mode-dropdown">
+                      <button type="button" class="lime-menu__item lime-menu__item--selected">
+                        <span class="lime-menu__check"><span class="dew dew-check"></span></span>
                         Default - MacBook Pro Microphone
-                      </div>
-                      <div class="seed-dropdown__item">
-                        <span class="lime-menu__check-slot"><span class="dew dew-check"></span></span>
+                      </button>
+                      <button type="button" class="lime-menu__item">
+                        <span class="lime-menu__check"></span>
                         MacBook Pro Microphone (Built-in)
-                      </div>
-                      <div class="seed-dropdown__item">
-                        <span class="lime-menu__check-slot"><span class="dew dew-check"></span></span>
+                      </button>
+                      <button type="button" class="lime-menu__item">
+                        <span class="lime-menu__check"></span>
                         iPhone Microphone
-                      </div>
-                      <div class="seed-dropdown__item">
-                        <span class="lime-menu__check-slot"><span class="dew dew-check"></span></span>
+                      </button>
+                      <button type="button" class="lime-menu__item">
+                        <span class="lime-menu__check"></span>
                         Microsoft Teams Audio Device (Virtual)
-                      </div>
+                      </button>
                     </div>
                   </div>
                   <!-- dew has no lock icon (checked the full 53-icon set) — dew-shield-check
@@ -623,12 +623,12 @@
               <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Quote"><i class="icon-text-quote"></i></button>
               <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Code">&lt;/&gt;</button>
               <button type="button" class="lime-composer__tool lime-composer__overflow" id="replies-composer-toolbar-overflow" title="More"><span class="dew dew-ellipsis-menu"></span></button>
-              <div class="seed-dropdown__menu lime-menu" id="replies-composer-toolbar-overflow-dropdown">
-                <div class="seed-dropdown__item"><span class="dew dew-link"></span>Link</div>
-                <div class="seed-dropdown__item"><i class="icon-list-ordered"></i>Numbered list</div>
-                <div class="seed-dropdown__item"><i class="icon-list"></i>Bulleted list</div>
-                <div class="seed-dropdown__item"><i class="icon-text-quote"></i>Quote</div>
-                <div class="seed-dropdown__item">&lt;/&gt; Code</div>
+              <div class="lime-menu" id="replies-composer-toolbar-overflow-dropdown">
+                <button type="button" class="lime-menu__item"><span class="dew dew-link"></span>Link</button>
+                <button type="button" class="lime-menu__item"><i class="icon-list-ordered"></i>Numbered list</button>
+                <button type="button" class="lime-menu__item"><i class="icon-list"></i>Bulleted list</button>
+                <button type="button" class="lime-menu__item"><i class="icon-text-quote"></i>Quote</button>
+                <button type="button" class="lime-menu__item">&lt;/&gt; Code</button>
               </div>
             </div>
           </div>
@@ -636,23 +636,23 @@
             <button type="button" class="lime-composer__aux" title="Attach"><span class="dew dew-plus"></span></button>
             <div class="lime-composer__voice-dropdown">
               <button type="button" class="lime-composer__aux lime-composer__voice" id="replies-voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
-              <div class="seed-dropdown__menu seed-dropdown__menu--wide lime-menu" id="replies-voice-mode-dropdown">
-                <div class="seed-dropdown__item seed-dropdown__item--active">
-                  <span class="lime-menu__check-slot"><span class="dew dew-check"></span></span>
+              <div class="lime-menu lime-menu--wide" id="replies-voice-mode-dropdown">
+                <button type="button" class="lime-menu__item lime-menu__item--selected">
+                  <span class="lime-menu__check"><span class="dew dew-check"></span></span>
                   Default - MacBook Pro Microphone
-                </div>
-                <div class="seed-dropdown__item">
-                  <span class="lime-menu__check-slot"><span class="dew dew-check"></span></span>
+                </button>
+                <button type="button" class="lime-menu__item">
+                  <span class="lime-menu__check"></span>
                   MacBook Pro Microphone (Built-in)
-                </div>
-                <div class="seed-dropdown__item">
-                  <span class="lime-menu__check-slot"><span class="dew dew-check"></span></span>
+                </button>
+                <button type="button" class="lime-menu__item">
+                  <span class="lime-menu__check"></span>
                   iPhone Microphone
-                </div>
-                <div class="seed-dropdown__item">
-                  <span class="lime-menu__check-slot"><span class="dew dew-check"></span></span>
+                </button>
+                <button type="button" class="lime-menu__item">
+                  <span class="lime-menu__check"></span>
                   Microsoft Teams Audio Device (Virtual)
-                </div>
+                </button>
               </div>
             </div>
             <span class="lime-composer__privacy"><span class="dew dew-shield-check"></span> Your messages are always secure and encrypted, we never sell your data.</span>
@@ -672,11 +672,11 @@
       <input type="search" class="lime-search-modal__input" id="search-modal-input" placeholder="Search people, messages, jams...">
     </div>
     <div class="lime-search-modal__results">
-      <div class="lime-search-modal__label">Recent searches</div>
-      <button class="lime-search-modal__item" type="button"><span class="dew dew-person"></span> Jean Chung</button>
-      <button class="lime-search-modal__item" type="button"><span class="dew dew-people"></span> Grade Three</button>
-      <button class="lime-search-modal__item" type="button"><span class="dew dew-chat"></span> "voice message"</button>
-      <button class="lime-search-modal__item" type="button"><span class="dew dew-person"></span> Alexi Daily</button>
+      <div class="lime-menu__label">Recent searches</div>
+      <button class="lime-menu__item" type="button"><span class="dew dew-person"></span> Jean Chung</button>
+      <button class="lime-menu__item" type="button"><span class="dew dew-people"></span> Grade Three</button>
+      <button class="lime-menu__item" type="button"><span class="dew dew-chat"></span> "voice message"</button>
+      <button class="lime-menu__item" type="button"><span class="dew dew-person"></span> Alexi Daily</button>
     </div>
   </div>
 

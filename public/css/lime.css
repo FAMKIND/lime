@@ -75,16 +75,13 @@ body {
 
 /* Panel dividers: Seed's flush mode ships an always-visible hairline.
    The wireframe wants dividers to appear only on hover/drag — this
-   just fades them in instead of showing them at rest. Color: matches
-   --selected-bg-subtle-hover (the same scale the nav hover/active
-   state uses, LIME-14), not Seed's own "good" semantic scale — a
-   first attempt at "consistent with the center divider" used
-   --good-border-* here, which is a different green than the nav's
-   lime, so it still didn't actually match anything else in the app.
-   Dragging gets a bolder step on the same scale
-   (--selected-bg-subtle-active) instead of the hover shade — the
-   pale hover color didn't read clearly enough once you're actually
-   grabbing the line to move it. */
+   just fades them in instead of showing them at rest. Neutral, per
+   the user: lime is reserved for nav and primary actions (LIME-21b) —
+   this used to share the nav's lime scale (LIME-14), which an earlier
+   pass had chosen specifically so it would match something else in
+   the app; now that lime is scoped narrower, a plain border-strength
+   token reads as the more honest choice for a divider line anyway.
+   Dragging gets the bolder step, same as before. */
 .seed-layout--left-flush  .seed-layout__handle--left::after,
 .seed-layout--right-flush .seed-layout__handle--right::after {
   opacity: 0;
@@ -94,13 +91,13 @@ body {
 .seed-layout--left-flush  .seed-layout__handle--left:hover::after,
 .seed-layout--right-flush .seed-layout__handle--right:hover::after {
   opacity: 1;
-  background: var(--selected-bg-subtle-hover);
+  background: var(--calm-border-normal-default);
 }
 
 .seed-layout--left-flush  .seed-layout__handle--left.is-dragging::after,
 .seed-layout--right-flush .seed-layout__handle--right.is-dragging::after {
   opacity: 1;
-  background: var(--selected-bg-subtle-active);
+  background: var(--calm-border-bold-default);
 }
 
 /* Seed's left/right panels ship their own 16px internal padding (card
@@ -592,23 +589,27 @@ body {
   margin-left: var(--seed-space-2);
 }
 
-/* ── LIME-21: every JS-toggled menu on Seed's dropdown component ──
-   Seed's own .seed-dropdown__menu is position:absolute — .lime-menu
-   overrides it to fixed (top/left computed by wireDropdownToggle in
-   app.js at open time; same reason the old .lime-nav-dropdown needed
-   this, documented at LIME-03w — .seed-layout__left's own
-   overflow-x:hidden would otherwise clip a dropdown wider than the
-   sidebar). Lime's JS still toggles the `is-open` class (LIME-20's
-   own logic, untouched) rather than Seed's `--open` modifier, via the
-   override two rules down — keeps every wireDropdownToggle call site
-   exactly as it was. z-index: no Seed z-token reaches this high (the
-   tallest, --seed-z-toast, is 500) and this app has nothing else
-   above 1000 either — kept the literal value the old dropdowns
-   already used, proven correct rather than guessed. */
+/* ── LIME-21b: one shared menu style, mirroring the search modal ──
+   Replaces LIME-21's Seed-dropdown-based system entirely — the user
+   preferred the search modal's own rounded rows and hover states over
+   Seed's edge-to-edge look; Seed's dropdown.css is no longer used
+   anywhere in this app. .lime-menu is fixed-positioned (top/left
+   computed by wireDropdownToggle in app.js at open time, same reason
+   the old .lime-nav-dropdown needed it, documented at LIME-03w —
+   .seed-layout__left's own overflow-x:hidden would otherwise clip a
+   dropdown wider than the sidebar). z-index: no Seed z-token reaches
+   this high (the tallest, --seed-z-toast, is 500) and this app has
+   nothing else above 1000 either — kept the value LIME-20/21 already
+   proved correct. */
 .lime-menu {
+  display: none;
   position: fixed;
-  top: auto;
-  left: auto;
+  background: var(--soil-bg-elevated);
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-lg);
+  box-shadow: var(--seed-shadow-md);
+  padding: var(--seed-space-2);
+  min-width: 220px;
   z-index: 1000;
 }
 
@@ -616,29 +617,75 @@ body {
   display: block;
 }
 
-/* Seed bug: width:100% + padding overflows the menu — upstream to
-   Seed (same no-border-box cause as LIME-18-fix4). */
-.seed-dropdown__item {
+.lime-menu--wide {
+  min-width: 280px;
+}
+
+/* Matches the search modal's own item exactly — .lime-search-modal__item
+   is gone, fully replaced by this shared class. Real <button>/<a>
+   elements default to box-sizing:border-box on their own; stated
+   explicitly anyway since a couple of rows here were converted from
+   plain <div>s that don't get that default (the actual overflow bug
+   LIME-18-fix4/LIME-21 both hit — items wider than their menu). */
+.lime-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  width: 100%;
+  padding: var(--seed-space-2);
+  border: none;
+  background: none;
+  border-radius: var(--seed-radius-md);
+  font-family: var(--seed-font-ui);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
   box-sizing: border-box;
 }
 
-/* Lime's selected lime (LIME-14), not Seed's stock mint, for whichever
-   item is the current/chosen one (the active microphone). Hover on an
-   already-active row deepens the same way LIME-14 steps everywhere else. */
-.seed-dropdown__item--active {
-  background: var(--selected-bg-subtle-default);
-  color: var(--selected-text-normal-default);
+.lime-menu__item:hover,
+.lime-menu__item:focus-visible {
+  background: var(--calm-bg-subtle-hover);
+  outline: none;
 }
 
-.seed-dropdown__item--active:hover {
-  background: var(--selected-bg-subtle-hover);
+.lime-menu__item .dew {
+  font-size: 14px;
+  color: var(--soil-text-muted);
+  flex-shrink: 0;
+}
+
+/* The chosen/current row (e.g. the active microphone) — neutral, per
+   the user: lime is reserved for nav and primary actions (LIME-21b).
+   No background at rest; just a checkmark and slightly heavier text. */
+.lime-menu__item--selected {
+  font-weight: var(--seed-weight-medium);
+}
+
+.lime-menu__item--selected .dew-check {
+  color: var(--soil-text);
+}
+
+.lime-menu__label {
+  padding: var(--seed-space-2) var(--seed-space-2) var(--seed-space-1);
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text-muted);
+}
+
+.lime-menu__divider {
+  height: 1px;
+  background: var(--soil-border-subtle);
+  margin: var(--seed-space-2) 0;
 }
 
 /* User menu's email/phone — information, not an action: muted, no
-   hover, not clickable. Matches Seed's own item padding so it lines
-   up with the real items below it. */
+   hover, not clickable. Matches the item's own padding so it lines up
+   with the real items below it. */
 .lime-menu__header {
-  padding: var(--seed-space-2) var(--seed-space-3);
+  padding: var(--seed-space-2);
   color: var(--soil-text-muted);
   font-size: var(--seed-text-sm);
   cursor: default;
@@ -652,29 +699,24 @@ body {
   max-width: 320px;
 }
 
-/* Voice menu: every row reserves this space (LIME-21) — previously only
-   the active row had a checkmark span at all, so its text sat indented
-   relative to every other row's. Fixed width, hidden unless the row is
-   --active, so all four device names line up regardless of which one
-   is chosen. */
-.lime-menu__check-slot {
+/* Voice menu: every row reserves this space, whether or not it holds a
+   checkmark — only the selected row's own markup actually includes the
+   dew-check icon (LIME-21b), so no visibility toggle is needed the way
+   LIME-21's version needed one; the empty slot in every other row is
+   what keeps all four device names aligned at the same left edge. */
+.lime-menu__check {
   display: inline-flex;
   width: 14px;
   flex-shrink: 0;
-  visibility: hidden;
-}
-
-.seed-dropdown__item--active .lime-menu__check-slot {
-  visibility: visible;
 }
 
 /* ── Rich notifications (Apple-style: avatar/name/time/preview) ──
-   .lime-notif itself carries no layout of its own now — it's a plain
+   .lime-notif itself carries no layout of its own — it's a plain
    marker class (kept for the data-contact JS hook) alongside
-   .seed-dropdown__item, which now supplies the same display/padding/
-   gap/hover every other menu item gets. Only the inner name/time/
-   preview structure below is still Lime's own, since Seed's plain
-   item has no equivalent for multi-line rich content. */
+   .lime-menu__item, which supplies the same display/padding/gap/hover
+   every other menu item gets. Only the inner name/time/preview
+   structure below is still Lime's own, since a plain menu item has no
+   equivalent for multi-line rich content. */
 .lime-notif__body {
   flex: 1;
   min-width: 0;
@@ -1247,39 +1289,9 @@ body {
   padding: var(--seed-space-2) var(--seed-space-2) var(--seed-space-4);
 }
 
-.lime-search-modal__label {
-  padding: var(--seed-space-2) var(--seed-space-2) var(--seed-space-1);
-  font-size: var(--seed-text-xs);
-  font-weight: var(--seed-weight-medium);
-  color: var(--soil-text-muted);
-}
-
-.lime-search-modal__item {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-3);
-  width: 100%;
-  padding: var(--seed-space-2);
-  border: none;
-  background: none;
-  border-radius: var(--seed-radius-md);
-  font-family: var(--seed-font-ui);
-  font-size: var(--seed-text-sm);
-  color: var(--soil-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.lime-search-modal__item:hover,
-.lime-search-modal__item:focus-visible {
-  background: var(--calm-bg-subtle-hover);
-  outline: none;
-}
-
-.lime-search-modal__item .dew {
-  font-size: 14px;
-  color: var(--soil-text-muted);
-}
+/* .lime-search-modal__label/__item and their :hover/.dew rules are
+   gone (LIME-21b) — fully replaced by the shared .lime-menu__label/
+   __item above, which the search results now use directly. */
 
 /* ── 2a. Conversation list ── */
 
@@ -1321,12 +1333,12 @@ body {
 
 .lime-center-handle:hover::after {
   opacity: 1;
-  background: var(--selected-bg-subtle-hover);
+  background: var(--calm-border-normal-default);
 }
 
 .lime-center-handle.is-dragging::after {
   opacity: 1;
-  background: var(--selected-bg-subtle-active);
+  background: var(--calm-border-bold-default);
 }
 
 /* Top padding matches .lime-messages's own top padding so the tabs
@@ -1960,17 +1972,20 @@ body {
   border-color: var(--calm-border-normal-default);
 }
 
-/* Reactions the current user has added (LIME-08) — Seed's --selected-*
-   scale (its own "toggled on by the user" semantic tier) rather than the
-   --calm hover tokens above, so this reads as a persistent state and not
-   just a hover echo. */
+/* Reactions the current user has added (LIME-08) — neutral, per the
+   user: lime is reserved for nav and primary actions (LIME-21b). One
+   step deeper than the plain chip's own hover (above), so this still
+   reads as a persistent state, not just a hover echo. Its own hover
+   has nowhere further to step in the subtle background tier, so the
+   border deepens instead — still a visible change. */
 .lime-reaction--active {
-  background: var(--selected-bg-subtle-default);
-  border-color: var(--selected-border-subtle-default);
+  background: var(--calm-bg-subtle-active);
+  border-color: var(--calm-border-normal-default);
 }
 
 .lime-reaction--active:hover {
-  background: var(--selected-bg-subtle-hover);
+  background: var(--calm-bg-subtle-active);
+  border-color: var(--calm-border-bold-default);
 }
 
 .lime-reaction__count {
