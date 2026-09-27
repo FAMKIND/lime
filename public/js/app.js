@@ -173,7 +173,18 @@ function refreshReplyIndicator(messageId) {
       // firing right after this one and immediately closing what this
       // just opened.
       e.stopImmediatePropagation();
-      const picker = btn.closest(REACTABLE).querySelector('.lime-reaction-picker');
+      const container = btn.closest(REACTABLE);
+      const picker = container.querySelector('.lime-reaction-picker');
+      if (picker && !picker.classList.contains('is-open')) {
+        // position:fixed, computed here from the row's own rect — same
+        // reasoning as wireDropdownToggle's fixed mode: a scrollable
+        // ancestor (the reply panel's list) clips an absolutely
+        // positioned popup that opens upward from a row near its top
+        // edge, same class of bug LIME-03w fixed for the nav dropdowns.
+        const rect = container.getBoundingClientRect();
+        picker.style.right = (window.innerWidth - rect.right) + 'px';
+        picker.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+      }
       picker?.classList.toggle('is-open');
       return;
     }

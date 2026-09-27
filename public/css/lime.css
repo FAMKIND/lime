@@ -1776,15 +1776,17 @@ body {
   font-size: 14px;
 }
 
-/* ── Reaction picker ── .lime-message already has position:relative
-   (added for .lime-message__actions above), so no extra wrapper is
-   needed here — unlike the nav dropdowns (LIME-03r/03u), which needed
-   one added specifically for this. */
+/* ── Reaction picker ── position:fixed, not absolute: the reply panel's
+   list (.lime-replies-panel__list) scrolls, and an absolutely
+   positioned picker opening upward from a row near the list's own top
+   edge got clipped by that overflow, same class of bug LIME-03w fixed
+   for the nav dropdowns the same way. right/bottom are computed in JS
+   (the React button's click handler in app.js) from the row's own
+   rect at open time, since position:fixed has no relative-to-row
+   anchor of its own the way position:absolute did. */
 .lime-reaction-picker {
   display: none;
-  position: absolute;
-  top: -48px;
-  right: 0;
+  position: fixed;
   background: var(--soil-bg-surface);
   border: 1px solid var(--soil-border-subtle);
   border-radius: var(--seed-radius-full);
