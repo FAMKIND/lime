@@ -26,6 +26,12 @@ function getMessagesByConversation(conversationId) {
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 }
 
+// Replies live in the reply thread panel, never inline in the main
+// thread (LIME-17) — this excludes anything with a reply_to.
+function getThreadMessages(conversationId) {
+  return getMessagesByConversation(conversationId).filter((m) => !m.reply_to);
+}
+
 function getDirectConversations() {
   return getConversationsForUser(CURRENT_USER_ID).filter((c) => c.type === 'direct');
 }

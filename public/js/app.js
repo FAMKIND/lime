@@ -92,6 +92,33 @@ function renderReactions(messageEl, reactions) {
   if (container) container.innerHTML = reactionsHtml(messageEl.dataset.messageId, reactions);
 }
 
+// LIME-11-fix5: "X replies" under any main-thread message that has
+// real replies — like reactions, the count is computed live from
+// getRepliesForMessage rather than trusted from the seed message's
+// own stale reply_count field. Click reuses the exact same
+// openReplies() the "Reply" action button already calls (see the
+// "Reply thread panel" closure further down) via a second delegated
+// listener on this button's own class.
+function replyIndicatorHtml(messageId) {
+  const count = getRepliesForMessage(messageId).length;
+  if (count === 0) return '';
+  return '<button type="button" class="lime-message__reply-indicator" data-message-id="' + messageId + '">'
+    + '<span class="dew dew-chat"></span>'
+    + count + (count === 1 ? ' reply' : ' replies')
+    + '</button>';
+}
+
+// Keeps the main thread's "N replies" indicator correct after a reply
+// is sent anywhere (the thread panel), without a full re-render (LIME-17).
+function refreshReplyIndicator(messageId) {
+  const messageEl = document.querySelector('#thread-messages .lime-message[data-message-id="' + messageId + '"]');
+  if (!messageEl) return;
+  const existing = messageEl.querySelector('.lime-message__reply-indicator');
+  if (existing) existing.remove();
+  const reactionsEl = messageEl.querySelector('.lime-message__reactions');
+  if (reactionsEl) reactionsEl.insertAdjacentHTML('afterend', replyIndicatorHtml(messageId));
+}
+
 (function () {
   const list = document.getElementById('contacts-list');
   const thread = document.getElementById('thread-messages');
@@ -127,6 +154,15 @@ function renderReactions(messageEl, reactions) {
   // now always has one — the fallback branch was dead code and is gone.
   const REACTABLE = '.lime-message, .lime-reply, .lime-replies-panel__quote';
 
+  // A reaction made in the thread panel's quote/reply, or in the main
+  // thread, must show up everywhere that message is currently on screen
+  // (LIME-17) — not just the container the click happened in.
+  function renderReactionsEverywhere(messageId, reactions) {
+    document.querySelectorAll(REACTABLE).forEach((el) => {
+      if (el.dataset.messageId === messageId) renderReactions(el, reactions);
+    });
+  }
+
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.lime-message__actions [title="React"]');
     if (btn) {
@@ -148,7 +184,7 @@ function renderReactions(messageEl, reactions) {
       const messageId = msg.dataset.messageId;
       if (messageId) {
         const reactions = addReaction(messageId, pickerEmoji.dataset.emoji);
-        renderReactions(msg, reactions);
+        renderReactionsEverywhere(messageId, reactions);
       }
       pickerEmoji.closest('.lime-reaction-picker').classList.remove('is-open');
       return;
@@ -160,7 +196,7 @@ function renderReactions(messageEl, reactions) {
       const messageId = msg.dataset.messageId;
       if (!messageId) return;
       const reactions = toggleReaction(messageId, pill.dataset.emoji);
-      renderReactions(msg, reactions);
+      renderReactionsEverywhere(messageId, reactions);
     }
   });
   document.addEventListener('click', () => document.querySelectorAll('.lime-reaction-picker.is-open').forEach((p) => p.classList.remove('is-open')));
@@ -213,26 +249,10 @@ function renderReactions(messageEl, reactions) {
       + '</div>';
   }
 
-  // LIME-11-fix5: "X replies" under any main-thread message that has
-  // real replies — like reactions, the count is computed live from
-  // getRepliesForMessage rather than trusted from the seed message's
-  // own stale reply_count field. Click reuses the exact same
-  // openReplies() the "Reply" action button already calls (see the
-  // "Reply thread panel" closure further down) via a second delegated
-  // listener on this button's own class.
-  function replyIndicatorHtml(messageId) {
-    const count = getRepliesForMessage(messageId).length;
-    if (count === 0) return '';
-    return '<button type="button" class="lime-message__reply-indicator" data-message-id="' + messageId + '">'
-      + '<span class="dew dew-chat"></span>'
-      + count + (count === 1 ? ' reply' : ' replies')
-      + '</button>';
-  }
-
   function renderThread(conversationId, teacher) {
     currentConversationId = conversationId;
     lastRenderedDay = null;
-    const msgs = getMessagesByConversation(conversationId);
+    const msgs = getThreadMessages(conversationId);
     thread.innerHTML = '';
     if (msgs.length === 0) {
       thread.innerHTML = '<p class="lime-messages__empty">No messages yet.</p>';
@@ -789,6 +809,7 @@ function setRightPanelOpen(isOpen) {
     const content = replyInput.value.trim();
     if (!content) return;
     sendReply(currentReplyParentId, content);
+    refreshReplyIndicator(currentReplyParentId);
     renderReplies(currentReplyParentId);
     listEl.scrollTop = listEl.scrollHeight;
     replyInput.value = '';
