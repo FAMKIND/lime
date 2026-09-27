@@ -3040,17 +3040,16 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
      to match the specificity fight already documented above and in
      LIME-12-fix3 — plain declarations here lost to the collapsed-left
      rules in testing. */
-  /* LIME-12-fix6: applies whether or not the stale collapsed-left
-     class from fix5 is present — the drawer's logo should sit at the
-     same left inset as the hamburger toggle it replaces (12px,
-     .lime-center-top's own mobile padding and .lime-nav's existing
-     horizontal padding below), not desktop's wider 24px (sized there
-     to optically center the logo over nav icons in a permanent rail —
-     not relevant once the drawer is a temporary push-open panel). */
+  /* Reverses LIME-12-fix6's own choice (2026-09-27, user's explicit
+     ask): the drawer's logo now matches desktop's 24px inset — the
+     same value that optically centers it over the nav icons below —
+     instead of the 12px inset that matched the hamburger toggle it
+     replaces. Applies whether or not the stale collapsed-left class
+     from fix5 is present. */
   .seed-layout--mobile-open .lime-sidebar__top,
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__top {
     justify-content: flex-start !important;
-    padding: 0 var(--seed-space-2) 0 var(--seed-space-3) !important;
+    padding: 0 var(--seed-space-2) 0 24px !important;
   }
 
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__brand {
