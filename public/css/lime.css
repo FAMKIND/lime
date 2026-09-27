@@ -20,6 +20,18 @@
 [data-theme="light"] {
   --soil-bg-canvas:  #f9f8f4; /* --lime-canvas */
   --soil-bg-surface: #f0eee6; /* --lime-warm — message bubbles, composer, search fields */
+  /* Lime's "chosen / current" colour (LIME-14): Seed's own --selected-*
+     family, retuned from Seed's mint to the lime the nav has always used.
+     Stepped per Seed's flower convention: resting, hover, pressed. */
+  --selected-bg-subtle-default: var(--seed-lime-100);
+  --selected-bg-subtle-hover:   var(--seed-lime-200);
+  --selected-bg-subtle-active:  var(--seed-lime-300);
+  --selected-border-subtle-default: var(--seed-lime-300);
+  /* Amendment: stock lime-600 text measured 4.46:1 on lime-100, just
+     under the 4.5:1 minimum for text. Darkened one step; icons only
+     need 3:1 so lime-600 (≈4.4:1) still clears it with room to spare. */
+  --selected-text-normal-default: var(--seed-lime-700);
+  --selected-icon-normal-default: var(--seed-lime-600);
 }
 
 html, body {
@@ -64,14 +76,15 @@ body {
 /* Panel dividers: Seed's flush mode ships an always-visible hairline.
    The wireframe wants dividers to appear only on hover/drag — this
    just fades them in instead of showing them at rest. Color: matches
-   --lime-nav-hover (the same token the nav hover/active state uses),
-   not Seed's own "good" semantic scale — a first attempt at
-   "consistent with the center divider" used --good-border-* here,
-   which is a different green than the nav's --lime-nav-hover, so it
-   still didn't actually match anything else in the app. Dragging gets
-   a bolder step on the same scale (--seed-lime-300) instead of the
-   hover shade — the pale hover color didn't read clearly enough once
-   you're actually grabbing the line to move it. */
+   --selected-bg-subtle-hover (the same scale the nav hover/active
+   state uses, LIME-14), not Seed's own "good" semantic scale — a
+   first attempt at "consistent with the center divider" used
+   --good-border-* here, which is a different green than the nav's
+   lime, so it still didn't actually match anything else in the app.
+   Dragging gets a bolder step on the same scale
+   (--selected-bg-subtle-active) instead of the hover shade — the
+   pale hover color didn't read clearly enough once you're actually
+   grabbing the line to move it. */
 .seed-layout--left-flush  .seed-layout__handle--left::after,
 .seed-layout--right-flush .seed-layout__handle--right::after {
   opacity: 0;
@@ -81,13 +94,13 @@ body {
 .seed-layout--left-flush  .seed-layout__handle--left:hover::after,
 .seed-layout--right-flush .seed-layout__handle--right:hover::after {
   opacity: 1;
-  background: var(--lime-nav-hover);
+  background: var(--selected-bg-subtle-hover);
 }
 
 .seed-layout--left-flush  .seed-layout__handle--left.is-dragging::after,
 .seed-layout--right-flush .seed-layout__handle--right.is-dragging::after {
   opacity: 1;
-  background: var(--seed-lime-300);
+  background: var(--selected-bg-subtle-active);
 }
 
 /* Seed's left/right panels ship their own 16px internal padding (card
@@ -133,13 +146,6 @@ body {
      --seed-lime-100 — referencing that directly instead of updating
      this to a second hardcoded hex value. */
   --lime-badge-light: var(--seed-lime-100);
-  /* #a3e18a (requested for nav hover/active) is an exact match for
-     --seed-lime-300 — these are lighter steps on that same raw scale.
-     Wrapped in named tokens rather than referencing --seed-lime-* raw
-     values directly in the component rules below, since Seed's own
-     README says Tier 1 raw palette tokens should never be referenced
-     directly in components, only through a semantic layer. */
-  --lime-nav-hover: var(--seed-lime-100);
   --lime-avatar-blush:      #F9D8DA;
   --lime-avatar-peach:      #FCDCC5;
   --lime-avatar-butter:     #FBEFB8;
@@ -523,13 +529,21 @@ body {
 }
 
 .lime-nav__btn:hover {
-  background: var(--lime-nav-hover);
+  background: var(--selected-bg-subtle-default);
   color: var(--soil-text);
 }
 
 .lime-nav__btn--active {
-  background: var(--lime-nav-hover);
+  background: var(--selected-bg-subtle-default);
   color: var(--soil-text);
+}
+
+.lime-nav__btn--active:hover {
+  background: var(--selected-bg-subtle-hover);
+}
+
+.lime-nav__btn:active {
+  background: var(--selected-bg-subtle-active);
 }
 
 .lime-nav__btn .dew {
@@ -756,7 +770,11 @@ body {
 }
 
 .lime-sidebar__user-trigger:hover {
-  background: var(--lime-nav-hover);
+  background: var(--selected-bg-subtle-default);
+}
+
+.lime-sidebar__user-trigger:active {
+  background: var(--selected-bg-subtle-active);
 }
 
 .seed-layout--collapsed-left .lime-sidebar__footer {
@@ -1357,12 +1375,12 @@ body {
 
 .lime-center-handle:hover::after {
   opacity: 1;
-  background: var(--lime-nav-hover);
+  background: var(--selected-bg-subtle-hover);
 }
 
 .lime-center-handle.is-dragging::after {
   opacity: 1;
-  background: var(--seed-lime-300);
+  background: var(--selected-bg-subtle-active);
 }
 
 /* Top padding matches .lime-messages's own top padding so the tabs
@@ -2405,13 +2423,17 @@ body {
 .lime-composer__return.is-active {
   opacity: 1;
   cursor: pointer;
-  /* Same token as .lime-nav__btn's hover/active state — active and
-     hover deliberately share one colour, matching the nav convention. */
-  background: var(--lime-nav-hover);
+  /* Seed's --selected-* scale, same as the nav (LIME-14): resting,
+     deeper on hover, deeper again while pressed. */
+  background: var(--selected-bg-subtle-default);
 }
 
 .lime-composer__return.is-active:hover {
-  background: var(--lime-nav-hover);
+  background: var(--selected-bg-subtle-hover);
+}
+
+.lime-composer__return.is-active:active {
+  background: var(--selected-bg-subtle-active);
 }
 
 .lime-composer__return:hover {
