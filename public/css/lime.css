@@ -450,7 +450,7 @@ body {
   width: 100%;
   height: 36px;
   flex-shrink: 0;
-  margin-bottom: var(--seed-space-2);
+  margin-bottom: 0;
   padding: 0 var(--seed-space-3);
   border: none;
   border-radius: var(--seed-radius-full);
@@ -723,20 +723,24 @@ body {
 .lime-sidebar__footer {
   position: relative;
   flex-shrink: 0;
+  padding: var(--seed-space-2) var(--seed-space-3);
 }
 
 .lime-sidebar__user-trigger {
+  width: 100%;
+  height: 40px;
   display: flex;
   align-items: center;
-  gap: var(--seed-space-2);
-  width: 100%;
+  gap: var(--seed-space-3);
+  padding: 0 var(--seed-space-3);
   border: none;
-  background: none;
-  padding: var(--seed-space-3) var(--seed-space-4);
-  font-family: inherit;
-  text-align: left;
+  background: transparent;
+  border-radius: 12px;
+  color: var(--soil-text-muted);
+  font-family: var(--seed-font-ui);
+  font-size: var(--seed-text-sm);
   cursor: pointer;
-  border-radius: var(--seed-radius-md);
+  transition: background 80ms ease, color 80ms ease;
 }
 
 /* .lime-sidebar__user-icon (the brief's target) no longer exists —
@@ -752,11 +756,16 @@ body {
 }
 
 .lime-sidebar__user-trigger:hover {
-  background: var(--calm-bg-subtle-hover);
+  background: var(--lime-nav-hover);
+}
+
+.seed-layout--collapsed-left .lime-sidebar__footer {
+  padding: var(--seed-space-2);
 }
 
 .seed-layout--collapsed-left .lime-sidebar__user-trigger {
-  padding: var(--seed-space-3) 0;
+  width: 40px;
+  padding: 0;
   justify-content: center;
 }
 
@@ -2396,14 +2405,13 @@ body {
 .lime-composer__return.is-active {
   opacity: 1;
   cursor: pointer;
-  /* --soil-bg-subtle doesn't exist (checked, same gap already found and
-     substituted in LIME-10-fix11) — --calm-bg-subtle-default instead,
-     exactly one step lighter than the :hover value below. */
-  background: var(--calm-bg-subtle-default);
+  /* Same token as .lime-nav__btn's hover/active state — active and
+     hover deliberately share one colour, matching the nav convention. */
+  background: var(--lime-nav-hover);
 }
 
 .lime-composer__return.is-active:hover {
-  background: var(--calm-bg-subtle-hover);
+  background: var(--lime-nav-hover);
 }
 
 .lime-composer__return:hover {
@@ -2568,7 +2576,7 @@ textarea.lime-composer__input {
   height: 24px;
   min-height: 24px;
   max-height: 24px;
-  padding: var(--seed-space-1) 40px var(--seed-space-1) 0; /* right: reserves room for the corner-anchored Send button so typed text doesn't render under it */
+  padding: var(--seed-space-1) 40px var(--seed-space-1) var(--seed-space-2); /* right: reserves room for the corner-anchored Send button so typed text doesn't render under it */
   border: none;
   background: transparent;
   resize: none;
@@ -3064,8 +3072,13 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
     display: inline !important;
   }
 
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__footer {
+    padding: var(--seed-space-2) var(--seed-space-3) !important;
+  }
+
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-sidebar__user-trigger {
-    padding: var(--seed-space-3) var(--seed-space-4) !important;
+    width: 100% !important;
+    padding: 0 var(--seed-space-3) !important;
     justify-content: flex-start !important;
   }
 
