@@ -1106,6 +1106,17 @@ body {
    overflow (which body's overflow-x:auto turns into a scrollbar). */
 .seed-layout__center {
   min-width: 800px; /* 320px list + 480px chat — matches app.js's MIN_CENTER */
+  /* LIME-18-fix7: extends the card 16px past the grid's own bottom
+     padding, into space the grid container itself still reserves (not
+     past its true outer edge), the same mechanism already proven safe
+     on .lime-replies-panel__composer below. Needed because
+     .seed-layout__center keeps Seed's strict overflow:hidden on both
+     axes (unlike .seed-layout__right, which Seed itself already
+     loosens to overflow-y:auto) — the main composer's absolutely
+     positioned box has zero slack to move into otherwise, confirmed by
+     measuring live (headless Chrome) rather than computing it, after
+     two earlier rounds of computed-and-wrong pixel math. */
+  margin-bottom: calc(-1 * var(--seed-space-4));
 }
 
 .seed-layout__left {
@@ -2912,21 +2923,25 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
      pill), so the missing direction was never visible as a bug until now. */
   flex-direction: column;
   gap: var(--seed-space-1);
-  /* LIME-18-fix5: this element is a normal flex child — #replies-composer
+  /* LIME-18-fix5/7: this element is a normal flex child — #replies-composer
      never carried .lime-composer's class (checked directly; a fix2
      comment here wrongly assumed it did), so nothing here is or was
-     absolutely positioned. The real gap: #right-panel/.seed-layout__right
-     carries its own 16px padding on every side, which the main composer
-     never pays — it escapes its own panel's padding entirely via
-     position:absolute against an unpadded .lime-chat-body. Left at
-     --seed-space-4 to match .lime-replies-panel__header's own left
-     padding (so this box's left edge lines up with the "Thread" title
-     above it); right/bottom margins cancel #right-panel's 16px on those
-     sides, landing the box exactly at #right-panel-toggle's own 12px
-     right inset and the main composer's 8px (--seed-space-2) bottom
-     padding. */
-  padding: var(--seed-space-3) var(--seed-space-3) var(--seed-space-2) var(--seed-space-4);
-  margin-right: calc(-1 * var(--seed-space-4));
+     absolutely positioned. fix5's own premise was also wrong: it
+     assumed #right-panel/.seed-layout__right carries Seed's stock 16px
+     padding — it doesn't; lime.css zeroes it (~112) for both side
+     panels. Corrected via live measurement (headless Chrome), not
+     computed, after fix5's computed numbers turned out wrong twice.
+     Left at --seed-space-4 to match .lime-replies-panel__header's own
+     left padding (measured: exact match, 0px off). Right padding at
+     --seed-space-4 (not fix5's --seed-space-3, no margin-right needed
+     now that the panel truly has 0 padding) lands the box within 1px
+     of #right-panel-toggle's own 12px right inset. margin-bottom is
+     kept, not because it cancels any panel padding (there isn't any),
+     but because the user explicitly prefers the composer at this
+     lower position — .seed-layout__center was extended by the same
+     16px instead (see its own rule) so the main composer matches this
+     one, rather than pulling this one back up. */
+  padding: var(--seed-space-3) var(--seed-space-4) var(--seed-space-2) var(--seed-space-4);
   margin-bottom: calc(-1 * var(--seed-space-4));
 }
 
@@ -3018,6 +3033,16 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
     grid-template-columns: 0px 1fr !important;
     padding: 0;
     transition: grid-template-columns 0.2s ease;
+  }
+
+  /* LIME-18-fix7's desktop-only trick (.seed-layout__center's negative
+     margin-bottom, extending into the grid's own reserved bottom
+     padding) has nothing to extend into here — the grid's own padding
+     is already zeroed on this line above, at every side, for mobile.
+     Confirmed via headless Chrome: left unreset, the composer rendered
+     16px past the mobile viewport's own height. */
+  .seed-layout__center {
+    margin-bottom: 0;
   }
 
   /* Explicit grid-column, not relying on DOM-order auto-placement —
