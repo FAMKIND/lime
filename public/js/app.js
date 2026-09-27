@@ -1120,6 +1120,7 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
   const backdrop = document.getElementById('search-modal-backdrop');
   const modal    = document.getElementById('search-modal');
   const input    = document.getElementById('search-modal-input');
+  const closeBtn = document.getElementById('search-modal-close');
   if (!trigger || !modal) return;
 
   let lastFocused = null;
@@ -1166,6 +1167,7 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
 
   trigger.addEventListener('click', open);
   backdrop.addEventListener('click', close);
+  if (closeBtn) closeBtn.addEventListener('click', close);
   // .lime-menu__item, not the old .lime-search-modal__item (LIME-21b
   // unified them) — scoped to modal's own children, so this still only
   // ever matches these 4 result buttons, nothing from any other menu.

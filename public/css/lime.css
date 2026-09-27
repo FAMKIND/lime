@@ -1282,6 +1282,16 @@ body {
   color: var(--soil-text-muted);
 }
 
+/* -6px, measured (headless Chrome), not guessed: without this, the
+   glyph's right gap from the modal edge was 22px vs the search icon's
+   own 16px left gap — the icon-button's own internal centering (36px
+   box, glyph smaller) adds extra inset a bare .dew glyph doesn't have.
+   No seed-space token lands on exactly 6px, so this is a literal. */
+.lime-search-modal__close {
+  flex-shrink: 0;
+  margin-right: -6px;
+}
+
 .lime-search-modal__results {
   flex: 1;
   min-height: 0;
