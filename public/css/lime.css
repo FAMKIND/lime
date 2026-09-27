@@ -592,93 +592,89 @@ body {
   margin-left: var(--seed-space-2);
 }
 
-/* ── Nav dropdowns (notifications, user menu) ──
-   position:fixed, not absolute — .seed-layout__left has
-   overflow-x:hidden (Seed's own layout.css), so an absolutely
-   positioned dropdown wider than the sidebar gets CLIPPED by that
-   overflow, not hidden behind something else. This is the same
-   problem Seed's own .seed-layout__menu solves the same way (see its
-   comment: "position:fixed so they clear overflow:hidden bounds").
-   z-index alone (the brief's literal fix) cannot solve this — it has
-   no effect on overflow clipping. left/bottom are set by JS
-   (wireDropdownToggle in app.js) at open time from the trigger's own
-   position, since position:fixed has no relative-to-trigger anchor of
-   its own the way position:absolute did. */
-.lime-nav-dropdown {
-  display: none;
+/* ── LIME-21: every JS-toggled menu on Seed's dropdown component ──
+   Seed's own .seed-dropdown__menu is position:absolute — .lime-menu
+   overrides it to fixed (top/left computed by wireDropdownToggle in
+   app.js at open time; same reason the old .lime-nav-dropdown needed
+   this, documented at LIME-03w — .seed-layout__left's own
+   overflow-x:hidden would otherwise clip a dropdown wider than the
+   sidebar). Lime's JS still toggles the `is-open` class (LIME-20's
+   own logic, untouched) rather than Seed's `--open` modifier, via the
+   override two rules down — keeps every wireDropdownToggle call site
+   exactly as it was. z-index: no Seed z-token reaches this high (the
+   tallest, --seed-z-toast, is 500) and this app has nothing else
+   above 1000 either — kept the literal value the old dropdowns
+   already used, proven correct rather than guessed. */
+.lime-menu {
   position: fixed;
-  min-width: 220px;
-  background: var(--soil-bg-surface);
-  border: 1px solid var(--soil-border-subtle);
-  border-radius: var(--seed-radius-md);
-  box-shadow: var(--seed-shadow-md);
-  padding: var(--seed-space-2);
+  top: auto;
+  left: auto;
   z-index: 1000;
 }
 
-.lime-nav-dropdown.is-open {
+.lime-menu.is-open {
   display: block;
 }
 
-.lime-nav-dropdown__item {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-2);
-  padding: var(--seed-space-2) var(--seed-space-3);
-  border: none;
-  background: none;
-  width: 100%;
-  font-family: inherit;
-  font-size: var(--seed-text-sm);
-  color: var(--soil-text);
-  text-align: left;
-  cursor: pointer;
-  border-radius: var(--seed-radius-sm);
+/* Seed bug: width:100% + padding overflows the menu — upstream to
+   Seed (same no-border-box cause as LIME-18-fix4). */
+.seed-dropdown__item {
+  box-sizing: border-box;
 }
 
-.lime-nav-dropdown__item:hover {
-  background: var(--calm-bg-subtle-hover);
-  cursor: pointer; /* already on the base rule (line above); redundant here but added per the brief's literal ask — couldn't identify or reproduce an actual defect via static review */
-}
-
-/* Currently-selected device in the voice-mode dropdown (LIME-10-fix10) —
-   Seed's --selected-* scale, same "toggled on" language already used for
-   .lime-reaction--active, rather than reusing the plain :hover token. */
-.lime-nav-dropdown__item--active {
+/* Lime's selected lime (LIME-14), not Seed's stock mint, for whichever
+   item is the current/chosen one (the active microphone). Hover on an
+   already-active row deepens the same way LIME-14 steps everywhere else. */
+.seed-dropdown__item--active {
   background: var(--selected-bg-subtle-default);
   color: var(--selected-text-normal-default);
-  font-weight: var(--seed-weight-medium);
 }
 
-.lime-nav-dropdown__item--active .dew-check {
-  color: var(--selected-icon-normal-default);
-  font-size: 14px;
+.seed-dropdown__item--active:hover {
+  background: var(--selected-bg-subtle-hover);
 }
 
-.lime-nav-dropdown__divider {
-  height: 1px;
-  background: var(--soil-border-subtle);
-  margin: var(--seed-space-2) 0;
+/* User menu's email/phone — information, not an action: muted, no
+   hover, not clickable. Matches Seed's own item padding so it lines
+   up with the real items below it. */
+.lime-menu__header {
+  padding: var(--seed-space-2) var(--seed-space-3);
+  color: var(--soil-text-muted);
+  font-size: var(--seed-text-sm);
+  cursor: default;
 }
 
-/* ── Rich notifications (Apple-style: avatar/name/time/preview) ── */
-.lime-notif {
-  display: flex;
-  gap: var(--seed-space-3);
-  padding: var(--seed-space-3);
-  border-radius: var(--seed-radius-md);
-  cursor: pointer;
-  text-decoration: none;
+/* Notification previews already truncate with an ellipsis
+   (.lime-notif__preview, below) — this bounds the menu itself so that
+   truncation actually has an edge to truncate against, rather than
+   growing to fit the longest preview. */
+#notif-dropdown {
+  max-width: 320px;
 }
 
-.lime-notif:hover {
-  background: var(--calm-bg-subtle-hover);
-}
-
-.lime-notif__avatar {
+/* Voice menu: every row reserves this space (LIME-21) — previously only
+   the active row had a checkmark span at all, so its text sat indented
+   relative to every other row's. Fixed width, hidden unless the row is
+   --active, so all four device names line up regardless of which one
+   is chosen. */
+.lime-menu__check-slot {
+  display: inline-flex;
+  width: 14px;
   flex-shrink: 0;
+  visibility: hidden;
 }
 
+.seed-dropdown__item--active .lime-menu__check-slot {
+  visibility: visible;
+}
+
+/* ── Rich notifications (Apple-style: avatar/name/time/preview) ──
+   .lime-notif itself carries no layout of its own now — it's a plain
+   marker class (kept for the data-contact JS hook) alongside
+   .seed-dropdown__item, which now supplies the same display/padding/
+   gap/hover every other menu item gets. Only the inner name/time/
+   preview structure below is still Lime's own, since Seed's plain
+   item has no equivalent for multi-line rich content. */
 .lime-notif__body {
   flex: 1;
   min-width: 0;
@@ -868,54 +864,11 @@ body {
   background: var(--calm-bg-subtle-hover);
 }
 
-/* Wrapper needed for .lime-dropdown's top:100%/right:0 to anchor under
-   the ellipsis button specifically — .lime-center-top itself has no
-   position set, so without this the dropdown's containing block would
-   bubble up to a much larger ancestor and render in the wrong spot. */
-.lime-more-menu {
-  position: relative;
-}
-
-.lime-dropdown {
-  display: none;
-  position: absolute;
-  top: 100%;
-  right: 0;
-  min-width: 160px;
-  background: var(--soil-bg-surface);
-  border: 1px solid var(--soil-border-subtle);
-  border-radius: var(--seed-radius-md);
-  box-shadow: var(--seed-shadow-md);
-  padding: var(--seed-space-2);
-  z-index: 100;
-}
-
-.lime-dropdown.is-open {
-  display: block;
-}
-
-.lime-dropdown__item {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-2);
-  width: 100%;
-  padding: var(--seed-space-2) var(--seed-space-3);
-  border: none;
-  background: none;
-  font-size: var(--seed-text-sm);
-  color: var(--soil-text);
-  cursor: pointer;
-  border-radius: var(--seed-radius-sm);
-}
-
-.lime-dropdown__item:hover {
-  background: var(--calm-bg-subtle-hover);
-}
-
-.lime-dropdown__item .dew {
-  font-size: 16px;
-  color: var(--soil-text-muted);
-}
+/* .lime-more-menu's own CSS rule (position:relative, anchoring the old
+   position:absolute .lime-dropdown under the ellipsis button) is gone —
+   more-menu is fixed-positioned now, same as every other menu, needing
+   no positioned wrapper ancestor. The wrapper <div> itself stays in
+   the markup (still groups the trigger and menu), just unstyled. */
 
 .lime-topbar__crumb {
   display: flex;

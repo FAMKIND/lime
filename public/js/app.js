@@ -931,9 +931,11 @@ function setRightPanelOpen(isOpen) {
 // any outside click. Generalized rather than copy-pasted a third time.
 // `fixed: true` (notif/user menus) computes the dropdown's on-screen
 // position from the trigger's own rect before opening it — required
-// now that .lime-nav-dropdown is position:fixed (LIME-03w), which has
-// no relative-to-trigger anchor of its own the way position:absolute
-// did. LIME-20: every registered dropdown now shares one Set (declared
+// now that .lime-menu is position:fixed (LIME-03w's original reasoning
+// for the old .lime-nav-dropdown, carried over by LIME-21's shared
+// class), which has no relative-to-trigger anchor of its own the way
+// position:absolute did. LIME-20: every registered dropdown now shares
+// one Set (declared
 // near the top of this file — see the comment there for why) so
 // opening any of them closes whichever other one was open — the old
 // per-call document listener alone couldn't do this, since each
@@ -1001,15 +1003,11 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// LIME-20 tried switching more-menu to fixed mode too, so every menu
-// would share one positioning path — checked live (headless Chrome):
-// its own .lime-dropdown CSS is still position:absolute, and applying
-// inline top/left computed for a position:fixed element against that
-// different containing block rendered it off-screen (left: 2896 in a
-// 1567px viewport). Left non-fixed per the brief's own fallback;
-// LIME-21 gives it the shared position:fixed .lime-menu CSS, at which
-// point this can switch too.
-wireDropdownToggle('more-menu-toggle', 'more-menu');
+// LIME-20 tried this in fixed mode but had to revert — its CSS was
+// still position:absolute then. Now on the shared .lime-menu (LIME-21),
+// position:fixed, so it finally shares the same positioning path as
+// every other menu.
+wireDropdownToggle('more-menu-toggle', 'more-menu', { fixed: true });
 // Opens beside the bell, not below it, so the nav items under it (Link,
 // Jam) stay visible instead of getting covered (LIME-20-fix).
 wireDropdownToggle('notif-btn', 'notif-dropdown', { fixed: true, placement: 'right' });
