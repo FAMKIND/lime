@@ -156,6 +156,57 @@ function refreshReplyIndicator(messageId) {
   messageEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
 }
 
+// ── Avatar identity system ──────────────────────────────
+// Every .lime-avatar[data-name] gets initials + a color deterministically
+// derived from the name (same input always yields the same output, so a
+// person's color is stable across the whole app and across reloads).
+// Moved above the contacts/thread render below (LIME-18-fix): that
+// render's own paintAvatar call (added by LIME-18, for reply-summary
+// avatars and to fix a conversation-switch gap) runs during this
+// script's very first synchronous pass — before a later `const` in
+// this file would otherwise have been initialized, throwing "Cannot
+// access 'PALETTE_SIZE' before initialization" and aborting the rest
+// of this entire script. That's the actual cause behind a much bigger
+// symptom than it looks: once one top-level statement in a script
+// throws uncaught, every statement textually after it — every other
+// IIFE's click wiring, the reaction picker, the mobile nav, all of
+// it — simply never runs. paintAvatar is top-level, not IIFE-private
+// (LIME-11), since sent messages, replies, and now conversation
+// switches all need to call it themselves — the one-time sweep further
+// down only ever reached what already existed at parse time.
+const PALETTE_SIZE = 12;
+
+function hashName(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) % PALETTE_SIZE;
+}
+
+function initialsFor(name) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  const first = parts[0][0];
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (first + last).toUpperCase();
+}
+
+function paintAvatar(el) {
+  const name = el.dataset.name;
+  if (el.dataset.image) {
+    const img = document.createElement('img');
+    img.src = el.dataset.image;
+    img.alt = '';
+    el.appendChild(img);
+    el.setAttribute('aria-label', name);
+    return;
+  }
+  el.classList.add('lime-avatar--p' + hashName(name));
+  el.textContent = initialsFor(name);
+  el.setAttribute('aria-label', name);
+}
+
 (function () {
   const list = document.getElementById('contacts-list');
   const thread = document.getElementById('thread-messages');
@@ -427,52 +478,11 @@ function refreshReplyIndicator(messageId) {
   });
 })();
 
-// ── Avatar identity system ──────────────────────────────
-// Every .lime-avatar[data-name] gets initials + a color deterministically
-// derived from the name (same input always yields the same output, so a
-// person's color is stable across the whole app and across reloads).
-// paintAvatar is a top-level function, not IIFE-private (LIME-11) — the
-// forEach below only ever runs once, at parse time, so it only reached
-// elements that already existed by then (the initial contacts list +
-// default thread, both rendered earlier in this same script). Any
-// .lime-avatar added afterward — a sent message (LIME-07) or a reply
-// (LIME-11) — never got painted at all: a real, pre-existing gap this
-// brief's own "replies show avatars" requirement forced into the open.
-// Anything that appends a new .lime-avatar[data-name] now has to call
-// this itself.
-const PALETTE_SIZE = 12;
-
-function hashName(name) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash * 31 + name.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash) % PALETTE_SIZE;
-}
-
-function initialsFor(name) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '';
-  const first = parts[0][0];
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
-  return (first + last).toUpperCase();
-}
-
-function paintAvatar(el) {
-  const name = el.dataset.name;
-  if (el.dataset.image) {
-    const img = document.createElement('img');
-    img.src = el.dataset.image;
-    img.alt = '';
-    el.appendChild(img);
-    el.setAttribute('aria-label', name);
-    return;
-  }
-  el.classList.add('lime-avatar--p' + hashName(name));
-  el.textContent = initialsFor(name);
-  el.setAttribute('aria-label', name);
-}
-
+// ── Avatar identity system (declarations moved above the contacts/
+// thread render below — see LIME-18-fix comment there for why) ──
+// This one-time sweep still runs here, after that render: it catches
+// the static Recent-row avatars, the sidebar's own avatar, and the
+// contact list's rows, none of which call paintAvatar individually.
 document.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
 
 // ── Panel resize (outer left/right dividers) ─────────────
