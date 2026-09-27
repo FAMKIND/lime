@@ -575,16 +575,14 @@ body {
   box-shadow: none;
 }
 
-/* --soil-bg-disabled (the brief's requested token) doesn't exist —
-   the background was already --calm-bg-subtle-default (LIME-03u), a
-   neutral muted gray that already reads as "disabled"-looking, so
-   it's left as-is. --soil-text-disabled does exist and is the one
-   real change here (was --soil-text-muted). */
+/* Status tag, not a disabled state: neutral fill matching the nav
+   Search field; ~7:1 text contrast (LIME-23). */
 .lime-badge--soon {
   font-size: var(--seed-text-xs);
   padding: 2px 6px;
-  background: var(--calm-bg-subtle-default);
-  color: var(--soil-text-disabled);
+  background: var(--calm-bg-normal-default);
+  color: var(--calm-text-normal-default);
+  font-weight: var(--seed-weight-medium);
   border-radius: var(--seed-radius-full);
   margin-left: var(--seed-space-2);
 }
