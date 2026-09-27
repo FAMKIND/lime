@@ -2303,6 +2303,22 @@ body {
   }
 }
 
+/* The reply composer's column is always narrow — the right panel's
+   width on desktop, or the full mobile "panel" view, which is still
+   only as wide as that same panel — unlike the main composer, which
+   only gets this narrow at the 480px breakpoint above. Collapsing its
+   extra tools into the overflow menu unconditionally, rather than
+   gating it on a viewport-width breakpoint tuned for the main
+   composer's much wider column, is what actually keeps 4 tools + the
+   "…" button + the corner-anchored Send button all fitting on one line. */
+#replies-composer .lime-composer__tool--overflow {
+  display: none;
+}
+
+#replies-composer .lime-composer__overflow {
+  display: inline-flex;
+}
+
 /* The right panel narrows the center panel (and this composer along
    with it) — rather than guessing a viewport breakpoint, key directly
    off the actual state that causes it, per the brief's own "open right

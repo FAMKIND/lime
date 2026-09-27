@@ -1007,6 +1007,19 @@ wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropd
   if (input) input.placeholder = 'Message...';
 })();
 
+// ── Shorter reply-composer privacy text ─────────────────────
+// Not width-gated like the placeholder fix above: the reply composer's
+// own column is always narrow (the desktop right panel, or the full
+// mobile "panel" view, itself no wider than that same panel), so its
+// disclaimer text overflows regardless of the overall window width.
+// A <span> does support CSS ellipsis (unlike the placeholder's
+// <textarea>), so this was already truncating cleanly — shortened the
+// actual text instead, so more of it stays legible in the space it has.
+(function () {
+  const privacy = document.querySelector('#replies-composer .lime-composer__privacy');
+  if (privacy) privacy.innerHTML = '<span class="dew dew-shield-check"></span> Secure &amp; encrypted';
+})();
+
 // ── Sign out ───────────────────────────────────────────────
 // Clears the mock session login.html stores on a successful sign-in
 // and sends the user back there. index.html has no auth-gate check on
