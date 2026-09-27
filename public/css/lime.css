@@ -1908,13 +1908,26 @@ body {
   gap: var(--seed-space-1);
   font-size: var(--seed-text-xs);
   font-weight: var(--seed-weight-semibold);
-  text-decoration: underline;
+  text-decoration: none;
   color: var(--calm-text-bold-default);
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* LIME-18-fix6: underline is scoped to the count/time text only, on
+   hover/focus — an underlined avatar initial in a circle read as a
+   bug, and it inherited the button's own underline (removed above)
+   since text-decoration is an inherited, in-flow property. */
+.lime-message__replies:hover .lime-replies__count,
+.lime-message__replies:hover .lime-replies__time {
+  text-decoration: underline;
+}
+
+.lime-message__replies:focus-visible .lime-replies__count {
+  text-decoration: underline;
 }
 
 .lime-replies__time {

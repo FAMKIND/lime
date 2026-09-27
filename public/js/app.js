@@ -134,7 +134,7 @@ function replyIndicatorHtml(messageId) {
   return '<div class="lime-message__footer">'
     + '<button type="button" class="lime-message__replies" data-message-id="' + messageId + '">'
     + '<span class="seed-avatar-group lime-replies__avatars">' + avatars.join('') + '</span>'
-    + replies.length + (replies.length === 1 ? ' reply' : ' replies')
+    + '<span class="lime-replies__count">' + replies.length + (replies.length === 1 ? ' reply' : ' replies') + '</span>'
     + '<span class="lime-replies__time">Last reply ' + formatLastReply(last.created_at) + '</span>'
     + '</button>'
     + '</div>';
