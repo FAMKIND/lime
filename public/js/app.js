@@ -550,6 +550,16 @@ function wireHoverPreviewToggle(toggle, initial, paint, apply) {
     apply(state);
     paint(!state); // still hovering post-click — keep previewing the next toggle
   });
+
+  // External closers (Escape, a breakpoint change) call this so the
+  // toggle's own private state stays in sync and its next click is correct.
+  return {
+    set(next) {
+      state = next;
+      apply(state);
+      paint(state);
+    },
+  };
 }
 
 // Shared by every trigger that opens/closes the right panel
@@ -1070,18 +1080,17 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
 });
 
 // ── Mobile nav drawer ─────────────────────────────────────
-// Reuses Seed's own .seed-layout--mobile-open overlay for
-// .seed-layout__left (already fully styled in layout.css) — this just
-// adds the trigger and a click-outside/Esc-to-close backdrop, which
-// Seed's mechanism doesn't itself provide. The trigger is now styled
-// and wired like the existing left/right panel toggles (icon swaps
-// open/closed, hover previews the alternate) rather than a plain
-// hamburger with its own bespoke click handler.
+// Push model, no Seed overlay and no backdrop: the drawer just pushes
+// the center panel narrower while staying fully visible and
+// interactive next to it. The trigger is styled and wired like the
+// existing left/right panel toggles (icon swaps open/closed, hover
+// previews the alternate) rather than a plain hamburger with its own
+// bespoke click handler. It closes via the hamburger, Escape, or
+// widening past the mobile breakpoint.
 (function () {
-  const layout   = document.getElementById('layout');
-  const toggle   = document.getElementById('mobile-nav-toggle');
-  const backdrop = document.getElementById('mobile-nav-backdrop');
-  if (!layout || !toggle || !backdrop) return;
+  const layout = document.getElementById('layout');
+  const toggle = document.getElementById('mobile-nav-toggle');
+  if (!layout || !toggle) return;
 
   const icon = toggle.querySelector('.dew');
 
@@ -1092,19 +1101,21 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
 
   function applyOpen(isOpen) {
     layout.classList.toggle('seed-layout--mobile-open', isOpen);
-    backdrop.classList.toggle('is-open', isOpen);
     toggle.setAttribute('aria-expanded', String(isOpen));
   }
 
   applyOpen(false);
-  wireHoverPreviewToggle(toggle, false, paintIcon, applyOpen);
+  const nav = wireHoverPreviewToggle(toggle, false, paintIcon, applyOpen);
 
-  backdrop.addEventListener('click', () => { applyOpen(false); paintIcon(false); });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && layout.classList.contains('seed-layout--mobile-open')) {
-      applyOpen(false);
-      paintIcon(false);
+      nav.set(false);
     }
+  });
+
+  const mobileQuery = window.matchMedia('(max-width: 767px)');
+  mobileQuery.addEventListener('change', (e) => {
+    if (!e.matches) nav.set(false);
   });
 })();
 

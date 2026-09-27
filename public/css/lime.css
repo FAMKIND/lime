@@ -1156,18 +1156,6 @@ body {
   display: none;
 }
 
-.lime-mobile-nav-backdrop {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(19, 27, 23, 0.3);
-  z-index: var(--seed-z-overlay);
-}
-
-.lime-mobile-nav-backdrop.is-open {
-  display: block;
-}
-
 @media (max-width: 767px) {
   .lime-mobile-nav-toggle {
     display: flex;
@@ -1234,12 +1222,6 @@ body {
     max-width: 240px;
   }
 
-  /* No backdrop in a push model — the center panel stays fully visible
-     and interactive next to the open sidebar, just narrower, so there's
-     nothing to dim and no overlay region to tap-to-close. */
-  .lime-mobile-nav-backdrop {
-    display: none !important;
-  }
 }
 
 .lime-search-modal {
