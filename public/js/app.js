@@ -647,12 +647,19 @@ function initMessagesList() {
     if (timeEl) timeEl.textContent = latest ? formatTime(latest.created_at) : '';
   }
 
-  function refreshList() {
-    const sorted = sortConversations(LimeStore.listConversations({ types: ['direct', 'group'] }));
+  // Shared by "All" and "Starred" (LIME-25) — same row shape, same
+  // update-in-place/build-if-missing/drop-if-gone diff, just a different
+  // target <ul> and (Starred only) source filter and empty-state message.
+  function syncSection(container, conversations, emptyMessage) {
+    const sorted = sortConversations(conversations);
+    if (sorted.length === 0 && emptyMessage) {
+      container.innerHTML = '<li class="lime-contact-list__empty">' + escapeHtml(emptyMessage) + '</li>';
+      return sorted;
+    }
     const seenIds = new Set();
     sorted.forEach((conversation) => {
       seenIds.add(conversation.id);
-      let li = list.querySelector('[data-conversation-id="' + conversation.id + '"]');
+      let li = container.querySelector('[data-conversation-id="' + conversation.id + '"]');
       if (li) {
         updateRow(li, conversation);
       } else {
@@ -660,23 +667,125 @@ function initMessagesList() {
       }
       // appendChild on an already-attached node moves it — this both
       // places brand-new rows and re-sorts existing ones in the same pass.
-      list.appendChild(li);
+      container.appendChild(li);
     });
-    [...list.children].forEach((li) => {
+    [...container.children].forEach((li) => {
       if (!seenIds.has(li.dataset.conversationId)) li.remove();
     });
     return sorted;
   }
 
-  let messageConversations = refreshList();
+  const starredList = document.getElementById('starred-list');
 
-  document.addEventListener('lime:conversations-changed', () => { messageConversations = refreshList(); });
-  document.addEventListener('lime:messages-changed', () => { messageConversations = refreshList(); });
+  function starredConversations() {
+    return LimeStore.listConversations({ types: ['direct', 'group'] }).filter((c) => {
+      const membership = LimeStore.getMyMembership(c.id);
+      return membership && membership.starred;
+    });
+  }
+
+  let messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
+  if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
+
+  document.addEventListener('lime:conversations-changed', () => {
+    messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
+    if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
+  });
+  document.addEventListener('lime:messages-changed', () => {
+    messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
+    if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
+  });
+
+  // ── Conversation actions menu (LIME-25) ─────────────────
+  // Rebuilt fresh from CONVERSATION_ACTIONS every time it opens, for
+  // whichever conversation is currently open — never assembled once and
+  // left stale, since Star/Unstar's own label depends on live state.
+  const conversationMenu = document.getElementById('conversation-menu');
+  const conversationMenuToggle = document.getElementById('conversation-menu-toggle');
+
+  function renderConversationMenu() {
+    if (!conversationMenu || !currentConversationId) return;
+    const conversation = LimeStore.getConversation(currentConversationId);
+    if (!conversation) return;
+    const membership = LimeStore.getMyMembership(currentConversationId);
+    conversationMenu.innerHTML = CONVERSATION_ACTIONS
+      .filter((action) => !action.isVisible || action.isVisible(conversation, membership))
+      .map((action) => {
+        const label = typeof action.label === 'function' ? action.label(conversation, membership) : action.label;
+        const dangerClass = action.danger ? ' lime-menu__item--danger' : '';
+        return '<button type="button" class="lime-menu__item' + dangerClass + '" role="menuitem" data-action="' + action.id + '">'
+          + '<span class="dew ' + action.icon + '"></span>' + escapeHtml(label)
+          + '<span class="lime-menu__kbd">' + escapeHtml(action.key) + '</span>'
+          + '</button>';
+      })
+      .join('');
+  }
+
+  function runConversationAction(actionId) {
+    if (!currentConversationId) return;
+    const action = CONVERSATION_ACTIONS.find((a) => a.id === actionId);
+    if (!action) return;
+    const conversation = LimeStore.getConversation(currentConversationId);
+    const membership = LimeStore.getMyMembership(currentConversationId);
+    if (!conversation) return;
+    action.run(conversation, membership).catch(console.error);
+    if (conversationMenu) conversationMenu.classList.remove('is-open');
+  }
+
+  if (conversationMenuToggle) {
+    // Registered before wireDropdownToggle's own click listener below (on
+    // the same button, same event) — listeners fire in registration
+    // order, so the menu's contents are already fresh by the time that
+    // one measures offsetHeight/offsetWidth to position it.
+    conversationMenuToggle.addEventListener('click', renderConversationMenu);
+  }
+  if (conversationMenu) {
+    conversationMenu.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-action]');
+      if (item) runConversationAction(item.dataset.action);
+    });
+  }
+  // The hint-key shortcut ("like Claude's") — only while the menu is open,
+  // and not while the user is actually typing somewhere (a plain "s"
+  // keystroke in the composer shouldn't star the open conversation).
+  document.addEventListener('keydown', (e) => {
+    if (!conversationMenu || !conversationMenu.classList.contains('is-open')) return;
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+    const action = CONVERSATION_ACTIONS.find((a) => a.key.toLowerCase() === e.key.toLowerCase());
+    if (action) runConversationAction(action.id);
+  });
+  // aria-expanded has no single choke point to update from (the menu can
+  // close via its own toggle, an outside click, Escape, or another
+  // dropdown opening) — a MutationObserver on its own is-open class covers
+  // every path without touching wireDropdownToggle's shared logic.
+  if (conversationMenu && conversationMenuToggle) {
+    new MutationObserver(() => {
+      conversationMenuToggle.setAttribute('aria-expanded', String(conversationMenu.classList.contains('is-open')));
+    }).observe(conversationMenu, { attributes: true, attributeFilter: ['class'] });
+  }
+  if (conversationMenuToggle) wireDropdownToggle('conversation-menu-toggle', 'conversation-menu', { fixed: true });
 
   if (messageConversations.length > 0) {
     selectConversation(messageConversations[0]);
   }
 }
+
+// LIME-25: the title caret's menu. One action today (Star); built as a
+// data-driven list from the start, per the brief, so LIME-26/27 add Rename,
+// Share, Copy link, Archive and Delete as more entries here, not by
+// restructuring how the menu itself is built or wired.
+const CONVERSATION_ACTIONS = [
+  {
+    id: 'star',
+    label: (conversation, membership) => (membership && membership.starred ? 'Unstar' : 'Star'),
+    icon: 'dew-star',
+    key: 'S',
+    danger: false,
+    isVisible: () => true,
+    run: (conversation, membership) => LimeStore.setStarred(conversation.id, !(membership && membership.starred)),
+  },
+];
 
 LimeStore.init().then(initMessagesList).catch(console.error);
 

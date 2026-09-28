@@ -18,6 +18,16 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+// Demo defaults (LIME-25, mirrored from public/js/local-adapter.js's own
+// DEMO_MEMBER_STATE) so a database seed starts with the same two
+// conversations starred for the demo user, matching the local prototype.
+const DEMO_MEMBER_STATE: Record<string, Record<string, { starred?: boolean }>> = {
+  'teacher-002': {
+    'conv-001': { starred: true },
+    'conv-010': { starred: true },
+  },
+};
+
 async function seed() {
   console.log('🌱 Starting seed...\n');
 
@@ -76,10 +86,12 @@ async function seed() {
 
     // Add members
     for (const participantId of conv.participants) {
+      const demo = DEMO_MEMBER_STATE[participantId]?.[conv.id] ?? {};
       await supabase.from('conversation_members').insert({
         conversation_id: conv.id,
         user_id: participantId,
         role: participantId === conv.created_by ? 'owner' : 'member',
+        starred: demo.starred ?? false,
         joined_at: conv.created_at,
       });
     }

@@ -750,6 +750,29 @@ body {
   color: var(--soil-text);
 }
 
+/* Right-aligned key hint (LIME-25's conversation actions menu, "S" for
+   Star) — .lime-menu__item is already flex, so margin-left:auto pushes
+   this to the far end regardless of how long the label text before it is. */
+.lime-menu__kbd {
+  margin-left: auto;
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+/* The only item allowed to read as destructive (LIME-25's own note: "only
+   Delete is red" — nothing uses this yet, Delete arrives in LIME-26). Text
+   and icon both take the danger color; hover steps to the danger family's
+   own subtle background rather than the neutral hover every other item uses. */
+.lime-menu__item--danger,
+.lime-menu__item--danger .dew {
+  color: var(--bad-text-bold-default);
+}
+
+.lime-menu__item--danger:hover,
+.lime-menu__item--danger:focus-visible {
+  background: var(--bad-bg-subtle-default);
+}
+
 .lime-menu__label {
   padding: var(--seed-space-2) var(--seed-space-2) var(--seed-space-1);
   font-size: var(--seed-text-xs);
@@ -1651,6 +1674,14 @@ body {
   list-style: none;
   padding: 0;
   margin: 0;
+}
+
+/* Starred's own empty state (LIME-25) — a real <li> (not a <p>), since the
+   parent is a <ul> and this replaces its rows entirely when there are none. */
+.lime-contact-list__empty {
+  padding: var(--seed-space-3) var(--seed-space-2);
+  color: var(--soil-text-muted);
+  font-size: var(--seed-text-xs);
 }
 
 /* Fixed gutters on all four states (rest/hover/active) — the row's

@@ -20,8 +20,22 @@ const LocalAdapter = (function () {
     return String(hash >>> 0);
   }
 
+  // Demo defaults (LIME-25) so the prototype isn't empty on first load —
+  // the current demo user's own membership starts starred on these two
+  // conversations. Mirrored in seed-data/seed.ts's own DEMO_MEMBER_STATE
+  // so a database seed matches. Folded into the fingerprint below (not a
+  // separate version bump) so any future change to these defaults also
+  // invalidates an old snapshot automatically, the same as a real seed
+  // data change already does.
+  const DEMO_MEMBER_STATE = {
+    'teacher-002': {
+      'conv-001': { starred: true },
+      'conv-010': { starred: true },
+    },
+  };
+
   function seedFingerprint() {
-    return hashString(JSON.stringify(window.LIME_SEED_DATA));
+    return hashString(JSON.stringify(window.LIME_SEED_DATA) + JSON.stringify(DEMO_MEMBER_STATE));
   }
 
   // Builds the five normalized tables from the embedded seed — run once,
@@ -69,11 +83,12 @@ const LocalAdapter = (function () {
         updated_at: c.updated_at,
       });
       c.participants.forEach((userId) => {
+        const demo = (DEMO_MEMBER_STATE[userId] && DEMO_MEMBER_STATE[userId][c.id]) || {};
         conversationMembers.push({
           conversation_id: c.id,
           user_id: userId,
           role: userId === c.created_by ? 'owner' : 'member',
-          starred: false,
+          starred: demo.starred || false,
           archived_at: null,
           last_read_at: null,
           joined_at: c.created_at,

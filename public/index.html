@@ -145,7 +145,8 @@
               <span class="seed-breadcrumbs__separator" data-crumb-sep="details">/</span>
               <span class="seed-breadcrumb seed-breadcrumb--active" id="crumb-details">Details</span>
             </nav>
-            <button class="lime-topbar__crumb-caret" title="Switch conversation"><span class="dew dew-chevron-down"></span></button>
+            <button type="button" class="lime-topbar__crumb-caret" id="conversation-menu-toggle" title="Conversation actions" aria-haspopup="menu" aria-expanded="false"><span class="dew dew-chevron-down"></span></button>
+            <div class="lime-menu" id="conversation-menu" role="menu"></div>
           </div>
 
           <div class="lime-center-top__spacer"></div>
@@ -268,51 +269,10 @@
                   </button>
                   <div class="lime-section__body">
                     <div class="lime-section__body-inner">
-                      <ul class="lime-contact-list">
-                        <li class="lime-contact lime-contact--active" data-search-text="jean chung">
-                          <span class="lime-avatar-frame lime-avatar-frame--lg">
-                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Jean Chung"></span>
-                            <span class="lime-presence" data-presence="busy" role="img" aria-label="Busy"></span>
-                          </span>
-                          <div class="lime-contact__body">
-                            <span class="lime-contact__name">Jean Chung</span>
-                            <span class="lime-contact__preview"><span class="dew dew-microphone"></span> Voice message</span>
-                          </div>
-                          <div class="lime-contact__meta">
-                            <span class="lime-contact__time">11:30 PM</span>
-                            <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
-                          </div>
-                          <span class="dew dew-chevron-right lime-contact__chevron"></span>
-                        </li>
-                        <li class="lime-contact" data-search-text="valene rajoon">
-                          <span class="lime-avatar-frame lime-avatar-frame--lg">
-                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Valene Rajoon"></span>
-                            <span class="lime-presence" data-presence="away" role="img" aria-label="Away"></span>
-                          </span>
-                          <div class="lime-contact__body">
-                            <span class="lime-contact__name">Valene Rajoon</span>
-                            <span class="lime-contact__preview">Voice message</span>
-                          </div>
-                          <div class="lime-contact__meta">
-                            <span class="lime-contact__time">11:30 PM</span>
-                            <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
-                          </div>
-                        </li>
-                        <li class="lime-contact" data-search-text="mary lee">
-                          <span class="lime-avatar-frame lime-avatar-frame--lg">
-                            <span class="seed-avatar seed-avatar--lg lime-avatar" data-name="Mary Lee"></span>
-                            <span class="lime-presence" data-presence="dnd" role="img" aria-label="Do not disturb"></span>
-                          </span>
-                          <div class="lime-contact__body">
-                            <span class="lime-contact__name">Mary Lee</span>
-                            <span class="lime-contact__preview">Voice message</span>
-                          </div>
-                          <div class="lime-contact__meta">
-                            <span class="lime-contact__time">11:30 PM</span>
-                            <span class="seed-badge seed-badge--neutral seed-badge--sm">2</span>
-                          </div>
-                        </li>
-                      </ul>
+                      <!-- Rendered from LimeStore by app.js (LIME-25): every
+                           conversation the current user has starred, live,
+                           same row markup and sort as "All". -->
+                      <ul class="lime-contact-list" id="starred-list"></ul>
                     </div>
                   </div>
                 </section>
