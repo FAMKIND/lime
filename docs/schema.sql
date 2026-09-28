@@ -269,9 +269,12 @@ create table message_reactions (
 --     where c.id = messages.conversation_id and c.type = 'community' and c.deleted_at is null
 --   ));
 --
--- -- Members insert messages only into conversations they belong to.
+-- -- Members insert messages only into conversations they belong to, as
+-- -- themselves — checking membership alone (LIME-24a-fix's own version)
+-- -- would still let a member insert a message with someone ELSE's
+-- -- sender_id (found in plot's re-review of that brief).
 -- create policy messages_insert_member on messages for insert
---   with check (is_member(conversation_id));
+--   with check (is_member(conversation_id) and sender_id = current_profile_id());
 --
 -- -- Not used by the app yet (there's no edit-message or delete-message UI
 -- -- today), but the intent is decided now rather than left undefined:

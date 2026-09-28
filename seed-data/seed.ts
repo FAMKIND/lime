@@ -109,11 +109,19 @@ async function seed() {
     // Add reactions if present
     if (msg.reactions) {
       for (const reaction of msg.reactions) {
-        // Simulate multiple users reacting
-        const reactors = messages.messages
-          .filter(m => m.conversation_id === msg.conversation_id)
-          .map(m => m.sender_id)
-          .slice(0, reaction.count);
+        // The reactor rule (LIME-24a-fix, applied here in LIME-24b): a
+        // reaction's reactors are the conversation's distinct members, in
+        // participant order, sliced to min(count, member count) — a
+        // reaction can't have more reactors than the conversation has
+        // members. The old version here selected from message senders
+        // without deduping, which could both exceed the conversation's
+        // real membership and insert the same (message, user, emoji)
+        // triple more than once, violating message_reactions' own
+        // primary key. This matches LocalAdapter's own reactor logic
+        // exactly, so a local seed and a database seed agree.
+        const reactedConversation = conversations.conversations.find(c => c.id === msg.conversation_id);
+        const memberIds = reactedConversation ? reactedConversation.participants : [];
+        const reactors = memberIds.slice(0, Math.min(reaction.count, memberIds.length));
 
         for (const reactorId of reactors) {
           await supabase.from('message_reactions').insert({

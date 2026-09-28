@@ -5,17 +5,20 @@ const theme = localStorage.getItem('lime-theme');
 if (theme) document.documentElement.setAttribute('data-theme', theme);
 
 // ── Seed data: contacts list + thread (LIME-06) ──────────
-// Runs first, before every other top-level binding below — several of
-// them (avatar identity system, contact-preview truncation, message
-// avatar-click, contact click, mobile view router) scan the DOM once
-// with querySelectorAll rather than delegating, so the elements this
-// renders have to exist before those run or they'd be missed on their
-// only pass.
 // Promoted to top-level (LIME-11), not IIFE-private — the new replies
 // panel needs these same pure helpers and can't reach inside the LIME-06
 // closure's scope. None of them depend on that closure's own state
 // (list/thread/me/etc.), so hoisting changes nothing about how the
 // contacts/thread code below already uses them.
+//
+// LIME-24b: the contacts/thread IIFE further down no longer runs
+// synchronously at parse time — it waits on `LimeStore.init()` (the store
+// itself is a separate <script>, loaded before this one) — so nothing
+// past it in this file can assume its DOM (the list rows, the initial
+// thread) already exists yet. The two things that used to depend on
+// that (the Recent-row highlight and the mobile view router's contact
+// click) are delegated listeners now instead of one-time scans, exactly
+// so they don't care when — or whether — a given row exists yet.
 const PRESENCE = { online: 'active', busy: 'busy', offline: 'away' };
 const PRESENCE_LABEL = { active: 'Active', busy: 'Busy', away: 'Away' };
 
@@ -26,6 +29,15 @@ function presenceFor(status) {
 function shortName(name) {
   const parts = name.trim().split(/\s+/);
   return parts.length < 2 ? name : parts[0] + ' ' + parts[parts.length - 1][0];
+}
+
+// Just the first name — used for a group row's "Jean: " sender prefix
+// (LIME-19b). A separate, tinier helper than shortName's "First L." form;
+// intentionally duplicated (not shared) with the equivalent used inside
+// store.js's own getConversationTitle — both are one-liners private to
+// their own file, not worth a shared module for.
+function firstName(displayName) {
+  return displayName.trim().split(/\s+/)[0];
 }
 
 function escapeHtml(str) {
@@ -88,22 +100,26 @@ const REACTION_PICKER_HTML = '<div class="lime-reaction-picker">'
   + '<button class="lime-reaction-picker__add" title="More"><span class="dew dew-plus"></span></button>'
   + '</div>';
 
-function reactionsHtml(messageId, reactions) {
+// LIME-24b: reads live from LimeStore.getReactions rather than taking a
+// `reactions` array + separately checking a local hasUserReacted Set — the
+// store already returns count and "mine" (whether the current user is one
+// of the reactors) per emoji, so there's nothing left to track locally.
+function reactionsHtml(messageId) {
+  const reactions = LimeStore.getReactions(messageId);
   if (!reactions || reactions.length === 0) return '';
   return reactions
     .map((r) => {
-      const active = hasUserReacted(messageId, r.emoji) ? ' lime-reaction--active' : '';
+      const active = r.mine ? ' lime-reaction--active' : '';
       return '<button type="button" class="lime-reaction' + active + '" data-emoji="' + r.emoji + '">' + r.emoji + ' <span class="lime-reaction__count">' + r.count + '</span></button>';
     })
     .join('');
 }
 
 // Re-renders one message's reaction pills in place (LIME-08) — messageEl
-// needs data-message-id since active-state depends on which
-// message/emoji pair this is.
-function renderReactions(messageEl, reactions) {
+// needs data-message-id since reactionsHtml re-fetches by that id.
+function renderReactions(messageEl) {
   const container = messageEl.querySelector('.lime-message__reactions');
-  if (container) container.innerHTML = reactionsHtml(messageEl.dataset.messageId, reactions);
+  if (container) container.innerHTML = reactionsHtml(messageEl.dataset.messageId);
 }
 
 // LIME-18: restores the original Slack-style summary (replier avatars,
@@ -119,7 +135,7 @@ function renderReactions(messageEl, reactions) {
 // frontmost, so as implemented the *oldest* of the shown avatars ends
 // up frontmost/leftmost, not the most recent; flagged at the gate.
 function replyIndicatorHtml(messageId) {
-  const replies = getRepliesForMessage(messageId);
+  const replies = LimeStore.listReplies(messageId);
   if (replies.length === 0) return '';
   const seenSenders = new Set();
   const avatars = [];
@@ -127,7 +143,7 @@ function replyIndicatorHtml(messageId) {
     const senderId = replies[i].sender_id;
     if (seenSenders.has(senderId)) continue;
     seenSenders.add(senderId);
-    const sender = getTeacherById(senderId);
+    const sender = LimeStore.getProfile(senderId);
     if (sender) avatars.push('<span class="seed-avatar seed-avatar--xs lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>');
   }
   const last = replies[replies.length - 1];
@@ -216,12 +232,13 @@ function paintAvatar(el) {
 // the app in jsdom before committing, not by reasoning about it.
 const registeredDropdowns = new Set();
 
-(function () {
+function initMessagesList() {
   const list = document.getElementById('contacts-list');
   const thread = document.getElementById('thread-messages');
   if (!list || !thread) return;
 
-  const me = getTeacherById(CURRENT_USER_ID);
+  const currentUserId = LimeStore.getCurrentUserId();
+  const me = LimeStore.getCurrentUser();
   const crumbThread = document.getElementById('crumb-thread');
   const openProfileAvatars = document.getElementById('open-profile-avatars');
   const composerInput = document.getElementById('composer-input');
@@ -230,16 +247,24 @@ const registeredDropdowns = new Set();
   let currentConversationId = null;
   let lastRenderedDay = null;
 
+  // Members excluding the current user, in the store's own membership
+  // order (LIME-24b: this used to read conversation.participants directly;
+  // that array no longer exists on a conversation object now that
+  // membership is relational — LimeStore.getMembers(id) is the equivalent).
+  function otherParticipants(conversation) {
+    return LimeStore.getMembers(conversation.id).filter((p) => p.id !== currentUserId);
+  }
+
   // Other participants ordered most-recent-speaker first, then by
-  // conversation.participants order for anyone who hasn't spoken (LIME-19b).
-  // Drives both the list's avatar cluster and the thread header's avatar
-  // row — a group's "who's shown first" should track who's actually been
-  // talking, not just seed-data participant order.
+  // membership order for anyone who hasn't spoken (LIME-19b). Drives both
+  // the list's avatar cluster and the thread header's avatar row — a
+  // group's "who's shown first" should track who's actually been talking,
+  // not just membership order.
   function orderedOthers(conversation) {
     const others = otherParticipants(conversation);
     const lastSentAt = new Map();
-    getMessagesByConversation(conversation.id).forEach((m) => {
-      if (m.sender_id !== CURRENT_USER_ID) lastSentAt.set(m.sender_id, m.created_at);
+    LimeStore.listMessages(conversation.id).forEach((m) => {
+      if (m.sender_id !== currentUserId) lastSentAt.set(m.sender_id, m.created_at);
     });
     return [...others].sort((a, b) => {
       const at = lastSentAt.get(a.id);
@@ -271,11 +296,21 @@ const registeredDropdowns = new Set();
   // A reaction made in the thread panel's quote/reply, or in the main
   // thread, must show up everywhere that message is currently on screen
   // (LIME-17) — not just the container the click happened in.
-  function renderReactionsEverywhere(messageId, reactions) {
+  function renderReactionsEverywhere(messageId) {
     document.querySelectorAll(REACTABLE).forEach((el) => {
-      if (el.dataset.messageId === messageId) renderReactions(el, reactions);
+      if (el.dataset.messageId === messageId) renderReactions(el);
     });
   }
+  // One subscription covers every reaction click anywhere (main thread,
+  // reply quote, reply list) — LimeStore.toggleReaction is the only
+  // reaction write in the contract (LIME-24b unified the old add-always /
+  // toggle-on-existing pair into this one call), and its event is the
+  // single source of truth for re-rendering, rather than each click
+  // handler re-rendering off its own Promise result.
+  document.addEventListener('lime:reactions-changed', (e) => {
+    const messageId = e.detail && e.detail.messageId;
+    if (messageId) renderReactionsEverywhere(messageId);
+  });
 
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.lime-message__actions [title="React"]');
@@ -307,10 +342,7 @@ const registeredDropdowns = new Set();
     if (pickerEmoji) {
       const msg = pickerEmoji.closest(REACTABLE);
       const messageId = msg.dataset.messageId;
-      if (messageId) {
-        const reactions = addReaction(messageId, pickerEmoji.dataset.emoji);
-        renderReactionsEverywhere(messageId, reactions);
-      }
+      if (messageId) LimeStore.toggleReaction(messageId, pickerEmoji.dataset.emoji).catch(console.error);
       pickerEmoji.closest('.lime-reaction-picker').classList.remove('is-open');
       return;
     }
@@ -320,8 +352,7 @@ const registeredDropdowns = new Set();
       const msg = pill.closest(REACTABLE);
       const messageId = msg.dataset.messageId;
       if (!messageId) return;
-      const reactions = toggleReaction(messageId, pill.dataset.emoji);
-      renderReactionsEverywhere(messageId, reactions);
+      LimeStore.toggleReaction(messageId, pill.dataset.emoji).catch(console.error);
     }
   });
   document.addEventListener('click', () => document.querySelectorAll('.lime-reaction-picker.is-open').forEach((p) => p.classList.remove('is-open')));
@@ -362,7 +393,7 @@ const registeredDropdowns = new Set();
       + '<span class="lime-message__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
       + contentHtml(message)
-      + '<div class="lime-message__reactions">' + reactionsHtml(message.id, message.reactions) + '</div>'
+      + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + replyIndicatorHtml(message.id)
       + '</div>'
       + '<div class="lime-message__actions">'
@@ -374,15 +405,15 @@ const registeredDropdowns = new Set();
       + '</div>';
   }
 
-  // Placeholder for a sender id that doesn't resolve to a real teacher
-  // record — shouldn't happen with today's seed data, but getTeacherById
-  // can return null, and messageHtml needs a display_name/status either way.
+  // Placeholder for a sender id that doesn't resolve to a real profile —
+  // shouldn't happen with today's seed data, but LimeStore.getProfile can
+  // return null, and messageHtml needs a display_name/status either way.
   const UNKNOWN_SENDER = { display_name: 'Unknown', status: 'offline' };
 
   function renderThread(conversationId) {
     currentConversationId = conversationId;
     lastRenderedDay = null;
-    const msgs = getThreadMessages(conversationId);
+    const msgs = LimeStore.listMessages(conversationId, { threadOnly: true });
     thread.innerHTML = '';
     if (msgs.length === 0) {
       thread.innerHTML = '<p class="lime-messages__empty">No messages yet.</p>';
@@ -394,10 +425,10 @@ const registeredDropdowns = new Set();
         thread.insertAdjacentHTML('beforeend', '<div class="lime-date-divider"><span>' + day + '</span></div>');
         lastRenderedDay = day;
       }
-      const isSent = m.sender_id === CURRENT_USER_ID;
+      const isSent = m.sender_id === currentUserId;
       // LIME-19b: a group thread has a different sender per message, not
       // one fixed "teacher" for the whole conversation.
-      const sender = isSent ? me : (getTeacherById(m.sender_id) || UNKNOWN_SENDER);
+      const sender = isSent ? me : (LimeStore.getProfile(m.sender_id) || UNKNOWN_SENDER);
       thread.insertAdjacentHTML('beforeend', messageHtml(m, sender, isSent));
     });
     // LIME-18: needed for a conversation switch, not just the initial
@@ -454,7 +485,7 @@ const registeredDropdowns = new Set();
   function rowPreviewHtml(conversation, latest) {
     if (!latest) return '<span class="lime-contact__preview-text">No messages yet</span>';
     if (conversation.type !== 'group') return previewFor(latest);
-    const sender = latest.sender_id === CURRENT_USER_ID ? null : getTeacherById(latest.sender_id);
+    const sender = latest.sender_id === currentUserId ? null : LimeStore.getProfile(latest.sender_id);
     const label = sender ? firstName(sender.display_name) : 'You';
     const prefix = escapeHtml(label + ': ');
     return previewFor(latest).replace('<span class="lime-contact__preview-text">', '<span class="lime-contact__preview-text">' + prefix);
@@ -462,7 +493,7 @@ const registeredDropdowns = new Set();
 
   function conversationRowHtml(conversation, latest) {
     const isGroup = conversation.type === 'group';
-    const title = getConversationTitle(conversation);
+    const title = LimeStore.getConversationTitle(conversation);
     const avatarHtml = isGroup ? avatarClusterHtml(conversation) : directAvatarHtml(conversation);
     // LIME-19b-fix: the member count read as an unread/comment count here
     // and was removed from the list — it still shows in the thread header.
@@ -477,8 +508,8 @@ const registeredDropdowns = new Set();
   }
 
   function conversationSearchText(conversation) {
-    const names = conversation.participants.map((id) => getTeacherById(id)).filter(Boolean).map((t) => t.display_name);
-    return (getConversationTitle(conversation) + ' ' + names.join(' ')).toLowerCase();
+    const names = LimeStore.getMembers(conversation.id).map((p) => p.display_name);
+    return (LimeStore.getConversationTitle(conversation) + ' ' + names.join(' ')).toLowerCase();
   }
 
   // Header avatars for whichever conversation is open (#open-profile-avatars).
@@ -512,13 +543,13 @@ const registeredDropdowns = new Set();
     avatarsHtml += [...shown].reverse().map((t) => '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(t.display_name) + '"></span>').join('');
     const allNames = others.map((t) => t.display_name).join(', ');
     return '<span class="seed-avatar-group lime-topbar__avatars" title="' + escapeHtml(allNames) + '">' + avatarsHtml + '</span>'
-      + '<span class="lime-topbar__member-count">' + conversation.participants.length + ' members</span>';
+      + '<span class="lime-topbar__member-count">' + LimeStore.getMembers(conversation.id).length + ' members</span>';
   }
 
   function selectConversation(conversation) {
     document.querySelectorAll('.lime-contact').forEach((el) => el.classList.remove('lime-contact--active'));
     document.querySelectorAll('[data-conversation-id="' + conversation.id + '"]').forEach((el) => el.classList.add('lime-contact--active'));
-    if (crumbThread) crumbThread.textContent = getConversationTitle(conversation);
+    if (crumbThread) crumbThread.textContent = LimeStore.getConversationTitle(conversation);
     if (openProfileAvatars) {
       openProfileAvatars.innerHTML = conversationHeaderAvatarsHtml(conversation);
       openProfileAvatars.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
@@ -531,21 +562,28 @@ const registeredDropdowns = new Set();
     if (!composerInput || !currentConversationId) return;
     const content = composerInput.value.trim();
     if (!content) return;
+    const conversationId = currentConversationId;
 
-    const message = sendMessage(currentConversationId, content);
-    document.dispatchEvent(new CustomEvent('lime:activity', { detail: { conversationId: currentConversationId } }));
-    const emptyState = thread.querySelector('.lime-messages__empty');
-    if (emptyState) emptyState.remove();
+    LimeStore.sendMessage(conversationId, { content }).then((message) => {
+      if (conversationId !== currentConversationId) return; // switched threads before this resolved
+      const emptyState = thread.querySelector('.lime-messages__empty');
+      if (emptyState) emptyState.remove();
 
-    const day = formatDay(message.created_at);
-    if (day !== lastRenderedDay) {
-      thread.insertAdjacentHTML('beforeend', '<div class="lime-date-divider"><span>' + day + '</span></div>');
-      lastRenderedDay = day;
-    }
-    thread.insertAdjacentHTML('beforeend', messageHtml(message, me, true));
-    const newAvatar = thread.querySelector('.lime-message:last-child .lime-avatar[data-name]');
-    if (newAvatar) paintAvatar(newAvatar); // real bug (LIME-11): paintAvatar only ran once at load, missing every sent message's avatar since LIME-07
+      const day = formatDay(message.created_at);
+      if (day !== lastRenderedDay) {
+        thread.insertAdjacentHTML('beforeend', '<div class="lime-date-divider"><span>' + day + '</span></div>');
+        lastRenderedDay = day;
+      }
+      thread.insertAdjacentHTML('beforeend', messageHtml(message, me, true));
+      const newAvatar = thread.querySelector('.lime-message:last-child .lime-avatar[data-name]');
+      if (newAvatar) paintAvatar(newAvatar); // real bug (LIME-11): paintAvatar only ran once at load, missing every sent message's avatar since LIME-07
+      thread.scrollTop = thread.scrollHeight;
+    }).catch(console.error);
 
+    // Clearing the composer doesn't wait on the write — LIME-24b's
+    // optimistic-update principle applies to the *cache* (updated
+    // synchronously inside the store before its Promise resolves), but the
+    // UI's own "instant" feel has always meant not waiting on anything.
     composerInput.value = '';
     composerInput.style.height = ''; // drop the auto-grow inline height (LIME-10)
     // Setting .value directly doesn't fire an 'input' event, so the
@@ -553,7 +591,6 @@ const registeredDropdowns = new Set();
     // never sees this clear on its own — reset it here explicitly,
     // otherwise Send stays looking "active" after a message is sent.
     if (composerSend) composerSend.classList.remove('is-active');
-    thread.scrollTop = thread.scrollHeight;
   }
 
   if (composerInput) {
@@ -566,68 +603,82 @@ const registeredDropdowns = new Set();
   }
   if (composerSend) composerSend.addEventListener('click', handleSend);
 
-  // ── Merged Messages list (LIME-19b) ─────────────────────
+  // ── Merged Messages list (LIME-19b, delegated LIME-24b) ──
   // Direct + group conversations in one list, newest activity first
   // (no-activity conversations last, alphabetical among themselves).
-  // Rows are built once here and only ever updated/reordered in place
-  // afterward (see the lime:activity listener below) — later code
-  // (recent-highlight and the mobile view router, both further down this
-  // file) binds its own click listeners to .lime-contact once at load and
-  // assumes these nodes already exist and are never replaced.
+  // refreshList() both builds the list the first time and re-syncs it on
+  // every lime:conversations-changed/lime:messages-changed event — rows
+  // can be created (a brand new conversation) or disappear (deleted,
+  // archived) at any time now, not just reordered, so every pass
+  // recomputes the full membership rather than assuming yesterday's set
+  // of rows is still the right one. Existing rows are updated and moved
+  // in place (never recreated) — later code (recent-highlight and the
+  // mobile view router, both further down this file) delegates its own
+  // click handling for exactly this reason, rather than binding once to
+  // whatever rows happen to exist at that moment.
   function sortConversations(conversations) {
     return [...conversations].sort((a, b) => {
-      const la = getLatestActivity(a.id);
-      const lb = getLatestActivity(b.id);
+      const la = LimeStore.getLatestActivity(a.id);
+      const lb = LimeStore.getLatestActivity(b.id);
       if (la && lb) return new Date(lb.created_at) - new Date(la.created_at);
       if (la) return -1;
       if (lb) return 1;
-      return getConversationTitle(a).localeCompare(getConversationTitle(b));
+      return LimeStore.getConversationTitle(a).localeCompare(LimeStore.getConversationTitle(b));
     });
   }
 
-  const messageConversations = sortConversations(getMessageConversations());
-  list.innerHTML = '';
-  messageConversations.forEach((conversation) => {
-    const latest = getLatestActivity(conversation.id);
+  function buildRow(conversation) {
+    const latest = LimeStore.getLatestActivity(conversation.id);
     const li = document.createElement('li');
     li.className = 'lime-contact';
     li.dataset.conversationId = conversation.id;
     li.dataset.searchText = conversationSearchText(conversation);
     li.innerHTML = conversationRowHtml(conversation, latest);
     li.addEventListener('click', () => selectConversation(conversation));
-    list.appendChild(li);
-  });
+    li.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+    return li;
+  }
 
-  // Live update (LIME-19b): sendMessage/sendReply dispatch this instead of
-  // calling back into the list directly, so this IIFE doesn't need to know
-  // about the separate replies IIFE further down the file (or vice versa).
-  document.addEventListener('lime:activity', (e) => {
-    const conversationId = e.detail && e.detail.conversationId;
-    const conversation = messageConversations.find((c) => c.id === conversationId);
-    if (!conversation) return; // e.g. a community conversation — not this list's concern
+  function updateRow(li, conversation) {
+    const latest = LimeStore.getLatestActivity(conversation.id);
+    const previewEl = li.querySelector('.lime-contact__preview');
+    const timeEl = li.querySelector('.lime-contact__time');
+    if (previewEl) previewEl.innerHTML = rowPreviewHtml(conversation, latest);
+    if (timeEl) timeEl.textContent = latest ? formatTime(latest.created_at) : '';
+  }
 
-    const li = list.querySelector('[data-conversation-id="' + conversation.id + '"]');
-    if (li) {
-      const latest = getLatestActivity(conversation.id);
-      const previewEl = li.querySelector('.lime-contact__preview');
-      const timeEl = li.querySelector('.lime-contact__time');
-      if (previewEl) previewEl.innerHTML = rowPreviewHtml(conversation, latest);
-      if (timeEl) timeEl.textContent = latest ? formatTime(latest.created_at) : '';
-    }
-
-    // Re-sort by moving the existing <li> nodes (appendChild on an
-    // already-attached node moves it) — never recreated, per the
-    // load-time-listener constraint above.
-    sortConversations(messageConversations).forEach((c) => {
-      const row = list.querySelector('[data-conversation-id="' + c.id + '"]');
-      if (row) list.appendChild(row);
+  function refreshList() {
+    const sorted = sortConversations(LimeStore.listConversations({ types: ['direct', 'group'] }));
+    const seenIds = new Set();
+    sorted.forEach((conversation) => {
+      seenIds.add(conversation.id);
+      let li = list.querySelector('[data-conversation-id="' + conversation.id + '"]');
+      if (li) {
+        updateRow(li, conversation);
+      } else {
+        li = buildRow(conversation);
+      }
+      // appendChild on an already-attached node moves it — this both
+      // places brand-new rows and re-sorts existing ones in the same pass.
+      list.appendChild(li);
     });
-  });
+    [...list.children].forEach((li) => {
+      if (!seenIds.has(li.dataset.conversationId)) li.remove();
+    });
+    return sorted;
+  }
+
+  let messageConversations = refreshList();
+
+  document.addEventListener('lime:conversations-changed', () => { messageConversations = refreshList(); });
+  document.addEventListener('lime:messages-changed', () => { messageConversations = refreshList(); });
 
   if (messageConversations.length > 0) {
     selectConversation(messageConversations[0]);
   }
-})();
+}
+
+LimeStore.init().then(initMessagesList).catch(console.error);
 
 // ── Contact preview truncation ───────────────────────────
 // text-overflow: ellipsis has no effect on a flex container (only on
@@ -952,7 +1003,7 @@ function setRightPanelOpen(isOpen) {
       + '<span class="lime-reply__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
       + '<p class="lime-reply__text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
-      + '<div class="lime-message__reactions">' + reactionsHtml(message.id, message.reactions) + '</div>'
+      + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '</div>'
       + '<div class="lime-message__actions">'
       + '<button title="React"><span>🙂</span></button>'
@@ -967,7 +1018,7 @@ function setRightPanelOpen(isOpen) {
       + '<div class="lime-replies-panel__quote-body">'
       + '<span class="lime-replies-panel__quote-sender">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<p class="lime-replies-panel__quote-text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
-      + '<div class="lime-message__reactions">' + reactionsHtml(message.id, message.reactions) + '</div>'
+      + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '</div>'
       + '<div class="lime-message__actions">'
       + '<button title="React"><span>🙂</span></button>'
@@ -991,7 +1042,7 @@ function setRightPanelOpen(isOpen) {
   }
 
   function renderReplies(parentId) {
-    const replies = getRepliesForMessage(parentId);
+    const replies = LimeStore.listReplies(parentId);
     renderMeta(replies);
     listEl.innerHTML = '';
     if (replies.length === 0) {
@@ -999,7 +1050,7 @@ function setRightPanelOpen(isOpen) {
       return;
     }
     replies.forEach((reply) => {
-      const sender = getTeacherById(reply.sender_id);
+      const sender = LimeStore.getProfile(reply.sender_id);
       if (!sender) return;
       listEl.insertAdjacentHTML('beforeend', replyHtml(reply, sender));
     });
@@ -1007,9 +1058,9 @@ function setRightPanelOpen(isOpen) {
   }
 
   function openReplies(messageId) {
-    const message = findMessageById(messageId);
+    const message = LimeStore.getMessage(messageId);
     if (!message) return;
-    const sender = getTeacherById(message.sender_id);
+    const sender = LimeStore.getProfile(message.sender_id);
     if (!sender) return;
     currentReplyParentId = messageId;
     renderQuote(message, sender);
@@ -1040,12 +1091,20 @@ function setRightPanelOpen(isOpen) {
     if (!replyInput || !currentReplyParentId) return;
     const content = replyInput.value.trim();
     if (!content) return;
-    const parent = findMessageById(currentReplyParentId);
-    sendReply(currentReplyParentId, content);
-    if (parent) document.dispatchEvent(new CustomEvent('lime:activity', { detail: { conversationId: parent.conversation_id } }));
-    refreshReplyIndicator(currentReplyParentId);
-    renderReplies(currentReplyParentId);
-    listEl.scrollTop = listEl.scrollHeight;
+    const parentId = currentReplyParentId;
+    const parent = LimeStore.getMessage(parentId);
+    if (!parent) return;
+
+    // sendMessage with replyTo covers replies too (LIME-24b's contract has
+    // no separate sendReply) — it already emits lime:messages-changed,
+    // which the main list's own listener picks up to re-sort; no manual
+    // event dispatch needed here the way the old lime:activity one was.
+    LimeStore.sendMessage(parent.conversation_id, { content, replyTo: parentId }).then(() => {
+      refreshReplyIndicator(parentId);
+      renderReplies(parentId);
+      listEl.scrollTop = listEl.scrollHeight;
+    }).catch(console.error);
+
     replyInput.value = '';
     replyInput.style.height = '';
     if (replySend) replySend.classList.remove('is-active');
@@ -1248,6 +1307,16 @@ wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropd
   if (privacy) privacy.innerHTML = '<span class="dew dew-shield-check"></span> Secure &amp; encrypted';
 })();
 
+// ── Reset demo data (LIME-24b) ──────────────────────────────
+// A native confirm() for now — LIME-26 brings the app's own confirm
+// dialog once one exists. Clears the persisted snapshot and reloads, so
+// the next LimeStore.init() normalizes fresh from the embedded seed
+// again, exactly like a first-ever visit.
+document.getElementById('reset-demo-data-btn')?.addEventListener('click', () => {
+  if (!window.confirm('Reset demo data? Anything you’ve sent, replied, or reacted with will be cleared, and the original seed data comes back.')) return;
+  LimeStore.reset().then(() => window.location.reload());
+});
+
 // ── Sign out ───────────────────────────────────────────────
 // Clears the mock session login.html stores on a successful sign-in
 // and sends the user back there. index.html has no auth-gate check on
@@ -1402,12 +1471,15 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
   });
 })();
 
-// Contact selection (Recent row)
-document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact) => {
-  contact.addEventListener('click', () => {
-    document.querySelectorAll('.lime-recent__item').forEach((c) => c.classList.remove('lime-recent__item--active'));
-    contact.classList.add('lime-recent__item--active');
-  });
+// Contact selection (Recent row) — delegated (LIME-24b): the Messages
+// list's own rows now render asynchronously (after LimeStore.init()) and
+// can be added or removed later too, so a one-time forEach bound at parse
+// time would miss anything that doesn't exist yet at that moment.
+document.addEventListener('click', (e) => {
+  const contact = e.target.closest('.lime-contact, .lime-recent__item');
+  if (!contact) return;
+  document.querySelectorAll('.lime-recent__item').forEach((c) => c.classList.remove('lime-recent__item--active'));
+  contact.classList.add('lime-recent__item--active');
 });
 
 // ── Mobile nav drawer ─────────────────────────────────────
@@ -1468,8 +1540,9 @@ document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((contact)
     layout.setAttribute('data-mobile-view', view);
   }
 
-  document.querySelectorAll('.lime-contact, .lime-recent__item').forEach((el) => {
-    el.addEventListener('click', () => setView('thread'));
+  // Delegated (LIME-24b), same reasoning as the Recent-row highlight above.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.lime-contact, .lime-recent__item')) setView('thread');
   });
 
   [document.getElementById('open-profile-avatars'), document.getElementById('open-replies'), document.getElementById('crumb-thread')]

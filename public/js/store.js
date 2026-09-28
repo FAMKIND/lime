@@ -1,0 +1,362 @@
+'use strict';
+
+// LimeStore (LIME-24b) — the one data seam described in
+// docs/data-model.md: the UI calls only this, never LocalAdapter (or,
+// later, a SupabaseAdapter) directly, and never reads the seed arrays or
+// localStorage itself. Reads are synchronous, from an in-memory cache;
+// writes are async (return a Promise), update the cache optimistically,
+// persist through the adapter (debounced), and emit one of the three
+// documented events. LIME_BACKEND is 'local' today — the only adapter
+// implemented is LocalAdapter; a 'supabase' branch is future work per the
+// switch checklist in docs/data-model.md, not built ahead of need here.
+const LIME_BACKEND = 'local';
+
+const LimeStore = (function () {
+  let profiles = new Map();
+  let conversations = [];
+  let members = [];
+  let messages = [];
+  let reactions = [];
+  let currentUserId = null;
+  let loggedFallback = false;
+  let saveTimer = null;
+
+  function adapter() {
+    // The only branch that exists yet — see the file header comment.
+    return LocalAdapter;
+  }
+
+  function emit(name, detail) {
+    document.dispatchEvent(new CustomEvent(name, { detail }));
+  }
+
+  function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      adapter().save({
+        profiles: [...profiles.values()],
+        conversations,
+        conversation_members: members,
+        messages,
+        message_reactions: reactions,
+      });
+    }, 100);
+  }
+
+  function loadFromAdapter() {
+    const state = adapter().load();
+    profiles = new Map(state.profiles.map((p) => [p.id, p]));
+    conversations = state.conversations;
+    members = state.conversation_members;
+    messages = state.messages;
+    reactions = state.message_reactions;
+  }
+
+  // The auth seam (docs/data-model.md): reads lime-demo-session's email
+  // and matches it to a profile. No match or no session at all falls back
+  // to teacher-002, logged once — not on every call — so the console
+  // doesn't fill up with the same notice on every render.
+  function resolveCurrentUserId() {
+    let email = null;
+    try {
+      const raw = localStorage.getItem('lime-demo-session');
+      if (raw) email = JSON.parse(raw).email;
+    } catch (e) {
+      // Malformed session value — treat the same as "no session".
+    }
+    if (email) {
+      const match = [...profiles.values()].find((p) => p.email === email);
+      if (match) return match.id;
+    }
+    if (!loggedFallback) {
+      console.log('[LimeStore] No session matched a profile — defaulting to teacher-002.');
+      loggedFallback = true;
+    }
+    return 'teacher-002';
+  }
+
+  function firstName(displayName) {
+    return displayName.trim().split(/\s+/)[0];
+  }
+
+  // "Jean", "Jean & Mary", "Jean, Mary & Jimin" — the unnamed-group title
+  // fallback. Not exercised by any group in today's seed (every one has an
+  // explicit name), same as when this first shipped in LIME-19b.
+  function joinNames(names) {
+    if (names.length <= 1) return names[0] || '';
+    if (names.length === 2) return names[0] + ' & ' + names[1];
+    return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1];
+  }
+
+  // ── reads ──────────────────────────────────────────────────
+
+  function getProfile(id) {
+    return profiles.get(id) || null;
+  }
+
+  function getCurrentUserId() {
+    return currentUserId;
+  }
+
+  function getCurrentUser() {
+    return getProfile(currentUserId);
+  }
+
+  function getConversation(id) {
+    return conversations.find((c) => c.id === id) || null;
+  }
+
+  function getMembers(conversationId) {
+    return members
+      .filter((m) => m.conversation_id === conversationId)
+      .map((m) => profiles.get(m.user_id))
+      .filter(Boolean);
+  }
+
+  function getMyMembership(conversationId) {
+    return members.find((m) => m.conversation_id === conversationId && m.user_id === currentUserId) || null;
+  }
+
+  function listConversations(options) {
+    const opts = options || {};
+    const types = opts.types;
+    const includeArchived = !!opts.includeArchived;
+    return members
+      .filter((m) => m.user_id === currentUserId)
+      .filter((m) => includeArchived || !m.archived_at)
+      .map((m) => getConversation(m.conversation_id))
+      .filter((c) => c && !c.deleted_at)
+      .filter((c) => !types || types.includes(c.type));
+  }
+
+  function listMessages(conversationId, options) {
+    const threadOnly = options && options.threadOnly;
+    return messages
+      .filter((m) => m.conversation_id === conversationId)
+      .filter((m) => !threadOnly || !m.reply_to)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }
+
+  function listReplies(messageId) {
+    return messages
+      .filter((m) => m.reply_to === messageId)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }
+
+  // Not in docs/data-model.md's original contract list — added as a small,
+  // necessary extension (documented there now) since the UI has no other
+  // way to resolve a single message id to its record (the reply panel's
+  // quote, and finding a reply's parent conversation both need exactly
+  // this). The old data.js had the equivalent (findMessageById).
+  function getMessage(id) {
+    return messages.find((m) => m.id === id) || null;
+  }
+
+  function getReactions(messageId) {
+    const byEmoji = new Map();
+    reactions
+      .filter((r) => r.message_id === messageId)
+      .forEach((r) => {
+        if (!byEmoji.has(r.emoji)) byEmoji.set(r.emoji, { emoji: r.emoji, count: 0, mine: false });
+        const entry = byEmoji.get(r.emoji);
+        entry.count += 1;
+        if (r.user_id === currentUserId) entry.mine = true;
+      });
+    return [...byEmoji.values()];
+  }
+
+  function getConversationTitle(conversation) {
+    if (conversation.type === 'direct') {
+      const other = getMembers(conversation.id).find((p) => p.id !== currentUserId);
+      return other ? other.display_name : 'Unknown';
+    }
+    if (conversation.name) return conversation.name;
+    const others = getMembers(conversation.id).filter((p) => p.id !== currentUserId);
+    return joinNames(others.map((p) => firstName(p.display_name)));
+  }
+
+  function getLatestActivity(conversationId) {
+    const msgs = listMessages(conversationId);
+    return msgs.length ? msgs[msgs.length - 1] : null;
+  }
+
+  // Per docs/data-model.md: owner can rename and delete; DMs can't be
+  // renamed (there's no name to change — the title is always derived from
+  // the other person). Nothing in the UI calls this yet (LIME-25/26 will);
+  // implemented now so the rule lives in one place from the start.
+  function can(action, conversation) {
+    const membership = getMyMembership(conversation.id);
+    const isOwner = !!membership && membership.role === 'owner';
+    if (action === 'rename') return isOwner && conversation.type !== 'direct';
+    if (action === 'delete') return isOwner;
+    return false;
+  }
+
+  // ── writes (async — each resolves with the affected record) ──
+
+  function sendMessage(conversationId, options) {
+    const opts = options || {};
+    const message = {
+      id: crypto.randomUUID(),
+      conversation_id: conversationId,
+      sender_id: currentUserId,
+      content: opts.content != null ? opts.content : null,
+      type: opts.type || 'text',
+      metadata: opts.metadata || null,
+      reply_to: opts.replyTo || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    messages.push(message);
+    scheduleSave();
+    emit('lime:messages-changed', { conversationId, messageId: message.id, kind: opts.replyTo ? 'reply' : 'message' });
+    return Promise.resolve(message);
+  }
+
+  function toggleReaction(messageId, emoji) {
+    const index = reactions.findIndex((r) => r.message_id === messageId && r.user_id === currentUserId && r.emoji === emoji);
+    if (index >= 0) {
+      reactions.splice(index, 1);
+    } else {
+      reactions.push({ message_id: messageId, user_id: currentUserId, emoji, created_at: new Date().toISOString() });
+    }
+    scheduleSave();
+    emit('lime:reactions-changed', { messageId, kind: 'reaction' });
+    return Promise.resolve(getReactions(messageId));
+  }
+
+  function createConversation(options) {
+    const opts = options || {};
+    const memberIds = [...new Set([currentUserId].concat(opts.memberIds || []))];
+    if (opts.type === 'direct') {
+      const dmKey = [...memberIds].sort().join(':');
+      const existing = conversations.find((c) => c.dm_key === dmKey);
+      if (existing) return Promise.resolve(existing);
+    }
+    const now = new Date().toISOString();
+    const conversation = {
+      id: crypto.randomUUID(),
+      type: opts.type,
+      name: opts.name || null,
+      description: opts.description || null,
+      created_by: currentUserId,
+      deleted_at: null,
+      dm_key: opts.type === 'direct' ? [...memberIds].sort().join(':') : null,
+      created_at: now,
+      updated_at: now,
+    };
+    conversations.push(conversation);
+    memberIds.forEach((userId) => {
+      members.push({
+        conversation_id: conversation.id,
+        user_id: userId,
+        role: userId === currentUserId ? 'owner' : 'member',
+        starred: false,
+        archived_at: null,
+        last_read_at: null,
+        joined_at: now,
+      });
+    });
+    scheduleSave();
+    emit('lime:conversations-changed', { conversationId: conversation.id, kind: 'create' });
+    return Promise.resolve(conversation);
+  }
+
+  function renameConversation(id, name) {
+    const conversation = getConversation(id);
+    if (!conversation) return Promise.reject(new Error('LimeStore: no such conversation'));
+    conversation.name = name;
+    conversation.updated_at = new Date().toISOString();
+    scheduleSave();
+    emit('lime:conversations-changed', { conversationId: id, kind: 'rename' });
+    return Promise.resolve(conversation);
+  }
+
+  function setStarred(id, bool) {
+    const membership = getMyMembership(id);
+    if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
+    membership.starred = !!bool;
+    scheduleSave();
+    emit('lime:conversations-changed', { conversationId: id, kind: 'star' });
+    return Promise.resolve(membership);
+  }
+
+  function setArchived(id, bool) {
+    const membership = getMyMembership(id);
+    if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
+    membership.archived_at = bool ? new Date().toISOString() : null;
+    scheduleSave();
+    emit('lime:conversations-changed', { conversationId: id, kind: 'archive' });
+    return Promise.resolve(membership);
+  }
+
+  function deleteConversation(id) {
+    const conversation = getConversation(id);
+    if (!conversation) return Promise.reject(new Error('LimeStore: no such conversation'));
+    conversation.deleted_at = new Date().toISOString();
+    scheduleSave();
+    emit('lime:conversations-changed', { conversationId: id, kind: 'delete' });
+    return Promise.resolve(conversation);
+  }
+
+  function markRead(conversationId) {
+    const membership = getMyMembership(conversationId);
+    if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
+    membership.last_read_at = new Date().toISOString();
+    scheduleSave();
+    emit('lime:conversations-changed', { conversationId, kind: 'read' });
+    return Promise.resolve(membership);
+  }
+
+  // ── lifecycle ──────────────────────────────────────────────
+
+  function init() {
+    loadFromAdapter();
+    currentUserId = resolveCurrentUserId();
+    return Promise.resolve();
+  }
+
+  // Local adapter only, per docs/data-model.md — "reset" has no meaning
+  // against a shared database, so a future SupabaseAdapter has no
+  // equivalent for the store to call here.
+  function reset() {
+    adapter().reset();
+    return init();
+  }
+
+  return {
+    init,
+    reset,
+    getProfile,
+    getCurrentUserId,
+    getCurrentUser,
+    getConversation,
+    getMembers,
+    getMyMembership,
+    listConversations,
+    listMessages,
+    listReplies,
+    getMessage,
+    getReactions,
+    getConversationTitle,
+    getLatestActivity,
+    can,
+    sendMessage,
+    toggleReaction,
+    createConversation,
+    renameConversation,
+    setStarred,
+    setArchived,
+    deleteConversation,
+    markRead,
+  };
+})();
+
+// A `const` at a classic <script>'s top level is visible to every other
+// script sharing this page (app.js's own `LimeStore.xxx()` calls already
+// rely on exactly that), but it isn't automatically a `window` property.
+// Exposing it explicitly here is just for anything reaching in from
+// outside the page's own scripts (devtools, tests) — the app itself never
+// needed this assignment to work.
+window.LimeStore = LimeStore;

@@ -98,6 +98,7 @@ only ever calls the store, never the adapter directly.
 - `getConversationTitle(conversation)`
 - `getLatestActivity(conversationId)`
 - `can(action, conversation)`
+- `getMessage(id)` — added in LIME-24b (see "Deviations from the contract" below)
 
 ### Writes (async — each returns a `Promise` of the affected record)
 
@@ -210,6 +211,22 @@ violate `message_reactions`' primary key — is now a decided rule, not an
 open question: a reaction's reactors are the conversation's distinct
 members (participant order), sliced to `min(count, member_count)`. Full
 reasoning and the same `conv-001`/`msg-006` repro (😍×5 → 😍×2, since it's
-a 2-person DM) are in `schema.sql`'s comments. `seed-data/seed.ts` is
-updated to this rule in LIME-24b; the local adapter uses it from the
-start.
+a 2-person DM) are in `schema.sql`'s comments. **`seed-data/seed.ts` is
+updated to this rule as of LIME-24b** — see that brief's `TEND.md` entry.
+
+## Deviations from the contract (LIME-24b)
+
+- **Added `getMessage(id)`** to the reads — a plain lookup of one message
+  record by id. It wasn't in this doc's original list, but the UI has no
+  other way to resolve a single message id to its record (the reply
+  panel's quote needs the parent message's own content/sender; `sendReply`
+  folding into `sendMessage(id, { replyTo })` means finding a reply's
+  target conversation needs the same lookup). The old `data.js` had the
+  exact equivalent (`findMessageById`) — this was very likely an
+  omission in the original contract listing, not a deliberate exclusion,
+  so it's added rather than worked around with a less direct query.
+- Nothing else needed to deviate: `sendReply` was never a separate
+  contract method to begin with (`sendMessage`'s own `replyTo` field
+  already covered it, per the very first draft of this doc) — LIME-19b's
+  old separate `sendReply`/`lime:activity` pair from `data.js` is what's
+  gone now, not anything this contract promised.
