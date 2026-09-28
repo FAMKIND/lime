@@ -111,11 +111,11 @@
         <div class="lime-sidebar__footer">
           <div class="lime-menu" id="user-dropdown">
             <div class="lime-menu__header">
-              <div>shem@example.com</div>
-              <div>+1 555-0123</div>
+              <div id="profile-menu-email">shem@example.com</div>
+              <div id="profile-menu-phone">+1 555-0123</div>
             </div>
             <div class="lime-menu__divider"></div>
-            <button type="button" class="lime-menu__item"><span class="dew dew-gear"></span>Settings</button>
+            <button type="button" class="lime-menu__item" id="settings-btn"><span class="dew dew-gear"></span>Settings</button>
             <button type="button" class="lime-menu__item" id="reset-demo-data-btn"><span class="dew dew-undo"></span>Reset demo data</button>
             <button type="button" class="lime-menu__item" id="sign-out-btn">Sign Out</button>
           </div>
@@ -569,7 +569,7 @@
 
   <!-- Global search modal: nav "Search" opens this. Distinct from the
        center panel's local list filter — this one is app-wide. -->
-  <div class="lime-search-modal-backdrop" id="search-modal-backdrop"></div>
+  <div class="lime-modal-backdrop" id="search-modal-backdrop"></div>
   <div class="lime-search-modal" id="search-modal" role="dialog" aria-modal="true" aria-label="Search">
     <div class="lime-search-modal__field">
       <span class="dew dew-search"></span>
@@ -582,6 +582,27 @@
       <button class="lime-menu__item" type="button"><span class="dew dew-people"></span> Grade Three</button>
       <button class="lime-menu__item" type="button"><span class="dew dew-chat"></span> "voice message"</button>
       <button class="lime-menu__item" type="button"><span class="dew dew-person"></span> Alexi Daily</button>
+    </div>
+  </div>
+
+  <!-- Settings modal (LIME-30): the profile menu's "Settings" item opens
+       this. Read-only in this brief — both sections render straight from
+       LimeStore.getCurrentUser() in app.js; LIME-31 makes them editable. -->
+  <div class="lime-modal-backdrop" id="settings-modal-backdrop"></div>
+  <div class="lime-settings" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-pane-title">
+    <button type="button" class="lime-icon-btn lime-settings__close" id="settings-modal-close" aria-label="Close settings" title="Close"><span class="dew dew-close"></span></button>
+    <div class="lime-settings__nav" id="settings-nav">
+      <div class="lime-settings__nav-search">
+        <span class="dew dew-search"></span>
+        <input type="search" id="settings-nav-search-input" placeholder="Search settings">
+      </div>
+      <div class="lime-menu__label">Account</div>
+      <button type="button" class="lime-settings__nav-item lime-menu__item" data-settings-section="profile"><span class="dew dew-person"></span>Profile</button>
+      <button type="button" class="lime-settings__nav-item lime-menu__item" data-settings-section="security"><span class="dew dew-shield-check"></span>Login &amp; security</button>
+    </div>
+    <div class="lime-settings__pane" id="settings-pane">
+      <!-- Rendered by app.js: a header (title + muted description) and
+           label/value rows, one section at a time. -->
     </div>
   </div>
 

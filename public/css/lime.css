@@ -1250,16 +1250,235 @@ body {
    local list filter; this one searches everything, everywhere).
 ───────────────────────────────────────────────────── */
 
-.lime-search-modal-backdrop {
+/* ─────────────────────────────────────────────────────
+   MODAL BACKDROP — shared by every modal (LIME-30). A light blur
+   instead of a dark overlay, per the user's own preference over the
+   search modal's original flat dark scrim. The @supports fallback
+   covers any browser without backdrop-filter support (older Firefox,
+   some in-app webviews) with that original dark-scrim look, since a
+   plain transparent-tinted overlay with no blur reads as barely-there.
+───────────────────────────────────────────────────── */
+
+.lime-modal-backdrop {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(19, 27, 23, 0.3);
+  background: rgba(19, 27, 23, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: var(--seed-z-modal);
 }
 
-.lime-search-modal-backdrop.is-open {
+@supports not (backdrop-filter: blur(1px)) {
+  .lime-modal-backdrop {
+    background: rgba(19, 27, 23, 0.3);
+  }
+}
+
+.lime-modal-backdrop.is-open {
   display: block;
+}
+
+/* ─────────────────────────────────────────────────────
+   SETTINGS MODAL (LIME-30) — a left nav (search + grouped items) and a
+   scrollable right pane, styled after Claude's/Notion's own settings
+   surfaces per the user's reference. Read-only in this brief; LIME-31
+   turns Profile and Login & security into editable forms inside the
+   same shell.
+───────────────────────────────────────────────────── */
+
+.lime-settings {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(960px, calc(100vw - 64px));
+  height: min(720px, calc(100vh - 64px));
+  background: var(--soil-bg-elevated);
+  border-radius: var(--seed-radius-lg);
+  box-shadow: var(--seed-shadow-xl);
+  z-index: var(--seed-z-modal);
+  overflow: hidden;
+}
+
+.lime-settings.is-open {
+  display: flex;
+}
+
+.lime-settings__close {
+  position: absolute;
+  top: var(--seed-space-3);
+  right: var(--seed-space-3);
+  z-index: 1;
+}
+
+.lime-settings__nav {
+  width: 240px;
+  /* Without this, the declared 240px is the content box alone and the
+     --seed-space-3 padding (12px each side) adds on top, rendering at
+     264px — measured live (headless Chrome), not assumed. Same root
+     cause as every other "declared width doesn't match the real one"
+     bug this project has hit (LIME-18-fix4, LIME-21b). */
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--seed-space-1);
+  padding: var(--seed-space-3);
+  background: var(--soil-bg-canvas);
+  overflow-y: auto;
+}
+
+/* Same rounded-pill look as .lime-nav-search, but a real <input> inside
+   it (live-filtering as you type) rather than a button that opens
+   another modal — the two just happen to share a visual style. */
+.lime-settings__nav-search {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  height: 36px;
+  flex-shrink: 0;
+  margin-bottom: var(--seed-space-2);
+  padding: 0 var(--seed-space-3);
+  border-radius: var(--seed-radius-full);
+  background: var(--calm-bg-normal-default);
+  color: var(--soil-text-muted);
+}
+
+.lime-settings__nav-search .dew {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.lime-settings__nav-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--seed-font-ui);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+}
+
+.lime-settings__nav-search input:focus {
+  outline: none;
+}
+
+.lime-settings__nav-search input::placeholder {
+  color: var(--soil-text-muted);
+}
+
+/* A neutral (not lime) selected state, per LIME-21b's own rule — the
+   same reasoning as .lime-menu__item--selected, just with a background
+   here since this is a persistent section choice, not a momentary menu
+   pick. */
+.lime-settings__nav-item.is-active {
+  background: var(--calm-bg-subtle-hover);
+  font-weight: var(--seed-weight-medium);
+}
+
+.lime-settings__back {
+  display: none;
+  margin-bottom: var(--seed-space-2);
+}
+
+.lime-settings__pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--seed-space-8);
+}
+
+.lime-settings__title {
+  margin: 0;
+  font-size: var(--seed-text-lg);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+}
+
+.lime-settings__description {
+  margin: var(--seed-space-1) 0 0;
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+}
+
+.lime-settings__rows {
+  margin-top: var(--seed-space-6);
+}
+
+.lime-settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--seed-space-4);
+  padding: var(--seed-space-4) 0;
+  border-bottom: 1px solid var(--soil-border-subtle);
+}
+
+.lime-settings__row:last-child {
+  border-bottom: none;
+}
+
+/* Nav-search row highlighting (LIME-30's "highlighted or scrolled into
+   view") — a subtle background, not a border or outline, so it doesn't
+   fight the row's own bottom divider. */
+.lime-settings__row.is-highlighted {
+  background: var(--calm-bg-subtle-hover);
+  border-radius: var(--seed-radius-md);
+}
+
+.lime-settings__row-label {
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+}
+
+.lime-settings__row-control {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  flex-shrink: 0;
+}
+
+.lime-settings__row-value {
+  color: var(--soil-text-muted);
+  text-align: right;
+}
+
+@media (max-width: 767px) {
+  .lime-settings {
+    top: 0;
+    left: 0;
+    transform: none;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+
+  .lime-settings__nav {
+    width: 100%;
+  }
+
+  .lime-settings__pane {
+    display: none;
+    padding: var(--seed-space-4);
+  }
+
+  /* Mutually exclusive nav-list vs. section views, toggled by JS adding
+     .is-showing-section to #settings-modal on a nav click and removing
+     it on the back chevron or a fresh open — desktop never sets or reads
+     this class's effect, since it only does anything inside this query. */
+  .lime-settings.is-showing-section .lime-settings__nav {
+    display: none;
+  }
+
+  .lime-settings.is-showing-section .lime-settings__pane {
+    display: block;
+  }
+
+  .lime-settings__back {
+    display: inline-flex;
+  }
 }
 
 /* ─────────────────────────────────────────────────────

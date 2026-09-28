@@ -769,6 +769,18 @@ function initMessagesList() {
   if (messageConversations.length > 0) {
     selectConversation(messageConversations[0]);
   }
+
+  // LIME-30: the profile menu's static "shem@example.com"/"+1 555-0123"
+  // header, now the current user's real data. Phone is "or nothing" here
+  // (not "Not set", the settings pane's own convention) — this is a
+  // compact header, not a field list.
+  const profileMenuEmail = document.getElementById('profile-menu-email');
+  const profileMenuPhone = document.getElementById('profile-menu-phone');
+  if (profileMenuEmail || profileMenuPhone) {
+    const user = LimeStore.getCurrentUser();
+    if (profileMenuEmail) profileMenuEmail.textContent = user.email || '';
+    if (profileMenuPhone) profileMenuPhone.textContent = user.phone || '';
+  }
 }
 
 // LIME-25: the title caret's menu. One action today (Star); built as a
@@ -1450,22 +1462,33 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
   });
 });
 
-// ── Nav search → global modal ────────────────────────────
-// Distinct from the center panel's local filter: this searches everywhere
-// (people, messages, jams), opens as a dialog, traps focus, and closes on
-// Esc or a backdrop click.
-(function () {
-  const trigger  = document.getElementById('nav-search-trigger');
-  const backdrop = document.getElementById('search-modal-backdrop');
-  const modal    = document.getElementById('search-modal');
-  const input    = document.getElementById('search-modal-input');
-  const closeBtn = document.getElementById('search-modal-close');
-  if (!trigger || !modal) return;
-
-  let lastFocused = null;
+// ── Shared modal open/close + focus trap (LIME-30) ───────
+// Extracted from the search modal (LIME-22 built the original version of
+// this) so the new Settings modal doesn't duplicate it. Handles the
+// backdrop+modal is-open toggle, initial focus via onOpen, a Tab-trap
+// scoped to the modal's own focusable elements, Escape, and returning
+// focus on close.
+//
+// `returnFocusTo` (defaults to `trigger`) is who gets focused back on
+// close — not always the same element as `trigger`. Two real bugs, both
+// caught by testing in an actual headless Chrome, not by reasoning about
+// the code: (1) the original search-modal approach captured
+// document.activeElement at open time, but a *programmatic* .click() on
+// a <button> doesn't reliably focus it the way a real mouse click does,
+// so that capture could silently be the wrong element; fixed by using
+// the explicitly-passed trigger instead. (2) Settings' own trigger,
+// `#settings-btn`, lives inside the profile dropdown menu, which closes
+// itself (and so becomes display:none) as soon as it's clicked — by the
+// time the *settings modal* later closes, .focus() on a hidden element
+// is a silent no-op, and focus just stays wherever it was. `returnFocusTo`
+// lets a caller point focus somewhere that's still actually visible
+// (Settings passes #user-btn, the dropdown's own always-visible trigger)
+// instead of the specific menu item that opened it.
+function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen, onClose }) {
+  const focusTarget = returnFocusTo || trigger;
 
   function focusable() {
-    return [...modal.querySelectorAll('button, [href], input, [tabindex]:not([tabindex="-1"])')]
+    return [...modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
       .filter((el) => !el.disabled && el.offsetParent !== null);
   }
 
@@ -1489,11 +1512,9 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
   }
 
   function open() {
-    lastFocused = document.activeElement;
     backdrop.classList.add('is-open');
     modal.classList.add('is-open');
-    input.value = '';
-    input.focus();
+    if (onOpen) onOpen();
     document.addEventListener('keydown', onKeydown);
   }
 
@@ -1501,17 +1522,203 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
     backdrop.classList.remove('is-open');
     modal.classList.remove('is-open');
     document.removeEventListener('keydown', onKeydown);
-    if (lastFocused) lastFocused.focus();
+    if (onClose) onClose();
+    if (focusTarget) focusTarget.focus();
   }
 
-  trigger.addEventListener('click', open);
+  if (trigger) trigger.addEventListener('click', open);
   backdrop.addEventListener('click', close);
   if (closeBtn) closeBtn.addEventListener('click', close);
+
+  return { open, close, focusable };
+}
+
+// ── Nav search → global modal ────────────────────────────
+// Distinct from the center panel's local filter: this searches everywhere
+// (people, messages, jams), opens as a dialog, traps focus, and closes on
+// Esc or a backdrop click.
+(function () {
+  const trigger  = document.getElementById('nav-search-trigger');
+  const backdrop = document.getElementById('search-modal-backdrop');
+  const modal    = document.getElementById('search-modal');
+  const input    = document.getElementById('search-modal-input');
+  const closeBtn = document.getElementById('search-modal-close');
+  if (!trigger || !modal) return;
+
+  const searchModal = createModal({
+    trigger, backdrop, modal, closeBtn,
+    onOpen: () => { input.value = ''; input.focus(); },
+  });
+
   // .lime-menu__item, not the old .lime-search-modal__item (LIME-21b
   // unified them) — scoped to modal's own children, so this still only
   // ever matches these 4 result buttons, nothing from any other menu.
   modal.querySelectorAll('.lime-menu__item').forEach((item) => {
-    item.addEventListener('click', close);
+    item.addEventListener('click', searchModal.close);
+  });
+})();
+
+// ── Settings modal (LIME-30) ──────────────────────────────
+// Profile menu → Settings. Read-only in this brief — both sections
+// render straight from LimeStore.getCurrentUser(); LIME-31 turns them
+// into editable forms inside this same shell.
+(function () {
+  const trigger        = document.getElementById('settings-btn');
+  const backdrop       = document.getElementById('settings-modal-backdrop');
+  const modal          = document.getElementById('settings-modal');
+  const closeBtn       = document.getElementById('settings-modal-close');
+  const nav            = document.getElementById('settings-nav');
+  const pane           = document.getElementById('settings-pane');
+  const navSearchInput = document.getElementById('settings-nav-search-input');
+  if (!trigger || !modal || !nav || !pane) return;
+
+  // Kept in one place rather than derived from the DOM each time (the
+  // brief's own "keep it simple" for the search filter) — row labels for
+  // a section that isn't currently rendered aren't otherwise knowable.
+  const SECTION_ROW_LABELS = {
+    profile: ['Photo', 'Display name', 'Pronouns', 'Role', 'School', 'Grade levels', 'Subjects', 'Bio', 'Timezone', 'Phone'],
+    security: ['Email', 'Password', 'Sign out'],
+  };
+
+  function paneHeaderHtml(title, description) {
+    // The back chevron is part of the pane's own rendered content, not a
+    // static sibling — .lime-settings__pane's own display:none/block
+    // toggle (mobile only) already gates its visibility, so it never
+    // needs a re-render-proof listener of its own; a single delegated
+    // click handler on #settings-pane (below) covers it regardless of
+    // how many times the pane's content gets replaced.
+    return '<button type="button" class="lime-settings__back" aria-label="Back to settings list" title="Back"><span class="dew dew-chevron-left"></span></button>'
+      + '<div class="lime-settings__pane-header">'
+      + '<h2 class="lime-settings__title" id="settings-pane-title">' + escapeHtml(title) + '</h2>'
+      + '<p class="lime-settings__description">' + escapeHtml(description) + '</p>'
+      + '</div>';
+  }
+
+  function rowHtml(label, valueHtml) {
+    return '<div class="lime-settings__row" data-row-label="' + escapeHtml(label) + '">'
+      + '<div class="lime-settings__row-label">' + escapeHtml(label) + '</div>'
+      + valueHtml
+      + '</div>';
+  }
+
+  function valueRowHtml(label, value) {
+    return rowHtml(label, '<div class="lime-settings__row-value">' + escapeHtml(value) + '</div>');
+  }
+
+  function listOrNotSet(list) {
+    return (list && list.length) ? list.join(', ') : 'Not set';
+  }
+
+  function renderProfileSection() {
+    const user = LimeStore.getCurrentUser();
+    pane.innerHTML = paneHeaderHtml('Profile', 'Your details as others see them across Lime.')
+      + '<div class="lime-settings__rows">'
+      + rowHtml('Photo', '<div class="lime-settings__row-control">'
+        + '<span class="seed-avatar seed-avatar--xl lime-avatar" data-name="' + escapeHtml(user.display_name) + '"></span>'
+        + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" disabled>Upload photo</button>'
+        + '<span class="lime-badge--soon">Soon</span>'
+        + '</div>')
+      + valueRowHtml('Display name', user.display_name || 'Not set')
+      + valueRowHtml('Pronouns', user.pronouns || 'Not set')
+      + valueRowHtml('Role', user.role || 'Not set')
+      + valueRowHtml('School', user.school || 'Not set')
+      + valueRowHtml('Grade levels', listOrNotSet(user.grade_levels))
+      + valueRowHtml('Subjects', listOrNotSet(user.subjects))
+      + valueRowHtml('Bio', user.bio || 'Not set')
+      + valueRowHtml('Timezone', user.timezone || 'Not set')
+      + valueRowHtml('Phone', user.phone || 'Not set')
+      + '</div>';
+    pane.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+  }
+
+  function changeRowHtml(label, value) {
+    return rowHtml(label, '<div class="lime-settings__row-control">'
+      + '<span class="lime-settings__row-value">' + escapeHtml(value) + '</span>'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" disabled>Change</button>'
+      + '</div>');
+  }
+
+  function renderSecuritySection() {
+    const user = LimeStore.getCurrentUser();
+    pane.innerHTML = paneHeaderHtml('Login & security', 'How you sign in, and how to sign out.')
+      + '<div class="lime-settings__rows">'
+      + changeRowHtml('Email', user.email || 'Not set')
+      + changeRowHtml('Password', '••••••••')
+      + rowHtml('Sign out', '<div class="lime-settings__row-control"><button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-sign-out-btn">Sign out</button></div>')
+      + '</div>';
+  }
+
+  const SETTINGS_SECTIONS = [
+    { id: 'profile', label: 'Profile', render: renderProfileSection },
+    { id: 'security', label: 'Login & security', render: renderSecuritySection },
+  ];
+
+  function showSection(id) {
+    nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.settingsSection === id);
+    });
+    const section = SETTINGS_SECTIONS.find((s) => s.id === id);
+    if (section) section.render();
+    pane.scrollTop = 0;
+  }
+
+  nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      showSection(btn.dataset.settingsSection);
+      modal.classList.add('is-showing-section'); // only visible ≤767px
+    });
+  });
+
+  // Delegated (not a direct listener on #settings-back) so it survives
+  // every pane.innerHTML replacement without being re-attached each time.
+  pane.addEventListener('click', (e) => {
+    if (e.target.closest('.lime-settings__back')) modal.classList.remove('is-showing-section');
+  });
+
+  pane.addEventListener('click', (e) => {
+    if (e.target.closest('#settings-sign-out-btn')) document.getElementById('sign-out-btn')?.click();
+  });
+
+  function filterSettings() {
+    const query = (navSearchInput.value || '').trim().toLowerCase();
+    nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
+      const section = SETTINGS_SECTIONS.find((s) => s.id === btn.dataset.settingsSection);
+      const rowLabels = SECTION_ROW_LABELS[btn.dataset.settingsSection] || [];
+      const matches = !query
+        || section.label.toLowerCase().includes(query)
+        || rowLabels.some((label) => label.toLowerCase().includes(query));
+      btn.style.display = matches ? '' : 'none';
+    });
+    let firstMatch = null;
+    pane.querySelectorAll('.lime-settings__row').forEach((row) => {
+      const isMatch = !!query && (row.dataset.rowLabel || '').toLowerCase().includes(query);
+      row.classList.toggle('is-highlighted', isMatch);
+      if (isMatch && !firstMatch) firstMatch = row;
+    });
+    if (firstMatch) firstMatch.scrollIntoView({ block: 'nearest' });
+  }
+
+  if (navSearchInput) navSearchInput.addEventListener('input', filterSettings);
+
+  createModal({
+    trigger, backdrop, modal, closeBtn,
+    // #settings-btn (the trigger) lives inside the profile dropdown,
+    // which closes itself the moment it's clicked — by the time this
+    // modal closes, focusing the now-hidden trigger would silently do
+    // nothing (see createModal's own comment). #user-btn is that
+    // dropdown's own trigger and stays visible regardless.
+    returnFocusTo: document.getElementById('user-btn'),
+    onOpen: () => {
+      if (navSearchInput) navSearchInput.value = '';
+      modal.classList.remove('is-showing-section');
+      showSection('profile');
+      filterSettings();
+      // Matches the search modal's own pattern (focus its input on open)
+      // — without this, focus is left wherever it was, which both reads
+      // oddly for a dialog and leaves the Tab-trap starting from an
+      // element outside the modal entirely.
+      if (navSearchInput) navSearchInput.focus();
+    },
   });
 })();
 
