@@ -133,6 +133,11 @@ const LimeStore = (function () {
     return members
       .filter((m) => m.user_id === currentUserId)
       .filter((m) => includeArchived || !m.archived_at)
+      // LIME-34: "Delete for me" (cleared_at) hides a conversation from
+      // your own lists once there's nothing after the clear point left to
+      // show — a fresh message from the other person un-hides it again,
+      // for free, just by having a created_at past cleared_at.
+      .filter((m) => !m.cleared_at || messages.some((msg) => msg.conversation_id === m.conversation_id && new Date(msg.created_at) > new Date(m.cleared_at)))
       .map((m) => getConversation(m.conversation_id))
       .filter((c) => c && !c.deleted_at)
       .filter((c) => !types || types.includes(c.type));
@@ -140,8 +145,14 @@ const LimeStore = (function () {
 
   function listMessages(conversationId, options) {
     const threadOnly = options && options.threadOnly;
+    // LIME-34: cleared_at is per-membership (your own "delete for me"
+    // point) — messages at or before it are hidden from you specifically,
+    // never from the other person's own read of the same conversation.
+    const membership = getMyMembership(conversationId);
+    const clearedAt = membership && membership.cleared_at;
     return messages
       .filter((m) => m.conversation_id === conversationId)
+      .filter((m) => !clearedAt || new Date(m.created_at) > new Date(clearedAt))
       .filter((m) => !threadOnly || !m.reply_to)
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   }
@@ -191,14 +202,33 @@ const LimeStore = (function () {
 
   // Per docs/data-model.md: owner can rename and delete; DMs can't be
   // renamed (there's no name to change — the title is always derived from
-  // the other person). Nothing in the UI calls this yet (LIME-25/26 will);
-  // implemented now so the rule lives in one place from the start.
+  // the other person). LIME-34: delete is no longer owner-only for a DM —
+  // there's no "owner" of one at all, and "delete" there means your own
+  // copy (deleteForMe), not deleting it for the other person too, so it's
+  // always available regardless of role.
   function can(action, conversation) {
     const membership = getMyMembership(conversation.id);
     const isOwner = !!membership && membership.role === 'owner';
     if (action === 'rename') return isOwner && conversation.type !== 'direct';
-    if (action === 'delete') return isOwner;
+    if (action === 'delete') return isOwner || conversation.type === 'direct';
     return false;
+  }
+
+  // LIME-34: the one-line reason a disabled menu item shows, kept next to
+  // can() itself so the rule and its explanation can't drift apart. Only
+  // meaningful when can() is false — returns null otherwise, including for
+  // any action can() doesn't know about, rather than guessing a message
+  // for a case that was never designed to be disabled in the first place.
+  function canReason(action, conversation) {
+    if (can(action, conversation)) return null;
+    const membership = getMyMembership(conversation.id);
+    const isOwner = !!membership && membership.role === 'owner';
+    if (action === 'rename') {
+      if (conversation.type === 'direct') return 'Direct messages are named after the person';
+      if (!isOwner) return 'Only the group owner can rename';
+    }
+    if (action === 'delete' && !isOwner) return 'Only the group owner can delete. Archive hides it for you';
+    return null;
   }
 
   // ── writes (async — each resolves with the affected record) ──
@@ -308,6 +338,19 @@ const LimeStore = (function () {
     return Promise.resolve(conversation);
   }
 
+  // LIME-34: "delete for me" — sets only your own membership's
+  // cleared_at, never conversations.deleted_at (that's the owner-only,
+  // delete-for-everyone path above). listConversations/listMessages both
+  // already read cleared_at, so hiding is automatic from here.
+  function deleteForMe(id) {
+    const membership = getMyMembership(id);
+    if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
+    membership.cleared_at = new Date().toISOString();
+    scheduleSave();
+    emit('lime:conversations-changed', { conversationId: id, kind: 'clear' });
+    return Promise.resolve(membership);
+  }
+
   function markRead(conversationId) {
     const membership = getMyMembership(conversationId);
     if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
@@ -385,6 +428,7 @@ const LimeStore = (function () {
     getConversationTitle,
     getLatestActivity,
     can,
+    canReason,
     sendMessage,
     toggleReaction,
     createConversation,
@@ -392,6 +436,7 @@ const LimeStore = (function () {
     setStarred,
     setArchived,
     deleteConversation,
+    deleteForMe,
     markRead,
     updateProfile,
     setProfileEmail,

@@ -739,6 +739,43 @@ body {
   flex-shrink: 0;
 }
 
+/* LIME-34: the label wraps on its own now (it used to be a bare text
+   node) so a disabled item's reason can sit on its own line underneath
+   it, inside the same flex item, without disturbing the icon/kbd
+   alignment on either side. */
+.lime-menu__item-label {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.lime-menu__item-reason {
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-regular);
+  color: var(--soil-text-disabled);
+}
+
+/* Disabled instead of hidden (LIME-34's "same menu everywhere") — muted
+   text/icon, no hover background, a plain cursor. Not a native `disabled`
+   button (the brief specifies aria-disabled): runConversationAction
+   itself is what actually refuses to run a disabled action, for both a
+   click and the key-hint shortcut, so this attribute only needs to
+   handle the visual state and assistive-tech announcement. */
+.lime-menu__item[aria-disabled="true"] {
+  color: var(--soil-text-disabled);
+  cursor: default;
+}
+
+.lime-menu__item[aria-disabled="true"] .dew {
+  color: var(--soil-text-disabled);
+}
+
+.lime-menu__item[aria-disabled="true"]:hover,
+.lime-menu__item[aria-disabled="true"]:focus-visible {
+  background: none;
+}
+
 /* The chosen/current row (e.g. the active microphone) — neutral, per
    the user: lime is reserved for nav and primary actions (LIME-21b).
    No background at rest; just a checkmark and slightly heavier text. */
@@ -1062,24 +1099,18 @@ body {
   flex-shrink: 0;
 }
 
-/* Inline rename (LIME-26) — swaps in as a sibling of #crumb-thread
-   (never replaces it, so its existing click listeners elsewhere in
-   app.js stay bound); width is set inline by app.js's startRename,
-   clamped between this min-width and the breadcrumb row's own space. */
-.lime-rename-input {
-  font: inherit;
-  color: var(--soil-text);
-  background: var(--soil-bg-surface);
-  border: 1px solid var(--calm-border-normal-default);
-  border-radius: var(--seed-radius-md);
-  padding: 1px var(--seed-space-2);
-  min-width: 120px;
-  max-width: 100%;
-}
-
-.lime-rename-input:focus {
+/* Inline rename (LIME-34 — replaces LIME-26's sibling .lime-rename-input,
+   removed entirely) — #crumb-thread itself becomes contenteditable in
+   place. Same font/size as always (nothing here touches those); a
+   subtle background and small radius are the only visual change, and
+   double as the focus indicator along with the caret — deliberately no
+   border and no focus ring (Seed's default green one is suppressed by
+   simply never letting one apply: outline:none, no box-shadow set). */
+#crumb-thread.is-editing {
+  background: var(--calm-bg-subtle-hover);
+  border-radius: var(--seed-radius-sm);
   outline: none;
-  box-shadow: var(--seed-shadow-focus);
+  cursor: text;
 }
 
 /* The local contacts search field stays mobile-only — desktop/tablet

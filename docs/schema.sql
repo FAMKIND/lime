@@ -95,6 +95,12 @@ create table conversation_members (
   role             text not null default 'member' check (role in ('owner', 'member')),
   starred          boolean not null default false,
   archived_at      timestamptz,
+  -- "Delete for me" (LIME-34) — your own copy's clear point. Messages at
+  -- or before this hide from your reads only; the conversation and the
+  -- other member(s)' own rows are untouched. A message after this point
+  -- (from anyone) makes the conversation visible to you again, with only
+  -- what's after cleared_at showing.
+  cleared_at       timestamptz,
   last_read_at     timestamptz,
   joined_at        timestamptz not null default now(),
   primary key (conversation_id, user_id)
@@ -270,11 +276,22 @@ create table message_reactions (
 --     or is_owner(conversation_id)
 --   );
 --
--- -- Each user updates only their own membership row (star, archive, read).
+-- -- Each user updates only their own membership row (star, archive, read,
+-- -- and LIME-34's cleared_at — "delete for me" is just another column on
+-- -- this same row, so it needs no policy of its own).
 -- create policy conversation_members_update_self on conversation_members for update
 --   using (user_id = current_profile_id());
 --
 -- -- ── messages ───────────────────────────────────────────────
+-- -- LIME-34: this does NOT filter out a message the reader has "deleted
+-- -- for me" (created_at <= their own cleared_at) — that hiding is a
+-- -- store/UI-level read filter (LimeStore.listMessages), not RLS, since a
+-- -- deleted-for-me message still needs to exist and be selectable for
+-- -- everyone else in the conversation. A production RLS policy that also
+-- -- enforced this at the database level would need its own per-row
+-- -- subquery against the reader's conversation_members.cleared_at —
+-- -- left as a note for whoever builds SupabaseAdapter, not written here,
+-- -- since nothing today requires the guarantee to hold below the UI.
 -- create policy messages_select_member on messages for select
 --   using (is_member(conversation_id));
 --

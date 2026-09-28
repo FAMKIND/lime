@@ -41,8 +41,14 @@ const LocalAdapter = (function () {
   // with every profile silently missing it.
   const PROFILE_SCHEMA_VERSION = 'phone-v1';
 
+  // Same idea as PROFILE_SCHEMA_VERSION, for conversation_members —
+  // LIME-34 added cleared_at ("delete for me"). A separate constant
+  // rather than folding into the profile one: they version unrelated
+  // tables, and a future field on either shouldn't force-invalidate both.
+  const MEMBER_SCHEMA_VERSION = 'cleared-v1';
+
   function seedFingerprint() {
-    return hashString(JSON.stringify(window.LIME_SEED_DATA) + JSON.stringify(DEMO_MEMBER_STATE) + PROFILE_SCHEMA_VERSION);
+    return hashString(JSON.stringify(window.LIME_SEED_DATA) + JSON.stringify(DEMO_MEMBER_STATE) + PROFILE_SCHEMA_VERSION + MEMBER_SCHEMA_VERSION);
   }
 
   // Builds the five normalized tables from the embedded seed — run once,
@@ -100,6 +106,7 @@ const LocalAdapter = (function () {
           role: userId === c.created_by ? 'owner' : 'member',
           starred: demo.starred || false,
           archived_at: null,
+          cleared_at: null,
           last_read_at: null,
           joined_at: c.created_at,
         });

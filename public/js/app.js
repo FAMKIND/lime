@@ -585,81 +585,72 @@ function initMessagesList() {
     thread.innerHTML = '<p class="lime-messages__empty">No conversations left. Start one from the sidebar.</p>';
   }
 
-  // ── Inline rename (LIME-26) ──────────────────────────────
-  // A detached, absolutely-off-DOM <span> is the standard way to measure
-  // how wide a string renders in a given font, without laying out
-  // anything visible — matched against the input's own computed font so
-  // the measurement is accurate for this exact element.
-  function measureTextWidth(text, referenceEl) {
-    const span = document.createElement('span');
-    const cs = getComputedStyle(referenceEl);
-    span.style.font = cs.font;
-    span.style.position = 'absolute';
-    span.style.visibility = 'hidden';
-    span.style.whiteSpace = 'pre';
-    span.textContent = text || ' ';
-    document.body.appendChild(span);
-    const width = span.getBoundingClientRect().width;
-    span.remove();
-    return width;
-  }
-
-  // Swaps in as a sibling of #crumb-thread, never replacing it — the
-  // mobile view router (further down this file) binds a click listener
-  // directly to that exact node at parse time, so recreating it here
-  // would silently lose that listener (the same repaintAvatar lesson
-  // from LIME-31, applied to a different element).
+  // ── Inline rename (LIME-34 — replaces LIME-26's sibling <input>) ──
+  // #crumb-thread becomes editable in place: no second element, so
+  // nothing else that touches this exact node (the mobile view router's
+  // own click listener, bound to it directly at parse time) needs to
+  // know rename ever happened here.
   function startRename(conversation) {
     if (!crumbThread) return;
-    const breadcrumbsNav = crumbThread.parentElement;
-    const currentTitle = LimeStore.getConversationTitle(conversation);
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'lime-rename-input';
-    input.value = currentTitle;
-    input.setAttribute('aria-label', 'Conversation name');
-
-    crumbThread.hidden = true;
-    crumbThread.insertAdjacentElement('afterend', input);
-
-    function resize() {
-      const textWidth = measureTextWidth(input.value, input);
-      const available = breadcrumbsNav ? breadcrumbsNav.getBoundingClientRect().width : Infinity;
-      input.style.width = Math.max(120, Math.min(textWidth + 20, available)) + 'px';
+    // plaintext-only strips *pasted* formatting for free; not every
+    // browser implements this contentEditable value yet, so fall back to
+    // "true" plus a manual paste handler that does the same job.
+    let usedPlaintextOnly = true;
+    try {
+      crumbThread.contentEditable = 'plaintext-only';
+      if (crumbThread.contentEditable !== 'plaintext-only') throw new Error('unsupported');
+    } catch (e) {
+      usedPlaintextOnly = false;
+      crumbThread.contentEditable = 'true';
     }
-    resize();
-    input.addEventListener('input', resize);
+    crumbThread.classList.add('is-editing');
 
-    input.focus();
-    input.select(); // "the whole name selected," per the brief's own reference
+    function onPaste(e) {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, text);
+    }
+    if (!usedPlaintextOnly) crumbThread.addEventListener('paste', onPaste);
+
+    crumbThread.focus();
+    // "the whole name selected," per the brief's own reference.
+    const range = document.createRange();
+    range.selectNodeContents(crumbThread);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
 
     let finished = false;
     function finish(save) {
       if (finished) return;
       finished = true;
-      input.removeEventListener('input', resize);
-      input.remove();
-      crumbThread.hidden = false;
-      crumbThread.focus();
+      crumbThread.contentEditable = 'false';
+      crumbThread.removeAttribute('contenteditable');
+      crumbThread.classList.remove('is-editing');
+      crumbThread.removeEventListener('keydown', onKeydown);
+      crumbThread.removeEventListener('blur', onBlur);
+      if (!usedPlaintextOnly) crumbThread.removeEventListener('paste', onPaste);
       if (save) {
         // An empty value clears the name back to the auto title — the
         // store's own behavior (getConversationTitle falls through to
         // the derived name whenever conversations.name is falsy), not
         // special-cased here.
-        const trimmed = input.value.trim();
+        const trimmed = crumbThread.textContent.trim();
         LimeStore.renameConversation(conversation.id, trimmed || null).then(() => {
           // lime:conversations-changed (emitted by renameConversation)
           // already repaints this conversation's row everywhere via
-          // updateRow, above — but the breadcrumb isn't a row, and
-          // nothing else re-derives it just from that event, so it needs
-          // its own update here.
+          // updateRow — but the breadcrumb isn't a row, and nothing else
+          // re-derives it just from that event, so it needs its own
+          // update here.
           if (crumbThread) crumbThread.textContent = LimeStore.getConversationTitle(conversation);
         }).catch(console.error);
+      } else {
+        crumbThread.textContent = LimeStore.getConversationTitle(conversation);
       }
     }
 
-    input.addEventListener('keydown', (e) => {
+    function onKeydown(e) {
       if (e.key === 'Enter') {
         e.preventDefault();
         finish(true);
@@ -667,8 +658,12 @@ function initMessagesList() {
         e.preventDefault();
         finish(false);
       }
-    });
-    input.addEventListener('blur', () => finish(true));
+    }
+    function onBlur() {
+      finish(true);
+    }
+    crumbThread.addEventListener('keydown', onKeydown);
+    crumbThread.addEventListener('blur', onBlur);
   }
 
   // ── Send message (LIME-07) ─────────────────────────────
@@ -881,30 +876,30 @@ function initMessagesList() {
   const conversationMenu = document.getElementById('conversation-menu');
   const conversationMenuToggle = document.getElementById('conversation-menu-toggle');
 
+  // LIME-34: "the same menu everywhere" — every item always renders now
+  // (no more isVisible filtering, no more dropping a divider that would
+  // otherwise have nothing on one side of it — Archive and Delete both
+  // always show, so the divider between them never needs that check).
+  // An action `can()` rejects renders disabled instead of hidden, muted,
+  // with a one-line reason under its label.
   function renderConversationMenu() {
     if (!conversationMenu || !currentConversationId) return;
     const conversation = LimeStore.getConversation(currentConversationId);
     if (!conversation) return;
     const membership = LimeStore.getMyMembership(currentConversationId);
 
-    // A divider always passes the visibility filter (it has no isVisible
-    // of its own) — dropped afterward if it ends up with nothing but
-    // other dividers or the list's own start/end on either side, so it
-    // never renders as a leading/trailing/doubled-up rule.
-    const withVisibility = CONVERSATION_ACTIONS.filter((action) => action.divider || !action.isVisible || action.isVisible(conversation, membership));
-    const items = withVisibility.filter((action, i) => {
-      if (!action.divider) return true;
-      const hasBefore = withVisibility.slice(0, i).some((a) => !a.divider);
-      const hasAfter = withVisibility.slice(i + 1).some((a) => !a.divider);
-      return hasBefore && hasAfter;
-    });
-
-    conversationMenu.innerHTML = items.map((action) => {
+    conversationMenu.innerHTML = CONVERSATION_ACTIONS.map((action) => {
       if (action.divider) return '<div class="lime-menu__divider" role="separator"></div>';
       const label = typeof action.label === 'function' ? action.label(conversation, membership) : action.label;
-      const dangerClass = action.danger ? ' lime-menu__item--danger' : '';
-      return '<button type="button" class="lime-menu__item' + dangerClass + '" role="menuitem" data-action="' + action.id + '">'
-        + '<span class="dew ' + action.icon + '"></span>' + escapeHtml(label)
+      const disabled = !!(action.disabled && action.disabled(conversation, membership));
+      const reason = disabled && action.reason ? action.reason(conversation, membership) : null;
+      const dangerClass = action.danger && !disabled ? ' lime-menu__item--danger' : '';
+      const disabledAttr = disabled ? ' aria-disabled="true"' : '';
+      return '<button type="button" class="lime-menu__item' + dangerClass + '" role="menuitem" data-action="' + action.id + '"' + disabledAttr + '>'
+        + '<span class="dew ' + action.icon + '"></span>'
+        + '<span class="lime-menu__item-label">' + escapeHtml(label)
+        + (reason ? '<span class="lime-menu__item-reason">' + escapeHtml(reason) + '</span>' : '')
+        + '</span>'
         + '<span class="lime-menu__kbd">' + escapeHtml(action.key) + '</span>'
         + '</button>';
     }).join('');
@@ -917,6 +912,7 @@ function initMessagesList() {
     const conversation = LimeStore.getConversation(currentConversationId);
     const membership = LimeStore.getMyMembership(currentConversationId);
     if (!conversation) return;
+    if (action.disabled && action.disabled(conversation, membership)) return;
     action.run(conversation, membership).catch(console.error);
     if (conversationMenu) conversationMenu.classList.remove('is-open');
   }
@@ -943,15 +939,14 @@ function initMessagesList() {
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
     const action = CONVERSATION_ACTIONS.find((a) => a.key && a.key.toLowerCase() === e.key.toLowerCase());
     if (!action || !currentConversationId) return;
-    // LIME-26: unlike Star (always visible), Rename/Archive/Delete's
-    // visibility depends on the open conversation — the keyboard
-    // shortcut has to respect the same isVisible check the menu itself
-    // already applies, or e.g. R would rename a DM the menu never even
-    // offered Rename for.
+    // LIME-34: "its key hint doesn't fire" for a disabled item — the
+    // shortcut has to respect the same can()-backed check the menu
+    // itself already applies, or e.g. R would rename a DM the menu
+    // itself only ever shows greyed out.
     const conversation = LimeStore.getConversation(currentConversationId);
     if (!conversation) return;
     const membership = LimeStore.getMyMembership(currentConversationId);
-    if (action.isVisible && !action.isVisible(conversation, membership)) return;
+    if (action.disabled && action.disabled(conversation, membership)) return;
     runConversationAction(action.id);
   });
   // aria-expanded has no single choke point to update from (the menu can
@@ -1016,10 +1011,13 @@ function repaintAvatar(el, name) {
   paintAvatar(el);
 }
 
-// LIME-25/26: the title caret's menu, data-driven from the start so this
-// stays the only place that needs to change. Final order (the brief's
-// own): Star · Rename · Archive/Unarchive · divider · Delete. LIME-27
-// will add Share and Copy link between Rename and Archive.
+// LIME-25/26/34: the title caret's menu, data-driven from the start so
+// this stays the only place that needs to change. Final order (the
+// brief's own): Star · Rename · Archive/Unarchive · divider · Delete, on
+// EVERY conversation now (LIME-34: no more hiding an unavailable item —
+// `disabled`/`reason` grey it out with an explanation instead). LIME-27
+// will add Share and Copy link here too, between Rename and Archive,
+// visible everywhere like the rest.
 const CONVERSATION_ACTIONS = [
   {
     id: 'star',
@@ -1027,7 +1025,6 @@ const CONVERSATION_ACTIONS = [
     icon: 'dew-star',
     key: 'S',
     danger: false,
-    isVisible: () => true,
     run: (conversation, membership) => LimeStore.setStarred(conversation.id, !(membership && membership.starred)),
   },
   {
@@ -1036,7 +1033,8 @@ const CONVERSATION_ACTIONS = [
     icon: 'dew-pencil',
     key: 'R',
     danger: false,
-    isVisible: (conversation) => LimeStore.can('rename', conversation),
+    disabled: (conversation) => !LimeStore.can('rename', conversation),
+    reason: (conversation) => LimeStore.canReason('rename', conversation),
     run: (conversation) => {
       if (conversationActionHooks.startRename) conversationActionHooks.startRename(conversation);
       return Promise.resolve();
@@ -1049,19 +1047,37 @@ const CONVERSATION_ACTIONS = [
     icon: 'dew-archive',
     key: 'A',
     danger: false,
-    isVisible: () => true,
     run: (conversation, membership) => LimeStore.setArchived(conversation.id, !(membership && membership.archived_at)),
   },
   { divider: true },
   {
     id: 'delete',
-    label: 'Delete',
+    // LIME-34: a DM's own "Delete" is delete-for-me (there's no
+    // delete-for-everyone for a DM in v1 — Archive already covers "make
+    // it go away for just me" for everyone else) — the label makes that
+    // distinction explicit rather than reusing the owned-group wording
+    // for a meaningfully different action.
+    label: (conversation) => (conversation.type === 'direct' ? 'Delete for me' : 'Delete'),
     icon: 'dew-trash',
     key: 'D',
     danger: true,
-    isVisible: (conversation) => LimeStore.can('delete', conversation),
+    disabled: (conversation) => !LimeStore.can('delete', conversation),
+    reason: (conversation) => LimeStore.canReason('delete', conversation),
     run: (conversation) => {
       const title = LimeStore.getConversationTitle(conversation);
+      if (conversation.type === 'direct') {
+        return confirmDialog({
+          title: 'Delete for me?',
+          message: 'Delete your copy of this chat with ' + title + '? They’ll still have theirs.',
+          confirmLabel: 'Delete',
+          danger: true,
+        }).then((confirmed) => {
+          if (!confirmed) return;
+          return LimeStore.deleteForMe(conversation.id).then(() => {
+            if (conversationActionHooks.selectTopOrEmpty) conversationActionHooks.selectTopOrEmpty();
+          });
+        });
+      }
       return confirmDialog({
         title: 'Delete "' + title + '"?',
         message: 'This removes it for everyone in it. This can’t be undone.',
@@ -2586,7 +2602,15 @@ document.addEventListener('click', (e) => {
 
   [document.getElementById('open-profile-avatars'), document.getElementById('open-replies'), document.getElementById('crumb-thread')]
     .filter(Boolean)
-    .forEach((btn) => btn.addEventListener('click', () => setView('panel')));
+    .forEach((btn) => btn.addEventListener('click', () => {
+      // LIME-34: #crumb-thread is contenteditable while renaming in
+      // place (startRename, above) — every click that places or moves
+      // the caret inside it would otherwise also fire this "go to
+      // panel" navigation, which is exactly the brief's own "must not
+      // trigger the title's click action while editing."
+      if (btn.isContentEditable) return;
+      setView('panel');
+    }));
 
   // right-panel-toggle is excluded from the "go to panel" list above —
   // LIME-03z made it close-only again (it lives inside #right-panel

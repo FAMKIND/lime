@@ -39,16 +39,24 @@ make the switch."
 7. **Permissions are written down**, for when RLS exists: owner vs. member
    for rename and delete; communities are public-read. The UI checks
    through one `can(action, conversation)` helper, so the rule lives in
-   exactly one place instead of being re-implemented at each call site.
+   exactly one place instead of being re-implemented at each call site —
+   `canReason(action, conversation)` sits next to it, returning the
+   one-line explanation a disabled menu item shows, so the rule and its
+   explanation can't drift apart.
    **DMs have no owner** (no `created_by`, and `can()`'s own `isOwner`
-   check is false for everyone in one as a result) — LIME-26's own
-   decision: a DM's title menu offers Star and Archive only, never
-   Rename (its title is always the other person, not something to
-   rename) or Delete (archiving is "remove it for me"; there's no
-   "delete for everyone" for a DM in v1). A group the current user
-   doesn't own gets the same Star-and-Archive-only treatment, for the
-   same ownership reason — "Leave group" (distinct from Delete, which
-   only an owner can do) is a later brief.
+   check is false for everyone in one as a result). **LIME-34 supersedes
+   LIME-26's own original decision here**: every conversation's title
+   menu now shows the *same* four items (Star · Rename · Archive ·
+   Delete) always — an item `can()` rejects renders disabled with its
+   `canReason`, rather than being hidden. A DM's Rename stays disabled
+   (its title is always the other person, not something to rename), but
+   its **Delete is enabled** — for a DM specifically, Delete means
+   "delete for me" (`cleared_at`, above), not delete-for-everyone, so
+   ownership (which a DM doesn't have) is beside the point. A group the
+   current user doesn't own gets a disabled Rename *and* a disabled
+   Delete, both with their own `canReason` ("Only the group owner
+   can…") — Archive stays enabled either way, and "Leave group"
+   (distinct from Delete, which only an owner can do) is a later brief.
 8. **UI preferences stay separate.** Panel widths, collapsed sections,
    theme — these are device preferences, not data, and keep their own
    `localStorage` keys outside this contract entirely.
@@ -79,7 +87,7 @@ Read `├─<` as "one of these has many of those."
 |---|---|
 | A conversation's title | `conversations.name` if set, else derived from the other member(s)' `profiles.display_name` (see `getConversationTitle` below) |
 | A DM | `conversations.type = 'direct'`, exactly 2 rows in `conversation_members`, `dm_key` set (the store computes it — the two member ids, sorted, joined with `:` — never the UI directly) so the same pair can't get a second DM |
-| Starred / archived | The current user's own row in `conversation_members` (`starred`, `archived_at`) — never the conversation itself |
+| Starred / archived / deleted-for-me | The current user's own row in `conversation_members` (`starred`, `archived_at`, `cleared_at`) — never the conversation itself. "Deleted for me" (LIME-34) hides the conversation once nothing after `cleared_at` remains, and hides individual messages at or before it — both computed at read time, nothing pre-filtered or stored |
 | A reply | `messages.reply_to` pointing at the parent message's `id` |
 | A reaction count | `count(*)` of `message_reactions` for that `(message_id, emoji)` |
 | "Did I react" | `exists` a `message_reactions` row for `(message_id, current_user_id, emoji)` |
@@ -107,6 +115,7 @@ only ever calls the store, never the adapter directly.
 - `getConversationTitle(conversation)`
 - `getLatestActivity(conversationId)`
 - `can(action, conversation)`
+- `canReason(action, conversation)` — added in LIME-34; `null` when `can()` is already true
 - `getMessage(id)` — added in LIME-24b (see "Deviations from the contract" below)
 
 ### Writes (async — each returns a `Promise` of the affected record)
@@ -117,7 +126,8 @@ only ever calls the store, never the adapter directly.
 - `renameConversation(id, name)`
 - `setStarred(id, bool)`
 - `setArchived(id, bool)`
-- `deleteConversation(id)` — a soft delete (`conversations.deleted_at`), not a row delete
+- `deleteConversation(id)` — a soft delete (`conversations.deleted_at`), not a row delete. Owner-only (`can('delete', …)`), removes it for everyone in it
+- `deleteForMe(id)` — added in LIME-34; sets only the **current user's own** `conversation_members.cleared_at`, never `conversations.deleted_at`. Available on any conversation the current user doesn't own (in practice, today, only ever exposed in the UI for DMs — Archive covers the same "make it go away for me" need for a group)
 - `markRead(conversationId)`
 - `updateProfile(patch)` — updates the **current user's own** profile.
   `patch` may only contain `display_name`, `pronouns`, `role`, `school`,
@@ -267,6 +277,15 @@ to Supabase directly in the first place.
 
 ## Known gaps, flagged rather than silently resolved
 
+- **"Delete for me" (`cleared_at`) hides messages at the store/UI layer
+  only, not via RLS.** `LimeStore.listMessages` filters out anything at
+  or before the reader's own `cleared_at`; the (still-commented-out)
+  `messages_select_member` policy in `schema.sql` does not, and doing so
+  properly would need its own per-row subquery against the reader's
+  `conversation_members.cleared_at` rather than the simple `is_member()`
+  check it has today. Not written, since nothing today needs that
+  guarantee to hold below the UI — worth a brief of its own if a real
+  backend ever needs the database itself to enforce it.
 - **Community `avatar_color` / `member_count`:** today's seed data gives
   `community`-type conversations two extra fields that don't fit this
   schema — `avatar_color` (presentational) and `member_count` (a stored
