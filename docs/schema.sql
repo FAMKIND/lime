@@ -32,6 +32,10 @@ create table profiles (
   subjects       text[],
   bio            text,
   timezone       text,
+  -- LIME-31. No seed teacher has one (the seed JSON never included a
+  -- phone field) — every seeded row normalizes to null, matching "no
+  -- column yet" from LIME-30's own read-only pass.
+  phone          text,
   status         text not null default 'offline' check (status in ('online', 'offline', 'busy')),
   avatar_url     text,
   created_at     timestamptz not null default now(),
@@ -160,6 +164,7 @@ create table message_reactions (
 --    them with the function owner's privileges, bypassing RLS for their
 --    own internal lookup, so calling them from a policy is safe.
 --
+-- alter table profiles enable row level security;
 -- alter table conversations enable row level security;
 -- alter table conversation_members enable row level security;
 -- alter table messages enable row level security;
@@ -202,6 +207,20 @@ create table message_reactions (
 --     where conversation_id = conv_id and user_id = current_profile_id() and role = 'owner'
 --   );
 -- $$;
+--
+-- -- ── profiles ───────────────────────────────────────────────
+-- -- LIME-31: any authenticated user may read any profile (names,
+-- -- avatars and titles throughout the app all resolve other people's
+-- -- profiles, not just your own — the same reasoning as communities
+-- -- being public-read). Only your own row can be updated, and only
+-- -- through updateProfile's whitelisted fields (data-model.md) — email
+-- -- and password are never written here at all, by design (see the
+-- -- auth seam), so there's no policy gap to worry about for those.
+-- create policy profiles_select_authenticated on profiles for select
+--   to authenticated
+--   using (true);
+-- create policy profiles_update_self on profiles for update
+--   using (id = current_profile_id());
 --
 -- -- ── conversations ──────────────────────────────────────────
 -- -- Members read the conversations they belong to. `deleted_at is null`

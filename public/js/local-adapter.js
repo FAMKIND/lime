@@ -34,8 +34,15 @@ const LocalAdapter = (function () {
     },
   };
 
+  // Bumped when the *shape* normalizeSeed produces changes, even if
+  // window.LIME_SEED_DATA and DEMO_MEMBER_STATE themselves didn't (LIME-31
+  // added profiles.phone) — otherwise an old snapshot, saved before that
+  // field existed, would still "validly" match the fingerprint and load
+  // with every profile silently missing it.
+  const PROFILE_SCHEMA_VERSION = 'phone-v1';
+
   function seedFingerprint() {
-    return hashString(JSON.stringify(window.LIME_SEED_DATA) + JSON.stringify(DEMO_MEMBER_STATE));
+    return hashString(JSON.stringify(window.LIME_SEED_DATA) + JSON.stringify(DEMO_MEMBER_STATE) + PROFILE_SCHEMA_VERSION);
   }
 
   // Builds the five normalized tables from the embedded seed — run once,
@@ -58,6 +65,9 @@ const LocalAdapter = (function () {
       subjects: t.subjects,
       bio: t.bio,
       timezone: t.timezone,
+      // LIME-31: no seed teacher has one — the seed JSON never included a
+      // phone field, so this normalizes to null for every seeded profile.
+      phone: t.phone || null,
       status: t.status,
       avatar_url: null,
       created_at: loadedAt,

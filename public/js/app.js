@@ -650,7 +650,12 @@ function initMessagesList() {
   // Shared by "All" and "Starred" (LIME-25) — same row shape, same
   // update-in-place/build-if-missing/drop-if-gone diff, just a different
   // target <ul> and (Starred only) source filter and empty-state message.
-  function syncSection(container, conversations, emptyMessage) {
+  // `forceRebuild` (LIME-31): updateRow only ever touches preview/time —
+  // a profile rename changes neither, so a plain sync wouldn't repaint a
+  // row's own name/avatar. Passing true skips the "update in place"
+  // branch entirely and always rebuilds, for the one event that actually
+  // needs it (lime:profile-changed, below).
+  function syncSection(container, conversations, emptyMessage, forceRebuild) {
     const sorted = sortConversations(conversations);
     if (sorted.length === 0 && emptyMessage) {
       container.innerHTML = '<li class="lime-contact-list__empty">' + escapeHtml(emptyMessage) + '</li>';
@@ -659,10 +664,12 @@ function initMessagesList() {
     const seenIds = new Set();
     sorted.forEach((conversation) => {
       seenIds.add(conversation.id);
-      let li = container.querySelector('[data-conversation-id="' + conversation.id + '"]');
+      let li = forceRebuild ? null : container.querySelector('[data-conversation-id="' + conversation.id + '"]');
       if (li) {
         updateRow(li, conversation);
       } else {
+        const existing = container.querySelector('[data-conversation-id="' + conversation.id + '"]');
+        if (existing) existing.remove();
         li = buildRow(conversation);
       }
       // appendChild on an already-attached node moves it — this both
@@ -694,6 +701,31 @@ function initMessagesList() {
   document.addEventListener('lime:messages-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
+  });
+
+  // LIME-31: "everywhere updates" for a profile change (own's or, once a
+  // future brief lets anyone else's change too, theirs) — rows (name,
+  // avatar cluster), the open thread's sender names/avatars, and the
+  // open conversation's header avatar group, all forced to rebuild fresh
+  // from the store rather than patched, since a rename touches fields
+  // none of the lighter per-row update paths above ever look at.
+  document.addEventListener('lime:profile-changed', () => {
+    messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }), null, true);
+    if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.', true);
+
+    if (currentConversationId) {
+      const conversation = LimeStore.getConversation(currentConversationId);
+      if (conversation) {
+        renderThread(currentConversationId);
+        if (crumbThread) crumbThread.textContent = LimeStore.getConversationTitle(conversation);
+        if (openProfileAvatars) {
+          openProfileAvatars.innerHTML = conversationHeaderAvatarsHtml(conversation);
+          openProfileAvatars.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+        }
+      }
+    }
+
+    updateProfileEverywhere();
   });
 
   // ── Conversation actions menu (LIME-25) ─────────────────
@@ -770,17 +802,45 @@ function initMessagesList() {
     selectConversation(messageConversations[0]);
   }
 
-  // LIME-30: the profile menu's static "shem@example.com"/"+1 555-0123"
-  // header, now the current user's real data. Phone is "or nothing" here
-  // (not "Not set", the settings pane's own convention) — this is a
-  // compact header, not a field list.
+  updateProfileEverywhere();
+}
+
+// LIME-30's profile-menu-header population, extended in LIME-31 to also
+// cover the sidebar's own user name/avatar (static "Shem R" until now,
+// never actually reactive to the session's real current user) — both
+// called once at init (from initMessagesList, above) and again on every
+// lime:profile-changed.
+function updateProfileEverywhere() {
+  const user = LimeStore.getCurrentUser();
+  if (!user) return;
+
+  // Profile menu header (LIME-30). Phone is "or nothing" here (not "Not
+  // set", the settings pane's own convention) — a compact header, not a
+  // field list.
   const profileMenuEmail = document.getElementById('profile-menu-email');
   const profileMenuPhone = document.getElementById('profile-menu-phone');
-  if (profileMenuEmail || profileMenuPhone) {
-    const user = LimeStore.getCurrentUser();
-    if (profileMenuEmail) profileMenuEmail.textContent = user.email || '';
-    if (profileMenuPhone) profileMenuPhone.textContent = user.phone || '';
-  }
+  if (profileMenuEmail) profileMenuEmail.textContent = user.email || '';
+  if (profileMenuPhone) profileMenuPhone.textContent = user.phone || '';
+
+  // Sidebar user name + avatar (LIME-31).
+  const sidebarAvatar = document.querySelector('#user-btn .lime-avatar');
+  const sidebarName = document.querySelector('#user-btn .lime-sidebar__user-name');
+  if (sidebarAvatar) repaintAvatar(sidebarAvatar, user.display_name);
+  if (sidebarName) sidebarName.textContent = shortName(user.display_name);
+}
+
+// Every existing paintAvatar call site before LIME-31 only ever painted a
+// brand-new element (renderThread/buildRow/etc. always build fresh
+// markup), so a stale lime-avatar--pN class was never a real scenario —
+// this is the first place that repaints an *existing* element in place,
+// so the old palette class has to be removed first or both would apply,
+// and whichever one wins would depend on stylesheet order, not on which
+// was painted more recently.
+function repaintAvatar(el, name) {
+  [...el.classList].forEach((c) => { if (/^lime-avatar--p\d+$/.test(c)) el.classList.remove(c); });
+  el.dataset.name = name;
+  el.textContent = '';
+  paintAvatar(el);
 }
 
 // LIME-25: the title caret's menu. One action today (Star); built as a
@@ -1439,15 +1499,17 @@ document.getElementById('reset-demo-data-btn')?.addEventListener('click', () => 
 });
 
 // ── Sign out ───────────────────────────────────────────────
-// Clears the mock session login.html stores on a successful sign-in
-// and sends the user back there. index.html has no auth-gate check on
-// load (a deliberate LIME-05a decision — a real gate would redirect
-// here on every direct open, breaking this whole workflow without a
-// real backend), so this only ends the *current* session; nothing
-// stops opening index.html directly again afterward.
+// index.html has no auth-gate check on load (a deliberate LIME-05a
+// decision — a real gate would redirect here on every direct open,
+// breaking this whole workflow without a real backend), so this only
+// ends the *current* session; nothing stops opening index.html directly
+// again afterward. LIME-31: the actual clear-session-and-redirect logic
+// now lives in LimeAuth.signOut() (the auth seam's own signOut, which
+// the Settings modal's own Sign out row also calls, via this same
+// button) — this handler just calls it, rather than the two duplicating
+// the same two lines.
 document.getElementById('sign-out-btn')?.addEventListener('click', () => {
-  localStorage.removeItem('lime-demo-session');
-  window.location.href = 'login.html';
+  LimeAuth.signOut();
 });
 
 // ── Notification click ───────────────────────────────────
@@ -1484,7 +1546,12 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
 // lets a caller point focus somewhere that's still actually visible
 // (Settings passes #user-btn, the dropdown's own always-visible trigger)
 // instead of the specific menu item that opened it.
-function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen, onClose }) {
+// `onBeforeClose` (LIME-31) — an optional veto: returning exactly `false`
+// cancels the close (Escape, backdrop click, and the close button all go
+// through this same path). Settings uses it to ask "Discard changes?"
+// before closing over an unsaved Profile edit; the search modal doesn't
+// pass one, so its own behavior is unaffected.
+function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen, onClose, onBeforeClose }) {
   const focusTarget = returnFocusTo || trigger;
 
   function focusable() {
@@ -1519,6 +1586,7 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
   }
 
   function close() {
+    if (onBeforeClose && onBeforeClose() === false) return;
     backdrop.classList.remove('is-open');
     modal.classList.remove('is-open');
     document.removeEventListener('keydown', onKeydown);
@@ -1558,10 +1626,10 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
   });
 })();
 
-// ── Settings modal (LIME-30) ──────────────────────────────
-// Profile menu → Settings. Read-only in this brief — both sections
-// render straight from LimeStore.getCurrentUser(); LIME-31 turns them
-// into editable forms inside this same shell.
+// ── Settings modal (LIME-30, editable as of LIME-31) ──────
+// Profile menu → Settings. Profile is a real form now, saved through
+// LimeStore.updateProfile; Login & security's Change buttons open inline
+// email/password forms through LimeAuth.
 (function () {
   const trigger        = document.getElementById('settings-btn');
   const backdrop       = document.getElementById('settings-modal-backdrop');
@@ -1572,6 +1640,17 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
   const navSearchInput = document.getElementById('settings-nav-search-input');
   if (!trigger || !modal || !nav || !pane) return;
 
+  const COMMON_TIMEZONES = [
+    'America/New_York',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'America/Anchorage',
+    'Pacific/Honolulu',
+  ];
+
+  const PROFILE_FIELD_KEYS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone'];
+
   // Kept in one place rather than derived from the DOM each time (the
   // brief's own "keep it simple" for the search filter) — row labels for
   // a section that isn't currently rendered aren't otherwise knowable.
@@ -1579,6 +1658,11 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     profile: ['Photo', 'Display name', 'Pronouns', 'Role', 'School', 'Grade levels', 'Subjects', 'Bio', 'Timezone', 'Phone'],
     security: ['Email', 'Password', 'Sign out'],
   };
+
+  // The Profile form's loaded values, for dirty-checking against the
+  // live inputs — reset every time renderProfileSection runs (a fresh
+  // load, a Discard, or a successful Save all count as "clean" again).
+  let profileOriginal = null;
 
   function paneHeaderHtml(title, description) {
     // The back chevron is part of the pane's own rendered content, not a
@@ -1601,16 +1685,100 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
       + '</div>';
   }
 
-  function valueRowHtml(label, value) {
-    return rowHtml(label, '<div class="lime-settings__row-value">' + escapeHtml(value) + '</div>');
+  function fieldHtml(key, label, value, inputAttrs) {
+    return '<div class="lime-settings__field" data-field="' + key + '" data-row-label="' + escapeHtml(label) + '">'
+      + '<label class="lime-settings__field-label" for="settings-field-' + key + '">' + escapeHtml(label) + '</label>'
+      + '<input class="seed-input" id="settings-field-' + key + '" ' + (inputAttrs || 'type="text"') + ' value="' + escapeHtml(value || '') + '">'
+      + '<p class="lime-settings__field-error"></p>'
+      + '</div>';
   }
 
-  function listOrNotSet(list) {
-    return (list && list.length) ? list.join(', ') : 'Not set';
+  function textareaFieldHtml(key, label, value) {
+    return '<div class="lime-settings__field" data-field="' + key + '" data-row-label="' + escapeHtml(label) + '">'
+      + '<label class="lime-settings__field-label" for="settings-field-' + key + '">' + escapeHtml(label) + '</label>'
+      + '<textarea class="seed-input" id="settings-field-' + key + '">' + escapeHtml(value || '') + '</textarea>'
+      + '<p class="lime-settings__field-error"></p>'
+      + '</div>';
+  }
+
+  function timezoneFieldHtml(value) {
+    // The current value is always in the list, even if it isn't one of
+    // the "common" ones — otherwise selecting it would silently jump to
+    // whatever the <select> defaults to, changing the profile's own
+    // timezone as a side effect of just opening the form.
+    const zones = (value && !COMMON_TIMEZONES.includes(value)) ? [value].concat(COMMON_TIMEZONES) : COMMON_TIMEZONES;
+    const options = zones.map((z) => '<option value="' + escapeHtml(z) + '"' + (z === value ? ' selected' : '') + '>' + escapeHtml(z) + '</option>').join('');
+    return '<div class="lime-settings__field" data-field="timezone" data-row-label="Timezone">'
+      + '<label class="lime-settings__field-label" for="settings-field-timezone">Timezone</label>'
+      + '<select class="seed-input" id="settings-field-timezone">' + options + '</select>'
+      + '<p class="lime-settings__field-error"></p>'
+      + '</div>';
+  }
+
+  function fieldErrorEl(key) {
+    const field = pane.querySelector('[data-field="' + key + '"]');
+    return field && field.querySelector('.lime-settings__field-error');
+  }
+
+  function clearFieldError(key) {
+    const field = pane.querySelector('[data-field="' + key + '"]');
+    if (!field) return;
+    field.classList.remove('has-error');
+    const errorEl = fieldErrorEl(key);
+    if (errorEl) errorEl.textContent = '';
+  }
+
+  function setFieldError(key, message) {
+    const field = pane.querySelector('[data-field="' + key + '"]');
+    if (!field) return;
+    field.classList.add('has-error');
+    const errorEl = fieldErrorEl(key);
+    if (errorEl) errorEl.textContent = message;
+  }
+
+  function getProfileFormValues() {
+    const values = {};
+    PROFILE_FIELD_KEYS.forEach((key) => {
+      const el = document.getElementById('settings-field-' + key);
+      if (el) values[key] = el.value;
+    });
+    return values;
+  }
+
+  function isProfileFormDirty() {
+    if (!profileOriginal) return false;
+    const current = getProfileFormValues();
+    return PROFILE_FIELD_KEYS.some((key) => current[key] !== profileOriginal[key]);
+  }
+
+  function updateSaveBarVisibility() {
+    const saveBar = document.getElementById('settings-save-bar');
+    if (saveBar) saveBar.classList.toggle('is-visible', isProfileFormDirty());
+  }
+
+  // The brief's own "leaving the section, or closing the modal, with
+  // unsaved changes" gate — one function, called from every place that
+  // can navigate away from a dirty Profile form (switching nav sections,
+  // the mobile back chevron, and closing the modal itself via
+  // createModal's onBeforeClose). Returns false to mean "stay put."
+  function confirmDiscardIfDirty() {
+    if (!isProfileFormDirty()) return true;
+    return window.confirm('Discard changes?');
   }
 
   function renderProfileSection() {
     const user = LimeStore.getCurrentUser();
+    profileOriginal = {
+      display_name: user.display_name || '',
+      pronouns: user.pronouns || '',
+      role: user.role || '',
+      school: user.school || '',
+      grade_levels: (user.grade_levels || []).join(', '),
+      subjects: (user.subjects || []).join(', '),
+      bio: user.bio || '',
+      timezone: user.timezone || '',
+      phone: user.phone || '',
+    };
     pane.innerHTML = paneHeaderHtml('Profile', 'Your details as others see them across Lime.')
       + '<div class="lime-settings__rows">'
       + rowHtml('Photo', '<div class="lime-settings__row-control">'
@@ -1618,32 +1786,188 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
         + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" disabled>Upload photo</button>'
         + '<span class="lime-badge--soon">Soon</span>'
         + '</div>')
-      + valueRowHtml('Display name', user.display_name || 'Not set')
-      + valueRowHtml('Pronouns', user.pronouns || 'Not set')
-      + valueRowHtml('Role', user.role || 'Not set')
-      + valueRowHtml('School', user.school || 'Not set')
-      + valueRowHtml('Grade levels', listOrNotSet(user.grade_levels))
-      + valueRowHtml('Subjects', listOrNotSet(user.subjects))
-      + valueRowHtml('Bio', user.bio || 'Not set')
-      + valueRowHtml('Timezone', user.timezone || 'Not set')
-      + valueRowHtml('Phone', user.phone || 'Not set')
+      + '</div>'
+      + '<div class="lime-settings__form" id="settings-profile-form">'
+      + fieldHtml('display_name', 'Display name', profileOriginal.display_name)
+      + fieldHtml('pronouns', 'Pronouns', profileOriginal.pronouns)
+      + fieldHtml('role', 'Role', profileOriginal.role)
+      + fieldHtml('school', 'School', profileOriginal.school)
+      + fieldHtml('grade_levels', 'Grade levels', profileOriginal.grade_levels)
+      + fieldHtml('subjects', 'Subjects', profileOriginal.subjects)
+      + textareaFieldHtml('bio', 'Bio', profileOriginal.bio)
+      + timezoneFieldHtml(profileOriginal.timezone)
+      + fieldHtml('phone', 'Phone', profileOriginal.phone)
+      + '</div>'
+      + '<div class="lime-settings__save-bar" id="settings-save-bar">'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-discard-btn">Discard</button>'
+      + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="settings-save-btn">Save</button>'
       + '</div>';
     pane.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+
+    const form = document.getElementById('settings-profile-form');
+    if (form) form.addEventListener('input', updateSaveBarVisibility);
+
+    const discardBtn = document.getElementById('settings-discard-btn');
+    if (discardBtn) discardBtn.addEventListener('click', renderProfileSection);
+
+    const saveBtn = document.getElementById('settings-save-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        const values = getProfileFormValues();
+        PROFILE_FIELD_KEYS.forEach(clearFieldError);
+
+        if (!values.display_name.trim()) {
+          setFieldError('display_name', 'Display name is required.');
+          return;
+        }
+        const phone = values.phone.trim();
+        // Loose, per the brief: digits, spaces, +, -, (). Empty is fine
+        // (phone isn't required) — only a non-empty value gets checked.
+        if (phone && !/^[\d\s()+-]+$/.test(phone)) {
+          setFieldError('phone', 'Enter a valid phone number.');
+          return;
+        }
+
+        const patch = {
+          display_name: values.display_name.trim(),
+          pronouns: values.pronouns.trim() || null,
+          role: values.role.trim() || null,
+          school: values.school.trim() || null,
+          grade_levels: values.grade_levels.split(',').map((s) => s.trim()).filter(Boolean),
+          subjects: values.subjects.split(',').map((s) => s.trim()).filter(Boolean),
+          bio: values.bio.trim() || null,
+          timezone: values.timezone,
+          phone: phone || null,
+        };
+        saveBtn.disabled = true;
+        LimeStore.updateProfile(patch).then(() => {
+          renderProfileSection(); // fresh values, and clears the dirty state
+        }).catch((err) => {
+          saveBtn.disabled = false;
+          setFieldError('display_name', err.message);
+        });
+      });
+    }
   }
 
-  function changeRowHtml(label, value) {
+  function changeRowHtml(key, label, value) {
     return rowHtml(label, '<div class="lime-settings__row-control">'
       + '<span class="lime-settings__row-value">' + escapeHtml(value) + '</span>'
-      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" disabled>Change</button>'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" data-change="' + key + '">Change</button>'
       + '</div>');
+  }
+
+  function passwordFieldHtml(id, label) {
+    return '<div class="lime-settings__field" data-field="' + id + '">'
+      + '<label class="lime-settings__field-label" for="settings-' + id + '">' + escapeHtml(label) + '</label>'
+      + '<div class="lime-password-field">'
+      + '<input class="seed-input" id="settings-' + id + '" type="password">'
+      + '<button type="button" class="lime-password-field__toggle" aria-label="Show password"><span class="dew dew-eye-closed"></span></button>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function emailChangeFormHtml() {
+    return '<div class="lime-settings__inline-form" id="settings-inline-email">'
+      + '<div class="lime-settings__field" data-field="new_email">'
+      + '<label class="lime-settings__field-label" for="settings-new-email">New email</label>'
+      + '<input class="seed-input" id="settings-new-email" type="email">'
+      + '</div>'
+      + '<p class="lime-settings__inline-error" id="settings-email-error" hidden></p>'
+      + '<div class="lime-settings__inline-form-actions">'
+      + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="settings-email-save-btn">Save</button>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function passwordChangeFormHtml() {
+    return '<div class="lime-settings__inline-form" id="settings-inline-password">'
+      + passwordFieldHtml('current-password', 'Current password')
+      + passwordFieldHtml('new-password', 'New password')
+      + passwordFieldHtml('confirm-password', 'Confirm new password')
+      + '<p class="lime-settings__inline-error" id="settings-password-error" hidden></p>'
+      + '<p class="lime-settings__inline-success" id="settings-password-success" hidden></p>'
+      + '<div class="lime-settings__inline-form-actions">'
+      + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="settings-password-save-btn">Save</button>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function wireEmailForm() {
+    const saveBtn = document.getElementById('settings-email-save-btn');
+    if (!saveBtn) return;
+    saveBtn.addEventListener('click', () => {
+      const input = document.getElementById('settings-new-email');
+      const errorEl = document.getElementById('settings-email-error');
+      errorEl.hidden = true;
+      saveBtn.disabled = true;
+      LimeAuth.changeEmail(input.value).then(() => {
+        renderSecuritySection(); // fresh render shows the new email; the inline form goes with it
+      }).catch((err) => {
+        saveBtn.disabled = false;
+        errorEl.textContent = err.message;
+        errorEl.hidden = false;
+      });
+    });
+  }
+
+  function wirePasswordForm() {
+    const saveBtn = document.getElementById('settings-password-save-btn');
+    if (!saveBtn) return;
+    saveBtn.addEventListener('click', () => {
+      const current = document.getElementById('settings-current-password').value;
+      const next = document.getElementById('settings-new-password').value;
+      const confirm = document.getElementById('settings-confirm-password').value;
+      const errorEl = document.getElementById('settings-password-error');
+      const successEl = document.getElementById('settings-password-success');
+      errorEl.hidden = true;
+      successEl.hidden = true;
+      saveBtn.disabled = true;
+      LimeAuth.changePassword({ current, next, confirm }).then((result) => {
+        saveBtn.disabled = false;
+        successEl.textContent = result.message;
+        successEl.hidden = false;
+        ['settings-current-password', 'settings-new-password', 'settings-confirm-password'].forEach((id) => {
+          document.getElementById(id).value = '';
+        });
+      }).catch((err) => {
+        saveBtn.disabled = false;
+        errorEl.textContent = err.message;
+        errorEl.hidden = false;
+      });
+    });
+  }
+
+  // Only one inline form open at a time; clicking an already-open row's
+  // Change button again closes it (a plain toggle).
+  function toggleInlineForm(key) {
+    const existingId = 'settings-inline-' + key;
+    const existing = document.getElementById(existingId);
+    pane.querySelectorAll('.lime-settings__inline-form').forEach((el) => el.remove());
+    if (existing) return; // was open — the remove() above already closed it
+
+    const rowLabel = key === 'email' ? 'Email' : 'Password';
+    const row = pane.querySelector('[data-row-label="' + rowLabel + '"]');
+    if (!row) return;
+    if (key === 'email') {
+      row.insertAdjacentHTML('afterend', emailChangeFormHtml());
+      wireEmailForm();
+      const input = document.getElementById('settings-new-email');
+      if (input) input.focus();
+    } else {
+      row.insertAdjacentHTML('afterend', passwordChangeFormHtml());
+      wirePasswordForm();
+      const input = document.getElementById('settings-current-password');
+      if (input) input.focus();
+    }
   }
 
   function renderSecuritySection() {
     const user = LimeStore.getCurrentUser();
     pane.innerHTML = paneHeaderHtml('Login & security', 'How you sign in, and how to sign out.')
       + '<div class="lime-settings__rows">'
-      + changeRowHtml('Email', user.email || 'Not set')
-      + changeRowHtml('Password', '••••••••')
+      + changeRowHtml('email', 'Email', user.email || 'Not set')
+      + changeRowHtml('password', 'Password', '••••••••')
       + rowHtml('Sign out', '<div class="lime-settings__row-control"><button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-sign-out-btn">Sign out</button></div>')
       + '</div>';
   }
@@ -1654,29 +1978,37 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
   ];
 
   function showSection(id) {
+    if (!confirmDiscardIfDirty()) return false;
     nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
       btn.classList.toggle('is-active', btn.dataset.settingsSection === id);
     });
     const section = SETTINGS_SECTIONS.find((s) => s.id === id);
     if (section) section.render();
     pane.scrollTop = 0;
+    return true;
   }
 
   nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
     btn.addEventListener('click', () => {
-      showSection(btn.dataset.settingsSection);
-      modal.classList.add('is-showing-section'); // only visible ≤767px
+      if (showSection(btn.dataset.settingsSection)) {
+        modal.classList.add('is-showing-section'); // only visible ≤767px
+      }
     });
   });
 
-  // Delegated (not a direct listener on #settings-back) so it survives
+  // Delegated (not a direct listener on any one button) so these survive
   // every pane.innerHTML replacement without being re-attached each time.
   pane.addEventListener('click', (e) => {
-    if (e.target.closest('.lime-settings__back')) modal.classList.remove('is-showing-section');
-  });
-
-  pane.addEventListener('click', (e) => {
-    if (e.target.closest('#settings-sign-out-btn')) document.getElementById('sign-out-btn')?.click();
+    if (e.target.closest('.lime-settings__back')) {
+      if (confirmDiscardIfDirty()) modal.classList.remove('is-showing-section');
+      return;
+    }
+    if (e.target.closest('#settings-sign-out-btn')) {
+      document.getElementById('sign-out-btn')?.click();
+      return;
+    }
+    const changeBtn = e.target.closest('[data-change]');
+    if (changeBtn) toggleInlineForm(changeBtn.dataset.change);
   });
 
   function filterSettings() {
@@ -1690,7 +2022,10 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
       btn.style.display = matches ? '' : 'none';
     });
     let firstMatch = null;
-    pane.querySelectorAll('.lime-settings__row').forEach((row) => {
+    // .lime-settings__field too (LIME-31) — Profile's editable fields
+    // aren't .lime-settings__row anymore, but still need the same
+    // highlight-and-scroll-into-view treatment.
+    pane.querySelectorAll('.lime-settings__row, .lime-settings__field').forEach((row) => {
       const isMatch = !!query && (row.dataset.rowLabel || '').toLowerCase().includes(query);
       row.classList.toggle('is-highlighted', isMatch);
       if (isMatch && !firstMatch) firstMatch = row;
@@ -1708,6 +2043,7 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     // nothing (see createModal's own comment). #user-btn is that
     // dropdown's own trigger and stays visible regardless.
     returnFocusTo: document.getElementById('user-btn'),
+    onBeforeClose: confirmDiscardIfDirty,
     onOpen: () => {
       if (navSearchInput) navSearchInput.value = '';
       modal.classList.remove('is-showing-section');

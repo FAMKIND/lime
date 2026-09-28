@@ -1445,6 +1445,122 @@ body {
   text-align: right;
 }
 
+/* ── Settings form fields (LIME-31) — Profile's own editable form, and
+   the inline email/password change forms under Login & security. Label
+   sits above the input (not the read-only rows' label-left/value-right
+   above), since an input, a textarea and a comma-list field all read
+   better with room to grow downward than squeezed into a value column. */
+.lime-settings__field {
+  margin-bottom: var(--seed-space-4);
+}
+
+.lime-settings__field-label {
+  display: block;
+  margin-bottom: var(--seed-space-1);
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+}
+
+.lime-settings__field textarea.seed-input {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.lime-settings__field-error {
+  margin: var(--seed-space-1) 0 0;
+  font-size: var(--seed-text-xs);
+  color: var(--bad-text-bold-default);
+}
+
+.lime-settings__field.has-error .seed-input {
+  border-color: var(--bad-text-bold-default);
+}
+
+/* Only shown while the Profile form is dirty (app.js toggles is-visible)
+   — Save is the one place in this modal lime is allowed, as the primary
+   action, per LIME-21b's "lime is reserved for nav and primary actions." */
+.lime-settings__save-bar {
+  display: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--seed-space-3);
+  margin-top: var(--seed-space-6);
+  padding-top: var(--seed-space-4);
+  border-top: 1px solid var(--soil-border-subtle);
+}
+
+.lime-settings__save-bar.is-visible {
+  display: flex;
+}
+
+/* The inline email/password change form that opens under its own row
+   (Login & security's "Change" button) — a plain block sibling of that
+   row, not nested inside its flex layout, so it naturally spans the
+   pane's full width instead of being squeezed into the row's value column. */
+.lime-settings__inline-form {
+  padding: 0 0 var(--seed-space-4);
+  border-bottom: 1px solid var(--soil-border-subtle);
+}
+
+.lime-settings__inline-form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  margin-top: var(--seed-space-3);
+}
+
+.lime-settings__inline-success {
+  margin-top: var(--seed-space-2);
+  font-size: var(--seed-text-xs);
+  color: var(--good-text-bold-default);
+}
+
+.lime-settings__inline-error {
+  margin-top: var(--seed-space-2);
+  font-size: var(--seed-text-xs);
+  color: var(--bad-text-bold-default);
+}
+
+/* Ported from auth.css (LIME-31) — that stylesheet is only ever loaded
+   by login.html/signup.html, not index.html, and pulling the whole file
+   in just for these 5 rules risked colliding with its other, page-level
+   auth styles. The password-change form under Login & security reuses
+   the exact same .lime-password-field markup login.html already has. */
+.lime-password-field {
+  position: relative;
+}
+
+.lime-password-field .seed-input {
+  padding-right: 40px;
+}
+
+.lime-password-field__toggle {
+  position: absolute;
+  top: 50%;
+  right: var(--seed-space-2);
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--soil-text-muted);
+  cursor: pointer;
+  border-radius: var(--seed-radius-sm);
+}
+
+.lime-password-field__toggle:hover {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+}
+
+.lime-password-field__toggle .dew {
+  font-size: 16px;
+}
+
 @media (max-width: 767px) {
   .lime-settings {
     top: 0;

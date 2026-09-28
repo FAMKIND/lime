@@ -110,12 +110,27 @@ only ever calls the store, never the adapter directly.
 - `setArchived(id, bool)`
 - `deleteConversation(id)` — a soft delete (`conversations.deleted_at`), not a row delete
 - `markRead(conversationId)`
+- `updateProfile(patch)` — updates the **current user's own** profile.
+  `patch` may only contain `display_name`, `pronouns`, `role`, `school`,
+  `grade_levels`, `subjects`, `bio`, `timezone`, `phone`; any other key
+  rejects the whole call (nothing partially applies). `display_name`, if
+  present in the patch, may not be empty. **Email and password are never
+  accepted here** — they belong to the auth seam below, not this
+  whitelist, because on Supabase they're auth-provider concerns, not
+  columns this call would ever be allowed to touch directly.
 
 ### Events (dispatched on `document`)
 
 - `lime:conversations-changed`
 - `lime:messages-changed`
 - `lime:reactions-changed`
+- `lime:profile-changed` — `detail: { profileId }`. Fired by
+  `updateProfile` and by the auth seam's `changeEmail` (which updates
+  `profiles.email` too, once the auth-provider-side change succeeds).
+  Anything rendering a profile's name, avatar initials, or email
+  (sidebar, profile menu header, contact rows, thread sender names, the
+  settings pane itself) subscribes to this rather than re-deriving on a
+  timer.
 
 Each carries `detail: { conversationId, messageId?, kind }`. `kind`
 distinguishes what changed within that category (e.g. a new message vs. a
@@ -165,6 +180,50 @@ would simply never have matched).
 Nothing else in the UI changes, because nothing else in the UI calls
 anything auth-related directly — `getCurrentUserId()` is the only seam.
 
+### `auth.js` — the write half of the auth seam (LIME-31)
+
+`getCurrentUserId()` above is the *read* half of the auth seam (who am
+I); `auth.js` is the *write* half (change who I am, or how I sign in).
+Three functions, all returning Promises, all called directly by the UI —
+never through `LimeStore`, since email and password are explicitly **not**
+`updateProfile`'s concern (production-ready rule: they belong to the auth
+provider, not `profiles`).
+
+- **`changeEmail(newEmail)`**
+  - **Local:** validates the format, rejects if another profile already
+    has that email (`LimeStore.findProfileByEmail`), then writes
+    `profiles.email` (via a narrow store method, not `updateProfile` —
+    see "Deviations" below) and updates the `email` field inside the
+    `lime-demo-session` `localStorage` value, so the session still
+    resolves to the same profile on the next `LimeStore.init()`. Without
+    that second part, changing your email would silently log you back in
+    as `teacher-002` (the fallback) on your very next reload, since
+    `getCurrentUserId()` would no longer find a profile matching the
+    session's stale email.
+  - **Supabase:** `supabase.auth.updateUser({ email })`, which sends a
+    confirmation email and only takes effect once it's clicked —
+    `profiles.email` updates via a database trigger on that
+    confirmation, not synchronously in this function. The local version's
+    "succeeds immediately" behavior is a deliberate simplification for
+    the prototype, not a preview of production behavior.
+- **`changePassword({ current, next, confirm })`**
+  - **Local:** validates only — `next` is at least 8 characters, `next`
+    differs from `current`, and `next` matches `confirm`. **Stores
+    nothing, anywhere, in any form** — there is no real password to check
+    `current` against locally (the demo login's one hardcoded credential
+    lives in the gitignored `demo-config.local.js`, which this module
+    never reads), so `current` is validated for shape only, never
+    verified. Resolves with a message the UI shows as-is: "Password
+    changes take effect once connected to the real account system."
+  - **Supabase:** `supabase.auth.updateUser({ password })`, after
+    Supabase itself re-authenticates `current` server-side (this module
+    would still send `current`, just to Supabase instead of validating it
+    locally).
+- **`signOut()`** — clears `lime-demo-session` and redirects to
+  `login.html`. Identical to what `#sign-out-btn`'s own handler already
+  did before this brief; that handler now just calls this instead, so
+  the logic exists in exactly one place.
+
 ## The switch checklist
 
 When it's time to point this app at a real, shared Supabase project instead
@@ -186,7 +245,12 @@ of `localStorage`:
 5. Run `seed-data/seed.ts` against the new database (it's fixed to use the
    corrected reactor rule in LIME-24b — no longer a blocker by the time
    this checklist is used for real).
-6. Flip `LIME_BACKEND` from `'local'` to `'supabase'`.
+6. Swap `auth.js`'s local `changeEmail`/`changePassword` bodies for their
+   Supabase equivalents (`supabase.auth.updateUser({ email })` /
+   `updateUser({ password })`) — same function names and signatures, so
+   nothing calling `LimeAuth.changeEmail`/`changePassword` needs to change.
+   `signOut()` swaps to `supabase.auth.signOut()`.
+7. Flip `LIME_BACKEND` from `'local'` to `'supabase'`.
 
 Nothing else changes — the store, the events, and every UI call site stay
 exactly as they are, because they were never talking to `localStorage` or
@@ -230,3 +294,21 @@ updated to this rule as of LIME-24b** — see that brief's `TEND.md` entry.
   already covered it, per the very first draft of this doc) — LIME-19b's
   old separate `sendReply`/`lime:activity` pair from `data.js` is what's
   gone now, not anything this contract promised.
+
+## Deviations from the contract (LIME-31)
+
+- **Added `findProfileByEmail(email)`** to the reads — `changeEmail`'s own
+  uniqueness check ("checks format and uniqueness against profiles," per
+  the brief's own words) has no other way to ask "does any profile
+  already have this email" without it. A plain lookup, same shape as
+  `getMessage(id)`'s own justification in LIME-24b.
+- **Added `setProfileEmail(id, email)`** to the writes — a narrow,
+  internal write, **not** part of `updateProfile`'s whitelist and not
+  meant to be called from UI code directly. `auth.js`'s `changeEmail` is
+  its only caller: locally, there's no separate `auth.users` table for
+  email to live on, so this is what actually writes `profiles.email`
+  after `changeEmail`'s own validation passes — playing the same role a
+  real Supabase trigger plays after a confirmed `auth.users` email
+  change. Emits the same `lime:profile-changed` event `updateProfile`
+  does, since email is still profile data from the UI's own rendering
+  perspective (it shows in Login & security and the profile menu header).

@@ -95,6 +95,14 @@ const LimeStore = (function () {
     return profiles.get(id) || null;
   }
 
+  // Not in docs/data-model.md's original contract list — added in LIME-31
+  // (see "Deviations from the contract" there) so changeEmail's own
+  // uniqueness check has a way to ask "does any profile already have this
+  // email" without reaching into the cache directly.
+  function findProfileByEmail(email) {
+    return [...profiles.values()].find((p) => p.email === email) || null;
+  }
+
   function getCurrentUserId() {
     return currentUserId;
   }
@@ -309,6 +317,40 @@ const LimeStore = (function () {
     return Promise.resolve(membership);
   }
 
+  // LIME-31. Email and password are deliberately absent from this list —
+  // they're the auth seam's concern (auth.js), not this whitelist; see
+  // docs/data-model.md's production-ready rules.
+  const PROFILE_EDITABLE_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone'];
+
+  function updateProfile(patch) {
+    const profile = getProfile(currentUserId);
+    if (!profile) return Promise.reject(new Error('LimeStore: no current profile'));
+    const keys = Object.keys(patch || {});
+    const invalidKeys = keys.filter((k) => !PROFILE_EDITABLE_FIELDS.includes(k));
+    if (invalidKeys.length > 0) {
+      return Promise.reject(new Error('LimeStore.updateProfile: not editable — ' + invalidKeys.join(', ')));
+    }
+    if (keys.includes('display_name') && !patch.display_name.trim()) {
+      return Promise.reject(new Error('Display name is required.'));
+    }
+    Object.assign(profile, patch, { updated_at: new Date().toISOString() });
+    scheduleSave();
+    emit('lime:profile-changed', { profileId: profile.id });
+    return Promise.resolve(profile);
+  }
+
+  // Not part of updateProfile's whitelist — auth.js's changeEmail is the
+  // only intended caller (see docs/data-model.md's "Deviations" section).
+  function setProfileEmail(id, email) {
+    const profile = getProfile(id);
+    if (!profile) return Promise.reject(new Error('LimeStore: no such profile'));
+    profile.email = email;
+    profile.updated_at = new Date().toISOString();
+    scheduleSave();
+    emit('lime:profile-changed', { profileId: id });
+    return Promise.resolve(profile);
+  }
+
   // ── lifecycle ──────────────────────────────────────────────
 
   function init() {
@@ -329,6 +371,7 @@ const LimeStore = (function () {
     init,
     reset,
     getProfile,
+    findProfileByEmail,
     getCurrentUserId,
     getCurrentUser,
     getConversation,
@@ -350,6 +393,8 @@ const LimeStore = (function () {
     setArchived,
     deleteConversation,
     markRead,
+    updateProfile,
+    setProfileEmail,
   };
 })();
 
