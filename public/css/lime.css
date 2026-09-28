@@ -1062,6 +1062,26 @@ body {
   flex-shrink: 0;
 }
 
+/* Inline rename (LIME-26) — swaps in as a sibling of #crumb-thread
+   (never replaces it, so its existing click listeners elsewhere in
+   app.js stay bound); width is set inline by app.js's startRename,
+   clamped between this min-width and the breadcrumb row's own space. */
+.lime-rename-input {
+  font: inherit;
+  color: var(--soil-text);
+  background: var(--soil-bg-surface);
+  border: 1px solid var(--calm-border-normal-default);
+  border-radius: var(--seed-radius-md);
+  padding: 1px var(--seed-space-2);
+  min-width: 120px;
+  max-width: 100%;
+}
+
+.lime-rename-input:focus {
+  outline: none;
+  box-shadow: var(--seed-shadow-focus);
+}
+
 /* The local contacts search field stays mobile-only — desktop/tablet
    use the nav sidebar's global search instead. Breadcrumbs used to be
    mobile-only too (tablet/desktop showed both/all panels at once, so
@@ -1277,6 +1297,72 @@ body {
 
 .lime-modal-backdrop.is-open {
   display: block;
+}
+
+/* ─────────────────────────────────────────────────────
+   CONFIRM DIALOG (LIME-26) — the app's own confirmDialog(), built on
+   createModal + the shared blurred backdrop above. One static instance
+   in the DOM, its content and button labels rewritten per call (see
+   app.js's confirmDialog) rather than built fresh each time — replaces
+   both native window.confirm() calls (Reset demo data, Settings'
+   "Discard changes?") plus Delete's own confirmation.
+───────────────────────────────────────────────────── */
+
+.lime-confirm-dialog {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(400px, calc(100vw - 32px));
+  background: var(--soil-bg-elevated);
+  border-radius: var(--seed-radius-lg);
+  box-shadow: var(--seed-shadow-xl);
+  z-index: var(--seed-z-modal);
+  padding: var(--seed-space-6);
+}
+
+.lime-confirm-dialog.is-open {
+  display: block;
+}
+
+.lime-confirm-dialog__title {
+  margin: 0 0 var(--seed-space-2);
+  font-size: var(--seed-text-base);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+}
+
+.lime-confirm-dialog__message {
+  margin: 0 0 var(--seed-space-5);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+}
+
+.lime-confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--seed-space-3);
+}
+
+/* Deliberately not .seed-button--danger — that variant is Seed's own
+   softer "subtle bg + danger text" style. The brief calls for the bold
+   solid-red-with-white-text treatment specifically for this one button,
+   so it's a small scoped override instead of a new Seed variant. */
+.lime-confirm-dialog__confirm--danger {
+  background: var(--bad-bg-bold-default);
+  border-color: var(--bad-bg-bold-default);
+  color: #fff;
+}
+
+.lime-confirm-dialog__confirm--danger:hover {
+  background: var(--bad-bg-bold-hover);
+  border-color: var(--bad-bg-bold-hover);
+}
+
+.lime-confirm-dialog__confirm--danger:active {
+  background: var(--bad-bg-bold-active);
+  border-color: var(--bad-bg-bold-active);
 }
 
 /* ─────────────────────────────────────────────────────

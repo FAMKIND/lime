@@ -298,6 +298,22 @@
                     </div>
                   </div>
                 </section>
+
+                <section class="lime-section" data-section-id="archived" data-default-collapsed="true" hidden>
+                  <button class="lime-section__toggle" aria-expanded="false">
+                    <span class="dew dew-chevron-down"></span>
+                    <h3>Archived</h3>
+                  </button>
+                  <div class="lime-section__body">
+                    <div class="lime-section__body-inner">
+                      <!-- Rendered from LimeStore by app.js (LIME-26): every
+                           conversation the current user has archived. hidden
+                           (above) is toggled by app.js — this section doesn't
+                           show at all while there's nothing archived. -->
+                      <ul class="lime-contact-list" id="archived-list"></ul>
+                    </div>
+                  </div>
+                </section>
               </div>
 
               <!-- Communities scope -->
@@ -610,6 +626,19 @@
     <div class="lime-settings__pane" id="settings-pane">
       <!-- Rendered by app.js: a header (title + muted description) and
            label/value rows, one section at a time. -->
+    </div>
+  </div>
+
+  <!-- The app's own confirm dialog (LIME-26) — one static instance, its
+       content and button labels rewritten per call by app.js's own
+       confirmDialog(). Replaces window.confirm() everywhere it was used. -->
+  <div class="lime-modal-backdrop" id="confirm-dialog-backdrop"></div>
+  <div class="lime-confirm-dialog" id="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
+    <h2 class="lime-confirm-dialog__title" id="confirm-dialog-title"></h2>
+    <p class="lime-confirm-dialog__message" id="confirm-dialog-message"></p>
+    <div class="lime-confirm-dialog__actions">
+      <button type="button" class="seed-button seed-button--secondary seed-button--sm" id="confirm-dialog-cancel">Cancel</button>
+      <button type="button" class="seed-button seed-button--primary seed-button--sm" id="confirm-dialog-confirm">Confirm</button>
     </div>
   </div>
 

@@ -40,6 +40,15 @@ make the switch."
    for rename and delete; communities are public-read. The UI checks
    through one `can(action, conversation)` helper, so the rule lives in
    exactly one place instead of being re-implemented at each call site.
+   **DMs have no owner** (no `created_by`, and `can()`'s own `isOwner`
+   check is false for everyone in one as a result) — LIME-26's own
+   decision: a DM's title menu offers Star and Archive only, never
+   Rename (its title is always the other person, not something to
+   rename) or Delete (archiving is "remove it for me"; there's no
+   "delete for everyone" for a DM in v1). A group the current user
+   doesn't own gets the same Star-and-Archive-only treatment, for the
+   same ownership reason — "Leave group" (distinct from Delete, which
+   only an owner can do) is a later brief.
 8. **UI preferences stay separate.** Panel widths, collapsed sections,
    theme — these are device preferences, not data, and keep their own
    `localStorage` keys outside this contract entirely.

@@ -232,6 +232,15 @@ function paintAvatar(el) {
 // the app in jsdom before committing, not by reasoning about it.
 const registeredDropdowns = new Set();
 
+// LIME-26: CONVERSATION_ACTIONS (below) is module-scope, but Rename and
+// Delete need a couple of functions that only exist inside
+// initMessagesList's own closure (startRename touches #crumb-thread and
+// the rename input directly; selectTopOrEmpty needs the live
+// messageConversations list). initMessagesList fills these in once, at
+// the end of its own setup — the same bridge-object pattern as
+// registeredDropdowns above, just for a different scope gap.
+const conversationActionHooks = { startRename: null, selectTopOrEmpty: null };
+
 function initMessagesList() {
   const list = document.getElementById('contacts-list');
   const thread = document.getElementById('thread-messages');
@@ -557,6 +566,111 @@ function initMessagesList() {
     renderThread(conversation.id);
   }
 
+  // LIME-26: after Delete, the conversation menu always acts on
+  // currentConversationId (there's no per-row menu in this app — the
+  // caret lives in the topbar for whichever thread is open), so the
+  // deleted conversation was always the open one. messageConversations
+  // is already fresh by the time this runs — deleteConversation's own
+  // emit fires its lime:conversations-changed listener synchronously,
+  // before this function is even called.
+  function selectTopOrEmpty() {
+    if (messageConversations.length > 0) {
+      selectConversation(messageConversations[0]);
+      return;
+    }
+    currentConversationId = null;
+    document.querySelectorAll('.lime-contact').forEach((el) => el.classList.remove('lime-contact--active'));
+    if (crumbThread) crumbThread.textContent = '';
+    if (openProfileAvatars) openProfileAvatars.innerHTML = '';
+    thread.innerHTML = '<p class="lime-messages__empty">No conversations left. Start one from the sidebar.</p>';
+  }
+
+  // ── Inline rename (LIME-26) ──────────────────────────────
+  // A detached, absolutely-off-DOM <span> is the standard way to measure
+  // how wide a string renders in a given font, without laying out
+  // anything visible — matched against the input's own computed font so
+  // the measurement is accurate for this exact element.
+  function measureTextWidth(text, referenceEl) {
+    const span = document.createElement('span');
+    const cs = getComputedStyle(referenceEl);
+    span.style.font = cs.font;
+    span.style.position = 'absolute';
+    span.style.visibility = 'hidden';
+    span.style.whiteSpace = 'pre';
+    span.textContent = text || ' ';
+    document.body.appendChild(span);
+    const width = span.getBoundingClientRect().width;
+    span.remove();
+    return width;
+  }
+
+  // Swaps in as a sibling of #crumb-thread, never replacing it — the
+  // mobile view router (further down this file) binds a click listener
+  // directly to that exact node at parse time, so recreating it here
+  // would silently lose that listener (the same repaintAvatar lesson
+  // from LIME-31, applied to a different element).
+  function startRename(conversation) {
+    if (!crumbThread) return;
+    const breadcrumbsNav = crumbThread.parentElement;
+    const currentTitle = LimeStore.getConversationTitle(conversation);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'lime-rename-input';
+    input.value = currentTitle;
+    input.setAttribute('aria-label', 'Conversation name');
+
+    crumbThread.hidden = true;
+    crumbThread.insertAdjacentElement('afterend', input);
+
+    function resize() {
+      const textWidth = measureTextWidth(input.value, input);
+      const available = breadcrumbsNav ? breadcrumbsNav.getBoundingClientRect().width : Infinity;
+      input.style.width = Math.max(120, Math.min(textWidth + 20, available)) + 'px';
+    }
+    resize();
+    input.addEventListener('input', resize);
+
+    input.focus();
+    input.select(); // "the whole name selected," per the brief's own reference
+
+    let finished = false;
+    function finish(save) {
+      if (finished) return;
+      finished = true;
+      input.removeEventListener('input', resize);
+      input.remove();
+      crumbThread.hidden = false;
+      crumbThread.focus();
+      if (save) {
+        // An empty value clears the name back to the auto title — the
+        // store's own behavior (getConversationTitle falls through to
+        // the derived name whenever conversations.name is falsy), not
+        // special-cased here.
+        const trimmed = input.value.trim();
+        LimeStore.renameConversation(conversation.id, trimmed || null).then(() => {
+          // lime:conversations-changed (emitted by renameConversation)
+          // already repaints this conversation's row everywhere via
+          // updateRow, above — but the breadcrumb isn't a row, and
+          // nothing else re-derives it just from that event, so it needs
+          // its own update here.
+          if (crumbThread) crumbThread.textContent = LimeStore.getConversationTitle(conversation);
+        }).catch(console.error);
+      }
+    }
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finish(true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(false);
+      }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+
   // ── Send message (LIME-07) ─────────────────────────────
   function handleSend() {
     if (!composerInput || !currentConversationId) return;
@@ -641,8 +755,15 @@ function initMessagesList() {
 
   function updateRow(li, conversation) {
     const latest = LimeStore.getLatestActivity(conversation.id);
+    const nameEl = li.querySelector('.lime-contact__name');
     const previewEl = li.querySelector('.lime-contact__preview');
     const timeEl = li.querySelector('.lime-contact__time');
+    // LIME-26: a rename is the first case where a conversation's own
+    // title (not just its preview/time) needs to update in place — added
+    // here rather than routing through profile-changed's forceRebuild
+    // path, since this is cheap and always correct (the title is always
+    // whatever LimeStore.getConversationTitle says right now).
+    if (nameEl) nameEl.textContent = LimeStore.getConversationTitle(conversation);
     if (previewEl) previewEl.innerHTML = rowPreviewHtml(conversation, latest);
     if (timeEl) timeEl.textContent = latest ? formatTime(latest.created_at) : '';
   }
@@ -683,6 +804,8 @@ function initMessagesList() {
   }
 
   const starredList = document.getElementById('starred-list');
+  const archivedList = document.getElementById('archived-list');
+  const archivedSection = document.querySelector('.lime-section[data-section-id="archived"]');
 
   function starredConversations() {
     return LimeStore.listConversations({ types: ['direct', 'group'] }).filter((c) => {
@@ -691,16 +814,38 @@ function initMessagesList() {
     });
   }
 
+  // Archiving removes a conversation from All and Starred (both already
+  // exclude archived by default — listConversations only includes them
+  // with includeArchived: true) and lists it here instead. The section
+  // itself hides entirely when this is empty — a different rule from
+  // Starred's own always-shown "Star a chat…" empty message, per the brief.
+  function archivedConversations() {
+    return LimeStore.listConversations({ types: ['direct', 'group'], includeArchived: true }).filter((c) => {
+      const membership = LimeStore.getMyMembership(c.id);
+      return membership && membership.archived_at;
+    });
+  }
+
+  function syncArchivedSection(forceRebuild) {
+    if (!archivedList) return;
+    const items = archivedConversations();
+    syncSection(archivedList, items, null, forceRebuild);
+    if (archivedSection) archivedSection.hidden = items.length === 0;
+  }
+
   let messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
   if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
+  syncArchivedSection();
 
   document.addEventListener('lime:conversations-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
+    syncArchivedSection();
   });
   document.addEventListener('lime:messages-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
+    syncArchivedSection();
   });
 
   // LIME-31: "everywhere updates" for a profile change (own's or, once a
@@ -712,6 +857,7 @@ function initMessagesList() {
   document.addEventListener('lime:profile-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }), null, true);
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.', true);
+    syncArchivedSection(true);
 
     if (currentConversationId) {
       const conversation = LimeStore.getConversation(currentConversationId);
@@ -740,17 +886,28 @@ function initMessagesList() {
     const conversation = LimeStore.getConversation(currentConversationId);
     if (!conversation) return;
     const membership = LimeStore.getMyMembership(currentConversationId);
-    conversationMenu.innerHTML = CONVERSATION_ACTIONS
-      .filter((action) => !action.isVisible || action.isVisible(conversation, membership))
-      .map((action) => {
-        const label = typeof action.label === 'function' ? action.label(conversation, membership) : action.label;
-        const dangerClass = action.danger ? ' lime-menu__item--danger' : '';
-        return '<button type="button" class="lime-menu__item' + dangerClass + '" role="menuitem" data-action="' + action.id + '">'
-          + '<span class="dew ' + action.icon + '"></span>' + escapeHtml(label)
-          + '<span class="lime-menu__kbd">' + escapeHtml(action.key) + '</span>'
-          + '</button>';
-      })
-      .join('');
+
+    // A divider always passes the visibility filter (it has no isVisible
+    // of its own) — dropped afterward if it ends up with nothing but
+    // other dividers or the list's own start/end on either side, so it
+    // never renders as a leading/trailing/doubled-up rule.
+    const withVisibility = CONVERSATION_ACTIONS.filter((action) => action.divider || !action.isVisible || action.isVisible(conversation, membership));
+    const items = withVisibility.filter((action, i) => {
+      if (!action.divider) return true;
+      const hasBefore = withVisibility.slice(0, i).some((a) => !a.divider);
+      const hasAfter = withVisibility.slice(i + 1).some((a) => !a.divider);
+      return hasBefore && hasAfter;
+    });
+
+    conversationMenu.innerHTML = items.map((action) => {
+      if (action.divider) return '<div class="lime-menu__divider" role="separator"></div>';
+      const label = typeof action.label === 'function' ? action.label(conversation, membership) : action.label;
+      const dangerClass = action.danger ? ' lime-menu__item--danger' : '';
+      return '<button type="button" class="lime-menu__item' + dangerClass + '" role="menuitem" data-action="' + action.id + '">'
+        + '<span class="dew ' + action.icon + '"></span>' + escapeHtml(label)
+        + '<span class="lime-menu__kbd">' + escapeHtml(action.key) + '</span>'
+        + '</button>';
+    }).join('');
   }
 
   function runConversationAction(actionId) {
@@ -784,8 +941,18 @@ function initMessagesList() {
     if (!conversationMenu || !conversationMenu.classList.contains('is-open')) return;
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-    const action = CONVERSATION_ACTIONS.find((a) => a.key.toLowerCase() === e.key.toLowerCase());
-    if (action) runConversationAction(action.id);
+    const action = CONVERSATION_ACTIONS.find((a) => a.key && a.key.toLowerCase() === e.key.toLowerCase());
+    if (!action || !currentConversationId) return;
+    // LIME-26: unlike Star (always visible), Rename/Archive/Delete's
+    // visibility depends on the open conversation — the keyboard
+    // shortcut has to respect the same isVisible check the menu itself
+    // already applies, or e.g. R would rename a DM the menu never even
+    // offered Rename for.
+    const conversation = LimeStore.getConversation(currentConversationId);
+    if (!conversation) return;
+    const membership = LimeStore.getMyMembership(currentConversationId);
+    if (action.isVisible && !action.isVisible(conversation, membership)) return;
+    runConversationAction(action.id);
   });
   // aria-expanded has no single choke point to update from (the menu can
   // close via its own toggle, an outside click, Escape, or another
@@ -801,6 +968,12 @@ function initMessagesList() {
   if (messageConversations.length > 0) {
     selectConversation(messageConversations[0]);
   }
+
+  // LIME-26: fills in the module-scope bridge CONVERSATION_ACTIONS' own
+  // rename/delete entries call through (see conversationActionHooks'
+  // own comment, near registeredDropdowns, for why the indirection).
+  conversationActionHooks.startRename = startRename;
+  conversationActionHooks.selectTopOrEmpty = selectTopOrEmpty;
 
   updateProfileEverywhere();
 }
@@ -843,10 +1016,10 @@ function repaintAvatar(el, name) {
   paintAvatar(el);
 }
 
-// LIME-25: the title caret's menu. One action today (Star); built as a
-// data-driven list from the start, per the brief, so LIME-26/27 add Rename,
-// Share, Copy link, Archive and Delete as more entries here, not by
-// restructuring how the menu itself is built or wired.
+// LIME-25/26: the title caret's menu, data-driven from the start so this
+// stays the only place that needs to change. Final order (the brief's
+// own): Star · Rename · Archive/Unarchive · divider · Delete. LIME-27
+// will add Share and Copy link between Rename and Archive.
 const CONVERSATION_ACTIONS = [
   {
     id: 'star',
@@ -856,6 +1029,51 @@ const CONVERSATION_ACTIONS = [
     danger: false,
     isVisible: () => true,
     run: (conversation, membership) => LimeStore.setStarred(conversation.id, !(membership && membership.starred)),
+  },
+  {
+    id: 'rename',
+    label: 'Rename',
+    icon: 'dew-pencil',
+    key: 'R',
+    danger: false,
+    isVisible: (conversation) => LimeStore.can('rename', conversation),
+    run: (conversation) => {
+      if (conversationActionHooks.startRename) conversationActionHooks.startRename(conversation);
+      return Promise.resolve();
+    },
+  },
+  // LIME-27 adds Share and Copy link here, between Rename and Archive.
+  {
+    id: 'archive',
+    label: (conversation, membership) => (membership && membership.archived_at ? 'Unarchive' : 'Archive'),
+    icon: 'dew-archive',
+    key: 'A',
+    danger: false,
+    isVisible: () => true,
+    run: (conversation, membership) => LimeStore.setArchived(conversation.id, !(membership && membership.archived_at)),
+  },
+  { divider: true },
+  {
+    id: 'delete',
+    label: 'Delete',
+    icon: 'dew-trash',
+    key: 'D',
+    danger: true,
+    isVisible: (conversation) => LimeStore.can('delete', conversation),
+    run: (conversation) => {
+      const title = LimeStore.getConversationTitle(conversation);
+      return confirmDialog({
+        title: 'Delete "' + title + '"?',
+        message: 'This removes it for everyone in it. This can’t be undone.',
+        confirmLabel: 'Delete',
+        danger: true,
+      }).then((confirmed) => {
+        if (!confirmed) return;
+        return LimeStore.deleteConversation(conversation.id).then(() => {
+          if (conversationActionHooks.selectTopOrEmpty) conversationActionHooks.selectTopOrEmpty();
+        });
+      });
+    },
   },
 ];
 
@@ -1488,14 +1706,19 @@ wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropd
   if (privacy) privacy.innerHTML = '<span class="dew dew-shield-check"></span> Secure &amp; encrypted';
 })();
 
-// ── Reset demo data (LIME-24b) ──────────────────────────────
-// A native confirm() for now — LIME-26 brings the app's own confirm
-// dialog once one exists. Clears the persisted snapshot and reloads, so
-// the next LimeStore.init() normalizes fresh from the embedded seed
-// again, exactly like a first-ever visit.
+// ── Reset demo data (LIME-24b, dialog swapped in LIME-26) ───
+// Clears the persisted snapshot and reloads, so the next LimeStore.init()
+// normalizes fresh from the embedded seed again, exactly like a
+// first-ever visit.
 document.getElementById('reset-demo-data-btn')?.addEventListener('click', () => {
-  if (!window.confirm('Reset demo data? Anything you’ve sent, replied, or reacted with will be cleared, and the original seed data comes back.')) return;
-  LimeStore.reset().then(() => window.location.reload());
+  confirmDialog({
+    title: 'Reset demo data?',
+    message: 'Anything you’ve sent, replied, or reacted with will be cleared, and the original seed data comes back.',
+    confirmLabel: 'Reset',
+  }).then((confirmed) => {
+    if (!confirmed) return;
+    LimeStore.reset().then(() => window.location.reload());
+  });
 });
 
 // ── Sign out ───────────────────────────────────────────────
@@ -1585,8 +1808,7 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     document.addEventListener('keydown', onKeydown);
   }
 
-  function close() {
-    if (onBeforeClose && onBeforeClose() === false) return;
+  function finishClose() {
     backdrop.classList.remove('is-open');
     modal.classList.remove('is-open');
     document.removeEventListener('keydown', onKeydown);
@@ -1594,11 +1816,99 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     if (focusTarget) focusTarget.focus();
   }
 
+  // LIME-26: onBeforeClose can now also return a Promise (e.g.
+  // confirmDialog's own return value) — this was previously always
+  // synchronous. A plain `false` still vetoes the close immediately, as
+  // before; anything else still closes immediately too, so every
+  // existing sync caller (Settings' confirmDiscardIfDirty) is unaffected
+  // by this extension.
+  function close() {
+    if (!onBeforeClose) { finishClose(); return; }
+    const result = onBeforeClose();
+    if (result === false) return;
+    if (result && typeof result.then === 'function') {
+      result.then((proceed) => { if (proceed !== false) finishClose(); });
+      return;
+    }
+    finishClose();
+  }
+
   if (trigger) trigger.addEventListener('click', open);
   backdrop.addEventListener('click', close);
   if (closeBtn) closeBtn.addEventListener('click', close);
 
   return { open, close, focusable };
+}
+
+// ── App confirm dialog (LIME-26) ─────────────────────────
+// Replaces both native window.confirm() calls (Reset demo data, Settings'
+// "Discard changes?") and backs Delete's own confirmation. One static
+// modal instance, reused for every call — its content and button labels
+// are rewritten per call rather than built fresh, since only one
+// confirmation is ever open at a time in this app.
+const confirmDialogEls = {
+  backdrop: document.getElementById('confirm-dialog-backdrop'),
+  modal: document.getElementById('confirm-dialog'),
+  title: document.getElementById('confirm-dialog-title'),
+  message: document.getElementById('confirm-dialog-message'),
+  cancelBtn: document.getElementById('confirm-dialog-cancel'),
+  confirmBtn: document.getElementById('confirm-dialog-confirm'),
+};
+
+// Escape and a backdrop click both mean "cancel" (the brief's own rule) —
+// pendingResult starts false on every call and only ever flips to true
+// from the Confirm button's own click, right before it triggers the same
+// close() path Escape/backdrop use. Whichever path closes it, onBeforeClose
+// below is the single place that resolves the call's Promise and restores
+// focus, so all four ways of leaving the dialog behave identically.
+let confirmDialogResolve = null;
+let confirmDialogPendingResult = false;
+let confirmDialogPreviouslyFocused = null;
+
+const confirmDialogModal = confirmDialogEls.modal && confirmDialogEls.backdrop
+  ? createModal({
+      backdrop: confirmDialogEls.backdrop,
+      modal: confirmDialogEls.modal,
+      onBeforeClose: () => {
+        if (confirmDialogResolve) {
+          const resolve = confirmDialogResolve;
+          confirmDialogResolve = null;
+          resolve(confirmDialogPendingResult);
+        }
+        if (confirmDialogPreviouslyFocused && confirmDialogPreviouslyFocused.focus) {
+          confirmDialogPreviouslyFocused.focus();
+        }
+        confirmDialogPreviouslyFocused = null;
+        return true;
+      },
+      // Focus lands on Cancel (the brief's own rule) — the safer default
+      // for a dialog that can be destructive when confirmed.
+      onOpen: () => { if (confirmDialogEls.cancelBtn) confirmDialogEls.cancelBtn.focus(); },
+    })
+  : null;
+
+function confirmDialog({ title, message, confirmLabel, cancelLabel, danger }) {
+  const els = confirmDialogEls;
+  if (!confirmDialogModal || !els.title || !els.message || !els.cancelBtn || !els.confirmBtn) {
+    return Promise.resolve(false); // the modal markup is missing — fail closed, never silently "confirmed"
+  }
+
+  els.title.textContent = title;
+  els.message.textContent = message;
+  els.cancelBtn.textContent = cancelLabel || 'Cancel';
+  els.confirmBtn.textContent = confirmLabel || 'Confirm';
+  els.confirmBtn.classList.toggle('seed-button--primary', !danger);
+  els.confirmBtn.classList.toggle('lime-confirm-dialog__confirm--danger', !!danger);
+
+  confirmDialogPreviouslyFocused = document.activeElement;
+  confirmDialogPendingResult = false;
+  els.cancelBtn.onclick = () => { confirmDialogPendingResult = false; confirmDialogModal.close(); };
+  els.confirmBtn.onclick = () => { confirmDialogPendingResult = true; confirmDialogModal.close(); };
+
+  return new Promise((resolve) => {
+    confirmDialogResolve = resolve;
+    confirmDialogModal.open();
+  });
 }
 
 // ── Nav search → global modal ────────────────────────────
@@ -1761,8 +2071,19 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     return values;
   }
 
+  // Pre-existing bug, found and fixed here (LIME-26): this only makes
+  // sense while Profile is actually the rendered section. Once you've
+  // navigated away (e.g. to Login & security) its fields aren't in the
+  // DOM at all, getProfileFormValues() returns them all as undefined,
+  // and every key compares unequal to profileOriginal — a false "dirty"
+  // on a completely clean form, the instant you switch back or reopen
+  // the modal. Previously invisible: window.confirm auto-accepted in
+  // every test, and a silent native popup is easy to miss manually.
+  // LIME-26's confirmDialog made it a real, visible, reproducible modal,
+  // which is how this surfaced.
   function isProfileFormDirty() {
     if (!profileOriginal) return false;
+    if (!document.getElementById('settings-field-display_name')) return false;
     const current = getProfileFormValues();
     return PROFILE_FIELD_KEYS.some((key) => current[key] !== profileOriginal[key]);
   }
@@ -1781,10 +2102,17 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
   // unsaved changes" gate — one function, called from every place that
   // can navigate away from a dirty Profile form (switching nav sections,
   // the mobile back chevron, and closing the modal itself via
-  // createModal's onBeforeClose). Returns false to mean "stay put."
+  // createModal's onBeforeClose). Resolves false to mean "stay put."
+  // LIME-26: now returns a Promise (confirmDialog is async) instead of a
+  // plain boolean — every call site below awaits it, and createModal's
+  // own onBeforeClose already knows how to await a thenable.
   function confirmDiscardIfDirty() {
-    if (!isProfileFormDirty()) return true;
-    return window.confirm('Discard changes?');
+    if (!isProfileFormDirty()) return Promise.resolve(true);
+    return confirmDialog({
+      title: 'Discard changes?',
+      message: 'Your unsaved edits to this section will be lost.',
+      confirmLabel: 'Discard',
+    });
   }
 
   function renderProfileSection() {
@@ -2012,25 +2340,29 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     { id: 'security', label: 'Login & security', render: renderSecuritySection },
   ];
 
+  // LIME-26: returns a Promise now (confirmDiscardIfDirty does) — both
+  // call sites below already await it.
   function showSection(id) {
-    if (!confirmDiscardIfDirty()) return false;
-    nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
-      btn.classList.toggle('is-active', btn.dataset.settingsSection === id);
+    return confirmDiscardIfDirty().then((proceed) => {
+      if (!proceed) return false;
+      nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
+        btn.classList.toggle('is-active', btn.dataset.settingsSection === id);
+      });
+      const section = SETTINGS_SECTIONS.find((s) => s.id === id);
+      if (section) section.render();
+      // LIME-31-fix: the pane itself no longer scrolls (header/footer are
+      // fixed); .lime-settings__body is the scrolling zone now.
+      const body = pane.querySelector('.lime-settings__body');
+      if (body) body.scrollTop = 0;
+      return true;
     });
-    const section = SETTINGS_SECTIONS.find((s) => s.id === id);
-    if (section) section.render();
-    // LIME-31-fix: the pane itself no longer scrolls (header/footer are
-    // fixed); .lime-settings__body is the scrolling zone now.
-    const body = pane.querySelector('.lime-settings__body');
-    if (body) body.scrollTop = 0;
-    return true;
   }
 
   nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (showSection(btn.dataset.settingsSection)) {
-        modal.classList.add('is-showing-section'); // only visible ≤767px
-      }
+      showSection(btn.dataset.settingsSection).then((switched) => {
+        if (switched) modal.classList.add('is-showing-section'); // only visible ≤767px
+      });
     });
   });
 
@@ -2038,7 +2370,9 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
   // every pane.innerHTML replacement without being re-attached each time.
   pane.addEventListener('click', (e) => {
     if (e.target.closest('.lime-settings__back')) {
-      if (confirmDiscardIfDirty()) modal.classList.remove('is-showing-section');
+      confirmDiscardIfDirty().then((proceed) => {
+        if (proceed) modal.classList.remove('is-showing-section');
+      });
       return;
     }
     if (e.target.closest('#settings-sign-out-btn')) {
@@ -2087,13 +2421,19 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     onOpen: () => {
       if (navSearchInput) navSearchInput.value = '';
       modal.classList.remove('is-showing-section');
-      showSection('profile');
-      filterSettings();
-      // Matches the search modal's own pattern (focus its input on open)
-      // — without this, focus is left wherever it was, which both reads
-      // oddly for a dialog and leaves the Tab-trap starting from an
-      // element outside the modal entirely.
-      if (navSearchInput) navSearchInput.focus();
+      // LIME-26: showSection is async now (confirmDiscardIfDirty goes
+      // through confirmDialog, a Promise, even when it resolves
+      // immediately) — filterSettings has to wait for Profile to have
+      // actually rendered into the pane, or it reads the pane's stale
+      // pre-render content.
+      showSection('profile').then(() => {
+        filterSettings();
+        // Matches the search modal's own pattern (focus its input on
+        // open) — without this, focus is left wherever it was, which
+        // both reads oddly for a dialog and leaves the Tab-trap starting
+        // from an element outside the modal entirely.
+        if (navSearchInput) navSearchInput.focus();
+      });
     },
   });
 })();
@@ -2151,6 +2491,12 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
   document.querySelectorAll('.lime-section[data-section-id]').forEach((section) => {
     const toggle = section.querySelector('.lime-section__toggle');
     const key    = 'lime-section-' + section.dataset.sectionId;
+    // LIME-26: every section before Archived has defaulted to expanded
+    // when nothing's stored yet — Archived is the first that needs a
+    // different first-open state ("collapsed by default," the brief's
+    // own words), so it's read from a per-section data attribute rather
+    // than hardcoding "archived" by name into this shared loop.
+    const defaultCollapsed = section.dataset.defaultCollapsed === 'true';
 
     function setCollapsed(collapsed) {
       section.dataset.collapsed = String(collapsed);
@@ -2158,7 +2504,8 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
       localStorage.setItem(key, String(collapsed));
     }
 
-    setCollapsed(localStorage.getItem(key) === 'true');
+    const stored = localStorage.getItem(key);
+    setCollapsed(stored === null ? defaultCollapsed : stored === 'true');
     toggle.addEventListener('click', () => setCollapsed(section.dataset.collapsed !== 'true'));
   });
 })();
