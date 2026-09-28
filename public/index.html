@@ -149,8 +149,12 @@
               <button type="button" class="seed-breadcrumb" id="crumb-teachers">Messages</button>
               <span class="seed-breadcrumbs__separator" data-crumb-sep="thread">/</span>
               <button type="button" class="seed-breadcrumb" id="crumb-thread">Jean Chung</button>
-              <span class="seed-breadcrumbs__separator" data-crumb-sep="details">/</span>
-              <span class="seed-breadcrumb seed-breadcrumb--active" id="crumb-details">Details</span>
+              <span class="seed-breadcrumbs__separator" data-crumb-sep="panel">/</span>
+              <!-- LIME-35: filled by renderCrumbs() — the open person's
+                   name, "Members", or "Thread"; empty (and hidden, see
+                   lime.css) whenever the right panel is closed. Replaces
+                   the old static "Details" text entirely. -->
+              <span class="seed-breadcrumb seed-breadcrumb--active" id="crumb-panel"></span>
             </nav>
             <button type="button" class="lime-topbar__crumb-caret" id="conversation-menu-toggle" title="Conversation actions" aria-haspopup="menu" aria-expanded="false"><span class="dew dew-chevron-down"></span></button>
             <div class="lime-menu" id="conversation-menu" role="menu"></div>
@@ -486,25 +490,28 @@
       <div class="lime-profile-panel">
         <div class="lime-profile has-fade-y">
           <div class="fade-top" aria-hidden="true"></div>
-          <div class="lime-profile__header">
-            <span class="seed-avatar seed-avatar--xl lime-avatar lime-profile__avatar" data-name="Jean Chung"></span>
-          </div>
-          <h2 class="lime-profile__name">Jean Chung</h2>
-          <p class="lime-profile__title">Head of FAM</p>
-          <p class="lime-profile__pronouns">she/her/hers</p>
-
-          <section class="lime-profile__section">
-            <h3>About me</h3>
-            <p>Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus.</p>
-          </section>
-
-          <section class="lime-profile__section">
-            <h3>Contact Information</h3>
-            <p><span class="dew dew-chat"></span> jean@chungrajoon.com</p>
-            <p><span class="dew dew-calendar"></span> 9:51 PM ET local time</p>
-            <p><span class="lime-presence lime-presence--inline" data-presence="busy" role="img" aria-label="Busy"></span> Busy</p>
-          </section>
+          <!-- Rendered by app.js's renderProfilePanel (LIME-35) — the
+               avatar, name, pronouns/role/school, "About me," and
+               contact info for whichever person is currently shown.
+               No hard-coded person: a fresh render replaces this
+               entirely every time showPersonDetails(profileId) runs,
+               including a back-to-Members chevron when reached from
+               there, and an "Edit profile" button for your own. A
+               dedicated wrapper (not .lime-profile itself) so
+               .fade-top above survives every re-render untouched. -->
+          <div class="lime-profile__content"></div>
         </div>
+      </div>
+
+      <div class="lime-members-panel">
+        <header class="lime-members-panel__header">
+          <h2 class="lime-members-panel__title"></h2>
+        </header>
+        <!-- Rendered by app.js's renderMembersPanel (LIME-35): every
+             member of the currently open group, with their role
+             (Owner/Member), each clickable through to their own
+             details — showPersonDetails' back chevron returns here. -->
+        <div class="lime-members-panel__list"></div>
       </div>
 
       <div class="lime-replies-panel">

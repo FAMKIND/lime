@@ -391,14 +391,19 @@ function initMessagesList() {
 
   function messageHtml(message, sender, isSent) {
     const presence = presenceFor(sender.status);
+    // LIME-35: data-profile-id on both the avatar and the sender name —
+    // the one delegated [data-profile-id] listener (top-level, below)
+    // opens that sender's own details, never a hard-coded person. Empty
+    // for UNKNOWN_SENDER (no real profile id) — the listener just no-ops
+    // on a lookup miss, same as it would for any other bad/missing id.
     return '<div class="lime-message ' + (isSent ? 'lime-message--sent' : 'lime-message--received') + '" data-message-id="' + message.id + '">'
       + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
-      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>'
+      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(sender.display_name) + '" data-profile-id="' + escapeHtml(sender.id || '') + '"></span>'
       + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
       + '</span>'
       + '<div class="lime-message__col">'
       + '<div class="lime-message__meta">'
-      + '<span class="lime-message__sender">' + escapeHtml(shortName(sender.display_name)) + '</span>'
+      + '<span class="lime-message__sender" data-profile-id="' + escapeHtml(sender.id || '') + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<span class="lime-message__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
       + contentHtml(message)
@@ -558,12 +563,22 @@ function initMessagesList() {
   function selectConversation(conversation) {
     document.querySelectorAll('.lime-contact').forEach((el) => el.classList.remove('lime-contact--active'));
     document.querySelectorAll('[data-conversation-id="' + conversation.id + '"]').forEach((el) => el.classList.add('lime-contact--active'));
-    if (crumbThread) crumbThread.textContent = LimeStore.getConversationTitle(conversation);
     if (openProfileAvatars) {
       openProfileAvatars.innerHTML = conversationHeaderAvatarsHtml(conversation);
       openProfileAvatars.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
     }
     renderThread(conversation.id);
+    // LIME-35: keep the profile/Members panel in sync with whichever
+    // conversation is now open — the old static "Jean Chung" markup
+    // never did this at all (the exact staleness this brief fixes), so
+    // switching conversations while it was showing left it displaying
+    // the previous conversation's person/members. Skipped while a reply
+    // thread is open (switching conversations doesn't touch that view).
+    const rightPanel = document.getElementById('right-panel');
+    if (rightPanel && rightPanel.dataset.panel !== 'replies') {
+      showConversationHeaderPanel(conversation, false);
+    }
+    renderCrumbs(); // crumbThread's own text is renderCrumbs' job now, not set directly here
   }
 
   // LIME-26: after Delete, the conversation menu always acts on
@@ -580,9 +595,9 @@ function initMessagesList() {
     }
     currentConversationId = null;
     document.querySelectorAll('.lime-contact').forEach((el) => el.classList.remove('lime-contact--active'));
-    if (crumbThread) crumbThread.textContent = '';
     if (openProfileAvatars) openProfileAvatars.innerHTML = '';
     thread.innerHTML = '<p class="lime-messages__empty">No conversations left. Start one from the sidebar.</p>';
+    renderCrumbs(); // no .lime-contact--active left — renderCrumbs clears crumbThread's text itself
   }
 
   // ── Inline rename (LIME-34 — replaces LIME-26's sibling <input>) ──
@@ -1293,6 +1308,255 @@ function setRightPanelOpen(isOpen) {
   layout.classList.toggle('seed-layout--right-hidden', !isOpen);
   if (toggle) toggle.setAttribute('aria-expanded', String(isOpen));
   localStorage.setItem('lime-right-panel-open', String(isOpen));
+  // LIME-35: the panel crumb is "absent when the right panel is closed"
+  // — every path that flips this (the close button, crumb-thread,
+  // showPersonDetails/showMembers opening it) goes through here, so one
+  // call covers all of them instead of each caller remembering to.
+  renderCrumbs();
+}
+
+// ── Per-person details / group Members panels (LIME-35) ──
+// Replaces the old hard-coded "Jean Chung" markup and the one-time
+// forEach that used to bind clicks on whatever .lime-message__sender/
+// .lime-avatar elements existed at page-parse time (broken the moment a
+// conversation switch replaced #thread-messages's content, and it never
+// actually identified *which* sender was clicked anyway — every click
+// just showed the same static Jean Chung regardless). Top-level, not
+// inside initMessagesList's closure — LimeStore and plain DOM lookups
+// are all either function needs, so neither has to reach into that
+// closure's private state.
+
+// Set only while showPersonDetails was reached *from* the Members list
+// — its own back chevron re-shows Members instead of doing nothing
+// (there's no other way back to Members once you've clicked through).
+let detailsReturnTo = null;
+
+function localTimeFor(timezone) {
+  if (!timezone) return null;
+  try {
+    return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: timezone }) + ' local time';
+  } catch (e) {
+    return null; // an unrecognized/invalid timezone string — omit rather than throw
+  }
+}
+
+function renderProfilePanel(person) {
+  const content = document.querySelector('.lime-profile__content');
+  if (!content) return;
+  const isOwn = person.id === LimeStore.getCurrentUserId();
+  const roleSchool = [person.role, person.school].filter(Boolean).join(' · ');
+  const localTime = localTimeFor(person.timezone);
+  const presence = presenceFor(person.status);
+
+  let html = '';
+  if (detailsReturnTo === 'members') {
+    html += '<button type="button" class="lime-profile__back" aria-label="Back to Members" title="Back"><span class="dew dew-chevron-left"></span></button>';
+  }
+  html += '<div class="lime-profile__header">'
+    + '<span class="seed-avatar seed-avatar--xl lime-avatar lime-profile__avatar" data-name="' + escapeHtml(person.display_name) + '"></span>'
+    + '</div>'
+    + '<h2 class="lime-profile__name">' + escapeHtml(person.display_name) + '</h2>';
+  if (roleSchool) html += '<p class="lime-profile__title">' + escapeHtml(roleSchool) + '</p>';
+  if (person.pronouns) html += '<p class="lime-profile__pronouns">' + escapeHtml(person.pronouns) + '</p>';
+
+  if (person.bio) {
+    html += '<section class="lime-profile__section"><h3>About me</h3><p>' + escapeHtml(person.bio) + '</p></section>';
+  }
+
+  // email/local time are omitted when missing (the brief's own "missing
+  // fields are simply omitted"); status always has a value (presenceFor
+  // falls back to "away" for anything it doesn't recognize), so it's
+  // never conditionally left out the way the other two are.
+  let contact = '';
+  if (person.email) contact += '<p><span class="dew dew-chat"></span>' + escapeHtml(person.email) + '</p>';
+  if (localTime) contact += '<p><span class="dew dew-calendar"></span>' + escapeHtml(localTime) + '</p>';
+  contact += '<p><span class="lime-presence lime-presence--inline" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>' + PRESENCE_LABEL[presence] + '</p>';
+  html += '<section class="lime-profile__section"><h3>Contact Information</h3>' + contact + '</section>';
+
+  if (isOwn) {
+    html += '<button type="button" class="seed-button seed-button--secondary seed-button--sm lime-profile__edit-btn" id="profile-edit-btn">Edit profile</button>';
+  }
+
+  content.innerHTML = html;
+  const avatar = content.querySelector('.lime-avatar[data-name]');
+  if (avatar) paintAvatar(avatar);
+}
+
+// openPanel=false (used only by the "keep the panel in sync with
+// whichever conversation is open" call in selectConversation, below)
+// updates the content without forcing anything open or switching the
+// mobile view — otherwise merely switching conversations would yank
+// open a panel the user had deliberately closed, or jump them to the
+// mobile panel view while they're just browsing contacts.
+function showPersonDetails(profileId, cameFromMembers, openPanel) {
+  const person = LimeStore.getProfile(profileId);
+  if (!person) return;
+  const layout = document.getElementById('layout');
+  const rightPanel = document.getElementById('right-panel');
+  if (!layout || !rightPanel) return;
+  detailsReturnTo = cameFromMembers ? 'members' : null;
+  rightPanel.dataset.panel = 'profile';
+  // shownProfileId, not profileId — a real bug found live: #right-panel
+  // is an ancestor of every button inside it (including its own
+  // .lime-profile__back), so naming this attribute the same as the
+  // [data-profile-id] selector the global delegated listener (below)
+  // matches on made #right-panel itself an unintended match for *any*
+  // click bubbling through it — including the back button's own click,
+  // which re-triggered showPersonDetails and stomped right back over
+  // the showMembers() call the back button was supposed to make.
+  rightPanel.dataset.shownProfileId = person.id;
+  renderProfilePanel(person);
+  if (openPanel !== false) {
+    if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
+    layout.setAttribute('data-mobile-view', 'panel');
+  }
+  renderCrumbs();
+}
+
+// Role isn't read from the store (this brief's own scope explicitly
+// excludes touching it, and LimeStore.getMembers only ever returns
+// profiles, not the membership row role lives on) — derived instead
+// from conversations.created_by, already exposed via getConversation,
+// which is exactly how role is assigned in the first place (see
+// local-adapter.js's normalizeSeed: `role: userId === c.created_by ?
+// 'owner' : 'member'`) and nothing anywhere ever changes it afterward.
+function renderMembersPanel(conversation) {
+  const titleEl = document.querySelector('.lime-members-panel__title');
+  const listEl = document.querySelector('.lime-members-panel__list');
+  if (!titleEl || !listEl) return;
+  titleEl.textContent = LimeStore.getConversationTitle(conversation);
+  const members = LimeStore.getMembers(conversation.id);
+  listEl.innerHTML = members.map((m) => {
+    const isOwner = m.id === conversation.created_by;
+    return '<button type="button" class="lime-members-panel__row" data-profile-id="' + m.id + '">'
+      + '<span class="seed-avatar seed-avatar--md lime-avatar" data-name="' + escapeHtml(m.display_name) + '"></span>'
+      + '<div class="lime-members-panel__row-body">'
+      + '<span class="lime-members-panel__row-name">' + escapeHtml(m.display_name) + '</span>'
+      + '<span class="lime-members-panel__row-role">' + (isOwner ? 'Owner' : 'Member') + '</span>'
+      + '</div>'
+      + '</button>';
+  }).join('');
+  listEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+}
+
+function showMembers(conversation, openPanel) {
+  const layout = document.getElementById('layout');
+  const rightPanel = document.getElementById('right-panel');
+  if (!layout || !rightPanel) return;
+  rightPanel.dataset.panel = 'members';
+  renderMembersPanel(conversation);
+  if (openPanel !== false) {
+    if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
+    layout.setAttribute('data-mobile-view', 'panel');
+  }
+  renderCrumbs();
+}
+
+// Shared by #open-profile-avatars' own click handler and
+// selectConversation's own "keep it in sync" call (openPanel=false
+// there) — a DM's header opens the other person directly; a group's
+// opens Members instead of a single person.
+function showConversationHeaderPanel(conversation, openPanel) {
+  if (!conversation) return;
+  if (conversation.type === 'group') {
+    showMembers(conversation, openPanel);
+    return;
+  }
+  const other = LimeStore.getMembers(conversation.id).find((p) => p.id !== LimeStore.getCurrentUserId());
+  if (other) showPersonDetails(other.id, false, openPanel);
+}
+
+// One delegated listener for every avatar/sender-name trigger, per the
+// brief's own instruction — thread messages, the reply quote, the reply
+// list, and Members rows all just need a data-profile-id attribute
+// (already added at each of those HTML-building call sites) to work
+// with this, rather than each surface wiring its own click handler.
+document.addEventListener('click', (e) => {
+  const trigger = e.target.closest('[data-profile-id]');
+  if (!trigger || !trigger.dataset.profileId) return;
+  showPersonDetails(trigger.dataset.profileId, !!trigger.closest('.lime-members-panel'));
+});
+
+// The profile panel's own content is rebuilt on every render (see
+// renderProfilePanel), so its Edit-profile/back buttons need a
+// delegated listener too, bound once to the stable .lime-profile
+// container rather than re-attached after every innerHTML replacement.
+(function () {
+  const profileEl = document.querySelector('.lime-profile');
+  if (!profileEl) return;
+  profileEl.addEventListener('click', (e) => {
+    if (e.target.closest('#profile-edit-btn')) {
+      document.getElementById('settings-btn')?.click();
+      return;
+    }
+    if (e.target.closest('.lime-profile__back')) {
+      const activeRow = document.querySelector('.lime-contact--active');
+      const conversationId = activeRow && activeRow.dataset.conversationId;
+      const conversation = conversationId && LimeStore.getConversation(conversationId);
+      if (conversation) showMembers(conversation);
+    }
+  });
+})();
+
+// LIME-35: the one place that computes and writes all three breadcrumb
+// segments — Messages/Communities (following the active scope tab) /
+// the open conversation's title / whichever panel is currently showing
+// (a person's name, "Members", or "Thread", absent when the right
+// panel is closed). Called on every state change that could affect any
+// of the three, rather than each of those places writing its own
+// fragment of the breadcrumb directly.
+function renderCrumbs() {
+  const crumbTeachers = document.getElementById('crumb-teachers');
+  const crumbThread = document.getElementById('crumb-thread');
+  const crumbPanel = document.getElementById('crumb-panel');
+  const layout = document.getElementById('layout');
+  const rightPanel = document.getElementById('right-panel');
+  if (!crumbTeachers || !crumbThread || !crumbPanel || !layout || !rightPanel) return;
+
+  const activeTab = document.querySelector('#scope-tablist [role="tab"][aria-selected="true"]');
+  if (activeTab) crumbTeachers.textContent = activeTab.textContent.trim();
+
+  // Not editing (LIME-34 owns crumbThread's text while renaming — this
+  // would otherwise stomp on the in-progress edit on every state change).
+  if (!crumbThread.isContentEditable) {
+    const activeRow = document.querySelector('.lime-contact--active');
+    const conversationId = activeRow && activeRow.dataset.conversationId;
+    const conversation = conversationId && LimeStore.getConversation(conversationId);
+    // Empty, not left stale, when nothing's open (e.g. the last
+    // conversation was just deleted — selectTopOrEmpty's own "none
+    // left" branch relies on exactly this to clear the old title).
+    crumbThread.textContent = conversation ? LimeStore.getConversationTitle(conversation) : '';
+  }
+
+  const panelOpen = !layout.classList.contains('seed-layout--right-hidden');
+  let panelLabel = '';
+  if (panelOpen) {
+    const panelKind = rightPanel.dataset.panel;
+    if (panelKind === 'members') {
+      panelLabel = 'Members';
+    } else if (panelKind === 'replies') {
+      panelLabel = 'Thread';
+      // "Thread · <parent sender's short name>" on mobile only — a real
+      // bug caught live (Playwright): data-mobile-view is sticky (set
+      // to "panel" by openReplies unconditionally, regardless of actual
+      // window size, and never reset just because the window later
+      // grows past 767px), so checking *it* showed the short name on
+      // desktop too. window.innerWidth, checked live, is what actually
+      // answers "is this mobile right now." text-overflow: ellipsis on
+      // the breadcrumb (already in place) is what handles "if it fits,"
+      // rather than measuring pixel widths here.
+      if (window.innerWidth <= 767) {
+        const quoteEl = document.getElementById('replies-quote');
+        const senderId = quoteEl && quoteEl.dataset.senderId;
+        const sender = senderId && LimeStore.getProfile(senderId);
+        if (sender) panelLabel = 'Thread · ' + shortName(sender.display_name);
+      }
+    } else if (panelKind === 'profile') {
+      const person = LimeStore.getProfile(rightPanel.dataset.shownProfileId);
+      if (person) panelLabel = person.display_name;
+    }
+  }
+  crumbPanel.textContent = panelLabel;
 }
 
 // ── Left nav panel toggle ────────────────────────────────
@@ -1356,33 +1620,19 @@ function setRightPanelOpen(isOpen) {
   // now). The breadcrumb's "Jean Chung" segment (#crumb-thread) used to
   // double as this same trigger, but LIME-03g redefined it to mean "go
   // to thread" instead — it no longer opens the profile panel.
+  // LIME-35: which panel it opens now depends on the conversation — a
+  // DM opens the other person's own details directly; a group opens
+  // Members instead (showConversationHeaderPanel, top-level, branches
+  // on conversation.type so this one trigger doesn't have to).
   const openProfileAvatars = document.getElementById('open-profile-avatars');
   if (openProfileAvatars) {
     openProfileAvatars.addEventListener('click', () => {
-      if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
+      const activeRow = document.querySelector('.lime-contact--active');
+      const conversationId = activeRow && activeRow.dataset.conversationId;
+      const conversation = conversationId && LimeStore.getConversation(conversationId);
+      showConversationHeaderPanel(conversation);
     });
   }
-})();
-
-// ── Profile panel opens from any message's sender name/avatar ──
-// LIME-03n: clicking a sender name or avatar anywhere in the thread
-// (not just the topbar avatar-group/breadcrumb) opens the profile view
-// specifically (not replies). Uses setRightPanelOpen directly rather
-// than simulating a click on #right-panel-toggle, since that button's
-// own semantics have changed more than once across recent briefs.
-(function () {
-  const layout     = document.getElementById('layout');
-  const rightPanel = document.getElementById('right-panel');
-  if (!layout || !rightPanel) return;
-
-  document.querySelectorAll('.lime-message__sender, .lime-message .lime-avatar').forEach((el) => {
-    el.style.cursor = 'pointer';
-    el.addEventListener('click', () => {
-      if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
-      rightPanel.setAttribute('data-panel', 'profile');
-      layout.setAttribute('data-mobile-view', 'panel');
-    });
-  });
 })();
 
 // ── Reply thread panel ────────────────────────────────────
@@ -1411,10 +1661,10 @@ function setRightPanelOpen(isOpen) {
 
   function replyHtml(message, sender) {
     return '<div class="lime-reply" data-message-id="' + message.id + '">'
-      + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>'
+      + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '" data-profile-id="' + escapeHtml(sender.id) + '"></span>'
       + '<div class="lime-reply__col">'
       + '<div class="lime-reply__meta">'
-      + '<span class="lime-reply__sender">' + escapeHtml(shortName(sender.display_name)) + '</span>'
+      + '<span class="lime-reply__sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<span class="lime-reply__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
       + '<p class="lime-reply__text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
@@ -1429,9 +1679,12 @@ function setRightPanelOpen(isOpen) {
 
   function renderQuote(message, sender) {
     quoteEl.dataset.messageId = message.id;
-    quoteEl.innerHTML = '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>'
+    // data-sender-id (LIME-35): renderCrumbs reads this for the mobile
+    // "Thread · <parent sender's short name>" panel-crumb format.
+    quoteEl.dataset.senderId = sender.id;
+    quoteEl.innerHTML = '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '" data-profile-id="' + escapeHtml(sender.id) + '"></span>'
       + '<div class="lime-replies-panel__quote-body">'
-      + '<span class="lime-replies-panel__quote-sender">' + escapeHtml(shortName(sender.display_name)) + '</span>'
+      + '<span class="lime-replies-panel__quote-sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<p class="lime-replies-panel__quote-text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '</div>'
@@ -1483,6 +1736,7 @@ function setRightPanelOpen(isOpen) {
     if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
     rightPanel.setAttribute('data-panel', 'replies');
     layout.setAttribute('data-mobile-view', 'panel');
+    renderCrumbs();
   }
 
   document.addEventListener('click', (e) => {
@@ -2474,27 +2728,22 @@ function confirmDialog({ title, message, confirmLabel, cancelLabel, danger }) {
     });
   }
 
-  const crumbTeachers = document.getElementById('crumb-teachers');
-
   function setScope(scope) {
-    let activeLabel = null;
     tabs.forEach((tab, index) => {
       const active = tab.dataset.scope === scope;
       tab.classList.toggle('seed-tab--active', active);
       tab.setAttribute('aria-selected', String(active));
-      if (active) {
-        tablist.style.setProperty('--active-index', index);
-        activeLabel = tab.textContent.trim();
-      }
+      if (active) tablist.style.setProperty('--active-index', index);
     });
     document.querySelectorAll('[data-scope-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.scopePanel !== scope;
     });
-    // The mobile breadcrumb's first segment tracks whichever scope tab
-    // is active ("Messages"/"Communities") rather than
-    // always reading "Teachers" — id stays #crumb-teachers regardless
-    // of the label it's currently showing.
-    if (crumbTeachers && activeLabel) crumbTeachers.textContent = activeLabel;
+    // LIME-35: the breadcrumb's first segment tracking whichever scope
+    // tab is active ("Messages"/"Communities") is now renderCrumbs' own
+    // job (it re-reads the active tab directly) — one renderer for all
+    // three crumb segments, not each state-change site writing its own
+    // fragment of the breadcrumb.
+    renderCrumbs();
     filter();
   }
 
@@ -2583,16 +2832,14 @@ document.addEventListener('click', (e) => {
 // in lime.css); above that breakpoint the attribute is simply inert.
 // Triggers here layer onto elements that already have their own
 // desktop-oriented click handlers (open-profile-avatars, open-replies)
-// rather than replacing them. #crumb-thread ("Jean Chung" in the
-// breadcrumb) now opens the panel too, matching "clicking Jean's name,
-// photo, or right toggle should show panel" — this supersedes the
-// prior LIME-03g pass, which had it navigate to the thread instead.
+// rather than replacing them.
 (function () {
   const layout = document.getElementById('layout');
   if (!layout) return;
 
   function setView(view) {
     layout.setAttribute('data-mobile-view', view);
+    renderCrumbs();
   }
 
   // Delegated (LIME-24b), same reasoning as the Recent-row highlight above.
@@ -2600,17 +2847,12 @@ document.addEventListener('click', (e) => {
     if (e.target.closest('.lime-contact, .lime-recent__item')) setView('thread');
   });
 
-  [document.getElementById('open-profile-avatars'), document.getElementById('open-replies'), document.getElementById('crumb-thread')]
+  // #open-replies is stale (removed from the markup back in LIME-06 —
+  // getElementById always returns null for it) — .filter(Boolean) has
+  // always quietly dropped it; left as-is, not this brief's concern.
+  [document.getElementById('open-profile-avatars'), document.getElementById('open-replies')]
     .filter(Boolean)
-    .forEach((btn) => btn.addEventListener('click', () => {
-      // LIME-34: #crumb-thread is contenteditable while renaming in
-      // place (startRename, above) — every click that places or moves
-      // the caret inside it would otherwise also fire this "go to
-      // panel" navigation, which is exactly the brief's own "must not
-      // trigger the title's click action while editing."
-      if (btn.isContentEditable) return;
-      setView('panel');
-    }));
+    .forEach((btn) => btn.addEventListener('click', () => setView('panel')));
 
   // right-panel-toggle is excluded from the "go to panel" list above —
   // LIME-03z made it close-only again (it lives inside #right-panel
@@ -2618,6 +2860,23 @@ document.addEventListener('click', (e) => {
   // "thread", never open "panel" itself.
   const rightToggle = document.getElementById('right-panel-toggle');
   if (rightToggle) rightToggle.addEventListener('click', () => setView('thread'));
+
+  // LIME-35: #crumb-thread is now purely an *ancestor* crumb — clicking
+  // it closes whatever panel is open and returns to the thread (mobile:
+  // "thread" view; desktop: the panel just closes), the inverse of its
+  // old "opens the panel" job from LIME-03g/34. setRightPanelOpen(false)
+  // is a harmless no-op when it's already closed, same as setView
+  // re-setting an already-current view — this needs no extra guard for
+  // "nothing to close" beyond the existing isContentEditable one, which
+  // LIME-34 still needs while renaming in place.
+  const crumbThread = document.getElementById('crumb-thread');
+  if (crumbThread) {
+    crumbThread.addEventListener('click', () => {
+      if (crumbThread.isContentEditable) return;
+      setRightPanelOpen(false);
+      setView('thread');
+    });
+  }
 
   const crumbTeachers = document.getElementById('crumb-teachers');
   if (crumbTeachers) crumbTeachers.addEventListener('click', () => setView('contacts'));

@@ -1091,11 +1091,13 @@ body {
   min-width: 0;
 }
 
-/* "Details" (renamed from "Bio" in LIME-03p) is the shortest,
+/* The panel crumb (renamed from the static "Details"/"Bio" text in
+   LIME-35/LIME-03p — #crumb-panel now holds whatever renderCrumbs()
+   put there: a person's name, "Members", or "Thread") is the shortest,
    least-important-to-truncate segment (it's also the current
    location, already bolded) — it shouldn't be the one that gets
    squeezed down to nothing when space is tight. */
-#crumb-details {
+#crumb-panel {
   flex-shrink: 0;
 }
 
@@ -1145,9 +1147,10 @@ body {
 
 /* Breadcrumb content tracks the current mobile view — "Teachers" is
    always shown; "Jean Chung" (+ its separator) appears once you're at
-   least in the thread; "Details" (+ its separator, renamed from "Bio"
-   in LIME-03p) appears only in the profile/replies panel. #crumb-
-   details already gets its "current location" bold treatment for free
+   least in the thread; the panel crumb (+ its separator; LIME-35's
+   dynamic person name/"Members"/"Thread", replacing the old static
+   "Details") appears only once a panel is actually showing. #crumb-
+   panel already gets its "current location" bold treatment for free
    from Seed's own .seed-breadcrumb--active class; Teachers/Jean Chung
    need it added here since which one is "current" changes with the
    view. */
@@ -1156,8 +1159,8 @@ body {
   display: none;
 }
 
-#crumb-details,
-[data-crumb-sep="details"] {
+#crumb-panel,
+[data-crumb-sep="panel"] {
   display: none;
 }
 
@@ -1185,20 +1188,21 @@ body {
   }
 }
 
-/* "Details" shows on mobile via the same data-mobile-view="panel"
+/* The panel crumb shows on mobile via the same data-mobile-view="panel"
    condition as before, OR on any breakpoint the moment the right
    panel is actually open (:not(.seed-layout--right-hidden)) — the
    two conditions have to be OR'd because mobile forces the panel
    fullscreen via data-mobile-view independent of that class, while
    desktop/tablet only ever use the class, never the attribute (it
-   stays stuck at its "contacts" default there). */
-#layout[data-mobile-view="panel"] #crumb-details,
-.seed-layout:not(.seed-layout--right-hidden) #crumb-details {
+   stays stuck at its "contacts" default there). Matches the brief's
+   own "absent when the right panel is closed." */
+#layout[data-mobile-view="panel"] #crumb-panel,
+.seed-layout:not(.seed-layout--right-hidden) #crumb-panel {
   display: inline;
 }
 
-#layout[data-mobile-view="panel"] [data-crumb-sep="details"],
-.seed-layout:not(.seed-layout--right-hidden) [data-crumb-sep="details"] {
+#layout[data-mobile-view="panel"] [data-crumb-sep="panel"],
+.seed-layout:not(.seed-layout--right-hidden) [data-crumb-sep="panel"] {
   display: inline-flex;
 }
 
@@ -2607,6 +2611,14 @@ body {
   color: var(--soil-text);
 }
 
+/* LIME-35: every trigger for the one delegated [data-profile-id] click
+   listener (app.js) gets the pointer cursor declaratively — replaces
+   the inline el.style.cursor = 'pointer' the old one-time-bound handler
+   used to set on whatever elements existed at page-parse time only. */
+[data-profile-id] {
+  cursor: pointer;
+}
+
 .lime-message__time {
   font-size: var(--seed-text-xs);
   color: var(--soil-text-muted);
@@ -3523,10 +3535,40 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
   color: var(--soil-text-muted);
 }
 
-/* ── Reply thread panel ──
-   Replaces (rather than overlays) the profile panel — toggled purely by
-   #right-panel's own data-panel attribute, no inline styles from JS. */
-#right-panel[data-panel="replies"] .lime-profile-panel {
+/* LIME-35: shown only when showPersonDetails was reached from the
+   Members list — clicking it re-renders that same conversation's
+   Members panel rather than closing the whole right panel outright
+   (the existing .lime-panel-close button already does that job). */
+.lime-profile__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  border-radius: var(--seed-radius-full);
+  color: var(--soil-text-muted);
+  cursor: pointer;
+  margin-bottom: var(--seed-space-3);
+}
+
+.lime-profile__back:hover,
+.lime-profile__back:focus-visible {
+  background: var(--calm-bg-subtle-hover);
+  color: var(--soil-text);
+  outline: none;
+}
+
+.lime-profile__edit-btn {
+  margin-top: var(--seed-space-2);
+}
+
+/* ── Reply thread panel / Members panel ──
+   Both replace (rather than overlay) the profile panel, toggled purely
+   by #right-panel's own data-panel attribute, no inline styles from JS. */
+#right-panel[data-panel="replies"] .lime-profile-panel,
+#right-panel[data-panel="members"] .lime-profile-panel {
   display: none;
 }
 
@@ -3538,6 +3580,90 @@ textarea.lime-composer__input::-webkit-scrollbar-thumb {
 
 #right-panel[data-panel="replies"] .lime-replies-panel {
   display: flex;
+}
+
+/* LIME-35: the group Members list — same "replaces the profile panel"
+   toggle pattern as the reply thread above, and (being declared after
+   .lime-replies-panel's own base display:none) already hidden whenever
+   data-panel is "replies" or "profile" without needing its own rule
+   for those states. */
+.lime-members-panel {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+}
+
+#right-panel[data-panel="members"] .lime-members-panel {
+  display: flex;
+}
+
+.lime-members-panel__header {
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  padding: 0 var(--seed-space-4);
+  border-bottom: 1px solid var(--soil-border-subtle);
+}
+
+.lime-members-panel__title {
+  font-size: var(--seed-text-base);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+  margin: 0;
+}
+
+.lime-members-panel__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--seed-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: none;
+}
+
+.lime-members-panel__list::-webkit-scrollbar {
+  display: none;
+}
+
+.lime-members-panel__row {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  width: 100%;
+  padding: var(--seed-space-2);
+  border: none;
+  background: none;
+  border-radius: var(--seed-radius-md);
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.lime-members-panel__row:hover,
+.lime-members-panel__row:focus-visible {
+  background: var(--calm-bg-subtle-hover);
+  outline: none;
+}
+
+.lime-members-panel__row-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lime-members-panel__row-name {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+}
+
+.lime-members-panel__row-role {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
 }
 
 .lime-replies-panel__header {
