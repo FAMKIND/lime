@@ -69,12 +69,13 @@ Read `├─<` as "one of these has many of those."
 | UI concept | Table / derivation |
 |---|---|
 | A conversation's title | `conversations.name` if set, else derived from the other member(s)' `profiles.display_name` (see `getConversationTitle` below) |
-| A DM | `conversations.type = 'direct'`, exactly 2 rows in `conversation_members` |
+| A DM | `conversations.type = 'direct'`, exactly 2 rows in `conversation_members`, `dm_key` set (the store computes it — the two member ids, sorted, joined with `:` — never the UI directly) so the same pair can't get a second DM |
 | Starred / archived | The current user's own row in `conversation_members` (`starred`, `archived_at`) — never the conversation itself |
 | A reply | `messages.reply_to` pointing at the parent message's `id` |
 | A reaction count | `count(*)` of `message_reactions` for that `(message_id, emoji)` |
 | "Did I react" | `exists` a `message_reactions` row for `(message_id, current_user_id, emoji)` |
 | Latest activity (for list sorting) | The most recent row in `messages` for that `conversation_id`, replies included |
+| Presence dot (Active / Away / Busy / DND) | `presenceFor(profiles.status)` — `online → Active`, `busy → Busy`, `offline → Away`. **"Away" and "DND" as *distinct* states have no stored value yet**: today's `status` column only ever holds `online`/`offline`/`busy` (matching the seed and this schema exactly), so `presenceFor`'s "away" is really just its fallback for "anything else," and the UI's separate "DND" dot exists only in still-static markup (the Recent row), never derived from a real profile. A future presence feature decides whether "away" and "DND" become real, distinct stored values. |
 
 ## The store API (the adapter contract)
 
@@ -138,11 +139,30 @@ or no matching profile, it falls back to `teacher-002` and logs once, so
 the app still renders something during local development without a login
 step.
 
-When Supabase auth replaces this: `getCurrentUserId()` reads the Supabase
-session instead (`supabase.auth.getUser()` or equivalent) and resolves its
-`email` (or `id`, once profiles are keyed by the auth user's own uuid) the
-same way. Nothing else in the UI changes, because nothing else in the UI
-calls anything auth-related directly — this function is the only seam.
+When Supabase auth replaces this: `getCurrentUserId()` resolves to the
+profile whose `profiles.auth_user_id` matches the current session's
+`auth.uid()` — via the `current_profile_id()` SQL helper in `schema.sql`,
+which every RLS policy also calls, so the app and the database agree on
+"who's asking" through the exact same lookup. **Not** a direct comparison
+of `profiles.id` to `auth.uid()` — they're different types (readable text
+vs. uuid) and different ids entirely (LIME-24a-fix caught this: the first
+draft of this doc missed it, and every policy that compared them directly
+would simply never have matched).
+
+**Onboarding**, the two ways a profile ends up linked:
+- **A brand-new signup** gets a `profiles` row created for them (via a
+  Supabase trigger on `auth.users` insert, or on their first successful
+  login — either works; whichever is simpler when this is actually built),
+  with `auth_user_id` set immediately.
+- **An existing seed teacher** (e.g. `teacher-002`) gets linked the first
+  time someone logs in with that teacher's `email`: find the `profiles` row
+  by email, set its `auth_user_id` to the new session's `auth.uid()`, once.
+  This is exactly what "test with multiple email logins" needs — a real
+  login attaches to the seed identity that already has all its messages
+  and conversations, rather than starting that person over from empty.
+
+Nothing else in the UI changes, because nothing else in the UI calls
+anything auth-related directly — `getCurrentUserId()` is the only seam.
 
 ## The switch checklist
 
@@ -154,11 +174,18 @@ of `localStorage`:
 2. Add config: a Supabase project URL and anon key, via a gitignored
    `*.local.js` file, the same pattern `demo-config.local.js` already
    uses for the demo login.
-3. Enable the RLS policies drafted (as comments) in `schema.sql`.
-4. Run `seed-data/seed.ts` against the new database — **after** fixing the
-   reactor-duplication bug flagged in `schema.sql`'s comments; as written
-   today it would fail against `message_reactions`' own primary key.
-5. Flip `LIME_BACKEND` from `'local'` to `'supabase'`.
+3. Create the `current_profile_id()`, `is_member()` and `is_owner()` SQL
+   helpers from `schema.sql`, then enable the RLS policies drafted there
+   (as comments) — the policies call the helpers, so the helpers have to
+   exist first.
+4. Wire up the onboarding linking described in "The auth seam" above (new
+   signup → a profile row with `auth_user_id` set; existing seed teacher →
+   linked by email on first login), so `current_profile_id()` actually
+   resolves to something for every real login.
+5. Run `seed-data/seed.ts` against the new database (it's fixed to use the
+   corrected reactor rule in LIME-24b — no longer a blocker by the time
+   this checklist is used for real).
+6. Flip `LIME_BACKEND` from `'local'` to `'supabase'`.
 
 Nothing else changes — the store, the events, and every UI call site stay
 exactly as they are, because they were never talking to `localStorage` or
@@ -175,11 +202,14 @@ to Supabase directly in the first place.
   (LIME-28 in the drafted lifecycle is what makes them live); this is
   worth resolving when that brief defines what a community page actually
   needs, not guessed at here.
-- **`seed-data/seed.ts`'s reactor selection doesn't dedupe senders before
-  slicing**, which would violate `message_reactions`' own primary key if
-  run against this schema as written. Full detail and a concrete repro
-  (`conv-001`'s `msg-006`) are in `schema.sql`'s comments, right above the
-  table it affects. Production-ready principle 4 asks `LIME-24b`'s local
-  adapter to match `seed.ts`'s exact reactor algorithm — it should match
-  a *corrected* version of that algorithm (dedupe first, then slice), not
-  reproduce this bug locally too.
+
+**Resolved by LIME-24a-fix** (kept here for the record, not because it's
+still open): the reactor algorithm gap flagged in the first draft of this
+doc — `seed-data/seed.ts` selecting reactors without deduping, which would
+violate `message_reactions`' primary key — is now a decided rule, not an
+open question: a reaction's reactors are the conversation's distinct
+members (participant order), sliced to `min(count, member_count)`. Full
+reasoning and the same `conv-001`/`msg-006` repro (😍×5 → 😍×2, since it's
+a 2-person DM) are in `schema.sql`'s comments. `seed-data/seed.ts` is
+updated to this rule in LIME-24b; the local adapter uses it from the
+start.

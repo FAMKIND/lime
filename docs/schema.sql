@@ -15,20 +15,27 @@
 -- creates one via Supabase auth's own trigger (not written here — this
 -- schema only covers the app's own tables).
 create table profiles (
-  id            text primary key,
-  display_name  text not null,
-  email         text not null unique,
-  role          text,
-  pronouns      text,
-  school        text,
-  grade_levels  text[],
-  subjects      text[],
-  bio           text,
-  timezone      text,
-  status        text not null default 'offline' check (status in ('online', 'offline', 'busy')),
-  avatar_url    text,
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
+  id             text primary key,
+  -- LIME-24a-fix: the seam to a real login. `auth.uid()` (Supabase auth's
+  -- own user id) is a uuid, and never equal to this table's readable text
+  -- ids — comparing them directly in a policy would just never match.
+  -- Nullable: a seed profile has no linked auth user until someone
+  -- actually logs in as that person (see `current_profile_id()` below and
+  -- the auth seam in data-model.md for how that linking happens).
+  auth_user_id   uuid unique references auth.users(id),
+  display_name   text not null,
+  email          text not null unique,
+  role           text,
+  pronouns       text,
+  school         text,
+  grade_levels   text[],
+  subjects       text[],
+  bio            text,
+  timezone       text,
+  status         text not null default 'offline' check (status in ('online', 'offline', 'busy')),
+  avatar_url     text,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
 );
 
 -- ── conversations ───────────────────────────────────────────
@@ -45,9 +52,19 @@ create table conversations (
   -- Soft delete (owner only, per the RLS notes below) — a deleted
   -- conversation is hidden from listConversations, not gone from the table.
   deleted_at   timestamptz,
+  -- LIME-24a-fix: makes a DM between two people unique. The store computes
+  -- this — never the UI directly — as the two member ids, sorted, joined
+  -- with ':' (e.g. "teacher-001:teacher-002"). null for group/community
+  -- rows, which have no such uniqueness rule. `createConversation`'s
+  -- promise to "return the existing DM" depends on this: it looks up
+  -- `dm_key` before creating a new row, rather than trusting nothing
+  -- stops a duplicate from existing.
+  dm_key       text,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
+
+create unique index conversations_dm_key_idx on conversations (dm_key) where dm_key is not null;
 
 -- NOT modeled here, flagged rather than silently added: today's
 -- seed-data/conversations.json gives `community`-type rows two extra
@@ -109,22 +126,21 @@ create table message_reactions (
   primary key (message_id, user_id, emoji)
 );
 
--- FLAGGED — inconsistent with seed-data/seed.ts as it exists today:
--- seed.ts's reactor selection (`messages.filter(m => m.conversation_id
--- === msg.conversation_id).map(m => m.sender_id).slice(0, reaction.count)`)
--- does not deduplicate sender_id before slicing. Confirmed against the
--- real seed: conv-001's msg-006 carries a `{emoji: "😍", count: 5}`
--- reaction, and the first 5 messages in conv-001 (file order) are sent by
--- teacher-002, teacher-001, teacher-002, teacher-001, teacher-002 — only 2
--- distinct senders. Run as written, seed.ts would attempt to insert
--- (msg-006, teacher-002, "😍") three times and (msg-006, teacher-001,
--- "😍") twice, violating this table's own primary key. Whoever runs a real
--- seed against this schema needs to dedupe reactors before slicing, e.g.
--- `[...new Set(reactors)].slice(0, reaction.count)` — not fixed here
--- (seed-data/seed.ts is out of this brief's scope), but LIME-24b's local
--- adapter, which production-ready principle 4 requires to use "seed.ts's
--- exact reactor algorithm, so local and database seeds match," needs to
--- apply that same dedupe rather than reproducing the bug locally too.
+-- The reactor rule (LIME-24a-fix, replacing the earlier "dedupe the
+-- senders" suggestion): a reaction's reactors are the conversation's
+-- distinct members, in participant order, sliced to
+-- `min(reaction.count, member_count)`. A reaction count can't exceed the
+-- number of people who could actually react — deduping alone (the earlier
+-- suggestion) doesn't enforce that ceiling, and seed-data/seed.ts's
+-- current algorithm (filtering messages, mapping to sender_id, slicing
+-- without deduping) can both produce duplicate reactor rows (violating
+-- this table's primary key) and, separately, imply more reactors than a
+-- conversation actually has members.
+-- Confirmed against the real seed: conv-001's msg-006 carries a
+-- `{emoji: "😍", count: 5}` reaction, but conv-001 is a 2-person DM — so
+-- under this rule it becomes 😍×2 (both members), not 5. seed-data/seed.ts
+-- is changed to this same rule in LIME-24b (the only change allowed there
+-- in that brief); the local adapter uses it from the start.
 
 -- ── Row-level security (draft, not yet enabled) ──────────────
 -- Left as comments — RLS isn't turned on until Supabase actually backs
@@ -132,43 +148,156 @@ create table message_reactions (
 -- Written down now so 24b's local `can(action, conversation)` helper has
 -- a real target to match, not just a guess.
 --
+-- LIME-24a-fix, two corrections to the first draft:
+-- 1. Every policy below compares against `current_profile_id()`, never
+--    `auth.uid()` directly — `auth.uid()` is a uuid and profiles.id is
+--    readable text, so a direct comparison would simply never match.
+-- 2. None of these policies query `conversation_members` from inside a
+--    policy defined *on* `conversation_members` — Postgres RLS policies
+--    re-invoke themselves when a policy's own query touches its own
+--    table, which recurses infinitely. The `is_member`/`is_owner` helper
+--    functions exist specifically to break that: `security definer` runs
+--    them with the function owner's privileges, bypassing RLS for their
+--    own internal lookup, so calling them from a policy is safe.
+--
 -- alter table conversations enable row level security;
 -- alter table conversation_members enable row level security;
 -- alter table messages enable row level security;
 -- alter table message_reactions enable row level security;
 --
--- -- Members read the conversations and messages they belong to.
+-- -- The current auth session's profile id, or null if unlinked. `stable`
+-- -- (not `immutable`) since auth.uid() varies per request, not per call.
+-- create or replace function current_profile_id()
+-- returns text
+-- language sql
+-- stable
+-- security definer
+-- set search_path = public
+-- as $$
+--   select id from profiles where auth_user_id = auth.uid();
+-- $$;
+--
+-- create or replace function is_member(conv_id text)
+-- returns boolean
+-- language sql
+-- stable
+-- security definer
+-- set search_path = public
+-- as $$
+--   select exists (
+--     select 1 from conversation_members
+--     where conversation_id = conv_id and user_id = current_profile_id()
+--   );
+-- $$;
+--
+-- create or replace function is_owner(conv_id text)
+-- returns boolean
+-- language sql
+-- stable
+-- security definer
+-- set search_path = public
+-- as $$
+--   select exists (
+--     select 1 from conversation_members
+--     where conversation_id = conv_id and user_id = current_profile_id() and role = 'owner'
+--   );
+-- $$;
+--
+-- -- ── conversations ──────────────────────────────────────────
+-- -- Members read the conversations they belong to. `deleted_at is null`
+-- -- here (and on the community policy below) is a deliberate choice, not
+-- -- an oversight: it hides a soft-deleted conversation from being listed
+-- -- or opened fresh, but existing members' access to its messages isn't
+-- -- separately revoked below — soft delete is "leave my list", not
+-- -- "retroactively lock everyone out", and nothing in the app today needs
+-- -- the stronger version.
 -- create policy conversations_select_member on conversations for select
---   using (exists (
---     select 1 from conversation_members m
---     where m.conversation_id = conversations.id and m.user_id = auth.uid()
---   ));
+--   using (is_member(id) and deleted_at is null);
+--
+-- -- Communities are readable by any authenticated user, whether or not
+-- -- they've joined (joining is a separate conversation_members insert,
+-- -- below) — the exact join-eligibility rule isn't decided until LIME-28.
+-- create policy conversations_select_community on conversations for select
+--   using (type = 'community' and deleted_at is null);
+--
+-- -- Creating a conversation: any authenticated user may insert one,
+-- -- naming themselves as its creator. The matching conversation_members
+-- -- row (making them the owner) is a separate insert, below.
+-- create policy conversations_insert_creator on conversations for insert
+--   with check (created_by = current_profile_id());
+--
+-- -- Only the owner renames or soft-deletes a conversation.
+-- create policy conversations_update_owner on conversations for update
+--   using (is_owner(id));
+--
+-- -- ── conversation_members ───────────────────────────────────
+-- -- Members see who else is in their conversations.
+-- create policy conversation_members_select_member on conversation_members for select
+--   using (is_member(conversation_id));
+--
+-- -- Adding a member: the row's own creator (self-adding, e.g. joining a
+-- -- community), the conversation's creator (populating the initial member
+-- -- list right after creating it — is_member/is_owner would both still be
+-- -- false at that instant, since this is the row that would make them
+-- -- true), or an existing owner adding someone later.
+-- create policy conversation_members_insert_creator on conversation_members for insert
+--   with check (
+--     user_id = current_profile_id()
+--     or exists (
+--       select 1 from conversations c
+--       where c.id = conversation_members.conversation_id
+--         and c.created_by = current_profile_id()
+--     )
+--     or is_owner(conversation_id)
+--   );
+--
+-- -- Each user updates only their own membership row (star, archive, read).
+-- create policy conversation_members_update_self on conversation_members for update
+--   using (user_id = current_profile_id());
+--
+-- -- ── messages ───────────────────────────────────────────────
 -- create policy messages_select_member on messages for select
+--   using (is_member(conversation_id));
+--
+-- -- Community messages are readable by any authenticated user, matching
+-- -- the community's own public-read select policy above — today only the
+-- -- conversation row itself was public; without this, a non-member could
+-- -- see that a community exists but not what's said in it.
+-- create policy messages_select_community on messages for select
 --   using (exists (
---     select 1 from conversation_members m
---     where m.conversation_id = messages.conversation_id and m.user_id = auth.uid()
+--     select 1 from conversations c
+--     where c.id = messages.conversation_id and c.type = 'community' and c.deleted_at is null
 --   ));
 --
 -- -- Members insert messages only into conversations they belong to.
 -- create policy messages_insert_member on messages for insert
---   with check (exists (
---     select 1 from conversation_members m
---     where m.conversation_id = messages.conversation_id and m.user_id = auth.uid()
---   ));
+--   with check (is_member(conversation_id));
 --
--- -- Only the owner renames or soft-deletes a conversation.
--- create policy conversations_update_owner on conversations for update
+-- -- Not used by the app yet (there's no edit-message or delete-message UI
+-- -- today), but the intent is decided now rather than left undefined:
+-- -- you may only ever change or remove your own messages.
+-- create policy messages_update_self on messages for update
+--   using (sender_id = current_profile_id());
+-- create policy messages_delete_self on messages for delete
+--   using (sender_id = current_profile_id());
+--
+-- -- ── message_reactions ──────────────────────────────────────
+-- create policy message_reactions_select_member on message_reactions for select
 --   using (exists (
---     select 1 from conversation_members m
---     where m.conversation_id = conversations.id and m.user_id = auth.uid() and m.role = 'owner'
+--     select 1 from messages m
+--     where m.id = message_reactions.message_id and is_member(m.conversation_id)
 --   ));
 --
--- -- Each user updates only their own membership row (star, archive, read).
--- create policy conversation_members_update_self on conversation_members for update
---   using (user_id = auth.uid());
---
--- -- Communities are readable by any authenticated user, and joinable
--- -- (an insert into conversation_members for oneself, once communities go
--- -- live in LIME-28 — the exact join-eligibility rule isn't decided yet).
--- create policy conversations_select_community on conversations for select
---   using (type = 'community');
+-- -- Insert/delete of your own rows only — and only into a conversation
+-- -- you're actually a member of (matching the reactor rule above: you
+-- -- can't react to something you can't see).
+-- create policy message_reactions_insert_self on message_reactions for insert
+--   with check (
+--     user_id = current_profile_id()
+--     and exists (
+--       select 1 from messages m
+--       where m.id = message_reactions.message_id and is_member(m.conversation_id)
+--     )
+--   );
+-- create policy message_reactions_delete_self on message_reactions for delete
+--   using (user_id = current_profile_id());
