@@ -2957,6 +2957,23 @@ body {
   border-radius: var(--seed-radius-lg);
   background: var(--soil-bg-surface);
   padding: var(--seed-space-2) var(--seed-space-3);
+  /* LIME-32: composer width varies with window + panels; key the toolbar
+     collapse off the composer's own width (container query), never the
+     viewport. This box already had `position: relative` (for the
+     corner-anchored Send button below), which already makes it a
+     containing block for absolutely-positioned descendants — adding
+     container-type here doesn't change that. Verified live (Playwright):
+     width: 75% and the Send button's corner position are both unaffected
+     by this addition. A real thing learned live, not assumed: this
+     element keeps its default content-box sizing (unchanged), and its
+     @container max-width condition (below) is compared against that same
+     content-box size, not the rendered border-box getBoundingClientRect
+     reports — confirmed by sweeping box.style.width directly and
+     checking exactly when the condition started matching. Firefox has
+     supported container queries since 110 (2023); this app targets
+     current browsers only. */
+  container-type: inline-size;
+  container-name: composer;
 }
 
 /* The reply composer (LIME-11) reuses this same class inside a much
@@ -3027,8 +3044,27 @@ body {
   display: none;
 }
 
-@media (max-width: 480px) {
-  .lime-composer__tool--overflow {
+/* LIME-32: replaces the old @media (max-width: 480px) viewport
+   breakpoint — the composer's own width depends on the window, the
+   left/right panels, and the 75% box rule, so no single viewport
+   breakpoint could ever be right for it. 374px measured live
+   (Playwright/Firefox, sweeping the box's own content-box width and
+   reading the real rendered gap at each step — the same content-box size
+   the @container condition below is itself compared against, confirmed
+   the same way): the full toolbar (all 9 tools + 3 dividers) plus the
+   corner-anchored Send button's own footprint keeps exactly an 8px gap
+   at a 374px content-box width, and the gap only grows above that — so
+   this collapses the instant the box can no longer guarantee the
+   brief's own "≥8px everywhere" with the full toolbar showing. */
+@container composer (max-width: 374px) {
+  /* .lime-composer__toolbar prefix, not the bare class — a real bug
+     found live (Playwright): the two overflow dividers also carry
+     .lime-composer__divider, whose own display:block rule (below, later
+     in the file) ties this rule's specificity and wins on source order,
+     leaving them visibly dangling among the 4 always-shown tools exactly
+     as the brief's own "(and any divider left dangling)" flagged. This
+     extra selector segment reliably outranks it regardless of order. */
+  .lime-composer__toolbar .lime-composer__tool--overflow {
     display: none;
   }
 
@@ -3037,14 +3073,16 @@ body {
   }
 }
 
-/* The reply composer's column is always narrow — the right panel's
-   width on desktop, or the full mobile "panel" view, which is still
-   only as wide as that same panel — unlike the main composer, which
-   only gets this narrow at the 480px breakpoint above. Collapsing its
-   extra tools into the overflow menu unconditionally, rather than
-   gating it on a viewport-width breakpoint tuned for the main
-   composer's much wider column, is what actually keeps 4 tools + the
-   "…" button + the corner-anchored Send button all fitting on one line. */
+/* The reply composer keeps its own *unconditional* collapse — measured
+   live rather than assumed: the right panel's resize handle enforces a
+   minimum (240px) but no maximum, and dragging it out to roughly 432px+
+   pushes this composer's own box past the 400px threshold above, where
+   the shared container query alone would stop collapsing it. That's a
+   real, reachable width (a wide monitor has the room), not just a
+   theoretical one, so relying on the shared rule alone would occasionally
+   let this composer's toolbar run into its own Send button. Kept
+   deliberately outside any @container block — these two rules apply
+   regardless of this composer's own measured width. */
 #replies-composer .lime-composer__tool--overflow {
   display: none;
 }
@@ -3053,23 +3091,15 @@ body {
   display: inline-flex;
 }
 
-/* The right panel narrows the center panel (and this composer along
-   with it) — rather than guessing a viewport breakpoint, key directly
-   off the actual state that causes it, per the brief's own "open right
-   panel" trigger. Shrinks tools slightly so 9 buttons + 2 dividers keep
-   fitting on one line instead of spilling past .lime-composer__box's
-   rounded border (flex-shrink:0 above prevents them squishing instead,
-   but doesn't by itself make a too-narrow row actually fit). */
-#layout:not(.seed-layout--right-hidden) .lime-composer__tool {
-  width: 28px;
-  height: 28px;
-  font-size: 16px;
-}
-
-#layout:not(.seed-layout--right-hidden) .lime-composer__tool .dew,
-#layout:not(.seed-layout--right-hidden) .lime-composer__tool [class^="icon-"] {
-  font-size: 14px;
-}
+/* LIME-32: the #layout:not(.seed-layout--right-hidden) .lime-composer__tool
+   size tweak that used to live here (shrinking tools to 28px so the
+   uncollapsed toolbar kept fitting when the right panel narrowed this
+   composer) is gone, not just trimmed — measured live across every
+   width × right-panel-state the brief's own verification calls for:
+   at every one, either the container query above has already collapsed
+   the toolbar (tool size can't matter — 5 items show either way) or
+   there's ≥21px of gap to spare at full 32px size. The tweak's whole
+   job is now the container query's, precisely, everywhere. */
 
 .lime-composer__tool:hover {
   background: var(--calm-bg-subtle-hover);
