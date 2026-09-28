@@ -1678,10 +1678,30 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
       + '</div>';
   }
 
-  function rowHtml(label, valueHtml) {
-    return '<div class="lime-settings__row" data-row-label="' + escapeHtml(label) + '">'
-      + '<div class="lime-settings__row-label">' + escapeHtml(label) + '</div>'
-      + valueHtml
+  // LIME-31-fix: label-left, control-right row (Pronouns/Role/School/Grade
+  // levels/Subjects/Timezone/Phone). data-field + a .lime-settings__field-error
+  // descendant keep it compatible with fieldErrorEl/clearFieldError/setFieldError
+  // below, which were written for the old .lime-settings__field layout.
+  function compactRowHtml(key, label, controlHtml) {
+    return '<div class="lime-settings__compact-row" data-field="' + key + '" data-row-label="' + escapeHtml(label) + '">'
+      + '<label class="lime-settings__compact-label" for="settings-field-' + key + '">' + escapeHtml(label) + '</label>'
+      + '<div class="lime-settings__compact-control">' + controlHtml + '<p class="lime-settings__field-error"></p></div>'
+      + '</div>';
+  }
+
+  function compactInputHtml(key, value, inputAttrs) {
+    return '<input class="seed-input" id="settings-field-' + key + '" ' + (inputAttrs || 'type="text"') + ' value="' + escapeHtml(value || '') + '">';
+  }
+
+  // Login & security row: label + muted description, "Change" opens an
+  // inline form after it (see toggleInlineForm).
+  function accountRowHtml(key, label, description) {
+    return '<div class="lime-settings__account-row" data-row-label="' + escapeHtml(label) + '">'
+      + '<div>'
+      + '<div class="lime-settings__account-row-label">' + escapeHtml(label) + '</div>'
+      + '<div class="lime-settings__account-row-value">' + escapeHtml(description) + '</div>'
+      + '</div>'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" data-change="' + key + '">Change</button>'
       + '</div>';
   }
 
@@ -1708,11 +1728,7 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     // timezone as a side effect of just opening the form.
     const zones = (value && !COMMON_TIMEZONES.includes(value)) ? [value].concat(COMMON_TIMEZONES) : COMMON_TIMEZONES;
     const options = zones.map((z) => '<option value="' + escapeHtml(z) + '"' + (z === value ? ' selected' : '') + '>' + escapeHtml(z) + '</option>').join('');
-    return '<div class="lime-settings__field" data-field="timezone" data-row-label="Timezone">'
-      + '<label class="lime-settings__field-label" for="settings-field-timezone">Timezone</label>'
-      + '<select class="seed-input" id="settings-field-timezone">' + options + '</select>'
-      + '<p class="lime-settings__field-error"></p>'
-      + '</div>';
+    return compactRowHtml('timezone', 'Timezone', '<select class="seed-input" id="settings-field-timezone">' + options + '</select>');
   }
 
   function fieldErrorEl(key) {
@@ -1751,9 +1767,14 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     return PROFILE_FIELD_KEYS.some((key) => current[key] !== profileOriginal[key]);
   }
 
-  function updateSaveBarVisibility() {
-    const saveBar = document.getElementById('settings-save-bar');
-    if (saveBar) saveBar.classList.toggle('is-visible', isProfileFormDirty());
+  // LIME-31-fix: the footer is always visible; Save/Cancel are disabled
+  // instead of the whole bar hiding (brief's "always-visible Save/Cancel").
+  function updateFooterState() {
+    const dirty = isProfileFormDirty();
+    const saveBtn = document.getElementById('settings-save-btn');
+    const discardBtn = document.getElementById('settings-discard-btn');
+    if (saveBtn) saveBtn.disabled = !dirty;
+    if (discardBtn) discardBtn.disabled = !dirty;
   }
 
   // The brief's own "leaving the section, or closing the modal, with
@@ -1779,33 +1800,38 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
       timezone: user.timezone || '',
       phone: user.phone || '',
     };
+    // LIME-31-fix layout: avatar beside Display name, then compact
+    // label-left/control-right rows, Bio last, an always-visible footer
+    // (Save/Cancel disabled until dirty — see updateFooterState).
     pane.innerHTML = paneHeaderHtml('Profile', 'Your details as others see them across Lime.')
-      + '<div class="lime-settings__rows">'
-      + rowHtml('Photo', '<div class="lime-settings__row-control">'
-        + '<span class="seed-avatar seed-avatar--xl lime-avatar" data-name="' + escapeHtml(user.display_name) + '"></span>'
-        + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" disabled>Upload photo</button>'
-        + '<span class="lime-badge--soon">Soon</span>'
-        + '</div>')
+      + '<div class="lime-settings__body" id="settings-profile-form">'
+      + '<div class="lime-settings__profile-top" data-row-label="Photo">'
+      + '<div class="lime-settings__profile-photo">'
+      + '<span class="seed-avatar seed-avatar--xl lime-avatar" data-name="' + escapeHtml(user.display_name) + '"></span>'
+      + '<div class="lime-settings__profile-photo-actions">'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" disabled>Upload photo</button>'
+      + '<span class="lime-badge--soon">Soon</span>'
       + '</div>'
-      + '<div class="lime-settings__form" id="settings-profile-form">'
+      + '</div>'
       + fieldHtml('display_name', 'Display name', profileOriginal.display_name)
-      + fieldHtml('pronouns', 'Pronouns', profileOriginal.pronouns)
-      + fieldHtml('role', 'Role', profileOriginal.role)
-      + fieldHtml('school', 'School', profileOriginal.school)
-      + fieldHtml('grade_levels', 'Grade levels', profileOriginal.grade_levels)
-      + fieldHtml('subjects', 'Subjects', profileOriginal.subjects)
-      + textareaFieldHtml('bio', 'Bio', profileOriginal.bio)
-      + timezoneFieldHtml(profileOriginal.timezone)
-      + fieldHtml('phone', 'Phone', profileOriginal.phone)
       + '</div>'
-      + '<div class="lime-settings__save-bar" id="settings-save-bar">'
-      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-discard-btn">Discard</button>'
-      + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="settings-save-btn">Save</button>'
+      + compactRowHtml('pronouns', 'Pronouns', compactInputHtml('pronouns', profileOriginal.pronouns))
+      + compactRowHtml('role', 'Role', compactInputHtml('role', profileOriginal.role))
+      + compactRowHtml('school', 'School', compactInputHtml('school', profileOriginal.school))
+      + compactRowHtml('grade_levels', 'Grade levels', compactInputHtml('grade_levels', profileOriginal.grade_levels))
+      + compactRowHtml('subjects', 'Subjects', compactInputHtml('subjects', profileOriginal.subjects))
+      + timezoneFieldHtml(profileOriginal.timezone)
+      + compactRowHtml('phone', 'Phone', compactInputHtml('phone', profileOriginal.phone, 'type="tel"'))
+      + textareaFieldHtml('bio', 'Bio', profileOriginal.bio)
+      + '</div>'
+      + '<div class="lime-settings__footer">'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-discard-btn" disabled>Cancel</button>'
+      + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="settings-save-btn" disabled>Save changes</button>'
       + '</div>';
     pane.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
 
     const form = document.getElementById('settings-profile-form');
-    if (form) form.addEventListener('input', updateSaveBarVisibility);
+    if (form) form.addEventListener('input', updateFooterState);
 
     const discardBtn = document.getElementById('settings-discard-btn');
     if (discardBtn) discardBtn.addEventListener('click', renderProfileSection);
@@ -1850,13 +1876,6 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     }
   }
 
-  function changeRowHtml(key, label, value) {
-    return rowHtml(label, '<div class="lime-settings__row-control">'
-      + '<span class="lime-settings__row-value">' + escapeHtml(value) + '</span>'
-      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" data-change="' + key + '">Change</button>'
-      + '</div>');
-  }
-
   function passwordFieldHtml(id, label) {
     return '<div class="lime-settings__field" data-field="' + id + '">'
       + '<label class="lime-settings__field-label" for="settings-' + id + '">' + escapeHtml(label) + '</label>'
@@ -1875,6 +1894,7 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
       + '</div>'
       + '<p class="lime-settings__inline-error" id="settings-email-error" hidden></p>'
       + '<div class="lime-settings__inline-form-actions">'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-email-cancel-btn">Cancel</button>'
       + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="settings-email-save-btn">Save</button>'
       + '</div>'
       + '</div>';
@@ -1888,6 +1908,7 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
       + '<p class="lime-settings__inline-error" id="settings-password-error" hidden></p>'
       + '<p class="lime-settings__inline-success" id="settings-password-success" hidden></p>'
       + '<div class="lime-settings__inline-form-actions">'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-password-cancel-btn">Cancel</button>'
       + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="settings-password-save-btn">Save</button>'
       + '</div>'
       + '</div>';
@@ -1895,7 +1916,11 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
 
   function wireEmailForm() {
     const saveBtn = document.getElementById('settings-email-save-btn');
+    const cancelBtn = document.getElementById('settings-email-cancel-btn');
     if (!saveBtn) return;
+    // Cancel just closes the inline form — toggleInlineForm('email') already
+    // removes it when one is open, so re-calling it is the whole behavior.
+    if (cancelBtn) cancelBtn.addEventListener('click', () => toggleInlineForm('email'));
     saveBtn.addEventListener('click', () => {
       const input = document.getElementById('settings-new-email');
       const errorEl = document.getElementById('settings-email-error');
@@ -1913,7 +1938,9 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
 
   function wirePasswordForm() {
     const saveBtn = document.getElementById('settings-password-save-btn');
+    const cancelBtn = document.getElementById('settings-password-cancel-btn');
     if (!saveBtn) return;
+    if (cancelBtn) cancelBtn.addEventListener('click', () => toggleInlineForm('password'));
     saveBtn.addEventListener('click', () => {
       const current = document.getElementById('settings-current-password').value;
       const next = document.getElementById('settings-new-password').value;
@@ -1964,11 +1991,19 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
 
   function renderSecuritySection() {
     const user = LimeStore.getCurrentUser();
+    // LIME-31-fix: Notion-style "Account security" / "Account" subsections
+    // with headings and dividers, replacing the flat row list. No footer
+    // here — changes are per-row via the inline Change forms above.
     pane.innerHTML = paneHeaderHtml('Login & security', 'How you sign in, and how to sign out.')
-      + '<div class="lime-settings__rows">'
-      + changeRowHtml('email', 'Email', user.email || 'Not set')
-      + changeRowHtml('password', 'Password', '••••••••')
-      + rowHtml('Sign out', '<div class="lime-settings__row-control"><button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-sign-out-btn">Sign out</button></div>')
+      + '<div class="lime-settings__body">'
+      + '<h3 class="lime-settings__subsection-heading">Account security</h3>'
+      + accountRowHtml('email', 'Email', user.email || 'Not set')
+      + accountRowHtml('password', 'Password', 'Set a new password for your account.')
+      + '<h3 class="lime-settings__subsection-heading">Account</h3>'
+      + '<div class="lime-settings__account-row" data-row-label="Sign out">'
+      + '<div class="lime-settings__account-row-label">Sign out</div>'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-sign-out-btn">Sign out</button>'
+      + '</div>'
       + '</div>';
   }
 
@@ -1984,7 +2019,10 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     });
     const section = SETTINGS_SECTIONS.find((s) => s.id === id);
     if (section) section.render();
-    pane.scrollTop = 0;
+    // LIME-31-fix: the pane itself no longer scrolls (header/footer are
+    // fixed); .lime-settings__body is the scrolling zone now.
+    const body = pane.querySelector('.lime-settings__body');
+    if (body) body.scrollTop = 0;
     return true;
   }
 
@@ -2022,10 +2060,12 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
       btn.style.display = matches ? '' : 'none';
     });
     let firstMatch = null;
-    // .lime-settings__field too (LIME-31) — Profile's editable fields
-    // aren't .lime-settings__row anymore, but still need the same
-    // highlight-and-scroll-into-view treatment.
-    pane.querySelectorAll('.lime-settings__row, .lime-settings__field').forEach((row) => {
+    // LIME-31-fix: .lime-settings__row is gone — rows are now one of
+    // .lime-settings__field (Display name, Bio), .lime-settings__compact-row
+    // (Pronouns/Role/etc.), .lime-settings__profile-top (Photo), or
+    // .lime-settings__account-row (Email/Password/Sign out) — all still
+    // need the same highlight-and-scroll-into-view treatment.
+    pane.querySelectorAll('.lime-settings__field, .lime-settings__compact-row, .lime-settings__profile-top, .lime-settings__account-row').forEach((row) => {
       const isMatch = !!query && (row.dataset.rowLabel || '').toLowerCase().includes(query);
       row.classList.toggle('is-highlighted', isMatch);
       if (isMatch && !firstMatch) firstMatch = row;

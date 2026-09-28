@@ -1306,6 +1306,39 @@ body {
   display: flex;
 }
 
+/* LIME-31-fix: scoped box-sizing fix — the 5th time this exact bug has
+   hit this project (LIME-18-fix4, LIME-20, LIME-21b, the composer, now
+   here). .seed-input is `width: 100%` plus its own padding and border,
+   content-box by default, so it renders wider than its container the
+   instant that container isn't exactly as wide as intended — the
+   Login & security password inputs ran past the pane's own edge into a
+   horizontal scrollbar before this. Deliberately scoped to `.lime-settings`
+   only, not a page-wide reset — plot is weighing a global
+   `*, *::before, *::after { box-sizing: border-box }` reset separately,
+   as its own brief with a full visual regression pass, precisely because
+   this bug keeps recurring one component at a time. */
+.lime-settings,
+.lime-settings *,
+.lime-settings *::before,
+.lime-settings *::after {
+  box-sizing: border-box;
+}
+
+/* Clean focus (LIME-31-fix) — Seed's own .seed-input:focus rule sets a
+   green box-shadow glow (--seed-shadow-focus) the user asked to remove
+   here, scoped the same way the nav search field already overrides it
+   (lime.css's .lime-search-field .seed-input:focus). A visible indicator
+   still has to remain for keyboard users — the darker border is it, not
+   just a subtler shadow. A field with an error keeps its red border even
+   while focused, via a higher-specificity rule further down
+   (.lime-settings .has-error .seed-input:focus) — otherwise this rule's
+   own specificity would win and briefly hide that the field still has
+   a problem while you're actively fixing it. */
+.lime-settings .seed-input:focus {
+  box-shadow: none;
+  border-color: var(--calm-border-bold-default);
+}
+
 .lime-settings__close {
   position: absolute;
   top: var(--seed-space-3);
@@ -1383,11 +1416,22 @@ body {
   margin-bottom: var(--seed-space-2);
 }
 
+/* LIME-31-fix: the pane is now three stacked zones — a fixed header, a
+   scrolling body, and (Profile only) a fixed footer — instead of one
+   uniformly-padded scrolling block. Login & security has no footer (its
+   own changes are per-row, inline), so it's just header + body; the flex
+   layout works the same either way with two children or three. */
 .lime-settings__pane {
   flex: 1;
   min-width: 0;
-  overflow-y: auto;
-  padding: var(--seed-space-8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lime-settings__pane-header {
+  flex-shrink: 0;
+  padding: var(--seed-space-6) var(--seed-space-6) 0;
 }
 
 .lime-settings__title {
@@ -1403,53 +1447,140 @@ body {
   color: var(--soil-text-muted);
 }
 
-.lime-settings__rows {
-  margin-top: var(--seed-space-6);
+.lime-settings__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--seed-space-4) var(--seed-space-6) var(--seed-space-6);
 }
 
-.lime-settings__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--seed-space-4);
-  padding: var(--seed-space-4) 0;
-  border-bottom: 1px solid var(--soil-border-subtle);
-}
-
-.lime-settings__row:last-child {
-  border-bottom: none;
-}
-
-/* Nav-search row highlighting (LIME-30's "highlighted or scrolled into
-   view") — a subtle background, not a border or outline, so it doesn't
-   fight the row's own bottom divider. */
-.lime-settings__row.is-highlighted {
+/* Highlighted by the nav search filter — a subtle background, not a
+   border or outline, so it doesn't fight a row's own divider. Applies to
+   any row/field type (compact rows, the top-block fields, Bio, the
+   account rows), not just one specific class. */
+.is-highlighted {
   background: var(--calm-bg-subtle-hover);
   border-radius: var(--seed-radius-md);
 }
 
-.lime-settings__row-label {
+/* ── Profile's top block: photo beside Display name (Notion) ── */
+.lime-settings__profile-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--seed-space-4);
+  margin-bottom: var(--seed-space-4);
+}
+
+.lime-settings__profile-top .lime-settings__field {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.lime-settings__profile-photo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--seed-space-2);
+  flex-shrink: 0;
+}
+
+.lime-settings__profile-photo-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+}
+
+/* ── Compact rows (Claude-style: label left, a bounded control right) —
+   Pronouns through Phone. ~44px tall including the divider, tight enough
+   that Profile's whole body fits the modal without scrolling at
+   1567×905 (measured live, not assumed — see TEND.md). */
+.lime-settings__compact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--seed-space-4);
+  padding: var(--seed-space-2) 0;
+  border-bottom: 1px solid var(--soil-border-subtle);
+}
+
+.lime-settings__compact-row:last-child {
+  border-bottom: none;
+}
+
+.lime-settings__compact-label {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+  flex-shrink: 0;
+}
+
+/* flex: 0 1 280px — the brief's own "≤280px", shrinking (not growing)
+   below that on a narrow viewport rather than overflowing the row. */
+.lime-settings__compact-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 1 280px;
+  min-width: 0;
+}
+
+.lime-settings__compact-control .seed-input {
+  width: 100%;
+}
+
+.lime-settings__compact-control .lime-settings__field-error {
+  align-self: flex-end;
+  text-align: right;
+}
+
+/* ── Login & security's own row style — a label with a muted value
+   underneath (Notion's "Account security"), not label-left/value-right
+   like the compact rows above; the value here is a description, not
+   data to edit inline. ── */
+.lime-settings__account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--seed-space-4);
+  padding: var(--seed-space-3) 0;
+  border-bottom: 1px solid var(--soil-border-subtle);
+}
+
+.lime-settings__account-row:last-child {
+  border-bottom: none;
+}
+
+.lime-settings__account-row-label {
   font-weight: var(--seed-weight-medium);
   color: var(--soil-text);
 }
 
-.lime-settings__row-control {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-3);
-  flex-shrink: 0;
-}
-
-.lime-settings__row-value {
+.lime-settings__account-row-value {
+  margin-top: 2px;
+  font-size: var(--seed-text-sm);
   color: var(--soil-text-muted);
-  text-align: right;
 }
 
-/* ── Settings form fields (LIME-31) — Profile's own editable form, and
-   the inline email/password change forms under Login & security. Label
-   sits above the input (not the read-only rows' label-left/value-right
-   above), since an input, a textarea and a comma-list field all read
-   better with room to grow downward than squeezed into a value column. */
+/* Subsection headings ("Account security", "Account") — Notion's own
+   grouping style. */
+.lime-settings__subsection-heading {
+  margin: var(--seed-space-6) 0 var(--seed-space-1);
+  padding-bottom: var(--seed-space-2);
+  font-size: var(--seed-text-base);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+  border-bottom: 1px solid var(--soil-border-subtle);
+}
+
+.lime-settings__subsection-heading:first-child {
+  margin-top: 0;
+}
+
+/* ── Settings form fields — Profile's top-block Display name and Bio
+   (still label-above-input; a textarea and a name field both read better
+   with room to grow downward than squeezed into a compact row), and the
+   inline email/password change forms under Login & security. */
 .lime-settings__field {
   margin-bottom: var(--seed-space-4);
 }
@@ -1463,7 +1594,7 @@ body {
 }
 
 .lime-settings__field textarea.seed-input {
-  min-height: 80px;
+  min-height: 60px;
   resize: vertical;
 }
 
@@ -1473,25 +1604,36 @@ body {
   color: var(--bad-text-bold-default);
 }
 
-.lime-settings__field.has-error .seed-input {
+/* Generic (LIME-31-fix) — applies wherever a field can have an error:
+   the label-above .lime-settings__field, and the compact rows above. */
+.has-error .seed-input {
   border-color: var(--bad-text-bold-default);
 }
 
-/* Only shown while the Profile form is dirty (app.js toggles is-visible)
-   — Save is the one place in this modal lime is allowed, as the primary
-   action, per LIME-21b's "lime is reserved for nav and primary actions." */
-.lime-settings__save-bar {
-  display: none;
+/* Higher specificity than .lime-settings .seed-input:focus above, so an
+   error stays visibly red even while you're actively fixing it, rather
+   than the clean-focus border briefly hiding that this field still has
+   a problem. */
+.lime-settings .has-error .seed-input:focus {
+  border-color: var(--bad-text-bold-default);
+}
+
+/* Always visible now (LIME-31-fix — was hidden until dirty), a fixed
+   third zone of the pane, not scrolling with the body. Save and Cancel
+   are both plain `disabled` (Seed's own :disabled style) until the form
+   is dirty, rather than the whole bar appearing/disappearing — the
+   brief's own "it's clear how to commit or back out" reasoning: showing
+   the controls but disabled says more than hiding them entirely. Save
+   is the one place in this modal lime is allowed, as the primary action,
+   per LIME-21b's "lime is reserved for nav and primary actions." */
+.lime-settings__footer {
+  flex-shrink: 0;
+  display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--seed-space-3);
-  margin-top: var(--seed-space-6);
-  padding-top: var(--seed-space-4);
+  padding: var(--seed-space-4) var(--seed-space-6);
   border-top: 1px solid var(--soil-border-subtle);
-}
-
-.lime-settings__save-bar.is-visible {
-  display: flex;
 }
 
 /* The inline email/password change form that opens under its own row
@@ -1499,8 +1641,14 @@ body {
    row, not nested inside its flex layout, so it naturally spans the
    pane's full width instead of being squeezed into the row's value column. */
 .lime-settings__inline-form {
-  padding: 0 0 var(--seed-space-4);
+  padding: var(--seed-space-3) 0 var(--seed-space-4);
   border-bottom: 1px solid var(--soil-border-subtle);
+}
+
+/* The brief's own "≤360px" for the password fields; harmless on the
+   single-field email form too, which reads fine at that width. */
+.lime-settings__inline-form .lime-settings__field {
+  max-width: 360px;
 }
 
 .lime-settings__inline-form-actions {
@@ -1577,7 +1725,6 @@ body {
 
   .lime-settings__pane {
     display: none;
-    padding: var(--seed-space-4);
   }
 
   /* Mutually exclusive nav-list vs. section views, toggled by JS adding
@@ -1588,12 +1735,44 @@ body {
     display: none;
   }
 
+  /* flex, not block (LIME-31-fix) — the pane is now a header/body/footer
+     flex column (see the desktop rule above); `display: block` here
+     would have collapsed that back to plain stacked elements, losing
+     the scrolling body and the pinned-to-the-bottom footer. */
   .lime-settings.is-showing-section .lime-settings__pane {
-    display: block;
+    display: flex;
+  }
+
+  .lime-settings__pane-header,
+  .lime-settings__body,
+  .lime-settings__footer {
+    padding-left: var(--seed-space-4);
+    padding-right: var(--seed-space-4);
   }
 
   .lime-settings__back {
     display: inline-flex;
+  }
+}
+
+/* The brief's own "rows may stack below ~560px wide" — a narrower,
+   separate breakpoint from the 767px mobile one above (the full-screen
+   modal is already 767px-and-under; 560px is specifically about when a
+   compact row's label-left/control-right layout gets cramped, which can
+   still happen well inside the mobile range on a small phone). */
+@media (max-width: 560px) {
+  .lime-settings__compact-row {
+    flex-wrap: wrap;
+  }
+
+  .lime-settings__compact-control {
+    flex-basis: 100%;
+    align-items: stretch;
+  }
+
+  .lime-settings__compact-control .lime-settings__field-error {
+    align-self: flex-start;
+    text-align: left;
   }
 }
 
