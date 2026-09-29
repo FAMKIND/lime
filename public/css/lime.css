@@ -1435,7 +1435,13 @@ body {
    LIME-40: max-width/height widened from -64px to -128px/-96px per the
    brief's own explicit numbers (room for the close button's own corner
    inset plus, on narrower viewports, the fixed-to-viewport prev/next
-   arrows beside it, without either ever overlapping the image itself). */
+   arrows beside it, without either ever overlapping the image itself).
+   LIME-40-fix: display:flex + flex-direction:column instead of
+   display:block — the bar now stacks above the image as a real
+   in-flow sibling, not something positioned over it. align-items
+   defaults to stretch, so the bar (below) stretches to match the
+   image's own rendered width automatically — no separate measurement
+   needed to keep the bar's edges aligned with the image's. */
 .lime-lightbox {
   display: none;
   position: fixed;
@@ -1445,53 +1451,104 @@ body {
   max-width: calc(100vw - 128px);
   max-height: calc(100vh - 96px);
   z-index: var(--seed-z-modal);
+  flex-direction: column;
+  gap: var(--seed-space-2);
 }
 
 .lime-lightbox.is-open {
-  display: block;
+  display: flex;
+}
+
+/* LIME-40-fix: the bar's own height (a 40px button, vertically centred)
+   plus the column's gap above is reserved out of the image's own
+   max-height budget below, so bar + gap + image can never together
+   exceed the outer .lime-lightbox max-height above — the bar can never
+   be pushed off-screen by a tall image, ruling out LIME-40's original
+   bug (and this fix's own predecessor bug, a translucent control sitting
+   ON the image) by construction rather than by positioning tricks. */
+.lime-lightbox__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  height: 40px;
 }
 
 .lime-lightbox__img {
   display: block;
   max-width: calc(100vw - 128px);
-  max-height: calc(100vh - 96px);
+  /* 96px outer margin, minus the bar's own 40px and the column gap
+     (--seed-space-2, 8px) reserved above it — see .lime-lightbox__bar. */
+  max-height: calc(100vh - 96px - 40px - var(--seed-space-2));
   border-radius: var(--seed-radius-lg);
   box-shadow: var(--seed-shadow-xl);
 }
 
-/* LIME-40: was position:absolute; top:-44px; right:0 — entirely *above*
-   the image's own box, which put it outside the viewport for any image
-   tall enough to sit near the screen's own top edge (the reported bug).
-   Now inset *inside* the image's top-left corner instead — .lime-lightbox
-   itself has no fixed size of its own (it shrinks to the image, per
-   above), so this is always relative to whatever the image's real
-   rendered box turns out to be, never a separate assumption about it. */
+/* LIME-40-fix: a solid, opaque 40px round target — the user's own QA
+   ("not accessible on hover... needs to be on the outside of the image,
+   not on top of it") against the LIME-40 version, a translucent
+   rgba(19,27,23,0.55) × inset into the image's own dark corner, nearly
+   invisible on a dark photo. --soil-bg-elevated/--soil-text are the same
+   solid-panel tokens the app's own modals already sit on (settings,
+   confirm dialog) — this button now reads as a real button on its own
+   surface, not a marking laid over someone else's photo.
+   The border is load-bearing, not decorative: measured live (a real
+   pixel sample of the button's own fill against the backdrop behind it,
+   not just a token comparison), --soil-bg-elevated alone (an
+   near-white surface) against the blurred backdrop's own light tint
+   comes out to only ~1.4:1 — nowhere near the brief's required 3:1
+   non-text contrast. --calm-border-bold-default measured ~6.5:1 against
+   that same backdrop, comfortably clearing it; box-sizing: border-box
+   keeps the button's own footprint at exactly 40px with the border
+   included, not 43px. */
 .lime-lightbox__close {
-  position: absolute;
-  top: var(--seed-space-3);
-  left: var(--seed-space-3);
-  background: rgba(19, 27, 23, 0.55);
-  color: #fff;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--calm-border-bold-default);
+  border-radius: var(--seed-radius-full);
+  background: var(--soil-bg-elevated);
+  color: var(--soil-text);
+  box-shadow: var(--seed-shadow-sm);
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.lime-lightbox__close .dew {
+  font-size: 18px;
 }
 
 .lime-lightbox__close:hover {
-  background: rgba(19, 27, 23, 0.75);
+  background: var(--calm-bg-subtle-hover);
+}
+
+/* A real, visible ring (unlike this file's other :focus-visible rules,
+   which only swap the background) — the brief explicitly calls for one
+   here, since a modal control reachable only by Tab needs a keyboard
+   user to be able to actually see where focus landed. */
+.lime-lightbox__close:focus-visible {
+  outline: 2px solid var(--calm-border-bold-default);
+  outline-offset: 2px;
 }
 
 /* LIME-40: the "N / M" counter — shown only alongside the arrows (more
    than one image in this conversation), toggled via the same [hidden]
-   attribute JS already uses for the arrows themselves. */
+   attribute JS already uses for the arrows themselves.
+   LIME-40-fix: moved into the bar (was position:absolute over the image's
+   own bottom edge) — same solid/opaque treatment as the close button
+   now, for the same reason. */
 .lime-lightbox__counter {
-  position: absolute;
-  bottom: var(--seed-space-3);
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(19, 27, 23, 0.55);
-  color: #fff;
+  background: var(--soil-bg-elevated);
+  color: var(--soil-text);
   font-size: var(--seed-text-xs);
   font-weight: var(--seed-weight-semibold);
-  padding: 4px 10px;
+  padding: 4px 12px;
   border-radius: var(--seed-radius-full);
+  box-shadow: var(--seed-shadow-sm);
 }
 
 .lime-lightbox__counter[hidden] {
@@ -1502,25 +1559,52 @@ body {
    centred at the viewport's sides" is relative to the *viewport*, not
    the image's own box (which could be far narrower than the viewport
    for a small image), so these are position:fixed against the window
-   the same way .lime-lightbox itself is, not nested inside it. */
+   the same way .lime-lightbox itself is, not nested inside it.
+   LIME-40-fix: same solid/opaque 40px treatment as the bar's own close
+   button, for visual consistency and the same contrast reasoning. */
 .lime-lightbox__nav {
   position: fixed;
   top: 50%;
   transform: translateY(-50%);
   z-index: var(--seed-z-modal);
-  background: rgba(19, 27, 23, 0.55);
-  color: #fff;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Same load-bearing border as .lime-lightbox__close above, same
+     measured reasoning — the arrows sit on the identical blurred
+     backdrop. */
+  border: 1.5px solid var(--calm-border-bold-default);
+  border-radius: var(--seed-radius-full);
+  background: var(--soil-bg-elevated);
+  color: var(--soil-text);
+  box-shadow: var(--seed-shadow-sm);
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.lime-lightbox__nav .dew {
+  font-size: 18px;
 }
 
 .lime-lightbox__nav:hover {
-  background: rgba(19, 27, 23, 0.75);
+  background: var(--calm-bg-subtle-hover);
 }
 
-/* Higher specificity than .lime-icon-btn's own display:flex — the bare
-   UA-stylesheet [hidden] rule alone loses to it (both are author-origin-
-   equivalent specificity in practice once .lime-icon-btn sets display
-   explicitly; an attribute selector scoped to this class wins cleanly
-   instead of relying on cascade-origin order). */
+.lime-lightbox__nav:focus-visible {
+  outline: 2px solid var(--calm-border-bold-default);
+  outline-offset: 2px;
+}
+
+/* [hidden] needs no extra specificity fight here the way LIME-40's did —
+   these buttons no longer carry .lime-icon-btn's own author-stylesheet
+   display:flex (this file's own .lime-lightbox__nav rule above is the
+   only display declaration on them now), so the native UA [hidden] rule
+   applies uncontested. Kept explicit anyway: relying on the UA
+   stylesheet's own display:none for something this visible is exactly
+   the kind of silent cascade dependency LIME-40's bug came from. */
 .lime-lightbox__nav[hidden] {
   display: none;
 }
