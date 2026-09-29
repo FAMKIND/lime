@@ -2467,13 +2467,19 @@ body {
    lets the last message scroll fully clear of the input. No mask here:
    a permanent viewport-relative mask faded content even on short threads
    with nothing left to scroll — the composer's own ::before gradient
-   (below) only reads as a fade when content actually passes beneath it. */
+   (below) only reads as a fade when content actually passes beneath it.
+   LIME-39: this rule's own padding-bottom is the pre-JS/no-ResizeObserver
+   fallback only — gradients.css loads after this file and declares the
+   same property again, driven live from --composer-clearance (see its
+   own comment there for why a static number stopped being enough). Kept
+   in sync here (same var, same 200px fallback) so reading either file
+   alone still gives the right answer. */
 .lime-messages {
   position: absolute;
   inset: 0;
   overflow-y: auto;
   padding: var(--seed-space-4);
-  padding-bottom: 80px;
+  padding-bottom: var(--composer-clearance, 200px);
   display: flex;
   flex-direction: column;
   gap: var(--seed-space-5);

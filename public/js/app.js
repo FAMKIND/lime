@@ -179,7 +179,58 @@ function hasRealFormatting(sanitizedHtml) {
 // and rendering directly (none of which need execCommand); the live
 // toolbar interactions are verified in Playwright + Firefox instead,
 // matching the brief's own two-part verification split.
-function createComposer(rootEl, { onSend, growScrollTarget } = {}) {
+
+// ── Sticky-bottom scrolling (LIME-39) ────────────────────
+// Shared by the main thread and the reply list: tracks whether the
+// scroller is currently at the bottom (via a live 'scroll' listener, not
+// a one-off snapshot — the brief's own Goal covers several distinct
+// triggers — composer growth, a new message, an image finishing its
+// load — and a live flag answers "should this particular trigger
+// auto-scroll" correctly for all of them, including a user who scrolls
+// away in the gap between two triggers) and re-pins to the bottom when
+// something grows the content, but only if it was already there.
+//
+// The 'load' listener (not bubbling — captured, so one listener here
+// covers every image at any depth) is what fixes the amended bug: an
+// attachment's real URL resolves through an IndexedDB round trip
+// (LIME-38's own getAttachmentUrl) well after the initial render's own
+// pinToBottom() already ran, growing scrollHeight and leaving that
+// scrollTop short of the real bottom once the image actually loads.
+function createStickyScroll(scrollerEl) {
+  let pinned = true;
+  function checkPinned() {
+    pinned = scrollerEl.scrollHeight - scrollerEl.scrollTop - scrollerEl.clientHeight <= 8;
+  }
+  function maybeStayAtBottom() {
+    if (pinned) scrollerEl.scrollTop = scrollerEl.scrollHeight;
+  }
+  scrollerEl.addEventListener('scroll', checkPinned);
+  scrollerEl.addEventListener('load', (e) => {
+    if (e.target.tagName === 'IMG') maybeStayAtBottom();
+  }, true);
+  return {
+    scrollerEl,
+    // Unconditional — for moments that should always end up at the
+    // bottom regardless of prior position (switching conversations,
+    // opening a conversation's thread for the first time, your own
+    // message you just sent) — and marks `pinned` true afterward so a
+    // later image load or composer growth correctly keeps following.
+    pinToBottom() { pinned = true; scrollerEl.scrollTop = scrollerEl.scrollHeight; },
+    // Conditional — only if the scroller was already at the bottom
+    // (checked live, not assumed) before whatever just grew it.
+    maybeStayAtBottom,
+  };
+}
+
+// for whichever scroller this composer overlaps — only the main
+// composer passes one (it's position:absolute over #thread-messages;
+// the reply composer is a normal-flow flex sibling of its own list, so
+// growing it already reflows the list via flex, no overlap to fix).
+// When present, a ResizeObserver on rootEl keeps that scroller's own
+// --composer-clearance (read by its padding-bottom in gradients.css) in
+// sync with this composer's real height, and re-pins to the bottom
+// afterward if the scroller was already there.
+function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   const input = rootEl.querySelector('.lime-composer__input');
   const sendBtn = rootEl.querySelector('.lime-composer__return');
   const toolbar = rootEl.querySelector('.lime-composer__toolbar');
@@ -437,14 +488,32 @@ function createComposer(rootEl, { onSend, growScrollTarget } = {}) {
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
-    // As the input grows taller (LIME-10-fix13), it eats into the
-    // scroll container's own vertical space from the bottom — only the
-    // main composer passes growScrollTarget (its thread); the reply
-    // composer never rescrolled its own list for this, unchanged.
-    if (growScrollTarget) growScrollTarget.scrollTop = growScrollTarget.scrollHeight;
+    // LIME-39: the ResizeObserver below (wired when stickyScroll is
+    // passed) picks up this height change itself and re-pins the
+    // scroller if it was at the bottom — no manual rescroll needed here
+    // any more. LIME-10-fix13's old unconditional
+    // `growScrollTarget.scrollTop = growScrollTarget.scrollHeight` is
+    // gone: it yanked the view to the bottom on every keystroke even if
+    // the reader had deliberately scrolled up, which is exactly the
+    // "position isn't yanked" case this brief's own Goal calls out.
     updateSendActive();
     updatePressedStates();
   });
+
+  // LIME-39: composer height varies far more now than LIME-10-fix15's
+  // static 200px calibration ever anticipated (rich-text lists/quotes
+  // from LIME-37, attachment chips from LIME-38) — a fixed clearance
+  // value can't cover every state any more, so the scroller's own
+  // padding-bottom is driven live from this instead (gradients.css).
+  if (stickyScroll && typeof ResizeObserver !== 'undefined') {
+    const CLEARANCE_GAP = 16; // --seed-space-4
+    const ro = new ResizeObserver(() => {
+      const clearance = Math.ceil(rootEl.getBoundingClientRect().height) + CLEARANCE_GAP;
+      stickyScroll.scrollerEl.style.setProperty('--composer-clearance', clearance + 'px');
+      stickyScroll.maybeStayAtBottom();
+    });
+    ro.observe(rootEl);
+  }
 
   document.addEventListener('selectionchange', () => {
     if (document.activeElement === input) updatePressedStates();
@@ -781,6 +850,8 @@ function initMessagesList() {
   const thread = document.getElementById('thread-messages');
   if (!list || !thread) return;
 
+  const threadSticky = createStickyScroll(thread); // LIME-39
+
   const currentUserId = LimeStore.getCurrentUserId();
   const me = LimeStore.getCurrentUser();
   const crumbThread = document.getElementById('crumb-thread');
@@ -993,7 +1064,12 @@ function initMessagesList() {
     // conversation) and every subsequent conversation switch, since both
     // paths call this same function — renderThread never scrolled at all
     // before this, always leaving the view at the top of the thread.
-    thread.scrollTop = thread.scrollHeight;
+    // LIME-39: pinToBottom (not a bare assignment) also marks the
+    // scroller "pinned," so any image among what was just inserted that
+    // hasn't finished loading yet (an IndexedDB round trip — LIME-38)
+    // correctly re-triggers this same scroll once it does, instead of
+    // silently leaving the view short of the real bottom.
+    threadSticky.pinToBottom();
   }
 
   // ── Group avatar cluster (LIME-19b) ─────────────────────
@@ -1230,7 +1306,7 @@ function initMessagesList() {
   const composerEl = document.getElementById('composer');
   if (composerEl) {
     createComposer(composerEl, {
-      growScrollTarget: thread,
+      stickyScroll: threadSticky,
       onSend({ content, metadata, attachments }) {
         if (!currentConversationId) return Promise.resolve();
         const conversationId = currentConversationId;
@@ -1249,7 +1325,7 @@ function initMessagesList() {
           const newAvatar = thread.querySelector('.lime-message:last-child .lime-avatar[data-name]');
           if (newAvatar) paintAvatar(newAvatar); // real bug (LIME-11): paintAvatar only ran once at load, missing every sent message's avatar since LIME-07
           paintAttachments(thread); // LIME-38
-          thread.scrollTop = thread.scrollHeight;
+          threadSticky.pinToBottom(); // LIME-39: your own message always scrolls into view, and re-pins for any attachment inside it that loads afterward
         }
 
         // LIME-38: text first (if any), then one message per attachment,
@@ -2329,6 +2405,14 @@ function renderCrumbs() {
   const listEl      = document.getElementById('replies-list');
   if (!layout || !rightPanel || !quoteEl || !listEl) return;
 
+  // LIME-39: no clearance mechanism needed here (survey confirmed:
+  // #replies-composer is a normal-flow flex sibling of this list, not
+  // position:absolute over it like the main composer — growing it
+  // already reflows the list via flex, nothing to fix there) — but the
+  // same "stay pinned through an attachment's own late-loading image"
+  // fix still applies, so this still gets a sticky controller.
+  const repliesSticky = createStickyScroll(listEl);
+
   let currentReplyParentId = null;
 
   function replyHtml(message, sender) {
@@ -2431,9 +2515,10 @@ function renderCrumbs() {
 
   // Reply composer: LIME-37 replaces the old duplicated expand/collapse +
   // auto-grow + is-active + Enter-to-send block (identical to the main
-  // composer's own, minus growScrollTarget — the reply list was never
-  // rescrolled as this grows, unchanged) with the same shared
-  // createComposer used by the main composer above.
+  // composer's own, minus a stickyScroll option — LIME-39 confirmed this
+  // composer doesn't overlap its own list, so it has nothing to fix
+  // there) with the same shared createComposer used by the main composer
+  // above.
   const repliesComposer = document.getElementById('replies-composer');
   if (repliesComposer) {
     createComposer(repliesComposer, {
@@ -2446,7 +2531,7 @@ function renderCrumbs() {
         function afterSend() {
           refreshReplyIndicator(parentId);
           renderReplies(parentId); // re-renders the whole list, including paintAttachments (LIME-38)
-          listEl.scrollTop = listEl.scrollHeight;
+          repliesSticky.pinToBottom(); // LIME-39
         }
 
         // sendMessage with replyTo covers replies too (LIME-24b's contract

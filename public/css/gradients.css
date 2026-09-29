@@ -68,7 +68,17 @@
    .lime-composer is 107px collapsed, 163px with the toolbar expanded.
    Calibrated against the taller expanded state, not just the resting
    height, so growing the composer while already scrolled to the bottom
-   can never newly clip the last message — 163px + ~37px breathing room. */
+   can never newly clip the last message — 163px + ~37px breathing room.
+   LIME-39: that single calibrated number stopped being enough once the
+   composer's own height became far more variable — rich-text lists/
+   quotes (LIME-37) and attachment chips (LIME-38) can each make it much
+   taller than 163px, and no one static value covers every state. Driven
+   live instead: app.js's createComposer (when passed a stickyScroll)
+   watches #composer's real height with a ResizeObserver and writes
+   --composer-clearance here on every change. 200px is only the fallback
+   for the instant before that JS has run (or if ResizeObserver doesn't
+   exist at all) — it's this same calibrated value, unchanged, just no
+   longer the only value that's ever used. */
 .lime-messages {
-  padding-bottom: 200px;
+  padding-bottom: var(--composer-clearance, 200px);
 }
