@@ -3139,6 +3139,194 @@ body {
   background: var(--calm-bg-subtle-hover);
 }
 
+/* ── Typed file cards (LIME-42) ── fileCardHtml's own new markup, under
+   fresh .lime-filecard__* names rather than extending
+   .lime-message__file-* above — survey found those bare class names
+   (name/download in particular) get silently redeclared later in this
+   file by an unrelated, already-dead .lime-message__file block (no
+   "-card") that nothing in app.js has ever rendered; because neither
+   selector is scoped to a parent, the later declaration wins for every
+   element with that class regardless of which one you meant. Not this
+   brief's to clean up (flagged in TEND.md instead) — but reason enough
+   not to add new rules under those same collision-prone names. */
+.lime-filecard {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  min-width: 200px;
+}
+
+/* The badge+meta area — a real <a target="_blank"> for a PDF (opens the
+   file), a plain <div> otherwise (nothing to open) — same layout either
+   way, so both share this one class. text-decoration/color reset only
+   matter for the <a> case; a <div> never had either to begin with. */
+.lime-filecard__open {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.lime-filecard__badge {
+  min-width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--seed-space-1);
+  border-radius: var(--seed-radius-sm);
+  font-size: 11px;
+  font-weight: var(--seed-weight-semibold);
+  letter-spacing: 0.02em;
+}
+
+/* The unrecognized-extension fallback — today's exact pre-LIME-42 look
+   (a generic file glyph on the same muted tile every file card always
+   used), not a guess at a color that wouldn't mean anything for an
+   extension with no established convention. */
+.lime-filecard__badge--neutral {
+  background: var(--calm-bg-subtle-default);
+  color: var(--soil-text-muted);
+  font-size: 18px;
+}
+
+/* Real category colors, per the brief's own "Seed calm/bad/warn/good
+   tints by category, only if they pass contrast" — all four measured
+   (text-bold-default on bg-subtle-default) at 6.4:1 or better in both
+   light and dark mode (probe-tints.js), comfortably past any contrast
+   floor, so none needed the neutral fallback. */
+.lime-filecard__badge--bad { background: var(--bad-bg-subtle-default); color: var(--bad-text-bold-default); }
+.lime-filecard__badge--calm { background: var(--calm-bg-subtle-default); color: var(--calm-text-bold-default); }
+.lime-filecard__badge--good { background: var(--good-bg-subtle-default); color: var(--good-text-bold-default); }
+.lime-filecard__badge--warn { background: var(--warn-bg-subtle-default); color: var(--warn-text-bold-default); }
+
+.lime-filecard__meta {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The brief's own "ellipsis-truncated in the middle, keeping the
+   extension": the base name (before the last dot) shrinks with an
+   ellipsis; the extension is a separate, never-shrinking flex sibling
+   after it, so it's always fully visible regardless of how long the
+   base name is. min-width: 0 on both this row and its shrinking child
+   is required — a flex item's default min-width is auto (its own
+   content size), which silently defeats text-overflow: ellipsis
+   entirely without this, the exact gotcha .lime-message__file-meta
+   above already had to work around once. */
+.lime-filecard__name {
+  display: flex;
+  min-width: 0;
+}
+
+.lime-filecard__name-base {
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+}
+
+.lime-filecard__name-ext {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+}
+
+.lime-filecard__size {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.lime-filecard__download {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--seed-radius-full);
+  color: var(--calm-text-bold-default);
+  text-decoration: none;
+}
+
+.lime-filecard__download:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+/* ── Audio attachment (LIME-42) ── a real player (a hidden <audio>
+   element, app.js's own [data-audio-player] click handling) styled to
+   match the decorative 'voice' message bubble exactly
+   (.lime-message__voice/.lime-voice__* below — LIME-10) per the brief's
+   own "matches the existing voice-message bubble" — under its own class
+   names so the two features can never collide or be confused for one
+   another; .lime-voice__play itself stays exactly as inert as it always
+   was, since nothing here touches it. */
+.lime-audio-attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  min-width: 220px;
+}
+
+.lime-audio-attachment__play {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--seed-radius-full);
+  background: var(--selected-bg-bold-default);
+  color: var(--selected-text-bold-default);
+  cursor: pointer;
+}
+
+.lime-audio-attachment__play .dew {
+  font-size: 14px;
+}
+
+/* No dew-pause icon exists in this project's icon set (checked
+   vendor/seed/icons/dew/dist/dew.css directly) — a small inline SVG
+   (two bars) swapped in by app.js's syncAudioPlayerButton while playing,
+   sized to sit inside the same 32px circle the dew glyph does. */
+.lime-audio-attachment__pause-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.lime-audio-attachment__waveform {
+  flex: 1;
+  height: 24px;
+  border-radius: var(--seed-radius-sm);
+  background: repeating-linear-gradient(
+    to right,
+    var(--soil-text-disabled) 0,
+    var(--soil-text-disabled) 2px,
+    transparent 2px,
+    transparent 5px
+  );
+  background-size: 100% 60%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.lime-audio-attachment__duration {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+  flex-shrink: 0;
+}
+
 /* :not(:empty) so the container added to every message (LIME-03v)
    doesn't add a phantom gap under messages that have no reactions yet.
    LIME-04a: moved from inside .lime-message__content to a sibling

@@ -644,6 +644,31 @@ function readImageDimensions(file) {
   });
 }
 
+// LIME-42: recorded once at upload time, same reasoning as
+// readImageDimensions above — "the duration comes from metadata" per the
+// brief, not measured live off the real <audio> element each time it
+// renders (which would also work, but would leave the duration label
+// blank until the file had actually loaded once, and wouldn't match
+// "from metadata"). Resolves a number of seconds, or null for a
+// non-audio file or one the browser can't read metadata for.
+function readAudioDuration(file) {
+  if (!file.type || !file.type.startsWith('audio/')) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const el = new Audio();
+    el.preload = 'metadata';
+    el.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(Number.isFinite(el.duration) ? el.duration : null);
+    };
+    el.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    el.src = url;
+  });
+}
+
 // LIME-41: an attachment counts as a photo by its recorded mime — the one
 // check every attachment-aware reader below uses (album membership,
 // lightbox scoping, preview text) so none of them ever branch on
@@ -652,18 +677,35 @@ function isImageAttachment(att) {
   return !!(att.mime && att.mime.startsWith('image/'));
 }
 
+// LIME-42: same pattern as isImageAttachment above, for a real uploaded
+// audio file (never the decorative 'voice' message type, which has no
+// attachments at all — see audioPlayerHtml's own comment for why the two
+// stay fully separate).
+function isAudioAttachment(att) {
+  return !!(att.mime && att.mime.startsWith('audio/'));
+}
+
 // LIME-41: the attachment-only half of previewFor/plainPreviewFor below —
 // "Photo"/"📎 filename" for the single-attachment case (matches LIME-38's
 // own wording exactly, legacy or not), "📷 N photos"/"📎 N files"/both
 // joined for a real multi-attachment album.
+// LIME-42: three-way split (images / audio / everything else), extending
+// LIME-41's own two-way version — "🎵 Audio" for the single-audio case
+// (the brief's own exact wording, no count, matching "Photo"'s own
+// no-count form), "🎵 N audio" ("audio" doesn't pluralize) alongside the
+// existing photo/file parts for a real mixed multi-attachment album.
 function attachmentSummaryPlain(attachments) {
   const images = attachments.filter(isImageAttachment);
-  const files = attachments.filter((a) => !isImageAttachment(a));
+  const audio = attachments.filter(isAudioAttachment);
+  const files = attachments.filter((a) => !isImageAttachment(a) && !isAudioAttachment(a));
   if (attachments.length === 1) {
-    return images.length === 1 ? 'Photo' : '📎 ' + (files[0].name || 'File');
+    if (images.length === 1) return 'Photo';
+    if (audio.length === 1) return '🎵 Audio';
+    return '📎 ' + (files[0].name || 'File');
   }
   const parts = [];
   if (images.length > 0) parts.push('📷 ' + images.length + (images.length === 1 ? ' photo' : ' photos'));
+  if (audio.length > 0) parts.push('🎵 ' + audio.length + ' audio');
   if (files.length > 0) parts.push('📎 ' + files.length + (files.length === 1 ? ' file' : ' files'));
   return parts.join(', ');
 }
@@ -725,16 +767,99 @@ function imageTileHtml(att, index, extraClass) {
   return '<img class="lime-message__image' + (extraClass ? ' ' + extraClass : '') + '" data-attachment-path="' + path + '" data-attachment-index="' + index + '" alt="' + name + '">';
 }
 
+// LIME-42: extension -> { label, tint } for a file card's badge, keyed
+// off the attachment's own filename (its real extension — a .docx's own
+// mime, application/vnd.openxmlformats-officedocument..., isn't
+// obviously "DOC" the way the extension is) so "which badge to show" and
+// "keeping the extension" (the truncation requirement below) both read
+// from the one source. Only the extensions common enough to recognize at
+// a glance get a color; anything else falls back to a plain neutral
+// tile with a generic file glyph — today's exact pre-LIME-42 look for
+// those, not a guess at a color that wouldn't mean anything.
+const FILE_CATEGORY_BY_EXT = {
+  pdf: { label: 'PDF', tint: 'bad' },
+  doc: { label: 'DOC', tint: 'calm' },
+  docx: { label: 'DOC', tint: 'calm' },
+  xls: { label: 'XLS', tint: 'good' },
+  xlsx: { label: 'XLS', tint: 'good' },
+  csv: { label: 'XLS', tint: 'good' },
+  ppt: { label: 'PPT', tint: 'warn' },
+  pptx: { label: 'PPT', tint: 'warn' },
+  zip: { label: 'ZIP', tint: 'neutral' },
+  rar: { label: 'ZIP', tint: 'neutral' },
+  '7z': { label: 'ZIP', tint: 'neutral' },
+  tar: { label: 'ZIP', tint: 'neutral' },
+  gz: { label: 'ZIP', tint: 'neutral' },
+  txt: { label: 'TXT', tint: 'neutral' },
+  md: { label: 'TXT', tint: 'neutral' },
+  log: { label: 'TXT', tint: 'neutral' },
+};
+
+function fileExtension(name) {
+  const match = /\.([a-z0-9]+)$/i.exec(name || '');
+  return match ? match[1].toLowerCase() : '';
+}
+
 function fileCardHtml(att) {
   const path = escapeHtml(att.path || '');
-  const name = escapeHtml(att.name || 'file');
-  return '<div class="lime-message__file-card">'
-    + '<span class="lime-message__file-icon"><span class="dew dew-file"></span></span>'
-    + '<div class="lime-message__file-meta">'
-    + '<span class="lime-message__file-name">' + name + '</span>'
-    + '<span class="lime-message__file-size">' + formatFileSize(att.size || 0) + '</span>'
-    + '</div>'
-    + '<a class="lime-message__file-download" data-attachment-path="' + path + '" data-attachment-download="' + name + '" download="' + name + '" title="Download"><span class="dew dew-download"></span></a>'
+  const name = att.name || 'file';
+  const ext = fileExtension(name);
+  const base = ext ? name.slice(0, -(ext.length + 1)) : name;
+  const category = FILE_CATEGORY_BY_EXT[ext];
+  const badgeHtml = category
+    ? '<span class="lime-filecard__badge lime-filecard__badge--' + category.tint + '">' + category.label + '</span>'
+    : '<span class="lime-filecard__badge lime-filecard__badge--neutral"><span class="dew dew-file"></span></span>';
+  const metaHtml = badgeHtml
+    + '<div class="lime-filecard__meta">'
+    + '<span class="lime-filecard__name"><span class="lime-filecard__name-base">' + escapeHtml(base) + '</span><span class="lime-filecard__name-ext">' + (ext ? '.' + escapeHtml(ext) : '') + '</span></span>'
+    + '<span class="lime-filecard__size">' + formatFileSize(att.size || 0) + '</span>'
+    + '</div>';
+  // LIME-42: "PDFs and images open in a new tab from the card" — an
+  // image attachment never reaches this function at all (it always
+  // renders as an album/grid tile via imageTileHtml, never a file card),
+  // so only the PDF half of that sentence ever applies here.
+  //
+  // A real <a target="_blank">, resolved by the exact same
+  // paintAttachments pass every other attachment already goes through —
+  // not a JS window.open() call, which was tried first and found, live
+  // in Firefox, to silently fail: the tab opened but never navigated.
+  // A blob: URL is scoped to the Document that created it, and can't
+  // reliably be handed to a genuinely separate browsing context opened
+  // via window.open(), even same-origin — but a real anchor click's own
+  // "open as an auxiliary browsing context" navigation does resolve it
+  // correctly, the same proven path the Download link right below
+  // already relies on (confirmed working there first).
+  const openHtml = att.mime === 'application/pdf'
+    ? '<a class="lime-filecard__open" href="#" target="_blank" rel="noopener" data-attachment-path="' + path + '">' + metaHtml + '</a>'
+    : '<div class="lime-filecard__open">' + metaHtml + '</div>';
+  return '<div class="lime-filecard">'
+    + openHtml
+    + '<a class="lime-filecard__download" data-attachment-path="' + path + '" data-attachment-download="' + escapeHtml(name) + '" download="' + escapeHtml(name) + '" title="Download"><span class="dew dew-download"></span></a>'
+    + '</div>';
+}
+
+// LIME-42: real playback for an uploaded audio attachment, styled to
+// match the decorative 'voice' message type's own bubble exactly
+// (.lime-message__voice/.lime-voice__play/-waveform/-duration, LIME-10)
+// per the brief's own "matches the existing voice-message bubble" — but
+// under its own class names (.lime-audio-attachment*), never those, so
+// this can never accidentally share a selector with that unrelated,
+// still-purely-decorative feature, or with a since-found pre-existing
+// dead-CSS collision on .lime-message__file-name/-download (a leftover,
+// unused `.lime-message__file` block further down lime.css redeclares
+// those same bare class names — noted in TEND.md, left alone, out of
+// this brief's scope — fileCardHtml above already sidesteps it the same
+// way, with its own fresh .lime-filecard__* names).
+function audioPlayerHtml(att, index) {
+  const path = escapeHtml(att.path || '');
+  const duration = att.duration_seconds != null ? att.duration_seconds : 0;
+  return '<div class="lime-audio-attachment">'
+    + '<button type="button" class="lime-audio-attachment__play" data-audio-player data-attachment-index="' + index + '" aria-label="Play audio" title="Play">'
+    + '<span class="dew dew-play"></span>'
+    + '</button>'
+    + '<div class="lime-audio-attachment__waveform" aria-hidden="true"></div>'
+    + '<span class="lime-audio-attachment__duration">' + formatDuration(Math.round(duration)) + '</span>'
+    + '<audio class="lime-audio-attachment__el" data-attachment-path="' + path + '" preload="none" hidden></audio>'
     + '</div>';
 }
 
@@ -759,7 +884,11 @@ function fileCardHtml(att) {
 function albumHtml(message, attachments, options) {
   const wrap = !!(options && options.wrap);
   const images = attachments.filter(isImageAttachment);
-  const files = attachments.filter((a) => !isImageAttachment(a));
+  // LIME-42: audio gets its own inline-player treatment, split out from
+  // "everything else" the same way images already are — files below is
+  // now genuinely "neither photo nor audio", not "everything non-image".
+  const audio = attachments.filter(isAudioAttachment);
+  const files = attachments.filter((a) => !isImageAttachment(a) && !isAudioAttachment(a));
   let out = '';
   if (images.length === 1) {
     const tile = imageTileHtml(images[0], 0, '');
@@ -783,6 +912,13 @@ function albumHtml(message, attachments, options) {
   if (message.content) {
     out += '<p class="lime-message__caption">' + escapeHtml(message.content) + '</p>';
   }
+  // LIME-42: same .lime-message__content bubble the decorative 'voice'
+  // message type itself uses (padded, not the no-padding --media
+  // variant images get) — matches that bubble exactly, per the brief.
+  audio.forEach((att, i) => {
+    const player = audioPlayerHtml(att, i);
+    out += wrap ? '<div class="lime-message__content">' + player + '</div>' : player;
+  });
   files.forEach((att) => {
     const card = fileCardHtml(att);
     out += wrap ? '<div class="lime-message__content">' + card + '</div>' : card;
@@ -834,11 +970,65 @@ function paintAttachments(container) {
     el.dataset.attachmentPainted = 'true';
     if (!path) return;
     LimeStore.getAttachmentUrl(path).then((url) => {
-      if (el.tagName === 'IMG') el.src = url;
+      // LIME-42: an audio attachment's hidden <audio> element also needs
+      // its src resolved the same lazy, two-step way every other
+      // attachment already does — an IMG's own .src assignment.
+      if (el.tagName === 'IMG' || el.tagName === 'AUDIO') el.src = url;
       else el.href = url;
     }).catch(console.error);
   });
 }
+
+// LIME-42: play/pause for a real audio attachment's hidden <audio>
+// element — [data-audio-player] only ever appears on audioPlayerHtml's
+// own button, never on the decorative 'voice' message type's unrelated
+// .lime-voice__play (which carries no such attribute and stays exactly
+// as inert as it always was).
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-audio-player]');
+  if (!btn) return;
+  const container = btn.closest('.lime-audio-attachment');
+  const audioEl = container && container.querySelector('.lime-audio-attachment__el');
+  if (!audioEl) return;
+  if (audioEl.paused) {
+    // Only one plays at a time — a second player starting shouldn't
+    // leave the first one still audibly running behind it.
+    document.querySelectorAll('.lime-audio-attachment__el').forEach((el) => {
+      if (el !== audioEl && !el.paused) el.pause();
+    });
+    audioEl.play().catch(console.error);
+  } else {
+    audioEl.pause();
+  }
+});
+
+// Icon + aria-label reflect the real <audio> element's own `paused`
+// state — covers every path that can change it (the click above, or the
+// file simply finishing on its own) rather than just the one click
+// handler's own assumption of what state it left things in. play/pause/
+// ended don't bubble (spec), so this has to listen on the capturing
+// phase, the same technique createStickyScroll's own 'load' listener
+// already uses for the identical reason.
+function syncAudioPlayerButton(audioEl) {
+  const container = audioEl.closest('.lime-audio-attachment');
+  const btn = container && container.querySelector('[data-audio-player]');
+  if (!btn) return;
+  const playing = !audioEl.paused && !audioEl.ended;
+  btn.innerHTML = playing
+    ? '<svg class="lime-audio-attachment__pause-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+      + '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/>'
+      + '<rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/>'
+      + '</svg>'
+    : '<span class="dew dew-play"></span>';
+  btn.setAttribute('aria-label', playing ? 'Pause audio' : 'Play audio');
+  btn.title = playing ? 'Pause' : 'Play';
+}
+
+['play', 'pause', 'ended'].forEach((evt) => {
+  document.addEventListener(evt, (e) => {
+    if (e.target.classList && e.target.classList.contains('lime-audio-attachment__el')) syncAudioPlayerButton(e.target);
+  }, true);
+});
 
 // Also promoted (LIME-11-fix2) — the reply panel's quote/reply items
 // reuse this exact reaction markup/rendering, same reasoning as the
@@ -1480,7 +1670,10 @@ function initMessagesList() {
         }
 
         // LIME-41 supersedes LIME-38's "text first, then one message per
-        // attachment": every file uploads (and has its dimensions read),
+        // attachment": every file uploads (and has its dimensions/duration
+        // read — LIME-42 adds readAudioDuration alongside LIME-41's own
+        // readImageDimensions, same reasoning: recorded once at upload
+        // time, not measured live off the real <audio> element later),
         // then a single sendMessage carries the caption plus the whole
         // attachments array — one message, not N+1. Upload order doesn't
         // matter here (Promise.all preserves array order regardless of
@@ -1489,13 +1682,15 @@ function initMessagesList() {
         return Promise.all(files.map((file) => Promise.all([
           LimeStore.uploadAttachment(file, { conversationId }),
           readImageDimensions(file),
-        ]).then(([{ path }, dims]) => ({
+          readAudioDuration(file),
+        ]).then(([{ path }, dims, duration]) => ({
           path,
           name: file.name,
           size: file.size,
           mime: file.type,
           width: dims ? dims.width : null,
           height: dims ? dims.height : null,
+          duration_seconds: duration,
         })))).then((atts) => LimeStore.sendMessage(conversationId, { content: content || null, metadata, attachments: atts }).then(appendMessage))
           .catch(console.error);
       },
@@ -2723,13 +2918,15 @@ function renderCrumbs() {
         return Promise.all(files.map((file) => Promise.all([
           LimeStore.uploadAttachment(file, { conversationId: parent.conversation_id }),
           readImageDimensions(file),
-        ]).then(([{ path }, dims]) => ({
+          readAudioDuration(file),
+        ]).then(([{ path }, dims, duration]) => ({
           path,
           name: file.name,
           size: file.size,
           mime: file.type,
           width: dims ? dims.width : null,
           height: dims ? dims.height : null,
+          duration_seconds: duration,
         })))).then((atts) => LimeStore.sendMessage(parent.conversation_id, { content: content || null, metadata, replyTo: parentId, attachments: atts }).then(afterSend))
           .catch(console.error);
       },

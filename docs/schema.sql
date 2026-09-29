@@ -181,6 +181,12 @@ create table message_attachments (
   -- never reflows the grid once it's already been laid out once.
   width       integer,
   height      integer,
+  -- LIME-42: same reasoning as width/height above — recorded once at
+  -- upload time (app.js's readAudioDuration decodes the file locally via
+  -- a real <audio> element before it ever hits the wire) so the inline
+  -- audio player's own duration label never has to wait for playback to
+  -- start before showing a real number. Null for a non-audio attachment.
+  duration_seconds  numeric,
   -- Display order within the message — the order the files were chosen
   -- in, not insertion order (today the same thing, but position is the
   -- documented contract).

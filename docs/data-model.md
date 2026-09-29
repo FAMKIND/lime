@@ -113,7 +113,7 @@ only ever calls the store, never the adapter directly.
 - `listMessages(conversationId, { threadOnly })`
 - `listReplies(messageId)`
 - `getReactions(messageId)` → `[{ emoji, count, mine }]`
-- `getAttachments(messageId)` — added in LIME-41; `[{ path, name, size, mime, width, height, position }]`, sorted by `position`. Synthesizes a single-row result from a legacy `'image'`/`'file'` message's own `metadata.path` when the message has no real `message_attachments` rows (see "Multi-attachment messages" below) — every caller uses this one function regardless of which era a message is from
+- `getAttachments(messageId)` — added in LIME-41; `[{ path, name, size, mime, width, height, duration_seconds, position }]`, sorted by `position`. `duration_seconds` added in LIME-42, same reasoning as `width`/`height` — recorded once at upload time, `null` for a non-audio attachment or one synthesized from a legacy message (which never had one). Synthesizes a single-row result from a legacy `'image'`/`'file'` message's own `metadata.path` when the message has no real `message_attachments` rows (see "Multi-attachment messages" below) — every caller uses this one function regardless of which era a message is from
 - `getConversationTitle(conversation)`
 - `getLatestActivity(conversationId)`
 - `can(action, conversation)`
@@ -122,7 +122,7 @@ only ever calls the store, never the adapter directly.
 
 ### Writes (async — each returns a `Promise` of the affected record)
 
-- `sendMessage(conversationId, { content, type, metadata, replyTo, attachments })` — `metadata.html` (LIME-37) carries the sanitised rich-text version of `content`, omitted when the message has no formatting. `attachments` (LIME-41) is an array of `{ path, name, size, mime, width, height }` — already-uploaded files (via `uploadAttachment` below) that become that same message's album; `content`, if present alongside them, is that album's caption, not a separate message
+- `sendMessage(conversationId, { content, type, metadata, replyTo, attachments })` — `metadata.html` (LIME-37) carries the sanitised rich-text version of `content`, omitted when the message has no formatting. `attachments` (LIME-41, `duration_seconds` added LIME-42) is an array of `{ path, name, size, mime, width, height, duration_seconds }` — already-uploaded files (via `uploadAttachment` below) that become that same message's album; `content`, if present alongside them, is that album's caption, not a separate message
 - `toggleReaction(messageId, emoji)`
 - `createConversation({ type, memberIds, name, description })`
 - `renameConversation(id, name)`
@@ -385,7 +385,8 @@ to Supabase directly in the first place.
 ## Multi-attachment messages (LIME-41)
 
 - **New table, `message_attachments`** (schema.sql): `{ id, message_id,
-  path, name, size, mime, width, height, position, created_at }`, one row
+  path, name, size, mime, width, height, duration_seconds, position,
+  created_at }` (`duration_seconds` added LIME-42), one row
   per file, `position` giving display order. Supersedes LIME-38's "one
   message per file, `metadata.path` on the message itself" — any message,
   including one with real `content`, can now carry 0..n attachments.
@@ -435,6 +436,79 @@ to Supabase directly in the first place.
   single image still reads "Photo", a single file still reads "📎
   filename" (unchanged from LIME-38); multiple attachments read "📷 N
   photos", "📎 N files", or "📷 N photos, 📎 M files" for a mixed album.
+
+## Audio attachments and typed file cards (LIME-42)
+
+- **Audio attachments** (`mime` starting `audio/`) are their own category
+  within a message's attachments, split out from "files" the same way
+  images already are (`isAudioAttachment`, alongside `isImageAttachment`).
+  They render as a real inline player — a visible play/pause button, a
+  waveform-styled bar, and a duration label — backed by a genuine hidden
+  `<audio>` element (`data-attachment-path`, resolved the same lazy,
+  two-step way every other attachment already is via `paintAttachments`),
+  not the decorative, unwired `'voice'` message type (LIME-10), which
+  this brief leaves completely untouched. `duration_seconds` is read once
+  at upload time (`readAudioDuration(file)`, mirroring
+  `readImageDimensions`'s own reasoning exactly) so the label never has
+  to wait on the file actually loading to show a real number.
+- **Playback**: clicking the play button toggles the real `<audio>`
+  element's own `.play()`/`.pause()`; starting one attachment's audio
+  pauses any other attachment's audio currently playing (only one plays
+  at a time). The button's icon and `aria-label` reflect the `<audio>`
+  element's own live `paused`/`ended` state (via non-bubbling `play`/
+  `pause`/`ended` listeners on the capturing phase — those events don't
+  bubble, so a document-level delegated listener has to use `true` for
+  its third argument to ever see them at all), not just an assumption
+  about what the one click that triggered it did.
+- **Typed file cards**: a non-image, non-audio attachment's card now
+  carries an extension badge — a two-to-four-letter label (PDF, DOC, XLS,
+  PPT, ZIP, TXT) on a Seed calm/bad/warn/good-tinted tile, keyed off the
+  attachment's own filename extension (checked against `FILE_CATEGORY_BY_EXT`
+  in app.js), or a plain neutral tile with a generic file glyph for
+  anything not in that list. All four tint pairings (their own
+  `-text-bold-default` on `-bg-subtle-default`) measured at 6.4:1 contrast
+  or better in both light and dark mode — comfortably clear of the
+  "only if it passes contrast, otherwise neutral" bar the brief itself
+  set, so none needed the neutral fallback.
+- **Name truncation**: the filename's base (everything before the last
+  dot) ellipsis-truncates on overflow; the extension is a separate,
+  never-shrinking element after it, so a long filename always keeps its
+  extension visible rather than losing it to a plain end-truncation.
+- **PDFs open in a new tab from the card** — the badge+meta area
+  (`.lime-filecard__open`) is a real `<a target="_blank" rel="noopener">`
+  for `mime === 'application/pdf'` (a plain `<div>` otherwise), resolved
+  by the same `paintAttachments` pass every other attachment already
+  goes through. Not a JS `window.open()` call: tried first, and found —
+  live, in Firefox — to silently fail, since a `blob:` URL is scoped to
+  the Document that created it and can't reliably be handed to a
+  genuinely separate browsing context opened that way, even same-origin.
+  A real anchor click's own "open as an auxiliary browsing context"
+  navigation resolves it correctly instead — the same proven path the
+  Download link right beside it already relies on. Images never reach
+  this at all, since an image attachment always renders as an album/grid
+  tile (`imageTileHtml`), never a file card — the brief's own "PDFs and
+  images open in a new tab from the card" only has a file-card half to
+  implement here.
+- **List previews**: a single audio attachment (no caption) reads "🎵
+  Audio" (the brief's own exact wording, no count — matching "Photo"'s
+  own no-count form for a single image); a real multi-attachment mix
+  extends the existing "📷 N photos"/"📎 N files" pattern with "🎵 N
+  audio" ("audio" doesn't pluralize).
+- **A pre-existing, out-of-scope CSS finding, not fixed here:** surveying
+  the old file-card CSS turned up a genuinely dead, unreferenced
+  `.lime-message__file` block further down `lime.css` (no `-card`,
+  nothing in `app.js` has ever rendered it) that happens to redeclare the
+  bare `.lime-message__file-name`/`.lime-message__file-download` class
+  names the *real* card also used — since neither selector is scoped to
+  a parent, the later one in the file silently wins for every element
+  carrying that class, meaning the real download button had been
+  rendering at 28×28 (the dead block's own size) rather than the 32×32
+  its own, earlier rule stated, ever since LIME-38. LIME-42's own new
+  file-card markup uses fresh `.lime-filecard__*` names specifically to
+  avoid inheriting this collision, but the dead block and the pre-LIME-42
+  collision it caused are both still sitting in `lime.css`, untouched —
+  flagged here rather than silently cleaned up, since removing dead code
+  wasn't this brief's own scope.
 
 ## Known gaps, flagged rather than silently resolved
 

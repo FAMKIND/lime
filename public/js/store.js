@@ -272,6 +272,10 @@ const LimeStore = (function () {
         mime: att.mime != null ? att.mime : null,
         width: att.width != null ? att.width : null,
         height: att.height != null ? att.height : null,
+        // LIME-42: mirrors width/height's own reasoning exactly — read
+        // once at upload time (app.js's readAudioDuration), not measured
+        // live off a real <audio> element each time one renders.
+        duration_seconds: att.duration_seconds != null ? att.duration_seconds : null,
         position: index,
         created_at: message.created_at,
       });
@@ -306,6 +310,7 @@ const LimeStore = (function () {
         mime: message.metadata.mime != null ? message.metadata.mime : null,
         width: null,
         height: null,
+        duration_seconds: null,
         position: 0,
         created_at: message.created_at,
       }];
