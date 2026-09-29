@@ -88,26 +88,12 @@
   pointer-events: none;
 }
 
-/* LIME-10-fix13's 150px was a reasoned estimate (Chrome unavailable for
-   previews at the time) — measured live for real this time (LIME-10-fix15):
-   .lime-composer is 107px collapsed, 163px with the toolbar expanded.
-   Calibrated against the taller expanded state, not just the resting
-   height, so growing the composer while already scrolled to the bottom
-   can never newly clip the last message — 163px + ~37px breathing room.
-   LIME-39: that single calibrated number stopped being enough once the
-   composer's own height became far more variable — rich-text lists/
-   quotes (LIME-37) and attachment chips (LIME-38) can each make it much
-   taller than 163px, and no one static value covers every state. Driven
-   live instead: app.js's createComposer (when passed a stickyScroll)
-   watches #composer's real height with a ResizeObserver and writes
-   --composer-clearance here on every change. 200px is only the fallback
-   for the instant before that JS has run (or if ResizeObserver doesn't
-   exist at all) — it's this same calibrated value, unchanged, just no
-   longer the only value that's ever used. LIME-46: this rule and
-   lime.css's own copy of it were flagged as a possible leftover conflict
-   in that brief's own survey — checked directly, they already agree
-   (both var(--composer-clearance, 200px)) since LIME-39 already unified
-   them; nothing further needed here. */
-.lime-messages {
-  padding-bottom: var(--composer-clearance, 200px);
-}
+/* LIME-47: the .lime-messages padding-bottom rule that used to live here
+   (a second, identical copy of lime.css's own — LIME-46's own survey
+   flagged it as a leftover conflict, but by then it wasn't actually
+   conflicting any more, just duplicated) is gone — kept only in
+   lime.css now, next to .lime-messages' other rules, its natural home.
+   Computed style is unchanged: both copies already read the exact same
+   var(--composer-clearance, 200px), confirmed live before removing this
+   one. See lime.css's own copy for the full calibration history
+   (LIME-10-fix13/fix15, LIME-39). */

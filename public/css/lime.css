@@ -2538,12 +2538,15 @@ body {
    a permanent viewport-relative mask faded content even on short threads
    with nothing left to scroll — the composer's own ::before gradient
    (below) only reads as a fade when content actually passes beneath it.
-   LIME-39: this rule's own padding-bottom is the pre-JS/no-ResizeObserver
-   fallback only — gradients.css loads after this file and declares the
-   same property again, driven live from --composer-clearance (see its
-   own comment there for why a static number stopped being enough). Kept
-   in sync here (same var, same 200px fallback) so reading either file
-   alone still gives the right answer. */
+   LIME-39: padding-bottom is driven live from --composer-clearance,
+   written by createComposer's own ResizeObserver on #composer's real
+   height (ranges from ~107px collapsed to much taller with rich-text/
+   attachments) — 200px is only the static fallback for the instant
+   before that JS has run, or if ResizeObserver doesn't exist at all.
+   LIME-47: this used to also be declared a second time in gradients.css
+   (identical value, loaded after this file — so it never actually
+   changed the cascade result, just duplicated it); removed there, this
+   is the one copy now. */
 .lime-messages {
   position: absolute;
   inset: 0;
@@ -2737,7 +2740,12 @@ body {
 .lime-message__content {
   background: var(--soil-bg-surface);
   padding: 14px 18px;
-  border-radius: var(--seed-radius-md);
+  /* LIME-47: reuses .lime-composer__box's own token (var(--seed-radius-lg))
+     directly, per the brief's own "read it and reuse the same token,
+     don't copy a number" — was --seed-radius-md (8px vs. 16px). Checked
+     both single-line and long-wrapped bubbles live afterward (screenshots,
+     TEND.md): padding unchanged, no "pill-cramped" look at this size. */
+  border-radius: var(--seed-radius-lg);
 }
 
 .lime-message__text {
@@ -2745,6 +2753,14 @@ body {
   line-height: var(--seed-leading-relaxed);
   color: var(--soil-text);
   margin: 0;
+  /* LIME-47: an unbroken string (no natural break point) previously had
+     no way to wrap at all — overflow-wrap:anywhere lets the browser break
+     it mid-word rather than letting it run past the bubble's own edge.
+     "anywhere" specifically (not the legacy word-break: break-word alias)
+     because it also affects min-content sizing during flex shrink — the
+     bubble's own shrink-to-content behavior for short messages depends
+     on that, not just the wrapping itself. */
+  overflow-wrap: anywhere;
 }
 
 /* LIME-37: shared between the composer's own contenteditable surface
@@ -2755,7 +2771,15 @@ body {
    into two different appearances for the exact same markup. Base
    font-size/line-height/color for the composer already come from
    .lime-composer__input above; for a rendered bubble they come from
-   .lime-message__text (both classes always sit alongside this one). */
+   .lime-message__text (both classes always sit alongside this one).
+   LIME-47: overflow-wrap:anywhere lives here now too (inherited — it's
+   an inherited property by spec — by every descendant: p/li/blockquote/a
+   included) since a long link or list item needs the identical fix
+   .lime-message__text just got for plain text. */
+.lime-rich-text {
+  overflow-wrap: anywhere;
+}
+
 .lime-rich-text p {
   margin: 0 0 0.5em;
 }
@@ -2798,6 +2822,14 @@ body {
   background: var(--soil-bg-elevated);
   border-radius: var(--seed-radius-sm);
   overflow-x: auto;
+  /* LIME-47: a code block's own long line scrolls horizontally *inside*
+     the bubble instead of wrapping (this .lime-rich-text's own inherited
+     overflow-wrap:anywhere would otherwise break it mid-token) or
+     overflowing past it (no rule stopped that before). white-space:pre
+     is what actually prevents the wrap in the first place — overflow-x:
+     auto above only ever mattered once there was unwrapped content wide
+     enough to need it. */
+  white-space: pre;
 }
 
 .lime-rich-text pre code {
@@ -4160,6 +4192,58 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
+  /* LIME-47: the 3-line clamp above stops a long *caption* from running
+     on forever, but doesn't by itself stop one long unbroken word within
+     a line from overflowing sideways before the clamp ever kicks in. */
+  overflow-wrap: anywhere;
+}
+
+/* LIME-47: the reply quote's own attachment preview — a small thumbnail
+   or a compact file chip, alongside the existing caption text below it
+   (unchanged). */
+.lime-replies-panel__quote-media {
+  position: relative;
+  display: inline-block;
+  margin: var(--seed-space-1) 0;
+}
+
+.lime-replies-panel__quote-thumb {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--seed-radius-sm);
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.lime-replies-panel__quote-thumb-more {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--seed-radius-sm);
+  background: rgba(19, 27, 23, 0.5);
+  color: #fff;
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-semibold);
+  pointer-events: none;
+}
+
+.lime-replies-panel__quote-file {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-1);
+  margin: var(--seed-space-1) 0;
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.lime-replies-panel__quote-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
 }
 
 /* LIME-46: same split as .lime-members-panel__list above — a new
@@ -4236,6 +4320,11 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   font-size: var(--seed-text-sm);
   color: var(--soil-text);
   line-height: var(--seed-leading-relaxed);
+  /* LIME-47: same fix as .lime-message__text — "the same rules apply to
+     replies in the reply panel," the brief's own words. Only matters for
+     a plain reply (this class alone); a formatted one also carries
+     .lime-rich-text, which now has its own copy. */
+  overflow-wrap: anywhere;
 }
 
 /* .lime-message__reactions's shared rule (main thread) adds a 12px

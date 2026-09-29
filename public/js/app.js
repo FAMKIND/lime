@@ -675,6 +675,48 @@ function attachmentContentHtml(message) {
     + '</div>';
 }
 
+// LIME-47: the reply panel's own quote used to show only "Photo"/"📎
+// filename" (plainPreviewFor's caption text, still rendered alongside
+// this — unchanged) with no actual media, making it hard to tell what's
+// being replied to. Reuses the exact same attachment read the thread
+// itself uses (message.metadata.path + getAttachmentUrl, via
+// paintAttachments — no separate read path to keep in sync). Returns an
+// array, not a single attachment, even though today's data model
+// (LIME-38: one message per file) never produces more than one — so this
+// already renders correctly, "+N" included, whenever LIME-41 adds real
+// multi-attachment messages, not just today's always-one-or-zero case.
+function quoteAttachments(message) {
+  if (message.type === 'image' || message.type === 'file') {
+    return [{ type: message.type, metadata: message.metadata || {} }];
+  }
+  return [];
+}
+
+function quoteMediaHtml(message) {
+  const attachments = quoteAttachments(message);
+  if (attachments.length === 0) return '';
+  const first = attachments[0];
+  const path = escapeHtml(first.metadata.path || '');
+  if (first.type === 'image') {
+    // lime-message__image (also) — the existing document-level lightbox
+    // click handler is delegated off that exact class, so a click here
+    // opens it for free; lime-replies-panel__quote-thumb only overrides
+    // the size (48px, not the thread bubble's 240×180 max).
+    const more = attachments.length > 1
+      ? '<span class="lime-replies-panel__quote-thumb-more">+' + (attachments.length - 1) + '</span>'
+      : '';
+    return '<div class="lime-replies-panel__quote-media">'
+      + '<img class="lime-message__image lime-replies-panel__quote-thumb" data-attachment-path="' + path + '" alt="">'
+      + more
+      + '</div>';
+  }
+  const name = escapeHtml(first.metadata.name || 'file');
+  return '<div class="lime-replies-panel__quote-file">'
+    + '<span class="dew dew-file"></span>'
+    + '<span class="lime-replies-panel__quote-file-name">' + name + '</span>'
+    + '</div>';
+}
+
 // Resolves every not-yet-painted [data-attachment-path] under `container`
 // to a real URL (getAttachmentUrl) and applies it — an <img>'s src, or a
 // download link's href. data-attachment-painted marks one done so a
@@ -2267,12 +2309,17 @@ function renderCrumbs() {
   const activeTab = document.querySelector('#scope-tablist [role="tab"][aria-selected="true"]');
   if (activeTab) crumbTeachers.textContent = activeTab.textContent.trim();
 
+  // LIME-47: hoisted out of the "not editing" block below (it used to be
+  // block-scoped there) — the DM-profile-crumb check further down needs
+  // it too, and re-deriving it a second time from the DOM would just be
+  // the same lookup twice.
+  const activeRow = document.querySelector('.lime-contact--active');
+  const conversationId = activeRow && activeRow.dataset.conversationId;
+  const conversation = conversationId && LimeStore.getConversation(conversationId);
+
   // Not editing (LIME-34 owns crumbThread's text while renaming — this
   // would otherwise stomp on the in-progress edit on every state change).
   if (!crumbThread.isContentEditable) {
-    const activeRow = document.querySelector('.lime-contact--active');
-    const conversationId = activeRow && activeRow.dataset.conversationId;
-    const conversation = conversationId && LimeStore.getConversation(conversationId);
     // Empty, not left stale, when nothing's open (e.g. the last
     // conversation was just deleted — selectTopOrEmpty's own "none
     // left" branch relies on exactly this to clear the old title).
@@ -2304,7 +2351,19 @@ function renderCrumbs() {
       }
     } else if (panelKind === 'profile') {
       const person = LimeStore.getProfile(rightPanel.dataset.shownProfileId);
-      if (person) panelLabel = person.display_name;
+      if (person) {
+        // LIME-47: a DM's own title crumb is already that person's name
+        // (getConversationTitle) — showing it a second time in the panel
+        // crumb ("Messages / Jean Chung / Jean Chung") reads as a
+        // mistake, not real information. "Profile" instead, but only
+        // when the open DM is *with this exact person* — your own
+        // details, or a group member's, still show their real name,
+        // since neither of those is already named in the title crumb.
+        const isDmWithShownPerson = conversation && conversation.type === 'direct'
+          && person.id !== LimeStore.getCurrentUserId()
+          && LimeStore.getMembers(conversation.id).some((m) => m.id === person.id);
+        panelLabel = isDmWithShownPerson ? 'Profile' : person.display_name;
+      }
     }
   }
   crumbPanel.textContent = panelLabel;
@@ -2442,6 +2501,7 @@ function renderCrumbs() {
     quoteEl.innerHTML = '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '" data-profile-id="' + escapeHtml(sender.id) + '"></span>'
       + '<div class="lime-replies-panel__quote-body">'
       + '<span class="lime-replies-panel__quote-sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
+      + quoteMediaHtml(message)
       + '<p class="lime-replies-panel__quote-text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '</div>'
@@ -2451,6 +2511,7 @@ function renderCrumbs() {
       + REACTION_PICKER_HTML;
     const avatar = quoteEl.querySelector('.lime-avatar[data-name]');
     if (avatar) paintAvatar(avatar);
+    paintAttachments(quoteEl); // LIME-47
   }
 
   // reply_count/last_reply_at on the parent message are stale seed
