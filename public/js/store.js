@@ -405,9 +405,21 @@ const LimeStore = (function () {
   // Local adapter only, per docs/data-model.md — "reset" has no meaning
   // against a shared database, so a future SupabaseAdapter has no
   // equivalent for the store to call here.
+  // Promise.resolve(...): adapter().reset() returns a Promise since
+  // LIME-38 (it also clears the lime-files IndexedDB database, not just
+  // localStorage) — wrapping it keeps this working if a future adapter's
+  // reset() is synchronous instead.
   function reset() {
-    adapter().reset();
-    return init();
+    return Promise.resolve(adapter().reset()).then(() => init());
+  }
+
+  // LIME-38.
+  function uploadAttachment(file, options) {
+    return adapter().uploadAttachment(file, options);
+  }
+
+  function getAttachmentUrl(path) {
+    return adapter().getAttachmentUrl(path);
   }
 
   return {
@@ -438,6 +450,8 @@ const LimeStore = (function () {
     deleteConversation,
     deleteForMe,
     markRead,
+    uploadAttachment,
+    getAttachmentUrl,
     updateProfile,
     setProfileEmail,
   };

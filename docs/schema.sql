@@ -112,7 +112,13 @@ create table messages (
   conversation_id  text not null references conversations(id) on delete cascade,
   sender_id        text not null references profiles(id),
   content          text,
-  type             text not null check (type in ('text', 'voice', 'location', 'image')),
+  type             text not null check (type in ('text', 'voice', 'location', 'image', 'file')),
+  -- LIME-38: an 'image'/'file' message's metadata is
+  -- { name, size, mime, path } — path is opaque to every reader (never
+  -- parsed, only ever handed to the adapter's own getAttachmentUrl) so
+  -- the local adapter (IndexedDB, see local-adapter.js) and a real
+  -- SupabaseAdapter (Storage, below) can use different path shapes
+  -- without the UI ever knowing the difference.
   metadata         jsonb,
   -- A reply's parent. Deleting the parent takes its replies with it —
   -- there's no "reply to a deleted message" state to design for yet.
@@ -174,6 +180,22 @@ create table message_reactions (
 -- alter table conversations enable row level security;
 -- alter table conversation_members enable row level security;
 -- alter table messages enable row level security;
+
+-- ── Attachments (LIME-38, draft, not yet created) ────────────
+-- Not a table — a Supabase Storage bucket, `attachments`, holding the
+-- actual file bytes; messages.metadata.path (above) is the object key
+-- within it: `<conversationId>/<messageId>/<filename>`. Storage buckets
+-- get their own RLS-style policies (on storage.objects), not table RLS:
+--
+-- create policy "attachments_read" on storage.objects for select
+--   using (bucket_id = 'attachments' and is_member((storage.foldername(name))[1]));
+-- create policy "attachments_write" on storage.objects for insert
+--   using (bucket_id = 'attachments' and is_member((storage.foldername(name))[1]));
+--
+-- (storage.foldername(name))[1] is the path's first segment —
+-- conversationId — so both policies reduce to the same is_member() check
+-- everything else here already uses. The local adapter has no equivalent
+-- to enable: IndexedDB is private to this browser profile already.
 -- alter table message_reactions enable row level security;
 --
 -- -- The current auth session's profile id, or null if unlinked. `stable`

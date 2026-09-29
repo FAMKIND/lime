@@ -8,6 +8,69 @@
 const LocalAdapter = (function () {
   const SNAPSHOT_KEY = 'lime-state-v1';
 
+  // ── Attachments (LIME-38) — IndexedDB, not localStorage ──────
+  // localStorage's ~5MB total quota can't hold even one attachment near
+  // this brief's own 10MB-per-file limit; IndexedDB has no such ceiling
+  // in practice. One database, one object store, keyed by `path`.
+  const FILES_DB_NAME = 'lime-files';
+  const FILES_STORE_NAME = 'attachments';
+  const FILES_DB_VERSION = 1;
+
+  function openFilesDb() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(FILES_DB_NAME, FILES_DB_VERSION);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore(FILES_STORE_NAME, { keyPath: 'path' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // `conversationId` is all `uploadAttachment` gets — there's no
+  // `messageId` yet, since the file uploads *before* the message that
+  // will reference it exists (sendMessage needs the resolved `path`
+  // first). Production's own path shape (schema.sql: conversationId/
+  // messageId/filename) isn't available here for that reason — fine,
+  // since `path` is opaque to every caller either way (data-model.md).
+  function uploadAttachment(file, options) {
+    const conversationId = (options && options.conversationId) || 'unfiled';
+    const path = conversationId + '/' + crypto.randomUUID() + '-' + file.name;
+    return openFilesDb().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(FILES_STORE_NAME, 'readwrite');
+      tx.objectStore(FILES_STORE_NAME).put({ path, blob: file, name: file.name, mime: file.type, size: file.size });
+      tx.oncomplete = () => resolve({ path });
+      tx.onerror = () => reject(tx.error);
+    }));
+  }
+
+  // A fresh object URL every call, never cached here — object URLs are
+  // only valid for this page's current lifetime anyway, so there's
+  // nothing worth persisting between calls.
+  function getAttachmentUrl(path) {
+    return openFilesDb().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(FILES_STORE_NAME, 'readonly');
+      const request = tx.objectStore(FILES_STORE_NAME).get(path);
+      request.onsuccess = () => {
+        if (!request.result) { reject(new Error('LocalAdapter: no attachment at ' + path)); return; }
+        resolve(URL.createObjectURL(request.result.blob));
+      };
+      request.onerror = () => reject(request.error);
+    }));
+  }
+
+  // Best-effort, like save()'s own try/catch below — a reset that can't
+  // fully clear old attachment blobs shouldn't block the rest of reset
+  // (the data snapshot) from going through.
+  function resetFiles() {
+    return new Promise((resolve) => {
+      const request = indexedDB.deleteDatabase(FILES_DB_NAME);
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+      request.onblocked = () => resolve();
+    });
+  }
+
   // A cheap, deterministic fingerprint of the embedded seed (djb2), not a
   // cryptographic hash — this only ever needs to answer "has the seed this
   // snapshot was built from changed since," so a collision-resistant hash
@@ -198,8 +261,16 @@ const LocalAdapter = (function () {
       }
     },
 
+    // Returns a Promise (unlike load/save) so store.js's own reset() can
+    // wait on the IndexedDB deletion too, not just localStorage, before
+    // it re-initializes — the "Reset demo data" flow reloads the page
+    // right after this resolves.
     reset() {
       localStorage.removeItem(SNAPSHOT_KEY);
+      return resetFiles();
     },
+
+    uploadAttachment,
+    getAttachmentUrl,
   };
 })();

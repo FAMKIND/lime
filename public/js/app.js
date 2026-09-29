@@ -187,9 +187,20 @@ function createComposer(rootEl, { onSend, growScrollTarget } = {}) {
   const linkInput = linkPopover && linkPopover.querySelector('[data-link-input]');
   const linkSubmit = linkPopover && linkPopover.querySelector('[data-link-submit]');
   const linkToolButtons = [...rootEl.querySelectorAll('[data-cmd="link"]')];
+  // LIME-38.
+  const fileInput = rootEl.querySelector('[data-file-input]');
+  const attachBtn = rootEl.querySelector('[data-attach-btn]');
+  const attachmentsEl = rootEl.querySelector('[data-attachments]');
+  const attachmentsErrorEl = rootEl.querySelector('[data-attachments-error]');
   if (!input) return;
 
   let savedLinkRange = null;
+  // { file, previewUrl } — previewUrl is a client-side object URL for an
+  // image chip's thumbnail only (this composer's own preview, made
+  // directly from the raw File — nothing has gone through
+  // LimeStore.uploadAttachment yet, so there's no `path` to ask
+  // getAttachmentUrl for until Send actually runs).
+  let pendingAttachments = [];
 
   function isCaretInside(tagName) {
     const sel = window.getSelection();
@@ -335,6 +346,88 @@ function createComposer(rootEl, { onSend, growScrollTarget } = {}) {
     return input.textContent.trim().length === 0;
   }
 
+  // ── Attachments (LIME-38) ──────────────────────────────
+  function showAttachmentError(message) {
+    if (!attachmentsErrorEl) return;
+    attachmentsErrorEl.textContent = message;
+    attachmentsErrorEl.hidden = false;
+  }
+
+  function hideAttachmentError() {
+    if (attachmentsErrorEl) attachmentsErrorEl.hidden = true;
+  }
+
+  function updateSendActive() {
+    if (sendBtn) sendBtn.classList.toggle('is-active', !isEmpty() || pendingAttachments.length > 0);
+  }
+
+  function renderAttachmentChips() {
+    if (!attachmentsEl) return;
+    attachmentsEl.innerHTML = pendingAttachments.map((pending, index) => {
+      const isImage = pending.file.type.startsWith('image/');
+      const thumb = isImage
+        ? '<img class="lime-attachment-chip__thumb" src="' + pending.previewUrl + '" alt="">'
+        : '<span class="lime-attachment-chip__icon"><span class="dew dew-file"></span></span>';
+      return '<div class="lime-attachment-chip' + (pending.sending ? ' lime-attachment-chip--sending' : '') + '" data-index="' + index + '">'
+        + thumb
+        + '<div class="lime-attachment-chip__meta">'
+        + '<span class="lime-attachment-chip__name">' + escapeHtml(pending.file.name) + '</span>'
+        + '<span class="lime-attachment-chip__size">' + formatFileSize(pending.file.size) + '</span>'
+        + '</div>'
+        + (pending.sending ? '' : '<button type="button" class="lime-attachment-chip__remove" data-remove-attachment title="Remove"><span class="dew dew-close"></span></button>')
+        + '</div>';
+    }).join('');
+  }
+
+  function addFiles(fileList) {
+    hideAttachmentError();
+    [...fileList].forEach((file) => {
+      if (pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE) {
+        showAttachmentError('Up to ' + MAX_ATTACHMENTS_PER_MESSAGE + ' files per message.');
+        return;
+      }
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        showAttachmentError('"' + file.name + '" is over the 10MB limit.');
+        return;
+      }
+      pendingAttachments.push({
+        file,
+        previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      });
+    });
+    renderAttachmentChips();
+    updateSendActive();
+  }
+
+  function removeAttachment(index) {
+    const removed = pendingAttachments.splice(index, 1)[0];
+    if (removed && removed.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+    renderAttachmentChips();
+    updateSendActive();
+  }
+
+  function clearAttachments() {
+    pendingAttachments.forEach((p) => { if (p.previewUrl) URL.revokeObjectURL(p.previewUrl); });
+    pendingAttachments = [];
+    renderAttachmentChips();
+  }
+
+  if (attachBtn && fileInput) {
+    attachBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      addFiles(fileInput.files);
+      fileInput.value = ''; // lets picking the exact same file again re-fire 'change'
+    });
+  }
+
+  if (attachmentsEl) {
+    attachmentsEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-remove-attachment]');
+      if (!btn) return;
+      removeAttachment(Number(btn.closest('[data-index]').dataset.index));
+    });
+  }
+
   rootEl.addEventListener('focusin', () => rootEl.classList.add('is-expanded'));
   rootEl.addEventListener('focusout', (e) => {
     if (rootEl.contains(e.relatedTarget)) return;
@@ -349,7 +442,7 @@ function createComposer(rootEl, { onSend, growScrollTarget } = {}) {
     // main composer passes growScrollTarget (its thread); the reply
     // composer never rescrolled its own list for this, unchanged.
     if (growScrollTarget) growScrollTarget.scrollTop = growScrollTarget.scrollHeight;
-    if (sendBtn) sendBtn.classList.toggle('is-active', !isEmpty());
+    updateSendActive();
     updatePressedStates();
   });
 
@@ -369,14 +462,29 @@ function createComposer(rootEl, { onSend, growScrollTarget } = {}) {
 
   function send() {
     const content = input.innerText.trim();
-    if (!content) return;
+    // LIME-38: Send is active with text OR attachments, either alone —
+    // guard matches that, not "content required" the way LIME-37 left it.
+    if (!content && pendingAttachments.length === 0) return;
     const safeHtml = sanitizeHtml(input.innerHTML);
     const metadata = hasRealFormatting(safeHtml) ? { html: safeHtml } : undefined;
-    if (onSend) onSend({ content, metadata });
+    const attachments = pendingAttachments.map((p) => p.file);
+    // "Optimistically showing a sending state" (brief) — chips stay
+    // visible (greyed, remove button hidden) until onSend's own Promise
+    // settles, rather than vanishing the instant Send is clicked; onSend
+    // resolving only *after* every upload+message actually landed is
+    // what lets this be an honest indicator, not a fake instant one.
+    if (attachments.length > 0) {
+      pendingAttachments.forEach((p) => { p.sending = true; });
+      renderAttachmentChips();
+    }
+    const result = onSend ? onSend({ content, metadata, attachments }) : null;
     input.innerHTML = '';
     input.style.height = '';
     if (sendBtn) sendBtn.classList.remove('is-active');
     updatePressedStates();
+    const finishAttachments = () => clearAttachments();
+    if (result && typeof result.then === 'function') result.then(finishAttachments, finishAttachments);
+    else finishAttachments();
   }
 
   input.addEventListener('keydown', (e) => {
@@ -426,10 +534,24 @@ function formatDuration(seconds) {
   return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 }
 
+// ── Attachments (LIME-38) ────────────────────────────────
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENTS_PER_MESSAGE = 5;
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 function previewFor(message) {
   if (!message) return '';
   if (message.type === 'voice') return '<span class="dew dew-microphone"></span><span class="lime-contact__preview-text">Voice message</span>';
   if (message.type === 'location') return '<span class="dew dew-camera-on"></span><span class="lime-contact__preview-text">' + escapeHtml(message.metadata && message.metadata.place_name || 'Location') + '</span>';
+  // LIME-38, per the brief's own two examples: an image is just "Photo";
+  // any other file shows its name behind a paperclip.
+  if (message.type === 'image') return '<span class="lime-contact__preview-text">Photo</span>';
+  if (message.type === 'file') return '<span class="lime-contact__preview-text">📎 ' + escapeHtml(message.metadata && message.metadata.name || 'File') + '</span>';
   return '<span class="lime-contact__preview-text">' + escapeHtml(message.content || '') + '</span>';
 }
 
@@ -439,6 +561,8 @@ function plainPreviewFor(message) {
   if (!message) return '';
   if (message.type === 'voice') return 'Voice message';
   if (message.type === 'location') return message.metadata && message.metadata.place_name || 'Location';
+  if (message.type === 'image') return 'Photo';
+  if (message.type === 'file') return '📎 ' + (message.metadata && message.metadata.name || 'File');
   return message.content || '';
 }
 
@@ -456,6 +580,47 @@ function messageBodyHtml(message, textClass) {
     return '<div class="' + cls + ' lime-rich-text">' + renderRichHtml(message.metadata.html) + '</div>';
   }
   return '<p class="' + cls + '">' + escapeHtml(message.content || '') + '</p>';
+}
+
+// LIME-38: an 'image'/'file' message's body — shared the same way
+// messageBodyHtml above is, between the main thread and the reply panel.
+// getAttachmentUrl is async (an IndexedDB read locally; a network fetch
+// against real Supabase Storage), so this renders a placeholder
+// synchronously (data-attachment-path, no real src/href yet) — paintAttachments
+// below resolves the real URL afterward, the same two-step pattern
+// paintAvatar already uses for avatars inserted after the initial load.
+function attachmentContentHtml(message) {
+  const meta = message.metadata || {};
+  const path = escapeHtml(meta.path || '');
+  const name = escapeHtml(meta.name || 'file');
+  if (message.type === 'image') {
+    return '<img class="lime-message__image" data-attachment-path="' + path + '" alt="' + name + '">';
+  }
+  return '<div class="lime-message__file-card">'
+    + '<span class="lime-message__file-icon"><span class="dew dew-file"></span></span>'
+    + '<div class="lime-message__file-meta">'
+    + '<span class="lime-message__file-name">' + name + '</span>'
+    + '<span class="lime-message__file-size">' + formatFileSize(meta.size || 0) + '</span>'
+    + '</div>'
+    + '<a class="lime-message__file-download" data-attachment-path="' + path + '" data-attachment-download="' + name + '" download="' + name + '" title="Download"><span class="dew dew-download"></span></a>'
+    + '</div>';
+}
+
+// Resolves every not-yet-painted [data-attachment-path] under `container`
+// to a real URL (getAttachmentUrl) and applies it — an <img>'s src, or a
+// download link's href. data-attachment-painted marks one done so a
+// later call over the same container (e.g. a second message arriving)
+// doesn't re-resolve and re-fetch ones already showing correctly.
+function paintAttachments(container) {
+  container.querySelectorAll('[data-attachment-path]:not([data-attachment-painted])').forEach((el) => {
+    const path = el.dataset.attachmentPath;
+    el.dataset.attachmentPainted = 'true';
+    if (!path) return;
+    LimeStore.getAttachmentUrl(path).then((url) => {
+      if (el.tagName === 'IMG') el.src = url;
+      else el.href = url;
+    }).catch(console.error);
+  });
 }
 
 // Also promoted (LIME-11-fix2) — the reply panel's quote/reply items
@@ -754,6 +919,10 @@ function initMessagesList() {
         + '</div>'
         + '</div>';
     }
+    if (message.type === 'image' || message.type === 'file') {
+      const mediaClass = message.type === 'image' ? ' lime-message__content--media' : '';
+      return '<div class="lime-message__content' + mediaClass + '">' + attachmentContentHtml(message) + '</div>';
+    }
     return '<div class="lime-message__content">' + messageBodyHtml(message) + '</div>';
   }
 
@@ -819,6 +988,7 @@ function initMessagesList() {
     // inserts afterward (every subsequent selectConversation call) is
     // otherwise left unpainted, same root cause as LIME-11's handleSend fix.
     thread.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+    paintAttachments(thread); // LIME-38: same reasoning — resolves every image/file rendered by this pass
     // LIME-11-fix3: covers both the initial page-load render (default
     // conversation) and every subsequent conversation switch, since both
     // paths call this same function — renderThread never scrolled at all
@@ -1061,10 +1231,11 @@ function initMessagesList() {
   if (composerEl) {
     createComposer(composerEl, {
       growScrollTarget: thread,
-      onSend({ content, metadata }) {
-        if (!currentConversationId) return;
+      onSend({ content, metadata, attachments }) {
+        if (!currentConversationId) return Promise.resolve();
         const conversationId = currentConversationId;
-        LimeStore.sendMessage(conversationId, { content, metadata }).then((message) => {
+
+        function appendMessage(message) {
           if (conversationId !== currentConversationId) return; // switched threads before this resolved
           const emptyState = thread.querySelector('.lime-messages__empty');
           if (emptyState) emptyState.remove();
@@ -1077,8 +1248,29 @@ function initMessagesList() {
           thread.insertAdjacentHTML('beforeend', messageHtml(message, me, true));
           const newAvatar = thread.querySelector('.lime-message:last-child .lime-avatar[data-name]');
           if (newAvatar) paintAvatar(newAvatar); // real bug (LIME-11): paintAvatar only ran once at load, missing every sent message's avatar since LIME-07
+          paintAttachments(thread); // LIME-38
           thread.scrollTop = thread.scrollHeight;
-        }).catch(console.error);
+        }
+
+        // LIME-38: text first (if any), then one message per attachment,
+        // in order — sequential (not Promise.all), so upload/send order
+        // is guaranteed and each message's created_at reflects a real,
+        // increasing send order rather than whichever upload happened to
+        // finish first.
+        let chain = Promise.resolve();
+        if (content) {
+          chain = chain.then(() => LimeStore.sendMessage(conversationId, { content, metadata }).then(appendMessage));
+        }
+        (attachments || []).forEach((file) => {
+          chain = chain.then(() => LimeStore.uploadAttachment(file, { conversationId }).then(({ path }) => {
+            const isImage = file.type.startsWith('image/');
+            return LimeStore.sendMessage(conversationId, {
+              type: isImage ? 'image' : 'file',
+              metadata: { name: file.name, size: file.size, mime: file.type, path },
+            });
+          }).then(appendMessage));
+        });
+        return chain.catch(console.error);
       },
     });
   }
@@ -2147,7 +2339,7 @@ function renderCrumbs() {
       + '<span class="lime-reply__sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<span class="lime-reply__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
-      + messageBodyHtml(message, 'lime-reply__text')
+      + (message.type === 'image' || message.type === 'file' ? attachmentContentHtml(message) : messageBodyHtml(message, 'lime-reply__text'))
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '</div>'
       + '<div class="lime-message__actions">'
@@ -2203,6 +2395,7 @@ function renderCrumbs() {
       listEl.insertAdjacentHTML('beforeend', replyHtml(reply, sender));
     });
     listEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+    paintAttachments(listEl); // LIME-38
   }
 
   function openReplies(messageId) {
@@ -2244,21 +2437,40 @@ function renderCrumbs() {
   const repliesComposer = document.getElementById('replies-composer');
   if (repliesComposer) {
     createComposer(repliesComposer, {
-      onSend({ content, metadata }) {
-        if (!currentReplyParentId) return;
+      onSend({ content, metadata, attachments }) {
+        if (!currentReplyParentId) return Promise.resolve();
         const parentId = currentReplyParentId;
         const parent = LimeStore.getMessage(parentId);
-        if (!parent) return;
+        if (!parent) return Promise.resolve();
+
+        function afterSend() {
+          refreshReplyIndicator(parentId);
+          renderReplies(parentId); // re-renders the whole list, including paintAttachments (LIME-38)
+          listEl.scrollTop = listEl.scrollHeight;
+        }
+
         // sendMessage with replyTo covers replies too (LIME-24b's contract
         // has no separate sendReply) — it already emits
         // lime:messages-changed, which the main list's own listener picks
         // up to re-sort; no manual event dispatch needed here the way the
-        // old lime:activity one was.
-        LimeStore.sendMessage(parent.conversation_id, { content, metadata, replyTo: parentId }).then(() => {
-          refreshReplyIndicator(parentId);
-          renderReplies(parentId);
-          listEl.scrollTop = listEl.scrollHeight;
-        }).catch(console.error);
+        // old lime:activity one was. LIME-38: text first, then one
+        // message per attachment, same sequential reasoning as the main
+        // composer's own onSend above.
+        let chain = Promise.resolve();
+        if (content) {
+          chain = chain.then(() => LimeStore.sendMessage(parent.conversation_id, { content, metadata, replyTo: parentId }).then(afterSend));
+        }
+        (attachments || []).forEach((file) => {
+          chain = chain.then(() => LimeStore.uploadAttachment(file, { conversationId: parent.conversation_id }).then(({ path }) => {
+            const isImage = file.type.startsWith('image/');
+            return LimeStore.sendMessage(parent.conversation_id, {
+              type: isImage ? 'image' : 'file',
+              metadata: { name: file.name, size: file.size, mime: file.type, path },
+              replyTo: parentId,
+            });
+          }).then(afterSend));
+        });
+        return chain.catch(console.error);
       },
     });
   }
@@ -2614,6 +2826,43 @@ function confirmDialog({ title, message, confirmLabel, cancelLabel, danger }) {
     confirmDialogModal.open();
   });
 }
+
+// ── Image lightbox (LIME-38) ─────────────────────────────
+// One static instance, same reuse-per-call pattern as confirmDialog above
+// — content rewritten per open, never rebuilt. Delegated (top-level, not
+// closure-private) since .lime-message__image appears both in the main
+// thread and in the reply panel, two separate closures.
+const lightboxEls = {
+  backdrop: document.getElementById('lightbox-backdrop'),
+  modal: document.getElementById('lightbox'),
+  closeBtn: document.getElementById('lightbox-close'),
+  img: document.getElementById('lightbox-img'),
+};
+let lightboxPreviouslyFocused = null;
+
+const lightboxModal = lightboxEls.modal && lightboxEls.backdrop
+  ? createModal({
+      backdrop: lightboxEls.backdrop,
+      modal: lightboxEls.modal,
+      closeBtn: lightboxEls.closeBtn,
+      onBeforeClose: () => {
+        if (lightboxEls.img) lightboxEls.img.src = ''; // stop showing the last image while closed
+        if (lightboxPreviouslyFocused && lightboxPreviouslyFocused.focus) lightboxPreviouslyFocused.focus();
+        lightboxPreviouslyFocused = null;
+        return true;
+      },
+      onOpen: () => { if (lightboxEls.closeBtn) lightboxEls.closeBtn.focus(); },
+    })
+  : null;
+
+document.addEventListener('click', (e) => {
+  const thumb = e.target.closest('.lime-message__image');
+  if (!thumb || !lightboxModal || !lightboxEls.img) return;
+  lightboxPreviouslyFocused = document.activeElement;
+  lightboxEls.img.src = thumb.src;
+  lightboxEls.img.alt = thumb.alt;
+  lightboxModal.open();
+});
 
 // ── Nav search → global modal ────────────────────────────
 // Distinct from the center panel's local filter: this searches everywhere

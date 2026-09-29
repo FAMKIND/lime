@@ -130,6 +130,8 @@ only ever calls the store, never the adapter directly.
 - `deleteConversation(id)` — a soft delete (`conversations.deleted_at`), not a row delete. Owner-only (`can('delete', …)`), removes it for everyone in it
 - `deleteForMe(id)` — added in LIME-34; sets only the **current user's own** `conversation_members.cleared_at`, never `conversations.deleted_at`. Available on any conversation the current user doesn't own (in practice, today, only ever exposed in the UI for DMs — Archive covers the same "make it go away for me" need for a group)
 - `markRead(conversationId)`
+- `uploadAttachment(file, { conversationId })` — added in LIME-38; resolves `{ path }`, an opaque key handed to `getAttachmentUrl` below, never parsed by the caller
+- `getAttachmentUrl(path)` — added in LIME-38; resolves a URL string safe to use directly in `<img src>` or a Download link's `href`
 - `updateProfile(patch)` — updates the **current user's own** profile.
   `patch` may only contain `display_name`, `pronouns`, `role`, `school`,
   `grade_levels`, `subjects`, `bio`, `timezone`, `phone`; any other key
@@ -319,6 +321,56 @@ to Supabase directly in the first place.
   button, storing Markdown and rendering it would mean either inventing a
   non-standard escape sequence just for this app, or dropping underline
   entirely. Sanitised HTML has no such gap and needs no dialect decision.
+
+## File and image attachments (LIME-38)
+
+- **`messages.type` gains `'file'`** (`'image'` already existed in the
+  schema, unused until now). An attachment message's `content` is always
+  `null` — attachments carry no text of their own; if the user also typed
+  something, that's a **separate** text message, sent first.
+- **`metadata` for an `'image'`/`'file'` message is `{ name, size, mime,
+  path }`** — `size` in bytes, `mime` the file's own `type`, `path` an
+  **opaque key** no reader ever parses or constructs, only ever hands to
+  `getAttachmentUrl` below. This is deliberate: it's what lets the local
+  adapter and a real `SupabaseAdapter` use completely different path
+  shapes (a local IndexedDB key vs. a Storage object path) without the UI
+  ever knowing or caring which one is active.
+- **The adapter contract gains two calls**, both async (return a
+  `Promise`, like every other write):
+  - `uploadAttachment(file, { conversationId })` → `{ path }`
+  - `getAttachmentUrl(path)` → a URL string, safe to put directly in an
+    `<img src>` or a Download link's `href`
+- **Local adapter: IndexedDB, not `localStorage`.** A `lime-files`
+  database (object store `attachments`, keyed by `path`) holds the raw
+  file `Blob`s — `localStorage`'s ~5MB total quota couldn't hold even one
+  attachment near this brief's own 10MB-per-file limit, let alone several.
+  `getAttachmentUrl` resolves via `URL.createObjectURL(blob)` — a fresh
+  object URL **per call**, valid only for this page's current lifetime
+  (never stored; re-resolved every time a message renders). Local's own
+  `path` is `<conversationId>/<uuid>-<filename>` — deliberately *not* the
+  production shape below (`uploadAttachment` never receives a `messageId`;
+  the file uploads *before* the message that will reference it exists),
+  which is fine precisely because `path` is opaque per the point above.
+- **Production** (documented in `schema.sql`, not built): a Supabase
+  Storage bucket `attachments`, object path
+  `<conversationId>/<messageId>/<filename>`, with storage-policy RLS
+  restricted to `is_member`.
+- **Limits, enforced client-side only:** 10MB per file, up to 5 files per
+  message. Same caveat as the LIME-37 sanitiser — a real backend would
+  need to enforce these again itself (a Storage bucket size limit, an edge
+  function checking count), since nothing stops a direct API call from
+  ignoring what the client checked.
+- **Sending is deliberately simple, not one atomic multi-part message:**
+  if there's typed text, it sends as its own ordinary text message first;
+  then each attached file uploads and sends as **its own message**, one
+  per file, in the order they were attached. A message with three photos
+  is three separate `messages` rows, not one row with a three-item array —
+  simpler to reason about, and it's what "one message per file" in the
+  brief's own words means literally.
+- **Reset demo data clears `lime-files` too** (the whole IndexedDB
+  database, not just its records) — otherwise a reset would bring back
+  the original seed conversations while orphaned attachment blobs from
+  the wiped session lingered on disk indefinitely.
 
 ## Known gaps, flagged rather than silently resolved
 

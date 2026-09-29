@@ -355,6 +355,12 @@
                    where one exists, a plain glyph where none does. -->
               <footer class="lime-composer" id="composer">
                 <div class="lime-composer__box">
+                  <!-- LIME-38: hidden, opened by the Attach (+) button below;
+                       chips render into .lime-composer__attachments as files
+                       are chosen. multiple — up to 5 enforced in JS, not here. -->
+                  <input type="file" multiple hidden data-file-input>
+                  <div class="lime-composer__attachments" data-attachments></div>
+                  <p class="lime-composer__attachments-error" data-attachments-error hidden></p>
                   <!-- Send moved here from inside .lime-composer__toolbar (LIME-10-fix12) —
                        it needed to stay visible collapsed, which meant the toolbar container
                        itself could never be display:none, only its individual children
@@ -402,7 +408,7 @@
                   </div>
                 </div>
                 <div class="lime-composer__actions">
-                  <button type="button" class="lime-composer__aux" title="Attach"><span class="dew dew-plus"></span></button>
+                  <button type="button" class="lime-composer__aux" data-attach-btn title="Attach"><span class="dew dew-plus"></span></button>
                   <div class="lime-composer__voice-dropdown">
                     <!-- Back to a real mic icon (LIME-10-fix10 reverses the LIME-10-fix5 swap
                          to icon-audio-waveform) — dew-microphone exists directly, no substitute
@@ -499,6 +505,9 @@
              duplicate ids are invalid HTML). -->
         <footer class="lime-replies-panel__composer" id="replies-composer">
           <div class="lime-composer__box">
+            <input type="file" multiple hidden data-file-input>
+            <div class="lime-composer__attachments" data-attachments></div>
+            <p class="lime-composer__attachments-error" data-attachments-error hidden></p>
             <div class="lime-composer__row">
               <div class="lime-composer__input lime-rich-text" id="replies-composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Reply" data-placeholder="Reply..."></div>
               <button type="button" class="lime-composer__return" id="replies-composer-send" title="Send">&#8629;</button>
@@ -530,7 +539,7 @@
             </div>
           </div>
           <div class="lime-composer__actions">
-            <button type="button" class="lime-composer__aux" title="Attach"><span class="dew dew-plus"></span></button>
+            <button type="button" class="lime-composer__aux" data-attach-btn title="Attach"><span class="dew dew-plus"></span></button>
             <div class="lime-composer__voice-dropdown">
               <button type="button" class="lime-composer__aux lime-composer__voice" id="replies-voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
               <div class="lime-menu lime-menu--wide" id="replies-voice-mode-dropdown">
@@ -610,6 +619,17 @@
       <button type="button" class="seed-button seed-button--secondary seed-button--sm" id="confirm-dialog-cancel">Cancel</button>
       <button type="button" class="seed-button seed-button--primary seed-button--sm" id="confirm-dialog-confirm">Confirm</button>
     </div>
+  </div>
+
+  <!-- LIME-38: image lightbox — one static instance, reused for every
+       thumbnail click anywhere (main thread or a reply), content
+       rewritten per open (same pattern as the confirm dialog above).
+       Reuses .lime-modal-backdrop for the blur backdrop the brief asks
+       for — every other modal in this app already gets it for free. -->
+  <div class="lime-modal-backdrop" id="lightbox-backdrop"></div>
+  <div class="lime-lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Image preview">
+    <button type="button" class="lime-icon-btn lime-lightbox__close" id="lightbox-close" aria-label="Close" title="Close"><span class="dew dew-close"></span></button>
+    <img class="lime-lightbox__img" id="lightbox-img" alt="">
   </div>
 
   <script src="js/seed-data.js"></script>
