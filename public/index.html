@@ -653,12 +653,23 @@
        thumbnail click anywhere (main thread or a reply), content
        rewritten per open (same pattern as the confirm dialog above).
        Reuses .lime-modal-backdrop for the blur backdrop the brief asks
-       for — every other modal in this app already gets it for free. -->
+       for — every other modal in this app already gets it for free.
+       LIME-40: close + the "N / M" counter are positioned relative to
+       .lime-lightbox itself (which shrinks to the image's own rendered
+       size, no fixed dimensions of its own), so both sit at the image's
+       actual corners regardless of that image's size — never outside the
+       viewport, the bug this brief exists to fix. Prev/next are siblings
+       of it instead, position:fixed to the *viewport's* own sides (the
+       brief's own "vertically centred at the viewport's sides") — they'd
+       be meaningless pinned to a small image's corner instead. -->
   <div class="lime-modal-backdrop" id="lightbox-backdrop"></div>
   <div class="lime-lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Image preview">
     <button type="button" class="lime-icon-btn lime-lightbox__close" id="lightbox-close" aria-label="Close" title="Close"><span class="dew dew-close"></span></button>
     <img class="lime-lightbox__img" id="lightbox-img" alt="">
+    <span class="lime-lightbox__counter" id="lightbox-counter" hidden></span>
   </div>
+  <button type="button" class="lime-icon-btn lime-lightbox__nav lime-lightbox__nav--prev" id="lightbox-prev" aria-label="Previous photo" title="Previous" hidden><span class="dew dew-chevron-left"></span></button>
+  <button type="button" class="lime-icon-btn lime-lightbox__nav lime-lightbox__nav--next" id="lightbox-next" aria-label="Next photo" title="Next" hidden><span class="dew dew-chevron-right"></span></button>
 
   <script src="js/seed-data.js"></script>
   <script src="js/local-adapter.js"></script>

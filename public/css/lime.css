@@ -1431,15 +1431,19 @@ body {
 
 /* LIME-38: full-size image preview — one static instance (same reuse
    pattern as .lime-confirm-dialog above), .lime-modal-backdrop supplies
-   the blur backdrop the brief asks for. */
+   the blur backdrop the brief asks for.
+   LIME-40: max-width/height widened from -64px to -128px/-96px per the
+   brief's own explicit numbers (room for the close button's own corner
+   inset plus, on narrower viewports, the fixed-to-viewport prev/next
+   arrows beside it, without either ever overlapping the image itself). */
 .lime-lightbox {
   display: none;
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  max-width: calc(100vw - 64px);
-  max-height: calc(100vh - 64px);
+  max-width: calc(100vw - 128px);
+  max-height: calc(100vh - 96px);
   z-index: var(--seed-z-modal);
 }
 
@@ -1449,18 +1453,84 @@ body {
 
 .lime-lightbox__img {
   display: block;
-  max-width: calc(100vw - 64px);
-  max-height: calc(100vh - 64px);
+  max-width: calc(100vw - 128px);
+  max-height: calc(100vh - 96px);
   border-radius: var(--seed-radius-lg);
   box-shadow: var(--seed-shadow-xl);
 }
 
+/* LIME-40: was position:absolute; top:-44px; right:0 — entirely *above*
+   the image's own box, which put it outside the viewport for any image
+   tall enough to sit near the screen's own top edge (the reported bug).
+   Now inset *inside* the image's top-left corner instead — .lime-lightbox
+   itself has no fixed size of its own (it shrinks to the image, per
+   above), so this is always relative to whatever the image's real
+   rendered box turns out to be, never a separate assumption about it. */
 .lime-lightbox__close {
   position: absolute;
-  top: -44px;
-  right: 0;
-  background: var(--soil-bg-elevated);
-  color: var(--soil-text);
+  top: var(--seed-space-3);
+  left: var(--seed-space-3);
+  background: rgba(19, 27, 23, 0.55);
+  color: #fff;
+}
+
+.lime-lightbox__close:hover {
+  background: rgba(19, 27, 23, 0.75);
+}
+
+/* LIME-40: the "N / M" counter — shown only alongside the arrows (more
+   than one image in this conversation), toggled via the same [hidden]
+   attribute JS already uses for the arrows themselves. */
+.lime-lightbox__counter {
+  position: absolute;
+  bottom: var(--seed-space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(19, 27, 23, 0.55);
+  color: #fff;
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-semibold);
+  padding: 4px 10px;
+  border-radius: var(--seed-radius-full);
+}
+
+.lime-lightbox__counter[hidden] {
+  display: none;
+}
+
+/* LIME-40: siblings of .lime-lightbox (not children) — "vertically
+   centred at the viewport's sides" is relative to the *viewport*, not
+   the image's own box (which could be far narrower than the viewport
+   for a small image), so these are position:fixed against the window
+   the same way .lime-lightbox itself is, not nested inside it. */
+.lime-lightbox__nav {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--seed-z-modal);
+  background: rgba(19, 27, 23, 0.55);
+  color: #fff;
+}
+
+.lime-lightbox__nav:hover {
+  background: rgba(19, 27, 23, 0.75);
+}
+
+/* Higher specificity than .lime-icon-btn's own display:flex — the bare
+   UA-stylesheet [hidden] rule alone loses to it (both are author-origin-
+   equivalent specificity in practice once .lime-icon-btn sets display
+   explicitly; an attribute selector scoped to this class wins cleanly
+   instead of relying on cascade-origin order). */
+.lime-lightbox__nav[hidden] {
+  display: none;
+}
+
+.lime-lightbox__nav--prev {
+  left: var(--seed-space-6);
+}
+
+.lime-lightbox__nav--next {
+  right: var(--seed-space-6);
 }
 
 /* ─────────────────────────────────────────────────────

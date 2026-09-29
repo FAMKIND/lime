@@ -2974,18 +2974,58 @@ function confirmDialog({ title, message, confirmLabel, cancelLabel, danger }) {
   });
 }
 
-// ── Image lightbox (LIME-38) ─────────────────────────────
+// ── Image lightbox (LIME-38, navigation LIME-40) ─────────
 // One static instance, same reuse-per-call pattern as confirmDialog above
 // — content rewritten per open, never rebuilt. Delegated (top-level, not
-// closure-private) since .lime-message__image appears both in the main
-// thread and in the reply panel, two separate closures.
+// closure-private) since .lime-message__image appears in the main
+// thread, the reply list, and the reply quote, three separate closures.
 const lightboxEls = {
   backdrop: document.getElementById('lightbox-backdrop'),
   modal: document.getElementById('lightbox'),
   closeBtn: document.getElementById('lightbox-close'),
   img: document.getElementById('lightbox-img'),
+  counter: document.getElementById('lightbox-counter'),
+  prevBtn: document.getElementById('lightbox-prev'),
+  nextBtn: document.getElementById('lightbox-next'),
 };
 let lightboxPreviouslyFocused = null;
+// LIME-40: the current conversation's own images, chronological
+// (LimeStore.listMessages' own sort order — includes replies, not just
+// the main thread, since an attachment can be sent as either), and
+// which one is open. Recomputed fresh on every open, not cached, so a
+// message sent while the lightbox is closed is always reflected next
+// time it opens.
+let lightboxImages = [];
+let lightboxIndex = 0;
+
+function lightboxUpdateNav() {
+  const total = lightboxImages.length;
+  const showNav = total > 1;
+  if (lightboxEls.prevBtn) lightboxEls.prevBtn.hidden = !showNav || lightboxIndex <= 0;
+  if (lightboxEls.nextBtn) lightboxEls.nextBtn.hidden = !showNav || lightboxIndex >= total - 1;
+  if (lightboxEls.counter) {
+    lightboxEls.counter.hidden = !showNav;
+    if (showNav) lightboxEls.counter.textContent = (lightboxIndex + 1) + ' / ' + total;
+  }
+}
+
+// Resolves through the same LimeStore.getAttachmentUrl every other
+// attachment uses — not the DOM thumbnail's own already-resolved src,
+// since navigating to a neighbor there's no guarantee a painted
+// thumbnail for it even exists on screen right now.
+function lightboxShow(index) {
+  const message = lightboxImages[index];
+  if (!message) return;
+  lightboxIndex = index;
+  const path = message.metadata && message.metadata.path;
+  if (path) {
+    LimeStore.getAttachmentUrl(path).then((url) => {
+      if (lightboxEls.img) lightboxEls.img.src = url;
+    }).catch(console.error);
+  }
+  if (lightboxEls.img) lightboxEls.img.alt = (message.metadata && message.metadata.name) || '';
+  lightboxUpdateNav();
+}
 
 const lightboxModal = lightboxEls.modal && lightboxEls.backdrop
   ? createModal({
@@ -2994,6 +3034,14 @@ const lightboxModal = lightboxEls.modal && lightboxEls.backdrop
       closeBtn: lightboxEls.closeBtn,
       onBeforeClose: () => {
         if (lightboxEls.img) lightboxEls.img.src = ''; // stop showing the last image while closed
+        // LIME-40: siblings of .lime-lightbox, not children of it — they
+        // don't inherit its own display:none-when-closed, so closing
+        // has to hide them explicitly too, not just re-gate them on the
+        // next open.
+        if (lightboxEls.prevBtn) lightboxEls.prevBtn.hidden = true;
+        if (lightboxEls.nextBtn) lightboxEls.nextBtn.hidden = true;
+        if (lightboxEls.counter) lightboxEls.counter.hidden = true;
+        lightboxImages = [];
         if (lightboxPreviouslyFocused && lightboxPreviouslyFocused.focus) lightboxPreviouslyFocused.focus();
         lightboxPreviouslyFocused = null;
         return true;
@@ -3006,9 +3054,43 @@ document.addEventListener('click', (e) => {
   const thumb = e.target.closest('.lime-message__image');
   if (!thumb || !lightboxModal || !lightboxEls.img) return;
   lightboxPreviouslyFocused = document.activeElement;
+  // The clicked thumbnail's own already-resolved src shows instantly —
+  // no need to wait on a second getAttachmentUrl round trip for the
+  // very image the user just clicked.
   lightboxEls.img.src = thumb.src;
   lightboxEls.img.alt = thumb.alt;
+
+  const container = thumb.closest('[data-message-id]');
+  const messageId = container && container.dataset.messageId;
+  const message = messageId && LimeStore.getMessage(messageId);
+  if (message) {
+    lightboxImages = LimeStore.listMessages(message.conversation_id)
+      .filter((m) => m.type === 'image' && m.metadata && m.metadata.path);
+    const foundIndex = lightboxImages.findIndex((m) => m.id === messageId);
+    lightboxIndex = foundIndex === -1 ? 0 : foundIndex;
+  } else {
+    // No message context resolvable (shouldn't happen for a real
+    // attachment thumbnail, but fail to "just this one image, no nav"
+    // rather than throwing) — never blocks opening the lightbox itself.
+    lightboxImages = [];
+    lightboxIndex = 0;
+  }
+  lightboxUpdateNav();
   lightboxModal.open();
+});
+
+if (lightboxEls.prevBtn) lightboxEls.prevBtn.addEventListener('click', () => lightboxShow(lightboxIndex - 1));
+if (lightboxEls.nextBtn) lightboxEls.nextBtn.addEventListener('click', () => lightboxShow(lightboxIndex + 1));
+
+// ←/→ only while the lightbox is actually open — doesn't wrap (brief's
+// own "it doesn't wrap"), matching the arrow buttons' own [hidden]
+// gating exactly (lightboxShow no-ops past either end anyway via the
+// array bounds check, but the keys shouldn't even try past a hidden
+// arrow).
+document.addEventListener('keydown', (e) => {
+  if (!lightboxEls.modal || !lightboxEls.modal.classList.contains('is-open')) return;
+  if (e.key === 'ArrowLeft' && lightboxIndex > 0) { e.preventDefault(); lightboxShow(lightboxIndex - 1); }
+  else if (e.key === 'ArrowRight' && lightboxIndex < lightboxImages.length - 1) { e.preventDefault(); lightboxShow(lightboxIndex + 1); }
 });
 
 // ── Nav search → global modal ────────────────────────────
