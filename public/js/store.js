@@ -132,17 +132,17 @@ const LimeStore = (function () {
     return members.find((m) => m.conversation_id === conversationId && m.user_id === currentUserId) || null;
   }
 
-  // LIME-45. Per-chat override (conversation_members.background) wins;
-  // absent or explicit kind:'default' there falls back to this user's
-  // own default (user_settings.default_background); absent there too
-  // falls back to the literal default. Same shape either way, so callers
-  // never branch on which table (or neither) a value came from.
-  function getEffectiveBackground(conversationId) {
-    const membership = getMyMembership(conversationId);
-    if (membership && membership.background && membership.background.kind !== 'default') return membership.background;
+  // LIME-50. Mirrors production's user_settings row (theme/canvas/pattern)
+  // — a plain field on the current user's own profile locally, same
+  // pattern as updateProfile, not a new adapter capability. `canvas`
+  // defaults to 'warm' (today's look, unchanged until a user picks
+  // something else); `theme`/`pattern` are LIME-51/52's own concern,
+  // included now so callers never have to guard against a missing key.
+  const DEFAULT_APPEARANCE = { theme: null, canvas: 'warm', pattern: null };
+
+  function getAppearance() {
     const profile = getCurrentUser();
-    if (profile && profile.default_background && profile.default_background.kind !== 'default') return profile.default_background;
-    return { kind: 'default' };
+    return Object.assign({}, DEFAULT_APPEARANCE, profile && profile.appearance);
   }
 
   function listConversations(options) {
@@ -461,29 +461,19 @@ const LimeStore = (function () {
     return Promise.resolve(profile);
   }
 
-  // LIME-45. conversationId set: this chat only (conversation_members.
-  // background). conversationId null: "Apply to all chats" — sets this
-  // user's own default (user_settings.default_background) AND clears
-  // this user's own per-chat overrides on every conversation, so chats
-  // that already had one switch to the new default too, not just chats
-  // that never had one — matches the brief's own gate ("Apply to all
-  // chats changes the other chats too"), not just future ones.
-  function setChatBackground(conversationId, background) {
-    if (conversationId) {
-      const membership = getMyMembership(conversationId);
-      if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
-      membership.background = background;
-      scheduleSave();
-      emit('lime:background-changed', { conversationId, scope: 'chat' });
-      return Promise.resolve(membership);
-    }
+  // LIME-50. A separate function from updateProfile, not folded into its
+  // whitelist: appearance is a device/preference concern with its own
+  // production table (user_settings), not a profile field a real
+  // SupabaseAdapter would ever expose through the profiles.update RLS
+  // policy. `patch` merges onto whatever's already set — {canvas: 'x'}
+  // alone never touches theme/pattern.
+  function setAppearance(patch) {
     const profile = getProfile(currentUserId);
     if (!profile) return Promise.reject(new Error('LimeStore: no current profile'));
-    profile.default_background = background;
-    members.forEach((m) => { if (m.user_id === currentUserId) delete m.background; });
+    profile.appearance = Object.assign({}, DEFAULT_APPEARANCE, profile.appearance, patch);
     scheduleSave();
-    emit('lime:background-changed', { conversationId: null, scope: 'default' });
-    return Promise.resolve(profile);
+    emit('lime:appearance-changed', { appearance: profile.appearance });
+    return Promise.resolve(profile.appearance);
   }
 
   // Not part of updateProfile's whitelist — auth.js's changeEmail is the
@@ -541,7 +531,7 @@ const LimeStore = (function () {
     getConversation,
     getMembers,
     getMyMembership,
-    getEffectiveBackground,
+    getAppearance,
     listConversations,
     listMessages,
     listReplies,
@@ -558,7 +548,7 @@ const LimeStore = (function () {
     renameConversation,
     setStarred,
     setArchived,
-    setChatBackground,
+    setAppearance,
     deleteConversation,
     deleteForMe,
     markRead,

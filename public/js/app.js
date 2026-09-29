@@ -1316,6 +1316,12 @@ const registeredDropdowns = new Set();
 const conversationActionHooks = { startRename: null, selectTopOrEmpty: null };
 
 function initMessagesList() {
+  // LIME-50: applies the current user's own stored canvas tone before
+  // anything else renders — LimeStore.init() (this function's own
+  // caller) has just resolved, so getAppearance() already has the real
+  // profile, not the pre-load default.
+  if (window.LimeAppearance) LimeAppearance.init();
+
   const list = document.getElementById('contacts-list');
   const thread = document.getElementById('thread-messages');
   if (!list || !thread) return;
@@ -1648,261 +1654,55 @@ function initMessagesList() {
       + '<span class="lime-topbar__member-count">' + LimeStore.getMembers(conversation.id).length + ' members</span>';
   }
 
-  // ── Chat backgrounds (LIME-45) ──────────────────────────────
-  // The mechanism is LIME-46's own --surface-bg, not a second variable:
-  // .lime-composer lives *inside* .lime-chat-body (index.html) and its
-  // background/fade already read the inherited --surface-bg
-  // (lime.css/gradients.css) — so overriding --surface-bg locally on
-  // .lime-chat-body here is the whole thing. Confirmed against this
-  // codebase's own forward-looking comment on body's declaration
-  // (lime.css) before writing any of this.
-  const chatBgToggle = document.getElementById('chat-bg-toggle');
-  const chatBgMenu = document.getElementById('chat-bg-menu');
-  const chatBody = document.querySelector('.lime-chat-body');
+  // ── Appearance shortcut (LIME-50) ───────────────────────────
+  // Replaces LIME-45's per-chat popover with an app-wide one: the same
+  // canvas swatches as Settings -> Preferences -> Appearance, plus a
+  // link to the full Preferences section for anything not covered here.
+  const appearanceToggle = document.getElementById('appearance-toggle');
+  const appearanceMenu = document.getElementById('appearance-menu');
 
-  // 8 presets built from Seed's own ramps (lime/brick/yellow/soil —
-  // meadow has no shade dark enough to clear the check below, so it has
-  // no representative here). Computed, not eyeballed: .lime-message__
-  // content's fixed --soil-bg-surface (#f0eee6) needs >=3:1 against
-  // whichever of these paints the thread behind it or the bubble stops
-  // reading as a distinct object. Most light/pastel shades across every
-  // ramp measured under 1.3:1 (see TEND.md's LIME-45 entry for the full
-  // sweep) — every swatch that shipped ended up mid-to-dark rather than
-  // the softer pastels a first guess would reach for. ink-on-pill (the
-  // metadata pill below) cleared >10:1 for all of these, nowhere close
-  // to binding, so the bubble check above is the only real constraint.
-  const CHAT_BG_SWATCHES = [
-    { id: 'brick-400', hex: '#C47060', label: 'Terracotta' },
-    { id: 'brick-600', hex: '#8A3228', label: 'Brick' },
-    { id: 'lime-600', hex: '#078040', label: 'Forest' },
-    { id: 'lime-800', hex: '#14532D', label: 'Pine' },
-    { id: 'yellow-750', hex: '#854D0E', label: 'Amber' },
-    { id: 'yellow-760', hex: '#695D02', label: 'Olive' },
-    { id: 'soil-500', hex: '#787068', label: 'Stone' },
-    { id: 'soil-650', hex: '#44403C', label: 'Charcoal' },
-  ];
-
-  // Each pattern ships with a fixed base colour (one of the swatches
-  // above) rather than a separate colour-then-pattern picker — the
-  // brief's own UI list ("Patterns (thumbnails)") describes one picker
-  // step, not two.
-  const CHAT_BG_PATTERNS = [
-    { id: 'dots', label: 'Dots', color: '#C47060' },
-    { id: 'diag', label: 'Diagonal', color: '#078040' },
-    { id: 'grid', label: 'Grid', color: '#854D0E' },
-    { id: 'chevron', label: 'Chevron', color: '#787068' },
-  ];
-
-  // White lines/dots at a low fixed opacity over the flat base colour —
-  // "subtle... tinted from the base colour at very low contrast" reads
-  // correctly this way regardless of the base hue, without computing a
-  // separate lighten/darken tint per swatch.
-  function patternSvgDataUri(patternId, color) {
-    const size = 32;
-    let shapes;
-    if (patternId === 'dots') {
-      shapes = '<circle cx="8" cy="8" r="1.6" fill="#fff" fill-opacity="0.12"/><circle cx="24" cy="24" r="1.6" fill="#fff" fill-opacity="0.12"/>';
-    } else if (patternId === 'diag') {
-      shapes = '<path d="M-4 4 L4 -4 M-4 36 L36 -4 M12 36 L36 12" stroke="#fff" stroke-opacity="0.1" stroke-width="2"/>';
-    } else if (patternId === 'grid') {
-      shapes = '<path d="M0 0 H32 M0 16 H32 M0 0 V32 M16 0 V32" stroke="#fff" stroke-opacity="0.08" stroke-width="1"/>';
-    } else {
-      shapes = '<path d="M0 8 L8 0 L16 8 L24 0 L32 8 M0 24 L8 16 L16 24 L24 16 L32 24" stroke="#fff" stroke-opacity="0.1" stroke-width="2" fill="none"/>';
-    }
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '">'
-      + '<rect width="' + size + '" height="' + size + '" fill="' + color + '"/>' + shapes + '</svg>';
-    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+  function appearanceSwatchButtonHtml(name, hex, isSelected) {
+    return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
   }
 
-  // Downscale to 16x16 and average, per the brief — a photo's exact
-  // per-pixel average past that resolution makes no visible difference
-  // to a single flat scrim colour.
-  function computeAverageColor(imgEl) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 16;
-    canvas.height = 16;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(imgEl, 0, 0, 16, 16);
-    const data = ctx.getImageData(0, 0, 16, 16).data;
-    let r = 0, g = 0, b = 0, n = 0;
-    for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
-    const chan = (v) => Math.round(v / n).toString(16).padStart(2, '0');
-    return '#' + chan(r) + chan(g) + chan(b);
-  }
-
-  function hexToRgba(hex, alpha) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
-  }
-
-  // The single colour every fade/composer backdrop blends into: the
-  // flat colour itself, the pattern's own base colour, a photo's own
-  // avgColor, or null for 'default' (clears the local override, letting
-  // .lime-chat-body fall back to inheriting body's own --surface-bg).
-  function resolveChatBg(background) {
-    if (background.kind === 'color' || background.kind === 'pattern') return background.color;
-    if (background.kind === 'photo') return background.avgColor || '#f9f8f4';
-    return null;
-  }
-
-  function applyChatBackground(conversationId) {
-    if (!chatBody) return;
-    const background = LimeStore.getEffectiveBackground(conversationId);
-    const chatBg = resolveChatBg(background);
-
-    if (chatBg) chatBody.style.setProperty('--surface-bg', chatBg);
-    else chatBody.style.removeProperty('--surface-bg');
-    chatBody.classList.toggle('lime-chat-body--custom-bg', background.kind !== 'default');
-    chatBody.dataset.bgKind = background.kind;
-
-    chatBody.style.backgroundImage = '';
-    chatBody.style.backgroundSize = '';
-    chatBody.style.backgroundPosition = '';
-
-    if (background.kind === 'pattern') {
-      chatBody.style.backgroundImage = 'url("' + patternSvgDataUri(background.patternId, background.color) + '")';
-      chatBody.style.backgroundSize = '32px 32px';
-    } else if (background.kind === 'photo' && background.path) {
-      LimeStore.getAttachmentUrl(background.path).then((url) => {
-        // A conversation switch (or another background pick) may have
-        // already moved on by the time this IndexedDB round trip
-        // resolves — same class of stale-async guard LIME-44 needed for
-        // its own paintLinkPreviews.
-        if (conversationId !== currentConversationId) return;
-        const scrim = hexToRgba(chatBg, 0.55);
-        chatBody.style.backgroundImage = 'linear-gradient(' + scrim + ', ' + scrim + '), url("' + url + '")';
-        chatBody.style.backgroundSize = 'cover';
-        chatBody.style.backgroundPosition = 'center';
-      }).catch(console.error);
-    }
-  }
-
-  function chatBgSwatchButtonHtml(swatch, isSelected) {
-    return '<button type="button" class="lime-chat-bg-swatch' + (isSelected ? ' is-selected' : '') + '" data-bg-kind="color" data-bg-color="' + swatch.hex + '" style="background:' + swatch.hex + '" title="' + escapeHtml(swatch.label) + '" aria-label="' + escapeHtml(swatch.label) + '"></button>';
-  }
-
-  function chatBgPatternButtonHtml(pattern, isSelected) {
-    const uri = patternSvgDataUri(pattern.id, pattern.color);
-    return '<button type="button" class="lime-chat-bg-pattern' + (isSelected ? ' is-selected' : '') + '" data-bg-kind="pattern" data-bg-pattern="' + pattern.id + '" data-bg-color="' + pattern.color + '" style="background-image:url(&quot;' + uri + '&quot;)" title="' + escapeHtml(pattern.label) + '" aria-label="' + escapeHtml(pattern.label) + '"></button>';
-  }
-
-  function renderChatBgMenu() {
-    if (!chatBgMenu || !currentConversationId) return;
-    const membership = LimeStore.getMyMembership(currentConversationId);
-    const current = (membership && membership.background && membership.background.kind !== 'default')
-      ? membership.background
-      : ((me && me.default_background) || { kind: 'default' });
-    const hasPhoto = current.kind === 'photo';
-
-    chatBgMenu.innerHTML =
-      '<div class="lime-menu__label">Colors</div>'
-      + '<div class="lime-chat-bg-swatches">'
-      + CHAT_BG_SWATCHES.map((s) => chatBgSwatchButtonHtml(s, current.kind === 'color' && current.color === s.hex)).join('')
-      + '</div>'
-      + '<div class="lime-menu__label">Patterns</div>'
-      + '<div class="lime-chat-bg-swatches">'
-      + CHAT_BG_PATTERNS.map((p) => chatBgPatternButtonHtml(p, current.kind === 'pattern' && current.patternId === p.id)).join('')
+  function renderAppearanceMenu() {
+    if (!appearanceMenu) return;
+    const current = LimeStore.getAppearance().canvas;
+    appearanceMenu.innerHTML =
+      '<div class="lime-menu__label">Canvas</div>'
+      + '<div class="lime-appearance-swatches">'
+      + Object.keys(LimeAppearance.CANVAS_P).map((name) => appearanceSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === current)).join('')
       + '</div>'
       + '<div class="lime-menu__divider"></div>'
-      + '<div class="lime-menu__label">Photo</div>'
-      + '<button type="button" class="lime-menu__item" data-bg-action="upload-photo"><span class="dew dew-plus"></span>Upload photo</button>'
-      + (hasPhoto ? '<button type="button" class="lime-menu__item" data-bg-action="remove-photo"><span class="dew dew-close"></span>Remove photo</button>' : '')
-      + '<input type="file" accept="image/*" hidden data-chat-bg-photo-input>'
-      + '<div class="lime-menu__divider"></div>'
-      + '<button type="button" class="lime-menu__item" data-bg-action="reset">Reset to default</button>'
-      + '<div class="lime-menu__divider"></div>'
-      + '<label class="lime-chat-bg-apply-all"><input type="checkbox" data-bg-apply-all> Apply to all chats</label>';
+      + '<button type="button" class="lime-menu__item" data-appearance-action="more"><span class="dew dew-gear"></span>More in Settings</button>';
   }
 
-  if (chatBgMenu) {
-    chatBgMenu.addEventListener('click', (e) => {
-      // Every other .lime-menu in this app closes on its own item click
-      // (a single action, then done) via wireDropdownToggle's shared
-      // document-level "any click closes the open dropdown" listener
-      // (below, no per-menu opt-out). This popover needs the opposite —
-      // "applies live as a preview" (the brief) means trying a few
-      // picks in a row without the panel closing after each one — so
-      // interior clicks stop here, never reaching that document
-      // listener. Found live via Playwright: without this, a second
-      // pick right after a first (e.g. checking "Apply to all chats"
-      // then choosing a colour) silently closed the menu first, making
-      // the next target unclickable.
+  if (appearanceMenu) {
+    appearanceMenu.addEventListener('click', (e) => {
+      // Same reasoning as the retired LIME-45 popover: stays open across
+      // a few picks (a live preview), so interior clicks never reach
+      // wireDropdownToggle's shared document-level close listener.
       e.stopPropagation();
-      const swatchBtn = e.target.closest('[data-bg-kind]');
-      const actionBtn = e.target.closest('[data-bg-action]');
-      const applyAllEl = chatBgMenu.querySelector('[data-bg-apply-all]');
-      const toAllChats = !!(applyAllEl && applyAllEl.checked);
-
-      if (swatchBtn) {
-        const kind = swatchBtn.dataset.bgKind;
-        const background = kind === 'pattern'
-          ? { kind: 'pattern', patternId: swatchBtn.dataset.bgPattern, color: swatchBtn.dataset.bgColor }
-          : { kind: 'color', color: swatchBtn.dataset.bgColor };
-        LimeStore.setChatBackground(toAllChats ? null : currentConversationId, background)
-          .then(() => { applyChatBackground(currentConversationId); renderChatBgMenu(); })
-          .catch(console.error);
+      const swatch = e.target.closest('[data-canvas]');
+      if (swatch) {
+        const name = swatch.dataset.canvas;
+        LimeAppearance.applyCanvas(name);
+        LimeStore.setAppearance({ canvas: name }).then(() => renderAppearanceMenu()).catch(console.error);
         return;
       }
-
-      if (actionBtn && actionBtn.dataset.bgAction === 'upload-photo') {
-        const fileInput = chatBgMenu.querySelector('[data-chat-bg-photo-input]');
-        if (fileInput) fileInput.click();
-        return;
+      if (e.target.closest('[data-appearance-action="more"]')) {
+        appearanceMenu.classList.remove('is-open');
+        document.getElementById('settings-btn')?.click();
       }
-
-      if (actionBtn && actionBtn.dataset.bgAction === 'remove-photo') {
-        LimeStore.setChatBackground(toAllChats ? null : currentConversationId, { kind: 'default' })
-          .then(() => { applyChatBackground(currentConversationId); renderChatBgMenu(); })
-          .catch(console.error);
-        return;
-      }
-
-      if (actionBtn && actionBtn.dataset.bgAction === 'reset') {
-        // Always this chat only — a distinct action from "Apply to all
-        // chats" (the checkbox below it), which pairs with the picks
-        // above, not with Reset.
-        LimeStore.setChatBackground(currentConversationId, { kind: 'default' })
-          .then(() => { applyChatBackground(currentConversationId); renderChatBgMenu(); })
-          .catch(console.error);
-      }
-    });
-
-    chatBgMenu.addEventListener('change', (e) => {
-      const fileInput = e.target.closest('[data-chat-bg-photo-input]');
-      if (!fileInput || !fileInput.files || !fileInput.files[0]) return;
-      const file = fileInput.files[0];
-      const applyAllEl = chatBgMenu.querySelector('[data-bg-apply-all]');
-      const toAllChats = !!(applyAllEl && applyAllEl.checked);
-      const conversationId = currentConversationId;
-      LimeStore.uploadAttachment(file, { conversationId }).then(({ path }) =>
-        LimeStore.getAttachmentUrl(path).then((url) => new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(img);
-          img.onerror = () => reject(new Error('LIME-45: could not load uploaded photo for avgColor'));
-          img.src = url;
-        })).then((img) => {
-          const avgColor = computeAverageColor(img);
-          return LimeStore.setChatBackground(toAllChats ? null : conversationId, { kind: 'photo', path, avgColor });
-        })
-      ).then(() => { applyChatBackground(currentConversationId); renderChatBgMenu(); })
-        .catch(console.error);
     });
   }
 
-  if (chatBgToggle && chatBgMenu) {
-    // Rendered fresh on every open (registered before wireDropdownToggle's
-    // own click listener below, so the menu's real content/height exist
-    // by the time that listener measures offsetHeight/offsetWidth to
-    // position it) — not just once at startup, since the selected swatch
-    // and whether "Remove photo" shows both depend on whichever
-    // conversation is open right now.
-    chatBgToggle.addEventListener('click', renderChatBgMenu);
-    wireDropdownToggle('chat-bg-toggle', 'chat-bg-menu', { fixed: true });
+  if (appearanceToggle && appearanceMenu) {
+    appearanceToggle.addEventListener('click', renderAppearanceMenu);
+    wireDropdownToggle('appearance-toggle', 'appearance-menu', { fixed: true });
     new MutationObserver(() => {
-      chatBgToggle.setAttribute('aria-expanded', String(chatBgMenu.classList.contains('is-open')));
-    }).observe(chatBgMenu, { attributes: true, attributeFilter: ['class'] });
+      appearanceToggle.setAttribute('aria-expanded', String(appearanceMenu.classList.contains('is-open')));
+    }).observe(appearanceMenu, { attributes: true, attributeFilter: ['class'] });
   }
 
   function selectConversation(conversation) {
@@ -1913,7 +1713,6 @@ function initMessagesList() {
       openProfileAvatars.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
     }
     renderThread(conversation.id); // sets currentConversationId — markRead below relies on this already being current
-    applyChatBackground(conversation.id); // LIME-45
     // LIME-36: opening a conversation clears its own unread state. This
     // emits lime:conversations-changed synchronously (store.js's emit is
     // a plain document.dispatchEvent, not deferred), so renderRecentRow
@@ -4009,6 +3808,7 @@ document.addEventListener('keydown', (e) => {
   const SECTION_ROW_LABELS = {
     profile: ['Photo', 'Display name', 'Pronouns', 'Role', 'School', 'Grade levels', 'Subjects', 'Bio', 'Timezone', 'Phone'],
     security: ['Email', 'Password', 'Sign out'],
+    preferences: ['Canvas'],
   };
 
   // The Profile form's loaded values, for dirty-checking against the
@@ -4017,16 +3817,17 @@ document.addEventListener('keydown', (e) => {
   let profileOriginal = null;
 
   // LIME-46: wraps whichever section's .lime-settings__body in the shared
-  // fade-frame pattern — a non-scrolling .lime-fade-frame sibling-hosts
-  // the fade divs, .lime-settings__body (unchanged identity/id, still
-  // targeted by showSection's own scrollTop reset and renderProfileSection's
-  // own getElementById('settings-profile-form')) becomes the actual
-  // absolute-fill scroller inside it. Shared by both sections below rather
-  // than duplicated, since they're otherwise identical wrapping.
+  // fade-frame pattern — a non-scrolling .lime-fade-frame that
+  // wireScrollFades toggles is-scrolled-* classes on (LIME-50: the mask
+  // itself lives on .lime-settings__body directly, gradients.css — no
+  // fade divs any more). .lime-settings__body (unchanged identity/id,
+  // still targeted by showSection's own scrollTop reset and
+  // renderProfileSection's own getElementById('settings-profile-form'))
+  // is the actual absolute-fill scroller inside it. Shared by both
+  // sections below rather than duplicated, since they're otherwise
+  // identical wrapping.
   function settingsBodyFrameOpen() {
-    return '<div class="lime-fade-frame lime-settings__body-frame">'
-      + '<div class="fade-top" aria-hidden="true"></div>'
-      + '<div class="fade-bottom" aria-hidden="true"></div>';
+    return '<div class="lime-fade-frame lime-settings__body-frame">';
   }
   const SETTINGS_BODY_FRAME_CLOSE = '</div>';
 
@@ -4395,9 +4196,34 @@ document.addEventListener('keydown', (e) => {
       + SETTINGS_BODY_FRAME_CLOSE;
   }
 
+  // LIME-50. Round swatch, per the brief — .lime-appearance-swatch (not
+  // reused from LIME-45's now-removed .lime-chat-bg-swatch, a different
+  // shape). Applies live on click (no Save/Cancel — same "changes are
+  // per-row" pattern as Login & security's own rows), so the only state
+  // that ever needs re-deriving is which one is currently selected.
+  function canvasSwatchButtonHtml(name, hex, isSelected) {
+    return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
+  }
+
+  function canvasSwatchesHtml() {
+    const current = LimeStore.getAppearance().canvas;
+    return Object.keys(LimeAppearance.CANVAS_P).map((name) => canvasSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === current)).join('');
+  }
+
+  function renderPreferencesSection() {
+    pane.innerHTML = paneHeaderHtml('Preferences', 'How Lime looks for you.')
+      + settingsBodyFrameOpen()
+      + '<div class="lime-settings__body">'
+      + '<h3 class="lime-settings__subsection-heading">Appearance</h3>'
+      + compactRowHtml('canvas', 'Canvas', '<div class="lime-appearance-swatches" id="settings-canvas-swatches">' + canvasSwatchesHtml() + '</div>')
+      + '</div>'
+      + SETTINGS_BODY_FRAME_CLOSE;
+  }
+
   const SETTINGS_SECTIONS = [
     { id: 'profile', label: 'Profile', render: renderProfileSection },
     { id: 'security', label: 'Login & security', render: renderSecuritySection },
+    { id: 'preferences', label: 'Preferences', render: renderPreferencesSection },
   ];
 
   // LIME-26: returns a Promise now (confirmDiscardIfDirty does) — both
@@ -4444,6 +4270,13 @@ document.addEventListener('keydown', (e) => {
     }
     if (e.target.closest('#settings-sign-out-btn')) {
       document.getElementById('sign-out-btn')?.click();
+      return;
+    }
+    const canvasSwatch = e.target.closest('[data-canvas]');
+    if (canvasSwatch) {
+      const name = canvasSwatch.dataset.canvas;
+      LimeAppearance.applyCanvas(name); // live preview, before the write resolves
+      LimeStore.setAppearance({ canvas: name }).then(() => renderPreferencesSection()).catch(console.error);
       return;
     }
     const changeBtn = e.target.closest('[data-change]');

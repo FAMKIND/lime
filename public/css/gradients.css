@@ -1,99 +1,109 @@
-/* gradients.css — Reusable fade gradient system (LIME-03q; restructured LIME-46).
+/* gradients.css — Reusable fade system (LIME-03q; restructured LIME-46;
+ * converted to CSS masks LIME-50).
  *
- * One pattern, everywhere a scroll area needs edge fades:
- *   .lime-fade-frame        — position:relative, non-scrolling, hosts the
- *                              fade divs. Never the element that scrolls.
- *   <the actual scroller>   — a sibling of the fade divs inside the frame,
- *                              the only element with overflow:auto. Its own
- *                              class/id is whatever that area already used
- *                              (.lime-list-col, .lime-messages, etc.) — see
- *                              lime.css for each area's own frame/scroller
- *                              split.
- *   .fade-top/.fade-bottom/.fade-left/.fade-right — real child elements of
- *                              the frame (not ::before/::after), siblings
- *                              of the scroller, so scrolling the content
- *                              never moves them (LIME-46's own bug: before
- *                              this, three of these five areas had the fade
- *                              divs living *inside* the scroller itself,
- *                              so they scrolled away with the content).
+ * LIME-46's version painted an opaque color-matched gradient div over the
+ * scroller's own edge, blending into --surface-bg — correct only as long
+ * as every fade host's real background was a known, single flat colour.
+ * LIME-50 makes the canvas app-wide but also opens the door to patterns
+ * and photos (LIME-52) behind any panel, so a fade that has to *know* the
+ * background colour to blend into it stops working the moment that
+ * background isn't flat. A CSS mask sidesteps the whole problem: it makes
+ * the scrolling content itself fade to transparent at the edge, revealing
+ * whatever is actually behind it — canvas, pattern, or photo — with no
+ * colour of its own to keep in sync.
  *
- * Each fade is opacity:0 at rest and only fades in once there's actually
- * hidden content in that direction — not a permanent overlay that dims
- * content even when nothing is cut off (a user-reported regression in an
- * earlier pass). JS (wireScrollFades in app.js) tracks each scroll
- * container's position and toggles the is-scrolled-* classes below on the
- * frame; the fade divs themselves never move — only their opacity changes.
+ * The pattern:
+ *   .lime-fade-frame        — position:relative, non-scrolling. No longer
+ *                              hosts fade divs (there are none now) — just
+ *                              the element wireScrollFades (app.js) toggles
+ *                              is-scrolled-* classes on.
+ *   <the actual scroller>   — a child of the frame, mask-image applied
+ *                              directly to it. Its own class/id is
+ *                              whatever that area already used
+ *                              (.lime-list-col__scroll, .lime-messages,
+ *                              etc.) — each pair listed below, matching
+ *                              app.js's own wireScrollFades(...) calls.
  *
- * Colour (LIME-46): every fade blends into var(--surface-bg) — the real
- * background of whichever panel it sits on (declared once per surface in
- * lime.css, inherited by everything inside it) — never a hard-coded token,
- * and never bare `transparent` (which interpolates through transparent
- * *black*, reading as a grey halo on anything but a near-white background).
- * color-mix's 0%-alpha endpoint fades to nothing while staying the same
- * hue as --surface-bg the whole way, so there's no dip through an
- * unrelated colour partway through the gradient.
+ * Each pair gets up to 3 rules (top-only / bottom-only / both), keyed on
+ * the frame's own is-scrolled-top/-bottom classes — CSS can't add two
+ * separate mask-image declarations from two different matching rules, so
+ * "both edges fading" needs its own explicit, higher-specificity rule
+ * rather than relying on the two single-edge rules somehow combining.
+ * Horizontal areas (is-scrolled-start/-end) follow the same shape.
+ *
+ * mask-image's alpha channel controls what shows through: transparent
+ * hides the content under it (down to whatever's behind the whole
+ * scroller), opaque black shows it at full strength — no colour is ever
+ * specified or needed, which is the entire point.
  */
 
 .lime-fade-frame {
   position: relative;
 }
 
-.lime-fade-frame > .fade-top,
-.lime-fade-frame > .fade-bottom,
-.lime-fade-frame > .fade-left,
-.lime-fade-frame > .fade-right {
-  content: '';
-  position: absolute;
-  pointer-events: none;
-  z-index: 10;
-  opacity: 0;
-  transition: opacity 150ms ease;
+/* ── Vertical pairs (top/bottom) ── */
+
+.lime-list-col.is-scrolled-top > .lime-list-col__scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px); mask-image: linear-gradient(to bottom, transparent, #000 32px); }
+.lime-list-col.is-scrolled-bottom > .lime-list-col__scroll { -webkit-mask-image: linear-gradient(to top, transparent, #000 48px); mask-image: linear-gradient(to top, transparent, #000 48px); }
+.lime-list-col.is-scrolled-top.is-scrolled-bottom > .lime-list-col__scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); }
+
+#settings-nav.is-scrolled-top > .lime-settings__nav-scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px); mask-image: linear-gradient(to bottom, transparent, #000 32px); }
+#settings-nav.is-scrolled-bottom > .lime-settings__nav-scroll { -webkit-mask-image: linear-gradient(to top, transparent, #000 48px); mask-image: linear-gradient(to top, transparent, #000 48px); }
+#settings-nav.is-scrolled-top.is-scrolled-bottom > .lime-settings__nav-scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); }
+
+/* .lime-settings__body-frame is rebuilt on every section render
+   (app.js's settingsBodyFrameOpen) but keeps the same class name each
+   time, so this static rule covers every instance. */
+.lime-settings__body-frame.is-scrolled-top > .lime-settings__body { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px); mask-image: linear-gradient(to bottom, transparent, #000 32px); }
+.lime-settings__body-frame.is-scrolled-bottom > .lime-settings__body { -webkit-mask-image: linear-gradient(to top, transparent, #000 48px); mask-image: linear-gradient(to top, transparent, #000 48px); }
+.lime-settings__body-frame.is-scrolled-top.is-scrolled-bottom > .lime-settings__body { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); }
+
+.lime-members-panel__list-frame.is-scrolled-top > .lime-members-panel__list { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px); mask-image: linear-gradient(to bottom, transparent, #000 32px); }
+.lime-members-panel__list-frame.is-scrolled-bottom > .lime-members-panel__list { -webkit-mask-image: linear-gradient(to top, transparent, #000 48px); mask-image: linear-gradient(to top, transparent, #000 48px); }
+.lime-members-panel__list-frame.is-scrolled-top.is-scrolled-bottom > .lime-members-panel__list { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); }
+
+.lime-replies-panel__list-frame.is-scrolled-top > .lime-replies-panel__list { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px); mask-image: linear-gradient(to bottom, transparent, #000 32px); }
+.lime-replies-panel__list-frame.is-scrolled-bottom > .lime-replies-panel__list { -webkit-mask-image: linear-gradient(to top, transparent, #000 48px); mask-image: linear-gradient(to top, transparent, #000 48px); }
+.lime-replies-panel__list-frame.is-scrolled-top.is-scrolled-bottom > .lime-replies-panel__list { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); }
+
+#wall-frame.is-scrolled-top > #wall-scroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px); mask-image: linear-gradient(to bottom, transparent, #000 32px); }
+#wall-frame.is-scrolled-bottom > #wall-scroller { -webkit-mask-image: linear-gradient(to top, transparent, #000 48px); mask-image: linear-gradient(to top, transparent, #000 48px); }
+#wall-frame.is-scrolled-top.is-scrolled-bottom > #wall-scroller { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent); }
+
+/* .lime-profile never had a bottom fade (pre-existing, LIME-46) — kept
+   that way, top-only. */
+.lime-profile.is-scrolled-top > .lime-profile__scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px); mask-image: linear-gradient(to bottom, transparent, #000 32px); }
+
+/* ── Horizontal pair (start/end) — Recent row ── */
+
+.lime-recent-frame.is-scrolled-start > .lime-recent { -webkit-mask-image: linear-gradient(to right, transparent, #000 24px); mask-image: linear-gradient(to right, transparent, #000 24px); }
+.lime-recent-frame.is-scrolled-end > .lime-recent { -webkit-mask-image: linear-gradient(to left, transparent, #000 24px); mask-image: linear-gradient(to left, transparent, #000 24px); }
+.lime-recent-frame.is-scrolled-start.is-scrolled-end > .lime-recent { -webkit-mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
+
+/* ── The thread (top scroll-gated; bottom permanent, see below) ── */
+
+/* Top is the ordinary scroll indicator — no fade until there's something
+   above to hide. */
+.lime-chat-body.is-scrolled-top > .lime-messages {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent);
 }
 
-.lime-fade-frame > .fade-top { top: 0; left: 0; right: 0; height: 32px; background: linear-gradient(to bottom, var(--surface-bg), color-mix(in srgb, var(--surface-bg) 0%, transparent)); }
-.lime-fade-frame > .fade-bottom { bottom: 0; left: 0; right: 0; height: 48px; background: linear-gradient(to top, var(--surface-bg), color-mix(in srgb, var(--surface-bg) 0%, transparent)); }
-.lime-fade-frame > .fade-left { left: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to right, var(--surface-bg), color-mix(in srgb, var(--surface-bg) 0%, transparent)); }
-.lime-fade-frame > .fade-right { right: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to left, var(--surface-bg), color-mix(in srgb, var(--surface-bg) 0%, transparent)); }
-
-/* Bare class selectors (not scoped to .lime-fade-frame specifically) —
-   wireScrollFades toggles these on whichever element it was given as
-   fadeHost, always a .lime-fade-frame in practice, but nothing here needs
-   to assume that to find the right child. */
-.is-scrolled-top > .fade-top { opacity: 1; }
-.is-scrolled-bottom > .fade-bottom { opacity: 1; }
-.is-scrolled-start > .fade-left { opacity: 1; }
-.is-scrolled-end > .fade-right { opacity: 1; }
-
-/* Composer bottom fade is deliberately NOT part of the .lime-fade-frame
- * system above: it sits above the composer's OWN box (bottom: 100%
- * relative to .lime-composer, not the chat area's frame), since the
- * composer itself occupies the bottom of .lime-chat-body — a generic
- * .fade-bottom anchored to the frame's own bottom edge would render
- * entirely underneath the opaque composer bar, invisible. It's also
- * deliberately NOT scroll-gated: the composer is a permanent bar always
- * sitting over the thread, not an overflow indicator, so it stays visible
- * regardless of scroll position. LIME-46: recoloured to the same
- * var(--surface-bg)/color-mix scheme as every other fade — the composer's
- * own background is var(--surface-bg) too now (lime.css), so this and the
- * bar it sits above can never visibly seam.
- */
-.lime-composer::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  height: 40px; /* was 32px (LIME-09) — taller per this brief's explicit ask */
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-bg) 0%, transparent), var(--surface-bg));
-  pointer-events: none;
+/* Bottom is NOT scroll-gated, on purpose — same reasoning LIME-46 gave
+   .lime-composer::before (now retired, see below): the composer is a
+   permanent bar always floating over the thread's own bottom edge, not
+   an overflow indicator, so content there always fades smoothly under
+   it regardless of scroll position. This is "the composer fade becomes
+   a mask on the thread above the composer" (the brief) — one mask,
+   applied to the thread's own content, rather than a second separate
+   gradient element sitting on the composer. */
+.lime-chat-body:not(.is-scrolled-top) > .lime-messages {
+  -webkit-mask-image: linear-gradient(to bottom, #000, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to bottom, #000, #000 calc(100% - 48px), transparent);
 }
 
-/* LIME-47: the .lime-messages padding-bottom rule that used to live here
-   (a second, identical copy of lime.css's own — LIME-46's own survey
-   flagged it as a leftover conflict, but by then it wasn't actually
-   conflicting any more, just duplicated) is gone — kept only in
-   lime.css now, next to .lime-messages' other rules, its natural home.
-   Computed style is unchanged: both copies already read the exact same
-   var(--composer-clearance, 200px), confirmed live before removing this
-   one. See lime.css's own copy for the full calibration history
-   (LIME-10-fix13/fix15, LIME-39). */
+/* .lime-composer's own ::before gradient (LIME-46) is retired — the rule
+   above covers the same visual job as a mask on the actual content, not
+   a colour-matched overlay sitting on the bar itself. .lime-composer
+   keeps its plain, unmasked background (the canvas colour like every
+   other surface, LIME-50) — only the thread's own content fades. */

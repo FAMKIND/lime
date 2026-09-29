@@ -10,7 +10,11 @@
    --seed-soil-900 is overridden at the raw tier (not just the
    --soil-text semantic wrapper) since a few components — the
    avatar identity system in particular — read the raw token
-   directly for a theme-invariant ink color.
+   directly for a theme-invariant ink color. LIME-50: this pin is
+   also why public/js/appearance.js's applyCanvas() never touches
+   --seed-soil-900 when it retunes the rest of the ramp — this ink
+   stays fixed across every canvas tone, on purpose, same as it
+   already was fixed across (the never-built) themes.
 ───────────────────────────────────────────────────── */
 
 :root {
@@ -18,8 +22,30 @@
 }
 
 [data-theme="light"] {
-  --soil-bg-canvas:  #f9f8f4; /* --lime-canvas */
+  /* LIME-50: --soil-bg-canvas now reads the raw ramp (--seed-soil-0)
+     instead of a hardcoded literal, so public/js/appearance.js's
+     applyCanvas() actually has something to retune — Seed's own stock
+     'warm' ramp already opens at #F9F8F4, so this is zero visual change
+     for the default preset. --soil-bg-surface stays a hardcoded literal,
+     deliberately NOT ramp-routed (matching Seed's own reference
+     behaviour, where bg-surface is independently hardcoded too, not
+     derived from the neutral ramp) — bubbles/composer/search fields
+     keep one fixed warm tone regardless of canvas tone, the same
+     surface tier bubbles already used to contrast against every
+     preset (verified in TEND.md's LIME-50 entry, "bubble vs canvas").
+     See appearance.js for the full CANVAS_P/makeCanvasRamp port. */
+  --soil-bg-canvas:  var(--seed-soil-0);
   --soil-bg-surface: #f0eee6; /* --lime-warm — message bubbles, composer, search fields */
+  /* LIME-50: computed, not assumed — --soil-text-muted at its Seed
+     default (--seed-soil-500) passed contrast against today's own
+     'warm' canvas by the barest margin (4.58:1) and failed outright
+     against most of the other 7 canvas presets (as low as 2.90:1,
+     `contrast-sweep`/`canvas-verify` scripts, TEND.md). One step darker
+     (--seed-soil-600) clears >=4.5:1 against all 8 shipped presets with
+     real margin (5.09-8.44:1) — the fix that makes "every preset must
+     pass" achievable at all, not a cosmetic preference. Visibly, if
+     subtly, darker than before; flagged for the gate. */
+  --soil-text-muted: var(--seed-soil-600);
   /* Lime's "chosen / current" colour (LIME-14): Seed's own --selected-*
      family, retuned from Seed's mint to the lime the nav has always used.
      Stepped per Seed's flower convention: resting, hover, pressed. */
@@ -44,19 +70,15 @@ body {
   height:      100vh;
   overflow-x:  auto;
   overflow-y:  hidden;
-  /* Every panel's top row shares this so nothing reads as a
-     separately-colored component stacked on top of another. */
-  /* LIME-46: --surface-bg is the one variable every fade (gradients.css)
-     and the composer bar blend into — declared here so the whole center
-     column (list, Recent, thread, composer) inherits the same value by
-     default, and background itself now reads from it (not a second,
-     independent copy of the same token) so the two can never drift apart.
-     #right-panel and .lime-settings override it locally to their own,
-     different real background — see each for why. LIME-45 (later) will
-     override this on the thread specifically for a user-chosen chat
-     background, and every fade there follows automatically, for free. */
-  --surface-bg: var(--soil-bg-canvas);
-  background: var(--surface-bg);
+  /* LIME-46 introduced --surface-bg here so every fade and the composer
+     bar could blend into "whatever this panel's real background is."
+     LIME-50 retires that mechanism entirely: fades are masks now
+     (gradients.css), which don't need to know a background colour at
+     all, and every panel (list, center, right) shows this same
+     app-wide canvas tone (LIME-50's own "unify the panels") rather than
+     each declaring its own local override. --soil-bg-canvas itself is
+     what LIME-50 retunes (see the Appearance section below). */
+  background: var(--soil-bg-canvas);
 }
 
 /* Seed's layout ships height: 100vh for standalone use; here it's the only
@@ -70,9 +92,9 @@ body {
   overflow-x: auto;
   /* Seed's base rule also paints its own opaque canvas background here —
      since #layout covers the full viewport, that fully hides body's
-     background beneath it. The single source of truth for the app's
-     background is body; this is groundwork for a future user-selectable
-     background (color/image/pattern) that must show through every panel. */
+     background beneath it. body is the single source of truth for the
+     app's background (LIME-50's own app-wide canvas tone, and LIME-52's
+     future pattern layer) — transparent here so it always shows through. */
   background: transparent;
 }
 
@@ -396,13 +418,50 @@ body {
   font-size: 18px;
 }
 
-/* LIME-45: #chat-bg-toggle's icon is a real <svg>, not a .dew glyph (dew
-   has no sun/palette icon — checked) — sized to match every other
-   .lime-icon-btn glyph at 18px, and stroke="currentColor" (markup) picks
-   up the same hover/muted color .dew icons already inherit here. */
-.lime-chat-bg-icon {
+/* LIME-50: #appearance-toggle's icon (a palette) is a real <svg>, not a
+   .dew glyph (dew has no sun/palette icon — checked) — sized to match
+   every other .lime-icon-btn glyph at 18px, and stroke="currentColor"
+   (markup) picks up the same hover/muted color .dew icons already
+   inherit here. */
+.lime-appearance-icon {
   width: 18px;
   height: 18px;
+}
+
+/* Round canvas swatches (the brief's own spec) — shared by the header
+   popover (#appearance-menu) and Settings -> Preferences -> Appearance
+   (the same markup/class, not two copies). */
+.lime-appearance-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--seed-space-2);
+  padding: 0 var(--seed-space-2) var(--seed-space-2);
+}
+
+.lime-settings__compact-control > .lime-appearance-swatches {
+  padding: 0;
+}
+
+.lime-appearance-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--seed-radius-full);
+  border: 2px solid transparent;
+  outline: 1px solid var(--soil-border-subtle);
+  outline-offset: 1px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.lime-appearance-swatch:hover {
+  outline-color: var(--soil-text-muted);
+}
+
+.lime-appearance-swatch.is-selected {
+  border-color: var(--soil-bg-elevated);
+  outline: 2px solid var(--selected-border-subtle-default, var(--soil-text));
+  outline-offset: 1px;
 }
 
 /* ─────────────────────────────────────────────────────
@@ -1319,23 +1378,15 @@ body {
   min-width: 240px; /* matches app.js's MIN_RIGHT */
 }
 
-/* LIME-46: the right panel's real background (flush mode) is Seed's own
-   var(--calm-bg-subtle-default) — vendor/seed/components/layout/layout.css
-   already paints it, untouched here. This just makes --surface-bg agree,
-   so every fade inside (profile, members, replies) blends into the right
-   colour instead of inheriting body's canvas default. */
+/* LIME-46 matched this panel's real background (Seed's own flush-mode
+   var(--calm-bg-subtle-default), vendor/layout.css) so its fades could
+   blend into it. LIME-50 "unifies the panels" instead — the right panel
+   now shows the same app-wide canvas as the list column and center,
+   overriding Seed's own flush colour outright, and needs no fade-colour
+   matching at all any more (masks, gradients.css). Dark mode's own
+   right-panel background is a separate, later concern (LIME-51). */
 #right-panel {
-  --surface-bg: var(--calm-bg-subtle-default);
-}
-
-/* Dark mode paints this panel a literal #1A1F1C (vendor's own rule,
-   layout.css ~250) — not var(--calm-bg-subtle-default)'s own dark value
-   (#1C2622, tokens.css), a real, if small, mismatch found while wiring
-   this up. Matched exactly rather than left to drift, since a fade
-   blending into the wrong shade by a few percent is exactly the kind of
-   "grey halo" this brief exists to remove. */
-[data-theme="dark"] #right-panel {
-  --surface-bg: #1A1F1C;
+  background: var(--soil-bg-canvas);
 }
 
 /* ─────────────────────────────────────────────────────
@@ -1633,20 +1684,16 @@ body {
 /* ─────────────────────────────────────────────────────
    PHOTO WALL (LIME-41-fix) — a full-screen, Pinterest-style masonry
    layer replacing LIME-41's gallery card modal. No white card: sits
-   directly over the shared blurred backdrop, so --surface-bg here
-   matches that backdrop's own literal value (lime.css's own
-   .lime-modal-backdrop background) rather than any panel color — the
-   LIME-46 fade-frame system's own edge fades need to blend into
-   *something*, and the backdrop tint is genuinely what's behind them
-   here, not a solid panel the way every other fade-frame in this app
-   sits on.
+   directly over the shared blurred backdrop (.lime-modal-backdrop).
+   LIME-50: its edge fades are masks now (gradients.css) — they no
+   longer need to know what colour is behind them, so the --surface-bg
+   this used to declare to match the backdrop's own tint is gone.
 ───────────────────────────────────────────────────── */
 .lime-photo-wall {
   display: none;
   position: fixed;
   inset: 0;
   z-index: var(--seed-z-modal);
-  --surface-bg: rgba(19, 27, 23, 0.12);
 }
 
 .lime-photo-wall.is-open {
@@ -1736,11 +1783,10 @@ body {
   transform: translate(-50%, -50%);
   width: min(960px, calc(100vw - 64px));
   height: min(720px, calc(100vh - 64px));
-  /* LIME-46: --surface-bg here is what .lime-settings__body's own fades
-     (added this brief — it had none before) blend into; .lime-settings__nav
-     overrides it locally below since it's a genuinely different shade. */
-  --surface-bg: var(--soil-bg-elevated);
-  background: var(--surface-bg);
+  /* Elevated tier of the canvas ladder (LIME-50: canvas -> surface for
+     bubbles/cards -> elevated for menus/modals). No --surface-bg needed
+     any more — .lime-settings__body's own fade is a mask (gradients.css). */
+  background: var(--soil-bg-elevated);
   border-radius: var(--seed-radius-lg);
   box-shadow: var(--seed-shadow-xl);
   z-index: var(--seed-z-modal);
@@ -1806,9 +1852,6 @@ body {
   box-sizing: border-box;
   flex-shrink: 0;
   position: relative;
-  /* This surface is genuinely a different shade than the modal shell
-     around it (canvas vs. elevated) — a local override, not inherited. */
-  --surface-bg: var(--soil-bg-canvas);
 }
 
 .lime-settings__nav-scroll {
@@ -1819,7 +1862,9 @@ body {
   flex-direction: column;
   gap: var(--seed-space-1);
   padding: var(--seed-space-3);
-  background: var(--surface-bg);
+  /* Canvas tier — genuinely a different shade than the modal shell
+     around it (elevated), same ladder every other panel uses. */
+  background: var(--soil-bg-canvas);
   overflow-y: auto;
 }
 
@@ -1910,8 +1955,9 @@ body {
 /* LIME-46: the flexible middle zone between the pane's fixed header and
    (Profile only) fixed footer — that sizing role now belongs to the
    wrapping .lime-settings__body-frame (app.js's settingsBodyFrameOpen),
-   since this element itself became the frame's absolute-fill scroller so
-   its own fade-top/fade-bottom siblings don't scroll away with it. */
+   since this element itself became the frame's absolute-fill scroller.
+   LIME-50: its own edge fade is a mask now (gradients.css), not a
+   sibling div, but the frame/scroller split here is unchanged. */
 .lime-settings__body-frame {
   flex: 1;
   min-height: 0;
@@ -2783,11 +2829,10 @@ body {
   min-height: 0;
 }
 
-/* The top fade lives in gradients.css now, as a real .fade-top child
-   div (LIME-03q's reusable fade system, restructured LIME-46 to
-   .lime-fade-frame) rather than a ::before pseudo-element — see
-   gradients.css for why it's a child of .lime-chat-body specifically,
-   not .lime-messages (the scroller). */
+/* The thread's fades (top and, since LIME-50, the permanent
+   composer-adjacent bottom one too) are a mask-image on .lime-messages
+   itself now (gradients.css) — no fade-div children of .lime-chat-body
+   any more. */
 
 /* Messages — absolutely fills .lime-chat-body so the floating composer can
    overlay it. padding-bottom (composer's ~72px height + a small gap)
@@ -3920,124 +3965,18 @@ body {
   align-items: center;
   gap: var(--seed-space-1);
   padding: var(--seed-space-3) var(--seed-space-4) var(--seed-space-2); /* bottom 16px -> 8px */
-  /* LIME-46: was the literal --soil-bg-canvas token; now the inherited
-     --surface-bg (body's own default, since the composer only ever
-     floats over the center/thread, never the right panel) — its own
-     ::before fade (gradients.css) uses the same variable, so bar and
-     fade can never visibly seam even if a future brief changes the
-     thread's background. */
-  background: var(--surface-bg);
+  /* LIME-50: plain canvas background, same as every other surface — no
+     --surface-bg matching needed any more. The thread's own content
+     (not the composer bar) carries the mask that fades it out before
+     it would disappear under this bar (gradients.css). */
+  background: var(--soil-bg-canvas);
 }
 
-/* ── Chat backgrounds (LIME-45) ───────────────────────────────
-   Reuses LIME-46's own --surface-bg fade system directly rather than a
-   second "--chat-bg" variable: .lime-composer above already lives
-   *inside* .lime-chat-body (index.html) and already reads the inherited
-   --surface-bg for its own background and fade (gradients.css) — so
-   app.js overriding --surface-bg locally on .lime-chat-body is the
-   *whole* mechanism. Every fade and the composer's own backdrop follow
-   automatically; this rule below is the one thing that was missing —
-   .lime-chat-body had no background of its own at all before this, so
-   the override had nothing to paint. */
-.lime-chat-body {
-  background: var(--surface-bg);
-}
-
-/* app.js sets background-image directly (a pattern tile or a photo +
-   scrim) only for those two kinds; size/position only matter then, and
-   are cleared (kind:'color'/'default') by app.js alongside the image
-   itself, not here. */
-.lime-chat-body {
-  background-repeat: repeat;
-}
-
-/* Metadata drawn directly on the thread background (never inside a
-   bubble, which already has its own opaque --soil-bg-surface and is
-   unaffected by any of this) — the date divider, a message's own
-   sender/time, and the "N replies" summary. Only shown once a non-
-   default background is active (app.js toggles this class) — on the
-   plain canvas default, today's plain unpilled text already reads fine
-   and a pill there would be a pointless, always-on visual change no
-   brief asked for. color-mix keeps --soil-bg-surface's own warm tone
-   dominant (per the brief's own "~80%") while still tinting toward
-   whatever the chat's background is, rather than a flat opaque chip
-   that ignores it. */
-.lime-chat-body--custom-bg .lime-date-divider,
-.lime-chat-body--custom-bg .lime-message__meta,
-.lime-chat-body--custom-bg .lime-message__replies {
-  background: color-mix(in srgb, var(--soil-bg-surface) 80%, var(--surface-bg) 20%);
-  border-radius: var(--seed-radius-full);
-  width: fit-content;
-}
-
-.lime-chat-body--custom-bg .lime-date-divider {
-  padding: 2px var(--seed-space-3);
-}
-
-.lime-chat-body--custom-bg .lime-message__meta,
-.lime-chat-body--custom-bg .lime-message__replies {
-  padding: 2px var(--seed-space-2);
-}
-
-/* .lime-date-divider's own ::before/::after rule lines already read
-   var(--soil-border-subtle) — a flat token, not --surface-bg — so they
-   keep working unchanged against any pill background above; no edit
-   needed there. */
-
-/* ── Background picker popover (#chat-bg-menu) ── */
-.lime-chat-bg-menu {
-  max-width: 300px;
-  /* renderChatBgMenu() (app.js) re-renders this panel's content on
-     every pick while it stays open (no auto-close, so a live preview
-     can be compared against another) — but wireDropdownToggle only
-     computes its fixed top/left once, at the click that opens it.
-     Content that got taller after that (e.g. once "Remove photo"
-     appears) could otherwise grow past where it was measured to fit.
-     A bounded, scrollable panel keeps every later render inside the
-     same footprint regardless — found live via Playwright: the "Apply
-     to all chats" checkbox + a later swatch pick became unclickable
-     ("not visible") without this. */
-  max-height: min(420px, 70vh);
-  overflow-y: auto;
-}
-
-.lime-chat-bg-swatches {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--seed-space-2);
-  padding: 0 var(--seed-space-2) var(--seed-space-2);
-}
-
-.lime-chat-bg-swatch,
-.lime-chat-bg-pattern {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: var(--seed-radius-md);
-  border: 2px solid transparent;
-  background-size: cover;
-  cursor: pointer;
-  padding: 0;
-}
-
-.lime-chat-bg-swatch:hover,
-.lime-chat-bg-pattern:hover {
-  outline: 1px solid var(--soil-border-subtle);
-}
-
-.lime-chat-bg-swatch.is-selected,
-.lime-chat-bg-pattern.is-selected {
-  border-color: var(--selected-border-subtle-default, var(--soil-text));
-}
-
-.lime-chat-bg-apply-all {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-2);
-  padding: var(--seed-space-2);
-  font-size: var(--seed-text-sm);
-  color: var(--soil-text);
-  cursor: pointer;
-}
+/* LIME-45's per-chat background code (the --surface-bg override on
+   .lime-chat-body, the custom-bg legibility pills, the popover) is
+   removed here — LIME-50 replaces it with one app-wide canvas tone
+   (see the "Appearance (LIME-50)" section, lime.css top, and the masked
+   fades in gradients.css). See docs/data-model.md for the removal note. */
 
 .lime-composer__box {
   position: relative; /* anchors the absolutely-positioned .lime-composer__return (LIME-10-fix14) */

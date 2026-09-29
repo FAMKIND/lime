@@ -110,7 +110,7 @@ only ever calls the store, never the adapter directly.
 - `getConversation(id)`
 - `getMembers(conversationId)`
 - `getMyMembership(conversationId)`
-- `getEffectiveBackground(conversationId)` — added in LIME-45; resolves `{ kind: 'default' | 'color' | 'pattern' | 'photo', color, patternId, path, avgColor }` — the current user's own per-chat override (`getMyMembership(conversationId).background`) if it's set and not `kind:'default'`, else their own default (`getCurrentUser().default_background`) if that's set and not `kind:'default'`, else the literal `{ kind: 'default' }` (see "Chat backgrounds" below)
+- `getAppearance()` — added in LIME-50; resolves `{ theme, canvas, pattern }` for the current user, defaulting any unset field (`canvas: 'warm'`, `theme`/`pattern`: `null`) so callers never have to guard against a missing key (see "Appearance" below)
 - `listMessages(conversationId, { threadOnly })`
 - `listReplies(messageId)`
 - `getReactions(messageId)` → `[{ emoji, count, mine }]`
@@ -136,7 +136,7 @@ only ever calls the store, never the adapter directly.
 - `uploadAttachment(file, { conversationId })` — added in LIME-38; resolves `{ path }`, an opaque key handed to `getAttachmentUrl` below, never parsed by the caller
 - `getAttachmentUrl(path)` — added in LIME-38; resolves a URL string safe to use directly in `<img src>` or a Download link's `href`
 - `getLinkPreview(url)` — added in LIME-44; resolves `{ url, minimal, title, description, site_name, image_url }`, never `null` for a well-formed URL (see "Link previews" below)
-- `setChatBackground(conversationId | null, background)` — added in LIME-45; `background` is the same shape `getEffectiveBackground` resolves. `conversationId` set: writes only that membership row's own `background` (this chat, this user). `conversationId` null ("Apply to all chats" in the UI): writes the current user's own `default_background` **and** clears that same user's own per-chat `background` on every conversation they're in, so a chat that already had its own override switches to the new default too, not just chats that never had one (see "Chat backgrounds" below)
+- `setAppearance(patch)` — added in LIME-50; merges `patch` onto the current user's own `{ theme, canvas, pattern }`, so `{ canvas: 'sage' }` alone never touches `theme`/`pattern`. Emits `lime:appearance-changed`. LIME-45's `setChatBackground`/`getEffectiveBackground` (per-chat backgrounds) were removed 2026-09-29 in favor of this one app-wide setting (see "Appearance" below)
 - `updateProfile(patch)` — updates the **current user's own** profile.
   `patch` may only contain `display_name`, `pronouns`, `role`, `school`,
   `grade_levels`, `subjects`, `bio`, `timezone`, `phone`; any other key
@@ -665,7 +665,23 @@ commit.
   outright rather than trying to make the indirect mechanism more
   reliable.
 
-## Chat backgrounds (LIME-45)
+## Chat backgrounds (LIME-45, removed 2026-09-29 in favor of app-wide appearance)
+
+**Removed on 2026-09-29 (LIME-50, user decision):** per-chat backgrounds
+are gone — `setChatBackground`/`getEffectiveBackground`, the `--surface-bg`
+override on `.lime-chat-body`, the 8-swatch/4-pattern/photo popover, and
+`conversation_members.background` are all deleted, not just deprecated.
+The replacement is one **app-wide** canvas tone (see "Appearance
+(LIME-50)" below) — the user's own screenshots showed LIME-45's
+per-chat colour painting only the chat card, "which looks broken,"
+against a reference where one pale tone tints every panel. The
+resolution/contrast methodology below (computed swatches, real
+Playwright verification, bugs found live) stays a valid record of how
+that system worked and was verified — kept for history, per this
+project's own convention (see LIME-43-revert's identical treatment of
+receipts), not because any of this code still runs. To reinstate,
+revert the LIME-50 commit's removal of it specifically (not a wholesale
+revert of LIME-50 itself, which also carries the app-wide canvas work).
 
 - **Reuses LIME-46's own `--surface-bg` fade system directly — no second
   variable.** The brief's own draft named a new `--chat-bg` variable, but
@@ -757,6 +773,107 @@ commit.
 - **The reply panel is out of scope, unchanged** — it keeps its own
   fixed default background regardless of the open conversation's chat
   background, per the brief.
+
+## Appearance (LIME-50)
+
+- **The contract**, mirroring `setStarred`/`updateProfile` (a plain field
+  on the existing snapshot, not a new adapter capability): `getAppearance()`
+  / `setAppearance(patch)` — see the Reads/Writes lists above. Shape:
+  `{ theme, canvas, pattern }`. Production: `user_settings` (`theme text`,
+  `canvas text`, `pattern jsonb`; the table already existed from LIME-45,
+  repurposed here — `schema.sql`). Local: the same store snapshot
+  (`profile.appearance`, riding along on the existing `profiles` array
+  `LocalAdapter.save`/`.load` already persists wholesale).
+- **Ported from Seed, not reimplemented — with attribution.** `CANVAS_P`
+  (5 presets) and `makeCanvasRamp(hex)` are copied from Seed's own brand
+  customiser (`vendor/seed/components/layout/layout.html` ~48-88) into a
+  new `public/js/appearance.js`, since `vendor/` itself can't be edited
+  and this logic needs to run against Lime's own stored preference
+  (`LimeStore.getAppearance()`), not Seed's demo-only `localStorage`
+  keys. Not modified beyond the port itself.
+- **A load-bearing gap found in survey, not assumed from the brief:**
+  Seed's own mechanism only works if the semantic tokens it retints
+  (`--soil-bg-canvas`, etc.) actually *read* the raw `--seed-soil-*` ramp
+  it overrides. Lime's `[data-theme="light"]` block had hardcoded
+  `--soil-bg-canvas`/`--soil-bg-surface` as **literal hex values**
+  instead — porting `CANVAS_P`/`applyCanvas` alone would have changed
+  nothing visible at all. Fixed by routing `--soil-bg-canvas` through
+  `var(--seed-soil-0)` (`lime.css`) — Seed's own stock `'warm'` ramp
+  already opens at `#F9F8F4`, byte-identical to Lime's old hardcoded
+  value, so this is zero visual change for the default preset (verified
+  live, not just reasoned about — TEND.md). `--soil-bg-surface` stays a
+  hardcoded literal, deliberately **not** ramp-routed: it matches Seed's
+  own reference behaviour (bg-surface is independently hardcoded there
+  too, never ramp-derived) and sidesteps a real conflict — the ramp's
+  own stop-100 is already claimed by `--soil-border-subtle`, and forcing
+  bg-surface onto the same stop would have shifted border colour on
+  every preset just to chase a bubble tone. Bubbles/composer/search
+  fields keep one fixed warm tone across every canvas tone; verified
+  per-preset via `bubble vs canvas contrast` (TEND.md) that this never
+  drops to the point of the bubble blending into the canvas.
+- **`--seed-soil-900` is never touched by `applyCanvas`, on purpose.**
+  Lime already pins this one raw stop to a fixed ink (`#131b17`, `lime.css`,
+  its own comment: the avatar identity system reads it directly for a
+  theme-invariant colour) — `SOIL_RAMP_INDEXES` in `appearance.js`
+  skips it explicitly, so a canvas tone can never move it. Verified live
+  in a real browser (not just jsdom, whose custom-property computed-style
+  support is unreliable) that `--seed-soil-900` reads identically before
+  and after a tone switch.
+- **A second load-bearing gap, also found in survey:** `--soil-text-muted`
+  at its Seed default (`--seed-soil-500`) passed contrast against
+  today's own `'warm'` canvas by the barest margin (4.58:1) and **failed
+  outright against most of the other 7 presets** (as low as 2.90:1 —
+  `contrast-sweep`/`canvas-verify` scripts, TEND.md). Since Lime's own
+  `--soil-text-muted` mapping is fixed regardless of which preset is
+  active, "every preset must pass" (the brief) was mathematically
+  impossible without moving that mapping. One step darker
+  (`--seed-soil-600`, `lime.css`) clears ≥4.5:1 against all 8 shipped
+  presets with real margin (4.74–8.44:1) — visibly, if subtly, darker
+  muted text than before across the whole app, flagged for the gate.
+- **8 canvas presets, not the brief's suggested 7–8 by coincidence — all
+  8 candidates shipped.** Seed's own 5 (`warm` default, `cool-gray`,
+  `warm-cream`, `blue-tint`, `pure-white`) plus 3 new pale tints generated
+  (not hand-picked) via `makeCanvasRamp` from a chosen base hex (`lemon`,
+  `sage`, `lilac`). `sage`'s base hex needed one round of tuning
+  (`#EAF1E6` → `#E3EDDC`) to clear the muted-text check above; the other
+  two cleared it on the first try. None needed dropping once muted text
+  moved to `--seed-soil-600` — the full contrast table (ink, muted,
+  border, bubble, per preset) is in TEND.md, computed twice (a Node
+  script during design, then cross-checked against real rendered pixels
+  via Playwright).
+- **Fades are CSS masks now, not colour-matched overlays** — see
+  `gradients.css`'s own header comment for the full mechanism and why:
+  in short, a mask makes the scrolling content itself fade to
+  transparent at its own edge, revealing whatever is actually behind it
+  (a flat tone today; a pattern or photo in LIME-52), with no colour of
+  its own to keep in sync. `--surface-bg` (LIME-46) is fully retired —
+  grep confirms zero remaining declarations or `var(--surface-bg)`
+  call sites anywhere. Verified with a temporary checkerboard diagnostic
+  background (Playwright): sampling inside the fade zone shows genuine
+  black/white variance from the checkerboard showing through, not one
+  flat colour a colour-matched overlay would have produced.
+- **Panels unified**, per the brief's own explicit list: the right panel's
+  distinct Seed-flush colour (`var(--calm-bg-subtle-default)`) is
+  replaced with the same `var(--soil-bg-canvas)` every other panel
+  shows — verified by sampling real rendered pixels (not each element's
+  own `background-color`, which can legitimately be `transparent` while
+  still displaying the right colour through inheritance) at the list
+  column, the thread, and the right panel, confirming they match within
+  antialiasing tolerance.
+- **The Appearance UI** lives in two places sharing one set of functions
+  (`renderAppearanceMenu`/`renderPreferencesSection`, both build the same
+  `.lime-appearance-swatches` markup from `LimeAppearance.CANVAS_P`):
+  the header shortcut (`#appearance-toggle`, a palette icon — dew has no
+  sun/palette icon, checked — replacing LIME-45's sun) opens a compact
+  popover with the 8 round swatches plus "More in Settings"; Settings ->
+  Preferences (a new nav item, `dew-gear`) -> Appearance has the same
+  swatches inline. Both apply live (no Save/Cancel — matches Login &
+  security's own "changes are per-row" pattern) and persist immediately.
+- **A real event-bubbling bug, same root cause LIME-45 already found and
+  fixed once:** the header popover also needs to stay open across a few
+  picks (a live preview), so its own delegated click handler calls
+  `e.stopPropagation()` too, for the same reason and against the same
+  shared `wireDropdownToggle` document-level close listener.
 
 ## Known gaps, flagged rather than silently resolved
 
