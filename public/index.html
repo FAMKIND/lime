@@ -361,36 +361,43 @@
                        (LIME-10-fix3's workaround). With Send living here instead, the toolbar
                        can just be display:none as a whole. -->
                   <div class="lime-composer__row">
-                    <textarea class="lime-composer__input" id="composer-input" placeholder="Say something meaningful..." rows="1"></textarea>
+                    <div class="lime-composer__input lime-rich-text" id="composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message" data-placeholder="Say something meaningful..."></div>
                     <button type="button" class="lime-composer__return" id="composer-send" title="Send">&#8629;</button>
                   </div>
                   <!-- Tools after Bold/Italic/Underline/Strikethrough hide under
                        .lime-composer__tool--overflow at narrow widths (LIME-12-fix4)
                        — dew-more-horizontal doesn't exist (checked); dew-ellipsis-menu
                        (already used for every other "More" button in this app) instead.
-                       The dropdown just relists the same options as plain, decorative
-                       labels — none of these tools have any real formatting behavior
-                       wired regardless of screen width, so there's nothing functional
-                       to preserve by cloning/moving the actual buttons. -->
+                       LIME-37: every tool (plain and overflow-dropdown alike) now
+                       carries data-cmd, read by the single shared createComposer's
+                       delegated click handler — both copies of each command really
+                       work, not just the always-visible ones. -->
                   <div class="lime-composer__toolbar">
-                    <button type="button" class="lime-composer__tool" title="Bold"><b>B</b></button>
-                    <button type="button" class="lime-composer__tool" title="Italic"><i>I</i></button>
-                    <button type="button" class="lime-composer__tool" title="Underline"><u>U</u></button>
-                    <button type="button" class="lime-composer__tool" title="Strikethrough"><s>S</s></button>
+                    <button type="button" class="lime-composer__tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+                    <button type="button" class="lime-composer__tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+                    <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+                    <button type="button" class="lime-composer__tool" data-cmd="strikethrough" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button>
                     <span class="lime-composer__divider lime-composer__tool--overflow"></span>
-                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Link"><span class="dew dew-link"></span></button>
-                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Numbered list"><i class="icon-list-ordered"></i></button>
-                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Bulleted list"><i class="icon-list"></i></button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="link" title="Link (Ctrl+K)"><span class="dew dew-link"></span></button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="orderedList" title="Numbered list"><i class="icon-list-ordered"></i></button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="unorderedList" title="Bulleted list"><i class="icon-list"></i></button>
                     <span class="lime-composer__divider lime-composer__tool--overflow"></span>
-                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Quote"><i class="icon-text-quote"></i></button>
-                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Code">&lt;/&gt;</button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="quote" title="Quote"><i class="icon-text-quote"></i></button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="code" title="Code">&lt;/&gt;</button>
                     <button type="button" class="lime-composer__tool lime-composer__overflow" id="composer-toolbar-overflow" title="More"><span class="dew dew-ellipsis-menu"></span></button>
                     <div class="lime-menu" id="composer-toolbar-overflow-dropdown">
-                      <button type="button" class="lime-menu__item"><span class="dew dew-link"></span>Link</button>
-                      <button type="button" class="lime-menu__item"><i class="icon-list-ordered"></i>Numbered list</button>
-                      <button type="button" class="lime-menu__item"><i class="icon-list"></i>Bulleted list</button>
-                      <button type="button" class="lime-menu__item"><i class="icon-text-quote"></i>Quote</button>
-                      <button type="button" class="lime-menu__item">&lt;/&gt; Code</button>
+                      <button type="button" class="lime-menu__item" data-cmd="link"><span class="dew dew-link"></span>Link</button>
+                      <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
+                      <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
+                      <button type="button" class="lime-menu__item" data-cmd="quote"><i class="icon-text-quote"></i>Quote</button>
+                      <button type="button" class="lime-menu__item" data-cmd="code">&lt;/&gt; Code</button>
+                    </div>
+                    <!-- LIME-37: inline URL entry, opened by the Link tool/menu item
+                         or Ctrl+K — position:fixed and JS-positioned off the Link
+                         button's own rect, same pattern as .lime-reaction-picker. -->
+                    <div class="lime-link-popover" data-link-popover>
+                      <input type="text" class="lime-link-popover__input" data-link-input placeholder="example.com" aria-label="Link URL">
+                      <button type="button" class="seed-button seed-button--primary seed-button--sm" data-link-submit>Add</button>
                     </div>
                   </div>
                 </div>
@@ -493,28 +500,32 @@
         <footer class="lime-replies-panel__composer" id="replies-composer">
           <div class="lime-composer__box">
             <div class="lime-composer__row">
-              <textarea class="lime-composer__input" id="replies-composer-input" placeholder="Reply..." rows="1"></textarea>
+              <div class="lime-composer__input lime-rich-text" id="replies-composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Reply" data-placeholder="Reply..."></div>
               <button type="button" class="lime-composer__return" id="replies-composer-send" title="Send">&#8629;</button>
             </div>
             <div class="lime-composer__toolbar">
-              <button type="button" class="lime-composer__tool" title="Bold"><b>B</b></button>
-              <button type="button" class="lime-composer__tool" title="Italic"><i>I</i></button>
-              <button type="button" class="lime-composer__tool" title="Underline"><u>U</u></button>
-              <button type="button" class="lime-composer__tool" title="Strikethrough"><s>S</s></button>
+              <button type="button" class="lime-composer__tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+              <button type="button" class="lime-composer__tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+              <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+              <button type="button" class="lime-composer__tool" data-cmd="strikethrough" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button>
               <span class="lime-composer__divider lime-composer__tool--overflow"></span>
-              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Link"><span class="dew dew-link"></span></button>
-              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Numbered list"><i class="icon-list-ordered"></i></button>
-              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Bulleted list"><i class="icon-list"></i></button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="link" title="Link (Ctrl+K)"><span class="dew dew-link"></span></button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="orderedList" title="Numbered list"><i class="icon-list-ordered"></i></button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="unorderedList" title="Bulleted list"><i class="icon-list"></i></button>
               <span class="lime-composer__divider lime-composer__tool--overflow"></span>
-              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Quote"><i class="icon-text-quote"></i></button>
-              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" title="Code">&lt;/&gt;</button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="quote" title="Quote"><i class="icon-text-quote"></i></button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="code" title="Code">&lt;/&gt;</button>
               <button type="button" class="lime-composer__tool lime-composer__overflow" id="replies-composer-toolbar-overflow" title="More"><span class="dew dew-ellipsis-menu"></span></button>
               <div class="lime-menu" id="replies-composer-toolbar-overflow-dropdown">
-                <button type="button" class="lime-menu__item"><span class="dew dew-link"></span>Link</button>
-                <button type="button" class="lime-menu__item"><i class="icon-list-ordered"></i>Numbered list</button>
-                <button type="button" class="lime-menu__item"><i class="icon-list"></i>Bulleted list</button>
-                <button type="button" class="lime-menu__item"><i class="icon-text-quote"></i>Quote</button>
-                <button type="button" class="lime-menu__item">&lt;/&gt; Code</button>
+                <button type="button" class="lime-menu__item" data-cmd="link"><span class="dew dew-link"></span>Link</button>
+                <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
+                <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
+                <button type="button" class="lime-menu__item" data-cmd="quote"><i class="icon-text-quote"></i>Quote</button>
+                <button type="button" class="lime-menu__item" data-cmd="code">&lt;/&gt; Code</button>
+              </div>
+              <div class="lime-link-popover" data-link-popover>
+                <input type="text" class="lime-link-popover__input" data-link-input placeholder="example.com" aria-label="Link URL">
+                <button type="button" class="seed-button seed-button--primary seed-button--sm" data-link-submit>Add</button>
               </div>
             </div>
           </div>

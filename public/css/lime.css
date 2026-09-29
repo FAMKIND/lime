@@ -2637,6 +2637,70 @@ body {
   margin: 0;
 }
 
+/* LIME-37: shared between the composer's own contenteditable surface
+   (div.lime-composer__input.lime-rich-text) and a rendered message's
+   formatted body (.lime-message__text.lime-rich-text, only present when
+   metadata.html exists) — one set of rules for what "a formatted message"
+   looks like, so the composer and the render path can't silently drift
+   into two different appearances for the exact same markup. Base
+   font-size/line-height/color for the composer already come from
+   .lime-composer__input above; for a rendered bubble they come from
+   .lime-message__text (both classes always sit alongside this one). */
+.lime-rich-text p {
+  margin: 0 0 0.5em;
+}
+
+.lime-rich-text p:last-child {
+  margin-bottom: 0;
+}
+
+.lime-rich-text ul,
+.lime-rich-text ol {
+  margin: 0.25em 0;
+  padding-left: 1.4em;
+}
+
+.lime-rich-text li {
+  margin: 0.15em 0;
+}
+
+.lime-rich-text blockquote {
+  margin: 0.4em 0;
+  padding-left: 0.75em;
+  border-left: 3px solid var(--soil-border-subtle);
+  color: var(--soil-text-muted);
+}
+
+/* --seed-font-mono doesn't exist in this project's tokens (checked
+   vendor/seed/tokens/tokens.css — only --seed-font-brand/serif/ui) — a
+   plain system monospace stack instead, per the brief's own fallback. */
+.lime-rich-text code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--calm-bg-subtle-default);
+  padding: 0.1em 0.35em;
+  border-radius: var(--seed-radius-sm);
+}
+
+.lime-rich-text pre {
+  margin: 0.4em 0;
+  padding: 0.6em 0.8em;
+  background: var(--soil-bg-elevated);
+  border-radius: var(--seed-radius-sm);
+  overflow-x: auto;
+}
+
+.lime-rich-text pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.lime-rich-text a {
+  color: var(--calm-text-bold-default);
+  text-decoration: underline;
+}
+
 .lime-message__footer {
   display: flex;
   align-items: center;
@@ -3149,6 +3213,21 @@ body {
   color: var(--soil-text);
 }
 
+/* LIME-37: a command's button (plain or overflow-menu copy) shows
+   pressed while the caret sits inside that format — set live by
+   createComposer off document/queryCommandState and each command's own
+   ancestor check (link/quote/code have no queryCommandState). Neutral,
+   per the brief — same token .lime-menu__item--selected already uses
+   for "this option is active" elsewhere, not a colored/active-brand look. */
+.lime-composer__tool[aria-pressed="true"] {
+  background: var(--calm-bg-subtle-active);
+  color: var(--soil-text);
+}
+
+.lime-menu__item[aria-pressed="true"] {
+  background: var(--calm-bg-subtle-active);
+}
+
 .lime-composer__tool b { font-weight: 700; font-style: normal; }
 /* :not([class]) — only the plain <i>I</i> in the Italic button itself;
    the icon-list-ordered/icon-list/icon-text-quote <i> tags (LIME-10-fix4)
@@ -3171,6 +3250,48 @@ body {
   margin: 0 6px;
   flex-shrink: 0;
 }
+
+/* LIME-37: the Link command's small inline URL entry — position:fixed,
+   same pattern (and z-index) as .lime-reaction-picker, JS-positioned off
+   the Link button's own getBoundingClientRect(). One per composer (each
+   .lime-composer__toolbar has its own), never a global singleton, so two
+   open composers on screen (main + reply) can't fight over one popover. */
+.lime-link-popover {
+  display: none;
+  position: fixed;
+  align-items: center;
+  gap: 6px;
+  background: var(--soil-bg-surface);
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-md);
+  box-shadow: var(--seed-shadow-md);
+  padding: 6px;
+  z-index: 20;
+}
+
+.lime-link-popover.is-open {
+  display: flex;
+}
+
+.lime-link-popover__input {
+  width: 220px;
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-sm);
+  padding: 6px 8px;
+  font-family: var(--seed-font-ui);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+  background: var(--soil-bg-elevated);
+}
+
+.lime-link-popover__input:focus {
+  outline: none;
+  border-color: var(--calm-border-normal-default);
+}
+
+/* Submit is a plain .seed-button--primary (Seed's own, unmodified) — no
+   custom color rule needed here, and it keeps this one small lime accent
+   consistent with every other primary action in the app (LIME-21b). */
 
 /* Content is now a plain ↵ character, not a wrapped .dew icon (LIME-10-fix4
    swapped the chevron-up dew icon for the return symbol directly) — so
@@ -3359,18 +3480,22 @@ body {
   outline: none;
 }
 
-/* Main composer's textarea (LIME-10) — lives inside .lime-composer__box
+/* Main composer's input (LIME-10) — lives inside .lime-composer__box
    now (LIME-10-fix), which supplies the border/background/radius, so
-   the textarea itself stays borderless/transparent. Scoped to the tag
-   so the reply panel's plain <input class="lime-composer__input">
-   (still inside .lime-composer__field) is completely unaffected. */
+   the input itself stays borderless/transparent. Scoped to the tag so
+   the reply panel's plain <input class="lime-composer__input"> (still
+   inside .lime-composer__field) is completely unaffected. */
 /* LIME-10-fix7: the JS auto-grow (app.js) already shrinks this back down
    whenever the content is deleted, so in practice it already reads as
    single-line at rest — but that's incidental (depends on the input
    handler firing on every keystroke), not declared. Capping max-height
    at 24px when collapsed makes "single line while collapsed" a real CSS
    guarantee instead of a side effect of JS timing. */
-textarea.lime-composer__input {
+/* LIME-37: textarea → contenteditable div (a WYSIWYG surface needs real
+   child elements — <b>, <ul>, <blockquote> — a <textarea>'s value can
+   never hold). Selector renamed from the tag-scoped textarea.… to
+   div.… accordingly; sizing/layout rules are otherwise unchanged. */
+div.lime-composer__input {
   display: block;
   /* flex:1, not flex:none — LIME-10-fix12 put this inside
      .lime-composer__row so it grows to fill the row's width. Now that
@@ -3390,28 +3515,43 @@ textarea.lime-composer__input {
   padding: var(--seed-space-1) 40px var(--seed-space-1) var(--seed-space-2); /* right: reserves room for the corner-anchored Send button so typed text doesn't render under it */
   border: none;
   background: transparent;
-  resize: none;
   line-height: var(--seed-leading-snug);
   overflow: hidden;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  cursor: text;
 }
 
-#composer.is-expanded textarea.lime-composer__input,
-#replies-composer.is-expanded textarea.lime-composer__input {
+#composer.is-expanded div.lime-composer__input,
+#replies-composer.is-expanded div.lime-composer__input {
   height: auto;
   max-height: 160px;
   overflow-y: auto;
 }
 
-textarea.lime-composer__input:focus {
+div.lime-composer__input:focus {
   outline: none;
 }
 
-textarea.lime-composer__input::-webkit-scrollbar {
+/* :empty::before, not a native placeholder attribute — a contenteditable
+   div has no such attribute; data-placeholder is set per-instance in
+   index.html (and rewritten by the ≤480px short-placeholder script,
+   below) since the two composers ("Say something meaningful..."/"Reply...")
+   need different text. Stops showing the instant there's any real content,
+   including a single <br> some browsers leave behind — :empty only matches
+   a node with zero children at all, so that's already handled for free. */
+div.lime-composer__input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--soil-text-muted);
+  pointer-events: none;
+}
+
+div.lime-composer__input::-webkit-scrollbar {
   width: 6px;
   background: transparent;
 }
 
-textarea.lime-composer__input::-webkit-scrollbar-thumb {
+div.lime-composer__input::-webkit-scrollbar-thumb {
   background: var(--soil-border-subtle);
   border-radius: 4px;
 }

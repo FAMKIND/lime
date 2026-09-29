@@ -46,6 +46,360 @@ function escapeHtml(str) {
   }[c]));
 }
 
+// ── Rich-text sanitiser (LIME-37) ────────────────────────
+// The one allow-list, used identically on send (before anything is
+// stored) and on render (before metadata.html ever reaches the DOM) —
+// per the brief's own "the same sanitiser runs on send and on render."
+// Nothing here trusts that content already in storage is still safe.
+const SANITIZE_ALLOWED_TAGS = new Set(['P', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'A', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'CODE', 'PRE']);
+// Tags whose *content* is never meaningful message text — removed
+// entirely, not unwrapped, unlike every other disallowed tag below.
+const SANITIZE_DROP_WITH_CONTENT = new Set(['SCRIPT', 'STYLE']);
+
+function sanitizeHrefValue(raw) {
+  const href = (raw || '').trim();
+  if (!href) return null;
+  if (/^(https?|mailto):/i.test(href)) return href;
+  // Some other real scheme (javascript:, data:, etc.) — never kept.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return null;
+  // No scheme at all — the same "add https:// for a bare domain" the
+  // Link toolbar command itself does (brief: "add https:// if there's
+  // no scheme"), applied here too so a pasted bare-domain link matches.
+  return 'https://' + href;
+}
+
+// Depth-first: a node's children are fully sanitised before deciding the
+// node's own fate, so unwrapping a disallowed wrapper (a pasted <div> or
+// <span>) never skips sanitising what was inside it.
+function sanitizeFragment(root) {
+  [...root.childNodes].forEach((node) => {
+    if (node.nodeType === 3) return; // text node — kept as-is
+    if (node.nodeType !== 1) { node.remove(); return; } // comments etc.
+    let tag = node.tagName;
+    if (SANITIZE_DROP_WITH_CONTENT.has(tag)) { node.remove(); return; }
+    // A legacy tag name a real execCommand implementation still emits
+    // (confirmed live in Firefox: strikeThrough produces <strike>, not
+    // <s>) — normalized to its allow-listed equivalent *before* the
+    // allow-list check below, so formatting the user actually applied
+    // doesn't silently vanish on send just because of which tag name an
+    // old execCommand happened to choose.
+    if (tag === 'STRIKE') {
+      const replacement = node.ownerDocument.createElement('s');
+      while (node.firstChild) replacement.appendChild(node.firstChild);
+      root.replaceChild(replacement, node);
+      node = replacement;
+      tag = 'S';
+    }
+    sanitizeFragment(node);
+    if (!SANITIZE_ALLOWED_TAGS.has(tag)) {
+      while (node.firstChild) root.insertBefore(node.firstChild, node);
+      node.remove();
+      return;
+    }
+    if (tag === 'A') {
+      const safeHref = sanitizeHrefValue(node.getAttribute('href'));
+      [...node.attributes].forEach((attr) => node.removeAttribute(attr.name));
+      if (safeHref) {
+        node.setAttribute('href', safeHref);
+      } else {
+        // No safe scheme at all (javascript:, an empty href, …) — the
+        // brief's own "javascript: links stripped": unwrap rather than
+        // leave a link-shaped element with nothing safe to point at.
+        while (node.firstChild) root.insertBefore(node.firstChild, node);
+        node.remove();
+      }
+      return;
+    }
+    // Every other allowed tag (p, br, strong, b, em, i, u, s, ul, ol, li,
+    // blockquote, code, pre) takes no attributes in this allow-list —
+    // strips a pasted style="…"/onerror="…" etc. regardless of which
+    // tag it rode in on.
+    [...node.attributes].forEach((attr) => node.removeAttribute(attr.name));
+  });
+}
+
+// <template> content is inert by spec — no script execution, no image
+// fetches, nothing fires while untrusted markup sits inside it — so
+// setting .innerHTML here can never itself trigger a payload (an
+// <img onerror> parsed into a plain detached <div> can still fire its
+// handler once the image load fails, asynchronously; a <template> never
+// loads the image at all). Sanitising happens synchronously against that
+// inert fragment, so nothing is ever "live" even for an instant.
+function sanitizeHtml(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html == null ? '' : String(html);
+  sanitizeFragment(template.content);
+  return template.innerHTML;
+}
+
+// Render-only: rel/target are a rendering concern (brief: "add … on
+// render"), never stored — re-sanitises first (defense in depth; never
+// trusts that what's already in metadata.html is still safe) then adds
+// them to the sanitised result.
+function renderRichHtml(html) {
+  const safe = sanitizeHtml(html);
+  const template = document.createElement('template');
+  template.innerHTML = safe;
+  template.content.querySelectorAll('a[href]').forEach((a) => {
+    a.setAttribute('rel', 'noopener noreferrer');
+    a.setAttribute('target', '_blank');
+  });
+  return template.innerHTML;
+}
+
+// Formatting tags that make metadata.html worth storing at all — <p>/<br>
+// alone are just contenteditable's own line structure, not a deliberate
+// format, so plain multi-line text still omits metadata.html entirely
+// (brief: "omit html when there's no formatting").
+const RICH_TEXT_FORMATTING_TAGS = /<(strong|b|em|i|u|s|a|ul|ol|li|blockquote|code|pre)[\s>]/i;
+
+function hasRealFormatting(sanitizedHtml) {
+  return RICH_TEXT_FORMATTING_TAGS.test(sanitizedHtml);
+}
+
+// ── Shared composer (LIME-37) ────────────────────────────
+// One implementation for both the main and reply composers — they only
+// ever differed in which ids they used and whether growth rescrolled a
+// thread; everything else (expand-on-focus, auto-grow, is-active Send,
+// toolbar commands, keyboard shortcuts, paste sanitising, send) was
+// duplicated. `rootEl` is the outer footer (#composer/#replies-composer);
+// `onSend({ content, metadata })` does whatever that composer's send
+// actually means (LimeStore.sendMessage for the main thread, sendMessage
+// with replyTo for a reply) — this function only ever produces the
+// payload, never talks to the store itself, so it stays reusable for
+// wherever a third composer shows up later.
+//
+// document.execCommand is what the brief sanctions for this prototype
+// ("a production editor … would replace it behind the same createComposer
+// API"). One real environmental limit found while building this: jsdom
+// has no execCommand/queryCommandState implementation at all (confirmed
+// directly, not assumed) — every live command/pressed-state check below
+// only ever runs for real in an actual browser. The jsdom verification
+// for this brief tests the sanitiser, the Enter/list/code keyboard logic,
+// and rendering directly (none of which need execCommand); the live
+// toolbar interactions are verified in Playwright + Firefox instead,
+// matching the brief's own two-part verification split.
+function createComposer(rootEl, { onSend, growScrollTarget } = {}) {
+  const input = rootEl.querySelector('.lime-composer__input');
+  const sendBtn = rootEl.querySelector('.lime-composer__return');
+  const toolbar = rootEl.querySelector('.lime-composer__toolbar');
+  const linkPopover = rootEl.querySelector('[data-link-popover]');
+  const linkInput = linkPopover && linkPopover.querySelector('[data-link-input]');
+  const linkSubmit = linkPopover && linkPopover.querySelector('[data-link-submit]');
+  const linkToolButtons = [...rootEl.querySelectorAll('[data-cmd="link"]')];
+  if (!input) return;
+
+  let savedLinkRange = null;
+
+  function isCaretInside(tagName) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    let node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === 3) node = node.parentElement;
+    const match = node && node.closest && node.closest(tagName);
+    return !!(match && input.contains(match));
+  }
+
+  function updatePressedStates() {
+    if (!toolbar || !document.queryCommandState) return;
+    toolbar.querySelectorAll('[data-cmd]').forEach((btn) => {
+      const cmd = btn.dataset.cmd;
+      let pressed = false;
+      try {
+        if (cmd === 'bold') pressed = document.queryCommandState('bold');
+        else if (cmd === 'italic') pressed = document.queryCommandState('italic');
+        else if (cmd === 'underline') pressed = document.queryCommandState('underline');
+        else if (cmd === 'strikethrough') pressed = document.queryCommandState('strikeThrough');
+        else if (cmd === 'orderedList') pressed = document.queryCommandState('insertOrderedList');
+        else if (cmd === 'unorderedList') pressed = document.queryCommandState('insertUnorderedList');
+        else if (cmd === 'quote') pressed = isCaretInside('blockquote');
+        else if (cmd === 'code') pressed = isCaretInside('code') || isCaretInside('pre');
+        else if (cmd === 'link') pressed = isCaretInside('a');
+      } catch (err) { /* queryCommandState on an unsupported command — leave unpressed */ }
+      btn.setAttribute('aria-pressed', String(pressed));
+    });
+  }
+
+  function toggleQuote() {
+    document.execCommand('formatBlock', false, isCaretInside('blockquote') ? 'p' : 'blockquote');
+  }
+
+  // "Inline code for a selection within a line, a code block otherwise"
+  // (brief). A prototype-level heuristic, not a full editor: a selection
+  // that reads as one line (no newline in its own flattened text) becomes
+  // inline <code>; anything else (a multi-line selection, or no selection
+  // at all) turns the current block into a <pre><code> block instead.
+  function toggleCode() {
+    if (isCaretInside('pre')) { document.execCommand('formatBlock', false, 'p'); return; }
+    const sel = window.getSelection();
+    const text = sel && sel.rangeCount ? sel.toString() : '';
+    if (text && !text.includes('\n')) {
+      document.execCommand('insertHTML', false, '<code>' + escapeHtml(text) + '</code>');
+    } else {
+      document.execCommand('formatBlock', false, 'pre');
+    }
+  }
+
+  function execCommandFor(cmd) {
+    document.execCommand('styleWithCSS', false, false);
+    if (cmd === 'bold') document.execCommand('bold');
+    else if (cmd === 'italic') document.execCommand('italic');
+    else if (cmd === 'underline') document.execCommand('underline');
+    else if (cmd === 'strikethrough') document.execCommand('strikeThrough');
+    else if (cmd === 'orderedList') document.execCommand('insertOrderedList');
+    else if (cmd === 'unorderedList') document.execCommand('insertUnorderedList');
+    else if (cmd === 'quote') toggleQuote();
+    else if (cmd === 'code') toggleCode();
+    updatePressedStates();
+  }
+
+  function closeLinkPopover() {
+    if (linkPopover) linkPopover.classList.remove('is-open');
+  }
+
+  function openLinkPopover(anchorBtn) {
+    if (!linkPopover || !linkInput) return;
+    const sel = window.getSelection();
+    savedLinkRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    let existingHref = '';
+    if (isCaretInside('a')) {
+      let node = savedLinkRange.startContainer;
+      if (node.nodeType === 3) node = node.parentElement;
+      const a = node.closest('a');
+      if (a) existingHref = a.getAttribute('href') || '';
+    }
+    linkInput.value = existingHref;
+    const rect = anchorBtn.getBoundingClientRect();
+    linkPopover.style.left = Math.max(8, rect.left) + 'px';
+    linkPopover.style.top = (rect.bottom + 8) + 'px';
+    linkPopover.classList.add('is-open');
+    linkInput.focus();
+    linkInput.select();
+  }
+
+  function applyLink() {
+    const url = sanitizeHrefValue(linkInput.value);
+    closeLinkPopover();
+    input.focus();
+    if (!url) return;
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    if (savedLinkRange) sel.addRange(savedLinkRange);
+    document.execCommand('styleWithCSS', false, false);
+    if (savedLinkRange && !savedLinkRange.collapsed) {
+      document.execCommand('createLink', false, url);
+    } else {
+      document.execCommand('insertHTML', false, '<a href="' + escapeHtml(url) + '">' + escapeHtml(url) + '</a>');
+    }
+    updatePressedStates();
+  }
+
+  if (linkPopover && linkInput && linkSubmit) {
+    linkSubmit.addEventListener('click', applyLink);
+    linkInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); applyLink(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeLinkPopover(); input.focus(); }
+    });
+    document.addEventListener('click', (e) => {
+      if (!linkPopover.classList.contains('is-open')) return;
+      if (linkPopover.contains(e.target)) return;
+      if (e.target.closest && e.target.closest('[data-cmd="link"]')) return;
+      closeLinkPopover();
+    });
+  }
+
+  // mousedown, not click — prevents the browser from ever moving
+  // focus/selection out of the contenteditable in the first place
+  // (clicking a <button> normally would), so the command below always
+  // applies to whatever was actually selected, not wherever focus lands
+  // after the click. Scoped to [data-cmd] only — the link popover's own
+  // input/submit inside this same toolbar need to receive focus normally.
+  if (toolbar) {
+    toolbar.addEventListener('mousedown', (e) => {
+      if (e.target.closest('[data-cmd]')) e.preventDefault();
+    });
+    toolbar.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-cmd]');
+      if (!btn) return;
+      const cmd = btn.dataset.cmd;
+      if (cmd === 'link') {
+        e.stopPropagation(); // same click that opens it would otherwise immediately close it (the document-level close-on-outside-click listener above)
+        openLinkPopover(btn);
+        return;
+      }
+      execCommandFor(cmd);
+    });
+  }
+
+  function isEmpty() {
+    return input.textContent.trim().length === 0;
+  }
+
+  rootEl.addEventListener('focusin', () => rootEl.classList.add('is-expanded'));
+  rootEl.addEventListener('focusout', (e) => {
+    if (rootEl.contains(e.relatedTarget)) return;
+    if (isEmpty()) rootEl.classList.remove('is-expanded');
+  });
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+    // As the input grows taller (LIME-10-fix13), it eats into the
+    // scroll container's own vertical space from the bottom — only the
+    // main composer passes growScrollTarget (its thread); the reply
+    // composer never rescrolled its own list for this, unchanged.
+    if (growScrollTarget) growScrollTarget.scrollTop = growScrollTarget.scrollHeight;
+    if (sendBtn) sendBtn.classList.toggle('is-active', !isEmpty());
+    updatePressedStates();
+  });
+
+  document.addEventListener('selectionchange', () => {
+    if (document.activeElement === input) updatePressedStates();
+  });
+
+  input.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const clipboard = e.clipboardData;
+    if (!clipboard) return;
+    const html = clipboard.getData('text/html');
+    const text = clipboard.getData('text/plain');
+    const raw = html || escapeHtml(text).replace(/\n/g, '<br>');
+    document.execCommand('insertHTML', false, sanitizeHtml(raw));
+  });
+
+  function send() {
+    const content = input.innerText.trim();
+    if (!content) return;
+    const safeHtml = sanitizeHtml(input.innerHTML);
+    const metadata = hasRealFormatting(safeHtml) ? { html: safeHtml } : undefined;
+    if (onSend) onSend({ content, metadata });
+    input.innerHTML = '';
+    input.style.height = '';
+    if (sendBtn) sendBtn.classList.remove('is-active');
+    updatePressedStates();
+  }
+
+  input.addEventListener('keydown', (e) => {
+    const mod = e.metaKey || e.ctrlKey;
+    const key = e.key.toLowerCase();
+    if (mod && !e.shiftKey && key === 'b') { e.preventDefault(); execCommandFor('bold'); return; }
+    if (mod && !e.shiftKey && key === 'i') { e.preventDefault(); execCommandFor('italic'); return; }
+    if (mod && !e.shiftKey && key === 'u') { e.preventDefault(); execCommandFor('underline'); return; }
+    if (mod && e.shiftKey && key === 'x') { e.preventDefault(); execCommandFor('strikethrough'); return; }
+    if (mod && !e.shiftKey && key === 'k') { e.preventDefault(); if (linkToolButtons[0]) openLinkPopover(linkToolButtons[0]); return; }
+
+    if (e.key === 'Enter') {
+      if (mod) { e.preventDefault(); send(); return; } // Cmd/Ctrl+Enter always sends
+      if (e.shiftKey) return; // Shift+Enter is always a newline
+      if (isCaretInside('li') || isCaretInside('pre') || isCaretInside('code')) return; // adds a new item/line
+      e.preventDefault();
+      send();
+    }
+  });
+
+  if (sendBtn) sendBtn.addEventListener('click', send);
+}
+
 function formatTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
@@ -86,6 +440,22 @@ function plainPreviewFor(message) {
   if (message.type === 'voice') return 'Voice message';
   if (message.type === 'location') return message.metadata && message.metadata.place_name || 'Location';
   return message.content || '';
+}
+
+// LIME-37: a text message's actual body — shared by the main thread
+// (contentHtml) and the reply panel's own reply rows (replyHtml), the two
+// places that render a real message rather than a compact one-line
+// preview (previewFor/plainPreviewFor stay plain on purpose — a list row
+// or a reply's quote summary was never meant to show bold/lists/etc.).
+// Re-sanitises metadata.html at render time (never trusts stored data is
+// still safe) and wraps it in a <div>, not <p> — the allow-list includes
+// block-level tags (ul/blockquote/pre) that <p> can't legally contain.
+function messageBodyHtml(message, textClass) {
+  const cls = textClass || 'lime-message__text';
+  if (message.metadata && message.metadata.html) {
+    return '<div class="' + cls + ' lime-rich-text">' + renderRichHtml(message.metadata.html) + '</div>';
+  }
+  return '<p class="' + cls + '">' + escapeHtml(message.content || '') + '</p>';
 }
 
 // Also promoted (LIME-11-fix2) — the reply panel's quote/reply items
@@ -250,8 +620,6 @@ function initMessagesList() {
   const me = LimeStore.getCurrentUser();
   const crumbThread = document.getElementById('crumb-thread');
   const openProfileAvatars = document.getElementById('open-profile-avatars');
-  const composerInput = document.getElementById('composer-input');
-  const composerSend = document.getElementById('composer-send');
 
   let currentConversationId = null;
   let lastRenderedDay = null;
@@ -386,7 +754,7 @@ function initMessagesList() {
         + '</div>'
         + '</div>';
     }
-    return '<div class="lime-message__content"><p class="lime-message__text">' + escapeHtml(message.content || '') + '</p></div>';
+    return '<div class="lime-message__content">' + messageBodyHtml(message) + '</div>';
   }
 
   function messageHtml(message, sender, isSent) {
@@ -688,51 +1056,32 @@ function initMessagesList() {
     crumbThread.addEventListener('blur', onBlur);
   }
 
-  // ── Send message (LIME-07) ─────────────────────────────
-  function handleSend() {
-    if (!composerInput || !currentConversationId) return;
-    const content = composerInput.value.trim();
-    if (!content) return;
-    const conversationId = currentConversationId;
+  // ── Send message (LIME-07, LIME-37: via the shared createComposer) ──
+  const composerEl = document.getElementById('composer');
+  if (composerEl) {
+    createComposer(composerEl, {
+      growScrollTarget: thread,
+      onSend({ content, metadata }) {
+        if (!currentConversationId) return;
+        const conversationId = currentConversationId;
+        LimeStore.sendMessage(conversationId, { content, metadata }).then((message) => {
+          if (conversationId !== currentConversationId) return; // switched threads before this resolved
+          const emptyState = thread.querySelector('.lime-messages__empty');
+          if (emptyState) emptyState.remove();
 
-    LimeStore.sendMessage(conversationId, { content }).then((message) => {
-      if (conversationId !== currentConversationId) return; // switched threads before this resolved
-      const emptyState = thread.querySelector('.lime-messages__empty');
-      if (emptyState) emptyState.remove();
-
-      const day = formatDay(message.created_at);
-      if (day !== lastRenderedDay) {
-        thread.insertAdjacentHTML('beforeend', '<div class="lime-date-divider"><span>' + day + '</span></div>');
-        lastRenderedDay = day;
-      }
-      thread.insertAdjacentHTML('beforeend', messageHtml(message, me, true));
-      const newAvatar = thread.querySelector('.lime-message:last-child .lime-avatar[data-name]');
-      if (newAvatar) paintAvatar(newAvatar); // real bug (LIME-11): paintAvatar only ran once at load, missing every sent message's avatar since LIME-07
-      thread.scrollTop = thread.scrollHeight;
-    }).catch(console.error);
-
-    // Clearing the composer doesn't wait on the write — LIME-24b's
-    // optimistic-update principle applies to the *cache* (updated
-    // synchronously inside the store before its Promise resolves), but the
-    // UI's own "instant" feel has always meant not waiting on anything.
-    composerInput.value = '';
-    composerInput.style.height = ''; // drop the auto-grow inline height (LIME-10)
-    // Setting .value directly doesn't fire an 'input' event, so the
-    // is-active toggle (LIME-10-fix14, wired to that event elsewhere)
-    // never sees this clear on its own — reset it here explicitly,
-    // otherwise Send stays looking "active" after a message is sent.
-    if (composerSend) composerSend.classList.remove('is-active');
-  }
-
-  if (composerInput) {
-    composerInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
-      }
+          const day = formatDay(message.created_at);
+          if (day !== lastRenderedDay) {
+            thread.insertAdjacentHTML('beforeend', '<div class="lime-date-divider"><span>' + day + '</span></div>');
+            lastRenderedDay = day;
+          }
+          thread.insertAdjacentHTML('beforeend', messageHtml(message, me, true));
+          const newAvatar = thread.querySelector('.lime-message:last-child .lime-avatar[data-name]');
+          if (newAvatar) paintAvatar(newAvatar); // real bug (LIME-11): paintAvatar only ran once at load, missing every sent message's avatar since LIME-07
+          thread.scrollTop = thread.scrollHeight;
+        }).catch(console.error);
+      },
     });
   }
-  if (composerSend) composerSend.addEventListener('click', handleSend);
 
   // ── Merged Messages list (LIME-19b, delegated LIME-24b) ──
   // Direct + group conversations in one list, newest activity first
@@ -1786,8 +2135,6 @@ function renderCrumbs() {
   const quoteEl     = document.getElementById('replies-quote');
   const metaEl      = document.getElementById('replies-meta');
   const listEl      = document.getElementById('replies-list');
-  const replyInput  = document.getElementById('replies-composer-input');
-  const replySend   = document.getElementById('replies-composer-send');
   if (!layout || !rightPanel || !quoteEl || !listEl) return;
 
   let currentReplyParentId = null;
@@ -1800,7 +2147,7 @@ function renderCrumbs() {
       + '<span class="lime-reply__sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<span class="lime-reply__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
-      + '<p class="lime-reply__text">' + escapeHtml(plainPreviewFor(message)) + '</p>'
+      + messageBodyHtml(message, 'lime-reply__text')
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '</div>'
       + '<div class="lime-message__actions">'
@@ -1889,55 +2236,32 @@ function renderCrumbs() {
     if (indicator) openReplies(indicator.dataset.messageId);
   });
 
-  function submitReply() {
-    if (!replyInput || !currentReplyParentId) return;
-    const content = replyInput.value.trim();
-    if (!content) return;
-    const parentId = currentReplyParentId;
-    const parent = LimeStore.getMessage(parentId);
-    if (!parent) return;
-
-    // sendMessage with replyTo covers replies too (LIME-24b's contract has
-    // no separate sendReply) — it already emits lime:messages-changed,
-    // which the main list's own listener picks up to re-sort; no manual
-    // event dispatch needed here the way the old lime:activity one was.
-    LimeStore.sendMessage(parent.conversation_id, { content, replyTo: parentId }).then(() => {
-      refreshReplyIndicator(parentId);
-      renderReplies(parentId);
-      listEl.scrollTop = listEl.scrollHeight;
-    }).catch(console.error);
-
-    replyInput.value = '';
-    replyInput.style.height = '';
-    if (replySend) replySend.classList.remove('is-active');
-  }
-
-  // Reply composer: same expand/collapse + auto-grow + is-active pattern
-  // as the main composer (LIME-10 through LIME-10-fix14). Duplicated
-  // rather than shared — this brief's scope explicitly excludes touching
-  // the main composer, and merging the two into one shared function
-  // would mean editing that already-working code too.
+  // Reply composer: LIME-37 replaces the old duplicated expand/collapse +
+  // auto-grow + is-active + Enter-to-send block (identical to the main
+  // composer's own, minus growScrollTarget — the reply list was never
+  // rescrolled as this grows, unchanged) with the same shared
+  // createComposer used by the main composer above.
   const repliesComposer = document.getElementById('replies-composer');
-  if (repliesComposer && replyInput) {
-    repliesComposer.addEventListener('focusin', () => repliesComposer.classList.add('is-expanded'));
-    repliesComposer.addEventListener('focusout', (e) => {
-      if (repliesComposer.contains(e.relatedTarget)) return;
-      if (!replyInput.value.trim()) repliesComposer.classList.remove('is-expanded');
-    });
-    replyInput.addEventListener('input', () => {
-      replyInput.style.height = 'auto';
-      replyInput.style.height = replyInput.scrollHeight + 'px';
-      if (replySend) replySend.classList.toggle('is-active', replyInput.value.trim().length > 0);
-    });
-    replyInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        submitReply();
-      }
+  if (repliesComposer) {
+    createComposer(repliesComposer, {
+      onSend({ content, metadata }) {
+        if (!currentReplyParentId) return;
+        const parentId = currentReplyParentId;
+        const parent = LimeStore.getMessage(parentId);
+        if (!parent) return;
+        // sendMessage with replyTo covers replies too (LIME-24b's contract
+        // has no separate sendReply) — it already emits
+        // lime:messages-changed, which the main list's own listener picks
+        // up to re-sort; no manual event dispatch needed here the way the
+        // old lime:activity one was.
+        LimeStore.sendMessage(parent.conversation_id, { content, metadata, replyTo: parentId }).then(() => {
+          refreshReplyIndicator(parentId);
+          renderReplies(parentId);
+          listEl.scrollTop = listEl.scrollHeight;
+        }).catch(console.error);
+      },
     });
   }
-
-  if (replySend) replySend.addEventListener('click', submitReply);
 
   // Decorative placeholder, not real navigator.mediaDevices (LIME-10 gate)
   // — a second instance for the reply composer, own unique ids since the
@@ -2044,39 +2368,14 @@ wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
 // doesn't need to either.
 wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropdown', { fixed: true });
 
-// ── Expandable composer (LIME-10) ────────────────────────
-// Toolbar shows only while #composer.is-expanded; textarea grows with
-// content up to the CSS max-height (then scrolls). focusin/focusout
-// (not focus/blur) because they bubble — needed to tell "focus moved to
-// a toolbar button inside #composer" (stay expanded) apart from "focus
-// left the composer entirely" (collapse, but only if it's empty).
-(function () {
-  const composer = document.getElementById('composer');
-  const input = document.getElementById('composer-input');
-  const thread = document.getElementById('thread-messages');
-  const sendBtn = document.getElementById('composer-send');
-  if (!composer || !input) return;
-
-  composer.addEventListener('focusin', () => composer.classList.add('is-expanded'));
-  composer.addEventListener('focusout', (e) => {
-    if (composer.contains(e.relatedTarget)) return;
-    if (!input.value.trim()) composer.classList.remove('is-expanded');
-  });
-  input.addEventListener('input', () => {
-    input.style.height = 'auto';
-    input.style.height = input.scrollHeight + 'px';
-    // As the textarea grows taller (LIME-10-fix13), it eats into
-    // .lime-messages's vertical space from the bottom — rescrolling to
-    // the thread's own bottom keeps the latest message in view instead
-    // of it sliding out from under the now-taller composer.
-    if (thread) thread.scrollTop = thread.scrollHeight;
-    // LIME-10-fix14: Send visually greys out when there's nothing to send.
-    if (sendBtn) sendBtn.classList.toggle('is-active', input.value.trim().length > 0);
-  });
-})();
+// LIME-10's original expandable-composer IIFE (expand-on-focus, auto-grow,
+// is-active Send) is gone — createComposer (LIME-37, above, called once
+// for #composer and once for #replies-composer) now does this for both,
+// replacing the two near-identical copies that used to live here and in
+// the reply-panel closure.
 
 // ── Shorter composer placeholder on narrow screens (LIME-12-fix4) ──
-// A <textarea> placeholder has no native ellipsis truncation the way
+// A plain textarea placeholder has no native ellipsis truncation the way
 // a single-line <input>'s does — "Say something meaningful..." simply
 // wraps onto a second line in a narrow mobile viewport, which the
 // fixed single-line collapsed height (LIME-10-fix9) then crudely
@@ -2085,15 +2384,17 @@ wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropd
 // brief's own literal CSS asked for — so this brief's other offered
 // option (shorter text via JS) is the one that actually does
 // something. Runs once at load, not on resize — the placeholder is
-// only ever visible while the textarea is empty and unfocused, a
-// state a live-resizing viewport doesn't really encounter.
+// only ever visible while the input is empty and unfocused, a state a
+// live-resizing viewport doesn't really encounter. LIME-37: the
+// composer is a contenteditable div now, with no native placeholder
+// attribute — data-placeholder (read by CSS's :empty::before) instead.
 (function () {
   if (window.innerWidth > 480) return;
   // Only the main composer's placeholder ("Say something meaningful...")
   // is long enough to wrap — the reply composer's ("Reply...") is
   // already short, nothing to shorten there.
   const input = document.getElementById('composer-input');
-  if (input) input.placeholder = 'Message...';
+  if (input) input.dataset.placeholder = 'Message...';
 })();
 
 // ── Shorter reply-composer privacy text ─────────────────────

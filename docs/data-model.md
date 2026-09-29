@@ -121,7 +121,7 @@ only ever calls the store, never the adapter directly.
 
 ### Writes (async — each returns a `Promise` of the affected record)
 
-- `sendMessage(conversationId, { content, type, metadata, replyTo })`
+- `sendMessage(conversationId, { content, type, metadata, replyTo })` — `metadata.html` (LIME-37) carries the sanitised rich-text version of `content`, omitted when the message has no formatting
 - `toggleReaction(messageId, emoji)`
 - `createConversation({ type, memberIds, name, description })`
 - `renameConversation(id, name)`
@@ -275,6 +275,50 @@ of `localStorage`:
 Nothing else changes — the store, the events, and every UI call site stay
 exactly as they are, because they were never talking to `localStorage` or
 to Supabase directly in the first place.
+
+## Message formatting (LIME-37)
+
+- **`messages.content` stays plain text** — previews (the conversation
+  list, notifications), search, and any place that just needs "what did
+  they say" read this, never the HTML. It's derived from the composer's
+  own `innerText`, trimmed.
+- **The formatted version lives in `messages.metadata.html`**, a
+  **sanitised allow-list HTML subset**: `p`, `br`, `strong`, `b`, `em`,
+  `i`, `u`, `s`, `a[href]` (`http:`, `https:` or `mailto:` only — a bare
+  `example.com` gets `https://` prepended, matching the Link toolbar's own
+  behavior; anything else strips the link down to its text), `ul`, `ol`,
+  `li`, `blockquote`, `code`, `pre`. Every other tag is either unwrapped
+  (its own children survive, re-sanitised, just not the tag itself — a
+  pasted `<div>` or `<span>` becomes plain inline content) or, for `script`
+  and `style` specifically, removed **with its content** — there's no
+  reading of "what was inside a script tag" that belongs in a message.
+  Every attribute is stripped except `href` on `a`, so a pasted `style="…"`
+  or `onerror="…"` never survives regardless of which tag it rode in on.
+  **Omitted entirely** (not stored as an empty string) when nothing in the
+  composer actually used formatting — a plain-text message has no
+  `metadata.html` key at all.
+- **The same sanitiser runs twice**: once on send (before anything is
+  stored) and again on render (before `metadata.html` is ever put in the
+  DOM) — never trust that what's already in storage is still safe, since
+  it could be old data from before a sanitiser bug was fixed, or (once a
+  real backend exists) written by a client this one doesn't control.
+  `rel="noopener noreferrer"` and `target="_blank"` are added to links at
+  render time only, never stored — they're a rendering concern, not part
+  of the message's own content.
+- **A real backend must sanitise server-side too.** This client-side
+  sanitiser protects this app's own render path; it does nothing to stop
+  a different client (or a direct API call) from writing unsanitised HTML
+  straight into `messages.metadata.html`. Once `SupabaseAdapter` exists,
+  either a database trigger or an edge function needs to run the
+  equivalent allow-list before a row is accepted — documented here rather
+  than assumed, since it's easy to ship a client-only sanitiser and call
+  message formatting "done."
+- **Why not Markdown:** underline has no Markdown form (`__x__` is
+  conventionally bold-alt, not underline, and no widely-used Markdown
+  dialect defines one) — since the brief calls for a real Underline
+  button, storing Markdown and rendering it would mean either inventing a
+  non-standard escape sequence just for this app, or dropping underline
+  entirely. Sanitised HTML has no such gap and needs no dialect decision.
 
 ## Known gaps, flagged rather than silently resolved
 
