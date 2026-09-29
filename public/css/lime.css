@@ -3142,6 +3142,151 @@ body {
   object-fit: cover;
 }
 
+/* ── Attachment album grid (LIME-41) ── a 2+ image message's own grid —
+   "one rounded bubble" per the brief (the clip/radius live on the grid
+   container, not each tile), fixed to the same 240px width the single-
+   thumbnail case above already uses so an album never reflows the bubble
+   wider than a normal photo message. Declared after .lime-message__image
+   above so .lime-album__img's own sizing wins the tie (equal, one-class
+   specificity; source order decides) over that shared class's own
+   240×180 cap — an album tile fills its own grid cell instead. */
+.lime-album {
+  display: grid;
+  gap: 2px;
+  width: 240px;
+  border-radius: var(--seed-radius-md);
+  overflow: hidden;
+}
+
+.lime-album--2 {
+  grid-template-columns: 1fr 1fr;
+  aspect-ratio: 4 / 3;
+}
+
+.lime-album--3 {
+  grid-template-columns: 1.3fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  aspect-ratio: 4 / 3;
+}
+
+.lime-album--3 .lime-album__tile:first-child {
+  grid-row: 1 / 3;
+}
+
+.lime-album--grid {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  aspect-ratio: 1 / 1;
+}
+
+.lime-album__tile {
+  position: relative;
+  display: block;
+  min-width: 0;
+  min-height: 0;
+}
+
+.lime-album__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+/* The 4th tile's own overlay when there are more images than the grid
+   shows (5+) — pointer-events: none so the click still lands on the
+   <img> beneath it, which is what the document-level lightbox listener
+   (app.js) is actually delegated off. */
+.lime-album__more-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(19, 27, 23, 0.45);
+  color: #fff;
+  font-size: var(--seed-text-lg);
+  font-weight: var(--seed-weight-semibold);
+  pointer-events: none;
+}
+
+.lime-album__gallery-label {
+  display: block;
+  margin-top: var(--seed-space-1);
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--calm-text-bold-default);
+  cursor: pointer;
+}
+
+.lime-album__gallery-label:hover {
+  text-decoration: underline;
+}
+
+.lime-message__caption {
+  margin: var(--seed-space-1) 0 0;
+  font-size: var(--seed-text-sm);
+  line-height: var(--seed-leading-relaxed);
+  color: var(--soil-text);
+  overflow-wrap: anywhere;
+}
+
+/* ── Gallery modal (LIME-41) ── opened by .lime-album__gallery-label
+   above for a 5+ image album; reuses .lime-modal-backdrop like every
+   other modal in this app (search/settings/confirm/lightbox) for the
+   blur backdrop, styled after .lime-settings' own centered-panel shell
+   (a scrollable body, not a shrink-to-content one like the lightbox). */
+.lime-gallery-modal {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(640px, calc(100vw - 64px));
+  max-height: calc(100vh - 96px);
+  background: var(--soil-bg-elevated);
+  border-radius: var(--seed-radius-lg);
+  box-shadow: var(--seed-shadow-xl);
+  z-index: var(--seed-z-modal);
+  padding: var(--seed-space-6);
+  overflow-y: auto;
+}
+
+.lime-gallery-modal.is-open {
+  display: block;
+}
+
+.lime-gallery-modal__close {
+  position: sticky;
+  top: 0;
+  float: right;
+  margin-left: var(--seed-space-3);
+}
+
+.lime-gallery-modal__grid {
+  clear: both;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--seed-space-2);
+}
+
+.lime-gallery-modal__tile {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: none;
+  max-height: none;
+  border-radius: var(--seed-radius-sm);
+  object-fit: cover;
+  cursor: pointer;
+}
+
 /* ── Voice message ── */
 .lime-message__voice {
   display: flex;

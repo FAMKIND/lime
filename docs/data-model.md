@@ -113,6 +113,7 @@ only ever calls the store, never the adapter directly.
 - `listMessages(conversationId, { threadOnly })`
 - `listReplies(messageId)`
 - `getReactions(messageId)` → `[{ emoji, count, mine }]`
+- `getAttachments(messageId)` — added in LIME-41; `[{ path, name, size, mime, width, height, position }]`, sorted by `position`. Synthesizes a single-row result from a legacy `'image'`/`'file'` message's own `metadata.path` when the message has no real `message_attachments` rows (see "Multi-attachment messages" below) — every caller uses this one function regardless of which era a message is from
 - `getConversationTitle(conversation)`
 - `getLatestActivity(conversationId)`
 - `can(action, conversation)`
@@ -121,7 +122,7 @@ only ever calls the store, never the adapter directly.
 
 ### Writes (async — each returns a `Promise` of the affected record)
 
-- `sendMessage(conversationId, { content, type, metadata, replyTo })` — `metadata.html` (LIME-37) carries the sanitised rich-text version of `content`, omitted when the message has no formatting
+- `sendMessage(conversationId, { content, type, metadata, replyTo, attachments })` — `metadata.html` (LIME-37) carries the sanitised rich-text version of `content`, omitted when the message has no formatting. `attachments` (LIME-41) is an array of `{ path, name, size, mime, width, height }` — already-uploaded files (via `uploadAttachment` below) that become that same message's album; `content`, if present alongside them, is that album's caption, not a separate message
 - `toggleReaction(messageId, emoji)`
 - `createConversation({ type, memberIds, name, description })`
 - `renameConversation(id, name)`
@@ -324,6 +325,13 @@ to Supabase directly in the first place.
 
 ## File and image attachments (LIME-38)
 
+> **Superseded by LIME-41 below** for anything sent from now on — kept
+> here because old messages sent under this design still exist and still
+> render, via the backward-compatibility mapping the next section
+> documents. The "one message per file" sending model, and `content` on
+> an attachment message always being `null`, are no longer how new
+> messages are produced.
+
 - **`messages.type` gains `'file'`** (`'image'` already existed in the
   schema, unused until now). An attachment message's `content` is always
   `null` — attachments carry no text of their own; if the user also typed
@@ -355,11 +363,13 @@ to Supabase directly in the first place.
   Storage bucket `attachments`, object path
   `<conversationId>/<messageId>/<filename>`, with storage-policy RLS
   restricted to `is_member`.
-- **Limits, enforced client-side only:** 10MB per file, up to 5 files per
-  message. Same caveat as the LIME-37 sanitiser — a real backend would
-  need to enforce these again itself (a Storage bucket size limit, an edge
-  function checking count), since nothing stops a direct API call from
-  ignoring what the client checked.
+- **Limits, enforced client-side only:** 10MB per file. Originally capped
+  at 5 files per message too; LIME-41 removes that count cap entirely (an
+  album is the point of that brief, and its own verification sends 7 in
+  one message) — only the size limit remains. Same caveat as the LIME-37
+  sanitiser either way — a real backend would need to enforce the size
+  limit again itself (a Storage bucket size limit), since nothing stops a
+  direct API call from ignoring what the client checked.
 - **Sending is deliberately simple, not one atomic multi-part message:**
   if there's typed text, it sends as its own ordinary text message first;
   then each attached file uploads and sends as **its own message**, one
@@ -371,6 +381,60 @@ to Supabase directly in the first place.
   database, not just its records) — otherwise a reset would bring back
   the original seed conversations while orphaned attachment blobs from
   the wiped session lingered on disk indefinitely.
+
+## Multi-attachment messages (LIME-41)
+
+- **New table, `message_attachments`** (schema.sql): `{ id, message_id,
+  path, name, size, mime, width, height, position, created_at }`, one row
+  per file, `position` giving display order. Supersedes LIME-38's "one
+  message per file, `metadata.path` on the message itself" — any message,
+  including one with real `content`, can now carry 0..n attachments.
+  `width`/`height` are recorded at upload time (read via a
+  `readImageDimensions(file)` helper before the file ever hits the wire)
+  so the album grid can lay itself out — and stay laid out identically
+  after a reload — without waiting for the image itself to load first.
+- **No data migration.** Old `'image'`/`'file'` messages (LIME-38 shape)
+  are left exactly as they are; they carry no `message_attachments` rows.
+  `messages.type` keeps `'image'`/`'file'` in its check constraint purely
+  to keep those old rows valid — nothing sends those values any more.
+- **Backward-compatibility mapping, the documented contract**: when
+  `getAttachments(messageId)` finds no real `message_attachments` rows for
+  a message, and that message's own `type` is `'image'` or `'file'` with a
+  `metadata.path`, it synthesizes a single-item result:
+  `[{ path: metadata.path, name: metadata.name, size: metadata.size, mime: metadata.mime, width: null, height: null, position: 0 }]`.
+  `width`/`height` come back `null` for these — no dimensions were ever
+  recorded for them — so their rendering falls back to the old
+  intrinsic-size single-thumbnail behavior rather than being forced into
+  a grid tile sized for data it doesn't have. Every reader (album
+  rendering, the lightbox, previews) calls `getAttachments` and never
+  branches on `message.type` itself, so old and new messages render
+  through the identical code path.
+- **Sending, one message for the whole pick:** attaching N files and
+  optionally typing a caption uploads all N files (`uploadAttachment`,
+  unchanged from LIME-38) and sends **one** `sendMessage` call with
+  `content` set to the caption (or `null`) and `attachments` set to the N
+  resulting `{ path, name, size, mime, width, height }` entries, `type`
+  always `'text'`. This replaces LIME-38's "typed text first, then one
+  message per file" entirely for new sends.
+- **Album rendering** (by attachment count, images only — non-image files
+  always render as file cards below the album, never inside the grid):
+  1 image is the existing single 240×180 thumbnail; 2 side-by-side; 3 one
+  large plus two stacked; 4 or more a 2×2 grid, the 4th tile carrying a
+  `+N` overlay when there are more than 4. All tiles `object-fit: cover`
+  inside one rounded bubble; the caption, if any, renders below. 5 or more
+  images additionally show an "N photos" label that opens a gallery modal
+  (a responsive grid over a blur backdrop, with its own close button)
+  rather than relying on the 2×2 tile grid alone to represent them.
+- **Lightbox scoping changes for albums**: clicking a tile from a
+  multi-attachment message opens the LIME-40 lightbox scoped to **that
+  message's own images only** (via `getAttachments(messageId)`, images
+  filtered by `mime`), not the whole conversation's images as LIME-40's
+  single-image click behavior still does.
+- **List previews** (`previewFor`/`plainPreviewFor`): caption text, if
+  present, always wins over any attachment summary. With no caption, a
+  single image still reads "Photo", a single file still reads "📎
+  filename" (unchanged from LIME-38); multiple attachments read "📷 N
+  photos", "📎 N files", or "📷 N photos, 📎 M files" for a mixed album.
 
 ## Known gaps, flagged rather than silently resolved
 

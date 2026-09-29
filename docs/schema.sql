@@ -158,6 +158,38 @@ create table message_reactions (
 -- is changed to this same rule in LIME-24b (the only change allowed there
 -- in that brief); the local adapter uses it from the start.
 
+-- ── message_attachments ──────────────────────────────────────
+-- LIME-41 supersedes LIME-38's "one message per file, metadata.path on
+-- the message itself" — any message (including one with real `content`,
+-- which becomes that album's caption) can carry 0..n attachments here.
+-- Old 'image'/'file' messages are left as-is, not migrated: they carry no
+-- row in this table, and a reader synthesizes an equivalent single-row
+-- result from their own metadata.path instead (see LimeStore.getAttachments
+-- and the backward-compat mapping documented in docs/data-model.md).
+create table message_attachments (
+  id          text primary key,
+  message_id  text not null references messages(id) on delete cascade,
+  -- Opaque object key, same rule as messages.metadata.path (LIME-38
+  -- above): never parsed, only ever handed to the adapter's own
+  -- getAttachmentUrl.
+  path        text not null,
+  name        text,
+  size        integer,
+  mime        text,
+  -- Recorded at upload time so the album grid can lay itself out (and
+  -- reserve space) before the image itself has loaded, and so a reload
+  -- never reflows the grid once it's already been laid out once.
+  width       integer,
+  height      integer,
+  -- Display order within the message — the order the files were chosen
+  -- in, not insertion order (today the same thing, but position is the
+  -- documented contract).
+  position    integer not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+create index message_attachments_message_id_position_idx on message_attachments (message_id, position);
+
 -- ── Row-level security (draft, not yet enabled) ──────────────
 -- Left as comments — RLS isn't turned on until Supabase actually backs
 -- this app (the switch checklist in docs/data-model.md covers that step).
@@ -362,3 +394,23 @@ create table message_reactions (
 --   );
 -- create policy message_reactions_delete_self on message_reactions for delete
 --   using (user_id = current_profile_id());
+--
+-- -- ── message_attachments ─────────────────────────────────────
+-- -- Same shape as message_reactions_select_member above: readable by
+-- -- anyone who can see the parent message.
+-- create policy message_attachments_select_member on message_attachments for select
+--   using (exists (
+--     select 1 from messages m
+--     where m.id = message_attachments.message_id and is_member(m.conversation_id)
+--   ));
+--
+-- -- Inserted only alongside a message you're the sender of, in a
+-- -- conversation you're a member of — mirrors messages_insert_member's own
+-- -- sender_id check rather than trusting message_id membership alone.
+-- create policy message_attachments_insert_self on message_attachments for insert
+--   with check (exists (
+--     select 1 from messages m
+--     where m.id = message_attachments.message_id
+--       and is_member(m.conversation_id)
+--       and m.sender_id = current_profile_id()
+--   ));

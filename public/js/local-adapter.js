@@ -220,6 +220,10 @@ const LocalAdapter = (function () {
       conversation_members: conversationMembers,
       messages,
       message_reactions: messageReactions,
+      // LIME-41: the seed has no attachments of its own (none of its
+      // messages carry metadata.path) — an empty array, not omitted,
+      // so callers can always assume the key exists.
+      message_attachments: [],
     };
   }
 
@@ -241,6 +245,9 @@ const LocalAdapter = (function () {
               conversation_members: snapshot.conversation_members,
               messages: snapshot.messages,
               message_reactions: snapshot.message_reactions,
+              // LIME-41: a snapshot saved before this brief landed has no
+              // such key at all — fall back to empty rather than undefined.
+              message_attachments: snapshot.message_attachments || [],
             };
           }
         }

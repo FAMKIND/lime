@@ -17,6 +17,7 @@ const LimeStore = (function () {
   let members = [];
   let messages = [];
   let reactions = [];
+  let messageAttachments = []; // LIME-41
   let currentUserId = null;
   let loggedFallback = false;
   let saveTimer = null;
@@ -40,6 +41,7 @@ const LimeStore = (function () {
         conversation_members: members,
         messages,
         message_reactions: reactions,
+        message_attachments: messageAttachments, // LIME-41
       });
     }, 100);
   }
@@ -51,6 +53,10 @@ const LimeStore = (function () {
     members = state.conversation_members;
     messages = state.messages;
     reactions = state.message_reactions;
+    // LIME-41: `|| []` — a snapshot saved before this brief landed has no
+    // such key at all; without the fallback this would be `undefined`
+    // and every array method below would throw the first time it's read.
+    messageAttachments = state.message_attachments || [];
   }
 
   // The auth seam (docs/data-model.md): reads lime-demo-session's email
@@ -233,6 +239,15 @@ const LimeStore = (function () {
 
   // ── writes (async — each resolves with the affected record) ──
 
+  // LIME-41 supersedes LIME-38's "one message per file": `attachments`
+  // (an array of { path, name, size, mime, width, height }, each already
+  // uploaded via uploadAttachment by the caller — this call only ever
+  // records the resulting rows, never touches file bytes itself) can sit
+  // on *any* message alongside real `content` — typed text is that
+  // message's own caption now, not a separate message. `type` stays
+  // 'text' for every new send regardless of whether attachments are
+  // present; 'image'/'file' are legacy values this function never
+  // produces any more, only ever read back (getAttachments below).
   function sendMessage(conversationId, options) {
     const opts = options || {};
     const message = {
@@ -247,9 +262,55 @@ const LimeStore = (function () {
       updated_at: new Date().toISOString(),
     };
     messages.push(message);
+    (opts.attachments || []).forEach((att, index) => {
+      messageAttachments.push({
+        id: crypto.randomUUID(),
+        message_id: message.id,
+        path: att.path,
+        name: att.name != null ? att.name : null,
+        size: att.size != null ? att.size : null,
+        mime: att.mime != null ? att.mime : null,
+        width: att.width != null ? att.width : null,
+        height: att.height != null ? att.height : null,
+        position: index,
+        created_at: message.created_at,
+      });
+    });
     scheduleSave();
     emit('lime:messages-changed', { conversationId, messageId: message.id, kind: opts.replyTo ? 'reply' : 'message' });
     return Promise.resolve(message);
+  }
+
+  // Sorted by position — the order attachments were actually chosen in,
+  // not insertion-into-the-array order (which happens to be the same
+  // today, but position is the real, documented contract, not an
+  // accident of push order). Falls back to synthesizing a single-row
+  // shape from a pre-LIME-41 'image'/'file' message's own metadata.path
+  // when this message has no real message_attachments rows at all — the
+  // documented backward-compatibility mapping (data-model.md), so every
+  // reader can call this one function regardless of which era a message
+  // is from, instead of branching on message.type itself.
+  function getAttachments(messageId) {
+    const rows = messageAttachments
+      .filter((a) => a.message_id === messageId)
+      .sort((a, b) => a.position - b.position);
+    if (rows.length > 0) return rows;
+    const message = getMessage(messageId);
+    if (message && (message.type === 'image' || message.type === 'file') && message.metadata && message.metadata.path) {
+      return [{
+        id: message.id + '-legacy',
+        message_id: message.id,
+        path: message.metadata.path,
+        name: message.metadata.name != null ? message.metadata.name : null,
+        size: message.metadata.size != null ? message.metadata.size : null,
+        mime: message.metadata.mime != null ? message.metadata.mime : null,
+        width: null,
+        height: null,
+        position: 0,
+        created_at: message.created_at,
+      }];
+    }
+    return [];
   }
 
   function toggleReaction(messageId, emoji) {
@@ -437,6 +498,7 @@ const LimeStore = (function () {
     listReplies,
     getMessage,
     getReactions,
+    getAttachments,
     getConversationTitle,
     getLatestActivity,
     can,

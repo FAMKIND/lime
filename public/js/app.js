@@ -433,10 +433,10 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   function addFiles(fileList) {
     hideAttachmentError();
     [...fileList].forEach((file) => {
-      if (pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE) {
-        showAttachmentError('Up to ' + MAX_ATTACHMENTS_PER_MESSAGE + ' files per message.');
-        return;
-      }
+      // LIME-41: the old 5-file-per-message cap is gone — an album (the
+      // whole point of this brief) can run well past 5 photos, and the
+      // brief's own verification sends 7 in one message. Only the
+      // per-file size limit remains.
       if (file.size > MAX_ATTACHMENT_BYTES) {
         showAttachmentError('"' + file.name + '" is over the 10MB limit.');
         return;
@@ -451,6 +451,12 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   }
 
   function removeAttachment(index) {
+    // LIME-41 fix: a size error shown while picking files (e.g. "… is
+    // over the 10MB limit") used to stay up even after the reader removed
+    // the offending chip — only the *next* addFiles call ever cleared it.
+    // Removing a chip is exactly the action that might have just fixed
+    // the error, so it clears here too.
+    hideAttachmentError();
     const removed = pendingAttachments.splice(index, 1)[0];
     if (removed && removed.previewUrl) URL.revokeObjectURL(removed.previewUrl);
     renderAttachmentChips();
@@ -534,6 +540,10 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     // LIME-38: Send is active with text OR attachments, either alone —
     // guard matches that, not "content required" the way LIME-37 left it.
     if (!content && pendingAttachments.length === 0) return;
+    // LIME-41 fix: same reasoning as removeAttachment above — an error
+    // from an earlier pick shouldn't keep showing once the reader has
+    // actually sent (with whatever files passed the check).
+    hideAttachmentError();
     const safeHtml = sanitizeHtml(input.innerHTML);
     const metadata = hasRealFormatting(safeHtml) ? { html: safeHtml } : undefined;
     const attachments = pendingAttachments.map((p) => p.file);
@@ -603,9 +613,8 @@ function formatDuration(seconds) {
   return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 }
 
-// ── Attachments (LIME-38) ────────────────────────────────
+// ── Attachments (LIME-38, per-file count cap removed by LIME-41) ──
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-const MAX_ATTACHMENTS_PER_MESSAGE = 5;
 
 function formatFileSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
@@ -613,14 +622,62 @@ function formatFileSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+// LIME-41: recorded once at upload time — not deferred to whenever the
+// <img> itself first paints — so the album grid can lay itself out (and
+// stay laid out identically after a reload) without ever waiting on a
+// real image load. Resolves { width, height }, or null for a non-image
+// file (nothing to measure) or one the browser can't decode.
+function readImageDimensions(file) {
+  if (!file.type || !file.type.startsWith('image/')) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    img.src = url;
+  });
+}
+
+// LIME-41: an attachment counts as a photo by its recorded mime — the one
+// check every attachment-aware reader below uses (album membership,
+// lightbox scoping, preview text) so none of them ever branch on
+// message.type themselves.
+function isImageAttachment(att) {
+  return !!(att.mime && att.mime.startsWith('image/'));
+}
+
+// LIME-41: the attachment-only half of previewFor/plainPreviewFor below —
+// "Photo"/"📎 filename" for the single-attachment case (matches LIME-38's
+// own wording exactly, legacy or not), "📷 N photos"/"📎 N files"/both
+// joined for a real multi-attachment album.
+function attachmentSummaryPlain(attachments) {
+  const images = attachments.filter(isImageAttachment);
+  const files = attachments.filter((a) => !isImageAttachment(a));
+  if (attachments.length === 1) {
+    return images.length === 1 ? 'Photo' : '📎 ' + (files[0].name || 'File');
+  }
+  const parts = [];
+  if (images.length > 0) parts.push('📷 ' + images.length + (images.length === 1 ? ' photo' : ' photos'));
+  if (files.length > 0) parts.push('📎 ' + files.length + (files.length === 1 ? ' file' : ' files'));
+  return parts.join(', ');
+}
+
 function previewFor(message) {
   if (!message) return '';
   if (message.type === 'voice') return '<span class="dew dew-microphone"></span><span class="lime-contact__preview-text">Voice message</span>';
   if (message.type === 'location') return '<span class="dew dew-camera-on"></span><span class="lime-contact__preview-text">' + escapeHtml(message.metadata && message.metadata.place_name || 'Location') + '</span>';
-  // LIME-38, per the brief's own two examples: an image is just "Photo";
-  // any other file shows its name behind a paperclip.
-  if (message.type === 'image') return '<span class="lime-contact__preview-text">Photo</span>';
-  if (message.type === 'file') return '<span class="lime-contact__preview-text">📎 ' + escapeHtml(message.metadata && message.metadata.name || 'File') + '</span>';
+  // LIME-41: caption text always wins over an attachment summary — a
+  // legacy 'image'/'file' message's own content is always null (LIME-38),
+  // so this falls straight through to the attachment branch for those.
+  if (message.content) return '<span class="lime-contact__preview-text">' + escapeHtml(message.content) + '</span>';
+  const attachments = LimeStore.getAttachments(message.id);
+  if (attachments.length > 0) return '<span class="lime-contact__preview-text">' + escapeHtml(attachmentSummaryPlain(attachments)) + '</span>';
   return '<span class="lime-contact__preview-text">' + escapeHtml(message.content || '') + '</span>';
 }
 
@@ -630,8 +687,9 @@ function plainPreviewFor(message) {
   if (!message) return '';
   if (message.type === 'voice') return 'Voice message';
   if (message.type === 'location') return message.metadata && message.metadata.place_name || 'Location';
-  if (message.type === 'image') return 'Photo';
-  if (message.type === 'file') return '📎 ' + (message.metadata && message.metadata.name || 'File');
+  if (message.content) return message.content;
+  const attachments = LimeStore.getAttachments(message.id);
+  if (attachments.length > 0) return attachmentSummaryPlain(attachments);
   return message.content || '';
 }
 
@@ -651,66 +709,114 @@ function messageBodyHtml(message, textClass) {
   return '<p class="' + cls + '">' + escapeHtml(message.content || '') + '</p>';
 }
 
-// LIME-38: an 'image'/'file' message's body — shared the same way
-// messageBodyHtml above is, between the main thread and the reply panel.
-// getAttachmentUrl is async (an IndexedDB read locally; a network fetch
-// against real Supabase Storage), so this renders a placeholder
-// synchronously (data-attachment-path, no real src/href yet) — paintAttachments
-// below resolves the real URL afterward, the same two-step pattern
+// LIME-41: a single image tile — shared by the 1-image case (no grid
+// wrapper, the existing 240×180 thumbnail) and each tile of a real album
+// grid (albumHtml below, which adds its own sizing class). `index` is
+// this attachment's position within the *image-only* list for its
+// message — what the lightbox click handler below reads back
+// (data-attachment-index) to know which image within that message's own
+// scope was actually clicked. getAttachmentUrl is async, so this renders
+// a placeholder synchronously (data-attachment-path, no real src yet) —
+// paintAttachments below resolves it after, the same two-step pattern
 // paintAvatar already uses for avatars inserted after the initial load.
-function attachmentContentHtml(message) {
-  const meta = message.metadata || {};
-  const path = escapeHtml(meta.path || '');
-  const name = escapeHtml(meta.name || 'file');
-  if (message.type === 'image') {
-    return '<img class="lime-message__image" data-attachment-path="' + path + '" alt="' + name + '">';
-  }
+function imageTileHtml(att, index, extraClass) {
+  const path = escapeHtml(att.path || '');
+  const name = escapeHtml(att.name || '');
+  return '<img class="lime-message__image' + (extraClass ? ' ' + extraClass : '') + '" data-attachment-path="' + path + '" data-attachment-index="' + index + '" alt="' + name + '">';
+}
+
+function fileCardHtml(att) {
+  const path = escapeHtml(att.path || '');
+  const name = escapeHtml(att.name || 'file');
   return '<div class="lime-message__file-card">'
     + '<span class="lime-message__file-icon"><span class="dew dew-file"></span></span>'
     + '<div class="lime-message__file-meta">'
     + '<span class="lime-message__file-name">' + name + '</span>'
-    + '<span class="lime-message__file-size">' + formatFileSize(meta.size || 0) + '</span>'
+    + '<span class="lime-message__file-size">' + formatFileSize(att.size || 0) + '</span>'
     + '</div>'
     + '<a class="lime-message__file-download" data-attachment-path="' + path + '" data-attachment-download="' + name + '" download="' + name + '" title="Download"><span class="dew dew-download"></span></a>'
     + '</div>';
 }
 
-// LIME-47: the reply panel's own quote used to show only "Photo"/"📎
-// filename" (plainPreviewFor's caption text, still rendered alongside
-// this — unchanged) with no actual media, making it hard to tell what's
-// being replied to. Reuses the exact same attachment read the thread
-// itself uses (message.metadata.path + getAttachmentUrl, via
-// paintAttachments — no separate read path to keep in sync). Returns an
-// array, not a single attachment, even though today's data model
-// (LIME-38: one message per file) never produces more than one — so this
-// already renders correctly, "+N" included, whenever LIME-41 adds real
-// multi-attachment messages, not just today's always-one-or-zero case.
-function quoteAttachments(message) {
-  if (message.type === 'image' || message.type === 'file') {
-    return [{ type: message.type, metadata: message.metadata || {} }];
+// LIME-41: a message's full attachment set (images as an album grid,
+// non-image files as cards below it, any typed text as a caption below
+// that) — supersedes LIME-38's one-attachment-per-message
+// attachmentContentHtml. `attachments` is always LimeStore.getAttachments
+// (message.id)'s own return, which already carries the backward-compat
+// synthesis for a pre-LIME-41 message — this function never branches on
+// message.type itself. `wrap` controls whether the media/file blocks get
+// the main thread's own .lime-message__content bubble (true) or render
+// bare the way the (already compact, no-bubble) reply list always used
+// attachmentContentHtml's own output (false) — matches how each context
+// already differed before this brief.
+//
+// Grid layout per the brief's own counts: 1 keeps the single 240×180
+// thumbnail (no grid); 2 side-by-side; 3 one large + two stacked; 4+ a
+// 2×2 grid, the 4th tile carrying a "+N" overlay (images beyond the 4
+// shown) once there are more than 4. 5+ also adds an "N photos" label
+// that opens the gallery modal (openGalleryModal below) — the 2×2 grid
+// alone can't represent every image in a large album on its own.
+function albumHtml(message, attachments, options) {
+  const wrap = !!(options && options.wrap);
+  const images = attachments.filter(isImageAttachment);
+  const files = attachments.filter((a) => !isImageAttachment(a));
+  let out = '';
+  if (images.length === 1) {
+    const tile = imageTileHtml(images[0], 0, '');
+    out += wrap ? '<div class="lime-message__content lime-message__content--media">' + tile + '</div>' : tile;
+  } else if (images.length > 1) {
+    const sizeClass = images.length === 2 ? 'lime-album--2' : images.length === 3 ? 'lime-album--3' : 'lime-album--grid';
+    const shown = images.slice(0, 4);
+    const overlayCount = images.length - 4;
+    const tiles = shown.map((att, i) => {
+      const overlay = (images.length > 4 && i === 3)
+        ? '<span class="lime-album__more-overlay" aria-hidden="true">+' + overlayCount + '</span>'
+        : '';
+      return '<span class="lime-album__tile">' + imageTileHtml(att, i, 'lime-album__img') + overlay + '</span>';
+    }).join('');
+    const grid = '<div class="lime-album ' + sizeClass + '">' + tiles + '</div>';
+    out += wrap ? '<div class="lime-message__content lime-message__content--media">' + grid + '</div>' : grid;
+    if (images.length >= 5) {
+      out += '<button type="button" class="lime-album__gallery-label" data-gallery-message-id="' + escapeHtml(message.id) + '">' + images.length + ' photos</button>';
+    }
   }
-  return [];
+  if (message.content) {
+    out += '<p class="lime-message__caption">' + escapeHtml(message.content) + '</p>';
+  }
+  files.forEach((att) => {
+    const card = fileCardHtml(att);
+    out += wrap ? '<div class="lime-message__content">' + card + '</div>' : card;
+  });
+  return out;
 }
 
+// LIME-47, updated for LIME-41's real multi-attachment data: the reply
+// panel's own quote used to show only "Photo"/"📎 filename"
+// (plainPreviewFor's caption text, still rendered alongside this —
+// unchanged) with no actual media. Reads LimeStore.getAttachments
+// directly now rather than the old message-type-only quoteAttachments —
+// same backward-compat synthesis, same "+N" thumbnail-overlay design
+// this was already built for, now exercised by a real album instead of
+// only ever a single legacy attachment.
 function quoteMediaHtml(message) {
-  const attachments = quoteAttachments(message);
+  const attachments = LimeStore.getAttachments(message.id);
   if (attachments.length === 0) return '';
-  const first = attachments[0];
-  const path = escapeHtml(first.metadata.path || '');
-  if (first.type === 'image') {
+  const images = attachments.filter(isImageAttachment);
+  if (images.length > 0) {
+    const path = escapeHtml(images[0].path || '');
     // lime-message__image (also) — the existing document-level lightbox
     // click handler is delegated off that exact class, so a click here
     // opens it for free; lime-replies-panel__quote-thumb only overrides
     // the size (48px, not the thread bubble's 240×180 max).
-    const more = attachments.length > 1
-      ? '<span class="lime-replies-panel__quote-thumb-more">+' + (attachments.length - 1) + '</span>'
+    const more = images.length > 1
+      ? '<span class="lime-replies-panel__quote-thumb-more">+' + (images.length - 1) + '</span>'
       : '';
     return '<div class="lime-replies-panel__quote-media">'
-      + '<img class="lime-message__image lime-replies-panel__quote-thumb" data-attachment-path="' + path + '" alt="">'
+      + '<img class="lime-message__image lime-replies-panel__quote-thumb" data-attachment-path="' + path + '" data-attachment-index="0" alt="">'
       + more
       + '</div>';
   }
-  const name = escapeHtml(first.metadata.name || 'file');
+  const name = escapeHtml(attachments[0].name || 'file');
   return '<div class="lime-replies-panel__quote-file">'
     + '<span class="dew dew-file"></span>'
     + '<span class="lime-replies-panel__quote-file-name">' + name + '</span>'
@@ -1032,9 +1138,12 @@ function initMessagesList() {
         + '</div>'
         + '</div>';
     }
-    if (message.type === 'image' || message.type === 'file') {
-      const mediaClass = message.type === 'image' ? ' lime-message__content--media' : '';
-      return '<div class="lime-message__content' + mediaClass + '">' + attachmentContentHtml(message) + '</div>';
+    // LIME-41: replaces the old message.type === 'image'/'file' branch —
+    // getAttachments already carries the backward-compat synthesis for
+    // those legacy messages, so a non-empty result covers both eras.
+    const attachments = LimeStore.getAttachments(message.id);
+    if (attachments.length > 0) {
+      return albumHtml(message, attachments, { wrap: true });
     }
     return '<div class="lime-message__content">' + messageBodyHtml(message) + '</div>';
   }
@@ -1370,25 +1479,25 @@ function initMessagesList() {
           threadSticky.pinToBottom(); // LIME-39: your own message always scrolls into view, and re-pins for any attachment inside it that loads afterward
         }
 
-        // LIME-38: text first (if any), then one message per attachment,
-        // in order — sequential (not Promise.all), so upload/send order
-        // is guaranteed and each message's created_at reflects a real,
-        // increasing send order rather than whichever upload happened to
-        // finish first.
-        let chain = Promise.resolve();
-        if (content) {
-          chain = chain.then(() => LimeStore.sendMessage(conversationId, { content, metadata }).then(appendMessage));
-        }
-        (attachments || []).forEach((file) => {
-          chain = chain.then(() => LimeStore.uploadAttachment(file, { conversationId }).then(({ path }) => {
-            const isImage = file.type.startsWith('image/');
-            return LimeStore.sendMessage(conversationId, {
-              type: isImage ? 'image' : 'file',
-              metadata: { name: file.name, size: file.size, mime: file.type, path },
-            });
-          }).then(appendMessage));
-        });
-        return chain.catch(console.error);
+        // LIME-41 supersedes LIME-38's "text first, then one message per
+        // attachment": every file uploads (and has its dimensions read),
+        // then a single sendMessage carries the caption plus the whole
+        // attachments array — one message, not N+1. Upload order doesn't
+        // matter here (Promise.all preserves array order regardless of
+        // which upload actually finishes first).
+        const files = attachments || [];
+        return Promise.all(files.map((file) => Promise.all([
+          LimeStore.uploadAttachment(file, { conversationId }),
+          readImageDimensions(file),
+        ]).then(([{ path }, dims]) => ({
+          path,
+          name: file.name,
+          size: file.size,
+          mime: file.type,
+          width: dims ? dims.width : null,
+          height: dims ? dims.height : null,
+        })))).then((atts) => LimeStore.sendMessage(conversationId, { content: content || null, metadata, attachments: atts }).then(appendMessage))
+          .catch(console.error);
       },
     });
   }
@@ -2476,6 +2585,12 @@ function renderCrumbs() {
   let currentReplyParentId = null;
 
   function replyHtml(message, sender) {
+    // LIME-41: replaces the old message.type === 'image'/'file' branch,
+    // same reasoning as the main thread's contentHtml — a non-empty
+    // getAttachments covers both a real album and a legacy single
+    // attachment. wrap: false matches attachmentContentHtml's own old
+    // unwrapped output here (the reply list has no message bubble chrome).
+    const replyAttachments = LimeStore.getAttachments(message.id);
     return '<div class="lime-reply" data-message-id="' + message.id + '">'
       + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '" data-profile-id="' + escapeHtml(sender.id) + '"></span>'
       + '<div class="lime-reply__col">'
@@ -2483,7 +2598,7 @@ function renderCrumbs() {
       + '<span class="lime-reply__sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<span class="lime-reply__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
-      + (message.type === 'image' || message.type === 'file' ? attachmentContentHtml(message) : messageBodyHtml(message, 'lime-reply__text'))
+      + (replyAttachments.length > 0 ? albumHtml(message, replyAttachments, { wrap: false }) : messageBodyHtml(message, 'lime-reply__text'))
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '</div>'
       + '<div class="lime-message__actions">'
@@ -2600,24 +2715,23 @@ function renderCrumbs() {
         // has no separate sendReply) — it already emits
         // lime:messages-changed, which the main list's own listener picks
         // up to re-sort; no manual event dispatch needed here the way the
-        // old lime:activity one was. LIME-38: text first, then one
-        // message per attachment, same sequential reasoning as the main
-        // composer's own onSend above.
-        let chain = Promise.resolve();
-        if (content) {
-          chain = chain.then(() => LimeStore.sendMessage(parent.conversation_id, { content, metadata, replyTo: parentId }).then(afterSend));
-        }
-        (attachments || []).forEach((file) => {
-          chain = chain.then(() => LimeStore.uploadAttachment(file, { conversationId: parent.conversation_id }).then(({ path }) => {
-            const isImage = file.type.startsWith('image/');
-            return LimeStore.sendMessage(parent.conversation_id, {
-              type: isImage ? 'image' : 'file',
-              metadata: { name: file.name, size: file.size, mime: file.type, path },
-              replyTo: parentId,
-            });
-          }).then(afterSend));
-        });
-        return chain.catch(console.error);
+        // old lime:activity one was. LIME-41 supersedes LIME-38's "text
+        // first, then one message per attachment" — one message carries
+        // the caption and the whole attachments array, same reasoning as
+        // the main composer's own onSend above.
+        const files = attachments || [];
+        return Promise.all(files.map((file) => Promise.all([
+          LimeStore.uploadAttachment(file, { conversationId: parent.conversation_id }),
+          readImageDimensions(file),
+        ]).then(([{ path }, dims]) => ({
+          path,
+          name: file.name,
+          size: file.size,
+          mime: file.type,
+          width: dims ? dims.width : null,
+          height: dims ? dims.height : null,
+        })))).then((atts) => LimeStore.sendMessage(parent.conversation_id, { content: content || null, metadata, replyTo: parentId, attachments: atts }).then(afterSend))
+          .catch(console.error);
       },
     });
   }
@@ -2989,12 +3103,21 @@ const lightboxEls = {
   nextBtn: document.getElementById('lightbox-next'),
 };
 let lightboxPreviouslyFocused = null;
-// LIME-40: the current conversation's own images, chronological
-// (LimeStore.listMessages' own sort order — includes replies, not just
-// the main thread, since an attachment can be sent as either), and
-// which one is open. Recomputed fresh on every open, not cached, so a
-// message sent while the lightbox is closed is always reflected next
-// time it opens.
+// LIME-40, scoping changed by LIME-41: a flat list of *attachments*
+// (`{ path, name, ... }`, LimeStore.getAttachments' own shape), not
+// messages — a message can now carry several. Recomputed fresh on every
+// open, not cached, so a message sent while the lightbox is closed is
+// always reflected next time it opens.
+//
+// Two different scopes, chosen per click (see the document click
+// listener below): a message with 2+ images of its own scopes to just
+// that message's images (an album's tiles open only onto each other,
+// per the brief); a message with 0 or 1 image of its own — a legacy
+// single-attachment message, or a new message that just happens to
+// carry one — keeps LIME-40's original whole-conversation scope,
+// flattened across every message's own images (chronological, via
+// LimeStore.listMessages' own sort order — includes replies, since an
+// attachment can be sent as either).
 let lightboxImages = [];
 let lightboxIndex = 0;
 
@@ -3014,16 +3137,15 @@ function lightboxUpdateNav() {
 // since navigating to a neighbor there's no guarantee a painted
 // thumbnail for it even exists on screen right now.
 function lightboxShow(index) {
-  const message = lightboxImages[index];
-  if (!message) return;
+  const att = lightboxImages[index];
+  if (!att) return;
   lightboxIndex = index;
-  const path = message.metadata && message.metadata.path;
-  if (path) {
-    LimeStore.getAttachmentUrl(path).then((url) => {
+  if (att.path) {
+    LimeStore.getAttachmentUrl(att.path).then((url) => {
       if (lightboxEls.img) lightboxEls.img.src = url;
     }).catch(console.error);
   }
-  if (lightboxEls.img) lightboxEls.img.alt = (message.metadata && message.metadata.name) || '';
+  if (lightboxEls.img) lightboxEls.img.alt = att.name || '';
   lightboxUpdateNav();
 }
 
@@ -3053,6 +3175,17 @@ const lightboxModal = lightboxEls.modal && lightboxEls.backdrop
 document.addEventListener('click', (e) => {
   const thumb = e.target.closest('.lime-message__image');
   if (!thumb || !lightboxModal || !lightboxEls.img) return;
+  // LIME-41: a gallery-modal tile is also a .lime-message__image (so it
+  // opens the lightbox through this exact same delegated path, no
+  // separate wiring) — but leaving the gallery modal open *underneath*
+  // the lightbox means both modals' own createModal-installed Escape
+  // listeners fire on a single Escape press, closing both at once
+  // (confirmed live: pressing Escape in the lightbox silently closed the
+  // gallery modal behind it too, breaking a return trip to the grid).
+  // Closing the gallery modal here — a hand-off to the lightbox, not a
+  // real stack — avoids that entirely; harmless no-op when it wasn't
+  // open (galleryModal.close() is idempotent).
+  if (galleryModal) galleryModal.close();
   lightboxPreviouslyFocused = document.activeElement;
   // The clicked thumbnail's own already-resolved src shows instantly —
   // no need to wait on a second getAttachmentUrl round trip for the
@@ -3063,11 +3196,26 @@ document.addEventListener('click', (e) => {
   const container = thumb.closest('[data-message-id]');
   const messageId = container && container.dataset.messageId;
   const message = messageId && LimeStore.getMessage(messageId);
+  const clickedIndex = Number(thumb.dataset.attachmentIndex || 0);
   if (message) {
-    lightboxImages = LimeStore.listMessages(message.conversation_id)
-      .filter((m) => m.type === 'image' && m.metadata && m.metadata.path);
-    const foundIndex = lightboxImages.findIndex((m) => m.id === messageId);
-    lightboxIndex = foundIndex === -1 ? 0 : foundIndex;
+    const ownImages = LimeStore.getAttachments(message.id).filter(isImageAttachment);
+    if (ownImages.length > 1) {
+      // LIME-41: an album's own tiles open scoped to just that message's
+      // images, not the whole conversation's — the brief's own "clicking
+      // any tile opens the lightbox scoped to that message's own images."
+      lightboxImages = ownImages;
+      lightboxIndex = Math.min(clickedIndex, ownImages.length - 1);
+    } else {
+      // LIME-40's original whole-conversation scope, unchanged for a
+      // message with 0 or 1 image of its own — flattened across every
+      // message's own images so an album sitting alongside single-image
+      // sends in the same conversation still contributes all of its
+      // images here, not just a placeholder single entry.
+      lightboxImages = LimeStore.listMessages(message.conversation_id)
+        .flatMap((m) => LimeStore.getAttachments(m.id).filter(isImageAttachment).map((att) => Object.assign({}, att, { _messageId: m.id })));
+      const foundIndex = lightboxImages.findIndex((att) => att._messageId === messageId);
+      lightboxIndex = foundIndex === -1 ? 0 : foundIndex;
+    }
   } else {
     // No message context resolvable (shouldn't happen for a real
     // attachment thumbnail, but fail to "just this one image, no nav"
@@ -3091,6 +3239,50 @@ document.addEventListener('keydown', (e) => {
   if (!lightboxEls.modal || !lightboxEls.modal.classList.contains('is-open')) return;
   if (e.key === 'ArrowLeft' && lightboxIndex > 0) { e.preventDefault(); lightboxShow(lightboxIndex - 1); }
   else if (e.key === 'ArrowRight' && lightboxIndex < lightboxImages.length - 1) { e.preventDefault(); lightboxShow(lightboxIndex + 1); }
+});
+
+// ── Gallery modal (LIME-41) ───────────────────────────────
+// One static instance, same reuse-per-call pattern as the lightbox above
+// — opened by an album's own "N photos" label (albumHtml, data-gallery-
+// message-id) for a message with 5+ images, since the 2×2 grid alone
+// can't represent a large album. Each tile in it carries the exact same
+// class/data-attachment-path/data-attachment-index/data-message-id shape
+// as a thread album tile — the document-level lightbox click listener
+// above is delegated off .lime-message__image with no knowledge of which
+// container it lives in, so a gallery tile opens the lightbox (scoped to
+// this same message, since it's still >1 image) for free, no separate
+// wiring needed.
+const galleryModalEls = {
+  backdrop: document.getElementById('gallery-modal-backdrop'),
+  modal: document.getElementById('gallery-modal'),
+  closeBtn: document.getElementById('gallery-modal-close'),
+  grid: document.getElementById('gallery-modal-grid'),
+};
+
+const galleryModal = galleryModalEls.modal && galleryModalEls.backdrop
+  ? createModal({
+      backdrop: galleryModalEls.backdrop,
+      modal: galleryModalEls.modal,
+      closeBtn: galleryModalEls.closeBtn,
+      onBeforeClose: () => { if (galleryModalEls.grid) galleryModalEls.grid.innerHTML = ''; return true; },
+      onOpen: () => { if (galleryModalEls.closeBtn) galleryModalEls.closeBtn.focus(); },
+    })
+  : null;
+
+function openGalleryModal(messageId) {
+  if (!galleryModal || !galleryModalEls.grid) return;
+  const images = LimeStore.getAttachments(messageId).filter(isImageAttachment);
+  galleryModalEls.grid.innerHTML = images.map((att, i) =>
+    '<img class="lime-message__image lime-gallery-modal__tile" data-message-id="' + escapeHtml(messageId) + '" data-attachment-path="' + escapeHtml(att.path || '') + '" data-attachment-index="' + i + '" alt="' + escapeHtml(att.name || '') + '">'
+  ).join('');
+  paintAttachments(galleryModalEls.grid);
+  galleryModal.open();
+}
+
+document.addEventListener('click', (e) => {
+  const label = e.target.closest('[data-gallery-message-id]');
+  if (!label) return;
+  openGalleryModal(label.dataset.galleryMessageId);
 });
 
 // ── Nav search → global modal ────────────────────────────
