@@ -1429,19 +1429,20 @@ body {
   border-color: var(--bad-bg-bold-active);
 }
 
-/* LIME-38: full-size image preview — one static instance (same reuse
-   pattern as .lime-confirm-dialog above), .lime-modal-backdrop supplies
-   the blur backdrop the brief asks for.
+/* LIME-38: full-size image preview ("the viewer") — one static instance
+   (same reuse pattern as .lime-confirm-dialog above), .lime-modal-backdrop
+   supplies the blur backdrop the brief asks for.
    LIME-40: max-width/height widened from -64px to -128px/-96px per the
-   brief's own explicit numbers (room for the close button's own corner
-   inset plus, on narrower viewports, the fixed-to-viewport prev/next
-   arrows beside it, without either ever overlapping the image itself).
-   LIME-40-fix: display:flex + flex-direction:column instead of
-   display:block — the bar now stacks above the image as a real
-   in-flow sibling, not something positioned over it. align-items
-   defaults to stretch, so the bar (below) stretches to match the
-   image's own rendered width automatically — no separate measurement
-   needed to keep the bar's edges aligned with the image's. */
+   brief's own explicit numbers.
+   LIME-41-fix: back to display:block (LIME-40-fix's flex column, one
+   shared bar above the image, is gone) — close/back/counter are each
+   independently position:absolute against .lime-lightbox itself (which
+   .position:fixed already establishes as their containing block; no
+   extra position:relative needed), sitting just OUTSIDE the image's own
+   box on each of three sides rather than sharing one full-width bar.
+   Per the user's own later QA: close at the image's top-right corner,
+   "back to all photos" mirrors it at the top-left, the counter centred
+   below — not a bar spanning the image's whole width. */
 .lime-lightbox {
   display: none;
   position: fixed;
@@ -1451,78 +1452,78 @@ body {
   max-width: calc(100vw - 128px);
   max-height: calc(100vh - 96px);
   z-index: var(--seed-z-modal);
-  flex-direction: column;
-  gap: var(--seed-space-2);
 }
 
 .lime-lightbox.is-open {
-  display: flex;
-}
-
-/* LIME-40-fix: the bar's own height (a 40px button, vertically centred)
-   plus the column's gap above is reserved out of the image's own
-   max-height budget below, so bar + gap + image can never together
-   exceed the outer .lime-lightbox max-height above — the bar can never
-   be pushed off-screen by a tall image, ruling out LIME-40's original
-   bug (and this fix's own predecessor bug, a translucent control sitting
-   ON the image) by construction rather than by positioning tricks. */
-.lime-lightbox__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  height: 40px;
+  display: block;
 }
 
 .lime-lightbox__img {
   display: block;
   max-width: calc(100vw - 128px);
-  /* 96px outer margin, minus the bar's own 40px and the column gap
-     (--seed-space-2, 8px) reserved above it — see .lime-lightbox__bar. */
-  max-height: calc(100vh - 96px - 40px - var(--seed-space-2));
+  /* 96px outer margin, minus a 52px reservation above (the 40px close/
+     back buttons plus a 12px gap) and a 36px reservation below (the
+     counter pill plus a 12px gap) — both controls now sit outside the
+     image on opposite edges, so both need their own guaranteed space,
+     not just one shared reservation the way LIME-40-fix's single bar did. */
+  max-height: calc(100vh - 96px - 52px - 36px);
   border-radius: var(--seed-radius-lg);
   box-shadow: var(--seed-shadow-xl);
 }
 
-/* LIME-40-fix: a solid, opaque 40px round target — the user's own QA
-   ("not accessible on hover... needs to be on the outside of the image,
-   not on top of it") against the LIME-40 version, a translucent
-   rgba(19,27,23,0.55) × inset into the image's own dark corner, nearly
-   invisible on a dark photo. --soil-bg-elevated/--soil-text are the same
-   solid-panel tokens the app's own modals already sit on (settings,
-   confirm dialog) — this button now reads as a real button on its own
-   surface, not a marking laid over someone else's photo.
-   The border is load-bearing, not decorative: measured live (a real
-   pixel sample of the button's own fill against the backdrop behind it,
-   not just a token comparison), --soil-bg-elevated alone (an
-   near-white surface) against the blurred backdrop's own light tint
-   comes out to only ~1.4:1 — nowhere near the brief's required 3:1
-   non-text contrast. --calm-border-bold-default measured ~6.5:1 against
-   that same backdrop, comfortably clearing it; box-sizing: border-box
-   keeps the button's own footprint at exactly 40px with the border
-   included, not 43px. */
-.lime-lightbox__close {
+/* LIME-41-fix: no border (removed per the user's own QA) — a soft
+   --seed-shadow-md separates the control from the blurred backdrop
+   instead. Safe for accessibility specifically because the *icon*
+   itself, not the button's edge, is what needs to read clearly: a dark
+   --soil-text glyph on a --soil-bg-elevated (near-white) fill measures
+   comfortably past 3:1 (reported in TEND.md) regardless of the
+   backdrop, since that contrast never touches the backdrop color at all
+   — only the border's own removal did, and the border was never what
+   made the icon itself legible. */
+.lime-lightbox__close,
+.lime-lightbox__back {
   box-sizing: border-box;
+  position: absolute;
+  bottom: calc(100% + var(--seed-space-3));
   width: 40px;
   height: 40px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid var(--calm-border-bold-default);
+  border: none;
   border-radius: var(--seed-radius-full);
   background: var(--soil-bg-elevated);
   color: var(--soil-text);
-  box-shadow: var(--seed-shadow-sm);
+  box-shadow: var(--seed-shadow-md);
   cursor: pointer;
   transition: background 80ms ease;
+}
+
+.lime-lightbox__close {
+  right: 0;
+}
+
+.lime-lightbox__back {
+  left: 0;
+}
+
+.lime-lightbox__back svg {
+  width: 16px;
+  height: 16px;
+}
+
+.lime-lightbox__close[hidden],
+.lime-lightbox__back[hidden] {
+  display: none;
 }
 
 .lime-lightbox__close .dew {
   font-size: 18px;
 }
 
-.lime-lightbox__close:hover {
+.lime-lightbox__close:hover,
+.lime-lightbox__back:hover {
   background: var(--calm-bg-subtle-hover);
 }
 
@@ -1530,7 +1531,8 @@ body {
    which only swap the background) — the brief explicitly calls for one
    here, since a modal control reachable only by Tab needs a keyboard
    user to be able to actually see where focus landed. */
-.lime-lightbox__close:focus-visible {
+.lime-lightbox__close:focus-visible,
+.lime-lightbox__back:focus-visible {
   outline: 2px solid var(--calm-border-bold-default);
   outline-offset: 2px;
 }
@@ -1538,17 +1540,21 @@ body {
 /* LIME-40: the "N / M" counter — shown only alongside the arrows (more
    than one image in this conversation), toggled via the same [hidden]
    attribute JS already uses for the arrows themselves.
-   LIME-40-fix: moved into the bar (was position:absolute over the image's
-   own bottom edge) — same solid/opaque treatment as the close button
-   now, for the same reason. */
+   LIME-41-fix: centred just below the image (was inside the LIME-40-fix
+   bar, above it) — no border, same --seed-shadow-md treatment as the
+   close/back buttons now. */
 .lime-lightbox__counter {
+  position: absolute;
+  top: calc(100% + var(--seed-space-3));
+  left: 50%;
+  transform: translateX(-50%);
   background: var(--soil-bg-elevated);
   color: var(--soil-text);
   font-size: var(--seed-text-xs);
   font-weight: var(--seed-weight-semibold);
   padding: 4px 12px;
   border-radius: var(--seed-radius-full);
-  box-shadow: var(--seed-shadow-sm);
+  box-shadow: var(--seed-shadow-md);
 }
 
 .lime-lightbox__counter[hidden] {
@@ -1560,8 +1566,9 @@ body {
    the image's own box (which could be far narrower than the viewport
    for a small image), so these are position:fixed against the window
    the same way .lime-lightbox itself is, not nested inside it.
-   LIME-40-fix: same solid/opaque 40px treatment as the bar's own close
-   button, for visual consistency and the same contrast reasoning. */
+   LIME-41-fix: no border, same --seed-shadow-md treatment as
+   close/back/counter, for the same reasoning and the same measured
+   result (a dark icon on a near-white fill, unrelated to the backdrop). */
 .lime-lightbox__nav {
   position: fixed;
   top: 50%;
@@ -1573,14 +1580,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Same load-bearing border as .lime-lightbox__close above, same
-     measured reasoning — the arrows sit on the identical blurred
-     backdrop. */
-  border: 1.5px solid var(--calm-border-bold-default);
+  border: none;
   border-radius: var(--seed-radius-full);
   background: var(--soil-bg-elevated);
   color: var(--soil-text);
-  box-shadow: var(--seed-shadow-sm);
+  box-shadow: var(--seed-shadow-md);
   cursor: pointer;
   transition: background 80ms ease;
 }
@@ -1615,6 +1619,96 @@ body {
 
 .lime-lightbox__nav--next {
   right: var(--seed-space-6);
+}
+
+/* ─────────────────────────────────────────────────────
+   PHOTO WALL (LIME-41-fix) — a full-screen, Pinterest-style masonry
+   layer replacing LIME-41's gallery card modal. No white card: sits
+   directly over the shared blurred backdrop, so --surface-bg here
+   matches that backdrop's own literal value (lime.css's own
+   .lime-modal-backdrop background) rather than any panel color — the
+   LIME-46 fade-frame system's own edge fades need to blend into
+   *something*, and the backdrop tint is genuinely what's behind them
+   here, not a solid panel the way every other fade-frame in this app
+   sits on.
+───────────────────────────────────────────────────── */
+.lime-photo-wall {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: var(--seed-z-modal);
+  --surface-bg: rgba(19, 27, 23, 0.12);
+}
+
+.lime-photo-wall.is-open {
+  display: block;
+}
+
+/* Same corner as the viewer's own close button (top-right, outside the
+   content) — but here "the content" is the whole viewport, not a single
+   photo, so this is fixed to the viewport's own edge directly rather
+   than positioned relative to any one tile. */
+.lime-photo-wall > .lime-lightbox__close {
+  position: fixed;
+  top: var(--seed-space-4);
+  right: var(--seed-space-4);
+  bottom: auto;
+  /* #wall-frame (position:absolute; inset:0) comes after this button in
+     DOM order, so without its own stacking context it would paint over
+     the button wherever the two overlap, in this corner — this button
+     needs to win. */
+  z-index: 1;
+}
+
+#wall-frame {
+  position: absolute;
+  inset: 0;
+}
+
+.lime-photo-wall__scroller {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--seed-space-8) var(--seed-space-6);
+}
+
+/* CSS columns, not CSS grid — a real masonry layout (natural aspect
+   ratios, no forced square crop, per the brief's own "doesn't provide
+   enough value" complaint about the old grid) needs content to flow
+   down one column before starting the next, which grid's own row-based
+   algorithm can't do on its own without an extra JS layout pass; columns
+   does this natively. Responsive count matches the brief's own three
+   explicit checkpoints (verified live, not just assumed from the
+   breakpoints alone): 2 by default (mobile, e.g. 500px), 3 from 700px
+   (covers the brief's own 900px checkpoint), 5 from 1200px (covers the
+   brief's own 1567px checkpoint). */
+.lime-photo-wall__masonry {
+  column-count: 2;
+  column-gap: var(--seed-space-2);
+}
+
+@media (min-width: 700px) {
+  .lime-photo-wall__masonry {
+    column-count: 3;
+  }
+}
+
+@media (min-width: 1200px) {
+  .lime-photo-wall__masonry {
+    column-count: 5;
+  }
+}
+
+.lime-photo-wall__tile {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: var(--seed-space-2);
+  border-radius: var(--seed-radius-sm);
+  cursor: pointer;
+  /* Columns lays out top-to-bottom then wraps to the next column — a
+     tile is only ever "cut" across that column boundary without this,
+     since CSS columns treats content as one continuous flow by default. */
+  break-inside: avoid;
 }
 
 /* ─────────────────────────────────────────────────────
@@ -3485,8 +3579,18 @@ body {
   pointer-events: none;
 }
 
+/* LIME-41-fix: align-self: flex-start overrides .lime-message__col's own
+   align-items: stretch (its default for every direct child) — without
+   it, this <button> (UA default text-align: center) stretched to the
+   full column width and its text centred inside that wide box, reading
+   as "floating, centred, with a gap" even though the button's own left
+   edge already lined up with the grid's. Shrinking to the button's own
+   content width via flex-start fixes both the stretch and the
+   appearance of centring in one declaration — no text-align override
+   needed. */
 .lime-album__gallery-label {
   display: block;
+  align-self: flex-start;
   margin-top: var(--seed-space-1);
   border: none;
   background: none;
@@ -3501,62 +3605,20 @@ body {
   text-decoration: underline;
 }
 
+/* LIME-41-fix: identical to .lime-message__text now (margin: 0, not
+   margin-top) — the caption renders inside a real .lime-message__content
+   bubble now (albumHtml, app.js), same as any text message, so the
+   small top margin this had as a bare, unwrapped element is gone; the
+   gap between the grid and this bubble comes from .lime-message__col's
+   own flex gap between its two sibling .lime-message__content divs,
+   the same place every other multi-part message already gets its
+   inter-bubble spacing from. */
 .lime-message__caption {
-  margin: var(--seed-space-1) 0 0;
+  margin: 0;
   font-size: var(--seed-text-sm);
   line-height: var(--seed-leading-relaxed);
   color: var(--soil-text);
   overflow-wrap: anywhere;
-}
-
-/* ── Gallery modal (LIME-41) ── opened by .lime-album__gallery-label
-   above for a 5+ image album; reuses .lime-modal-backdrop like every
-   other modal in this app (search/settings/confirm/lightbox) for the
-   blur backdrop, styled after .lime-settings' own centered-panel shell
-   (a scrollable body, not a shrink-to-content one like the lightbox). */
-.lime-gallery-modal {
-  display: none;
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(640px, calc(100vw - 64px));
-  max-height: calc(100vh - 96px);
-  background: var(--soil-bg-elevated);
-  border-radius: var(--seed-radius-lg);
-  box-shadow: var(--seed-shadow-xl);
-  z-index: var(--seed-z-modal);
-  padding: var(--seed-space-6);
-  overflow-y: auto;
-}
-
-.lime-gallery-modal.is-open {
-  display: block;
-}
-
-.lime-gallery-modal__close {
-  position: sticky;
-  top: 0;
-  float: right;
-  margin-left: var(--seed-space-3);
-}
-
-.lime-gallery-modal__grid {
-  clear: both;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: var(--seed-space-2);
-}
-
-.lime-gallery-modal__tile {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  max-width: none;
-  max-height: none;
-  border-radius: var(--seed-radius-sm);
-  object-fit: cover;
-  cursor: pointer;
 }
 
 /* ── Voice message ── */

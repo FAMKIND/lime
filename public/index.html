@@ -649,42 +649,69 @@
     </div>
   </div>
 
-  <!-- LIME-41: gallery modal — opened by an album's own "N photos" label
-       (5+ images) for a message the 2×2 grid alone can't fully show.
-       Clicking a tile inside it hands off to the lightbox below, closing
-       this modal first (app.js's document click listener) rather than
-       stacking the two — two simultaneously-open createModal instances
-       both install their own Escape listener, and a single Escape press
-       closed both at once when this was tried. -->
-  <div class="lime-modal-backdrop" id="gallery-modal-backdrop"></div>
-  <div class="lime-gallery-modal" id="gallery-modal" role="dialog" aria-modal="true" aria-label="Photos">
-    <button type="button" class="lime-icon-btn lime-gallery-modal__close" id="gallery-modal-close" aria-label="Close" title="Close"><span class="dew dew-close"></span></button>
-    <div class="lime-gallery-modal__grid" id="gallery-modal-grid"></div>
+  <!-- LIME-41-fix: shared backdrop for both the photo wall and the
+       viewer below — the wall and the viewer are two levels of one
+       stack, and showing two independent blurred backdrops at once
+       would double the blur/tint for no visual reason. Placed first
+       (lowest paint order among these three elements, all sharing the
+       same --seed-z-modal): the wall must paint above it, and the
+       viewer above the wall in turn, purely by DOM order — confirmed
+       live that a wall placed *before* this backdrop instead put the
+       backdrop visually and interactively on top of the wall's own
+       tiles, silently blocking every click on them. -->
+  <div class="lime-modal-backdrop" id="lightbox-backdrop"></div>
+
+  <!-- LIME-41-fix: full-screen photo wall — replaces LIME-41's gallery
+       card modal. Opened by an album's own "N photos" label or its "+N"
+       overlay tile, for a message with 5+ images. The wall stays a real
+       DOM element with its own is-open class the whole time the viewer
+       is open on top of it (never destroyed/rebuilt mid-session), so
+       returning to it via "back to all photos" needs no scroll-position
+       bookkeeping — the scroller simply never moved.
+       app.js owns ALL open/close/Escape/Tab-trap logic for this pair
+       directly (not the shared createModal helper every other modal in
+       this app uses) — two independently-managed createModal instances
+       stacked was tried for the LIME-41 gallery card and found to
+       double-fire on a single Escape press (each installs its own
+       document keydown listener); this pair's two-level "Escape steps
+       back one level" behavior needs exactly one owner instead. -->
+  <div class="lime-photo-wall" id="photo-wall" role="dialog" aria-modal="true" aria-label="All photos">
+    <button type="button" class="lime-lightbox__close" id="wall-close" aria-label="Close" title="Close"><span class="dew dew-close"></span></button>
+    <div class="lime-fade-frame" id="wall-frame">
+      <div class="fade-top" aria-hidden="true"></div>
+      <div class="fade-bottom" aria-hidden="true"></div>
+      <div class="lime-photo-wall__scroller" id="wall-scroller">
+        <div class="lime-photo-wall__masonry" id="wall-masonry"></div>
+      </div>
+    </div>
   </div>
 
-  <!-- LIME-38: image lightbox — one static instance, reused for every
-       thumbnail click anywhere (main thread or a reply), content
-       rewritten per open (same pattern as the confirm dialog above).
-       Reuses .lime-modal-backdrop for the blur backdrop the brief asks
-       for — every other modal in this app already gets it for free.
-       LIME-40-fix: close + the "N / M" counter live in a bar *above* the
-       image (a flex column: bar, then image), not positioned over the
-       image itself — the LIME-40 fix (inset into the image's own corner)
-       still left a translucent control sitting on top of the photo,
-       nearly invisible against a dark image and barely different on
-       hover. A bar outside the image rules that out structurally: the
-       controls always sit on their own solid, opaque surface, never on
-       the photo. Prev/next stay siblings of .lime-lightbox,
-       position:fixed to the *viewport's* own sides (unchanged from
-       LIME-40 — "vertically centred at the viewport's sides"), restyled
-       to the same solid/opaque treatment as the bar for consistency. -->
-  <div class="lime-modal-backdrop" id="lightbox-backdrop"></div>
+  <!-- LIME-38: image lightbox (the "viewer") — one static instance,
+       reused for every thumbnail click anywhere (main thread, a reply,
+       the wall above), content rewritten per open (same pattern as the
+       confirm dialog above). Reuses .lime-modal-backdrop above for the
+       blur backdrop the brief asks for.
+       LIME-41-fix: close sits just outside the image's own top-right
+       corner (not a full-width bar above it, LIME-40-fix's own design —
+       the user's later QA asked for this instead); a new "back to all
+       photos" control mirrors it at the top-left, shown only when this
+       viewer was opened from the wall; the counter is centred just
+       below the image, not inside a shared bar. All three (plus the
+       arrows) lost their LIME-40-fix border — measured to still clear
+       3:1 icon-vs-fill contrast without it — replaced by
+       --seed-shadow-md for separation from the backdrop instead. -->
   <div class="lime-lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Image preview">
-    <div class="lime-lightbox__bar">
-      <button type="button" class="lime-lightbox__close" id="lightbox-close" aria-label="Close" title="Close"><span class="dew dew-close"></span></button>
-      <span class="lime-lightbox__counter" id="lightbox-counter" hidden></span>
-    </div>
+    <button type="button" class="lime-lightbox__close" id="lightbox-close" aria-label="Close" title="Close"><span class="dew dew-close"></span></button>
+    <button type="button" class="lime-lightbox__back" id="lightbox-back" aria-label="Back to all photos" title="Back to all photos" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor"/>
+        <rect x="13" y="3" width="8" height="8" rx="1.5" fill="currentColor"/>
+        <rect x="3" y="13" width="8" height="8" rx="1.5" fill="currentColor"/>
+        <rect x="13" y="13" width="8" height="8" rx="1.5" fill="currentColor"/>
+      </svg>
+    </button>
     <img class="lime-lightbox__img" id="lightbox-img" alt="">
+    <span class="lime-lightbox__counter" id="lightbox-counter" hidden></span>
   </div>
   <button type="button" class="lime-lightbox__nav lime-lightbox__nav--prev" id="lightbox-prev" aria-label="Previous photo" title="Previous" hidden><span class="dew dew-chevron-left"></span></button>
   <button type="button" class="lime-lightbox__nav lime-lightbox__nav--next" id="lightbox-next" aria-label="Next photo" title="Next" hidden><span class="dew dew-chevron-right"></span></button>

@@ -879,8 +879,12 @@ function audioPlayerHtml(att, index) {
 // thumbnail (no grid); 2 side-by-side; 3 one large + two stacked; 4+ a
 // 2×2 grid, the 4th tile carrying a "+N" overlay (images beyond the 4
 // shown) once there are more than 4. 5+ also adds an "N photos" label
-// that opens the gallery modal (openGalleryModal below) — the 2×2 grid
-// alone can't represent every image in a large album on its own.
+// that opens the photo wall (openPhotoWall, LIME-41-fix, superseding
+// LIME-41's own gallery card modal) — the 2×2 grid alone can't represent
+// every image in a large album on its own. The "+N" overlay tile itself
+// (LIME-41-fix) opens the wall too, not the viewer at that one photo —
+// data-gallery-message-id on that tile specifically, read by the exact
+// same delegated click handler the "N photos" label uses.
 function albumHtml(message, attachments, options) {
   const wrap = !!(options && options.wrap);
   const images = attachments.filter(isImageAttachment);
@@ -897,11 +901,14 @@ function albumHtml(message, attachments, options) {
     const sizeClass = images.length === 2 ? 'lime-album--2' : images.length === 3 ? 'lime-album--3' : 'lime-album--grid';
     const shown = images.slice(0, 4);
     const overlayCount = images.length - 4;
+    const isOverflowing = images.length > 4;
     const tiles = shown.map((att, i) => {
-      const overlay = (images.length > 4 && i === 3)
+      const isMoreTile = isOverflowing && i === 3;
+      const overlay = isMoreTile
         ? '<span class="lime-album__more-overlay" aria-hidden="true">+' + overlayCount + '</span>'
         : '';
-      return '<span class="lime-album__tile">' + imageTileHtml(att, i, 'lime-album__img') + overlay + '</span>';
+      const galleryAttr = isMoreTile ? ' data-gallery-message-id="' + escapeHtml(message.id) + '"' : '';
+      return '<span class="lime-album__tile"' + galleryAttr + '>' + imageTileHtml(att, i, 'lime-album__img') + overlay + '</span>';
     }).join('');
     const grid = '<div class="lime-album ' + sizeClass + '">' + tiles + '</div>';
     out += wrap ? '<div class="lime-message__content lime-message__content--media">' + grid + '</div>' : grid;
@@ -909,8 +916,19 @@ function albumHtml(message, attachments, options) {
       out += '<button type="button" class="lime-album__gallery-label" data-gallery-message-id="' + escapeHtml(message.id) + '">' + images.length + ' photos</button>';
     }
   }
+  // LIME-41-fix: was a bare, unwrapped <p> with escapeHtml(message.content)
+  // — plain text only, formatting silently dropped even when
+  // metadata.html was correctly stored (confirmed live: the send path
+  // was never the bug). Now shares messageBodyHtml with every text
+  // message, the brief's own "share one caption renderer" — renders
+  // metadata.html through renderRichHtml when present, exactly the same
+  // path a top-level text message already uses. Wrapped in a real
+  // .lime-message__content bubble when wrap is true, matching a text
+  // message's own bubble exactly (LIME-47's width rules apply for free,
+  // since it's the identical markup shape).
   if (message.content) {
-    out += '<p class="lime-message__caption">' + escapeHtml(message.content) + '</p>';
+    const captionHtml = messageBodyHtml(message, wrap ? 'lime-message__caption' : 'lime-reply__text');
+    out += wrap ? '<div class="lime-message__content">' + captionHtml + '</div>' : captionHtml;
   }
   // LIME-42: same .lime-message__content bubble the decorative 'voice'
   // message type itself uses (padded, not the no-padding --media
@@ -3285,36 +3303,55 @@ function confirmDialog({ title, message, confirmLabel, cancelLabel, danger }) {
   });
 }
 
-// ── Image lightbox (LIME-38, navigation LIME-40) ─────────
-// One static instance, same reuse-per-call pattern as confirmDialog above
-// — content rewritten per open, never rebuilt. Delegated (top-level, not
-// closure-private) since .lime-message__image appears in the main
-// thread, the reply list, and the reply quote, three separate closures.
+// ── Image viewer + photo wall (LIME-38/40/40-fix/41, restructured
+// LIME-41-fix) ─────────────────────────────────────────────
+// Two static instances (the viewer/"lightbox" and the full-screen photo
+// wall), one shared backdrop between them — a real two-level stack now,
+// not the LIME-41 gallery-card's own "close the other one first, it's a
+// hand-off not a stack" workaround. Managed with bespoke open/close/
+// focus-trap logic here rather than the shared createModal helper every
+// *other* modal in this app uses: two independent createModal instances
+// stacked (tried for LIME-41's gallery card) each install their own
+// document keydown listener, and a single Escape press fired both —
+// fine for a plain hand-off, not for "Escape steps back exactly one
+// level," which needs one single owner of the Escape key, not two
+// independent ones.
 const lightboxEls = {
-  backdrop: document.getElementById('lightbox-backdrop'),
   modal: document.getElementById('lightbox'),
   closeBtn: document.getElementById('lightbox-close'),
+  backBtn: document.getElementById('lightbox-back'),
   img: document.getElementById('lightbox-img'),
   counter: document.getElementById('lightbox-counter'),
   prevBtn: document.getElementById('lightbox-prev'),
   nextBtn: document.getElementById('lightbox-next'),
 };
+const wallEls = {
+  wall: document.getElementById('photo-wall'),
+  closeBtn: document.getElementById('wall-close'),
+  masonry: document.getElementById('wall-masonry'),
+};
+const viewerBackdrop = document.getElementById('lightbox-backdrop');
+
+let lightboxOpen = false;
+let lightboxOpenedFromWall = false;
 let lightboxPreviouslyFocused = null;
+let wallOpen = false;
+let wallPreviouslyFocused = null;
+
 // LIME-40, scoping changed by LIME-41: a flat list of *attachments*
 // (`{ path, name, ... }`, LimeStore.getAttachments' own shape), not
 // messages — a message can now carry several. Recomputed fresh on every
-// open, not cached, so a message sent while the lightbox is closed is
+// open, not cached, so a message sent while the viewer is closed is
 // always reflected next time it opens.
 //
-// Two different scopes, chosen per click (see the document click
-// listener below): a message with 2+ images of its own scopes to just
-// that message's images (an album's tiles open only onto each other,
-// per the brief); a message with 0 or 1 image of its own — a legacy
-// single-attachment message, or a new message that just happens to
-// carry one — keeps LIME-40's original whole-conversation scope,
-// flattened across every message's own images (chronological, via
-// LimeStore.listMessages' own sort order — includes replies, since an
-// attachment can be sent as either).
+// Three different sources, chosen per click (see the click listeners
+// below): a message with 2+ images of its own scopes to just that
+// message's images (an album's tiles open only onto each other, per the
+// brief); a message with 0 or 1 image of its own — a legacy single-
+// attachment message, or a new message that just happens to carry one —
+// keeps LIME-40's original whole-conversation scope, flattened across
+// every message's own images; a wall tile scopes to the wall's own full
+// album (LIME-41-fix).
 let lightboxImages = [];
 let lightboxIndex = 0;
 
@@ -3346,140 +3383,199 @@ function lightboxShow(index) {
   lightboxUpdateNav();
 }
 
-const lightboxModal = lightboxEls.modal && lightboxEls.backdrop
-  ? createModal({
-      backdrop: lightboxEls.backdrop,
-      modal: lightboxEls.modal,
-      closeBtn: lightboxEls.closeBtn,
-      onBeforeClose: () => {
-        if (lightboxEls.img) lightboxEls.img.src = ''; // stop showing the last image while closed
-        // LIME-40: siblings of .lime-lightbox, not children of it — they
-        // don't inherit its own display:none-when-closed, so closing
-        // has to hide them explicitly too, not just re-gate them on the
-        // next open.
-        if (lightboxEls.prevBtn) lightboxEls.prevBtn.hidden = true;
-        if (lightboxEls.nextBtn) lightboxEls.nextBtn.hidden = true;
-        if (lightboxEls.counter) lightboxEls.counter.hidden = true;
-        lightboxImages = [];
-        if (lightboxPreviouslyFocused && lightboxPreviouslyFocused.focus) lightboxPreviouslyFocused.focus();
-        lightboxPreviouslyFocused = null;
-        return true;
-      },
-      onOpen: () => { if (lightboxEls.closeBtn) lightboxEls.closeBtn.focus(); },
-    })
-  : null;
+function showViewerBackdrop() { if (viewerBackdrop) viewerBackdrop.classList.add('is-open'); }
+function hideViewerBackdrop() { if (viewerBackdrop) viewerBackdrop.classList.remove('is-open'); }
 
+// Hides the viewer itself only — never touches the wall or the shared
+// backdrop, since this also runs for the "back to all photos" case,
+// where both of those need to stay exactly as they were.
+function lightboxHideVisualsOnly() {
+  if (lightboxEls.img) lightboxEls.img.src = ''; // stop showing the last image while hidden
+  if (lightboxEls.modal) lightboxEls.modal.classList.remove('is-open');
+  // Siblings of .lime-lightbox, not children of it (LIME-40) — they
+  // don't inherit its own display:none-when-closed, so hiding has to
+  // set these explicitly too, not just re-gate them on the next open.
+  if (lightboxEls.prevBtn) lightboxEls.prevBtn.hidden = true;
+  if (lightboxEls.nextBtn) lightboxEls.nextBtn.hidden = true;
+  if (lightboxEls.counter) lightboxEls.counter.hidden = true;
+  if (lightboxEls.backBtn) lightboxEls.backBtn.hidden = true;
+  lightboxImages = [];
+  lightboxOpen = false;
+}
+
+function closeWallVisualsOnly() {
+  if (wallEls.wall) wallEls.wall.classList.remove('is-open');
+  if (wallEls.masonry) wallEls.masonry.innerHTML = '';
+  wallOpen = false;
+}
+
+// The brief's own two-level Escape/close semantics: from the viewer
+// *when it was opened from the wall*, one step back re-shows the wall
+// (already open underneath — it was never hidden or rebuilt, so its
+// scroll position is exactly where it was); everywhere else, a close
+// action closes the whole stack down to nothing. Used by Escape, the
+// viewer's own × button, the wall's own × button, and a backdrop click —
+// one function per meaning, not one meaning re-implemented four times.
+function backToWall() {
+  lightboxHideVisualsOnly();
+  lightboxOpenedFromWall = false;
+  if (wallEls.closeBtn) wallEls.closeBtn.focus();
+}
+
+function closeStack() {
+  const returnTo = wallOpen ? wallPreviouslyFocused : lightboxPreviouslyFocused;
+  lightboxHideVisualsOnly();
+  lightboxOpenedFromWall = false;
+  if (wallOpen) closeWallVisualsOnly();
+  hideViewerBackdrop();
+  if (returnTo && returnTo.focus) returnTo.focus();
+  lightboxPreviouslyFocused = null;
+  wallPreviouslyFocused = null;
+}
+
+// One step back: the viewer's own close/Escape, when it was opened from
+// the wall, goes back to the wall instead of closing everything —
+// exactly what the dedicated "back to all photos" button also does, so
+// all three (Escape, ×, back-button) agree on what "back" means from
+// here. Anywhere else, it's a full close.
+function lightboxStepBack() {
+  if (lightboxOpenedFromWall) backToWall();
+  else closeStack();
+}
+
+function openLightbox(images, index, options) {
+  const fromWall = !!(options && options.fromWall);
+  lightboxImages = images;
+  lightboxOpenedFromWall = fromWall;
+  if (lightboxEls.backBtn) lightboxEls.backBtn.hidden = !fromWall;
+  if (!fromWall) lightboxPreviouslyFocused = document.activeElement;
+  showViewerBackdrop();
+  if (lightboxEls.modal) lightboxEls.modal.classList.add('is-open');
+  lightboxOpen = true;
+  lightboxShow(Math.min(Math.max(index, 0), images.length - 1));
+  if (lightboxEls.closeBtn) lightboxEls.closeBtn.focus();
+}
+
+function openPhotoWall(messageId) {
+  if (!wallEls.wall || !wallEls.masonry) return;
+  const images = LimeStore.getAttachments(messageId).filter(isImageAttachment);
+  wallEls.masonry.innerHTML = images.map((att, i) =>
+    '<img class="lime-photo-wall__tile" data-message-id="' + escapeHtml(messageId) + '" data-attachment-path="' + escapeHtml(att.path || '') + '" data-attachment-index="' + i + '" alt="' + escapeHtml(att.name || '') + '">'
+  ).join('');
+  paintAttachments(wallEls.masonry);
+  wallPreviouslyFocused = document.activeElement;
+  showViewerBackdrop();
+  wallEls.wall.classList.add('is-open');
+  wallOpen = true;
+  if (wallEls.closeBtn) wallEls.closeBtn.focus();
+}
+
+// Direct thumbnail clicks — a thread message, a reply, or a reply quote.
+// Excludes anything that also carries data-gallery-message-id (the "+N"
+// overlay tile, LIME-41-fix): that tile opens the wall, handled by the
+// separate delegated listener below, not the viewer at that one photo.
 document.addEventListener('click', (e) => {
   const thumb = e.target.closest('.lime-message__image');
-  if (!thumb || !lightboxModal || !lightboxEls.img) return;
-  // LIME-41: a gallery-modal tile is also a .lime-message__image (so it
-  // opens the lightbox through this exact same delegated path, no
-  // separate wiring) — but leaving the gallery modal open *underneath*
-  // the lightbox means both modals' own createModal-installed Escape
-  // listeners fire on a single Escape press, closing both at once
-  // (confirmed live: pressing Escape in the lightbox silently closed the
-  // gallery modal behind it too, breaking a return trip to the grid).
-  // Closing the gallery modal here — a hand-off to the lightbox, not a
-  // real stack — avoids that entirely; harmless no-op when it wasn't
-  // open (galleryModal.close() is idempotent).
-  if (galleryModal) galleryModal.close();
-  lightboxPreviouslyFocused = document.activeElement;
-  // The clicked thumbnail's own already-resolved src shows instantly —
-  // no need to wait on a second getAttachmentUrl round trip for the
-  // very image the user just clicked.
-  lightboxEls.img.src = thumb.src;
-  lightboxEls.img.alt = thumb.alt;
-
+  if (!thumb || thumb.closest('[data-gallery-message-id]') || !lightboxEls.img) return;
   const container = thumb.closest('[data-message-id]');
   const messageId = container && container.dataset.messageId;
   const message = messageId && LimeStore.getMessage(messageId);
   const clickedIndex = Number(thumb.dataset.attachmentIndex || 0);
+  let images = [];
+  let index = 0;
   if (message) {
     const ownImages = LimeStore.getAttachments(message.id).filter(isImageAttachment);
     if (ownImages.length > 1) {
       // LIME-41: an album's own tiles open scoped to just that message's
       // images, not the whole conversation's — the brief's own "clicking
       // any tile opens the lightbox scoped to that message's own images."
-      lightboxImages = ownImages;
-      lightboxIndex = Math.min(clickedIndex, ownImages.length - 1);
+      images = ownImages;
+      index = Math.min(clickedIndex, ownImages.length - 1);
     } else {
       // LIME-40's original whole-conversation scope, unchanged for a
       // message with 0 or 1 image of its own — flattened across every
       // message's own images so an album sitting alongside single-image
       // sends in the same conversation still contributes all of its
       // images here, not just a placeholder single entry.
-      lightboxImages = LimeStore.listMessages(message.conversation_id)
+      images = LimeStore.listMessages(message.conversation_id)
         .flatMap((m) => LimeStore.getAttachments(m.id).filter(isImageAttachment).map((att) => Object.assign({}, att, { _messageId: m.id })));
-      const foundIndex = lightboxImages.findIndex((att) => att._messageId === messageId);
-      lightboxIndex = foundIndex === -1 ? 0 : foundIndex;
+      const foundIndex = images.findIndex((att) => att._messageId === messageId);
+      index = foundIndex === -1 ? 0 : foundIndex;
     }
-  } else {
-    // No message context resolvable (shouldn't happen for a real
-    // attachment thumbnail, but fail to "just this one image, no nav"
-    // rather than throwing) — never blocks opening the lightbox itself.
-    lightboxImages = [];
-    lightboxIndex = 0;
   }
-  lightboxUpdateNav();
-  lightboxModal.open();
+  // The clicked thumbnail's own already-resolved src shows instantly —
+  // no need to wait on a second getAttachmentUrl round trip for the
+  // very image the user just clicked. openLightbox's own lightboxShow
+  // call resolves the "real" URL right after, harmlessly redundant for
+  // this first frame.
+  openLightbox(images, index, { fromWall: false });
+  lightboxEls.img.src = thumb.src;
+  lightboxEls.img.alt = thumb.alt;
 });
+
+// Wall tiles — always scoped to the wall's own full album (LIME-41-fix).
+document.addEventListener('click', (e) => {
+  const tile = e.target.closest('.lime-photo-wall__tile');
+  if (!tile) return;
+  const messageId = tile.dataset.messageId;
+  const images = LimeStore.getAttachments(messageId).filter(isImageAttachment);
+  const index = Number(tile.dataset.attachmentIndex || 0);
+  openLightbox(images, index, { fromWall: true });
+  lightboxEls.img.src = tile.src;
+  lightboxEls.img.alt = tile.alt;
+});
+
+// The "N photos" label and the "+N" overlay tile (both carry
+// data-gallery-message-id) — always opens the wall.
+document.addEventListener('click', (e) => {
+  const trigger = e.target.closest('[data-gallery-message-id]');
+  if (!trigger) return;
+  openPhotoWall(trigger.dataset.galleryMessageId);
+});
+
+if (lightboxEls.closeBtn) lightboxEls.closeBtn.addEventListener('click', lightboxStepBack);
+if (lightboxEls.backBtn) lightboxEls.backBtn.addEventListener('click', backToWall);
+if (wallEls.closeBtn) wallEls.closeBtn.addEventListener('click', closeStack);
+if (viewerBackdrop) {
+  viewerBackdrop.addEventListener('click', () => {
+    if (lightboxOpen) lightboxStepBack();
+    else if (wallOpen) closeStack();
+  });
+}
 
 if (lightboxEls.prevBtn) lightboxEls.prevBtn.addEventListener('click', () => lightboxShow(lightboxIndex - 1));
 if (lightboxEls.nextBtn) lightboxEls.nextBtn.addEventListener('click', () => lightboxShow(lightboxIndex + 1));
 
-// ←/→ only while the lightbox is actually open — doesn't wrap (brief's
-// own "it doesn't wrap"), matching the arrow buttons' own [hidden]
-// gating exactly (lightboxShow no-ops past either end anyway via the
-// array bounds check, but the keys shouldn't even try past a hidden
-// arrow).
-document.addEventListener('keydown', (e) => {
-  if (!lightboxEls.modal || !lightboxEls.modal.classList.contains('is-open')) return;
-  if (e.key === 'ArrowLeft' && lightboxIndex > 0) { e.preventDefault(); lightboxShow(lightboxIndex - 1); }
-  else if (e.key === 'ArrowRight' && lightboxIndex < lightboxImages.length - 1) { e.preventDefault(); lightboxShow(lightboxIndex + 1); }
-});
-
-// ── Gallery modal (LIME-41) ───────────────────────────────
-// One static instance, same reuse-per-call pattern as the lightbox above
-// — opened by an album's own "N photos" label (albumHtml, data-gallery-
-// message-id) for a message with 5+ images, since the 2×2 grid alone
-// can't represent a large album. Each tile in it carries the exact same
-// class/data-attachment-path/data-attachment-index/data-message-id shape
-// as a thread album tile — the document-level lightbox click listener
-// above is delegated off .lime-message__image with no knowledge of which
-// container it lives in, so a gallery tile opens the lightbox (scoped to
-// this same message, since it's still >1 image) for free, no separate
-// wiring needed.
-const galleryModalEls = {
-  backdrop: document.getElementById('gallery-modal-backdrop'),
-  modal: document.getElementById('gallery-modal'),
-  closeBtn: document.getElementById('gallery-modal-close'),
-  grid: document.getElementById('gallery-modal-grid'),
-};
-
-const galleryModal = galleryModalEls.modal && galleryModalEls.backdrop
-  ? createModal({
-      backdrop: galleryModalEls.backdrop,
-      modal: galleryModalEls.modal,
-      closeBtn: galleryModalEls.closeBtn,
-      onBeforeClose: () => { if (galleryModalEls.grid) galleryModalEls.grid.innerHTML = ''; return true; },
-      onOpen: () => { if (galleryModalEls.closeBtn) galleryModalEls.closeBtn.focus(); },
-    })
-  : null;
-
-function openGalleryModal(messageId) {
-  if (!galleryModal || !galleryModalEls.grid) return;
-  const images = LimeStore.getAttachments(messageId).filter(isImageAttachment);
-  galleryModalEls.grid.innerHTML = images.map((att, i) =>
-    '<img class="lime-message__image lime-gallery-modal__tile" data-message-id="' + escapeHtml(messageId) + '" data-attachment-path="' + escapeHtml(att.path || '') + '" data-attachment-index="' + i + '" alt="' + escapeHtml(att.name || '') + '">'
-  ).join('');
-  paintAttachments(galleryModalEls.grid);
-  galleryModal.open();
+function trapModalTab(e, containerEl) {
+  if (e.key !== 'Tab' || !containerEl) return;
+  const items = [...containerEl.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => !el.disabled && el.offsetParent !== null);
+  if (items.length === 0) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 
-document.addEventListener('click', (e) => {
-  const label = e.target.closest('[data-gallery-message-id]');
-  if (!label) return;
-  openGalleryModal(label.dataset.galleryMessageId);
+// The single owner of Escape (and Tab-trapping) for this whole stack —
+// exactly the "handle Escape in one place so nothing double-fires" the
+// brief asks for. ←/→ stay scoped to the viewer only, unchanged from
+// LIME-40 (doesn't wrap — lightboxShow's own array-bounds check plus the
+// arrow buttons' own [hidden] gating already both agree on that).
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (lightboxOpen) { e.preventDefault(); lightboxStepBack(); }
+    else if (wallOpen) { e.preventDefault(); closeStack(); }
+    return;
+  }
+  if (e.key === 'Tab') {
+    if (lightboxOpen) trapModalTab(e, lightboxEls.modal);
+    else if (wallOpen) trapModalTab(e, wallEls.wall);
+    return;
+  }
+  if (!lightboxOpen) return;
+  if (e.key === 'ArrowLeft' && lightboxIndex > 0) { e.preventDefault(); lightboxShow(lightboxIndex - 1); }
+  else if (e.key === 'ArrowRight' && lightboxIndex < lightboxImages.length - 1) { e.preventDefault(); lightboxShow(lightboxIndex + 1); }
 });
 
 // ── Nav search → global modal ────────────────────────────
@@ -4289,6 +4385,10 @@ wireScrollFades(document.querySelector('.lime-recent'), document.querySelector('
 wireScrollFades(document.querySelector('.lime-members-panel__list'), document.querySelector('.lime-members-panel__list-frame'));
 wireScrollFades(document.querySelector('.lime-replies-panel__list'), document.querySelector('.lime-replies-panel__list-frame'));
 wireScrollFades(document.querySelector('.lime-settings__nav-scroll'), document.getElementById('settings-nav'));
+// LIME-41-fix: the photo wall's own scroller — fades use --surface-bg
+// set directly on #photo-wall itself (the backdrop's own tint, lime.css),
+// not a panel color, since there's no white card here to inherit one from.
+wireScrollFades(document.getElementById('wall-scroller'), document.getElementById('wall-frame'));
 // The settings pane's own body is rebuilt on every section render
 // (renderProfileSection/renderSecuritySection, both via
 // settingsBodyFrameOpen) — wired from showSection itself, below, not
