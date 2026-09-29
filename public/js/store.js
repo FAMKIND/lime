@@ -191,6 +191,44 @@ const LimeStore = (function () {
     return [...byEmoji.values()];
   }
 
+  // LIME-43: "delivered ✓ / viewed ✓✓" for one of the CURRENT user's own
+  // sent messages — never meaningful for someone else's message (the
+  // UI only ever calls this for isSent messages). No new columns, per
+  // the brief's own production-ready derivation:
+  // - "Delivered" needs no state of its own — once a message exists in
+  //   this store at all, it's delivered.
+  // - "Viewed by X" reads X's own conversation_members.last_read_at
+  //   (LIME-36's markRead) against this message's created_at — real,
+  //   already-persisted data, not a new receipts table.
+  // A DM's only "other member" is the recipient; a group's status is
+  // "viewed" only once EVERY other member has read past this message's
+  // own timestamp — reflects the raw membership rows directly (not
+  // getMembers' profile-mapped view), since last_read_at only lives
+  // there.
+  function getReceiptStatus(messageId) {
+    const message = getMessage(messageId);
+    if (!message) return null;
+    const createdAt = new Date(message.created_at);
+    const viewedBy = [];
+    const notYet = [];
+    members
+      .filter((m) => m.conversation_id === message.conversation_id && m.user_id !== message.sender_id)
+      .forEach((m) => {
+        const profile = profiles.get(m.user_id);
+        if (!profile) return;
+        if (m.last_read_at && new Date(m.last_read_at) >= createdAt) {
+          viewedBy.push({ profile, last_read_at: m.last_read_at });
+        } else {
+          notYet.push({ profile });
+        }
+      });
+    return {
+      status: viewedBy.length > 0 && notYet.length === 0 ? 'viewed' : 'delivered',
+      viewedBy,
+      notYet,
+    };
+  }
+
   function getConversationTitle(conversation) {
     if (conversation.type === 'direct') {
       const other = getMembers(conversation.id).find((p) => p.id !== currentUserId);
@@ -504,6 +542,7 @@ const LimeStore = (function () {
     getMessage,
     getReactions,
     getAttachments,
+    getReceiptStatus,
     getConversationTitle,
     getLatestActivity,
     can,

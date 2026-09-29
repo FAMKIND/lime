@@ -2985,6 +2985,44 @@ body {
   color: var(--soil-text-muted);
 }
 
+/* LIME-43: delivered ✓ / viewed ✓✓, own messages only — neutral grey
+   throughout (the brief's own "Decided: both are neutral grey"), no
+   color change between the two states; only the second checkmark's
+   presence distinguishes them. */
+.lime-message__receipt {
+  display: inline-flex;
+  align-items: center;
+  color: var(--soil-text-muted);
+  font-size: 12px;
+  /* Found live, not assumed: .lime-message__actions (the hover-revealed
+     react/reply/more bar) sits at top:-16px; right:8px relative to the
+     whole message, which genuinely overlaps this tick's own position at
+     the end of the meta line for a short sender name/time — confirmed
+     by reading both elements' real rects while hovering. Without its own
+     stacking context, this tick loses to .lime-message__actions (later
+     in DOM order) for pointer events exactly where they overlap, making
+     it un-hoverable — impossible to reach the very tooltip it exists to
+     show. position:relative + z-index gives it its own stacking context
+     so it wins that overlap, without touching .lime-message__actions'
+     own existing position or behavior at all. */
+  position: relative;
+  z-index: 1;
+}
+
+.lime-message__receipt .dew-check {
+  font-size: 12px;
+}
+
+/* The doubled-check look (WhatsApp-style, slightly overlapping) rather
+   than two fully separate glyphs — dew has no dedicated double-check
+   icon (checked vendor/seed/icons/dew/dist/dew.css directly, the same
+   way LIME-42 confirmed no dew-pause), so this is two dew-check glyphs
+   with the second pulled left into the first rather than a bespoke SVG,
+   per the brief's own "use dew-check doubled" instruction. */
+.lime-message__receipt--viewed .dew-check + .dew-check {
+  margin-left: -7px;
+}
+
 .lime-message__content {
   background: var(--soil-bg-surface);
   padding: 14px 18px;

@@ -114,6 +114,7 @@ only ever calls the store, never the adapter directly.
 - `listReplies(messageId)`
 - `getReactions(messageId)` → `[{ emoji, count, mine }]`
 - `getAttachments(messageId)` — added in LIME-41; `[{ path, name, size, mime, width, height, duration_seconds, position }]`, sorted by `position`. `duration_seconds` added in LIME-42, same reasoning as `width`/`height` — recorded once at upload time, `null` for a non-audio attachment or one synthesized from a legacy message (which never had one). Synthesizes a single-row result from a legacy `'image'`/`'file'` message's own `metadata.path` when the message has no real `message_attachments` rows (see "Multi-attachment messages" below) — every caller uses this one function regardless of which era a message is from
+- `getReceiptStatus(messageId)` — added in LIME-43; `{ status: 'delivered' | 'viewed', viewedBy: [{ profile, last_read_at }], notYet: [{ profile }] }`. Meaningful only for one of the *current* user's own sent messages (see "Delivered/viewed receipts" below) — never called for someone else's
 - `getConversationTitle(conversation)`
 - `getLatestActivity(conversationId)`
 - `can(action, conversation)`
@@ -509,6 +510,72 @@ to Supabase directly in the first place.
   collision it caused are both still sitting in `lime.css`, untouched —
   flagged here rather than silently cleaned up, since removing dead code
   wasn't this brief's own scope.
+
+## Delivered/viewed receipts (LIME-43)
+
+- **No new columns — a pure derivation from data that already exists.**
+  "Delivered" needs no state of its own: once a message exists in this
+  store at all, it's delivered. "Viewed by X" compares X's own
+  `conversation_members.last_read_at` (LIME-36's `markRead`) against the
+  message's own `created_at` — `last_read_at >= created_at` means X has
+  read past this message. `LimeStore.getReceiptStatus(messageId)` reads
+  every *other* member of that message's conversation (never the sender
+  themselves) and buckets them into `viewedBy`/`notYet`.
+- **The rule for the tick itself**: a DM (one other member) shows ✓✓ the
+  moment that one person has viewed it. A group shows ✓✓ only once
+  *every* other member has — `notYet.length === 0` and at least one
+  member exists to view it at all. Otherwise it's a plain ✓ (delivered),
+  even if some — not all — members have already viewed it; that partial
+  state is exactly what the hover/focus tooltip is for.
+- **Only ever shown on your own messages** (`isSent` in `messageHtml`) —
+  a receipt reflects what happened to a message *you* sent; rendering
+  one on someone else's would be showing you information about a message
+  that isn't yours to see the read state of.
+- **The tick**: neutral grey throughout (`--soil-text-muted`), both
+  states — no color distinguishes ✓ from ✓✓, only the second checkmark's
+  presence. `dew-check`, doubled (this icon set has no dedicated
+  double-check glyph — checked directly, the same way LIME-40/LIME-42
+  each checked for their own missing icons).
+- **The tooltip** (native `title` attribute — hover *and* keyboard focus,
+  both native browser behavior, no custom tooltip component built for
+  this) always shows the full breakdown, not just whatever the tick's own
+  binary state implies: `"Delivered"` when nobody's viewed it yet;
+  `"Viewed by <name> · <time>"` for a DM's single other viewer;
+  `"Viewed by <name>, <name>"` for multiple viewers, with a second line,
+  `"Not yet: <name>, <name>"`, appended whenever the group isn't
+  unanimous. Names are `firstName`, not the sender-label `shortName`
+  ("First L.") convention used elsewhere in this app — matches the
+  brief's own two literal examples exactly, and reads more naturally in
+  a short, conversational tooltip.
+- **Live updates**: `markRead` already emits `lime:conversations-changed`
+  with `kind: 'read'` (LIME-36). The open thread listens for that event
+  (scoped to the currently-open conversation) and patches just the
+  affected `.lime-message__receipt` elements in place — not a full
+  thread re-render, which would disturb scroll position for no reason.
+- **A real layout bug found and fixed live, caused by this brief's own
+  new element**: `.lime-message__actions` (the hover-revealed react/
+  reply/more bar) sits at a fixed offset relative to the whole message
+  and genuinely overlaps a receipt tick's own position at the end of the
+  meta line for a short sender name/time — confirmed by reading both
+  elements' real rects while hovering, not assumed. Without its own
+  stacking context, the receipt lost every pointer event in that overlap
+  to `.lime-message__actions` (later in DOM order), making it literally
+  impossible to hover the very control that exists to show a tooltip.
+  Fixed with `position: relative; z-index: 1` on `.lime-message__receipt`
+  alone — doesn't touch `.lime-message__actions`' own existing position
+  or behavior at all.
+- **Not built:** a live cross-tab/cross-session sync of another member's
+  read state into an already-open window — this prototype has none of
+  its own to piggyback on (`localStorage` doesn't fire in the writing
+  tab, and this app has no `storage` event listener). Verified instead
+  with the same "a real store write from the other person's own session"
+  test hook LIME-34 established: a second `JSDOM` window, sharing the
+  same persisted snapshot, logged in as the other member, calling
+  `markRead` for real. A production `SupabaseAdapter` with realtime
+  subscriptions would update the ticks live across sessions for free;
+  noted here, not built, since this app has no realtime layer at all yet.
+- **Not built:** a privacy setting to turn off read receipts entirely —
+  noted per the brief's own "a future Settings item," not implemented.
 
 ## Known gaps, flagged rather than silently resolved
 

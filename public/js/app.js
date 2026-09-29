@@ -591,6 +591,47 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+// LIME-43: the hover/focus tooltip text for a receipt tick — always the
+// full breakdown (who's viewed, who hasn't), not just whatever the tick
+// itself is currently showing (✓ vs ✓✓), since a group can sit at a
+// plain ✓ while some — not all — members have already viewed it, and
+// that partial state is exactly what hovering is for. A DM's single
+// other viewer gets their own time inline ("Viewed by Jean · 2:15 PM");
+// a multi-viewer list reads names only (a full list of individual times
+// stops being readable past one or two people).
+function receiptTooltip(status) {
+  if (status.viewedBy.length === 0) return 'Delivered';
+  // firstName (not shortName's own "First L." form) — matches the
+  // brief's own two literal examples exactly ("Viewed by Jean · <time>",
+  // "Viewed by Jean, Grace"), and reads more naturally in a short,
+  // conversational tooltip than a full "First L." would.
+  const parts = status.viewedBy.length === 1
+    ? ['Viewed by ' + firstName(status.viewedBy[0].profile.display_name) + ' · ' + formatTime(status.viewedBy[0].last_read_at)]
+    : ['Viewed by ' + status.viewedBy.map((v) => firstName(v.profile.display_name)).join(', ')];
+  if (status.notYet.length > 0) {
+    parts.push('Not yet: ' + status.notYet.map((v) => firstName(v.profile.display_name)).join(', '));
+  }
+  return parts.join('\n');
+}
+
+// LIME-43: only ever called for the CURRENT user's own sent messages —
+// a receipt reflects what happened to a message *you* sent, never
+// someone else's, so messageHtml below only calls this when isSent.
+// role="img" + aria-label on the wrapping span (not the individual dew
+// glyphs) is the same compound-icon pattern .lime-presence already uses
+// elsewhere in this file — one label for the whole tick, not one per
+// checkmark.
+function receiptHtml(message) {
+  const status = LimeStore.getReceiptStatus(message.id);
+  if (!status) return '';
+  const viewed = status.status === 'viewed';
+  const label = viewed ? 'Viewed' : 'Delivered';
+  return '<span class="lime-message__receipt' + (viewed ? ' lime-message__receipt--viewed' : '') + '" tabindex="0" role="img" aria-label="' + escapeHtml(label) + '" title="' + escapeHtml(receiptTooltip(status)) + '">'
+    + '<span class="dew dew-check" aria-hidden="true"></span>'
+    + (viewed ? '<span class="dew dew-check" aria-hidden="true"></span>' : '')
+    + '</span>';
+}
+
 function formatDay(iso) {
   return new Date(iso).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
@@ -1372,6 +1413,11 @@ function initMessagesList() {
       + '<div class="lime-message__meta">'
       + '<span class="lime-message__sender" data-profile-id="' + escapeHtml(sender.id || '') + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<span class="lime-message__time">' + formatTime(message.created_at) + '</span>'
+      // LIME-43: only ever on your own messages — a receipt for someone
+      // else's message would be showing you information about their
+      // message that isn't yours to display (and isSent is already the
+      // exact signal messageHtml uses everywhere else for "is this mine").
+      + (isSent ? receiptHtml(message) : '')
       + '</div>'
       + contentHtml(message)
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
@@ -1430,6 +1476,33 @@ function initMessagesList() {
     // silently leaving the view short of the real bottom.
     threadSticky.pinToBottom();
   }
+
+  // LIME-43: "It updates on lime:conversations-changed (the read kind)"
+  // — someone else's markRead can flip an already-rendered ✓ to ✓✓ live,
+  // without a full re-render (which would disturb scroll position for no
+  // reason). Only ever touches .lime-message--sent rows — a receipt is
+  // never shown on anyone else's message, so there's nothing to refresh
+  // on the rest. Static NodeList from querySelectorAll, safe to mutate
+  // (outerHTML) while iterating.
+  function refreshReceipts() {
+    if (!currentConversationId) return;
+    thread.querySelectorAll('.lime-message--sent[data-message-id]').forEach((el) => {
+      const message = LimeStore.getMessage(el.dataset.messageId);
+      if (!message) return;
+      const receiptEl = el.querySelector('.lime-message__receipt');
+      const html = receiptHtml(message);
+      if (receiptEl) {
+        if (html) receiptEl.outerHTML = html;
+        else receiptEl.remove();
+      } else if (html) {
+        el.querySelector('.lime-message__meta').insertAdjacentHTML('beforeend', html);
+      }
+    });
+  }
+
+  document.addEventListener('lime:conversations-changed', (e) => {
+    if (e.detail && e.detail.kind === 'read' && e.detail.conversationId === currentConversationId) refreshReceipts();
+  });
 
   // ── Group avatar cluster (LIME-19b) ─────────────────────
   // A reusable "who's in this" mark for group rows, sized to sit inside
