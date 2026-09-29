@@ -2492,7 +2492,7 @@ body {
   position: absolute;
   top: -16px;
   right: 8px;
-  background: var(--soil-bg-surface);
+  background: var(--soil-bg-elevated);
   border: 1px solid var(--soil-border-subtle);
   border-radius: var(--seed-radius-md);
   box-shadow: var(--seed-shadow-sm);

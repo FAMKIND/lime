@@ -1227,10 +1227,12 @@ Plot's review of `9e5506f` found five issues; all five addressed, docs only, no 
   - Re-ran `run-lime35.js` and `run-lime31fix.js` — zero regressions. `run-lime34.js` initially failed (`Cannot read properties of null (reading 'conversation_members')`) — traced to the test's own hardcoded 60ms wait after a delete-confirm click, which used to be enough headroom before `scheduleSave`'s 100ms debounce fired, but no longer is, now that *every* conversation-open (not just the rename/delete writes this test already exercises) also calls `markRead` and thus resets that same debounce timer. Confirmed by running the identical test against a HEAD copy of `app.js` (passes) versus the working copy (fails, consistently, not flaky) — a real, explained timing shift caused by correct, brief-mandated new behavior, not a functional regression. Fixed by widening that one wait to 250ms in the scratchpad copy of the test; re-ran clean.
 - **Headless Firefox (Playwright), live measurement:** the row renders with real people, the fade toggles correctly on scroll (`is-scrolled-start`/`is-scrolled-end` classes appear), clicking a person opens their DM and marks that item active, clicking Me opens the profile panel. At 767px: 11 items fit with no horizontal scroll on the document and the row's own `scrollWidth === clientWidth` (no internal overflow either) — screenshots confirmed visually clean at both viewports.
 
-**Found, not fixed (out of scope):** two uncommitted, undocumented edits already present before this session began, neither touched or staged here:
-- `public/js/store.js` — `canReason`'s "Only the group owner can delete." text is missing the "Archive hides it for you" clause that `TEND.md`'s own LIME-34 entry documents as landed.
-- `public/css/lime.css` — one rule's `background` changed from `var(--soil-bg-surface)` to `var(--soil-bg-elevated)` (a menu's positioned pseudo-element, line ~2492).
-
-Flagging both for a future session to reconcile (commit, revert, or document, per whichever was actually intended).
+**Found, not fixed here:** two uncommitted edits already present before this session began, left untouched and out of this commit — confirmed by the user afterward to be their own manual edits, and landed separately (see "Manual edits" below).
 
 **Gate:** in Firefox — Recent shows the people you've been talking with, most recent first. The green ring means there's something you haven't read, and it clears when you open that chat. Clicking a person opens your chat with them.
+
+## Manual edits (user, not via `tend`)
+
+Two small hand edits, made directly by the user outside any brief, found as uncommitted drift while wrapping up LIME-36 and committed separately at their request:
+- `public/css/lime.css` — `.lime-message__actions`'s (hover actions) background changed from `var(--soil-bg-surface)` to `var(--soil-bg-elevated)`.
+- `public/js/store.js` — `canReason`'s non-owner delete reason shortened to "Only the group owner can delete." (dropped the trailing "Archive hides it for you" clause).

@@ -227,7 +227,7 @@ const LimeStore = (function () {
       if (conversation.type === 'direct') return 'Direct messages are named after the person';
       if (!isOwner) return 'Only the group owner can rename';
     }
-    if (action === 'delete' && !isOwner) return 'Only the group owner can delete. Archive hides it for you';
+    if (action === 'delete' && !isOwner) return 'Only the group owner can delete.';
     return null;
   }
 
