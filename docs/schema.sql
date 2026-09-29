@@ -196,6 +196,32 @@ create table message_attachments (
 
 create index message_attachments_message_id_position_idx on message_attachments (message_id, position);
 
+-- ── link_previews (LIME-44) ───────────────────────────────────
+-- A cache, keyed by the URL itself — not per-message, per-conversation,
+-- or per-user: an unfurl of a given URL means the same thing regardless
+-- of who linked it or where, so one row serves every message that ever
+-- links that same URL, and re-fetching is only ever needed once
+-- `fetched_at` is stale (a real TTL/refresh policy is a future brief's
+-- concern, not written here). Populated by the unfurl(url) Edge
+-- Function (fetch with a timeout and a size cap, parse Open Graph/
+-- Twitter meta plus <title>/favicon/og:image/description/site_name,
+-- block private IP ranges to prevent SSRF) — never by this app
+-- directly; browsers can't fetch another site's metadata themselves
+-- (CORS, and this app's own file:// origin during local dev has no
+-- fetch access at all). The local adapter's own getLinkPreview(url)
+-- never calls this Edge Function or any network endpoint — see
+-- docs/data-model.md's own "Link previews" section for its fixture-map
+-- and minimal-card fallback instead.
+create table link_previews (
+  url          text primary key,
+  title        text,
+  description  text,
+  image_url    text,
+  site_name    text,
+  favicon_url  text,
+  fetched_at   timestamptz not null default now()
+);
+
 -- ── Row-level security (draft, not yet enabled) ──────────────
 -- Left as comments — RLS isn't turned on until Supabase actually backs
 -- this app (the switch checklist in docs/data-model.md covers that step).
@@ -420,3 +446,16 @@ create index message_attachments_message_id_position_idx on message_attachments 
 --       and is_member(m.conversation_id)
 --       and m.sender_id = current_profile_id()
 --   ));
+--
+-- -- ── link_previews (LIME-44) ──────────────────────────────────
+-- -- Not scoped to is_member at all — unlike every table above, a row
+-- -- here isn't sensitive per-conversation data, just public metadata
+-- -- about a URL (its own title/description/image), readable by anyone
+-- -- signed in, regardless of which conversation (if any) first linked
+-- -- it. Writes only ever come from the unfurl() Edge Function itself
+-- -- (service-role, bypassing RLS entirely) — no insert/update policy for
+-- -- ordinary authenticated users at all, since nothing in this app ever
+-- -- writes a preview directly; the client only ever reads one.
+-- alter table link_previews enable row level security;
+-- create policy link_previews_select_authenticated on link_previews for select
+--   using (auth.role() = 'authenticated');

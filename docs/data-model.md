@@ -134,6 +134,7 @@ only ever calls the store, never the adapter directly.
 - `markRead(conversationId)`
 - `uploadAttachment(file, { conversationId })` — added in LIME-38; resolves `{ path }`, an opaque key handed to `getAttachmentUrl` below, never parsed by the caller
 - `getAttachmentUrl(path)` — added in LIME-38; resolves a URL string safe to use directly in `<img src>` or a Download link's `href`
+- `getLinkPreview(url)` — added in LIME-44; resolves `{ url, minimal, title, description, site_name, image_url }`, never `null` for a well-formed URL (see "Link previews" below)
 - `updateProfile(patch)` — updates the **current user's own** profile.
   `patch` may only contain `display_name`, `pronouns`, `role`, `school`,
   `grade_levels`, `subjects`, `bio`, `timezone`, `phone`; any other key
@@ -580,6 +581,87 @@ commit.
   noted here, not built, since this app has no realtime layer at all yet.
 - **Not built:** a privacy setting to turn off read receipts entirely —
   noted per the brief's own "a future Settings item," not implemented.
+
+## Link previews (LIME-44)
+
+- **"Built for real and demoed with samples":** the *contract*
+  (`getLinkPreview(url)`, resolving to a preview) is the production
+  shape. A real `SupabaseAdapter` would call an `unfurl(url)` Edge
+  Function and read/write a `link_previews` cache table (`schema.sql`)
+  instead of the local adapter's own fixture map — every caller
+  (`app.js`) only ever knows this one Promise-returning function,
+  unchanged either way.
+  - `unfurl(url)`: fetch with a timeout and a size cap, parse Open Graph
+    and Twitter meta plus `<title>`, `favicon`, `og:image`,
+    `description`, `site_name`; block private IP ranges (SSRF); cache
+    the result in `link_previews` (keyed by URL, not per-message or
+    per-conversation — an unfurl means the same thing regardless of who
+    linked it).
+  - A browser can't fetch another site's metadata itself (CORS, and this
+    app's own `file://` origin during local dev has no fetch access at
+    all) — this genuinely needs a server piece, which is why the local
+    adapter never attempts a real network call at all, not even as a
+    best-effort fallback.
+- **Local adapter: a small fixture map, no network calls, ever.** Three
+  realistic, hand-authored education-themed URLs resolve a full card
+  (`minimal: false`); any other well-formed URL resolves the brief's own
+  explicit minimal fallback (`minimal: true`: the domain as the title,
+  `description`/`site_name`/`image_url` all `null`) — never `null`
+  itself, the same way a real `unfurl()` would always resolve *some*
+  preview (even a bare-domain one) for any URL it could actually fetch.
+  Two of the three fixtures' `image_url` are small inline SVG data URIs
+  (self-contained in `local-adapter.js`, not separate bundled asset
+  files — nothing to fetch, nothing to go stale); the third has none, to
+  exercise the full card's own no-image fallback (a `dew-link` icon tile)
+  separately from the minimal card's own no-image case.
+- **Rendering** (`app.js`): the first `https?://` URL found in a
+  message's own plain `content` (checked against the raw string, never
+  the sanitized/rendered `metadata.html`) gets a card rendered as a
+  sibling **below** the text bubble — not merged into the bubble's own
+  background — via a two-step paint, the same `data-*` placeholder →
+  async-resolve pattern `paintAttachments`/`paintAvatar` already use.
+  Scoped to plain text messages in the main thread and the reply list
+  only, not album captions (out of this brief's own gate/verification,
+  and captions already carry a lot of visual weight on their own).
+  `message.content` itself is never touched — the URL stays exactly as
+  typed, in the message's own text, whether or not a card ends up
+  attached below it.
+- **A real CSS Containment bug found and fixed, not obvious from the
+  spec alone:** the card and its own `container-type`/`container-name`
+  (for the brief's own "image on the left, or top when wide" responsive
+  layout) can't live on the *same* element — a container can never be
+  restyled by its own `@container` rule (excluded specifically to avoid
+  a circular "my own size changes my own layout" dependency), confirmed
+  with a minimal repro before landing on the real fix: a permanent
+  `.lime-link-preview-slot` wrapper (inserted synchronously, holds
+  `container-type`/`-name`, and — separately — an explicit `320px` width,
+  since `contain: inline-size` also breaks ordinary shrink-to-fit sizing
+  for an element with no explicit width of its own) with the actual
+  `<a class="lime-link-preview">` card as its child, one level down,
+  which *can* respond to the `@container` condition. The minimal card
+  variant resets `container-type: normal` on its own slot (it never
+  needs the query, and inheriting containment while also trying to
+  shrink-to-content reproduced the exact same collapse, just worse —
+  found live: its own text wrapped one character per line without the
+  reset).
+- **A real, live-only scroll bug found and fixed, distinct from the
+  above:** unlike an attachment (whose placeholder reserves its real,
+  final box size *synchronously*, so `createStickyScroll`'s own
+  late-image-`load` mechanism only ever has to handle a *decode*
+  finishing late, never a *layout* shift), the link-preview slot starts
+  at zero height and only grows once `getLinkPreview`'s own Promise
+  resolves — a genuine asynchronous height change, not just a late
+  decode. Relying on the existing `load`-event mechanism alone measured
+  live as **flaky** even for a card with an image (repeated runs: at the
+  bottom / not / at the bottom), and **never fires at all** for an
+  image-less card (the minimal fallback, or the `image_url: null`
+  fixture) — confirmed both empirically before fixing. `paintLinkPreviews`
+  now takes an optional `stickyScroll` controller and calls
+  `.maybeStayAtBottom()` explicitly, right after the height-changing DOM
+  mutation — the same pattern `renderThread`/`appendMessage` already use
+  for their own synchronous inserts, sidestepping both failure modes
+  outright rather than trying to make the indirect mechanism more
+  reliable.
 
 ## Known gaps, flagged rather than silently resolved
 

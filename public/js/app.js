@@ -751,6 +751,120 @@ function messageBodyHtml(message, textClass) {
   return '<p class="' + cls + '">' + escapeHtml(message.content || '') + '</p>';
 }
 
+// LIME-44: the first http(s) URL in a message's plain content — checked
+// against the raw `content` string, not the sanitized/rendered HTML
+// (metadata.html), since a formatted message's own markup could contain
+// a URL inside some other attribute that isn't the actual typed text the
+// brief means by "a message's content." Never matches a bare
+// javascript:/data: URI or similar — the pattern itself only ever
+// recognizes strings starting with http:// or https://, so nothing
+// downstream needs to re-check the scheme for safety.
+const LINK_PATTERN = /https?:\/\/[^\s<>"']+/;
+
+function firstUrlIn(text) {
+  if (!text) return null;
+  const match = LINK_PATTERN.exec(text);
+  return match ? match[0] : null;
+}
+
+// LIME-44: a placeholder slot, inserted synchronously — resolved async by
+// paintLinkPreviews below, the same two-step pattern paintAvatar/
+// paintAttachments already use for anything needing a lookup after the
+// initial render (getLinkPreview's own contract is a Promise, matching
+// getAttachmentUrl, even though the local adapter's lookup is instant).
+// Scoped to plain text messages only (contentHtml's final branch, and a
+// reply's own equivalent) — not album captions, which already carry a
+// lot of their own visual weight; not something this brief's own gate
+// asks for either.
+function linkPreviewSlotHtml(message) {
+  const url = firstUrlIn(message.content);
+  if (!url) return '';
+  return '<div class="lime-link-preview-slot" data-link-preview-url="' + escapeHtml(url) + '"></div>';
+}
+
+// LIME-44: two genuinely different shapes, not one template with empty
+// fields standing in for the other — a full card (a real fixture: image
+// left, site name muted, bold 2-line-clamped title, muted 2-line-clamped
+// description) versus the brief's own explicit minimal fallback (the
+// domain as the title, the full URL muted underneath, no image at all).
+// "The whole card is a link" — a real <a>, not a div with a click
+// handler, so browser-native behavior (open in new tab, copy link,
+// status bar preview) all work for free; rel="noopener noreferrer"
+// since it always opens someone else's, potentially untrusted, page.
+function linkPreviewCardHtml(preview) {
+  const href = escapeHtml(preview.url);
+  if (preview.minimal) {
+    return '<a class="lime-link-preview lime-link-preview--minimal" href="' + href + '" target="_blank" rel="noopener noreferrer">'
+      + '<div class="lime-link-preview__body">'
+      + '<span class="lime-link-preview__title">' + escapeHtml(preview.title) + '</span>'
+      + '<span class="lime-link-preview__url">' + href + '</span>'
+      + '</div>'
+      + '</a>';
+  }
+  const imageHtml = preview.image_url
+    ? '<img class="lime-link-preview__thumb" src="' + escapeHtml(preview.image_url) + '" alt="">'
+    : '<span class="lime-link-preview__thumb lime-link-preview__thumb--fallback"><span class="dew dew-link"></span></span>';
+  return '<a class="lime-link-preview" href="' + href + '" target="_blank" rel="noopener noreferrer">'
+    + imageHtml
+    + '<div class="lime-link-preview__body">'
+    + (preview.site_name ? '<span class="lime-link-preview__site">' + escapeHtml(preview.site_name) + '</span>' : '')
+    + '<span class="lime-link-preview__title">' + escapeHtml(preview.title) + '</span>'
+    + (preview.description ? '<span class="lime-link-preview__description">' + escapeHtml(preview.description) + '</span>' : '')
+    + '</div>'
+    + '</a>';
+}
+
+// Resolves every not-yet-painted [data-link-preview-url] slot under
+// `container` — same two-step pattern as paintAttachments above.
+// getLinkPreview never resolves null for a well-formed URL (the local
+// adapter's own contract always returns at least a minimal card), so
+// there's no empty-result branch to handle here; only network/adapter
+// failure, which real production Edge Function calls could hit even
+// though this brief's own local adapter never does.
+// `stickyScroll`, when passed, is called explicitly once a card actually
+// lands — found live, not assumed: unlike an attachment (which reserves
+// its real box size *synchronously*, a placeholder with real CSS
+// dimensions from the very first render, so createStickyScroll's own
+// 'load'-event mechanism only ever has to handle the image's *content*
+// arriving late, never a height change), this slot starts at zero
+// height and only grows once getLinkPreview's own Promise resolves —
+// a real, asynchronous *layout* shift, not just a late image decode.
+// Relying on the 'load'-event mechanism alone here is doubly wrong: (1)
+// it never fires at all for a card with no image (the minimal fallback,
+// or a real fixture like ReadWriteThink's own image_url: null), so nothing
+// would ever re-scroll for those; (2) even for a card WITH an image, it
+// measured genuinely flaky live (3 runs: atBottom true/false/true,
+// confirmed with instrumented 'load'/'scroll' event logging, not
+// assumed from a single run) — a real timing race between the image's
+// own 'load' firing and the layout actually settling. An explicit call
+// right after the height-changing DOM mutation, the same pattern
+// appendMessage/renderThread already use for their own synchronous
+// inserts, sidesteps both problems outright.
+function paintLinkPreviews(container, stickyScroll) {
+  container.querySelectorAll('[data-link-preview-url]:not([data-link-preview-painted])').forEach((slot) => {
+    const url = slot.dataset.linkPreviewUrl;
+    slot.dataset.linkPreviewPainted = 'true';
+    LimeStore.getLinkPreview(url).then((preview) => {
+      if (!preview) return;
+      // Fills the slot's own innerHTML rather than replacing the slot
+      // itself (outerHTML) — the slot is the permanent CSS containment
+      // wrapper (container-type/container-name), and per spec a
+      // container can never be restyled by its own @container rule
+      // (found live: an element with container-type set on itself
+      // silently never matches an @container block targeting that same
+      // element/class, even though its children inside the same block
+      // resize correctly — a real, documented CSS Containment
+      // constraint, not a bug, confirmed with a minimal repro before
+      // settling on this two-element structure). The card itself lives
+      // one level down, as this wrapper's own child, so it CAN respond
+      // to the container query.
+      slot.classList.toggle('lime-link-preview-slot--minimal', !!preview.minimal);
+      slot.innerHTML = linkPreviewCardHtml(preview);
+      if (stickyScroll) stickyScroll.maybeStayAtBottom();
+    }).catch(console.error);
+  });
+}
+
 // LIME-41: a single image tile — shared by the 1-image case (no grid
 // wrapper, the existing 240×180 thumbnail) and each tile of a real album
 // grid (albumHtml below, which adds its own sizing class). `index` is
@@ -1353,7 +1467,7 @@ function initMessagesList() {
     if (attachments.length > 0) {
       return albumHtml(message, attachments, { wrap: true });
     }
-    return '<div class="lime-message__content">' + messageBodyHtml(message) + '</div>';
+    return '<div class="lime-message__content">' + messageBodyHtml(message) + '</div>' + linkPreviewSlotHtml(message);
   }
 
   function messageHtml(message, sender, isSent) {
@@ -1419,6 +1533,7 @@ function initMessagesList() {
     // otherwise left unpainted, same root cause as LIME-11's handleSend fix.
     thread.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
     paintAttachments(thread); // LIME-38: same reasoning — resolves every image/file rendered by this pass
+    paintLinkPreviews(thread, threadSticky); // LIME-44
     // LIME-11-fix3: covers both the initial page-load render (default
     // conversation) and every subsequent conversation switch, since both
     // paths call this same function — renderThread never scrolled at all
@@ -1684,6 +1799,7 @@ function initMessagesList() {
           const newAvatar = thread.querySelector('.lime-message:last-child .lime-avatar[data-name]');
           if (newAvatar) paintAvatar(newAvatar); // real bug (LIME-11): paintAvatar only ran once at load, missing every sent message's avatar since LIME-07
           paintAttachments(thread); // LIME-38
+          paintLinkPreviews(thread, threadSticky); // LIME-44
           threadSticky.pinToBottom(); // LIME-39: your own message always scrolls into view, and re-pins for any attachment inside it that loads afterward
         }
 
@@ -2811,7 +2927,7 @@ function renderCrumbs() {
       + '<span class="lime-reply__sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<span class="lime-reply__time">' + formatTime(message.created_at) + '</span>'
       + '</div>'
-      + (replyAttachments.length > 0 ? albumHtml(message, replyAttachments, { wrap: false }) : messageBodyHtml(message, 'lime-reply__text'))
+      + (replyAttachments.length > 0 ? albumHtml(message, replyAttachments, { wrap: false }) : messageBodyHtml(message, 'lime-reply__text') + linkPreviewSlotHtml(message))
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '</div>'
       + '<div class="lime-message__actions">'
@@ -2870,6 +2986,7 @@ function renderCrumbs() {
     });
     listEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
     paintAttachments(listEl); // LIME-38
+    paintLinkPreviews(listEl, repliesSticky); // LIME-44
   }
 
   function openReplies(messageId) {

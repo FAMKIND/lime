@@ -3669,47 +3669,169 @@ body {
   flex-shrink: 0;
 }
 
-/* ── Link preview ── */
+/* ── Link preview (LIME-44) ── this class predates this brief (an unused
+   placeholder — a single-line ellipsis title, no description field at
+   all, never wired to any real data or caller) — rewritten here in
+   place for the real thing, the same way LIME-38 rewrote the equally
+   unused old image-attachment placeholder in this same file. */
+/* The slot (app.js: linkPreviewSlotHtml) is the permanent wrapper — it
+   establishes the CSS containment context (container-type/-name) that
+   the card itself is measured against, and it's a genuinely separate
+   element from the card on purpose. Found live, not assumed: an element
+   with container-type set on ITSELF can never be restyled by its own
+   @container rule (the query container is excluded from matching its
+   own condition, to avoid a circular "my own size changes my own
+   layout" dependency) — a real, spec-documented CSS Containment
+   constraint. A minimal repro confirmed it precisely: identical CSS,
+   querying a child selector from inside the @container block worked;
+   querying the container's own selector from inside that same block
+   silently never matched, with no console warning either. Splitting
+   wrapper (sizes/contains) from card (queries/lays out) is the fix.
+   Not stretched to the flex column's own width — same fix LIME-41-fix
+   already needed for .lime-album__gallery-label, the identical "flex
+   column's align-items: stretch" gotcha. An explicit width rather than
+   shrink-to-content for the same containment reason above: container-
+   type implies contain: inline-size, which stops content-based sizing
+   in the inline direction — confirmed directly (the un-fixed version
+   collapsed to ~18px, its children rendering at their real size while
+   the wrapper's own computed width reported far less). 320px is
+   comfortably inside a realistic chat bubble's own available width,
+   with max-width: 100% as a safety net on genuinely narrow viewports —
+   the brief's own "the card doesn't overflow the bubble." */
+.lime-link-preview-slot {
+  display: block;
+  align-self: flex-start;
+  width: 320px;
+  max-width: 100%;
+  margin-top: var(--seed-space-2);
+  container-type: inline-size;
+  container-name: link-preview;
+}
+
+/* The minimal fallback has no image and only ever a short domain-as-
+   title plus a URL — stays narrow rather than padded out to the full
+   card's own 320px, and doesn't need the container query at all (no
+   image to ever reposition). Toggled by app.js's paintLinkPreviews.
+   container-type: normal is load-bearing here, not decoration — found
+   live: this variant inherits container-type: inline-size from the base
+   rule above, and combining that with width: auto reproduces the exact
+   same containment-collapses-shrink-to-fit-sizing bug the base rule's
+   own comment already documents (confirmed directly: without this reset
+   the card's text wrapped one character per line, the same collapse
+   just visibly worse since there's no thumbnail to keep the box any
+   wider). No @container rule ever needs to match this variant anyway
+   (it has no image to reposition), so removing containment here costs
+   nothing. */
+.lime-link-preview-slot--minimal {
+  width: auto;
+  container-type: normal;
+}
+
 .lime-link-preview {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--seed-space-3);
-  margin-top: var(--seed-space-2);
   padding: var(--seed-space-2);
   border: 1px solid var(--soil-border-subtle);
   border-radius: var(--seed-radius-md);
+  text-decoration: none;
+  color: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.lime-link-preview:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-link-preview:focus-visible {
+  outline: 2px solid var(--calm-border-bold-default);
+  outline-offset: 2px;
 }
 
 .lime-link-preview__thumb {
-  width: 40px;
-  height: 40px;
+  width: 64px;
+  height: 64px;
   flex-shrink: 0;
+  display: block;
+  border-radius: var(--seed-radius-sm);
+  object-fit: cover;
+}
+
+.lime-link-preview__thumb--fallback {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--seed-radius-sm);
   background: var(--calm-bg-normal-default);
   color: var(--soil-text-muted);
+  font-size: 20px;
 }
 
 .lime-link-preview__body {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
-.lime-link-preview__title {
-  font-size: var(--seed-text-sm);
-  font-weight: var(--seed-weight-medium);
-  color: var(--soil-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.lime-link-preview__site {
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
-.lime-link-preview__domain {
+/* 2-line clamp, per the brief's own "title bold (2 lines max)". */
+.lime-link-preview__title {
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* Same 2-line clamp, per "the description muted (2 lines max)". */
+.lime-link-preview__description {
   font-size: var(--seed-text-xs);
   color: var(--soil-text-muted);
+  line-height: var(--seed-leading-relaxed);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* Wide card: the image moves above the body instead of beside it — the
+   brief's own explicit alternate layout ("or top when wide"), not the
+   default. A real link preview only ever gets this wide inside a
+   roomier context than a chat bubble typically offers, but the rule is
+   keyed off the card's own measured width either way, not assumed. */
+@container link-preview (min-width: 360px) {
+  .lime-link-preview {
+    flex-direction: column;
+  }
+  .lime-link-preview__thumb {
+    width: 100%;
+    height: 140px;
+  }
+}
+
+/* The minimal fallback (any URL without a real fixture, brief's own
+   "any other URL gets a minimal card") — no thumbnail at all, just the
+   domain standing in for the title, and the full URL muted below it. */
+.lime-link-preview--minimal .lime-link-preview__title {
+  -webkit-line-clamp: 1;
+}
+
+.lime-link-preview__url {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+  overflow-wrap: anywhere;
 }
 
 /* ── Emoji-only message — no bubble background, larger glyphs. ── */

@@ -488,6 +488,11 @@ const LimeStore = (function () {
     return adapter().getAttachmentUrl(path);
   }
 
+  // LIME-44.
+  function getLinkPreview(url) {
+    return adapter().getLinkPreview(url);
+  }
+
   return {
     init,
     reset,
@@ -519,6 +524,7 @@ const LimeStore = (function () {
     markRead,
     uploadAttachment,
     getAttachmentUrl,
+    getLinkPreview,
     updateProfile,
     setProfileEmail,
   };

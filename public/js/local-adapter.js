@@ -71,6 +71,75 @@ const LocalAdapter = (function () {
     });
   }
 
+  // ── Link previews (LIME-44) ───────────────────────────────
+  // "Built for real and demoed with samples": the *contract*
+  // (getLinkPreview(url), resolving to a preview) is the production
+  // shape — a real SupabaseAdapter would call the unfurl() Edge Function
+  // (docs/data-model.md) and cache the result in a link_previews table
+  // instead of this fixture map, but every caller elsewhere (app.js)
+  // only ever knows this one Promise-returning function, unchanged
+  // either way. No network calls, ever, here — a handful of realistic
+  // demo URLs get a full, hand-authored card; anything else gets the
+  // brief's own explicit minimal-card fallback (domain as the title, no
+  // image), never null — a real unfurl() would also resolve *something*
+  // for any well-formed URL, even a bare domain-only fallback, so
+  // getLinkPreview here never rejects or resolves null for one either.
+  //
+  // Images are small inline SVG data URIs, not separate bundled asset
+  // files — self-contained in this one file (no new binary asset to
+  // manage, no network fetch, nothing to go stale), and deliberately
+  // drawn as plain flat-colour cards with a label rather than anything
+  // trying to pass as a real screenshot.
+  function svgImageDataUri(bg, label) {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="140">'
+      + '<rect width="240" height="140" fill="' + bg + '"/>'
+      + '<text x="120" y="76" font-family="system-ui,sans-serif" font-size="20" font-weight="600" fill="#fff" text-anchor="middle">' + label + '</text>'
+      + '</svg>';
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
+
+  const LINK_PREVIEW_FIXTURES = {
+    'https://www.edutopia.org/article/differentiated-instruction-strategies': {
+      title: '10 Differentiated Instruction Strategies That Work',
+      description: 'Practical, classroom-tested approaches for reaching every learner, from tiered assignments to flexible grouping.',
+      site_name: 'Edutopia',
+      image_url: svgImageDataUri('%232d6a4f', 'Edutopia'),
+    },
+    'https://www.readwritethink.org/classroom-resources/lesson-plans': {
+      title: 'Classroom-Ready Lesson Plans',
+      description: 'Standards-aligned reading and writing lesson plans for every grade level, free to browse and download.',
+      site_name: 'ReadWriteThink',
+      image_url: null,
+    },
+    'https://docs.google.com/forms/d/e/sample-field-trip-permission': {
+      title: 'Field Trip Permission Slip — Fall 2026',
+      description: 'Please complete this by Friday so your student can join us for the museum visit.',
+      site_name: 'Google Forms',
+      image_url: svgImageDataUri('%231a73e8', 'Forms'),
+    },
+  };
+
+  function domainOf(url) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch (e) {
+      return url;
+    }
+  }
+
+  function getLinkPreview(url) {
+    const fixture = LINK_PREVIEW_FIXTURES[url];
+    if (fixture) return Promise.resolve(Object.assign({ url, minimal: false }, fixture));
+    return Promise.resolve({
+      url,
+      minimal: true,
+      title: domainOf(url),
+      description: null,
+      site_name: null,
+      image_url: null,
+    });
+  }
+
   // A cheap, deterministic fingerprint of the embedded seed (djb2), not a
   // cryptographic hash — this only ever needs to answer "has the seed this
   // snapshot was built from changed since," so a collision-resistant hash
@@ -279,5 +348,6 @@ const LocalAdapter = (function () {
 
     uploadAttachment,
     getAttachmentUrl,
+    getLinkPreview,
   };
 })();
