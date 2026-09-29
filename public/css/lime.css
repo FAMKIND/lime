@@ -58,6 +58,18 @@
      need 3:1 so lime-600 (≈4.4:1) still clears it with room to spare. */
   --selected-text-normal-default: var(--seed-lime-700);
   --selected-icon-normal-default: var(--seed-lime-600);
+  /* LIME-51: the only other hardcoded-color gap the audit found (besides
+     the avatar palette, above) — .lime-recent/.lime-messages' own
+     visible scrollbar thumbs (every other scroller hides its thumb
+     entirely, scrollbar-width: none). A black-based translucent thumb
+     reads fine on a light canvas; on a near-black dark canvas it's
+     nearly invisible, so this needs a real per-theme value, not just a
+     token wrapper around one fixed literal. */
+  --lime-scrollbar-thumb: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="dark"] {
+  --lime-scrollbar-thumb: rgba(255, 255, 255, 0.18);
 }
 
 html, body {
@@ -70,6 +82,15 @@ body {
   height:      100vh;
   overflow-x:  auto;
   overflow-y:  hidden;
+  /* LIME-51: body never set its own text colour at all — every element
+     without an explicit color of its own (the message bubble text among
+     them, found live via Playwright: rendering pure black, 1.31:1
+     against a dark bubble) fell through to the browser's own UA default
+     (black), not --soil-text. Invisible in light mode, where --soil-text
+     resolves to #131b17 anyway — visually indistinguishable from pure
+     black at normal sizes — and only exposed once --soil-text actually
+     had a *different* value to diverge from. */
+  color: var(--soil-text);
   /* LIME-46 introduced --surface-bg here so every fade and the composer
      bar could blend into "whatever this panel's real background is."
      LIME-50 retires that mechanism entirely: fades are masks now
@@ -155,10 +176,15 @@ body {
    Every named avatar gets initials + a background color derived
    deterministically from the person's name (see hashPalette() in app.js).
    Palette built from Seed's raw brand ramps (lime/meadow/yellow/brick/soil)
-   since there's no semantic "identity" token tier — these are intentionally
-   theme-invariant (same hex in light/dark) so a person's color stays
-   recognizable regardless of theme, the same way their name doesn't change.
-   A single near-black text token passes AA against every light-tint entry.
+   since there's no semantic "identity" token tier.
+   LIME-51: "theme-invariant" no longer means "one literal hex" — a pastel
+   light enough for near-black text to pass AA reads as washed-out and
+   barely-there on a near-black canvas. Each hue now has its own light
+   and dark variant (same hue, deliberately deeper/more saturated in
+   dark — computed via HSL, not eyeballed: TEND.md), still recognizable
+   as "that person's colour" across a theme switch the same way a name
+   doesn't change, and the ink token below is still the one fixed thing
+   that never moves (lime-950/soil-900's own comment explains why).
 ───────────────────────────────────────────────────── */
 
 .lime-avatar {
@@ -173,8 +199,12 @@ body {
 :root {
   /* LIME-04b's requested #e4f9be is an exact match for Seed's own
      --seed-lime-100 — referencing that directly instead of updating
-     this to a second hardcoded hex value. */
+     this to a second hardcoded hex value. Not part of the per-theme
+     split below — a raw brand-ramp step, not a canvas-tied colour. */
   --lime-badge-light: var(--seed-lime-100);
+}
+
+[data-theme="light"] {
   --lime-avatar-blush:      #F9D8DA;
   --lime-avatar-peach:      #FCDCC5;
   --lime-avatar-butter:     #FBEFB8;
@@ -187,6 +217,27 @@ body {
   --lime-avatar-teal:       #CFEEEA;
   --lime-avatar-apricot:    #FBE0B0;
   --lime-avatar-rose:       #F5DCE2;
+}
+
+/* Each computed by taking the light hue's own HSL, then -15 saturation
+   (floored at 20) and -10 lightness (floored at 55) — deep enough to
+   read as "a dark-mode surface," never dropping below 55% lightness, so
+   the same fixed near-black ink (.lime-avatar, above) keeps clearing
+   AA on every one of them (9.58:1 to 12.97:1 measured — TEND.md's own
+   table — nowhere close to the 4.5:1 floor the brief asks for). */
+[data-theme="dark"] {
+  --lime-avatar-blush:      #EBB3B6;
+  --lime-avatar-peach:      #F1C09D;
+  --lime-avatar-butter:     #EFDE91;
+  --lime-avatar-mint:       #B5DBC3;
+  --lime-avatar-sky:        #AED2E8;
+  --lime-avatar-periwinkle: #B8BDE7;
+  --lime-avatar-lavender:   #CEBCE2;
+  --lime-avatar-lilac:      #DABCD7;
+  --lime-avatar-sand:       #DBCEB4;
+  --lime-avatar-teal:       #B2D8D3;
+  --lime-avatar-apricot:    #EECA8A;
+  --lime-avatar-rose:       #E2BCC5;
 }
 
 .lime-avatar--p0  { background: var(--lime-avatar-blush); }
@@ -462,6 +513,23 @@ body {
   border-color: var(--soil-bg-elevated);
   outline: 2px solid var(--selected-border-subtle-default, var(--soil-text));
   outline-offset: 1px;
+}
+
+/* LIME-51: canvas tones apply in light mode only (Seed's own
+   convention) — disabled, not hidden, with canvasDisabledNoticeHtml()'s
+   own inline reason (app.js) printed just above this row. */
+.lime-appearance-swatch:disabled {
+  cursor: not-allowed;
+}
+
+.lime-appearance-swatches.is-disabled {
+  opacity: 0.5;
+}
+
+.lime-appearance-disabled-note {
+  margin: 0 0 var(--seed-space-2);
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
 }
 
 /* ─────────────────────────────────────────────────────
@@ -2667,7 +2735,7 @@ body {
 }
 
 .lime-recent:hover {
-  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+  scrollbar-color: var(--lime-scrollbar-thumb) transparent;
 }
 
 .lime-recent::-webkit-scrollbar {
@@ -2684,7 +2752,7 @@ body {
 }
 
 .lime-recent:hover::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--lime-scrollbar-thumb);
 }
 
 .lime-recent__item {
@@ -2863,7 +2931,7 @@ body {
 }
 
 .lime-messages:hover {
-  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+  scrollbar-color: var(--lime-scrollbar-thumb) transparent;
 }
 
 /* Shown for a real conversation with no messages yet (LIME-06) — .lime-messages
@@ -2890,7 +2958,7 @@ body {
 }
 
 .lime-messages:hover::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--lime-scrollbar-thumb);
 }
 
 .lime-message {

@@ -42,7 +42,7 @@ create table profiles (
   updated_at     timestamptz not null default now()
 );
 
--- ── user_settings (LIME-45, repurposed LIME-50) ─────────────
+-- ── user_settings (LIME-45, repurposed LIME-50/51) ──────────
 -- One row per user, created lazily (first write) rather than alongside
 -- every profile — most users never customize appearance, so most never
 -- get a row. Originally held LIME-45's per-chat default_background;
@@ -51,7 +51,7 @@ create table profiles (
 -- changed with it, not just its callers.
 create table user_settings (
   user_id     text primary key references profiles(id) on delete cascade,
-  -- LIME-51 (not yet built): 'light' | 'dark' | 'system'.
+  -- LIME-51: 'light' | 'dark' | 'system'.
   theme       text,
   -- LIME-50: a CANVAS_P preset key ('warm', 'cool-gray', ...) or, for a
   -- future custom-hex picker, a literal '#rrggbb' — public/js/

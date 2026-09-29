@@ -3,6 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- LIME-51: see index.html's identical block for the full reasoning —
+       sets data-theme before any stylesheet below starts downloading. -->
+  <script>
+    (function () {
+      try {
+        var mode = localStorage.getItem('lime-theme') || 'system';
+        var dark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (e) { /* localStorage unavailable (private mode, etc.) — light default stands */ }
+    })();
+  </script>
   <title>Sign In — Lime</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

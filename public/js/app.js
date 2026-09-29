@@ -1,8 +1,10 @@
 'use strict';
 
-// Theme
-const theme = localStorage.getItem('lime-theme');
-if (theme) document.documentElement.setAttribute('data-theme', theme);
+// LIME-51: theme is now set by index.html's own inline <head> script
+// (before first paint) and confirmed/corrected once the real profile
+// loads (LimeAppearance.init(), called from initMessagesList below) —
+// this raw, unconditional localStorage read (never written by anything,
+// confirmed before removing it) predates both and is replaced by them.
 
 // ── Seed data: contacts list + thread (LIME-06) ──────────
 // Promoted to top-level (LIME-11), not IIFE-private — the new replies
@@ -44,6 +46,33 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
+}
+
+// LIME-51 — shared by both places Mode appears (the header popover and
+// Settings -> Preferences -> Appearance, "the same controls" per
+// LIME-50's own precedent), so top-level rather than private to either
+// one's own IIFE, the same reasoning escapeHtml above is top-level for.
+const THEME_MODES = [
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
+  { id: 'system', label: 'System' },
+];
+
+function modeTabsHtml(idPrefix, currentMode) {
+  return '<div class="seed-tabs seed-tabs--pill seed-tabs--sm" role="tablist" aria-label="Mode" id="' + idPrefix + '-mode-tabs">'
+    + THEME_MODES.map((m) => {
+      const active = m.id === currentMode;
+      return '<button type="button" class="seed-tab' + (active ? ' seed-tab--active' : '') + '" role="tab" aria-selected="' + active + '" data-theme-mode="' + m.id + '">' + m.label + '</button>';
+    }).join('')
+    + '</div>';
+}
+
+// Canvas tones are light-mode-only (Seed's own convention, per the
+// brief) — disabled, not hidden, with the reason stated inline rather
+// than just missing, so it reads as "not available right now" instead
+// of looking like the feature quietly vanished.
+function canvasDisabledNoticeHtml() {
+  return '<p class="lime-appearance-disabled-note">Tones apply in light mode.</p>';
 }
 
 // ── Rich-text sanitiser (LIME-37) ────────────────────────
@@ -1661,17 +1690,22 @@ function initMessagesList() {
   const appearanceToggle = document.getElementById('appearance-toggle');
   const appearanceMenu = document.getElementById('appearance-menu');
 
-  function appearanceSwatchButtonHtml(name, hex, isSelected) {
-    return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
+  function appearanceSwatchButtonHtml(name, hex, isSelected, disabled) {
+    return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + (disabled ? ' disabled' : '') + '></button>';
   }
 
   function renderAppearanceMenu() {
     if (!appearanceMenu) return;
-    const current = LimeStore.getAppearance().canvas;
+    const appearance = LimeStore.getAppearance();
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     appearanceMenu.innerHTML =
-      '<div class="lime-menu__label">Canvas</div>'
-      + '<div class="lime-appearance-swatches">'
-      + Object.keys(LimeAppearance.CANVAS_P).map((name) => appearanceSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === current)).join('')
+      '<div class="lime-menu__label">Mode</div>'
+      + modeTabsHtml('appearance-menu', appearance.theme)
+      + '<div class="lime-menu__divider"></div>'
+      + '<div class="lime-menu__label">Canvas</div>'
+      + (isDark ? canvasDisabledNoticeHtml() : '')
+      + '<div class="lime-appearance-swatches' + (isDark ? ' is-disabled' : '') + '">'
+      + Object.keys(LimeAppearance.CANVAS_P).map((name) => appearanceSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === appearance.canvas, isDark)).join('')
       + '</div>'
       + '<div class="lime-menu__divider"></div>'
       + '<button type="button" class="lime-menu__item" data-appearance-action="more"><span class="dew dew-gear"></span>More in Settings</button>';
@@ -1683,8 +1717,15 @@ function initMessagesList() {
       // a few picks (a live preview), so interior clicks never reach
       // wireDropdownToggle's shared document-level close listener.
       e.stopPropagation();
+      const modeBtn = e.target.closest('[data-theme-mode]');
+      if (modeBtn) {
+        const mode = modeBtn.dataset.themeMode;
+        LimeAppearance.applyTheme(mode);
+        LimeStore.setAppearance({ theme: mode }).then(() => renderAppearanceMenu()).catch(console.error);
+        return;
+      }
       const swatch = e.target.closest('[data-canvas]');
-      if (swatch) {
+      if (swatch && !swatch.disabled) {
         const name = swatch.dataset.canvas;
         LimeAppearance.applyCanvas(name);
         LimeStore.setAppearance({ canvas: name }).then(() => renderAppearanceMenu()).catch(console.error);
@@ -3808,7 +3849,7 @@ document.addEventListener('keydown', (e) => {
   const SECTION_ROW_LABELS = {
     profile: ['Photo', 'Display name', 'Pronouns', 'Role', 'School', 'Grade levels', 'Subjects', 'Bio', 'Timezone', 'Phone'],
     security: ['Email', 'Password', 'Sign out'],
-    preferences: ['Canvas'],
+    preferences: ['Mode', 'Canvas'],
   };
 
   // The Profile form's loaded values, for dirty-checking against the
@@ -4201,21 +4242,24 @@ document.addEventListener('keydown', (e) => {
   // shape). Applies live on click (no Save/Cancel — same "changes are
   // per-row" pattern as Login & security's own rows), so the only state
   // that ever needs re-deriving is which one is currently selected.
-  function canvasSwatchButtonHtml(name, hex, isSelected) {
-    return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
+  function canvasSwatchButtonHtml(name, hex, isSelected, disabled) {
+    return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + (disabled ? ' disabled' : '') + '></button>';
   }
 
-  function canvasSwatchesHtml() {
+  function canvasSwatchesHtml(isDark) {
     const current = LimeStore.getAppearance().canvas;
-    return Object.keys(LimeAppearance.CANVAS_P).map((name) => canvasSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === current)).join('');
+    return Object.keys(LimeAppearance.CANVAS_P).map((name) => canvasSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === current, isDark)).join('');
   }
 
   function renderPreferencesSection() {
+    const appearance = LimeStore.getAppearance();
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     pane.innerHTML = paneHeaderHtml('Preferences', 'How Lime looks for you.')
       + settingsBodyFrameOpen()
       + '<div class="lime-settings__body">'
       + '<h3 class="lime-settings__subsection-heading">Appearance</h3>'
-      + compactRowHtml('canvas', 'Canvas', '<div class="lime-appearance-swatches" id="settings-canvas-swatches">' + canvasSwatchesHtml() + '</div>')
+      + compactRowHtml('mode', 'Mode', modeTabsHtml('settings', appearance.theme))
+      + compactRowHtml('canvas', 'Canvas', (isDark ? canvasDisabledNoticeHtml() : '') + '<div class="lime-appearance-swatches' + (isDark ? ' is-disabled' : '') + '" id="settings-canvas-swatches">' + canvasSwatchesHtml(isDark) + '</div>')
       + '</div>'
       + SETTINGS_BODY_FRAME_CLOSE;
   }
@@ -4272,8 +4316,15 @@ document.addEventListener('keydown', (e) => {
       document.getElementById('sign-out-btn')?.click();
       return;
     }
+    const modeBtn = e.target.closest('[data-theme-mode]');
+    if (modeBtn) {
+      const mode = modeBtn.dataset.themeMode;
+      LimeAppearance.applyTheme(mode);
+      LimeStore.setAppearance({ theme: mode }).then(() => renderPreferencesSection()).catch(console.error);
+      return;
+    }
     const canvasSwatch = e.target.closest('[data-canvas]');
-    if (canvasSwatch) {
+    if (canvasSwatch && !canvasSwatch.disabled) {
       const name = canvasSwatch.dataset.canvas;
       LimeAppearance.applyCanvas(name); // live preview, before the write resolves
       LimeStore.setAppearance({ canvas: name }).then(() => renderPreferencesSection()).catch(console.error);

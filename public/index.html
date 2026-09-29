@@ -3,6 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- LIME-51: sets data-theme before any stylesheet below even starts
+       downloading, so there's no flash of light theme for a user whose
+       stored preference is dark or (System) currently resolves dark.
+       Mirrors public/js/appearance.js's own applyTheme() but can't call
+       it directly — LimeStore hasn't loaded yet this early — so it reads
+       the same raw localStorage key that function keeps in sync,
+       replacing the old, never-synced `lime-theme` read that used to
+       live in app.js (LIME-45: "It also applies on login.html and
+       signup.html" — this exact block is duplicated on both, on
+       purpose; a shared external file would itself be a render-blocking
+       request this brief exists to avoid). -->
+  <script>
+    (function () {
+      try {
+        var mode = localStorage.getItem('lime-theme') || 'system';
+        var dark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (e) { /* localStorage unavailable (private mode, etc.) — light default stands */ }
+    })();
+  </script>
   <title>Lime — Link</title>
   <!-- Font: Seed's --seed-font-ui token points to Montserrat, but the family itself
        isn't bundled — consumers load it. -->

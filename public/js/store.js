@@ -132,13 +132,16 @@ const LimeStore = (function () {
     return members.find((m) => m.conversation_id === conversationId && m.user_id === currentUserId) || null;
   }
 
-  // LIME-50. Mirrors production's user_settings row (theme/canvas/pattern)
-  // — a plain field on the current user's own profile locally, same
-  // pattern as updateProfile, not a new adapter capability. `canvas`
+  // LIME-50/51. Mirrors production's user_settings row (theme/canvas/
+  // pattern) — a plain field on the current user's own profile locally,
+  // same pattern as updateProfile, not a new adapter capability. `canvas`
   // defaults to 'warm' (today's look, unchanged until a user picks
-  // something else); `theme`/`pattern` are LIME-51/52's own concern,
-  // included now so callers never have to guard against a missing key.
-  const DEFAULT_APPEARANCE = { theme: null, canvas: 'warm', pattern: null };
+  // something else); `theme` defaults to 'system', matching the
+  // no-stored-preference fallback the head scripts (index/login/signup
+  // .html) already assume before any profile has loaded. `pattern` is
+  // LIME-52's own concern, included now so callers never have to guard
+  // against a missing key.
+  const DEFAULT_APPEARANCE = { theme: 'system', canvas: 'warm', pattern: null };
 
   function getAppearance() {
     const profile = getCurrentUser();

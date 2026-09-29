@@ -1,9 +1,11 @@
 'use strict';
 
-// Appearance (LIME-50) — one app-wide canvas tone, retuning Seed's own
-// neutral (soil) ramp from one choice so every surface, panel, text and
-// border derived from it updates together. LIME-51 (mode) and LIME-52
-// (pattern) extend this same file; this brief only needs canvas.
+// Appearance (LIME-50 canvas, LIME-51 mode) — one app-wide canvas tone,
+// retuning Seed's own neutral (soil) ramp from one choice so every
+// surface, panel, text and border derived from it updates together; and
+// light/dark/system mode, setting data-theme on <html> before Seed's own
+// comprehensive [data-theme="dark"] token block (tokens.css) takes over
+// almost everything else. LIME-52 (pattern) extends this same file.
 //
 // hexToHsl/hslToHex/clamp/makeCanvasRamp and the CANVAS_P preset data
 // below are ported from Seed's own brand customiser
@@ -98,12 +100,53 @@ const LimeAppearance = (function () {
     SOIL_KEYS.forEach((key, i) => root.setProperty(key, ramp[SOIL_RAMP_INDEXES[i]]));
   }
 
-  function init() {
-    const appearance = window.LimeStore ? LimeStore.getAppearance() : { canvas: 'warm' };
-    applyCanvas(appearance.canvas);
+  // LIME-51 — mode: 'light' | 'dark' | 'system'.
+  //
+  // The raw localStorage key (not LimeStore, which loads asynchronously)
+  // is what index.html/login.html/signup.html's own inline <head>
+  // scripts read to set data-theme before first paint, avoiding a flash
+  // of light theme. applyTheme keeps that key in sync every time it
+  // runs — the head scripts' own fallback ('system' when the key is
+  // absent) matches DEFAULT_APPEARANCE.theme (store.js) exactly, so a
+  // brand-new profile with no stored choice yet behaves identically
+  // whichever one happens to run first.
+  const THEME_STORAGE_KEY = 'lime-theme';
+  let systemThemeQuery = null;
+
+  function resolveTheme(mode) {
+    if (mode === 'dark' || mode === 'light') return mode;
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
   }
 
-  return { CANVAS_P, CANVAS_LABELS, makeCanvasRamp, applyCanvas, init };
+  function applyTheme(mode) {
+    document.documentElement.setAttribute('data-theme', resolveTheme(mode));
+    try { localStorage.setItem(THEME_STORAGE_KEY, mode); } catch (e) { /* private mode, etc. — visual apply above still worked */ }
+  }
+
+  // Installed once, ever — re-reads the stored mode fresh on every fire
+  // rather than closing over whatever mode was active when this was set
+  // up, since the user can switch into or out of 'system' at any time
+  // after this listener already exists.
+  function wireSystemThemeListener() {
+    if (systemThemeQuery || !window.matchMedia) return;
+    systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => {
+      let mode;
+      try { mode = localStorage.getItem(THEME_STORAGE_KEY) || 'system'; } catch (e) { mode = 'system'; }
+      if (mode === 'system') document.documentElement.setAttribute('data-theme', resolveTheme('system'));
+    };
+    if (systemThemeQuery.addEventListener) systemThemeQuery.addEventListener('change', onChange);
+    else if (systemThemeQuery.addListener) systemThemeQuery.addListener(onChange); // older Safari/Firefox
+  }
+
+  function init() {
+    const appearance = window.LimeStore ? LimeStore.getAppearance() : { canvas: 'warm', theme: 'system' };
+    applyCanvas(appearance.canvas);
+    applyTheme(appearance.theme);
+    wireSystemThemeListener();
+  }
+
+  return { CANVAS_P, CANVAS_LABELS, makeCanvasRamp, applyCanvas, applyTheme, resolveTheme, init };
 })();
 
 window.LimeAppearance = LimeAppearance;

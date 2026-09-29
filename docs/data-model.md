@@ -774,7 +774,7 @@ revert of LIME-50 itself, which also carries the app-wide canvas work).
   fixed default background regardless of the open conversation's chat
   background, per the brief.
 
-## Appearance (LIME-50)
+## Appearance (LIME-50 canvas, LIME-51 mode)
 
 - **The contract**, mirroring `setStarred`/`updateProfile` (a plain field
   on the existing snapshot, not a new adapter capability): `getAppearance()`
@@ -874,6 +874,99 @@ revert of LIME-50 itself, which also carries the app-wide canvas work).
   picks (a live preview), so its own delegated click handler calls
   `e.stopPropagation()` too, for the same reason and against the same
   shared `wireDropdownToggle` document-level close listener.
+
+### Mode (LIME-51)
+
+- **Why this needed its own brief, confirmed in survey rather than
+  assumed:** Seed's own `[data-theme="dark"]` token block (`tokens.css`)
+  is comprehensive — `--soil-*`, `--calm-*`, `--good-*`/`--warn-*`/
+  `--bad-*`, and `--selected-*` all already have real dark values, and
+  Lime's own component CSS almost entirely reads those semantic tokens
+  rather than hardcoding colours. Setting `data-theme="dark"` alone
+  already made most of the app look reasonable. The gaps were narrow but
+  real (below), not a ground-up dark palette.
+- **The mode itself:** Light / Dark / System, a `.seed-tabs--pill`
+  segmented control (Seed's own tab component, not a new one) shared
+  between the header popover and Settings -> Preferences -> Appearance
+  (`modeTabsHtml`, top-level in `app.js`, not IIFE-private, the same
+  reasoning `escapeHtml` already is). Stored in `getAppearance().theme`
+  (`'light' | 'dark' | 'system'`); `LimeAppearance.applyTheme(mode)`
+  resolves `'system'` via `matchMedia('(prefers-color-scheme: dark)')`
+  and sets `data-theme` on `<html>`. A single `matchMedia` change
+  listener, installed once, re-reads the *stored* mode on every fire
+  (not the mode captured when the listener was created) and only acts
+  if it's still `'system'` — live-following the OS preference without
+  fighting an explicit Light/Dark choice made after the listener was
+  installed.
+- **No flash of light theme, the brief's own hard requirement:** a tiny
+  inline `<script>` in `<head>` — before any `<link rel="stylesheet">` —
+  reads a raw `lime-theme` localStorage key directly and sets
+  `data-theme="dark"` immediately if needed, since `LimeStore` itself
+  loads asynchronously and can't be consulted this early. The identical
+  block is duplicated in `index.html`, `login.html` and `signup.html`
+  (the brief's own explicit ask) rather than factored into a shared file
+  — an external `<script src>` here would itself be a render-blocking
+  request, defeating the point. `LimeAppearance.applyTheme` keeps this
+  raw key in sync every time it runs, so the next load's guess is
+  accurate; `LimeAppearance.init()` (`LimeStore.getAppearance().theme`)
+  corrects it authoritatively once the real profile loads, for the rare
+  case the two disagree (a different browser profile, or a change made
+  in a different tab).
+- **Replaces, not adds to, a dead read:** `app.js` used to read
+  `localStorage.getItem('lime-theme')` unconditionally at parse time,
+  after most stylesheets had already been requested — confirmed via
+  `grep` that nothing anywhere ever *wrote* that key, so it was already
+  fully inert before this brief touched it. Removed outright, not kept
+  alongside the new mechanism.
+- **A real, load-bearing bug found live via Playwright, not visible from
+  reading the code:** `body` never set its own `color` at all — every
+  element without an explicit colour of its own (the message bubble text
+  among them) fell through to the browser's own UA default, black, not
+  `--soil-text`. Invisible in light mode (`--soil-text` resolves to
+  `#131b17`, indistinguishable from pure black at normal sizes) and only
+  exposed once dark mode gave `--soil-text` an actually different value
+  to diverge from — measured live at **1.31:1** (bubble text on a dark
+  bubble) before the fix, **14.50:1** after adding `color: var(--soil-text)`
+  to `body` (`lime.css`).
+- **Avatar pastels got real dark variants, not a blanket recolour.** The
+  12 `--lime-avatar-*` tokens moved from a theme-invariant `:root` block
+  into `[data-theme="light"]`/`[data-theme="dark"]` pairs — each dark
+  value computed from its light counterpart's own HSL (-15 saturation,
+  floored at 20; -10 lightness, floored at 55; never hand-eyeballed),
+  verified to clear **9.58:1 to 12.97:1** against the one ink colour that
+  still never changes (`--seed-soil-900`, pinned for the avatar identity
+  system specifically — same reasoning canvas tones already respect it).
+- **The only other hardcoded-colour gap the audit found:**
+  `.lime-recent`/`.lime-messages`'s own visible scrollbar thumbs (every
+  other scroller hides its thumb entirely). A black-based translucent
+  thumb reads fine on a light canvas and is nearly invisible on a
+  near-black one — wrapped in a new `--lime-scrollbar-thumb` token with
+  real light/dark values, rather than left as the one bare literal.
+- **Canvas tones are light-mode-only** (Seed's own convention, per the
+  brief) — the swatch grid renders `disabled` (not hidden) in dark mode,
+  with "Tones apply in light mode" printed inline, in both the header
+  popover and Preferences.
+- **Everything else audited and left alone, with reasoning, not
+  silently:** the confirm-dialog's danger button (`color: #fff` on a
+  bold red background), the album/reply-quote "+N" photo overlays
+  (`rgba(19, 27, 23, ...)` scrims with white text over a photo), and the
+  modal backdrop's own blur tint are all genuinely theme-invariant by
+  design (a bold-coloured surface or a scrim over arbitrary photo
+  content, not a themed panel) — kept as literals, not converted to
+  tokens that would have no second value to hold anyway. The
+  `--good-bg-bold-default` decorative gradient endpoint (`#14b8a6`, the
+  "story unseen" avatar ring) is a fixed accent colour, not sampled for
+  contrast against anything, and reads fine in both themes (checked via
+  screenshot, not assumed). `gradients.css`'s own `#000` values are
+  every one inside a `mask-image` gradient — a mask's alpha channel, not
+  a colour that ever gets painted; grep-visible but not a real hit.
+- **Nav/primary-button accent needed no Lime-specific dark override at
+  all** — checked, not assumed: Seed's own dark `--selected-*` tokens
+  (already lime-hued by default, unlike the "mint" Lime's own light
+  override retunes) measured **5.58:1** (primary button text on its own
+  background) and **11.09:1**/**8.06:1** (nav "selected" text/icon) —
+  all clearing the brief's own 4.5:1/3:1 bars before any Lime-specific
+  change, so none was made.
 
 ## Known gaps, flagged rather than silently resolved
 
