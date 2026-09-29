@@ -132,6 +132,19 @@ const LimeStore = (function () {
     return members.find((m) => m.conversation_id === conversationId && m.user_id === currentUserId) || null;
   }
 
+  // LIME-45. Per-chat override (conversation_members.background) wins;
+  // absent or explicit kind:'default' there falls back to this user's
+  // own default (user_settings.default_background); absent there too
+  // falls back to the literal default. Same shape either way, so callers
+  // never branch on which table (or neither) a value came from.
+  function getEffectiveBackground(conversationId) {
+    const membership = getMyMembership(conversationId);
+    if (membership && membership.background && membership.background.kind !== 'default') return membership.background;
+    const profile = getCurrentUser();
+    if (profile && profile.default_background && profile.default_background.kind !== 'default') return profile.default_background;
+    return { kind: 'default' };
+  }
+
   function listConversations(options) {
     const opts = options || {};
     const types = opts.types;
@@ -448,6 +461,31 @@ const LimeStore = (function () {
     return Promise.resolve(profile);
   }
 
+  // LIME-45. conversationId set: this chat only (conversation_members.
+  // background). conversationId null: "Apply to all chats" — sets this
+  // user's own default (user_settings.default_background) AND clears
+  // this user's own per-chat overrides on every conversation, so chats
+  // that already had one switch to the new default too, not just chats
+  // that never had one — matches the brief's own gate ("Apply to all
+  // chats changes the other chats too"), not just future ones.
+  function setChatBackground(conversationId, background) {
+    if (conversationId) {
+      const membership = getMyMembership(conversationId);
+      if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
+      membership.background = background;
+      scheduleSave();
+      emit('lime:background-changed', { conversationId, scope: 'chat' });
+      return Promise.resolve(membership);
+    }
+    const profile = getProfile(currentUserId);
+    if (!profile) return Promise.reject(new Error('LimeStore: no current profile'));
+    profile.default_background = background;
+    members.forEach((m) => { if (m.user_id === currentUserId) delete m.background; });
+    scheduleSave();
+    emit('lime:background-changed', { conversationId: null, scope: 'default' });
+    return Promise.resolve(profile);
+  }
+
   // Not part of updateProfile's whitelist — auth.js's changeEmail is the
   // only intended caller (see docs/data-model.md's "Deviations" section).
   function setProfileEmail(id, email) {
@@ -503,6 +541,7 @@ const LimeStore = (function () {
     getConversation,
     getMembers,
     getMyMembership,
+    getEffectiveBackground,
     listConversations,
     listMessages,
     listReplies,
@@ -519,6 +558,7 @@ const LimeStore = (function () {
     renameConversation,
     setStarred,
     setArchived,
+    setChatBackground,
     deleteConversation,
     deleteForMe,
     markRead,

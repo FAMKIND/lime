@@ -110,6 +110,7 @@ only ever calls the store, never the adapter directly.
 - `getConversation(id)`
 - `getMembers(conversationId)`
 - `getMyMembership(conversationId)`
+- `getEffectiveBackground(conversationId)` — added in LIME-45; resolves `{ kind: 'default' | 'color' | 'pattern' | 'photo', color, patternId, path, avgColor }` — the current user's own per-chat override (`getMyMembership(conversationId).background`) if it's set and not `kind:'default'`, else their own default (`getCurrentUser().default_background`) if that's set and not `kind:'default'`, else the literal `{ kind: 'default' }` (see "Chat backgrounds" below)
 - `listMessages(conversationId, { threadOnly })`
 - `listReplies(messageId)`
 - `getReactions(messageId)` → `[{ emoji, count, mine }]`
@@ -135,6 +136,7 @@ only ever calls the store, never the adapter directly.
 - `uploadAttachment(file, { conversationId })` — added in LIME-38; resolves `{ path }`, an opaque key handed to `getAttachmentUrl` below, never parsed by the caller
 - `getAttachmentUrl(path)` — added in LIME-38; resolves a URL string safe to use directly in `<img src>` or a Download link's `href`
 - `getLinkPreview(url)` — added in LIME-44; resolves `{ url, minimal, title, description, site_name, image_url }`, never `null` for a well-formed URL (see "Link previews" below)
+- `setChatBackground(conversationId | null, background)` — added in LIME-45; `background` is the same shape `getEffectiveBackground` resolves. `conversationId` set: writes only that membership row's own `background` (this chat, this user). `conversationId` null ("Apply to all chats" in the UI): writes the current user's own `default_background` **and** clears that same user's own per-chat `background` on every conversation they're in, so a chat that already had its own override switches to the new default too, not just chats that never had one (see "Chat backgrounds" below)
 - `updateProfile(patch)` — updates the **current user's own** profile.
   `patch` may only contain `display_name`, `pronouns`, `role`, `school`,
   `grade_levels`, `subjects`, `bio`, `timezone`, `phone`; any other key
@@ -662,6 +664,99 @@ commit.
   for their own synchronous inserts, sidestepping both failure modes
   outright rather than trying to make the indirect mechanism more
   reliable.
+
+## Chat backgrounds (LIME-45)
+
+- **Reuses LIME-46's own `--surface-bg` fade system directly — no second
+  variable.** The brief's own draft named a new `--chat-bg` variable, but
+  `.lime-composer` already lives *inside* `.lime-chat-body`
+  (`public/index.html`) and both its own background and every fade
+  (`gradients.css`) already read the inherited `--surface-bg`
+  (`lime.css`) — LIME-46's own comment on `body`'s declaration had
+  already anticipated exactly this ("LIME-45 (later) will override this
+  on the thread specifically… every fade there follows automatically,
+  for free"). So `app.js` overrides `--surface-bg` as a local inline
+  style on `.lime-chat-body` alone; the composer's background and every
+  fade in `gradients.css` pick it up through ordinary CSS inheritance,
+  with zero edits to either file. `.lime-chat-body` itself had no
+  `background` property at all before this brief — that one rule
+  (`lime.css`) is the only thing that was actually missing for the
+  override to paint anything.
+- **The contract**, mirroring `setStarred`/`updateProfile` (a plain
+  field on an existing snapshot row, not a new adapter capability — no
+  file storage or network call of its own, so no `adapter().…`
+  delegate):
+  - `getEffectiveBackground(conversationId)` (read) / `setChatBackground(conversationId | null, background)` (write) — see the Reads/Writes lists above for the exact resolution order and the "apply to all chats" semantics.
+  - `background` shape: `{ kind: 'default' | 'color' | 'pattern' | 'photo', color, patternId, path, avgColor }`.
+  - Production: `conversation_members.background jsonb` (per chat) and a new `user_settings.default_background jsonb` (per user — `user_settings` didn't exist before this brief; added to `schema.sql` with its own owner-only RLS).
+  - Local: the same store snapshot (both fields just ride along on the existing `profiles`/`conversation_members` arrays `LocalAdapter.save`/`.load` already persist wholesale — no schema plumbing needed there), with photos in IndexedDB via the existing `uploadAttachment`/`getAttachmentUrl` (LIME-38).
+- **"Apply to all chats" clears this user's own per-chat overrides, not just future ones.** Read literally, "changes the other chats too" (the brief's own gate) can't be true for a chat that already has its own explicit background unless something actively touches it — so `setChatBackground(null, background)` both sets `default_background` **and** deletes `background` off every one of the current user's own `conversation_members` rows. A conversation with no override left falls back to the new default automatically (`getEffectiveBackground`'s own resolution order), so every chat visibly matches immediately, not just ones that were already on the default.
+- **8 colour swatches, computed, not eyeballed.** `.lime-message__content`'s
+  fixed `--soil-bg-surface` (`#f0eee6`) needs ≥3:1 against whichever
+  swatch paints the thread behind it, or the bubble stops reading as a
+  distinct object (the brief's own requirement — "swatches that fail
+  don't ship"). A full sweep of Seed's `lime`/`meadow`/`soil`/`brick`/
+  `yellow` ramps (script: `contrast-sweep.js`, scratchpad) found that
+  **every light/pastel shade in every ramp measured under 1.3:1** — the
+  bubble and a pastel wallpaper are simply too close in lightness to
+  ever clear 3:1 against this specific bubble colour. Only mid-to-dark
+  shades clear it; the 8 that shipped (two each from `brick`/`lime`/
+  `yellow`/`soil`, a light-ish and a dark-ish one per ramp — `meadow` has
+  no shade dark enough in the ramp to qualify, so it has no
+  representative) range from 3.10:1 to 8.94:1. The pill's own
+  ink-on-pill contrast (metadata text, see below) cleared >10:1 for
+  every candidate regardless — never the binding constraint.
+- **Patterns:** 4 presets (`dots`/`diag`/`grid`/`chevron`), each a fixed
+  `{ patternId, color }` pair rather than a separate colour-then-pattern
+  picker (the brief's own UI list names one picker step, "Patterns
+  (thumbnails)", not two). Rendered as an inline SVG data URI
+  (`patternSvgDataUri`, `app.js`) — white lines/dots at a low fixed
+  opacity (0.08–0.12) over the flat base colour, which reads as "subtle…
+  tinted from the base colour at very low contrast" regardless of the
+  base hue, without computing a separate lighten/darken tint per swatch.
+- **Photos:** upload via the existing `uploadAttachment`/`getAttachmentUrl`
+  seam (no new storage mechanism). `avgColor` is computed client-side —
+  draw the resolved `<img>` to a 16×16 canvas and average every pixel
+  (`computeAverageColor`, `app.js`) — then stored alongside `path` on the
+  background object; a photo's own fade/composer colour is this
+  `avgColor`, never the photo itself (a gradient can't blend into a
+  bitmap). The visible background layer is a `linear-gradient` scrim at
+  `avgColor`, 55% opacity, stacked under the photo — the brief's own
+  "semi-opaque layer of avgColor" — not a separate overlay element.
+- **On-background legibility pills**, scoped to `.lime-chat-body--custom-bg`
+  (set whenever the effective background's `kind !== 'default'`, so the
+  plain canvas default never gets an always-on visual change nobody
+  asked for): `.lime-date-divider`, `.lime-message__meta` (sender + time
+  together, one pill, not two), and `.lime-message__replies` (the "N
+  replies" summary — the only other place text is drawn directly on the
+  thread background rather than inside a bubble or the out-of-scope
+  reply panel) get `color-mix(in srgb, var(--soil-bg-surface) 80%,
+  var(--surface-bg) 20%)` — the brief's own "~80%" reading as a mix
+  *with* the active background (keeping its own tint faintly present),
+  not a flat opaque chip that ignores it.
+- **A real event-bubbling bug found and fixed, not obvious from the
+  spec alone:** `wireDropdownToggle` (`app.js`) installs one shared
+  `document.addEventListener('click', () => dropdown.classList.remove
+  ('is-open'))` per dropdown, with no per-menu opt-out — correct for
+  every *other* `.lime-menu` in this app (one action, then close), but
+  wrong here: the brief's own "applies live as a preview" implies trying
+  several picks in a row without the panel closing after each one. Found
+  live via Playwright, not reasoned about in advance: a second pick right
+  after a first (checking "Apply to all chats", then choosing a colour)
+  silently closed the menu before the second click landed, making the
+  next target time out as "not visible." Fixed with `e.stopPropagation()`
+  at the top of the popover's own delegated click handler, so interior
+  clicks never reach that document-level listener at all.
+- **The popover panel is bounded and scrollable** (`max-height: min(420px,
+  70vh); overflow-y: auto`) rather than growing to fit whatever
+  `renderChatBgMenu()` last rendered — its *position* (`wireDropdownToggle`)
+  is computed once, at the click that opens it, from whatever content
+  height existed at that instant; content that grows taller afterward
+  (e.g. once "Remove photo" appears) could otherwise push the panel past
+  where it was measured to fit.
+- **The reply panel is out of scope, unchanged** — it keeps its own
+  fixed default background regardless of the open conversation's chat
+  background, per the brief.
 
 ## Known gaps, flagged rather than silently resolved
 

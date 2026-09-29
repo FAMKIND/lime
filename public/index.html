@@ -169,6 +169,24 @@
             </span>
           </button>
 
+          <!-- LIME-45: between the header avatars and the "…" button, per
+               the brief. dew has no sun/palette icon (checked against the
+               set dew.css actually ships) — a neutral inline SVG instead,
+               same fallback pattern LIME-41-fix used for its own missing
+               grid icon. -->
+          <div class="lime-chat-bg">
+            <button type="button" class="lime-icon-btn" id="chat-bg-toggle" title="Chat background" aria-label="Chat background" aria-haspopup="menu" aria-expanded="false">
+              <svg class="lime-chat-bg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"></circle>
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+              </svg>
+            </button>
+            <!-- Filled by renderChatBgMenu() (app.js) — same empty-container-
+                 filled-by-JS pattern as #conversation-menu/#more-menu, since
+                 the swatch/pattern grids are data-driven, not static markup. -->
+            <div class="lime-menu lime-menu--wide lime-chat-bg-menu" id="chat-bg-menu" role="menu"></div>
+          </div>
+
           <div class="lime-more-menu">
             <button class="lime-icon-btn" id="more-menu-toggle" title="More"><span class="dew dew-ellipsis-menu"></span></button>
             <div class="lime-menu" id="more-menu">

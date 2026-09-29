@@ -42,6 +42,21 @@ create table profiles (
   updated_at     timestamptz not null default now()
 );
 
+-- ── user_settings (LIME-45) ─────────────────────────────────
+-- One row per user, created lazily (first write) rather than alongside
+-- every profile — most users never set a default background, so most
+-- never get a row. A separate table rather than more columns on profiles
+-- itself: this is preference state, not identity, and the split mirrors
+-- conversation_members.background below (same shape, different scope).
+create table user_settings (
+  user_id            text primary key references profiles(id) on delete cascade,
+  -- Same shape as conversation_members.background. Applies to every
+  -- conversation that has no override of its own (kind:'default' or
+  -- absent there falls back to this).
+  default_background jsonb,
+  updated_at         timestamptz not null default now()
+);
+
 -- ── conversations ───────────────────────────────────────────
 -- Shared state only — anything that's true for every member (name,
 -- description, whether it's deleted). Per-member state (starred, archived,
@@ -103,6 +118,13 @@ create table conversation_members (
   cleared_at       timestamptz,
   last_read_at     timestamptz,
   joined_at        timestamptz not null default now(),
+  -- LIME-45: this member's own background for this one conversation —
+  -- { kind: 'default' | 'color' | 'pattern' | 'photo', color, patternId,
+  -- path, avgColor }. Absent or kind:'default' means "no override, use
+  -- user_settings.default_background instead" (see below) — the same
+  -- shape either way, so the UI never branches on which table a value
+  -- came from, only on which one exists.
+  background       jsonb,
   primary key (conversation_id, user_id)
 );
 
@@ -459,3 +481,14 @@ create table link_previews (
 -- alter table link_previews enable row level security;
 -- create policy link_previews_select_authenticated on link_previews for select
 --   using (auth.role() = 'authenticated');
+--
+-- -- ── user_settings (LIME-45) ──────────────────────────────────
+-- -- Owner only, both ways — nobody else has any reason to read or write
+-- -- another user's default background.
+-- alter table user_settings enable row level security;
+-- create policy user_settings_select_self on user_settings for select
+--   using (user_id = current_profile_id());
+-- create policy user_settings_upsert_self on user_settings for insert
+--   with check (user_id = current_profile_id());
+-- create policy user_settings_update_self on user_settings for update
+--   using (user_id = current_profile_id());

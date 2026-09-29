@@ -396,6 +396,15 @@ body {
   font-size: 18px;
 }
 
+/* LIME-45: #chat-bg-toggle's icon is a real <svg>, not a .dew glyph (dew
+   has no sun/palette icon — checked) — sized to match every other
+   .lime-icon-btn glyph at 18px, and stroke="currentColor" (markup) picks
+   up the same hover/muted color .dew icons already inherit here. */
+.lime-chat-bg-icon {
+  width: 18px;
+  height: 18px;
+}
+
 /* ─────────────────────────────────────────────────────
    PANEL 1 — NAV
 ───────────────────────────────────────────────────── */
@@ -3918,6 +3927,116 @@ body {
      fade can never visibly seam even if a future brief changes the
      thread's background. */
   background: var(--surface-bg);
+}
+
+/* ── Chat backgrounds (LIME-45) ───────────────────────────────
+   Reuses LIME-46's own --surface-bg fade system directly rather than a
+   second "--chat-bg" variable: .lime-composer above already lives
+   *inside* .lime-chat-body (index.html) and already reads the inherited
+   --surface-bg for its own background and fade (gradients.css) — so
+   app.js overriding --surface-bg locally on .lime-chat-body is the
+   *whole* mechanism. Every fade and the composer's own backdrop follow
+   automatically; this rule below is the one thing that was missing —
+   .lime-chat-body had no background of its own at all before this, so
+   the override had nothing to paint. */
+.lime-chat-body {
+  background: var(--surface-bg);
+}
+
+/* app.js sets background-image directly (a pattern tile or a photo +
+   scrim) only for those two kinds; size/position only matter then, and
+   are cleared (kind:'color'/'default') by app.js alongside the image
+   itself, not here. */
+.lime-chat-body {
+  background-repeat: repeat;
+}
+
+/* Metadata drawn directly on the thread background (never inside a
+   bubble, which already has its own opaque --soil-bg-surface and is
+   unaffected by any of this) — the date divider, a message's own
+   sender/time, and the "N replies" summary. Only shown once a non-
+   default background is active (app.js toggles this class) — on the
+   plain canvas default, today's plain unpilled text already reads fine
+   and a pill there would be a pointless, always-on visual change no
+   brief asked for. color-mix keeps --soil-bg-surface's own warm tone
+   dominant (per the brief's own "~80%") while still tinting toward
+   whatever the chat's background is, rather than a flat opaque chip
+   that ignores it. */
+.lime-chat-body--custom-bg .lime-date-divider,
+.lime-chat-body--custom-bg .lime-message__meta,
+.lime-chat-body--custom-bg .lime-message__replies {
+  background: color-mix(in srgb, var(--soil-bg-surface) 80%, var(--surface-bg) 20%);
+  border-radius: var(--seed-radius-full);
+  width: fit-content;
+}
+
+.lime-chat-body--custom-bg .lime-date-divider {
+  padding: 2px var(--seed-space-3);
+}
+
+.lime-chat-body--custom-bg .lime-message__meta,
+.lime-chat-body--custom-bg .lime-message__replies {
+  padding: 2px var(--seed-space-2);
+}
+
+/* .lime-date-divider's own ::before/::after rule lines already read
+   var(--soil-border-subtle) — a flat token, not --surface-bg — so they
+   keep working unchanged against any pill background above; no edit
+   needed there. */
+
+/* ── Background picker popover (#chat-bg-menu) ── */
+.lime-chat-bg-menu {
+  max-width: 300px;
+  /* renderChatBgMenu() (app.js) re-renders this panel's content on
+     every pick while it stays open (no auto-close, so a live preview
+     can be compared against another) — but wireDropdownToggle only
+     computes its fixed top/left once, at the click that opens it.
+     Content that got taller after that (e.g. once "Remove photo"
+     appears) could otherwise grow past where it was measured to fit.
+     A bounded, scrollable panel keeps every later render inside the
+     same footprint regardless — found live via Playwright: the "Apply
+     to all chats" checkbox + a later swatch pick became unclickable
+     ("not visible") without this. */
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+}
+
+.lime-chat-bg-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--seed-space-2);
+  padding: 0 var(--seed-space-2) var(--seed-space-2);
+}
+
+.lime-chat-bg-swatch,
+.lime-chat-bg-pattern {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--seed-radius-md);
+  border: 2px solid transparent;
+  background-size: cover;
+  cursor: pointer;
+  padding: 0;
+}
+
+.lime-chat-bg-swatch:hover,
+.lime-chat-bg-pattern:hover {
+  outline: 1px solid var(--soil-border-subtle);
+}
+
+.lime-chat-bg-swatch.is-selected,
+.lime-chat-bg-pattern.is-selected {
+  border-color: var(--selected-border-subtle-default, var(--soil-text));
+}
+
+.lime-chat-bg-apply-all {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  padding: var(--seed-space-2);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+  cursor: pointer;
 }
 
 .lime-composer__box {
