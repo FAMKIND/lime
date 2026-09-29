@@ -1567,10 +1567,11 @@ function initMessagesList() {
       html += recentItemHtml(person, { unread: hasUnreadWith(person.id), active: person.id === activeOtherId });
     });
 
-    // .fade-left/.fade-right are position:absolute (gradients.css's
-    // has-fade-x system) — not part of the flex flow wireScrollFades
-    // below cares about, so removing just the items and leaving them as
-    // permanent siblings is safe, and needs no new wrapper element.
+    // LIME-46: .fade-left/.fade-right now live one level up, as children
+    // of .lime-recent-frame (this container's own non-scrolling parent),
+    // not inside .lime-recent at all any more — container's own children
+    // are only ever .lime-recent__item rows, so a full querySelectorAll
+    // removal + fresh insert here can't touch them either way.
     container.querySelectorAll('.lime-recent__item').forEach((el) => el.remove());
     container.insertAdjacentHTML('beforeend', html);
     container.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
@@ -3012,6 +3013,20 @@ document.addEventListener('click', (e) => {
   // load, a Discard, or a successful Save all count as "clean" again).
   let profileOriginal = null;
 
+  // LIME-46: wraps whichever section's .lime-settings__body in the shared
+  // fade-frame pattern — a non-scrolling .lime-fade-frame sibling-hosts
+  // the fade divs, .lime-settings__body (unchanged identity/id, still
+  // targeted by showSection's own scrollTop reset and renderProfileSection's
+  // own getElementById('settings-profile-form')) becomes the actual
+  // absolute-fill scroller inside it. Shared by both sections below rather
+  // than duplicated, since they're otherwise identical wrapping.
+  function settingsBodyFrameOpen() {
+    return '<div class="lime-fade-frame lime-settings__body-frame">'
+      + '<div class="fade-top" aria-hidden="true"></div>'
+      + '<div class="fade-bottom" aria-hidden="true"></div>';
+  }
+  const SETTINGS_BODY_FRAME_CLOSE = '</div>';
+
   function paneHeaderHtml(title, description) {
     // The back chevron is part of the pane's own rendered content, not a
     // static sibling — .lime-settings__pane's own display:none/block
@@ -3170,6 +3185,7 @@ document.addEventListener('click', (e) => {
     // label-left/control-right rows, Bio last, an always-visible footer
     // (Save/Cancel disabled until dirty — see updateFooterState).
     pane.innerHTML = paneHeaderHtml('Profile', 'Your details as others see them across Lime.')
+      + settingsBodyFrameOpen()
       + '<div class="lime-settings__body" id="settings-profile-form">'
       + '<div class="lime-settings__profile-top" data-row-label="Photo">'
       + '<div class="lime-settings__profile-photo">'
@@ -3190,6 +3206,7 @@ document.addEventListener('click', (e) => {
       + compactRowHtml('phone', 'Phone', compactInputHtml('phone', profileOriginal.phone, 'type="tel"'))
       + textareaFieldHtml('bio', 'Bio', profileOriginal.bio)
       + '</div>'
+      + SETTINGS_BODY_FRAME_CLOSE
       + '<div class="lime-settings__footer">'
       + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-discard-btn" disabled>Cancel</button>'
       + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="settings-save-btn" disabled>Save changes</button>'
@@ -3361,6 +3378,7 @@ document.addEventListener('click', (e) => {
     // with headings and dividers, replacing the flat row list. No footer
     // here — changes are per-row via the inline Change forms above.
     pane.innerHTML = paneHeaderHtml('Login & security', 'How you sign in, and how to sign out.')
+      + settingsBodyFrameOpen()
       + '<div class="lime-settings__body">'
       + '<h3 class="lime-settings__subsection-heading">Account security</h3>'
       + accountRowHtml('email', 'Email', user.email || 'Not set')
@@ -3370,7 +3388,8 @@ document.addEventListener('click', (e) => {
       + '<div class="lime-settings__account-row-label">Sign out</div>'
       + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-sign-out-btn">Sign out</button>'
       + '</div>'
-      + '</div>';
+      + '</div>'
+      + SETTINGS_BODY_FRAME_CLOSE;
   }
 
   const SETTINGS_SECTIONS = [
@@ -3392,6 +3411,13 @@ document.addEventListener('click', (e) => {
       // fixed); .lime-settings__body is the scrolling zone now.
       const body = pane.querySelector('.lime-settings__body');
       if (body) body.scrollTop = 0;
+      // LIME-46: pane.innerHTML was just fully replaced (section.render()
+      // above), so both the frame and the body are brand new elements —
+      // rewired every time, not just once at parse time, unlike every
+      // other wireScrollFades call (those elements are static markup and
+      // only ever wired once, at the bottom of this file).
+      const bodyFrame = pane.querySelector('.lime-settings__body-frame');
+      if (body && bodyFrame) wireScrollFades(body, bodyFrame);
       return true;
     });
   }
@@ -3679,12 +3705,12 @@ document.addEventListener('click', (e) => {
 // A fade should only be visible when there's actually hidden content
 // past that edge — not a permanent overlay that dims content even at
 // rest. Toggles is-scrolled-* classes (read by gradients.css's
-// .has-fade-y/.has-fade-x system) on `fadeHost`, which may be a
-// different element than the one that actually scrolls: the chat fade
-// lives on .lime-chat-body (the non-scrolling parent), not
-// .lime-messages (the scroller) itself, because .lime-messages is
-// already position:absolute for other reasons and can't also host its
-// own positioned children — see gradients.css.
+// .lime-fade-frame system) on `fadeHost`, which is always a *different*
+// element than `scrollEl` (LIME-46: every call site below now follows
+// this, not just the chat one) — the fade divs live in a non-scrolling
+// frame precisely so scrolling the content never moves them; hosting
+// them on the scroller itself was this brief's own bug #2 (three of the
+// five original areas did exactly that).
 function wireScrollFades(scrollEl, fadeHost, { horizontal = false } = {}) {
   if (!scrollEl || !fadeHost) return;
 
@@ -3718,7 +3744,21 @@ function wireScrollFades(scrollEl, fadeHost, { horizontal = false } = {}) {
   update();
 }
 
-wireScrollFades(document.querySelector('.lime-list-col'), document.querySelector('.lime-list-col'));
+// LIME-46: scrollEl and fadeHost are now two different elements for
+// list-col/profile/recent too, not just messages/chat-body — each area's
+// own frame (non-scrolling, hosts the fade divs) is a distinct element
+// from its scroller (see lime.css's own comments on each for why the
+// split was needed, and which element kept which identity).
+wireScrollFades(document.querySelector('.lime-list-col__scroll'), document.querySelector('.lime-list-col'));
 wireScrollFades(document.querySelector('.lime-messages'), document.querySelector('.lime-chat-body'));
-wireScrollFades(document.querySelector('.lime-profile'), document.querySelector('.lime-profile'));
-wireScrollFades(document.querySelector('.lime-recent'), document.querySelector('.lime-recent'), { horizontal: true });
+wireScrollFades(document.querySelector('.lime-profile__scroll'), document.querySelector('.lime-profile'));
+wireScrollFades(document.querySelector('.lime-recent'), document.querySelector('.lime-recent-frame'), { horizontal: true });
+// New this brief — these two areas had no fades at all before.
+wireScrollFades(document.querySelector('.lime-members-panel__list'), document.querySelector('.lime-members-panel__list-frame'));
+wireScrollFades(document.querySelector('.lime-replies-panel__list'), document.querySelector('.lime-replies-panel__list-frame'));
+wireScrollFades(document.querySelector('.lime-settings__nav-scroll'), document.getElementById('settings-nav'));
+// The settings pane's own body is rebuilt on every section render
+// (renderProfileSection/renderSecuritySection, both via
+// settingsBodyFrameOpen) — wired from showSection itself, below, not
+// here, since the element doesn't exist yet at parse time and gets
+// replaced on every section switch.

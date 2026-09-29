@@ -1,29 +1,47 @@
-/* gradients.css — Reusable fade gradient system (LIME-03q).
+/* gradients.css — Reusable fade gradient system (LIME-03q; restructured LIME-46).
  *
- * Any scrollable container gets `.has-fade-y` (top+bottom) or
- * `.has-fade-x` (left+right) plus matching `.fade-top`/`.fade-bottom`/
- * `.fade-left`/`.fade-right` child divs — real elements, not
- * ::before/::after, so one pattern covers every area instead of a
- * bespoke pseudo-element rule per container.
+ * One pattern, everywhere a scroll area needs edge fades:
+ *   .lime-fade-frame        — position:relative, non-scrolling, hosts the
+ *                              fade divs. Never the element that scrolls.
+ *   <the actual scroller>   — a sibling of the fade divs inside the frame,
+ *                              the only element with overflow:auto. Its own
+ *                              class/id is whatever that area already used
+ *                              (.lime-list-col, .lime-messages, etc.) — see
+ *                              lime.css for each area's own frame/scroller
+ *                              split.
+ *   .fade-top/.fade-bottom/.fade-left/.fade-right — real child elements of
+ *                              the frame (not ::before/::after), siblings
+ *                              of the scroller, so scrolling the content
+ *                              never moves them (LIME-46's own bug: before
+ *                              this, three of these five areas had the fade
+ *                              divs living *inside* the scroller itself,
+ *                              so they scrolled away with the content).
  *
- * Each fade is opacity:0 at rest and only fades in once there's
- * actually hidden content in that direction — not a permanent overlay
- * that dims content even when nothing is cut off (a user-reported
- * regression in an earlier pass). JS (wireScrollFades in app.js)
- * tracks each scroll container's position and toggles the
- * is-scrolled-* classes below; the fade divs themselves never move —
- * only their opacity changes.
+ * Each fade is opacity:0 at rest and only fades in once there's actually
+ * hidden content in that direction — not a permanent overlay that dims
+ * content even when nothing is cut off (a user-reported regression in an
+ * earlier pass). JS (wireScrollFades in app.js) tracks each scroll
+ * container's position and toggles the is-scrolled-* classes below on the
+ * frame; the fade divs themselves never move — only their opacity changes.
+ *
+ * Colour (LIME-46): every fade blends into var(--surface-bg) — the real
+ * background of whichever panel it sits on (declared once per surface in
+ * lime.css, inherited by everything inside it) — never a hard-coded token,
+ * and never bare `transparent` (which interpolates through transparent
+ * *black*, reading as a grey halo on anything but a near-white background).
+ * color-mix's 0%-alpha endpoint fades to nothing while staying the same
+ * hue as --surface-bg the whole way, so there's no dip through an
+ * unrelated colour partway through the gradient.
  */
 
-.has-fade-y,
-.has-fade-x {
+.lime-fade-frame {
   position: relative;
 }
 
-.has-fade-y > .fade-top,
-.has-fade-y > .fade-bottom,
-.has-fade-x > .fade-left,
-.has-fade-x > .fade-right {
+.lime-fade-frame > .fade-top,
+.lime-fade-frame > .fade-bottom,
+.lime-fade-frame > .fade-left,
+.lime-fade-frame > .fade-right {
   content: '';
   position: absolute;
   pointer-events: none;
@@ -32,25 +50,32 @@
   transition: opacity 150ms ease;
 }
 
-.has-fade-y > .fade-top { top: 0; left: 0; right: 0; height: 32px; background: linear-gradient(to bottom, var(--soil-bg-canvas), transparent); }
-.has-fade-y > .fade-bottom { bottom: 0; left: 0; right: 0; height: 48px; background: linear-gradient(to top, var(--soil-bg-canvas), transparent); }
-.has-fade-x > .fade-left { left: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to right, var(--soil-bg-canvas), transparent); }
-.has-fade-x > .fade-right { right: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to left, var(--soil-bg-canvas), transparent); }
+.lime-fade-frame > .fade-top { top: 0; left: 0; right: 0; height: 32px; background: linear-gradient(to bottom, var(--surface-bg), color-mix(in srgb, var(--surface-bg) 0%, transparent)); }
+.lime-fade-frame > .fade-bottom { bottom: 0; left: 0; right: 0; height: 48px; background: linear-gradient(to top, var(--surface-bg), color-mix(in srgb, var(--surface-bg) 0%, transparent)); }
+.lime-fade-frame > .fade-left { left: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to right, var(--surface-bg), color-mix(in srgb, var(--surface-bg) 0%, transparent)); }
+.lime-fade-frame > .fade-right { right: 0; top: 0; bottom: 0; width: 24px; background: linear-gradient(to left, var(--surface-bg), color-mix(in srgb, var(--surface-bg) 0%, transparent)); }
 
+/* Bare class selectors (not scoped to .lime-fade-frame specifically) —
+   wireScrollFades toggles these on whichever element it was given as
+   fadeHost, always a .lime-fade-frame in practice, but nothing here needs
+   to assume that to find the right child. */
 .is-scrolled-top > .fade-top { opacity: 1; }
 .is-scrolled-bottom > .fade-bottom { opacity: 1; }
 .is-scrolled-start > .fade-left { opacity: 1; }
 .is-scrolled-end > .fade-right { opacity: 1; }
 
-/* Composer bottom fade is deliberately NOT part of the reusable
+/* Composer bottom fade is deliberately NOT part of the .lime-fade-frame
  * system above: it sits above the composer's OWN box (bottom: 100%
- * relative to .lime-composer, not the chat area's box), since the
+ * relative to .lime-composer, not the chat area's frame), since the
  * composer itself occupies the bottom of .lime-chat-body — a generic
- * .fade-bottom anchored to the container's own bottom edge would
- * render entirely underneath the opaque composer bar, invisible. It's
- * also deliberately NOT scroll-gated: the composer is a permanent bar
- * always sitting over the thread, not an overflow indicator, so it
- * stays visible regardless of scroll position.
+ * .fade-bottom anchored to the frame's own bottom edge would render
+ * entirely underneath the opaque composer bar, invisible. It's also
+ * deliberately NOT scroll-gated: the composer is a permanent bar always
+ * sitting over the thread, not an overflow indicator, so it stays visible
+ * regardless of scroll position. LIME-46: recoloured to the same
+ * var(--surface-bg)/color-mix scheme as every other fade — the composer's
+ * own background is var(--surface-bg) too now (lime.css), so this and the
+ * bar it sits above can never visibly seam.
  */
 .lime-composer::before {
   content: '';
@@ -59,7 +84,7 @@
   right: 0;
   bottom: 100%;
   height: 40px; /* was 32px (LIME-09) — taller per this brief's explicit ask */
-  background: linear-gradient(to bottom, transparent, var(--soil-bg-canvas));
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-bg) 0%, transparent), var(--surface-bg));
   pointer-events: none;
 }
 
@@ -78,7 +103,11 @@
    --composer-clearance here on every change. 200px is only the fallback
    for the instant before that JS has run (or if ResizeObserver doesn't
    exist at all) — it's this same calibrated value, unchanged, just no
-   longer the only value that's ever used. */
+   longer the only value that's ever used. LIME-46: this rule and
+   lime.css's own copy of it were flagged as a possible leftover conflict
+   in that brief's own survey — checked directly, they already agree
+   (both var(--composer-clearance, 200px)) since LIME-39 already unified
+   them; nothing further needed here. */
 .lime-messages {
   padding-bottom: var(--composer-clearance, 200px);
 }

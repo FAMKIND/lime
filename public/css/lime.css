@@ -46,7 +46,17 @@ body {
   overflow-y:  hidden;
   /* Every panel's top row shares this so nothing reads as a
      separately-colored component stacked on top of another. */
-  background:  var(--soil-bg-canvas);
+  /* LIME-46: --surface-bg is the one variable every fade (gradients.css)
+     and the composer bar blend into — declared here so the whole center
+     column (list, Recent, thread, composer) inherits the same value by
+     default, and background itself now reads from it (not a second,
+     independent copy of the same token) so the two can never drift apart.
+     #right-panel and .lime-settings override it locally to their own,
+     different real background — see each for why. LIME-45 (later) will
+     override this on the thread specifically for a user-chosen chat
+     background, and every fade there follows automatically, for free. */
+  --surface-bg: var(--soil-bg-canvas);
+  background: var(--surface-bg);
 }
 
 /* Seed's layout ships height: 100vh for standalone use; here it's the only
@@ -1300,6 +1310,25 @@ body {
   min-width: 240px; /* matches app.js's MIN_RIGHT */
 }
 
+/* LIME-46: the right panel's real background (flush mode) is Seed's own
+   var(--calm-bg-subtle-default) — vendor/seed/components/layout/layout.css
+   already paints it, untouched here. This just makes --surface-bg agree,
+   so every fade inside (profile, members, replies) blends into the right
+   colour instead of inheriting body's canvas default. */
+#right-panel {
+  --surface-bg: var(--calm-bg-subtle-default);
+}
+
+/* Dark mode paints this panel a literal #1A1F1C (vendor's own rule,
+   layout.css ~250) — not var(--calm-bg-subtle-default)'s own dark value
+   (#1C2622, tokens.css), a real, if small, mismatch found while wiring
+   this up. Matched exactly rather than left to drift, since a fade
+   blending into the wrong shade by a few percent is exactly the kind of
+   "grey halo" this brief exists to remove. */
+[data-theme="dark"] #right-panel {
+  --surface-bg: #1A1F1C;
+}
+
 /* ─────────────────────────────────────────────────────
    NAV SEARCH — global modal (distinct from the center panel's
    local list filter; this one searches everything, everywhere).
@@ -1450,7 +1479,11 @@ body {
   transform: translate(-50%, -50%);
   width: min(960px, calc(100vw - 64px));
   height: min(720px, calc(100vh - 64px));
-  background: var(--soil-bg-elevated);
+  /* LIME-46: --surface-bg here is what .lime-settings__body's own fades
+     (added this brief — it had none before) blend into; .lime-settings__nav
+     overrides it locally below since it's a genuinely different shade. */
+  --surface-bg: var(--soil-bg-elevated);
+  background: var(--surface-bg);
   border-radius: var(--seed-radius-lg);
   box-shadow: var(--seed-shadow-xl);
   z-index: var(--seed-z-modal);
@@ -1501,6 +1534,11 @@ body {
   z-index: 1;
 }
 
+/* LIME-46: #settings-nav (this element) keeps its own identity/id — it's
+   what app.js's nav-search filter and section-switch code already query —
+   and becomes the non-scrolling frame; .lime-settings__nav-scroll (new)
+   is the actual scroller nested inside it, and where its own fades
+   (added this brief — there were none before) attach. */
 .lime-settings__nav {
   width: 240px;
   /* Without this, the declared 240px is the content box alone and the
@@ -1510,11 +1548,21 @@ body {
      bug this project has hit (LIME-18-fix4, LIME-21b). */
   box-sizing: border-box;
   flex-shrink: 0;
+  position: relative;
+  /* This surface is genuinely a different shade than the modal shell
+     around it (canvas vs. elevated) — a local override, not inherited. */
+  --surface-bg: var(--soil-bg-canvas);
+}
+
+.lime-settings__nav-scroll {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: var(--seed-space-1);
   padding: var(--seed-space-3);
-  background: var(--soil-bg-canvas);
+  background: var(--surface-bg);
   overflow-y: auto;
 }
 
@@ -1602,9 +1650,19 @@ body {
   color: var(--soil-text-muted);
 }
 
-.lime-settings__body {
+/* LIME-46: the flexible middle zone between the pane's fixed header and
+   (Profile only) fixed footer — that sizing role now belongs to the
+   wrapping .lime-settings__body-frame (app.js's settingsBodyFrameOpen),
+   since this element itself became the frame's absolute-fill scroller so
+   its own fade-top/fade-bottom siblings don't scroll away with it. */
+.lime-settings__body-frame {
   flex: 1;
   min-height: 0;
+}
+
+.lime-settings__body {
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   padding: var(--seed-space-4) var(--seed-space-6) var(--seed-space-6);
 }
@@ -2091,15 +2149,26 @@ body {
 
 /* ── 2a. Conversation list ── */
 
+/* LIME-46: #list-col keeps its own identity/id — the center-divider drag
+   code (app.js) already measures its width via getComputedStyle(listCol)
+   — and becomes the non-scrolling frame; .lime-list-col__scroll (new) is
+   the actual scroller nested inside it, where the fade divs' siblings
+   used to live directly (scrolling away with the content — this brief's
+   own bug #2). */
 .lime-list-col {
   position: relative;
   width: var(--list-width, 320px);
   flex-shrink: 0;
+}
+
+.lime-list-col__scroll {
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   scrollbar-width: none;
 }
 
-.lime-list-col::-webkit-scrollbar {
+.lime-list-col__scroll::-webkit-scrollbar {
   display: none;
 }
 
@@ -2458,9 +2527,10 @@ body {
 }
 
 /* The top fade lives in gradients.css now, as a real .fade-top child
-   div (LIME-03q's reusable .has-fade-y system) rather than a ::before
-   pseudo-element — see gradients.css for why it's a child of
-   .lime-chat-body specifically, not .lime-messages (the scroller). */
+   div (LIME-03q's reusable fade system, restructured LIME-46 to
+   .lime-fade-frame) rather than a ::before pseudo-element — see
+   gradients.css for why it's a child of .lime-chat-body specifically,
+   not .lime-messages (the scroller). */
 
 /* Messages — absolutely fills .lime-chat-body so the floating composer can
    overlay it. padding-bottom (composer's ~72px height + a small gap)
@@ -3119,9 +3189,9 @@ body {
   flex-shrink: 0;
 }
 
-/* Composer — floats over the messages list. Its ::before fade (48px,
+/* Composer — floats over the messages list. Its ::before fade (40px,
    sitting just above it) lives entirely in gradients.css now, since
-   it's a bespoke rule that doesn't fit the reusable .has-fade-y
+   it's a bespoke rule that doesn't fit the reusable .lime-fade-frame
    pattern — see the comment there for why. */
 /* Box (textarea + toolbar, one bordered container) above, actions row
    outside/below it (LIME-10-fix — matches the Claude reference
@@ -3138,7 +3208,13 @@ body {
   align-items: center;
   gap: var(--seed-space-1);
   padding: var(--seed-space-3) var(--seed-space-4) var(--seed-space-2); /* bottom 16px -> 8px */
-  background: var(--soil-bg-canvas);
+  /* LIME-46: was the literal --soil-bg-canvas token; now the inherited
+     --surface-bg (body's own default, since the composer only ever
+     floats over the center/thread, never the right panel) — its own
+     ::before fade (gradients.css) uses the same variable, so bar and
+     fade can never visibly seam even if a future brief changes the
+     thread's background. */
+  background: var(--surface-bg);
 }
 
 .lime-composer__box {
@@ -3797,9 +3873,25 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   flex-direction: column;
 }
 
+/* LIME-46: .lime-profile keeps its own identity (the delegated Edit-
+   profile/back-button click listener in app.js is already bound to it,
+   and click events bubble up through the new inner scroller just fine
+   either way) and becomes the non-scrolling frame; .lime-profile__scroll
+   (new) is the actual scroller, where the fade divs' siblings used to
+   live directly (scrolling away with the content — this brief's own bug
+   #2) — plus it turns out .lime-profile never had its own position:relative
+   at all before this; its fades were positioned relative to #right-panel
+   itself (which does), landing at that box's edges, not necessarily this
+   one's — found while wiring this up, fixed as part of the same change. */
 .lime-profile {
   flex: 1;
   min-height: 0;
+  position: relative;
+}
+
+.lime-profile__scroll {
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   /* 56px top padding keeps content aligned with nav/center's top rows —
      the toggle that used to live in its own row here is now a
@@ -3809,7 +3901,7 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   scrollbar-width: none;
 }
 
-.lime-profile::-webkit-scrollbar {
+.lime-profile__scroll::-webkit-scrollbar {
   display: none;
 }
 
@@ -3949,9 +4041,19 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   margin: 0;
 }
 
-.lime-members-panel__list {
+/* LIME-46: .lime-members-panel__list-frame (new) is the non-scrolling
+   frame taking over the sizing role .lime-members-panel__list itself
+   used to have; the list keeps its own identity/class (app.js's
+   renderMembersPanel already targets it directly) and becomes the actual
+   absolute-fill scroller. No fades existed here before this brief. */
+.lime-members-panel__list-frame {
   flex: 1;
   min-height: 0;
+}
+
+.lime-members-panel__list {
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   padding: var(--seed-space-2);
   display: flex;
@@ -4060,9 +4162,19 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   overflow: hidden;
 }
 
-.lime-replies-panel__list {
+/* LIME-46: same split as .lime-members-panel__list above — a new
+   non-scrolling frame takes the sizing role, the list itself (unchanged
+   identity — LIME-39's own repliesSticky and renderReplies both already
+   target it directly) becomes the absolute-fill scroller. No fades
+   existed here before this brief. */
+.lime-replies-panel__list-frame {
   flex: 1;
   min-height: 0;
+}
+
+.lime-replies-panel__list {
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   padding: var(--seed-space-4);
   display: flex;

@@ -182,10 +182,10 @@
         <div class="lime-center-body">
 
           <!-- 2a: Conversation list -->
-          <div class="lime-list-col has-fade-y" id="list-col">
+          <div class="lime-list-col lime-fade-frame" id="list-col">
             <div class="fade-top" aria-hidden="true"></div>
             <div class="fade-bottom" aria-hidden="true"></div>
-            <div class="lime-contacts">
+            <div class="lime-contacts lime-list-col__scroll">
               <div class="lime-contacts__search">
                 <div class="lime-search-field">
                   <span class="dew dew-search"></span>
@@ -209,17 +209,27 @@
                   </button>
                   <div class="lime-section__body">
                     <div class="lime-section__body-inner">
-                      <div class="lime-recent has-fade-x">
+                      <!-- LIME-46: fade-left/fade-right moved out to this
+                           new wrapper — .lime-recent is intrinsically
+                           sized by its own row content (not a flex item
+                           of a fixed-height ancestor the way list-col/
+                           profile are), so it can't also become an
+                           absolute-fill scroller the way theirs did; this
+                           plain non-scrolling wrapper is enough on its
+                           own, no sizing handoff needed. .lime-recent
+                           itself is completely unchanged — same class,
+                           same children, same renderRecentRow() target. -->
+                      <div class="lime-fade-frame lime-recent-frame">
                         <div class="fade-left" aria-hidden="true"></div>
                         <div class="fade-right" aria-hidden="true"></div>
-                        <!-- Rendered by app.js's renderRecentRow (LIME-36):
-                             "Me" first, then up to 10 people you've
-                             recently interacted with, most recent
-                             first, with real unread state from
-                             last_read_at. .lime-recent__item children
-                             are inserted here directly (no wrapper) —
-                             fade-left/fade-right above are position:
-                             absolute and untouched by every re-render. -->
+                        <div class="lime-recent">
+                          <!-- Rendered by app.js's renderRecentRow (LIME-36):
+                               "Me" first, then up to 10 people you've
+                               recently interacted with, most recent
+                               first, with real unread state from
+                               last_read_at. .lime-recent__item children
+                               are inserted here directly (no wrapper). -->
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -336,7 +346,7 @@
 
           <!-- 2b: Chat -->
           <div class="lime-conversation">
-            <div class="lime-chat-body has-fade-y">
+            <div class="lime-chat-body lime-fade-frame">
               <div class="fade-top" aria-hidden="true"></div>
               <!-- Rendered from seed-data by app.js (LIME-06): messages for
                    whichever conversation is currently selected. -->
@@ -453,18 +463,20 @@
         <span class="dew dew-sidebar-right-closed"></span>
       </button>
       <div class="lime-profile-panel">
-        <div class="lime-profile has-fade-y">
+        <div class="lime-profile lime-fade-frame">
           <div class="fade-top" aria-hidden="true"></div>
-          <!-- Rendered by app.js's renderProfilePanel (LIME-35) — the
-               avatar, name, pronouns/role/school, "About me," and
-               contact info for whichever person is currently shown.
-               No hard-coded person: a fresh render replaces this
-               entirely every time showPersonDetails(profileId) runs,
-               including a back-to-Members chevron when reached from
-               there, and an "Edit profile" button for your own. A
-               dedicated wrapper (not .lime-profile itself) so
-               .fade-top above survives every re-render untouched. -->
-          <div class="lime-profile__content"></div>
+          <div class="lime-profile__scroll">
+            <!-- Rendered by app.js's renderProfilePanel (LIME-35) — the
+                 avatar, name, pronouns/role/school, "About me," and
+                 contact info for whichever person is currently shown.
+                 No hard-coded person: a fresh render replaces this
+                 entirely every time showPersonDetails(profileId) runs,
+                 including a back-to-Members chevron when reached from
+                 there, and an "Edit profile" button for your own. A
+                 dedicated wrapper (not .lime-profile__scroll itself) so
+                 .fade-top above survives every re-render untouched. -->
+            <div class="lime-profile__content"></div>
+          </div>
         </div>
       </div>
 
@@ -472,11 +484,16 @@
         <header class="lime-members-panel__header">
           <h2 class="lime-members-panel__title"></h2>
         </header>
-        <!-- Rendered by app.js's renderMembersPanel (LIME-35): every
+        <!-- LIME-46: frame + fades new; .lime-members-panel__list itself
+             (rendered by app.js's renderMembersPanel, LIME-35 — every
              member of the currently open group, with their role
-             (Owner/Member), each clickable through to their own
-             details — showPersonDetails' back chevron returns here. -->
-        <div class="lime-members-panel__list"></div>
+             (Owner/Member), each clickable through to their own details —
+             showPersonDetails' back chevron returns here) is unchanged. -->
+        <div class="lime-members-panel__list-frame lime-fade-frame">
+          <div class="fade-top" aria-hidden="true"></div>
+          <div class="fade-bottom" aria-hidden="true"></div>
+          <div class="lime-members-panel__list"></div>
+        </div>
       </div>
 
       <div class="lime-replies-panel">
@@ -495,7 +512,14 @@
         <div class="lime-replies-panel__quote" id="replies-quote"></div>
         <div class="lime-replies-panel__meta" id="replies-meta"></div>
 
-        <div class="lime-replies-panel__list" id="replies-list"></div>
+        <!-- LIME-46: frame + fades new; #replies-list itself is unchanged
+             (LIME-39's own repliesSticky and renderReplies both already
+             target it by this same id). -->
+        <div class="lime-replies-panel__list-frame lime-fade-frame">
+          <div class="fade-top" aria-hidden="true"></div>
+          <div class="fade-bottom" aria-hidden="true"></div>
+          <div class="lime-replies-panel__list" id="replies-list"></div>
+        </div>
 
         <!-- Same box/row/toolbar/actions structure as the main composer
              (LIME-09 through LIME-10-fix14) so it gets the identical
@@ -593,14 +617,18 @@
   <div class="lime-modal-backdrop" id="settings-modal-backdrop"></div>
   <div class="lime-settings" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-pane-title">
     <button type="button" class="lime-icon-btn lime-settings__close" id="settings-modal-close" aria-label="Close settings" title="Close"><span class="dew dew-close"></span></button>
-    <div class="lime-settings__nav" id="settings-nav">
-      <div class="lime-settings__nav-search">
-        <span class="dew dew-search"></span>
-        <input type="search" id="settings-nav-search-input" placeholder="Search settings">
+    <div class="lime-settings__nav lime-fade-frame" id="settings-nav">
+      <div class="fade-top" aria-hidden="true"></div>
+      <div class="fade-bottom" aria-hidden="true"></div>
+      <div class="lime-settings__nav-scroll">
+        <div class="lime-settings__nav-search">
+          <span class="dew dew-search"></span>
+          <input type="search" id="settings-nav-search-input" placeholder="Search settings">
+        </div>
+        <div class="lime-menu__label">Account</div>
+        <button type="button" class="lime-settings__nav-item lime-menu__item" data-settings-section="profile"><span class="dew dew-person"></span>Profile</button>
+        <button type="button" class="lime-settings__nav-item lime-menu__item" data-settings-section="security"><span class="dew dew-shield-check"></span>Login &amp; security</button>
       </div>
-      <div class="lime-menu__label">Account</div>
-      <button type="button" class="lime-settings__nav-item lime-menu__item" data-settings-section="profile"><span class="dew dew-person"></span>Profile</button>
-      <button type="button" class="lime-settings__nav-item lime-menu__item" data-settings-section="security"><span class="dew dew-shield-check"></span>Login &amp; security</button>
     </div>
     <div class="lime-settings__pane" id="settings-pane">
       <!-- Rendered by app.js: a header (title + muted description) and
