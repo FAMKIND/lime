@@ -4251,6 +4251,40 @@ document.addEventListener('keydown', (e) => {
     return Object.keys(LimeAppearance.CANVAS_P).map((name) => canvasSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === current, isDark)).join('');
   }
 
+  // LIME-52. "None" is its own thumbnail (a plain swatch, not a missing
+  // one) so every option — including turning patterns off — lives in the
+  // same row, same reasoning the canvas swatches don't have a separate
+  // "no tone" control either.
+  function patternNoneThumbHtml(isSelected) {
+    return '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--none' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="none" title="None" aria-label="None"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
+  }
+
+  function patternPresetThumbHtml(preset, isSelected) {
+    const uri = LimeAppearance.patternMaskDataUri(preset.id);
+    return '<button type="button" class="lime-pattern-thumb' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="preset" data-pattern-preset="' + preset.id + '" style="mask-image:url(&quot;' + uri + '&quot;);-webkit-mask-image:url(&quot;' + uri + '&quot;)" title="' + escapeHtml(preset.label) + '" aria-label="' + escapeHtml(preset.label) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
+  }
+
+  function intensityTabsHtml(current) {
+    const levels = [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }];
+    return '<div class="seed-tabs seed-tabs--pill seed-tabs--sm" role="tablist" aria-label="Intensity" id="settings-intensity-tabs">'
+      + levels.map((l) => {
+        const active = l.id === (current || 'low');
+        return '<button type="button" class="seed-tab' + (active ? ' seed-tab--active' : '') + '" role="tab" aria-selected="' + active + '" data-pattern-intensity="' + l.id + '">' + l.label + '</button>';
+      }).join('')
+      + '</div>';
+  }
+
+  function patternRowHtml(pattern) {
+    const kind = (pattern && pattern.kind) || 'none';
+    const thumbs = patternNoneThumbHtml(kind === 'none')
+      + LimeAppearance.PATTERN_PRESETS.map((p) => patternPresetThumbHtml(p, kind === 'preset' && pattern.presetId === p.id)).join('')
+      + '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--upload' + (kind === 'upload' ? ' is-selected' : '') + '" data-pattern-action="upload" title="Upload your own…" aria-label="Upload your own…"' + (kind === 'upload' ? ' aria-current="true"' : '') + '><span class="dew dew-plus"></span></button>'
+      + '<input type="file" accept="image/*" hidden data-pattern-upload-input>';
+    const hasPattern = kind !== 'none';
+    return '<div class="lime-pattern-thumbs" id="settings-pattern-thumbs">' + thumbs + '</div>'
+      + (hasPattern ? '<div class="lime-pattern-controls">' + intensityTabsHtml(pattern.intensity) + '<button type="button" class="lime-menu__item lime-pattern-remove" data-pattern-action="remove">Remove</button></div>' : '');
+  }
+
   function renderPreferencesSection() {
     const appearance = LimeStore.getAppearance();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -4260,6 +4294,8 @@ document.addEventListener('keydown', (e) => {
       + '<h3 class="lime-settings__subsection-heading">Appearance</h3>'
       + compactRowHtml('mode', 'Mode', modeTabsHtml('settings', appearance.theme))
       + compactRowHtml('canvas', 'Canvas', (isDark ? canvasDisabledNoticeHtml() : '') + '<div class="lime-appearance-swatches' + (isDark ? ' is-disabled' : '') + '" id="settings-canvas-swatches">' + canvasSwatchesHtml(isDark) + '</div>')
+      + compactRowHtml('pattern', 'Pattern', patternRowHtml(appearance.pattern))
+      + '<p class="lime-settings__description">A subtle texture behind every panel. Sits at low intensity by default, and stays out of the way of anything you read.</p>'
       + '</div>'
       + SETTINGS_BODY_FRAME_CLOSE;
   }
@@ -4330,8 +4366,74 @@ document.addEventListener('keydown', (e) => {
       LimeStore.setAppearance({ canvas: name }).then(() => renderPreferencesSection()).catch(console.error);
       return;
     }
+    const patternNoneBtn = e.target.closest('[data-pattern-kind="none"]');
+    if (patternNoneBtn) {
+      LimeAppearance.applyPattern(null);
+      LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(() => renderPreferencesSection()).catch(console.error);
+      return;
+    }
+    const patternPresetBtn = e.target.closest('[data-pattern-preset]');
+    if (patternPresetBtn) {
+      const presetId = patternPresetBtn.dataset.patternPreset;
+      // Keeps whichever intensity was already set (switching presets
+      // shouldn't reset a Medium pick back to Low), defaulting to Low —
+      // the brief's own "user-invisible-by-default" — only the first
+      // time any pattern is ever chosen.
+      const currentIntensity = (LimeStore.getAppearance().pattern || {}).intensity || 'low';
+      const pattern = { kind: 'preset', presetId, intensity: currentIntensity };
+      LimeAppearance.applyPattern(pattern);
+      LimeStore.setAppearance({ pattern }).then(() => renderPreferencesSection()).catch(console.error);
+      return;
+    }
+    const patternUploadBtn = e.target.closest('[data-pattern-action="upload"]');
+    if (patternUploadBtn) {
+      pane.querySelector('[data-pattern-upload-input]')?.click();
+      return;
+    }
+    const patternRemoveBtn = e.target.closest('[data-pattern-action="remove"]');
+    if (patternRemoveBtn) {
+      LimeAppearance.applyPattern(null);
+      LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(() => renderPreferencesSection()).catch(console.error);
+      return;
+    }
+    const intensityBtn = e.target.closest('[data-pattern-intensity]');
+    if (intensityBtn) {
+      const intensity = intensityBtn.dataset.patternIntensity;
+      const current = LimeStore.getAppearance().pattern || { kind: 'none' };
+      const pattern = Object.assign({}, current, { intensity });
+      LimeAppearance.applyPattern(pattern);
+      LimeStore.setAppearance({ pattern }).then(() => renderPreferencesSection()).catch(console.error);
+      return;
+    }
     const changeBtn = e.target.closest('[data-change]');
     if (changeBtn) toggleInlineForm(changeBtn.dataset.change);
+  });
+
+  // LIME-52: the pattern upload input — a separate delegated listener
+  // (change, not click) for the same reason LIME-45's own photo-upload
+  // input needed one. Path is namespaced under 'appearance' (not a real
+  // conversation id) so it reads clearly in IndexedDB, matching the
+  // brief's own "path appearance/pattern".
+  pane.addEventListener('change', (e) => {
+    const input = e.target.closest('[data-pattern-upload-input]');
+    if (!input || !input.files || !input.files[0]) return;
+    const file = input.files[0];
+    if (file.size > 1024 * 1024) {
+      // Same inline-error pattern the Profile form already uses
+      // (setFieldError/fieldErrorEl) — compactRowHtml already gives the
+      // Pattern row its own .lime-settings__field-error, so no native
+      // window.alert() (this app deliberately replaces those, per
+      // confirmDialog's own history).
+      setFieldError('pattern', 'Please choose an image under 1 MB.');
+      input.value = '';
+      return;
+    }
+    const currentIntensity = (LimeStore.getAppearance().pattern || {}).intensity || 'low';
+    LimeStore.uploadAttachment(file, { conversationId: 'appearance' }).then(({ path }) => {
+      const pattern = { kind: 'upload', path, intensity: currentIntensity };
+      LimeAppearance.applyPattern(pattern);
+      return LimeStore.setAppearance({ pattern });
+    }).then(() => renderPreferencesSection()).catch(console.error);
   });
 
   function filterSettings() {

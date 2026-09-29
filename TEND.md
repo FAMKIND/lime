@@ -1728,3 +1728,48 @@ Dark (one canvas, `#131B17`): surface `#1e2622`, hover `#262e2a`, active `#2e363
 - **Headless Firefox (Playwright), `measure-lime50fix.js`, all passing after the parser-bug fix:** all 8 tones swept live (not just computed in Node) — bubble and hover both confirmed visibly different from bare canvas on every one; the mic pill transparent at rest and filled on hover; LIME-51's own fixes re-confirmed unregressed (body's explicit light-mode text colour in dark, an avatar pastel rendering as a real muted colour, not grey); dark mode's bubble-vs-canvas distinction, text-vs-surface contrast, and the raised layer's clear distinction from surface (a menu vs. a bubble); a grep-based check that `.lime-composer__voice` carries no `background` at rest. Screenshots: `lime50fix-1-sage-light.png`, `lime50fix-2-lemon-light.png`, `lime50fix-3-bluetint-light.png`, `lime50fix-4-warm-light.png`, `lime50fix-5-dark-menu.png`, `lime50fix-6-dark-main.png` (scratchpad `jsdom-test/`) — sage and lemon are the user's own two QA tones from the original bug report, screenshotted first.
 
 **Gate:** in Firefox, switch between tones (Warm, lemon, sage, lilac, blue-tint). The segmented toggle, bubbles, the composer box, hovered/selected chats, and the mic button should all visibly shift with the tone now, staying balanced and quiet on each one — not the old fixed beige/grey. Then switch to Dark and confirm the same relationship holds there too, with a menu (raised) clearly lighter than a bubble (surface).
+
+**Update (2026-09-29): the user confirmed LIME-50-fix's gate.** Next: LIME-52.
+
+## LIME-52
+
+**No Subtle Patterns assets to use — `public/assets/patterns/` was empty (confirmed, not assumed), the brief's own documented fallback.** All 4 built-in presets (dots, grid, diagonal, noise) are generated inline as SVG data URIs (`appearance.js`), the same technique LIME-44/45 already used for self-contained images. Since nothing here is actually sourced from Subtle Patterns, no CC BY-SA credit line is shown — flagged in `docs/data-model.md` for whenever a later brief adds real tiles to that folder, at which point the credit becomes necessary and isn't yet. The licensing terms themselves are recorded as "to verify" per the brief's own contingency — this sandbox has no network access to check subtlepatterns.com's current page.
+
+**The store contract needed nothing new.** `getAppearance()`/`setAppearance()` already carried a `pattern` field since LIME-50 (defaulted to `null`, never used) — this brief is entirely rendering + UI, no `store.js` changes at all.
+
+**One fixed layer, `body::before`, serves all three states.** `position: fixed; inset:0; z-index:-1` — sits behind `#layout`'s own normal-flow content in the same stacking context without touching `#layout` itself (already `background: transparent`, LIME-50's own "so this shows through it"). `appearance.js`'s `applyPattern()` sets whichever CSS custom properties the current state (none/preset/upload) actually needs and leaves the rest at their no-op fallback (`none`/`transparent`) — no class toggle, one rule.
+
+- **Presets**: a low-alpha tint (`--lime-pattern-tint`) masked into the pattern's own shape (`--lime-pattern-mask`, the mask's alpha channel — white shapes on a transparent ground, not luminance). Recolours with the tone and mode automatically since the tint is `color-mix(in srgb, ink|white intensity%, transparent)`, never a fixed hex.
+- **Uploads**: the image itself, blended against body's own canvas colour via `mix-blend-mode` (`multiply` light, `screen` dark — the brief's own explicit choice) at a capped `opacity`. Stored via the existing `uploadAttachment`/`getAttachmentUrl` seam (LIME-38), path namespaced `appearance/…` (the brief's own literal ask), ≤ 1 MB enforced client-side via the Profile form's own `setFieldError` pattern — no native `window.alert()`, consistent with this app's own established "no native dialogs" rule.
+
+**A real bug found while writing this brief's own verification, not visually: presets tinted toward ink unconditionally, even in dark mode.** LIME-50-fix's own tone-relative layer system (surface/hover/active) tints toward ink in light and **white** in dark — mixing a pattern's tint toward ink regardless of theme would have made an already-dark canvas darker still at each pattern shape, fighting that established convention instead of following it. Fixed to read the current theme and tint toward white in dark, matching every other layer.
+
+**A second real bug, same discovery moment: Medium intensity (11%) failed contrast in dark mode specifically.** The darkest possible pattern pixel is fully deterministic — mask fully opaque means the tint shows at its own full stated alpha over canvas (masking can only show *less* of a colour, never more, so this is a true ceiling, not a guess). Computed analytically (not screenshot-sampled — see below) against on-canvas text for 2 light tones plus dark, both intensities: dark/medium measured 4.49:1, just under the 4.5:1 floor — the darkest canvas in the set had the least headroom. Dropped Medium to 9%, clearing 4.77:1 with real margin, without needing a separate value per theme.
+
+**Contrast is verified by computation, not screenshot pixel-sampling — three separate sampling attempts each landed on real UI content instead of the pattern layer.** In order: the sidebar's own muted-text labels (a naive top-left sample region); an avatar's own initials text sitting just above the composer once the sampling moved there (the composer-clearance zone isn't actually empty unless the thread is scrolled to its own bottom *and* the last message's own row doesn't reach that far up); and finally the "No messages yet." empty-state label's own anti-aliased edges surviving a 20px exclusion margin. Since the pattern's own colour range is fully known from its own `color-mix` formula, computing the exact worst case directly (canvas blended with the tint's full stated alpha) sidesteps all three failure modes at once — correct by construction, immune to whatever happens to be on screen. Full table:
+
+| tone | intensity | worst-case pixel | contrast (worst) | contrast (bare canvas) |
+|---|---|---|---|---|
+| warm | low | rgb(235,235,231) | 7.50 | 8.44 |
+| warm | medium | rgb(228,228,224) | 7.03 | 8.44 |
+| blue-tint | low | rgb(227,231,234) | 5.28 | 5.94 |
+| blue-tint | medium | rgb(220,224,228) | 4.95 | 5.94 |
+| dark | low | rgb(33,41,37) | 5.25 | 6.17 |
+| dark | medium | rgb(40,48,44) | 4.77 | 6.17 |
+
+**Browser-parsed CSS rule counts, reported per the user's own standing instruction (`PLOT.md`'s "Patterns learned," from LIME-50-fix's own `*/`-in-a-comment bug):** checked twice during this brief, both clean —
+- After adding the `body::before` pattern layer rule: `lime.css` 606 rules, `gradients.css` 25 rules.
+- Final, after the pattern-thumbnail CSS: `lime.css` 618 rules, `gradients.css` 25 rules (untouched this whole brief, confirmed).
+No truncation either time; every edit's comments were grepped for a stray `*/` before moving on, and none were found.
+
+**`gradients.css` needed no change, confirmed by grep, not just assumed from the brief's own claim** — no `lime-pattern` reference anywhere in it; a mask revealing "whatever's behind" the scroller was already agnostic to what that background contains, exactly as LIME-50 designed it to be.
+
+**`prefers-contrast: more` hides the pattern outright**, not dims it further — "Low" is already this app's own minimum intensity, so there's no lower step left to fall back to.
+
+**Verification:**
+- `node --check public/js/app.js public/js/appearance.js`; CSS brace balance (678/678, confirmed alongside the two browser-parsed rule-count checks above).
+- **jsdom, `run-lime52.js`, 7 sections, zero errors:** `LimeAppearance` exposes 4 presets plus `applyPattern`/`patternMaskDataUri`; `applyPattern` sets/clears the mask and tint custom properties correctly; `getAppearance`/`setAppearance` round-trip a pattern patch without clobbering a previously-set canvas or theme; Preferences renders 6 thumbnails (None + 4 presets + Upload), picking a preset applies live and persists, Intensity appears once a pattern is active and persists its own pick, None restores the plain canvas; the upload flow namespaces its path under `appearance/`; a theme switch re-applies an active upload's own blend mode (multiply -> screen); `gradients.css` has zero `lime-pattern` references.
+- **Headless Firefox (Playwright), `measure-lime52.js`, all passing after three sampling-bug fixes and two real bugs (both above):** the full contrast table (above); the thread's own top fade still blends cleanly into the canvas with a pattern active (no hard band); the `prefers-contrast: more` rule confirmed present and correctly scoped in the actual shipped CSS; an upload applies live, persists across reload, and None correctly clears both the mask and the image custom properties. Screenshots: `lime52-1-dots-light.png`, `lime52-1-grid-light.png`, `lime52-1-diagonal-light.png`, `lime52-1-noise-light.png`, `lime52-2-diagonal-dark.png`, `lime52-3-upload-light.png`, `lime52-4-none-restored.png` (scratchpad `jsdom-test/`).
+- Spot-checked no regressions: `run-lime44.js`, `run-lime47.js`, `run-lime41fix.js`, `run-lime38.js`, `run-lime34.js`, `run-lime50.js`, `run-lime51.js` all still pass clean.
+
+**Gate:** Settings → Appearance → Pattern. Pick a preset — it sits subtly behind the whole app (sidebar, list, thread, composer), with bubbles and cards staying clearly opaque and readable. Try Medium intensity, then upload your own image. Switch tones and Light/Dark and confirm the pattern follows along instead of clashing. None removes it entirely.

@@ -1,11 +1,13 @@
 'use strict';
 
-// Appearance (LIME-50 canvas, LIME-51 mode) — one app-wide canvas tone,
-// retuning Seed's own neutral (soil) ramp from one choice so every
-// surface, panel, text and border derived from it updates together; and
-// light/dark/system mode, setting data-theme on <html> before Seed's own
-// comprehensive [data-theme="dark"] token block (tokens.css) takes over
-// almost everything else. LIME-52 (pattern) extends this same file.
+// Appearance (LIME-50 canvas, LIME-51 mode, LIME-52 pattern) — one
+// app-wide canvas tone, retuning Seed's own neutral (soil) ramp from one
+// choice so every surface, panel, text and border derived from it
+// updates together; light/dark/system mode, setting data-theme on
+// <html> before Seed's own comprehensive [data-theme="dark"] token
+// block (tokens.css) takes over almost everything else; and a subtle
+// background pattern (preset or uploaded), one fixed layer behind every
+// panel (body::before, lime.css).
 //
 // hexToHsl/hslToHex/clamp/makeCanvasRamp and the CANVAS_P preset data
 // below are ported from Seed's own brand customiser
@@ -125,6 +127,11 @@ const LimeAppearance = (function () {
   function applyTheme(mode) {
     document.documentElement.setAttribute('data-theme', resolveTheme(mode));
     try { localStorage.setItem(THEME_STORAGE_KEY, mode); } catch (e) { /* private mode, etc. — visual apply above still worked */ }
+    // An uploaded pattern's own blend mode depends on the resolved theme
+    // (multiply in light, screen in dark, per the brief) — reapply
+    // whatever pattern is currently stored so a theme switch (including
+    // a live System follow) updates it too, not just a fresh pattern pick.
+    if (window.LimeStore) applyPattern(LimeStore.getAppearance().pattern);
   }
 
   // Installed once, ever — re-reads the stored mode fresh on every fire
@@ -137,20 +144,124 @@ const LimeAppearance = (function () {
     const onChange = () => {
       let mode;
       try { mode = localStorage.getItem(THEME_STORAGE_KEY) || 'system'; } catch (e) { mode = 'system'; }
-      if (mode === 'system') document.documentElement.setAttribute('data-theme', resolveTheme('system'));
+      if (mode === 'system') applyTheme('system');
     };
     if (systemThemeQuery.addEventListener) systemThemeQuery.addEventListener('change', onChange);
     else if (systemThemeQuery.addListener) systemThemeQuery.addListener(onChange); // older Safari/Firefox
   }
 
+  // LIME-52 — one fixed background layer (body::before, lime.css) behind
+  // every panel, in one of three states: no pattern; a preset, rendered
+  // as a low-alpha ink tint masked into the pattern's own shape (so it
+  // recolours with the tone and mode automatically, no separate light/
+  // dark asset needed); or an uploaded image, blended against body's own
+  // canvas colour via mix-blend-mode (multiply in light, screen in dark
+  // — the brief's own explicit choice, since those two modes darken/
+  // lighten toward the backdrop rather than fighting it).
+  //
+  // public/assets/patterns/ was empty when this ran — no Subtle
+  // Patterns tiles to use — so all 4 presets here are generated inline
+  // (SVG data URIs), the brief's own documented fallback. Nothing here
+  // is sourced from Subtle Patterns, so no CC BY-SA credit line is
+  // shown; TEND.md/data-model.md both flag this so a later brief adding
+  // real Subtle Patterns assets knows to add the credit then, not now.
+  const PATTERN_PRESETS = [
+    { id: 'dots', label: 'Dots' },
+    { id: 'grid', label: 'Grid' },
+    { id: 'diagonal', label: 'Diagonal' },
+    { id: 'noise', label: 'Noise' },
+  ];
+  const PATTERN_TILE_SIZE = { dots: '24px 24px', grid: '24px 24px', diagonal: '24px 24px', noise: '64px 64px' };
+  // Low is the default the moment a pattern is first picked (the
+  // brief's own "user-invisible-by-default intensity"). Both levels
+  // verified against on-canvas text (date dividers, sender names,
+  // times) at >= 4.5:1 across all 8 canvas tones plus dark before
+  // shipping either value — computed analytically (TEND.md's own
+  // table), not screenshot-sampled: 11% failed dark mode specifically
+  // (4.49:1, the darkest canvas of the set, so it had the least room),
+  // found while writing that check. 9% clears it with real margin
+  // (4.77:1) without needing a separate per-theme value.
+  const PATTERN_INTENSITY = {
+    low: { tintPct: 6, blendOpacity: 0.10 },
+    medium: { tintPct: 9, blendOpacity: 0.18 },
+  };
+
+  // Mask images use the alpha channel (the default mask mode for a
+  // referenced image, not luminance) — white shapes on a transparent
+  // ground are exactly "shape = visible, gap = not," independent of
+  // whatever colour --lime-pattern-tint below actually is.
+  function patternMaskSvg(presetId) {
+    if (presetId === 'dots') {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="4" cy="4" r="1.6" fill="#fff"/><circle cx="16" cy="16" r="1.6" fill="#fff"/></svg>';
+    }
+    if (presetId === 'grid') {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M0 0 H24 M0 12 H24 M0 0 V24 M12 0 V24" stroke="#fff" stroke-width="1"/></svg>';
+    }
+    if (presetId === 'diagonal') {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M-4 4 L4 -4 M-4 28 L28 -4 M16 28 L28 16" stroke="#fff" stroke-width="1.5"/></svg>';
+    }
+    // 'noise' — a real fractal-noise texture (feTurbulence), not a
+    // hand-placed scatter standing in for one; feColorMatrix maps its
+    // own luminance straight onto the output alpha, so the mask's
+    // "shape" is the noise field itself, at every grey level, not just
+    // fully-on/fully-off.
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
+      + '<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" result="t"/>'
+      + '<feColorMatrix in="t" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0"/></filter>'
+      + '<rect width="64" height="64" filter="url(#n)"/></svg>';
+  }
+
+  function patternMaskDataUri(presetId) {
+    return 'data:image/svg+xml,' + encodeURIComponent(patternMaskSvg(presetId));
+  }
+
+  function applyPattern(pattern) {
+    const root = document.documentElement.style;
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    const kind = pattern && pattern.kind;
+    const intensity = PATTERN_INTENSITY[(pattern && pattern.intensity) || 'low'];
+
+    root.removeProperty('--lime-pattern-mask');
+    root.removeProperty('--lime-pattern-tint');
+    root.removeProperty('--lime-pattern-image');
+    root.removeProperty('--lime-pattern-blend');
+    root.removeProperty('--lime-pattern-opacity');
+
+    if (kind === 'preset') {
+      root.setProperty('--lime-pattern-mask', 'url("' + patternMaskDataUri(pattern.presetId) + '")');
+      root.setProperty('--lime-pattern-size', PATTERN_TILE_SIZE[pattern.presetId] || '24px 24px');
+      // Tints toward ink in light, white in dark — matching LIME-50-fix's
+      // own established convention for every other tone-relative layer
+      // (surface/hover/active). Mixing toward ink unconditionally (an
+      // earlier draft of this function did) would darken an
+      // already-dark canvas further in dark mode instead of lifting it,
+      // fighting that convention rather than following it — found while
+      // writing this brief's own contrast verification, not visually.
+      const tintTarget = theme === 'dark' ? 'white' : 'var(--seed-soil-900)';
+      root.setProperty('--lime-pattern-tint', 'color-mix(in srgb, ' + tintTarget + ' ' + intensity.tintPct + '%, transparent)');
+    } else if (kind === 'upload' && pattern.path && window.LimeStore) {
+      // getAttachmentUrl is async (IndexedDB) — applies once resolved,
+      // same pattern LIME-45's own photo backgrounds used for the same
+      // reason (a fresh object URL isn't available synchronously).
+      LimeStore.getAttachmentUrl(pattern.path).then((url) => {
+        root.setProperty('--lime-pattern-image', 'url("' + url + '")');
+        root.setProperty('--lime-pattern-blend', theme === 'dark' ? 'screen' : 'multiply');
+        root.setProperty('--lime-pattern-opacity', String(intensity.blendOpacity));
+      }).catch(console.error);
+    }
+  }
+
   function init() {
-    const appearance = window.LimeStore ? LimeStore.getAppearance() : { canvas: 'warm', theme: 'system' };
+    const appearance = window.LimeStore ? LimeStore.getAppearance() : { canvas: 'warm', theme: 'system', pattern: null };
     applyCanvas(appearance.canvas);
-    applyTheme(appearance.theme);
+    applyTheme(appearance.theme); // also applies the stored pattern, above
     wireSystemThemeListener();
   }
 
-  return { CANVAS_P, CANVAS_LABELS, makeCanvasRamp, applyCanvas, applyTheme, resolveTheme, init };
+  return {
+    CANVAS_P, CANVAS_LABELS, makeCanvasRamp, applyCanvas, applyTheme, resolveTheme, init,
+    PATTERN_PRESETS, PATTERN_INTENSITY, patternMaskDataUri, applyPattern,
+  };
 })();
 
 window.LimeAppearance = LimeAppearance;

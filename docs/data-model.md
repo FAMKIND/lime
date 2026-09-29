@@ -1022,6 +1022,75 @@ revert of LIME-50 itself, which also carries the app-wide canvas work).
   all clearing the brief's own 4.5:1/3:1 bars before any Lime-specific
   change, so none was made.
 
+### Pattern (LIME-52)
+
+- **No Subtle Patterns assets used — the brief's own documented
+  fallback, not a shortcut.** `public/assets/patterns/` was empty when
+  this ran, so all 4 built-in presets (dots, grid, diagonal, noise) are
+  generated inline as SVG data URIs (`appearance.js`), the same
+  technique LIME-44/45 already used for their own inline images. Since
+  nothing here is actually sourced from Subtle Patterns, **no CC BY-SA
+  credit line is shown** — the brief's own licensing note is recorded as
+  "to verify" (no network access to confirm current terms) for if/when a
+  later brief adds real Subtle Patterns tiles to that folder, at which
+  point the credit line becomes necessary and isn't yet.
+- **One fixed layer, `body::before`**, behind every panel — `position:
+  fixed; inset:0; z-index:-1`, sitting behind `#layout`'s own normal-flow
+  content in the same stacking context without needing to touch
+  `#layout` itself (already `background: transparent`, LIME-50). One
+  rule serves all three pattern states (none/preset/upload) via CSS
+  custom properties `appearance.js`'s `applyPattern()` sets or leaves at
+  their no-op fallback (`none`/`transparent`) — no class toggle needed.
+- **Presets are tinted masks, not fixed assets** — a low-alpha colour
+  (`--lime-pattern-tint`, `color-mix(in srgb, ink|white intensity%,
+  transparent)`) masked into the pattern's own shape
+  (`--lime-pattern-mask`, the mask's alpha channel, not luminance — white
+  shapes on a transparent ground). Tints toward ink in light, white in
+  dark — matching LIME-50-fix's own tone-relative layer convention
+  exactly (a bug in an earlier draft tinted toward ink unconditionally,
+  caught while writing this brief's own contrast verification, not
+  visually). Recolours with the tone and mode automatically since the
+  tint is token-derived, never a fixed hex.
+- **Uploads blend against body's own canvas colour** via `mix-blend-mode`
+  (`multiply` in light, `screen` in dark — the brief's own explicit
+  choice) at a capped `opacity`, re-applied whenever the theme changes
+  (an upload's own blend mode depends on it) — `LimeAppearance.applyTheme`
+  calls `applyPattern` again internally for exactly this reason, so a
+  live System-mode follow updates an active upload too, not just a fresh
+  pattern pick. Stored via the existing `uploadAttachment`/
+  `getAttachmentUrl` seam (LIME-38), path namespaced `appearance/…` (the
+  brief's own literal ask), ≤ 1 MB enforced client-side with the same
+  inline-error pattern (`setFieldError`) the Profile form already uses —
+  no native `window.alert()`.
+- **Intensity (Low/Medium) tuned by computation, not guessed — and
+  Medium needed adjusting from the value that first shipped.** The
+  darkest possible pattern pixel is deterministic (mask fully opaque ->
+  the tint's own full stated alpha over canvas; masking can only show
+  *less* of a layer's own colour, never more, so this is a true ceiling,
+  not an approximation) — checked analytically against on-canvas text
+  for 2 light tones plus dark, both intensities. Medium at its first
+  value (11%) measured 4.49:1 in dark mode — just under the 4.5:1 floor,
+  the darkest canvas in the set having the least room — found while
+  writing this exact check, not visually. Dropped to 9%, clearing 4.77:1
+  with real margin, without needing a separate per-theme value.
+- **Contrast verification is computed, not screenshot-sampled** — three
+  separate attempts at pixel-sampling this from a live render each
+  landed on *real UI content* instead of the pattern layer itself (the
+  sidebar's own muted-text labels; an avatar's initials text sitting
+  just above the composer; the "No messages yet." empty state's own
+  anti-aliased edges past a supposedly generous exclusion margin). Since
+  the pattern's own colour range is fully known from its own formula,
+  computing the exact worst case directly is both correct and immune to
+  whatever happens to be on screen — TEND.md's own table.
+- **The fades (LIME-50's own masks) needed no change, confirmed by
+  grep, not just by the brief's own claim** — `gradients.css` has no
+  `lime-pattern` reference anywhere; a mask that reveals "whatever's
+  behind" the scroller was already agnostic to what that background
+  actually contains.
+- **`prefers-contrast: more` hides the pattern outright**, not just
+  dims it further — "Low" is already the minimum intensity this app
+  offers, so there's no lower step to fall back to.
+
 ## Known gaps, flagged rather than silently resolved
 
 - **"Delete for me" (`cleared_at`) hides messages at the store/UI layer

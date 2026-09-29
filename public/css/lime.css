@@ -167,6 +167,56 @@ body {
   background: var(--soil-bg-canvas);
 }
 
+/* LIME-52: one fixed pattern layer behind every panel, appearance.js's
+   own applyPattern() sets whichever custom properties below its current
+   state needs and leaves the rest unset (falling back to none/
+   transparent, painting nothing) — so this one rule serves all three
+   states (none, a preset, an upload) without a class toggle.
+   z-index: -1 keeps it behind #layout's own normal-flow content in this
+   same stacking context (html/body establish none of their own) without
+   needing to touch #layout itself, which stays background: transparent
+   so this shows through it, same reasoning LIME-50 already documents
+   there.
+   Presets: a low-alpha ink tint (--lime-pattern-tint), masked into the
+   pattern's own shape (--lime-pattern-mask) — recolours with the tone
+   and mode for free, since the tint is a token-derived colour, not a
+   fixed asset.
+   Uploads: the image itself (--lime-pattern-image), blended against
+   body's own canvas-coloured background (the very next thing behind
+   this layer in paint order) via mix-blend-mode
+   (--lime-pattern-blend: multiply in light, screen in dark — the
+   brief's own explicit choice, appearance.js), at a capped opacity
+   (--lime-pattern-opacity) rather than shown at full strength. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--lime-pattern-tint, transparent);
+  -webkit-mask-image: var(--lime-pattern-mask, none);
+  mask-image: var(--lime-pattern-mask, none);
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  -webkit-mask-size: var(--lime-pattern-size, 24px 24px);
+  mask-size: var(--lime-pattern-size, 24px 24px);
+  background-image: var(--lime-pattern-image, none);
+  background-repeat: repeat;
+  background-size: 160px 160px;
+  mix-blend-mode: var(--lime-pattern-blend, normal);
+  opacity: var(--lime-pattern-opacity, 1);
+}
+
+/* The brief's own explicit accessibility fallback: a pattern (of either
+   kind) is hidden outright rather than dimmed further under a
+   heightened-contrast preference, since "minimum intensity" is already
+   what the Low setting is. */
+@media (prefers-contrast: more) {
+  body::before {
+    display: none;
+  }
+}
+
 /* Seed's layout ships height: 100vh for standalone use; here it's the only
    thing in body (no separate global header), so it just needs to fill it. */
 #layout {
@@ -595,6 +645,87 @@ body {
   margin: 0 0 var(--seed-space-2);
   font-size: var(--seed-text-xs);
   color: var(--soil-text-muted);
+}
+
+/* LIME-52 — pattern thumbnails. Square, not round like the canvas
+   swatches (they're previewing a *texture*, not a flat colour, and a
+   circle would clip a repeating tile's own corners oddly at this size).
+   The mask-image itself is set inline per swatch (app.js) — this rule
+   just gives every one of them the same visible fill to mask (dark ink
+   at a much higher, thumbnail-only opacity than the actual low-intensity
+   production layer, body::before, ever uses — a preview needs to read
+   clearly at 36px, not match the real subtlety 1:1). */
+.lime-pattern-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--seed-space-2);
+  padding: 0 var(--seed-space-2) var(--seed-space-2);
+}
+
+.lime-settings__compact-control > .lime-pattern-thumbs {
+  padding: 0;
+}
+
+.lime-pattern-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--seed-radius-md);
+  border: 2px solid transparent;
+  outline: 1px solid var(--soil-border-subtle);
+  outline-offset: 1px;
+  background-color: var(--soil-bg-elevated);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.lime-pattern-thumb[style*="mask-image"] {
+  background-color: var(--soil-text);
+  mask-repeat: repeat;
+  -webkit-mask-repeat: repeat;
+  mask-size: 8px 8px;
+  -webkit-mask-size: 8px 8px;
+}
+
+.lime-pattern-thumb--none {
+  background: linear-gradient(to bottom right, transparent calc(50% - 1px), var(--bad-border-normal-default, currentColor) calc(50% - 1px), var(--bad-border-normal-default, currentColor) calc(50% + 1px), transparent calc(50% + 1px)), var(--soil-bg-elevated);
+}
+
+.lime-pattern-thumb--upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--soil-text-muted);
+}
+
+.lime-pattern-thumb--upload .dew {
+  font-size: 16px;
+}
+
+.lime-pattern-thumb:hover {
+  outline-color: var(--soil-text-muted);
+}
+
+.lime-pattern-thumb.is-selected {
+  border-color: var(--soil-bg-elevated);
+  outline: 2px solid var(--selected-border-subtle-default, var(--soil-text));
+  outline-offset: 1px;
+}
+
+.lime-pattern-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  padding: 0 var(--seed-space-2);
+}
+
+.lime-settings__compact-control > .lime-pattern-controls {
+  padding: var(--seed-space-2) 0 0;
+}
+
+.lime-pattern-remove {
+  width: auto;
+  color: var(--bad-text-normal-default, var(--soil-text-muted));
 }
 
 /* ─────────────────────────────────────────────────────
