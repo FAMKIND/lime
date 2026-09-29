@@ -513,6 +513,10 @@ to Supabase directly in the first place.
 
 ## Delivered/viewed receipts (LIME-43)
 
+**Removed from the UI on 2026-09-29 (user decision).** The derivation
+from `last_read_at` stays valid. To reinstate, revert the LIME-43-revert
+commit.
+
 - **No new columns — a pure derivation from data that already exists.**
   "Delivered" needs no state of its own: once a message exists in this
   store at all, it's delivered. "Viewed by X" compares X's own
