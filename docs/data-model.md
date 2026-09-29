@@ -92,7 +92,8 @@ Read `├─<` as "one of these has many of those."
 | A reaction count | `count(*)` of `message_reactions` for that `(message_id, emoji)` |
 | "Did I react" | `exists` a `message_reactions` row for `(message_id, current_user_id, emoji)` |
 | Latest activity (for list sorting) | The most recent row in `messages` for that `conversation_id`, replies included |
-| Presence dot (Active / Away / Busy / DND) | `presenceFor(profiles.status)` — `online → Active`, `busy → Busy`, `offline → Away`. **"Away" and "DND" as *distinct* states have no stored value yet**: today's `status` column only ever holds `online`/`offline`/`busy` (matching the seed and this schema exactly), so `presenceFor`'s "away" is really just its fallback for "anything else," and the UI's separate "DND" dot exists only in still-static markup (the Recent row), never derived from a real profile. A future presence feature decides whether "away" and "DND" become real, distinct stored values. |
+| Presence dot (Active / Away / Busy / DND) | `presenceFor(profiles.status)` — `online → Active`, `busy → Busy`, `offline → Away`. **"Away" and "DND" as *distinct* states have no stored value yet**: today's `status` column only ever holds `online`/`offline`/`busy` (matching the seed and this schema exactly), so `presenceFor`'s "away" is really just its fallback for "anything else." A future presence feature decides whether "away" and "DND" become real, distinct stored values. |
+| Unread (Recent row ring, LIME-36) | Derived, never stored: a person carries the unread ring if any conversation you share with them has a `messages` row from someone else newer than your own `conversation_members.last_read_at` for that conversation. Opening the conversation calls `markRead`, which sets `last_read_at` to now and clears the ring |
 
 ## The store API (the adapter contract)
 

@@ -567,7 +567,14 @@ function initMessagesList() {
       openProfileAvatars.innerHTML = conversationHeaderAvatarsHtml(conversation);
       openProfileAvatars.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
     }
-    renderThread(conversation.id);
+    renderThread(conversation.id); // sets currentConversationId — markRead below relies on this already being current
+    // LIME-36: opening a conversation clears its own unread state. This
+    // emits lime:conversations-changed synchronously (store.js's emit is
+    // a plain document.dispatchEvent, not deferred), so renderRecentRow
+    // (subscribed to that event, below) already reflects the read/active
+    // state correctly by the time this call returns — no separate call
+    // needed here.
+    LimeStore.markRead(conversation.id).catch(console.error);
     // LIME-35: keep the profile/Members panel in sync with whichever
     // conversation is now open — the old static "Jean Chung" markup
     // never did this at all (the exact staleness this brief fixes), so
@@ -843,19 +850,145 @@ function initMessagesList() {
     if (archivedSection) archivedSection.hidden = items.length === 0;
   }
 
+  // ── Recent row (LIME-36) ─────────────────────────────────
+  // "The latest activity involving them" is tracked per person, not per
+  // conversation: a group's activity only counts toward whichever member
+  // actually sent the message (there's no single "the conversation's
+  // activity" that belongs to any one of several co-members), while a
+  // DM's own latest activity counts toward its one partner regardless of
+  // which of the two of you sent it — matching the brief's own "or your
+  // latest DM activity with them" as an alternative signal, not just
+  // "messages they sent."
+  function recentContacts() {
+    const conversations = LimeStore.listConversations({ types: ['direct', 'group'] }); // already excludes archived + deleted-for-me
+    const latestByPerson = new Map();
+    function bump(personId, at) {
+      const existing = latestByPerson.get(personId);
+      if (!existing || new Date(at) > new Date(existing)) latestByPerson.set(personId, at);
+    }
+    conversations.forEach((conversation) => {
+      const msgs = LimeStore.listMessages(conversation.id); // already respects cleared_at
+      const others = LimeStore.getMembers(conversation.id).filter((p) => p.id !== currentUserId);
+      if (conversation.type === 'direct') {
+        const other = others[0];
+        if (!other) return;
+        const latest = msgs.length ? msgs[msgs.length - 1].created_at : conversation.created_at;
+        bump(other.id, latest);
+      } else {
+        others.forEach((person) => {
+          const theirs = msgs.filter((m) => m.sender_id === person.id);
+          if (theirs.length) bump(person.id, theirs[theirs.length - 1].created_at);
+        });
+      }
+    });
+    return [...latestByPerson.entries()]
+      .map(([id, at]) => ({ person: LimeStore.getProfile(id), at }))
+      .filter((entry) => entry.person)
+      .sort((a, b) => new Date(b.at) - new Date(a.at))
+      .slice(0, 10)
+      .map((entry) => entry.person);
+  }
+
+  // Unread is "is there anything I haven't read in a conversation I
+  // share with this person," not "did this specific person send
+  // something unread" — a group's unread message from a *third* member
+  // still puts the ring on every other member's own Recent row, per the
+  // brief's own "a message from someone else newer than your last_read_at."
+  function hasUnreadWith(personId) {
+    return LimeStore.listConversations({ types: ['direct', 'group'] }).some((conversation) => {
+      const members = LimeStore.getMembers(conversation.id);
+      if (!members.some((p) => p.id === personId)) return false;
+      const membership = LimeStore.getMyMembership(conversation.id);
+      const lastReadAt = membership && membership.last_read_at;
+      return LimeStore.listMessages(conversation.id).some((m) => m.sender_id !== currentUserId && (!lastReadAt || new Date(m.created_at) > new Date(lastReadAt)));
+    });
+  }
+
+  function recentItemHtml(person, { isMe, unread, active } = {}) {
+    const presence = presenceFor(person.status);
+    const classes = ['lime-recent__item'];
+    if (active) classes.push('lime-recent__item--active');
+    if (unread) classes.push('lime-recent__item--unread');
+    const label = isMe ? 'Me' : shortName(person.display_name);
+    const searchText = (isMe ? 'me ' : '') + person.display_name.toLowerCase();
+    // data-person-id, not data-profile-id — the latter is LIME-35's own
+    // "open this person's details" trigger (a real bug, caught there,
+    // came from exactly this kind of attribute collision); a Recent item
+    // opens a DM instead (data-recent-me carves out "Me"'s own row,
+    // which opens details instead, via the *existing* data-profile-id
+    // mechanism — reused deliberately, not reinvented).
+    return '<div class="' + classes.join(' ') + '" data-search-text="' + escapeHtml(searchText) + '"'
+      + (isMe ? ' data-profile-id="' + person.id + '"' : ' data-person-id="' + person.id + '"') + '>'
+      + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
+      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(person.display_name) + '"></span>'
+      + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
+      + '</span>'
+      + '<span class="lime-recent__name">' + escapeHtml(label) + '</span>'
+      + '</div>';
+  }
+
+  function renderRecentRow() {
+    const container = document.querySelector('.lime-recent');
+    if (!container) return;
+    const me = LimeStore.getCurrentUser();
+    if (!me) return;
+
+    // "The active item follows the open DM" — only a DM has a single
+    // person to highlight; a group has several co-members, none of them
+    // uniquely "the" active Recent item.
+    let activeOtherId = null;
+    if (currentConversationId) {
+      const conversation = LimeStore.getConversation(currentConversationId);
+      if (conversation && conversation.type === 'direct') {
+        const other = LimeStore.getMembers(conversation.id).find((p) => p.id !== currentUserId);
+        if (other) activeOtherId = other.id;
+      }
+    }
+
+    let html = recentItemHtml(me, { isMe: true });
+    recentContacts().forEach((person) => {
+      html += recentItemHtml(person, { unread: hasUnreadWith(person.id), active: person.id === activeOtherId });
+    });
+
+    // .fade-left/.fade-right are position:absolute (gradients.css's
+    // has-fade-x system) — not part of the flex flow wireScrollFades
+    // below cares about, so removing just the items and leaving them as
+    // permanent siblings is safe, and needs no new wrapper element.
+    container.querySelectorAll('.lime-recent__item').forEach((el) => el.remove());
+    container.insertAdjacentHTML('beforeend', html);
+    container.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+  }
+
+  // Delegated (LIME-24b's own reasoning) — Recent re-renders on every
+  // conversations/messages change, so a one-time binding would go stale
+  // the same way LIME-35's old sender-avatar handler did.
+  document.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-person-id]');
+    if (!item) return;
+    // createConversation already reuses an existing DM via its own
+    // dm_key check (a side-effect-free early return, confirmed in
+    // store.js) — no need to search for one here first.
+    LimeStore.createConversation({ type: 'direct', memberIds: [item.dataset.personId] })
+      .then((conversation) => selectConversation(conversation))
+      .catch(console.error);
+  });
+
   let messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
   if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
   syncArchivedSection();
+  renderRecentRow();
 
   document.addEventListener('lime:conversations-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
     syncArchivedSection();
+    renderRecentRow();
   });
   document.addEventListener('lime:messages-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
     syncArchivedSection();
+    renderRecentRow();
   });
 
   // LIME-31: "everywhere updates" for a profile change (own's or, once a
