@@ -25,7 +25,40 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - LIME-23 `e4c647b` (neutral "Soon" pill) landed; its gate check is pending.
   - The user chose to keep lime on the unread ring and the voice play button.
   - **The queue is empty.** Next: LIME-19 (needs the tab-merge answers), then the backlog.
-- **Paused mid-LIME-19b (2026-09-27, tend hit its usage limit):**
+- **LIME-19b committed as `0b5b3c7`** (and PLOT.md as `5e38b3d`). The user's check raised header and list-count issues, so LIME-19b-fix is drafted. **LIME-19c is ON HOLD, don't send it.** It's superseded by LIME-25 (real starring) in the lifecycle sequence. Queue: 19b-fix → LIME-24a `9e5506f` (reviewed) → LIME-24a-fix `30563a8` (re-reviewed, passed) → LIME-24b `a870c1e` (landed: `data.js` retired, `store.js` + `local-adapter.js`, sender check applied; the reload test used snapshot inspection instead of a real reload because headless `--user-data-dir` hung; the user's gate check is pending) → **LIME-25 drafted (next).** Then, **as the user prioritised: LIME-30 (settings shell, blurred backdrops) → LIME-31 (editable settings)**, then back to lifecycle 26–29. Later settings sections: Notifications and Preferences, plus a dark-mode design pass.
+  - **Update (2026-09-28):**
+    - LIME-25 `da1dea4`, LIME-30 `b7612b2` and LIME-31 `c6bbbeb` landed.
+    - 31 found that Seed's `button.css` was never linked, so every `seed-button` had been rendering unstyled. Fixed.
+    - The contract gained `findProfileByEmail` and `setProfileEmail`; `createModal` gained `onBeforeClose`.
+    - **LIME-31-fix drafted and runs FIRST** (settings layout feedback). **Then LIME-26 (drafted), then LIME-32 (drafted: the composer toolbar collapses by its own width).** Then 27 (share and toast; **now drafted**)
+    - **Update:** LIME-31-fix `1bfb4bb` passed (Profile still scrolls ~106px; plot offered pairing short fields side by side as an optional follow-up, no answer yet). LIME-26 `e90bfd1` landed and its gate check is pending. It also fixed a LIME-31 bug where "Discard changes?" appeared on a clean form. Open product question from the 26 gate: **DMs have Archive but no Delete.** Next: LIME-32 → LIME-27.
+    - **Update (2026-09-28 evening):** LIME-32 `8e31b72` landed (a container query at 374px; the reply composer keeps its unconditional collapse); its gate check is pending.
+      - Tend found that **the right panel is unreachable at window widths of 768–1024px** (Seed's mobile-reveal was never wired). This is a new open item, not yet briefed.
+      - **The user reprioritised:** the milestone "sign up → sign in → find a teacher → message them", with local accounts. **Queue now: LIME-33 (local accounts) → LIME-29 (New message picker) → then LIME-27 (share), LIME-28 (Communities).**
+      - **Superseded by the user's "solid place" QA (2026-09-28, later).** **Queue: LIME-34 → 35 → 36 → 37 → 38 (QA fixes), then LIME-33 → 29 (milestone), then 27 (share), 28 (Communities).** The right panel being unreachable at 768–1024px is still an unbriefed open item.
+      - LIME-34 `e888cb3` landed: `canReason`, `deleteForMe`, `cleared_at` in the schema, rename in place. Its gate check is pending. Next: LIME-35.
+      - LIME-35 `80d36f6` landed: person details, the Members panel, `renderCrumbs`. The title crumb now *closes* the panel (inverted from before). Its gate check is pending. Next: LIME-36.
+        - **Still mockups (backlog):** the notifications dropdown (static Jean/Mary/Valene), and the global search modal's "Recent searches". On mobile there's a duplicate "Thread" heading (pre-existing, flagged by tend). The initial breadcrumb and header HTML still say "Jean Chung" as placeholders, overwritten on render. Harmless, but they could be emptied.
+      - LIME-36 `60ef871` landed: a dynamic Recent row, unread via `markRead` on select. Its gate check is pending. Next: LIME-37.
+        - **Uncommitted drift** (not tend's; very likely the user's own hand edits, their usual pattern):
+          - `lime.css` ~2495: `.lime-message__actions` background changed from `--soil-bg-surface` to `--soil-bg-elevated` (the hover action bar becomes white);
+          - `store.js` ~230: `canReason` delete text shortened to "Only the group owner can delete." (the Archive hint dropped).
+        - Plot asked the user to confirm. If they're theirs, commit them as the user's edits, with a `TEND.md` note.
+      - **The user's edits were committed as `3ed7352`.** LIME-37 `f43ee40` landed (the WYSIWYG composer, and a sanitiser plot reviewed and found sound: a `<template>`-inert allow-list, attributes stripped, `javascript:` blocked, applied on send and on render; `<strike>` normalised to `<s>`). There's no `--seed-font-mono` token, so it uses a system monospace stack. **LIME-39 is drafted** for the composer covering the last message (pre-existing). **Queue: LIME-38 → LIME-39 → LIME-33 → LIME-29 → 27 → 28.**
+      - LIME-39 `4c824b7` landed: `--composer-clearance` via `ResizeObserver`, pinned-to-bottom on reload and image load, and it no longer yanks the view on every keystroke. The reply panel needs no clearance (it flows). **The padding rule is now in both `lime.css` and `gradients.css`.** LIME-46 should leave it in exactly one place. Its gate check is pending.
+      - LIME-47 `d081912` landed: `overflow-wrap`, code blocks scroll inside the bubble, the composer-radius token, reply-quote thumbnails (ready for "+N"), the DM "Profile" crumb, and the duplicate padding rule removed. Its gate check is pending. Next: LIME-40, then 41. The three `teacher.*` video files in `public/assets/` are deliberately **untracked** until LIME-48.
+      - LIME-41-fix `a67d834` and LIME-43 `c1516a6` landed: receipts are derived from `last_read_at`, with native-`title` tooltips, in-place patching, and a z-index fix so the tick is hoverable under the action bar. Both gate checks are pending. **Tend thought the queue was finished. It isn't.** Remaining: **LIME-43-revert (the user dropped receipts)** → LIME-44 → 45 → 33 → 48 → 29 → 27 → 28.
+      - LIME-40-fix `90c5672` and LIME-42 `e8430e3` landed: the lightbox bar outside the image, real audio playback, typed file cards with badges ≥ 6.4:1, and PDFs opening via a real `<a target=_blank>`. Both gate checks are pending. **Next: LIME-41-fix** (the user's QA: captions, viewer controls, the photo wall), then LIME-43.
+        - **Cleanup backlog:** a dead `.lime-message__file` block in `lime.css` (from LIME-38) overrides the Download button's size by class collision. Remove it in a cleanup brief, with the border-box and `[hidden]` global resets.
+      - LIME-41 `848f271` landed: the `message_attachments` table, albums and gallery, **and the user removed LIME-38's 5-file cap** (tend asked mid-brief). The gallery-plus-lightbox double-Escape was fixed by a hand-off. Its gate check is pending. **LIME-40-fix is drafted and runs next,** before 42: the close button sits in a bar outside the image.
+      - LIME-40 `5476097` landed: the lightbox × inset at the image's corner, arrows and keys, a counter, no wrap-around. Its gate check is pending. Next: LIME-41.
+      - **Queue (2026-09-29): LIME-39 (amended) → LIME-46 (the fade system; landed as `aba5855`: pinned frames, `--surface-bg`, `color-mix` fades; 11/12 pixel samples within ±3, with one edge pixel ±4 from anti-aliasing, which is acceptable) → LIME-47 (bubbles, reply-quote media) → 40 → 41 → 42 → 43 → 44 → 45, then LIME-33 → **LIME-48 (auth redesign; needs the user's copy and photo first)** → 29 → 27 → 28.**
+      - LIME-38 `9c9742d` landed: attachments through IndexedDB, `uploadAttachment`/`getAttachmentUrl` in the store, `'file'` in the schema, and `reset()` now chains the async adapter reset. Its gate check is pending. Next: LIME-39.
+      - **Prompt wording lesson:** "re-read it, then stop for my check" made tend stop *before* implementing. Always write "implement, commit, then stop for my check"., 28 (live Communities), 29 (Create).
+    - **The border-box bug has now hit 5 times** (18-fix4, 20, 21b, the composer, settings). Plot should weigh the global `*, *::before, *::after { box-sizing: border-box }` reset soon, as its own brief with a full visual regression pass (headless screenshots of key views before and after).
+    - Later candidate: "Leave group" for non-owners. → (25–29 drafted as each lands).
+  - **Update:** 19b-fix `d4a7810` passed with the user's feedback. The follow-up `67a4107` unified the DM header with the group header at the user's direct request (the brief had scoped DMs as unchanged). That commit has **no `Brief:` trailer**. It's left as is, not rewritten; its `TEND.md` entry explains it. **Tend proposed LIME-19c next, which is wrong: it's on hold.** Next is LIME-24.
+- **(Resolved) Paused mid-LIME-19b (2026-09-27, tend hit its usage limit):**
   - All of 19b is implemented and verified but **uncommitted**, and `TEND.md` has no 19b entry yet. Uncommitted files: `lime.css`, `index.html`, `app.js`, `data.js`, `seed-data.js`, and `seed-data/conversations.json` + `messages.json`.
   - Plot sanity-checked the tree: no diagnostic script left in `index.html`, `node --check` passes on both JS files, `lime.css` braces balance (434/434), and conv-011 is present in the JSON and the embedded copy.
   - **`PLOT.md` is also modified (plot's edits). It must NOT go into the 19b commit.** Commit it separately as `chore: update PLOT.md`.
@@ -47,7 +80,29 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - Tabs: `data-scope="teachers|groups|communities"` (~182–184). The scope filter lives in app.js ~1003.
 - **Redrafted LIME-19** (conversation-based rows, not teacher-based) should cover: DMs and groups in one live, recency-sorted list; a data-driven Starred section; and removing the Group Chat tab. Community going live is a separate later brief.
 
-## Open threads
+## Open thread: conversation lifecycle (create, star, edit, share, archive/delete), raised 2026-09-27
+
+- **The user's ask:** "we need a way to 'create' either a DM, group chat or community, then a way to star them, edit them, share them and delete/archive them."
+  - References: Claude's title caret menu (Pin / Rename / Share / Copy link / Delete, with keyboard hints), inline rename (the title turns into a selected text field), and Notion's header (a breadcrumb sibling switcher, plus Share, link and star icons, and a member avatar stack with "+10").
+- **Constraints plot found:**
+  1. **All data is in-memory.** A reload discards anything created, sent or renamed. A create and archive feature needs a decision on persistence.
+  2. **Rows can't be added today.** The list's load-time click bindings (`app.js` ~1245 and ~1310) only attach to rows that exist at load. That has to become delegated listeners before new conversations can appear.
+  3. The Communities tab is a static mockup, so "create community" needs a live Communities list first.
+  4. LIME-19c's hard-coded starred list would be thrown away once real starring exists. **19c is on hold, to be replaced by a real star feature.**
+- **Proposed sequence** (each one brief, one commit; after LIME-19b-fix):
+  - **LIME-24:** delegated list listeners, plus a conversation state layer in `data.js`: create, rename, star, archive, delete; a change event; and persistence per decision 1.
+  - **LIME-25:** real starring (a star toggle, and a Starred section driven by state). This replaces 19c.
+  - **LIME-26:** a conversation actions menu on the title caret **and** on a hover "…" on list rows, sharing one menu: Star, Rename (inline, groups and communities only; a DM's title is the person), Copy link, Archive, Delete (with a confirm dialog).
+  - **LIME-27:** Share. Copy a deep link (`#c=<conversation id>`) that opens that conversation on load, with a toast (Seed has a toast component).
+  - **LIME-28:** live Communities list, the same pattern as Messages.
+  - **LIME-29:** Create. A "New" button by the tabs opens a modal in the search-modal style. Pick 1 person for a DM, 2 or more for a group (optional title), or switch to Community (title required).
+- **Decisions put to the user:** persistence; archive and/or delete; red for destructive actions; where the actions live.
+- **DECIDED (2026-09-27):**
+  1. **Remember changes** in the browser across reloads, with a "Reset demo data" item in the profile menu.
+  2. **Archive and Delete.** Archive hides a conversation into a restorable "Archived" section; Delete removes it for good, after a confirm dialog.
+  3. **Delete is red** (Seed's `bad` colour); only Delete. Everything else stays neutral.
+  4. **Actions live only in the title caret menu,** Claude-style. There's no row hover "…" and no header icons. The caret (`.lime-topbar__crumb-caret`, currently a dead "Switch conversation" button) becomes the actions menu.
+- **Revised sequence:** LIME-24 (foundation, drafted) → LIME-25 (the title actions menu with Star; Starred driven by state, replacing 19c) → LIME-26 (inline rename, archive with the Archived section, delete with confirm) → LIME-27 (share: copy link plus deep link, and a toast) → LIME-28 (live Communities) → LIME-29 (Create modal). 25 onward are drafted once 24 lands.
 
 - **State-colour system: DECIDED 2026-09-27, option A, stepped.** LIME-14 is drafted below. Follow-up briefs in order: disabled (one consistent look instead of opacity 0.4 vs `--soil-text-disabled`), focus (restore visible outlines, e.g. `.lime-search-field` where LIME-03b removed Seed's focus glow), then a hover/default tidy-up. Error needs no brief until Lime has something that can fail. Candidate later: upstream the lime `selected` scale into Seed (option C). Original notes: The user wants the nav's active colour (`--lime-nav-hover` = `--seed-lime-100`, #E4F9BE) promoted to a reusable system colour with Seed-style default/hover/active/disabled states. Error is Seed's `bad-*` family, not a state.
   - Survey findings:
@@ -63,6 +118,10 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - Next brief (LIME-14) waits on this answer. LIME-13 doesn't depend on it.
 
 - **Lime is reserved for nav and primary actions (user, 2026-09-27).** This narrows LIME-14's option A. Menus, reactions and dividers go neutral in LIME-21b. `--selected-*` is still lime-retuned globally, so any *other* consumer of `--selected-*` (Seed components, avatar rings) is lime by accident. Future cleanup: give nav and primary actions their own lime tokens (e.g. `--lime-accent-*`) and return `--selected-*` to neutral or stock. Decide after LIME-21b's gate answers.
+- **Existing Supabase signup code:**
+  - `public/signup.html` + `public/js/supabase.js` (commit `8066506`) already use Supabase auth via CDN, with **placeholder** URL and key constants in the file.
+  - When the switch happens, consolidate: one Supabase client and config (from a gitignored `*.local.js`, per the switch checklist), shared by signup, login and the future `SupabaseAdapter`. Don't leave placeholder constants in committed code.
+  - LIME-24b left `supabase.js` untouched.
 - **Upstream to Seed (Seed's owner is FAM, the same person as the user):** `.seed-dropdown__item` is `width: 100%` plus padding with no `box-sizing: border-box`, so it overflows its menu. Lime works around it in LIME-21. Also candidates: the lime `selected` scale (LIME-14), and whether Seed should ship a global border-box reset.
 - **The 768px breakpoint doesn't match.** Seed's layout.css mobile rules use `max-width: 768px` and Lime's use `max-width: 767px`. At exactly 768px wide, Seed hides the left panel (`display: none`) and Lime's hamburger isn't shown, so there's probably no way to reach the nav at that single width. It isn't reported yet. Candidate small brief: align Lime's queries to 768px, or override Seed's. Verify live first.
 - **Briefs keep re-proposing overlays.** An overlay/backdrop version of the mobile nav was proposed three times against the settled push model (LIME-12-fix2/3/4/6). The decision is now logged in `README.md` → "Decisions (2026-09-23)". Any brief touching the mobile nav must be checked against it.
@@ -73,6 +132,29 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 
 - **Previewing:** `index.html` loads Seed via `../vendor/...`, so it must be served from the repo root or opened as a `file://` URL. A server started inside `public/` (as the LIME-13 tend session did, with `python -m http.server 8756`) returns 404 for all Seed CSS, and the page renders unstyled. Every brief's gate should give the preview URL as `file:///Users/shem/Sites/lime/public/index.html`, or as `localhost:<port>/public/index.html` with the server started from the repo root.
 - **Pixel alignment must be measured, not computed.** LIME-18-fix2 and fix5 both computed positions from CSS "by arithmetic" and got the premise wrong (fix5 assumed Seed's panel padding, which `lime.css` zeroes). Without the Chrome extension, use headless Chrome (`/Applications/Google Chrome.app`, `--headless=new --dump-dom` plus a temporary diagnostic script that's removed afterwards). Every alignment brief must require this.
+- **What actually worked in LIME-31-fix (`1bfb4bb`): Playwright-driven Firefox.** It's installed outside the repo; `node_modules` is gitignored. `TEND.md`'s LIME-31-fix entry records two headless-Firefox timing gotchas. **Future briefs should say "measure with Playwright + Firefox per `TEND.md` LIME-31-fix".**
+  - Also a lesson: a leftover diagnostic script in `index.html` auto-ran a click cascade on every load. **Every measurement brief must end with `git diff public/index.html` showing only intended changes,** checked before commit.
+- **The measurement tool is now headless Firefox (decided 2026-09-28, during LIME-31-fix).**
+  - Headless Chrome is blocked on this machine: Chrome's own GoogleUpdater/Keystone side process stalls on the system resolver when offline, which tend diagnosed from stderr. The only workaround needs `--no-sandbox`, which was declined.
+  - **Use Firefox 156** (`/Applications/Firefox.app`). It's the user's target browser, so it's also the more faithful measurement.
+  - **Recipe:**
+    - `firefox --headless -no-remote -profile "$(mktemp -d)" --window-size=W,H --screenshot out.png "file://…/index.html"`;
+    - a temporary diagnostic script prints the measurement JSON in a large fixed `<pre>` overlay, which tend reads from the PNG;
+    - **or** drive it over WebDriver BiDi (`--remote-debugging-port`, Node's WebSocket, `script.evaluate`);
+    - a 45s alarm per run;
+    - always a throwaway profile, never the user's.
+  - The Chrome notes below are historical.
+- **Headless Chrome hangs (seen in LIME-24b and LIME-31-fix).**
+  - A `--dump-dom --virtual-time-budget` run can sit for many minutes.
+  - **Plot's likely cause:** the page's external requests (Google Fonts, the unpkg lucide CSS) never settle in the sandbox, so virtual time never advances.
+  - **Standard recipe for every brief:**
+    - add `--host-resolver-rules="MAP * ~NOTFOUND"`, so external hosts fail fast (`file://` is unaffected);
+    - wrap each run in a hard timeout (macOS has no `timeout`; use `perl -e 'alarm 45; exec @ARGV' -- "…/Google Chrome" …`);
+    - use a throwaway `--user-data-dir` per run;
+    - clean up with `pkill -f -- '--headless=new'` if a run is killed. **Never `pkill -f "Google Chrome"`**, which quits the user's real Chrome windows (tend did this during LIME-31-fix).
+    - The user's rule is "preview to the user in Firefox only". Headless Chrome as an internal measuring tool is allowed and isn't the cause of the hangs.
+  - Never wait on a monitor for more than ~2 minutes.
+- **`[hidden]` is unreliable here:** any class that sets `display` (e.g. `.lime-icon-btn { display: flex }`) beats the browser's default `[hidden]` rule (found in LIME-40). Candidate for the global-reset brief: `[hidden] { display: none !important; }` alongside the border-box reset.
 - **JS verification must load the real app.** `node --check` and testing extracted functions missed LIME-18's load-order crash, which froze every click in the app. Every brief that touches JS must require that `seed-data.js`, `data.js` and `app.js` are loaded as real scripts against the real `index.html` (jsdom in the session scratchpad, not the repo, when Chrome isn't connected), with zero errors reported. Tend adopted this from LIME-18-fix onward.
 - **Handoff:** every brief handoff ends with a copy-paste prompt for tend, e.g. `tend LIME-14`. Tend reads the full brief from this file, so the brief must be saved here before handing off.
 - The user isn't technical. Explain decisions in plain terms: what the user will see, not selector mechanics.
@@ -82,6 +164,1475 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ---
 
 ## Drafted briefs
+
+### LIME-43-revert → `tend` (next, before LIME-44): remove the ✓/✓✓ receipts
+
+**The user (2026-09-29):** "the check feature doesn't read, remove it. We can use notifications for that to start, and bring it back later if needed."
+
+**Plot checked:** LIME-43 (`c1516a6`) is **the latest commit and purely additive** (TEND.md +21, data-model.md +67, lime.css +38, app.js +73, store.js +39; no deletions). So a clean revert of the code is safe, and reinstating it later is just "revert the revert".
+
+**The change:**
+1. `git revert --no-commit c1516a6`
+2. **Keep the history and the design:** restore `TEND.md` and `docs/data-model.md` to their current versions (`git checkout HEAD -- TEND.md docs/data-model.md`), so the LIME-43 record and the receipts design stay documented.
+3. In `docs/data-model.md`'s receipts section, add at the top: "**Removed from the UI on 2026-09-29 (user decision).** The derivation from `last_read_at` stays valid. To reinstate, revert the LIME-43-revert commit."
+4. **Keep everything `last_read_at` powers:** unread rings (LIME-36) and `markRead` must be untouched. The revert only removes LIME-43's additions. Confirm nothing from LIME-36 changes.
+5. The z-index stacking fix that LIME-43 added for the tick goes too, since it only existed for the tick. Confirm the message action bar still behaves as before LIME-43.
+
+**Verification:**
+- `git diff a67d834 -- public/` shows **no differences** (the code is identical to before LIME-43).
+- `TEND.md` and `data-model.md` keep their LIME-43 content, plus the note.
+- The real app loads in jsdom with zero errors. The Recent unread ring still clears when a chat is opened.
+
+**Gate:** in Firefox, your messages no longer show ✓ or ✓✓. Unread rings in Recent still work.
+
+**Record:** add a `## LIME-43-revert` entry to `TEND.md`. Commit: `revert: remove delivered/viewed receipts from the UI (design kept in docs)`, trailer `Brief: LIME-43-revert`, plus the attribution trailer.
+
+---
+
+### LIME-48 → `tend` (future; queued right after LIME-33): redesigned sign in and sign up, Claude-style
+
+**The user's direction (2026-09-29):** "prioritise for the future. I want to update our sign in and sign up flows to have more of a feeling like this", referencing Claude's login page:
+- a **two-column** layout: on the left, the logo top-left, a large serif-feel headline, a one-line subline, a soft rounded card containing "Continue with Google", "Continue with Apple", "OR", an email field, a primary "Continue with email" button and small legal text, and a secondary button under the card;
+- on the right, a **large rounded photo** filling most of the height.
+
+**It depends on LIME-33** (local accounts: `LimeAuth.signUp`/`signInWithPassword`). This brief is the **UI and flow** on top of it.
+
+**Plot's design decisions, flagged for the user:**
+- **One email-first flow replaces separate login and signup pages:** enter your email, then Continue.
+  - **An existing account** (local credential or seed teacher) goes to a password step ("Welcome back, <first name>").
+  - **A new email** goes to a create-account step (display name and password, plus the terms checkbox).
+  - "Use a different email" goes back.
+  - `login.html` and `signup.html` both render this flow, and `signup.html` opens at the create step when given an email. Or consolidate into one `auth.html` and redirect the other two; tend chooses and reports.
+- **Google and Apple buttons** are shown with a small "Soon" tag and disabled, until Supabase OAuth exists. **Production:** `supabase.auth.signInWithOAuth({ provider })`. Add it to the switch checklist.
+- **Visual:**
+  - **Colours:** Lime's canvas background; the card on `--soil-bg-elevated` with a soft shadow; **the primary button is lime** (a primary action, per the lime rule); the social buttons are neutral outlined.
+  - **Type:** the headline at the largest Seed display size. Lime has no serif token, so use Montserrat semibold at display size, **unless the user supplies a serif.** Ask.
+  - **At 767px and below,** the photo is hidden (or shown as a short banner on top) and the card is full width.
+  - **Accessibility:** labelled inputs, visible focus (the neutral focus style from LIME-31-fix, no green glow), errors inline with `role="alert"`, and ≥ 4.5:1 contrast.
+- **The user's answers (2026-09-29):**
+  1. **Copy:** use plot's placeholder: headline "Where teachers connect", subline "Messages, groups and communities for educators".
+  2. **The photo:** a free-licence photo from **Unsplash or Pexels** (both allow free commercial use without permission; attribution is appreciated, not required). **Tend's sandbox can't reliably download** (network is blocked), so the user saves the chosen photo as `public/assets/auth-hero.jpg`. Tend then optimises it (≤ 1600px wide, JPEG ≈ 80%, ideally ≤ 300 KB) and records the source URL and photographer credit in a comment and in `TEND.md` (plus an optional small credit line under the photo; tend proposes). If the file isn't there when this runs, ship the placeholder block and flag it.
+  2b. **Update (2026-09-29): the hero is a VIDEO, already in the repo (uncommitted):** Pexels video 12896417, <https://www.pexels.com/video/businesswoman-doing-a-presentation-in-an-office-12896417/> (Pexels licence: free use, no attribution required; record the URL in `TEND.md` and in a code comment, and credit is optional). Plot inspected the files in `public/assets/`:
+     - `teacher.mp4`: H.264, **2160×3840 portrait, 10s, 18.9 MB. Too heavy** for a sign-in page and for git.
+     - `teacher.webm`: 0.87 MB.
+     - `teacher.ogg`: Theora, 0.57 MB (obsolete format).
+     - `ffmpeg` isn't installed.
+   - **Plan:**
+     - **Serve `teacher.webm` first,** then a **re-encoded small MP4** fallback for Safari. Make it with macOS's built-in `avconvert` (e.g. `avconvert --preset Preset1280x720 …`). **Check that the output keeps the portrait orientation** and isn't letterboxed; if a preset can't, try another preset or report back. Target ≤ 3 MB.
+     - **Don't ship or commit the 18.9 MB original or the `.ogg`.** Delete them after the re-encode succeeds, or leave the original untracked and add it to `.gitignore`. Ask the user which, if unsure.
+     - **Poster image:** capture a frame via Playwright + Firefox (`video.currentTime = 1`, drawn to a canvas, saved as `auth-hero-poster.jpg`, ≤ 200 KB). It's shown before playback and for reduced motion.
+     - **Behaviour:**
+       - `<video autoplay muted loop playsinline preload="metadata" poster=…>` with `object-fit: cover` in the rounded right-hand panel;
+       - `aria-hidden="true"` (decorative) and no audio;
+       - **a small pause/play button** in the panel corner (WCAG 2.2.2: moving content longer than 5s needs a pause control), with `aria-label` and keyboard access;
+       - under `prefers-reduced-motion: reduce`, **don't autoplay**: show the poster, with the button available to play;
+       - at ≤ 767px it's hidden (the poster isn't downloaded either: use `media` on the sources, or set the source via JS only when visible).
+  3. **Font:** keep Montserrat for now.
+  4. **Under the card:** leave it blank for now. **Future:** links to the iOS and Android apps. The key product differentiator is **offline Bluetooth messaging during natural disasters, strikes, etc.** (see the product-context note in Open threads).
+- **Originally needed from the user before execution (now answered above):**
+  1. **Headline and subline copy.** Plot's placeholder is "Where teachers connect" / "Messages, groups and communities for educators".
+  2. **The hero photo:** a licensed image of teachers or a classroom that the user provides, in `public/assets/`. Otherwise a neutral placeholder block ships with the exact dimensions.
+  3. What the button under the card should be, if anything. Claude's is "Download desktop app"; plot proposes none for now.
+
+**Scope, when it runs:** `public/login.html`, `public/signup.html` (or a new `auth.html` plus redirects), a CSS file for auth (`auth.css` already exists), `public/assets/` for the photo, `public/js/auth.js` (only an `accountExists(email)` read, if needed), `docs/data-model.md` (OAuth in the switch checklist), and `TEND.md`.
+
+**Verification:** jsdom and Playwright + Firefox for the full email-first flow: an existing seed email reaches the password step, a new email reaches create and then the app, wrong-password errors appear, and both layouts (1567×905 and 767px) are screenshotted. The OAuth buttons are disabled, with an accessible "Coming soon" label.
+
+**Gate:** the user opens the sign-in page. It feels like the reference: headline, a clean card, and a big photo. The email-first flow works for both an existing and a new account.
+
+**Record:** add a `## LIME-48` entry to `TEND.md`. Commit: `feat: redesigned email-first sign in / sign up`, trailer `Brief: LIME-48`, plus the attribution trailer.
+
+---
+
+> **Shared context for LIME-40 to 45: the media, receipts, link previews and chat backgrounds round** (the user's QA of LIME-38, 2026-09-29, with Apple Messages and WhatsApp as references).
+>
+> **Decisions:**
+> - Receipts are **✓ delivered and ✓✓ viewed, both neutral grey,** with who and when on hover.
+> - **Link previews are built the real way,** demoed with sample data.
+> - **Chat backgrounds, not a fixed pattern:** a header icon (between the header avatars and "…") opens customisation: accessible colours, a few patterns, or upload your own photo. **The fades and gradients must follow whatever background is chosen.**
+>
+> **Order:** LIME-39 (amended: open at the latest message) → 40 → 41 → 42 → 43 → 44 → 45, then the milestone (LIME-33 → 29). **The user can reprioritise.** Capability, measurement and production-ready rules are as for LIME-34 to 38.
+
+### LIME-46 → `tend` (right after LIME-39, before LIME-40): one fade system: pinned to every panel's edges, coloured by that panel's background
+
+**The user's QA (2026-09-29), with a background colour applied via devtools to expose it:**
+1. **The fades are a single fixed colour** (`--soil-bg-canvas`), so on any other background they show as off-colour bands: the top of the list column, above the composer, the composer's own bar, and the Recent row's edges.
+2. **Some fades scroll with the content** instead of staying at the panel's edges ("it sometimes scrolls with the component when it should be at the bottom, top and sides of each panel, as a system"). In the screenshot, the list column's fades and the Recent row's right fade have moved with the scrolled content.
+
+**Root causes (plot read `gradients.css`, all 74 lines, and the fade markup in `index.html` ~185, ~212, ~339 and ~456):**
+- **Everything is hard-coded to `--soil-bg-canvas`** (gradients.css ~35–38 and ~62) and fades to the bare `transparent` keyword (which interpolates through transparent black, giving grey halos on coloured backgrounds). The composer bar's own background is also canvas.
+- **The fade divs are `position: absolute` children of `.has-fade-y`/`.has-fade-x`.** Where that element **is itself the scroll container** (e.g. `#list-col`), absolutely positioned children scroll along with the content. `wireScrollFades(scrollEl, fadeHost)` (app.js ~3597) already supports a separate, non-scrolling host, but not every usage is structured that way.
+- Panels don't share one background: the center is canvas, the right panel in flush mode is `--calm-bg-subtle-default`, and the settings nav differs. So one colour can never be right everywhere.
+- `gradients.css` ~64–74 still sets `.lime-messages { padding-bottom: 200px }`, which conflicts with `lime.css`'s 80px and LIME-39's dynamic clearance. LIME-39 should already own this; if it's still there, remove it here.
+
+**Goal:**
+- Every scrollable area (the conversation list, the Recent row, the main thread, the reply list, the profile/members panel, and the settings pane) uses **one** fade system.
+- The fades are **fixed to the scroll area's visible edges** (they never move with content), appear only when there's hidden content in that direction (today's behaviour), and are **coloured by the actual background behind them,** with no bands or grey halos on any background.
+
+**Scope:**
+- **May touch:** `public/css/gradients.css`, the fade markup in `public/index.html` (wrapping scrollers where needed), `wireScrollFades` and its call sites in `public/js/app.js`, background declarations in `public/css/lime.css` (to set the panel variable), and `TEND.md`.
+- **May not touch:** panel layout or sizes, and scroll behaviour itself (LIME-39's pinning).
+
+**The change:**
+1. **One background variable per surface.**
+   - Every panel or surface that hosts fades declares `--surface-bg` equal to its real background (the center/thread: canvas; the right panel: its flush colour; the settings pane and nav: theirs; the composer: the thread's).
+   - Its `background` **uses** `var(--surface-bg)`, so the two can't drift apart.
+   - Children inherit it. LIME-45 will later override `--surface-bg` on the thread with the chosen chat background, so **the fades follow automatically.**
+2. **Fade colours:** every fade gradient goes from `var(--surface-bg)` to `color-mix(in srgb, var(--surface-bg) 0%, transparent)`. **Never bare `transparent`,** and never a hard-coded token. This includes the composer's `::before` fade. **The composer bar's own background becomes `var(--surface-bg)`.**
+3. **A pinned structure,** one pattern:
+   - **the frame** (`.lime-fade-frame`, `position: relative`, the fade host, not scrolling) contains
+   - **the scroller** (`.lime-fade-scroll`, the only element with `overflow: auto`) plus
+   - **the fade elements** as siblings of the scroller.
+   - Restructure **every** usage to this pattern, and pass the frame as `fadeHost` to `wireScrollFades`.
+   - The old `.has-fade-y`/`.has-fade-x` structure goes. Keep the class names only if renaming is noisy, and say which.
+   - **The reply list and the settings pane get fades too,** if they scroll.
+4. **Horizontal (Recent row):** the same pattern, with left and right fades pinned to the row's visible edges.
+5. **Where the composer overlaps the thread,** the thread's bottom fade sits **above the composer** (anchored to the composer's top, as the `::before` does now) and uses the same colours. Unify so there's one bottom fade, not two stacked.
+
+**Verification (Playwright + Firefox, 1567×905):**
+1. For each scroll area, scroll to the middle. **The fade rects are identical before and after scrolling** (pinned; report them), and the fades are visible only in the directions with hidden content.
+2. **A background test:**
+   - set `--surface-bg` on the center and right panels to 3 test colours (a pale green like the user's `#cfe3c6`, a dark `#1e2a24`, and a saturated `#ffd7a8`), via a temporary diagnostic, **removed before commit**;
+   - screenshot each, and **sample pixels** at each fade's outer edge (it must equal the background ±3 per channel) and midpoint (it must lie between the background and the content, with **no grey dip**; report the RGB values);
+   - the composer bar matches the background (±3).
+3. The real app loads in jsdom with zero errors, and `git diff public/index.html` shows only the fade restructuring.
+
+**Gate:** in Firefox, change a panel's background the way you did in devtools (or ask tend for its test toggle). The fades at the top, the bottom, the sides and around the message box blend perfectly, and they stay at the panel's edges while you scroll.
+
+**Record:** add a `## LIME-46` entry to `TEND.md`. Commit: `refactor: one fade system, pinned to panel edges, coloured by surface background`, trailer `Brief: LIME-46`, plus the attribution trailer.
+
+---
+
+### LIME-47 → `tend` (after LIME-46, before LIME-40): message bubbles wrap properly and are rounder; the reply quote shows its media; the DM details crumb
+
+**The user's QA (2026-09-29, screenshots):**
+1. **Long messages break out of their bubble.** An unbroken string (and long list items or links) runs past the bubble's right edge and under the details panel, so the bubble "isn't responsive to the content". Bubbles should also be **more rounded, matching the composer box.**
+2. **The reply panel's quote shows only the word "Photo"** for an image message, so it's hard to tell what's being replied to.
+3. **(Plot's own observation)** In a DM with the details panel open, the breadcrumb reads "Messages / Jean Chung / Jean Chung", a duplicate.
+
+**Root causes (plot read `lime.css` ~2667–2680 and `renderQuote` in `app.js` ~2436):**
+- `.lime-message__content` (radius `--seed-radius-md`, padding `14px 18px`) and `.lime-message__text` have **no `overflow-wrap`/`word-break`** rule anywhere in `lime.css`.
+- The column containing the bubble likely lacks `min-width: 0`, so flex items can't shrink below their content. Confirm this.
+- `renderQuote` renders `plainPreviewFor(message)` only; it never renders attachments.
+
+**Also (carried over; the LIME-46 instruction wasn't done):** `.lime-messages { padding-bottom: var(--composer-clearance, 200px) }` is still in **both** `lime.css` ~2552 and `gradients.css` ~112. Keep it only in `lime.css` and delete the `gradients.css` copy. The cascade result is unchanged; confirm the computed value is the same before and after.
+
+**Scope:**
+- **May touch:** the message bubble, text, rich-text and reply-quote rules in `public/css/lime.css`, and the duplicate padding rule in `public/css/gradients.css`; `renderQuote` and `renderCrumbs` in `public/js/app.js`; and `TEND.md`.
+- **May not touch:** the bubble's colours, the album layout (LIME-41), or the replies list itself.
+
+**The change:**
+1. **Wrapping:**
+   - `overflow-wrap: anywhere` on bubble text, rich text, links and list items;
+   - `min-width: 0` on every flex ancestor between the message row and the bubble;
+   - the bubble keeps its existing max width (`min(70ch, 640px)` or whatever applies) and **shrinks to its content** for short messages;
+   - `pre` code blocks scroll horizontally **inside** the bubble (`overflow-x: auto`; `white-space: pre`) rather than wrapping or overflowing.
+   - The same rules apply to replies in the reply panel.
+2. **Rounder bubbles:** use the composer box's radius token (`.lime-composer__box`'s `border-radius`: read it and reuse the **same token**, don't copy a number). Keep the padding proportional: check that single-line bubbles don't look pill-cramped, and adjust the padding only if needed, reporting the before and after.
+3. **The reply quote shows media:**
+   - for a message with image attachments, render **a small thumbnail** (48px, rounded, `object-fit: cover`) beside or under the quoted sender, and a "+N" for more than one image;
+   - for a file or audio attachment, a compact file chip (icon plus name);
+   - the caption text as now.
+   - Use the same attachment read the thread uses (`getAttachments`, or LIME-38's `metadata.path` compatibility), so it keeps working after LIME-41.
+   - Clicking the thumbnail opens the lightbox.
+4. **The DM details crumb:** when the open panel is the person's details **and** the conversation is a DM with that person, the panel crumb reads **"Profile"** instead of repeating the name. Group and other-person cases are unchanged.
+
+**Verification (Playwright + Firefox, 1567×905 and 767px):**
+- Send a 300-character unbroken string, a long URL, a list with a long unbroken item, and a code block with a long line. For each, the bubble's right edge is ≤ its container's right edge (report them), and the code block scrolls (`scrollWidth > clientWidth`).
+- Short messages still hug their content.
+- The bubble's border-radius equals the composer box's.
+- The reply quote of an image message contains an `<img>` thumbnail; clicking it opens the lightbox.
+- The DM crumb shows "Profile".
+- The real app loads in jsdom with zero errors.
+
+**Gate:** in Firefox:
+- **Long text:** paste a very long word or link. It wraps inside a rounder bubble, and nothing runs off the side.
+- **Reply quote:** reply to a photo. The thread panel shows a small thumbnail of that photo.
+- **One-to-one crumb:** in a one-to-one chat, open the person's details. The breadcrumb ends "… / Profile".
+
+**Record:** add a `## LIME-47` entry to `TEND.md`. Commit: `fix: bubbles wrap and match composer radius; reply quote shows media; DM profile crumb`, trailer `Brief: LIME-47`, plus the attribution trailer.
+
+---
+
+### LIME-40 → `tend`: the lightbox: close at the photo's top-left, arrows between photos
+
+**QA:** the close × sits at the top-right, cut off by the window edge. "Close button should be on the left top corner of the photo, and if multiple photos we need arrows on the left and right."
+
+**The change** (`lime.css` `.lime-lightbox*` ~1406, and the lightbox code in `app.js`):
+1. **The close button** is positioned **relative to the image's box**, at its top-left corner (inset `--seed-space-3` inside the image, or overlapping its corner), never outside the viewport. It's a round button with a neutral translucent fill, `aria-label="Close"`, and Escape still closes.
+2. **Navigation:** the lightbox opens with the **list of images in the current conversation** (in chronological order) and the clicked one's index.
+   - With more than one image, show **left and right arrow buttons**, vertically centred at the viewport's sides, plus the ←/→ keys and a muted "3 / 7" counter.
+   - It doesn't wrap. Hide the arrow at either end.
+3. **Fit:** the image fits within the viewport minus a margin (`max-width: calc(100vw - 128px)`, `max-height: calc(100vh - 96px)`), and the buttons never cover the image's content beyond the corner.
+
+**Verification (Playwright + Firefox):** the close button's rect sits inside the viewport at the image's top-left (report both rects); the arrows and keys change the image and counter; the ends hide their arrows; Escape closes.
+
+**Gate:** click a photo. The × sits at the photo's top-left, and arrows or ←/→ move between that chat's photos.
+
+**Record:** add a `## LIME-40` entry to `TEND.md`. Commit: `fix: lightbox close at image corner, arrows between photos`, trailer `Brief: LIME-40`, plus the attribution trailer.
+
+---
+
+### LIME-41 → `tend`: several attachments in one message: an album grid and a gallery view
+
+**QA:** sending several photos creates one message per photo. The user wants **WhatsApp's album** (one bubble, a 2×2 grid, "+N" on the last tile) and **Apple's** gallery grid ("9 Photos" opens a grid of all of them).
+
+**The data model change** (production-ready; this supersedes LIME-38's "one message per file"):
+- **Schema:** a new table `message_attachments` (`id text pk`, `message_id` references `messages` on delete cascade, `path`, `name`, `size`, `mime`, `width`, `height`, `position`, `created_at`), with RLS by `is_member` via the message's conversation.
+- Any message (including text) can have 0 to n attachments. **Typed text becomes the caption of the same message,** not a separate message.
+- **The contract:** `sendMessage(conversationId, { content, metadata, replyTo, attachments: [{ path, name, size, mime, width, height }] })`. Add a read, `getAttachments(messageId)`.
+- **Backward compatibility:** LIME-38's existing `image`/`file` messages (with their `metadata.path`) are read as a message with one attachment. Don't break existing local data. Document the mapping.
+- Record the image width and height at upload (decode via `Image` or `createImageBitmap`) so the grid can lay out without jumping.
+
+**Rendering:**
+- **1 image:** as today, the thumbnail from LIME-38, max 240 × 180.
+- **2 images:** side by side.
+- **3:** one large plus two stacked.
+- **4 or more:** a 2×2 grid; with more than 4, the 4th tile shows a **"+N"** overlay.
+- Tiles are square-cropped (`object-fit: cover`) in one rounded bubble, with the caption below if any.
+- **Clicking a tile** opens the LIME-40 lightbox at that image, **scoped to this message's images**.
+- A small "N photos" label above an album (N ≥ 5) opens a **gallery modal**: a responsive grid of all the images in the message, with the blur backdrop and a close button. Clicking one opens the lightbox.
+- **Non-image files** in the same message render as file cards below the album (LIME-42 improves the cards).
+- **List previews:** "📷 N photos", or "📎 name" for one file, or the caption if there is one.
+
+**Also fix (seen in the user's screenshots):** the composer's attachment error ("… is over the 10MB limit") **stays visible after sending.** Clear it on send, on removing a chip, and on the next file pick.
+
+**Verification:**
+- jsdom + Playwright + Firefox: sending 7 photos with a caption creates **one** message with 7 attachments and the caption.
+- Grid tiles 2, 3 and 4 plus "+3" render per layout. Report the tile rects.
+- A tile opens the lightbox with 7 images; "7 photos" opens the gallery.
+- Old single-image messages still render.
+- After a reload, the album layout doesn't shift (the width and height are used).
+
+**Gate:** select several photos, add a caption, and send. One bubble shows a grid with "+N". Click a tile to open it large, with arrows. "N photos" opens the full grid.
+
+**Record:** add a `## LIME-41` entry to `TEND.md`. Commit: `feat: multi-attachment messages: album grid and gallery; message_attachments table`, trailer `Brief: LIME-41`, plus the attribution trailer.
+
+---
+
+### LIME-40-fix → `tend` (before LIME-42): the lightbox close button sits outside the image and is clearly visible
+
+**The user's QA (2026-09-29, screenshot):** "the close button is not accessible on hover, and it needs to be on the outside of the image, not on top of it." In the screenshot, a dark translucent × (`rgba(19,27,23,0.55)`, lime.css ~1469) sits on the photo's dark top-left corner, so it's nearly invisible, and its hover state barely changes.
+
+**The design:** a **toolbar row above the image** replaces absolute positioning on the image. This rules out the LIME-40 off-screen bug by construction.
+- The lightbox content becomes a column: **a top bar** (the close button on the left, the "2 / 7" counter on the right) above **the image**.
+- The image's max height becomes `calc(100vh - <bar height> - margins)`, so the bar can never be pushed off-screen.
+- The bar's left edge aligns with the image's left edge, and its right edge with the image's right edge (the bar's width follows the image's rendered width). If that's awkward, align it to the image column and report which.
+- **The close button:**
+  - a 40px round target on a **solid, opaque** surface (`--soil-bg-elevated`, the `--soil-text` icon, `--seed-shadow-sm`);
+  - hover uses `--calm-bg-subtle-hover`;
+  - **a visible focus ring** (the neutral focus style);
+  - `aria-label="Close"`, the `title` tooltip kept;
+  - **≥ 3:1 contrast against the backdrop** (non-text contrast). Report the ratio.
+- **The counter** moves into the bar, the same neutral pill.
+- **The arrows** stay at the viewport's sides, restyled to the same solid, opaque style as the close button, for consistency and contrast.
+- The **gallery modal's** close button (LIME-41) gets the same treatment, if it has the same problem.
+
+**Scope:** the lightbox and gallery markup in `public/index.html` and `app.js` (only if structure is needed), the `.lime-lightbox*` and gallery close rules in `public/css/lime.css`, and `TEND.md`.
+
+**Verification (Playwright + Firefox, 1567×905 and 500×500):**
+- The close button's rect is **outside** the image rect (above it), fully inside the viewport, and aligned to the image's left edge (±2px).
+- The contrast of the button against the backdrop is ≥ 3:1.
+- The hover and focus styles are visibly different (report their computed backgrounds and outlines).
+- Escape, the ← and → keys, and the arrows still work.
+- The real app loads in jsdom with zero errors.
+
+**Gate:** open a photo. The × sits in a bar just above the photo's top-left, clearly visible on any photo, and highlights on hover. The counter is at the top-right of the same bar.
+
+**Record:** add a `## LIME-40-fix` entry to `TEND.md`. Commit: `fix: lightbox controls in a bar outside the image, solid and accessible`, trailer `Brief: LIME-40-fix`, plus the attribution trailer.
+
+---
+
+### LIME-41-fix → `tend` (before LIME-43): album captions keep their formatting; viewer controls; a full-screen photo wall instead of the gallery card
+
+**The user's QA (2026-09-29, three screenshots):**
+1. **An album's caption loses its formatting** (bold, lists and so on), and renders as plain wide text with no bubble.
+2. **"5 photos" should sit directly under the grid.** Right now it's centred with a gap, floating between the grid and the caption.
+3. **Viewer (lightbox):** "remove the 1px border on all the nav items" (the close, arrow and counter controls). "Move the number counter to the bottom centre of the media, and the close button to the top-right corner of the media."
+4. **The gallery:** its close button should be at the top right, **outside** the content. And the grid "doesn't provide enough value." **Make it full-screen over the blurred app, like the photo viewer: a Pinterest-style wall**, where choosing a photo shows that photo alone.
+
+**Plot's reading of the positions:** keep the LIME-40-fix principle, **controls outside the photo**, so the photo is never covered:
+- **the close button sits just outside the image's top-right corner** (above it, right-aligned to the image's right edge);
+- **the counter is centred just below the image;**
+- the arrows stay at the viewport's sides.
+The image's max height reserves room above and below, so nothing goes off-screen. **If the user meant overlaid on the photo, it's a one-line change.** Flag it at the gate.
+
+**Plot's note on the borders:** the 1px borders were added in LIME-40-fix as "load-bearing" for 3:1 non-text contrast. Removing them is fine for accessibility **as long as each control's icon itself contrasts ≥ 3:1 with its own fill** (a dark icon on a white fill does), and the control is separated from the blurred backdrop by a **soft shadow** (`--seed-shadow-md`) instead of a border. Report the icon-to-fill ratio.
+
+**Scope:** album and caption rendering in `public/js/app.js`, the lightbox and gallery markup and JS, the `.lime-lightbox*`/gallery/album rules in `public/css/lime.css`, and `TEND.md`.
+
+**The change:**
+1. **Album caption:** render the caption **inside a normal message bubble** directly under the grid, the same width rules as text messages (LIME-47), using `metadata.html` through `renderRichHtml` when present, the same path as text messages. **Find why the album path skipped it** (probably plain `content` used for captions) and share one caption renderer. Check that sending an album with a formatted caption **stores** `metadata.html` at all, and fix the send path too if not.
+2. **"N photos":** a small left-aligned link directly under the grid (`--seed-space-1` gap), before the caption bubble, with muted text, underlined on hover. It opens the wall (below).
+3. **Viewer controls:** no borders, a soft shadow, the close button outside the image's top right, the counter centred below it, and the sizing reserves space for both. Keep Escape, the arrow keys, hover and focus styles, and the LIME-40 no-wrap behaviour.
+4. **The photo wall** (replacing the gallery card modal):
+   - **full-screen over the blurred backdrop** (the same backdrop as the viewer), with no white card;
+   - a **masonry wall** (CSS `columns` with `break-inside: avoid`, **natural aspect ratios**, not square crops), with the column count responsive to width: about 5 at 1567px, 3 at 900px and 2 at 500px;
+   - **the close button at the top right of the viewport**, outside the wall, with the same styling as the viewer;
+   - the wall scrolls inside the full-screen layer (the LIME-46 fade frame, with fades using the backdrop colour).
+   - **Choosing a photo** opens the viewer on that photo, scoped to the album. **The viewer then shows a "back to all photos" control** (a grid icon, top left, outside the image) that returns to the wall at the same scroll position.
+   - **Escape:** in the viewer (when opened from the wall), it returns to the wall; on the wall, it closes. This replaces LIME-41's close-gallery-first hand-off with a clear two-level stack. Handle Escape in **one** place so nothing double-fires.
+   - Reached from "N photos", and from the "+N" tile.
+
+**Verification (Playwright + Firefox, 1567×905 and 500×500):**
+- An album sent with a bold word and a list caption renders the formatting inside a bubble (and `metadata.html` is stored).
+- "5 photos" sits within 8px under the grid, left-aligned.
+- **Viewer:** the controls have `border-width: 0`; the close button is outside the image at its top right and the counter is below its centre, both inside the viewport (report the rects); the icon-to-fill contrast is reported.
+- **Wall:** full-screen; the tiles keep their aspect ratios (report 3 ratios against the originals); the column count at each width; the close button at the viewport's top right. Choosing a tile opens the viewer, "all photos" returns with the scroll position restored, and Escape behaves at each level.
+- The real app loads in jsdom with zero errors.
+
+**Gate:** in Firefox:
+- **Caption:** send photos with a formatted caption. It keeps its formatting, in a bubble under the grid, with "5 photos" right under the grid.
+- **Viewer:** open a photo. The × is outside its top right, the counter is centred below it, and there are no borders.
+- **Wall:** "5 photos" opens a full-screen, Pinterest-style wall. Choose a photo to see it alone, then "back to all photos".
+- **Ask:** should the controls sit outside the photo (as built) or on it?
+
+**Record:** add a `## LIME-41-fix` entry to `TEND.md`. Commit: `fix: formatted album captions, viewer controls, full-screen photo wall`, trailer `Brief: LIME-41-fix`, plus the attribution trailer.
+
+---
+
+### LIME-42 → `tend`: audio attachments play inline; file cards by type
+
+**QA:** audio uploads should work like WhatsApp's. "Same for audio and files."
+
+**The change:**
+- **Audio attachments** (`audio/*`) render as an inline player that matches the existing voice-message bubble (play/pause with the waveform style and duration, via a hidden `<audio>` element). The duration comes from metadata.
+- **File cards:**
+  - an extension badge (PDF, DOC, XLS, PPT, ZIP, TXT, or generic), each with a neutral tinted tile. **Not lime.** Use Seed calm/bad/warn/good tints by category only if they pass contrast, otherwise neutral;
+  - the name (ellipsis-truncated in the middle, keeping the extension);
+  - the size;
+  - a Download button;
+  - **PDFs and images** open in a new tab from the card.
+- **List previews:** "🎵 Audio", or "📎 name".
+
+**Verification:** Playwright + Firefox with a small mp3 and pdf from the scratchpad. The audio plays and pauses (the `<audio>` element's `paused` flips); the cards show the right badge; long names truncate while keeping the extension.
+
+**Gate:** attach an audio file, and it plays in the chat. Attach a PDF, a Word file and a zip, and each shows a clear card.
+
+**Record:** add a `## LIME-42` entry to `TEND.md`. Commit: `feat: inline audio player and typed file cards`, trailer `Brief: LIME-42`, plus the attribution trailer.
+
+---
+
+### LIME-43 → `tend`: delivered ✓ and viewed ✓✓
+
+**Decided:** both are neutral grey. Hover shows who viewed and when.
+
+**Production-ready derivation (no new columns):**
+- A message is **delivered** once the store persists it. **Viewed by X** when X's membership `last_read_at >= message.created_at`, which LIME-36 already writes via `markRead`.
+- **In a DM:** ✓✓ when the other person has viewed it.
+- **In a group:** ✓✓ when **all** other members have viewed it. The tooltip lists "Viewed by Jean, Grace" plus "Not yet: …".
+- Document this in `data-model.md`, and note that a real backend with realtime updates the ticks live.
+
+**The change:**
+- Only on **your own** messages: a small ✓ or ✓✓ after the time in the meta line (use `dew-check` doubled, or an inline SVG if a double-check icon doesn't exist), `--soil-text-muted`, with an `aria-label` ("Delivered" or "Viewed").
+- Hovering or focusing it shows a tooltip with the viewers and their times.
+- It updates on `lime:conversations-changed` (the read kind).
+- A **privacy setting** to turn off read receipts is a future Settings item. Note it.
+
+**Verification:** jsdom. A message you sent in Jean's DM shows ✓. Simulating Jean's `markRead` (test hook, as Jean) makes it ✓✓, with the tooltip "Viewed by Jean · <time>". In conv-011, ✓✓ appears only once all 9 others have read.
+
+**Gate:** send a message and see ✓. Sign in as the other person (after LIME-33), or ask tend for a demo toggle, and it becomes ✓✓. Hover shows who.
+
+**Record:** add a `## LIME-43` entry to `TEND.md`. Commit: `feat: delivered and viewed receipts derived from last_read_at`, trailer `Brief: LIME-43`, plus the attribution trailer.
+
+---
+
+### LIME-44 → `tend`: link preview cards, built for real and demoed with samples
+
+**Decided:** build it the real way, demo with samples. A browser can't fetch other sites' metadata (CORS, and `file://`), so this needs a server piece later.
+
+**Production design** (documented in `data-model.md` and `schema.sql`):
+- A Supabase Edge Function, `unfurl(url)`: fetch with a timeout and a size cap, parse Open Graph and Twitter meta plus `<title>`, `favicon`, `og:image`, `description`, `site_name`; block private IP ranges (SSRF); cache the result.
+- A table `link_previews` (`url pk`, `title`, `description`, `image_url`, `site_name`, `favicon_url`, `fetched_at`).
+- **The contract:** `getLinkPreview(url)`, resolving to a preview or null.
+
+**Local adapter:**
+- A small **fixture map** of 3–4 demo URLs with realistic previews (plausible education links; images as bundled local assets or none), for a full card.
+- **Any other URL** gets a minimal card: the site's domain as the title, the full URL muted, and no image.
+- **No network calls.**
+
+**The UI:**
+- The **first** link in a message's content gets a card below the bubble text: the image on the left (or top when wide), the site name muted, the title bold (2 lines max), the description muted (2 lines max).
+- The whole card is a link (`rel="noopener noreferrer"`, `target="_blank"`), with neutral styling, a subtle border, and radius.
+- A composer-side preview before sending (with an × to drop the preview) is **optional**; include it if simple.
+
+**Verification:** jsdom plus Playwright + Firefox. A fixture URL shows its full card; an unknown URL shows the minimal card; no network requests happen (use the fail-fast recipe); the card doesn't overflow the bubble; the message content itself is unchanged.
+
+**Gate:** paste one of the demo links (tend lists them) and send. A card with a title, description and image appears. Any other link shows a simple site card.
+
+**Record:** add a `## LIME-44` entry to `TEND.md`. Commit: `feat: link preview cards (unfurl contract; local fixtures)`, trailer `Brief: LIME-44`, plus the attribution trailer.
+
+---
+
+### LIME-45 → `tend`: customisable chat backgrounds, with gradients that follow them
+
+**The user's spec:**
+- An icon in the thread header, **between the header avatars and the "…" button**, opens background customisation: **accessible background colours, a few patterns, and uploading your own photo.**
+- **"Something critical to the success of this is the gradients need to be dynamic,** so that we don't see broken gradients that don't align to the colour background changes."
+
+**Plot's design decisions (flag anything that doesn't hold up):**
+- **Scope of a choice:** it's **per user, per conversation** (a WhatsApp-like "for this chat"), with an **"Apply to all chats"** option that sets **your default.**
+  - **Production:** `conversation_members.background jsonb` for per-chat, and a `user_settings.default_background jsonb` for the default (add `user_settings` to the schema if it's missing).
+  - **The contract:** `setChatBackground(conversationId | null, background)`.
+  - **Local:** the store snapshot, with photos in IndexedDB via `uploadAttachment`.
+- **The shape:** `{ kind: 'default' | 'color' | 'pattern' | 'photo', color, patternId, path, avgColor }`.
+- **Colours:** 8 preset swatches built from Seed tokens and brand ramps, **each checked**: the message bubble surface keeps ≥ 3:1 against the background (so bubbles read as objects), and any text drawn **directly** on the background (the date dividers, sender names, times, reply summaries) is ≥ 4.5:1. **Swatches that fail don't ship.**
+- **Patterns:** 3–4 subtle line patterns as **CSS or inline SVG** (no downloaded assets), tinted from the base colour at very low contrast, over a chosen base colour.
+- **Photos:** upload, then compute the **average colour** via canvas (downscale to 16 × 16 and average) and store it as `avgColor`. Show a **scrim** over the photo (a semi-opaque layer of `avgColor`) so on-background text stays legible.
+- **Dynamic gradients (the critical part): LIME-46 builds the system.** Here, setting the chat background just sets `--surface-bg` on the thread surface (and on the composer), and the fades follow. Don't add a second mechanism.
+  - **One variable, `--chat-bg`,** is set on the thread container: the colour, or the pattern's base colour, or a photo's `avgColor`.
+  - **Every fade touching the thread** (`gradients.css` ~35–62: the thread's top/bottom fades and the composer fade; audit all of them) uses `--chat-bg`, **never `--soil-bg-canvas` directly** there.
+  - Fade to a **transparent version of the same colour** (`color-mix(in srgb, var(--chat-bg) 0%, transparent)`, or `rgb(from var(--chat-bg) r g b / 0)`), **not the bare `transparent` keyword**, which interpolates through grey.
+  - **For photos,** the fades use `avgColor` over the scrim, so they blend.
+  - The composer's backdrop matches too.
+  - **The reply panel isn't in scope.** It keeps its default background.
+- **On-background legibility:** when the background isn't default, the date dividers and the metadata drawn directly on it (sender names, times, the reply summary) get a subtle pill backdrop, `color-mix` of `--soil-bg-surface` at ~80%.
+
+**The UI:**
+- A header icon button (`dew-sun` or a palette-like dew icon; if there's no good one, a neutral inline SVG), `aria-label="Chat background"`.
+- It opens a popover or small dialog in the menu and modal style:
+  - a "Colors" swatch grid (with the current one marked);
+  - "Patterns" (thumbnails);
+  - "Photo" ("Upload photo", and "Remove" if one is set);
+  - "Reset to default";
+  - an "Apply to all chats" checkbox.
+- Choices apply **live** as a preview, and persist.
+
+**Verification:**
+- jsdom plus Playwright + Firefox for each kind (default, 2 colours, a pattern, a photo):
+  - compute and report the contrast ratios (bubble surface vs the background; divider and meta text vs the background, with the pill);
+  - **sample the fade pixels** in screenshots at the thread's top and bottom and above the composer. There must be **no visible band**: the fade's end colour equals the background (±3 per channel), and its midpoint has no grey dip;
+  - per-chat versus "Apply to all" behaves correctly;
+  - the settings persist across reload;
+  - a photo's `avgColor` is sensible;
+  - Reset returns to default.
+- **Attach the screenshots to the `TEND.md` entry as file paths** in the scratchpad, for plot to review.
+
+**Gate:** open the background icon, try a colour, a pattern and your own photo. Text stays readable, and the fades at the top, the bottom and around the message box always blend into the background, with no hard edges or grey bands. "Apply to all chats" changes the other chats too.
+
+**Record:** add a `## LIME-45` entry to `TEND.md`. Commit: `feat: per-chat backgrounds (colour, pattern, photo) with background-aware fades`, trailer `Brief: LIME-45`, plus the attribution trailer.
+
+---
+
+### LIME-39 → `tend` (after LIME-38): the last message is never hidden behind a growing composer
+
+**Found by tend in LIME-37 (`f43ee40`), confirmed as pre-existing against the older HEAD:** `.lime-messages` (lime.css ~2437) is `position: absolute; inset: 0` with a **fixed** `padding-bottom: 80px`, and the main composer is absolutely positioned over its bottom. As the composer grows (multi-line text, lists, attachments from LIME-38), the thread's visible area doesn't shrink, so the last message ends up behind the composer. LIME-10-fix15's static calibration can't cover a composer whose height now varies much more.
+
+**Amended 2026-09-29 (the user's QA: "when I refresh it doesn't go to the latest message"):** after a reload, the thread doesn't end at the newest message. The likely cause is that images (LIME-38) load *after* the initial scroll-to-bottom, and push the content down. Same mechanism, so it's included here: **the thread also stays pinned when its content grows** (image loads, new messages), and **it opens at the latest message** after all its media has laid out. Observe the content too: a `ResizeObserver` on the message list's content, and/or `load` listeners on the thread's images. Verify with a reload in Playwright + Firefox on a chat that has photos: `scrollTop` ends at the bottom (±2px).
+
+**Goal:** in both the main thread and the reply panel, the latest message always stays visible above the composer at any composer height. If you were at the bottom before the composer grew, you stay pinned to the bottom. If you'd scrolled up to read history, your position isn't yanked.
+
+**Capability assumptions:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). **Measure with Playwright + Firefox** per `TEND.md` LIME-31-fix.
+
+**Scope:**
+- **May touch:** `public/js/app.js` (a small helper wired to both composers, via `createComposer` if that's the natural place), the `.lime-messages` and `.lime-replies-panel__list` padding rules in `public/css/lime.css` (and the fade's offset, if it depends on the composer height), and `TEND.md`.
+- **May not touch:** the composer's own layout, the Send position, the toolbar collapse (LIME-32), or the fades' design.
+
+**The change:**
+1. **Measure the composer's real height:** a `ResizeObserver` on each composer (main `#composer`; for the reply panel, check whether its composer overlaps the list or sits in normal flow, and apply this only where it overlaps) writes a CSS variable, e.g. `--composer-clearance: <height + --seed-space-4>px`, on the thread's scroll container.
+2. **Use it:** `.lime-messages { padding-bottom: var(--composer-clearance, 80px); }`, and the same for the reply list if needed. If the gradient fade's offset (`gradients.css` / LIME-10-fix15) is tied to the composer height, drive it from the same variable.
+3. **Stay pinned:** before applying a new clearance, record whether the scroller was at the bottom (`scrollHeight - scrollTop - clientHeight <= 8`). Afterwards, if it was, set `scrollTop = scrollHeight`. Don't move it otherwise.
+4. Add a comment pointing at LIME-10-fix15, and saying why a static value can't work any more.
+
+**Verification (Playwright + Firefox, 1567×905 and 767px):**
+- With the composer collapsed, expanded, and holding 6+ lines (including a list), in both the main thread and the reply panel: `lastMessage.bottom <= composerBox.top - 8`. Report the numbers for each state.
+- Scroll up to the middle of the history, then grow the composer: `scrollTop` is unchanged.
+- At the bottom, grow the composer: it stays at the bottom.
+- The real app loads in jsdom with zero errors.
+
+**Gate:** in Firefox:
+- **Growing box:** type a long multi-line message, or a list, in the main box. The last message moves up and stays visible above it.
+- **Reply box:** the same.
+- **Reading history:** scroll up to read older messages, then type. The view doesn't jump.
+
+**Record:** add a `## LIME-39` entry to `TEND.md`. Commit: `fix: thread keeps the latest message visible above a growing composer`, trailer `Brief: LIME-39`, plus the attribution trailer.
+
+> **Shared context for LIME-34 to 38: the "solid place" QA pass** (user, 2026-09-28). **These run BEFORE the milestone (LIME-33 → 29).**
+>
+> **The user's QA list and decisions:**
+> 1. **The menu differs between chats.** Decided: **the same items on every chat; items you can't use are greyed out with a short reason.**
+> 2. **Rename should edit the name itself,** not open a second field beside it. The screenshot shows the title *and* a green-outlined input.
+> 3. **The Recent row must be dynamic** (it's a static mockup at `index.html` ~211–265).
+> 4. **Every avatar and name in a thread should open that person's own details.** Today everything opens Jean's static profile panel (`index.html` ~486).
+> 5. **Breadcrumbs should be dynamic,** especially for reply threads. Today they're `crumb-teachers` / `crumb-thread` / a static "Details" (`index.html` ~149–153).
+> 6. **Formatting should really work in both composers, and + should attach a file.** Decided: **live (WYSIWYG) formatting.**
+> - **Also decided:** Delete on a DM = **"Delete for me"**. It clears your copy only; a new message from them brings a fresh chat back.
+>
+> **Capability assumptions for all five:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). **Measure with Playwright + Firefox per `TEND.md` LIME-31-fix. Check `git diff` of `index.html` before every commit.** Production-ready rules apply (see the LIME-24 context): per-user state lives on the membership; UI goes through `LimeStore`; contract and schema changes go into the docs in the same commit.
+
+### LIME-34 → `tend`: one consistent chat menu (greyed items with reasons), Delete for me on DMs, rename in place
+
+**Scope:**
+- **May touch:** `public/js/app.js` (`CONVERSATION_ACTIONS` and menu rendering, rename), `public/css/lime.css` (the disabled menu item and the in-place rename), `public/js/store.js` + `local-adapter.js` (Delete for me), `docs/data-model.md` + `docs/schema.sql`, and `TEND.md`.
+- **May not touch:** other menus, or the delete-for-everyone semantics for owned groups.
+
+**The change:**
+1. **The same menu everywhere:** Star · Rename · Archive · divider · Delete, on **every** conversation. (LIME-27 will later add Copy link and Share, visible everywhere too.)
+   - **Instead of hiding** an item `can()` rejects, render it with `aria-disabled="true"`, muted (`--soil-text-disabled`, no hover background, `cursor: default`), and a **one-line muted reason** under the label in `--seed-text-xs`.
+   - Its key hint doesn't fire.
+   - Add `canReason(action, conversation)` next to `can()` in the store, so the rule and its explanation live together:
+     - **Rename on a DM:** "Direct messages are named after the person".
+     - **Rename on a non-owned group:** "Only the group owner can rename".
+     - **Delete on a non-owned group:** "Only the group owner can delete. Archive hides it for you".
+2. **Delete for me (DMs):**
+   - **Schema:** `conversation_members.cleared_at timestamptz`.
+   - **Contract:** `deleteForMe(conversationId)` sets `cleared_at = now()` on **your** membership.
+   - **Reads:** for you, messages with `created_at <= cleared_at` are hidden, and a DM with no messages after `cleared_at` is hidden from your lists. A new message from them makes it reappear, with only the new messages.
+   - **Menu:** DM Delete is **enabled**, labelled **"Delete for me"**, with a confirm dialog: 'Delete your copy of this chat with <name>? They'll still have theirs.' The confirm label is "Delete", red.
+   - Owned groups keep the existing delete-for-everyone; non-owned groups are greyed (above).
+   - Update the RLS notes (a member may update their own `cleared_at`) and the mapping table.
+3. **Rename in place** (it replaces LIME-26's sibling-input approach):
+   - The breadcrumb title itself becomes editable: `contenteditable="plaintext-only"` on `#crumb-thread`, falling back to `"true"` with paste stripped to plain text.
+   - **Same font and size.** Its text is fully selected. It gets a subtle `--calm-bg-subtle-hover` background and `--seed-radius-sm`, with **no border and no green ring**. The focus indicator is the background plus the caret.
+   - Enter saves; Escape reverts; blur saves; an empty title reverts to the auto title. It must **not** trigger the title's click action (opening the details panel) while editing.
+   - **Remove** the sibling input code and CSS entirely.
+
+**Verification:**
+- jsdom: every conversation type shows 4 items plus the divider; the disabled items have `aria-disabled` and the right reason, and their keys do nothing.
+- **Delete for me:** delete for me on Alexi's DM: it vanishes, and Alexi's copy is untouched (check his membership row). Simulate a new message from Alexi (store write as Alexi via a test hook): it reappears with only that message.
+- **Rename in place:** only one title element exists while editing (no second field), the selection covers the whole title, and Escape restores the text.
+- Playwright + Firefox: the disabled item styling; the editing title has no outline or box-shadow; and a before/after screenshot of the breadcrumb while editing.
+
+**Gate:** in Firefox:
+- **Same menu:** every chat's ⌄ menu shows the same four items. Unavailable ones are grey with a reason.
+- **Rename:** it edits the name right where it is.
+- **Delete for me:** on a one-to-one chat it asks, then removes your copy.
+
+**Record:** add a `## LIME-34` entry to `TEND.md`. Commit: `feat: consistent chat menu with reasons, delete-for-me on DMs, rename in place`, trailer `Brief: LIME-34`, plus the attribution trailer.
+
+---
+
+### LIME-35 → `tend`: everyone's own details panel (and group members), plus dynamic breadcrumbs
+
+**Scope:**
+- **May touch:** `public/index.html` (the profile panel becomes a template, and the breadcrumb markup), `public/js/app.js`, `public/css/lime.css` (small additions), and `TEND.md`.
+- **May not touch:** the replies panel's internals (except the breadcrumb hook), or the store.
+
+**The change:**
+1. **The details panel is rendered from data:** `showPersonDetails(profileId)` fills the right panel from `LimeStore.getProfile(id)`.
+   - It shows the avatar, name, pronouns, role and school, "About me" (the bio), and contact information (email, **local time** computed from `timezone`, and status).
+   - Missing fields are simply omitted.
+   - **No hard-coded Jean.**
+   - When it's **your own** profile, add an "Edit profile" button that opens Settings → Profile.
+2. **Triggers:**
+   - **Every avatar and sender name** in the main thread and the reply panel (quote and replies) opens *that sender's* details. Use one delegated listener with `data-profile-id` on those elements.
+   - In a DM, the header avatars open the other person's details.
+   - **In a group, the header opens a Members panel:** the member list with avatars, names and roles (Owner or Member), each clickable through to that person's details, with a back chevron to Members.
+   - On mobile, these set `data-mobile-view="panel"`, as today.
+3. **Dynamic breadcrumbs,** one renderer, `renderCrumbs()`, called on every state change:
+   - `Messages` (or `Communities`, following the active tab) / `<conversation title>` ⌄ / `<panel>`.
+   - `<panel>` is the person's name (details), "Members", or **"Thread"** (the reply panel; on mobile, "Thread · <parent sender's short name>" if it fits), and it's absent when the right panel is closed.
+   - Each ancestor crumb navigates back: the scope crumb goes to the contacts view on mobile, and the title crumb closes the panel and returns to the thread.
+   - The ⌄ menu stays attached to the title crumb.
+   - Delete the static "Details" crumb.
+
+**Verification:**
+- jsdom:
+  - clicking Grace's avatar in conv-011 shows Grace's panel (her name and school), never Jean's;
+  - a reply's avatar opens that reply-sender's panel;
+  - the group header opens Members (10 rows, with Jean as Owner);
+  - your own avatar shows "Edit profile";
+  - the crumbs read correctly in each of the four states (no panel, person, Members, Thread), and each ancestor click navigates correctly, on desktop and at mobile width.
+- Playwright + Firefox: screenshots of the four crumb states and the panel layout, with no overflow at 767px.
+
+**Gate:** in Firefox:
+- **Details:** click different people's avatars and names in a chat. Each opens *their own* details.
+- **Groups:** a group's header opens its member list.
+- **Breadcrumbs:** they follow what you're looking at ("… / Thread" in a reply thread), and clicking back through them works.
+
+**Record:** add a `## LIME-35` entry to `TEND.md`. Commit: `feat: per-person details and group members panels; dynamic breadcrumbs`, trailer `Brief: LIME-35`, plus the attribution trailer.
+
+---
+
+### LIME-36 → `tend`: a dynamic Recent row with real unread state
+
+**Scope:**
+- **May touch:** `public/index.html` (replace the static Recent items with an empty container), `public/js/app.js`, `public/js/store.js` (a read helper only, if needed, added to the contract doc), `public/css/lime.css` (only if needed), `docs/data-model.md`, and `TEND.md`.
+
+**The change:**
+1. **The row is rendered from data:**
+   - **"Me" first.** It opens your own details (LIME-35).
+   - Then **up to 10 people** you've recently interacted with: the other participants of your non-archived Messages conversations, ordered by the latest activity involving them (the latest message *they* sent in any shared conversation, or your latest DM activity with them). Each person appears once.
+   - Each item has an avatar with presence, and a first name plus last initial.
+   - Re-render on `lime:messages-changed` and `lime:conversations-changed`.
+2. **Unread:**
+   - Opening a conversation calls `markRead(conversationId)` (the contract already has it).
+   - A person gets the **unread ring** (the existing `lime-recent__item--unread` style, which stays lime by the user's earlier choice) if any conversation you share with them has a message **from someone else** newer than your `last_read_at`.
+   - Document "unread" in `data-model.md` as derived from `last_read_at`.
+3. **Click:** open your DM with that person, creating it through `createConversation({ type: 'direct' })` if there isn't one (it reuses the existing one via `dm_key`). The active item follows the open DM.
+4. The horizontal scrolling and fades still work, and the search filter uses `data-search-text`.
+
+**Verification:**
+- jsdom: the order matches the latest activity; sending in conv-011 as someone else (test hook) moves that person to the front with an unread ring; opening it clears the ring; the static markup is gone.
+- Playwright + Firefox: the row renders with the fade, and there's no overflow at 767px.
+
+**Gate:** in Firefox:
+- **Order:** Recent shows the people you've been talking with, most recent first.
+- **Unread:** the green ring means there's something you haven't read, and it clears when you open that chat.
+- **Clicking:** a person opens your chat with them.
+
+**Record:** add a `## LIME-36` entry to `TEND.md`. Commit: `feat: dynamic Recent row with unread from last_read_at`, trailer `Brief: LIME-36`, plus the attribution trailer.
+
+---
+
+### LIME-37 → `tend`: live (WYSIWYG) formatting in both composers
+
+**Plot's design decisions (flag anything that doesn't work):**
+- **Storage format.** `messages.content` stays **plain text** (for previews, notifications and search). The formatted version goes in `metadata.html`, as a **sanitised allow-list HTML subset**: `p`, `br`, `strong`, `b`, `em`, `i`, `u`, `s`, `a[href]` (http, https or mailto only; add `rel="noopener noreferrer" target="_blank"` on render), `ul`, `ol`, `li`, `blockquote`, `code`, `pre`. Everything else is stripped.
+- **The same sanitiser runs on send and on render.** Note in `data-model.md` that a real backend must sanitise server-side as well.
+- **Why not Markdown:** underline has no Markdown form. Update the docs.
+
+**Scope:**
+- **May touch:** `public/index.html` (both composers' input elements), `public/js/app.js` (a **single shared** `createComposer(rootEl, { onSend })` used by the main and reply composers, replacing the duplicated logic), `public/js/store.js` (`sendMessage` accepts `metadata.html`), `public/css/lime.css`, `docs/data-model.md`, and `TEND.md`.
+- **May not touch:** attachments (LIME-38), or the Send button position and the collapse rules (LIME-32).
+
+**The change:**
+1. **Input:** replace each `<textarea>` with a `contenteditable` div (`role="textbox"`, `aria-multiline="true"`, `aria-label`), with the placeholder via `:empty::before`.
+   - **Keep existing behaviour:** the expand-on-focus toolbar, the auto-grow and max height, the `is-active` Send state, and the ≤480px short placeholder (LIME-12-fix4).
+   - **Paste** is sanitised through the same allow-list.
+2. **Toolbar commands** (both composers, including the "…" overflow menu items, which must now really work):
+   - Bold, Italic, Underline, Strikethrough.
+   - **Link:** a small inline popover to enter or edit the URL. Validate http, https or mailto, and add `https://` if there's no scheme.
+   - Numbered list, Bulleted list, Quote, Code: inline code for a selection within a line, a code block otherwise.
+   - Buttons show a pressed state (`aria-pressed`, neutral `--calm-bg-subtle-active`) when the caret is inside that format.
+   - `document.execCommand` is acceptable for the prototype. Comment that a production editor (e.g. TipTap or Lexical) would replace it behind the same `createComposer` API.
+3. **Keyboard:**
+   - `Cmd/Ctrl+B`, `I` and `U`; `Cmd/Ctrl+Shift+X` for strikethrough; `Cmd/Ctrl+K` for a link.
+   - **Enter sends,** *except* inside a list or code block, where it adds a new item or line. **Shift+Enter** is always a newline, and **Cmd/Ctrl+Enter** always sends.
+   - Empty or whitespace-only input doesn't send.
+4. **Sending:** derive `content` (plain text via `innerText`, trimmed) and `metadata.html` (sanitised); omit `html` when there's no formatting.
+5. **Rendering** (main thread and replies): if `metadata.html` exists, render it **re-sanitised**; otherwise use the existing escaped text. Style lists, quotes and code to fit the bubble with Seed tokens, and use `--seed-font-mono` if it exists.
+
+**Verification:**
+- jsdom:
+  - each command produces the expected sanitised HTML;
+  - a paste of `<script>`, `<img onerror>`, `style` or `javascript:` links is stripped (report the input and output);
+  - Enter inside a list doesn't send; Cmd+Enter sends;
+  - a message sent from each composer renders formatted, and its preview in the list is plain text;
+  - replies and both composers share one implementation (grep for the duplicated handlers: gone);
+  - LIME-31, 32 and 26 behaviours are intact.
+- Playwright + Firefox: formatting renders in bubbles, the toolbar's pressed states work, and the composer still grows upward without covering the last message.
+
+**Gate:** in Firefox:
+- **Formatting:** type in the main box and use bold, italic, underline, strikethrough, a link, both lists, quote and code. Each looks right as you type and after sending.
+- **Reply box:** the same.
+- **Enter:** sends, but adds a new line inside a list.
+
+**Record:** add a `## LIME-37` entry to `TEND.md`. Commit: `feat: live rich-text formatting in both composers, sanitised storage and rendering`, trailer `Brief: LIME-37`, plus the attribution trailer.
+
+---
+
+### LIME-38 → `tend` (after LIME-37): attach files with +
+
+**Plot's design decisions:**
+- `messages.type` gains `'file'` (the schema check already allows `'image'`).
+- `metadata = { name, size, mime, path }`.
+- **The adapter contract** gains `uploadAttachment(file, { conversationId })`, which resolves to `{ path }`, and `getAttachmentUrl(path)`, which resolves to a URL.
+- **Local adapter:** stores blobs in **IndexedDB** (`lime-files` database; **not** `localStorage`, which caps at about 5 MB). URLs come from `URL.createObjectURL`.
+- **Production** (documented): a Supabase Storage bucket `attachments`, path `<conversationId>/<messageId>/<filename>`, with storage RLS by `is_member`.
+- **Limits:** 10 MB per file, and up to 5 files per message. Any type is allowed. Images (`image/*`) render inline, and everything else renders as a file card.
+- **Reset demo data** clears `lime-files` too.
+
+**Scope:**
+- **May touch:** `public/index.html` (a hidden `<input type="file" multiple>` per composer), `public/js/app.js` (the + button, pending-attachment chips in `createComposer`, sending, rendering), `public/js/store.js` + `local-adapter.js`, `public/css/lime.css`, `docs/data-model.md` + `docs/schema.sql`, and `TEND.md`.
+
+**The change:**
+1. **Choosing files:** + opens the file picker. Chosen files appear as **removable chips** above the input inside the composer box: an image thumbnail, or an icon with the name and size.
+   - Over-limit files are rejected with an inline error.
+   - Send is active when there's text **or** at least one attachment.
+2. **Sending:** each file uploads through the store (optimistically showing a sending state), then **one message per file** of type `image` or `file`. If the user typed text, it's sent as a text message first. Keep it simple and document it.
+3. **Rendering:**
+   - **Images:** a thumbnail (max 240 × 180, rounded), clicking to open full size in a lightbox modal (blur backdrop).
+   - **Files:** a card with an icon, the name, a muted size, and a Download link.
+   - Both appear in the main thread and replies.
+   - **List previews:** "📎 filename" or "Photo".
+4. **Drag and drop** onto a composer is optional; include it only if it's trivial with the same path.
+
+**Verification:**
+- jsdom with File and IndexedDB stubs, or Playwright + Firefox with real files from the scratchpad (an image and a PDF): uploads persist across reload (the blob is in IndexedDB), and they render.
+- An 11 MB file is rejected. Previews are correct. Reset clears the files.
+- Playwright + Firefox: the chips don't overflow the composer, and the Send gap is still ≥ 8px (LIME-32).
+
+**Gate:** in Firefox:
+- **Photo:** click + in the main box and attach a photo. A preview chip appears, and sending shows the image in the chat. Click it to enlarge.
+- **Other files:** attach a PDF and it shows as a file card with Download.
+- **Reply box:** the same.
+- **Remembering:** reload, and they're still there.
+
+**Record:** add a `## LIME-38` entry to `TEND.md`. Commit: `feat: file and image attachments via +, IndexedDB-backed locally`, trailer `Brief: LIME-38`, plus the attribution trailer.
+
+> **Shared context for LIME-33 and LIME-29: the "sign up → sign in → find a teacher → message them" milestone** (user, 2026-09-28): "I want to plan to have a version running that I can sign in to and sign up an account, then create a message, search and find the new teacher to message." **Decided: accounts live in this browser** (local). The user runs into usage limits often, so this milestone is **prioritised ahead of LIME-27 and 28** and kept to two briefs.
+>
+> **Survey (plot):**
+> - `login.html` checks one hard-coded credential from the gitignored `demo-config.local.js` and writes `lime-demo-session`.
+> - `signup.html` calls `supabase.js` with **placeholder** keys, so it can't work.
+> - `auth.js` (`LimeAuth`) has `changeEmail`, `changePassword` (validation only) and `signOut`.
+> - `store.js` ~56 resolves the current user from `lime-demo-session`'s email and **falls back to teacher-002 when there's no session.**
+> - The global search modal is a static mockup.
+> - There's no "new message" UI.
+>
+> **Production-ready rule:** the auth seam must look like Supabase auth (`signUp`, `signInWithPassword`, `signOut`, `getSession`), so the switch is a body swap. **Credentials are kept separate from profiles,** as Supabase keeps `auth.users` separate from `public.profiles`.
+>
+> **Capability assumptions for both briefs:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). Measure with Playwright + Firefox per `TEND.md` LIME-31-fix. Check `git diff` of the HTML files before committing.
+
+### LIME-33 → `tend` (after LIME-32's check): local accounts, with real sign up and sign in
+
+**Goal:**
+- `signup.html` creates a real (browser-local) account, and a profile that appears in the teacher directory.
+- `login.html` signs in with any local account, **or** any seed teacher's email plus the shared demo password.
+- `index.html` requires a session, and sign out works.
+- A second account can be created, signed out of, and signed back into, in the same browser.
+
+**Scope:**
+- **May touch:** `public/js/auth.js`, `public/js/store.js` and `public/js/local-adapter.js` (profile creation and the session read), `public/login.html` and `public/signup.html` (their inline scripts and script tags), `public/index.html` (the session gate script tag, if needed), `docs/data-model.md` (the auth seam section), and `TEND.md`.
+- **May not touch:** `supabase.js` (leave it untouched and unused; remove it from `signup.html`'s script tags, and note it in the switch checklist), the seed JSON, or the app UI beyond the session gate.
+
+**The change:**
+1. **The `LimeAuth` API, shaped like Supabase's:**
+   - `signUp({ email, password, displayName })`
+   - `signInWithPassword({ email, password })`
+   - `signOut()`
+   - `getSession()`
+   All return Promises. Keep `changeEmail` and `changePassword`, and update `changePassword` so it **really works** for local accounts (verify the current password, then store the new hash).
+2. **Local credentials,** under their own `localStorage` key, `lime-auth-v1`: `{ [email]: { userId, salt, hash } }`.
+   - The hash is **PBKDF2-SHA256 via `crypto.subtle`**, with a random 16-byte salt and ≥100,000 iterations. **Never store plain passwords.**
+   - Add a comment: "local demo only; Supabase auth replaces this entirely".
+   - **Rules:** email format, emails are unique across credentials **and** profiles, the password is ≥ 8 characters, and a display name is required.
+3. **Seed teachers can sign in:**
+   - If the email matches a seed profile with no local credential, accept it with `window.LIME_DEMO_CREDENTIALS.password` (the existing gitignored file).
+   - If that file is missing, show the existing "demo credentials aren't configured" message **only for seed emails.** Local accounts don't need the file.
+4. **Sign-up creates a profile** through the store:
+   - Add a store write, `createProfile({ id, email, display_name })`, and document it in the contract.
+   - The `id` is `crypto.randomUUID()`. The other fields are null.
+   - It persists in the `lime-state-v1` snapshot, and **the `seedVersion` check must not discard snapshots that contain user-created profiles.** Confirm how.
+   - Then sign in and redirect to `index.html`.
+5. **Session:** `lime-demo-session` becomes `{ userId, email }`, written by `signIn`/`signUp` and cleared by `signOut`.
+   - `store.js` resolves the current user by `userId` (falling back to email for old sessions).
+   - **Remove the teacher-002 fallback for the real app:** `index.html` with no valid session redirects to `login.html`. Keep a test-only override for jsdom (e.g. a flag the test sets) and document it.
+6. **Reset demo data** wipes `lime-auth-v1` as well as the data snapshot, then signs out to `login.html`. Update the confirm dialog's message to say accounts are removed too.
+7. **`login.html` and `signup.html`:** errors appear inline in the existing error elements. On success, go to `index.html`. `signup.html` still requires the terms checkbox. Each page links to the other (check the existing links).
+
+**Verification:**
+1. `node --check` and jsdom (zero errors) for `index.html`, `login.html` and `signup.html`.
+2. **In jsdom:**
+   - sign up `new.teacher@example.com` / "Test Teacher": a profile exists, and a credential exists **without the plain password anywhere in `localStorage`** (grep every key for it);
+   - a duplicate email is rejected;
+   - a short password is rejected;
+   - sign out, then sign in with the wrong password (rejected) and the right one (succeeds);
+   - sign in as the seed email `shem.robinson@ps113.edu` with the demo password, and the app renders as Shem;
+   - `index.html` with no session redirects to `login.html`;
+   - `changePassword` works for the local account;
+   - reset wipes both keys.
+3. **Playwright + Firefox:** the end-to-end sign up → land in the app as the new user (an empty list) → sign out → the login page.
+
+**Gate:** in Firefox:
+- **Sign up:** open `file:///Users/shem/Sites/lime/public/signup.html` and sign up as a new teacher. You land in Lime as them, with an empty list.
+- **Sign in as yourself:** sign out, then sign in as `shem.robinson@ps113.edu` with the demo password.
+- **(Finding and messaging them is LIME-29.)**
+
+**Record:** add a `## LIME-33` entry to `TEND.md`. Commit: `feat: local accounts with sign up, sign in and session gate`, trailer `Brief: LIME-33`, plus the attribution trailer.
+
+---
+
+### LIME-29 → `tend` (after LIME-33; reprioritised): New message: find any teacher and start a DM or group
+
+**Goal:**
+- A **New message** button next to the Messages/Communities tabs opens a people picker in the search-modal style.
+- Type a name, email or school to find any teacher, **including accounts just signed up**. Pick one to start (or reopen) a DM, or several for a group with an optional name.
+- It lands in the conversation with the composer focused.
+- The other person sees it when they sign in.
+
+**Scope:**
+- **May touch:** `public/index.html` (the button, and the picker markup if it isn't built dynamically), `public/js/app.js`, `public/css/lime.css` (small additions reusing `.lime-menu__*`, the search modal and the LIME-26 dialog styles), `public/js/store.js` (only if a read is missing, e.g. `listProfiles()`; add it to the contract doc), `docs/data-model.md`, and `TEND.md`.
+- **May not touch:** creating communities (that waits for LIME-28), the global nav search modal (still a mockup), or the store's write semantics.
+
+**The change:**
+1. **The button:** an icon button (`dew-plus`, `title` and `aria-label` "New message") at the right of the tabs row, neutral style. It fits beside the tabs at every width. Measure it.
+2. **The picker** (the search modal's look, with the blur backdrop, a close ×, Escape and a focus trap):
+   - a search input ("Search teachers by name, email, phone or school"), autofocused;
+   - **phone search (user, 2026-09-29):** match `profiles.phone`, comparing **digits only** on both sides (so "+1 (555) 012-3456", "555-0123" and "5550123" all match), and only once ≥ 4 digits are typed;
+   - **an unknown email or phone (user, 2026-09-29):** when the query is a valid email address, or ≥ 7 digits, and matches **no** profile, show a row: "No teacher found with <query>", with an **"Invite"** button, disabled, with a small "Soon" pill (LIME-23 style) and an accessible label ("Invites coming soon"). **Production** (for `data-model.md` and the switch checklist): invites are a server action sending an email (Supabase Edge Function or auth invite) or an SMS (a provider such as Twilio), stored in an `invites` table (`id`, `inviter_id`, `email` or `phone`, `conversation_id`, `status`, `created_at`); accepting one on sign-up adds the new user to the waiting DM. **Document only; don't build it;**
+   - results from `listProfiles()` excluding yourself, filtered case-insensitively on name, email and school (and phone, as below);
+   - each result shows an avatar, the name, and a muted school or email, and arrow keys plus Enter work;
+   - **with an empty query,** show everyone, sorted by name (the directory is small);
+   - **selecting a person** adds a removable chip above the list. Enter with the query empty, or the **"Start"** button (the primary, lime), creates it.
+   - **One chip → DM:** `createConversation({ type: 'direct', memberIds })`, which returns the existing DM if there is one.
+   - **2+ chips → group:** an optional "Group name" field appears (blank means auto-title), then `createConversation({ type: 'group', memberIds, name })`. The current user becomes the owner.
+   - Then close, select the conversation, and focus the composer.
+3. **Empty states:**
+   - a brand-new account's Messages list shows a muted line, "No conversations yet", with a "New message" text button that opens the picker;
+   - no search results shows "No teachers match "…"".
+4. **After the first message,** the conversation sorts to the top (existing behaviour) and is visible to the other member on sign-in (membership rows).
+
+**Verification:**
+1. `node --check`, and jsdom (zero errors).
+2. **In jsdom:**
+   - searching "valene" finds Valene, and "ps113" finds PS 113 staff;
+   - a signed-up test account appears in results;
+   - picking Alexi opens the **existing** DM (no duplicate; the `dm_key` rule);
+   - picking a new person creates a DM, and sending a message puts it at the top of All;
+   - two people create a group, named or auto-titled, and the current user is owner (Rename and Delete visible in its ⌄ menu).
+3. **The end-to-end scenario, via jsdom or Playwright + Firefox:**
+   - sign up "Test Teacher" and sign out;
+   - sign in as Shem, New message, search "Test", start a DM and send "Welcome!";
+   - sign out, sign in as Test Teacher: the DM is there, with "Welcome!".
+4. **Playwright + Firefox:** the picker is centred over the blur, the chips wrap without overflow, and the New message button doesn't crowd the tabs at 1567px or 767px.
+
+**Gate:** the user runs the milestone in Firefox:
+1. Sign up a new teacher.
+2. Sign out.
+3. Sign in as yourself.
+4. Click **New message**, search their name, and start a chat.
+5. Send a message.
+6. Sign out, sign in as the new teacher, and see your message.
+
+**Record:** add a `## LIME-29` entry to `TEND.md`. Commit: `feat: new message picker: find any teacher, start a DM or group`, trailer `Brief: LIME-29`, plus the attribution trailer.
+
+### LIME-27 → `tend` (after LIME-32): Share and Copy link, deep links, and toasts
+
+**Context:** the lifecycle sequence. LIME-26 (`e90bfd1`) left a slot comment in `CONVERSATION_ACTIONS` (app.js ~1045): "LIME-27 adds Share and Copy link here, between Rename and Archive." Seed ships a toast component (`vendor/seed/components/toast/toast.css`, with container positions; the JS pattern is in `toast.html`), which isn't linked yet. Per the RLS draft, **only members can open a DM or group; community conversations are readable by any signed-in user.**
+
+**Capability assumptions:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). **Measure with Playwright + Firefox per `TEND.md` LIME-31-fix. Check `git diff public/index.html` before committing.**
+
+**Scope:**
+- **May touch:** `public/index.html` (link `toast.css`, a toast container, the share dialog markup if it isn't built dynamically), `public/js/app.js`, `public/css/lime.css` (small overrides only), `docs/data-model.md` (the deep-link format and access rule), and `TEND.md`.
+- **May not touch:** the store's write semantics, Seed files, or Communities UI.
+
+**The change:**
+1. **Toasts:**
+   - Link Seed's `toast.css` and add one container, `bottom-center`.
+   - Add a helper, `showToast(message, { tone = 'neutral', duration = 3000 })`, following `toast.html`'s pattern.
+   - The container is `role="status"` and `aria-live="polite"`. Toasts are dismissible and never cover the composer's Send button (measure).
+   - The neutral tone uses neutral Seed tokens. **No lime** (the lime rule).
+2. **Deep links:**
+   - The format is `#c=<conversationId>` on the app URL, and it lives in one helper, `conversationLink(id)`, built from `location.href` without its hash.
+   - On load, **after `LimeStore.init()`**: if the hash names a conversation that exists, isn't deleted, and **the current user may read** (a member, or `type === 'community'`), open it.
+   - Otherwise open the default and show the toast "That chat isn't available to you."
+   - When a conversation is selected, `history.replaceState` updates the hash, so a reload keeps your place without adding history entries.
+   - Document the format and the access rule in `data-model.md`. **In production this is the deployed app URL. The `file://` form is local-only.**
+3. **Actions** (in the slot, between Rename and Archive):
+   - **Copy link** (key L, `dew-link`): copies `conversationLink(id)` via `navigator.clipboard.writeText`, then shows the toast "Link copied".
+     - If the clipboard API is unavailable or rejected (it can be on `file://`), fall back to a hidden textarea plus `document.execCommand('copy')`.
+     - If that also fails, open the Share dialog so the user can copy it by hand.
+   - **Share…** (no key, `dew-share`): a small dialog using the LIME-26 dialog styling.
+     - Title: 'Share "<title>"'.
+     - A read-only field with the link, and a "Copy" button beside it (the same copy path, with the toast).
+     - A muted line: "Only people in this chat can open it." For communities: "Anyone in Lime can open it."
+     - A "Done" button. It closes with Escape or the backdrop, and uses the blur backdrop.
+   - Both are visible for every conversation type.
+
+**Verification:**
+1. `node --check`, the brace count, and the real app in jsdom (zero errors).
+2. **In jsdom:**
+   - `conversationLink('conv-011')` ends with `#c=conv-011`.
+   - Loading with `#c=conv-004` opens Alexi's DM. `#c=conv-008` (STEM Squad, **not a member**) opens the default and shows the "not available" toast. A deleted conversation behaves the same.
+   - Selecting a conversation updates the hash through `replaceState` (`history.length` unchanged).
+   - Copy link calls the clipboard path and shows "Link copied". Force the fallback and confirm the dialog opens.
+3. **Playwright + Firefox:**
+   - the menu order: Star · Rename (if permitted) · Copy link · Share… · Archive · divider · Delete (if permitted);
+   - the toast is positioned bottom-centre and doesn't overlap the composer's Send button (report both rects);
+   - the Share dialog is centred over the blur, and its field doesn't overflow;
+   - **a real deep-link load in Firefox** opens the right chat.
+
+**Gate:** in Firefox:
+- **Copy link:** ⌄ → Copy link, and a small "Link copied" notice appears. Paste the link into a new tab: it opens straight to that chat.
+- **Share…:** ⌄ → Share… shows the link with a Copy button and who can open it.
+- **Reload:** reloading keeps you on the chat you were in.
+- **No access:** open a link to a chat you're not in (tend will give you one), and it says it isn't available.
+
+**Record:** add a `## LIME-27` entry to `TEND.md`. Commit: `feat: share and copy link, deep links, toasts`, trailer `Brief: LIME-27`, plus the attribution trailer.
+
+### LIME-32 → `tend` (queued after LIME-26; the user said "future update"): the main composer toolbar collapses by its own width, like the reply composer
+
+**The user's QA (2026-09-28, screenshot):** with a narrower window (right panel closed), the main composer's expanded toolbar (B I U S | link, numbered, bulleted | quote, code) runs under the Send ↵ button, which overlaps the code icon. "The chatbox icons need to be responsive like the reply chatbox."
+
+**Root cause (plot read `lime.css` ~2905–2955):** the main composer only collapses extra tools into "…" at `@media (max-width: 480px)`, a **viewport** breakpoint, plus a right-panel-state size tweak. The composer's **own** width depends on the window, the left and right panels, and the 75% box rule, so no viewport breakpoint can be right. The reply composer avoids the problem by collapsing unconditionally (LIME-18-fix3).
+
+**Capability assumptions:** can edit files, run commands and commit. **Measure with headless Chrome** at several widths (see Patterns).
+
+**Scope:**
+- **May touch:** the composer toolbar rules in `public/css/lime.css` (~2880–2960), and `TEND.md`.
+- **May not touch:** the composer's markup and JS (the "…" overflow menu already exists for both composers), the Send button's position, or the reply composer's current look.
+
+**The change** (a CSS container query: the composer responds to its own width, not the window's):
+1. `.lime-composer__box { container-type: inline-size; container-name: composer; }`. Check this doesn't break the box's existing `width: 75%` or its absolutely positioned Send button, and report.
+2. **Measure** the width the full toolbar needs: every tool, the dividers and gaps, **plus** the Send button's footprint and a comfortable gap (≥ 8px). Call it `W`.
+3. Replace the `@media (max-width: 480px)` collapse with `@container composer (max-width: <W>px)`: hide `.lime-composer__tool--overflow` (and any divider left dangling) and show `.lime-composer__overflow`.
+4. **The reply composer:** replace its unconditional collapse with the **same container rule.** Its box is narrow enough that it should still collapse at every realistic width. Verify it; if it ever wouldn't, keep the unconditional rule for it and say why.
+5. Remove or trim the now-redundant `#layout:not(.seed-layout--right-hidden) .lime-composer__tool` size tweak **only if** measurement shows it's no longer needed. Otherwise keep it.
+6. Add a comment: "Composer width varies with window + panels; key the collapse off the composer's own width (container query), never the viewport."
+
+**Verification (headless Chrome, both composers expanded, typing so Send is active):**
+- Test at window widths of 1567, 1280, 1100 and 900px, with the right panel both open and closed, and at 767px.
+- Report whether the toolbar is collapsed, the gap between the last visible tool's right edge and Send's left edge (**must be ≥ 8px everywhere**), and that nothing overflows the box.
+- The "…" menu still opens, fully on-screen (LIME-20).
+- Firefox supports container queries (110+). Note the version assumption in the comment.
+
+**Gate:** in Firefox, open a chat, click into the message box, then make the window narrower and wider. The formatting icons tuck into "…" before they ever reach the Send arrow. The reply box behaves the same.
+
+**Record:** add a `## LIME-32` entry to `TEND.md`. Commit: `fix: composer toolbars collapse by their own width (container query)`, trailer `Brief: LIME-32`, plus the attribution trailer.
+
+### LIME-31-fix → `tend` (before LIME-26): Settings layout: compact rows, an always-visible Save/Cancel, clean focus, nothing touching the edges
+
+**The user's check of LIME-30/31 (2026-09-28), with Notion's Account page and Claude's Profile settings as references ("I like some of the way the content is organized in these examples, let's update before we move forward"):**
+1. **Save and Cancel are always visible** at the bottom, so it's clear how to commit or back out.
+2. **All content fits in the modal without scrolling,** if possible.
+3. **No green focus outlines** on fields. Keep it clean, as the app already does elsewhere.
+4. **The profile image sits next to the name** (Notion).
+5. **Padding all round:** no field touches the modal's edge. In the screenshot, the Login & security password inputs run past the pane's right edge, and a horizontal scrollbar appears.
+6. **Organisation like the references:** a label on the left with a compact control on the right (Claude), and grouped subsections with headings and dividers (Notion).
+
+**Root causes (plot read `lime.css` ~1290–1600 and Seed's `input.css` ~44–110):**
+- **The overflow** is the same recurring bug: `.seed-input` is `width: 100%` plus padding in content-box, and nothing inside `.lime-settings` sets `border-box`. That's the fifth time (18-fix4, 20, 21b, the composer, now here).
+- **The green ring** is Seed's `.seed-input:focus` `--seed-shadow-focus` (`rgba(9, 169, 80, 0.30)`). The nav search field already overrides it (lime.css ~1846).
+- **It's too tall** because every Profile field is a stacked label over a full-width input, which roughly doubles the height of a label + control row.
+
+**Capability assumptions:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). **Measure with headless Chrome at 1567×905** (see Patterns).
+
+**Scope:**
+- **May touch:** the settings markup and rendering in `public/js/app.js` and `public/index.html`, and the `.lime-settings*` and `.lime-password-field*` rules in `public/css/lime.css`, plus `TEND.md`.
+- **May not touch:** the store or auth contract and its behaviour (validation, discard confirmation, no password storage), other modals, and global focus styles outside settings.
+
+**The change:**
+1. **A scoped box-model fix:** `.lime-settings, .lime-settings *, .lime-settings *::before, .lime-settings *::after { box-sizing: border-box; }`, with a comment pointing at the open "global border-box reset" thread. This is deliberately scoped, and plot will decide the global reset separately.
+2. **Clean focus, still accessible:** inside `.lime-settings`, `.seed-input:focus` gets `box-shadow: none` and `border-color: var(--calm-border-bold-default)`. **A visible focus indicator must remain** for keyboard users; this dark border is it. Buttons and nav items keep a neutral `:focus-visible` outline.
+3. **Always-visible footer:**
+   - The pane becomes a column: a scrolling body plus a **fixed footer** (not sticky-inside-scroll) with a top divider and padding matching the body.
+   - **Profile:** "Cancel" (neutral) and "Save changes" (the primary, lime). Both are always shown and **disabled until the form is dirty**.
+   - Cancel reverts the form. Save keeps the current validation.
+   - **Login & security has no footer.** Its changes are per-row, below.
+4. **The Profile layout** (Claude rows plus Notion grouping):
+   - **Top block:** the avatar (56px) **beside** the Display name field (label above that one input, as in Notion), plus the "Upload photo · Soon" control under or beside it.
+   - **Then compact rows** (the label left, a control ≤ 280px wide right-aligned, a divider between rows, ~44px row height): Pronouns, Role, School, Grade levels, Subjects, Timezone, Phone.
+   - **Bio** last: a label, then a 2–3-line textarea spanning the content width.
+   - The pane padding is `--seed-space-6` on all sides, so no control touches an edge.
+5. **The Login & security layout** (Notion's "Account security"):
+   - Rows with a label plus a muted value under it on the left, and a small "Change" button on the right: Email (the address), and Password ("Set a new password for your account").
+   - **Change** expands a compact inline form **inside the pane's padding**:
+     - email: one input plus Cancel and Save;
+     - password: current, new and confirm, **each ≤ 360px wide,** with the show/hide toggle inside the field, plus Cancel and Save.
+   - Then a divider, and an "Account" subsection with the Sign out row.
+   - Use subsection headings ("Account security", "Account") styled like the references: `--seed-text-base` semibold with a divider under them.
+6. **Fitting without scrolling:** at 1567×905 (the modal is 720px tall), **Profile's body should not scroll.** Tighten the spacing (title and description margins, row padding) until it fits, keeping readability. If it can't fit without cramping, keep the footer fixed, let only the body scroll, and report how much overflowed. Don't shrink text below `--seed-text-sm`.
+
+**Verification:**
+1. `node --check`, the brace count, the real app in jsdom (zero errors), and every LIME-31 behaviour check re-run: validation, discard confirmation, email change, password validation, and **nothing stored**.
+2. **Headless Chrome, 1567×905:**
+   - the Profile body's `scrollHeight` ≤ `clientHeight` (report both);
+   - the footer is visible without scrolling, and Save is disabled until an edit;
+   - **every input's right edge is inside the pane's padding box** (report the max overshoot; it must be ≤ 0), for both sections, including the expanded password form;
+   - no horizontal scrollbar (`scrollWidth` = `clientWidth`);
+   - a focused input's computed `box-shadow` is `none` and its border colour is `--calm-border-bold-default`;
+   - the avatar sits beside the Display name field (report both rects).
+3. **At 767px:** the full-screen layout still works; rows may stack (label above control) below ~560px wide.
+
+**Gate:** in Firefox, Settings:
+- **Fit:** Profile fits without scrolling, with your photo beside your name and compact rows.
+- **Footer:** Save and Cancel are always at the bottom, greyed out until you change something.
+- **Focus:** no green glow when you click into a field, just a darker border.
+- **Login & security:** open Change on the password. Nothing runs off the right edge, and there's no sideways scrollbar.
+
+**Record:** add a `## LIME-31-fix` entry to `TEND.md`. Commit: `fix: settings layout: compact rows, persistent footer, clean focus, contained fields`, trailer `Brief: LIME-31-fix`, plus the attribution trailer.
+
+### LIME-26 → `tend` (after LIME-31): Rename (inline), Archive (with an Archived section), Delete (red, confirmed), and the app's own confirm dialog
+
+**Context:** the lifecycle decisions: Archive **and** Delete, **only Delete is red**, actions **only** in the title ⌄ menu. LIME-25 built `CONVERSATION_ACTIONS` (app.js ~850) with Star/S. LIME-30/31 built `createModal` (app.js ~1554, with `onBeforeClose`) and the blurred `.lime-modal-backdrop`. The store already has `renameConversation`, `setArchived`, `deleteConversation` (a soft delete) and `can()` (store.js ~196: rename = owner and not a DM; delete = owner).
+
+**Ownership in the seed (plot checked):**
+- The current user **owns** conv-007 "Math Teachers NYC" and conv-010 "Jean, Mary, Jimin & Me".
+- Jean owns conv-006 and conv-011.
+- **DMs have no owner** (seed DMs have no `created_by`, and the adapter's role check uses the raw field).
+- **Decision (plot): DMs get Star and Archive only**, with no Rename (the title is the person) and no Delete (removing a DM for yourself is what Archive is for; there's no "delete for both" in v1). Non-owned groups get Star and Archive only; "Leave group" is a later brief. Document this in `docs/data-model.md`'s permissions note.
+
+**Capability assumptions:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). Use headless Chrome for visuals (see Patterns).
+
+**Scope:**
+- **May touch:** `public/js/app.js`, `public/index.html` (the Archived section scaffold and the confirm dialog markup, if it's not built dynamically), `public/css/lime.css` (the confirm dialog, the rename input, the menu divider), `docs/data-model.md` (the permissions note only), and `TEND.md`.
+- **May not touch:** the store's write semantics (if a gap turns up, stop and ask **the user**), Communities, Share (LIME-27), or Create (LIME-29).
+
+**The change:**
+1. **Confirm dialog** (reusable): `confirmDialog({ title, message, confirmLabel, cancelLabel = 'Cancel', danger = false })` returns a Promise of true or false.
+   - Built on `createModal` with the blurred backdrop.
+   - Styling: `min(400px, calc(100vw - 32px))` wide, the settings modal's surface, radius and shadow; the title in `--seed-text-base` semibold; the message muted; buttons right-aligned.
+   - **Buttons:** Cancel is neutral. Confirm uses `--bad-bg-bold-default` with white text when `danger`, otherwise the primary style.
+   - Focus lands on **Cancel**. Escape or the backdrop means cancel; Enter on a focused button activates it.
+   - **Replace both native `confirm()` calls** (Reset demo data at app.js ~1497, and settings' "Discard changes?" at ~1766) with it. `onBeforeClose` is currently synchronous; if it needs to await, extend `createModal` minimally and document it.
+2. **Action list:**
+   - Extend `CONVERSATION_ACTIONS` with `{ divider: true }` support. A divider renders only when there are visible items on both sides.
+   - **The final order:** Star (S) · Rename (R, `dew-pencil`, visible when `can('rename')`) · Archive / Unarchive (A, `dew-archive`, the label from `membership.archived_at`) · divider · Delete (D, `dew-trash`, `danger: true`, visible when `can('delete')`).
+   - LIME-27 will add Share and Copy link between Rename and Archive. Leave a comment saying so.
+3. **Inline rename**, Claude-style (the user's reference: the title becomes a rounded input with the whole name selected):
+   - Rename swaps `#crumb-thread` for an `<input>` with the current title, **all text selected**, auto-sized to its content (min 120px, capped at the available breadcrumb width), a 1px `--calm-border-normal-default` border, `--seed-radius-md`, and a visible focus ring.
+   - **Enter or blur** saves via `renameConversation`; **Escape** cancels. An empty value clears the name back to the auto title (store behaviour).
+   - Then restore the button. The list rows, breadcrumb and header update via `lime:conversations-changed`.
+4. **Archive:**
+   - Archiving removes the conversation from All and Starred. **An "Archived" section** at the bottom of the Messages panel (the same `lime-section` pattern, `data-section-id="archived"`, **collapsed by default**, header "Archived") lists archived conversations with the same row builder. It's hidden entirely when empty.
+   - Unarchive (from the menu when the archived chat is open) returns it to its sections.
+   - An open conversation stays open when archived.
+   - New messages don't auto-unarchive (v1).
+5. **Delete:**
+   - Delete → `confirmDialog({ title: 'Delete "<title>"?', message: 'This removes it for everyone in it. This can’t be undone.', confirmLabel: 'Delete', danger: true })`.
+   - On confirm: `deleteConversation`. If it was open, select the top conversation in All (or show the empty thread state if none remain).
+   - Its rows disappear everywhere.
+6. **Keyboard:** R, A and D work while the menu is open, like S. They only fire for visible actions.
+
+**Verification:**
+1. `node --check`, the brace count, and the real app in jsdom (zero errors).
+2. **In jsdom:**
+   - **The menu for each case:** a DM shows Star and Archive; conv-006 (not owned) shows Star and Archive; conv-010 (owned) shows Star, Rename, Archive, a divider and Delete.
+   - **Renaming conv-010** to "Trivia Crew": the breadcrumb and row update, and it persists. Clearing the name returns "Jean, Mary & Jimin".
+   - **Archiving Alexi:** it leaves All and appears under Archived. Unarchive brings it back.
+   - **Deleting conv-007:** the confirm opens, cancel keeps it, confirm removes it, and the selection moves.
+   - Both former native confirms now use the dialog (grep: no `window.confirm` left).
+3. **Headless Chrome:**
+   - the menu's divider and red Delete: the computed Delete colour is `--bad-text-bold-default`;
+   - the rename input's text is selected on open (report `selectionStart`/`selectionEnd`);
+   - the confirm dialog is centred over the blur, with the red confirm button;
+   - the Archived section starts collapsed.
+
+**Gate:** in Firefox:
+- **What each menu offers:** open "Math Teachers NYC" (yours): its ⌄ menu has Star, Rename, Archive and a red Delete. A chat you don't own, and one-to-one chats, only get Star and Archive.
+- **Rename:** the name becomes an editable box with the text selected. Type a new name and press Enter.
+- **Archive:** archive a chat. It moves to a collapsed "Archived" section at the bottom, and Unarchive brings it back.
+- **Delete:** a confirm dialog appears first (with a red Delete button), and Cancel keeps the chat.
+- **"Reset demo data"** and **"Discard changes?"** now use the same dialog.
+- Ask whether one-to-one chats having no Delete (only Archive) matches their intent.
+
+**Record:** add a `## LIME-26` entry to `TEND.md`. Commit: `feat: rename, archive and delete conversations; app confirm dialog`, trailer `Brief: LIME-26`, plus the attribution trailer.
+
+> **Shared context for LIME-30 and 31: the Settings modal** (user, 2026-09-27; **prioritised to run right after LIME-25, before LIME-26**).
+>
+> **What the user asked for:**
+> - "a settings/preference page in [a] modal, so that updating profile, password, email… is easy to edit since it will be connected to a real database soon."
+> - References: Claude's settings modal (a left nav with search, grouped sections, and label + description rows with the control on the right) and Notion's Preferences.
+> - "I like the blurred-out version instead of just a dark overlay."
+>
+> **Decisions:**
+> - **Sections for v1: Profile, and Login & security.** Notifications and Preferences aren't in v1 (they can be added later as nav items).
+> - **Theme: light only.** Dark mode was never designed, and it'll be its own design pass. There's no theme control in v1.
+>
+> **Survey:**
+> - The profile menu's "Settings" item (`index.html` ~118) is dead.
+> - The profile menu header shows **static** "shem@example.com" and "+1 555-0123" (~114–115), not the current user's data.
+> - The `profiles` table has no `phone`.
+> - Seed has `input`, `toggle` and `tabs` components.
+> - The search modal already has a backdrop, a focus trap and a close × (LIME-22). Reuse its patterns.
+> - `app.js` line ~4 applies a stored `lime-theme`. Leave it alone.
+>
+> **Production-ready rules apply** (see the LIME-24 context): all data goes through `LimeStore`. **Email and password belong to the auth provider, not `profiles`.** On Supabase they go through `supabase.auth.updateUser`, with `profiles.email` synced by trigger. **Passwords are never stored locally,** in any form.
+
+### LIME-30 → `tend` (after LIME-25): the Settings modal shell, a blurred backdrop for all modals, and read-only Profile and Login & security
+
+**Goal:**
+- "Settings" in the profile menu opens a modal in the style of the references: a left nav (a search field, an "Account" group label, then **Profile** and **Login & security**, with dew icons) and a scrollable right pane with a title, a short description, and label + value rows separated by subtle dividers.
+- Both sections show the **current user's real data read-only** from `LimeStore` (editing is LIME-31).
+- The modal has a top-right close ×, and closes with Escape or a backdrop click. There's a focus trap, and focus returns to the trigger.
+- **Every modal backdrop (settings and search) is a light blur instead of a dark overlay.**
+
+**Capability assumptions:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). Use headless Chrome for visuals and measurements (see Patterns).
+
+**Scope:**
+- **May touch:** `public/index.html` (the modal markup, and the Settings item's `id="settings-btn"`), `public/css/lime.css` (the modal and backdrop styles, and moving the search backdrop onto the shared class), `public/js/app.js` (open/close, the focus trap, nav switching, search filtering, and read-only rendering; reuse or extract the search modal's focus-trap logic rather than duplicating it), and `TEND.md`.
+- **May not touch:** the store contract, the data docs, or theme handling.
+
+**The change:**
+1. **A shared backdrop:** add `.lime-modal-backdrop` with `background: rgba(19, 27, 23, 0.12)`, `backdrop-filter: blur(8px)` and `-webkit-backdrop-filter: blur(8px)`, plus `@supports not (backdrop-filter: blur(1px))`, which falls back to today's `rgba(19, 27, 23, 0.3)`. The search modal's backdrop switches to this class (delete its duplicate rules). The settings modal uses it too.
+2. **The modal:** `.lime-settings`, `role="dialog"`, `aria-modal`, `aria-labelledby` on the pane title.
+   - `position: fixed`, centred, `width: min(960px, calc(100vw - 64px))`, `height: min(720px, calc(100vh - 64px))`
+   - `--soil-bg-elevated`, `--seed-radius-lg`, `--seed-shadow-xl`, and the same z-index as the search modal
+   - **Nav column** 240px wide, `--soil-bg-canvas`, padding `--seed-space-3`:
+     - a search field in the nav search pill style;
+     - the group label in `lime-menu__label` style;
+     - items in `lime-menu__item` style;
+     - the active item uses `--calm-bg-subtle-hover` with medium weight. It's a neutral selection, not lime, per LIME-21b.
+   - **The pane** scrolls. Title in `--seed-text-lg` semibold, a muted description line under it, then the rows.
+   - **Rows:** a label (`--soil-text`, medium) with an optional muted description under it on the left, the value or control on the right, and a 1px `--soil-border-subtle` divider between rows.
+   - **The close ×** reuses LIME-22's close-button pattern, top-right of the modal.
+3. **Content (read-only in this brief):**
+   - **Profile:** a photo row (the current avatar at 48px, and a disabled "Upload photo" button with a small "Soon" pill, reusing LIME-23's style), then display name, pronouns, role, school, grade levels, subjects, bio, timezone, and phone ("Not set", since there's no column yet).
+   - **Login & security:** email; password as "••••••••"; a disabled "Change" button on each (LIME-31 enables them); and a "Sign out" row whose button calls the existing sign-out handler.
+   - All values come from `LimeStore.getCurrentUser()`. Nothing is hard-coded.
+4. **Nav search:** filters the nav items **and** the row labels. Typing "pron" shows Profile, with the Pronouns row highlighted or scrolled into view. Keep it simple: hide non-matching nav items; clicking a match shows its section.
+5. **Mobile (≤767px):** the modal goes full-screen (radius 0). The nav becomes a list; picking a section shows it with a back chevron to the list.
+6. **The profile menu header:** replace the static email and phone with the current user's email, and phone or nothing.
+
+**Verification:**
+1. `node --check`, the brace count, and the real app in jsdom (zero errors). In jsdom: Settings opens, both sections render the current user's values (report 3), the search filters, and Escape, × and the backdrop all close it, with focus returned to the trigger.
+2. **Headless Chrome at 1567px:**
+   - the modal rect is centred and within the viewport;
+   - the backdrop's computed `backdrop-filter` is `blur(8px)`, for both the settings and search backdrops;
+   - the nav is 240px;
+   - the rows' label/control alignment is consistent. Report 3 rows' rects.
+3. **At 767px:** it's full-screen, and the list → section → back flow works.
+
+**Gate:** in Firefox:
+- **Opening:** Profile menu → Settings opens a modal over a **blurred** app.
+- **Profile:** shows your real details.
+- **Login & security:** shows your email.
+- **Closing:** the × and Escape close it.
+- **Search:** it's also blurred behind now.
+- **Profile menu:** shows your real email.
+- (Editing comes next, in LIME-31.)
+
+**Record:** add a `## LIME-30` entry to `TEND.md`. Commit: `feat: settings modal shell (profile, login & security, read-only) and blurred modal backdrops`, trailer `Brief: LIME-30`, plus the attribution trailer.
+
+---
+
+### LIME-31 → `tend` (after LIME-30): editable Profile and Login & security, through the data contract
+
+**Goal:**
+- **Profile** fields are editable and saved through `LimeStore.updateProfile`. The change shows everywhere at once (avatars and initials, the sidebar name, message senders).
+- **Login & security** can change the email and change the password, through an **auth seam** that maps cleanly onto Supabase auth later.
+- The docs and schema are updated first.
+
+**Capability assumptions:** as in LIME-30.
+
+**Scope:**
+- **May touch:** `docs/data-model.md`, `docs/schema.sql`, `public/js/store.js`, `public/js/local-adapter.js`, `public/js/app.js`, `public/index.html`, `public/css/lime.css` (the settings form styles only), and `TEND.md`.
+- **May not touch:** `signup.html`, `supabase.js` or `login.html` logic, beyond reading the session key.
+
+**The change:**
+1. **Docs first:**
+   - `schema.sql`: add `profiles.phone text`, and profile RLS: `select` for authenticated users, `update` only where `id = current_profile_id()`.
+   - `data-model.md` contract:
+     - `updateProfile(patch)`, with the allowed fields `display_name`, `pronouns`, `role`, `school`, `grade_levels`, `subjects`, `bio`, `timezone`, `phone`. Anything else is rejected. It emits `lime:profile-changed`.
+     - The **auth seam**, a new small module, e.g. `auth.js`: `changeEmail(newEmail)`, `changePassword({ current, next })`, `signOut()`.
+       - **Local behaviour:** `changeEmail` checks format and uniqueness against profiles, then updates `profiles.email` and the `lime-demo-session` email. `changePassword` validates only (minimum 8 characters, next ≠ current, and they match their confirmation) and **stores nothing**; the UI says "Password changes take effect once connected to the real account system."
+       - **Supabase behaviour:** `supabase.auth.updateUser({ email })` (with confirmation-email semantics) and `updateUser({ password })`.
+     - Add both to the switch checklist.
+2. **Store and adapter:** implement `updateProfile` (optimistic, persisted, event) and add `phone` to the normalized profile (null by default). Make the `seedVersion` fingerprint handle the new field.
+3. **Editing UX:**
+   - **Profile** is a form. Plain inputs (Seed's `seed-input`), a textarea for the bio, comma-separated text for grade levels and subjects (chips come later), and a select for the timezone (common US zones plus the current value).
+   - A **"Save changes" bar** appears at the bottom of the pane only when something has changed, with Save (the **primary** action, so it may use lime, per the lime rule) and Discard.
+   - Validation: the display name is required, and the phone is loose (digits, spaces, `+`, `-`, `()`). Errors are shown under each field in `--bad-text-bold-default`.
+   - Leaving the section, or closing the modal, with unsaved changes asks "Discard changes?".
+   - **Login & security:** "Change" opens an inline form under its row.
+     - Email: new email plus Save.
+     - Password: current, new and confirm, with the show/hide toggle from `password-toggle.js` if it fits.
+     - Show success and error inline.
+4. **Everywhere updates:** on `lime:profile-changed`, re-render the sidebar user name, the profile menu header, every avatar for that person (the initials come from the name), and the open thread's sender names.
+
+**Verification:**
+1. `node --check`, the brace count, and the real app in jsdom (zero errors). **In jsdom:**
+   - change the display name to "Shem Robinson-Test": the sidebar, avatars and thread senders update, and it persists (snapshot method);
+   - an empty name blocks saving;
+   - `changeEmail` to an existing teacher's email is rejected;
+   - to a new one, it succeeds, and the session email updates;
+   - `changePassword` validation works in all three failure cases and **writes nothing to `localStorage`** (grep the snapshot and keys for the test password: it must be absent).
+2. **Headless Chrome:** the Save bar appears only when the form is dirty; the error text is under its field.
+3. Reset demo data restores the profile.
+
+**Gate:** in Firefox:
+- **Profile:** Settings → Profile → change your display name and save. Your name and initials update across the app and survive a reload.
+- **Unsaved changes:** edit something, then try closing. It asks before discarding.
+- **Login & security:** change your email to a new address, and it updates. Try a short password, and you get a clear error.
+
+**Record:** add a `## LIME-31` entry to `TEND.md`. Commit: `feat: editable profile and login & security through the data contract and auth seam`, trailer `Brief: LIME-31`, plus the attribution trailer.
+
+### LIME-25 → `tend` (after LIME-24b): the title actions menu, with Star, and a real Starred section
+
+**Context:** the lifecycle sequence (see that open thread). The user decided actions live **only** in the title caret menu, Claude-style, and **only Delete is red**. LIME-24b (`a870c1e`) delivered the store contract (`public/js/store.js`, `local-adapter.js`), with `setStarred` and `getMyMembership` available. **Per-user state:** starred is the current user's membership flag.
+
+**Capability assumptions:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). Use headless Chrome for placement and visuals (see Patterns).
+
+**What plot read:**
+- `index.html` ~148: `.lime-topbar__crumb-caret`, a dead "Switch conversation" button
+- ~264–320: the Starred section is **still static markup** with fake "2" badges
+- `app.js`: `conversationRowHtml` ~494 and `selectConversation` ~549
+- the store's write functions (~212–308), which emit `lime:conversations-changed` with `kind`
+- the dew icons available: `dew-star`, `dew-pencil`, `dew-share`, `dew-link`, `dew-archive`, `dew-trash`, `dew-undo`
+
+**Goal:**
+- The ⌄ next to the chat title opens a menu (the shared `.lime-menu` pattern from LIME-21b) whose first action is **Star** / **Unstar**.
+- The Starred section lists exactly the conversations you've starred, live, sorted by latest activity.
+- The menu is built so LIME-26 and 27 can add Rename, Share, Copy link, Archive and Delete by adding entries, not by restructuring.
+
+**Scope:**
+- **May touch:** `public/index.html` (the caret button's attributes; replace the static Starred `<li>`s with `<ul class="lime-contact-list" id="starred-list"></ul>`; add the menu container), `public/js/app.js`, `public/js/local-adapter.js` (demo starred defaults only), `seed-data/seed.ts` (the same defaults, for parity), `public/css/lime.css` (only if something new is needed; prefer the existing `.lime-menu` styles), and `TEND.md`.
+- **May not touch:** the store contract (if something's missing, stop and ask **the user**), the Recent row, Communities, or other menus' behaviour.
+
+**Phase 2 — The change:**
+1. **The caret becomes the actions trigger.**
+   - `id="conversation-menu-toggle"`, `title="Conversation actions"`, `aria-haspopup="menu"`, `aria-expanded` kept in sync.
+   - Menu container: `<div class="lime-menu" id="conversation-menu" role="menu"></div>`.
+   - Wire it with `wireDropdownToggle('conversation-menu-toggle', 'conversation-menu', { fixed: true })`, so it opens below and gets the LIME-20 flip, clamp and one-at-a-time behaviour.
+2. **A data-driven action list** in `app.js`:
+   - `CONVERSATION_ACTIONS = [{ id, label(conversation, membership), icon, key, isVisible(conversation), danger?: false, run(conversation) }]`
+   - The menu's items are **rebuilt from this list each time it opens**, for the current conversation.
+   - Each item is `<button type="button" class="lime-menu__item" role="menuitem">`, with a `dew` icon, the label, and a right-aligned muted key hint (`<span class="lime-menu__kbd">S</span>`; add a small CSS rule in the menu block: `margin-left: auto`, `--soil-text-muted`, `--seed-text-xs`).
+   - **While the menu is open, pressing the hint key runs the action** (like Claude's). Escape still closes.
+   - A `danger: true` item gets a `lime-menu__item--danger` class. Add the rule now, using `--bad-text-bold-default` for text and icon, and `--bad-bg-subtle-default` on hover. Nothing uses it until LIME-26's Delete.
+   - **This brief adds exactly one action:** `star`, labelled "Star" or "Unstar" by `membership.starred`, with the `dew-star` icon, key `S`, run as `LimeStore.setStarred(id, !starred)`.
+3. **A real Starred section:**
+   - Rows come from `listConversations(...)` filtered by `getMyMembership(id).starred`, rendered with the same `conversationRowHtml` and sorted like "All".
+   - Re-render on `lime:conversations-changed` and `lime:messages-changed`. Rows are safe to rebuild since 24b's delegated listeners.
+   - The active highlight covers every row of the open conversation, in both sections.
+   - **When there are no starred chats,** show one muted line inside the section: "Star a chat from its title menu." (the section header stays).
+   - Delete the static Starred markup, including its fake badges and chevron.
+4. **Demo defaults** (so the prototype isn't empty on first load):
+   - `LocalAdapter`'s normalization marks the **current user's** membership `starred = true` for `conv-001` (Jean's DM) and `conv-010` ("Jean, Mary, Jimin & Me"), via a small, commented `DEMO_MEMBER_STATE`.
+   - Mirror it in `seed.ts`, so a database seed matches.
+   - The `seedVersion` fingerprint should change if these defaults change. Include them in the fingerprint or bump it, and say which.
+
+**Phase 3 — Verification:**
+1. `node --check` on every JS file, the brace count, and the real app in jsdom (zero errors).
+2. **In jsdom:**
+   - On load, Starred has 2 rows (Jean, and "Jean, Mary, Jimin & Me").
+   - Open Alexi's DM, open the menu, click Star: Starred now has 3 rows, sorted by activity. Pressing `S` again in the reopened menu unstars it.
+   - The label flips between "Star" and "Unstar".
+   - Starred rows update when a message is sent.
+   - At mobile width, tapping a Starred row goes to the thread view.
+3. **Headless Chrome, 1567px and 767px:** the menu opens below the caret, fully on-screen, in the search-modal item style, with the key hint right-aligned. Report the rects.
+4. **Persistence:** unstar Jean, then reload (or 24b's snapshot method); Jean is still unstarred. Reset restores the two defaults.
+
+**Gate:** in Firefox:
+- **The menu:** click the ⌄ next to a chat's name. A menu with **Star** (and an "S" hint) appears.
+- **Starring:** star Alexi's chat, and it appears under Starred. Open the menu again: it says **Unstar**. Press S, and it's gone from Starred.
+- **Remembering:** reload, and your stars are remembered.
+- **Look:** Starred has no fake "2" badges any more.
+
+**Record:** add a `## LIME-25` entry to `TEND.md`. Commit: `feat: conversation actions menu with Star; data-driven Starred section`, trailer `Brief: LIME-25`, plus the attribution trailer.
+
+> **Shared context for LIME-24a and 24b: production-ready data layer** (user, 2026-09-27): "make sure that everything we're adding can easily be production ready when needed, meaning when we're ready to test with multiple email logins over an open-source database we can make the switch." **This replaces the earlier single LIME-24 draft, which was never sent.**
+>
+> **What the repo already assumes** (plot read `seed-data/seed.ts`, `useMockData.ts`, `README.md`, `public/login.html`):
+> - The target is **Supabase (open-source Postgres)**, with the tables `profiles`, `conversations` (`id`, `type`, `name`, `description`, `created_by`, `created_at`, `updated_at`), `conversation_members` (`conversation_id`, `user_id`, `role` owner|member, `joined_at`), `messages` (`id`, `conversation_id`, `sender_id`, `content`, `type`, `metadata`, `reply_to`, `created_at`, `updated_at`) and `message_reactions` (`message_id`, `user_id`, `emoji`, `created_at`).
+> - `seed.ts` converts the seed's `{emoji, count}` reactions into per-user reaction rows (the first N senders in that conversation react).
+> - Login is a demo: `login.html` checks one credential from the gitignored `demo-config.local.js`, and stores `{email, displayName}` under `lime-demo-session`.
+> - The app ignores all of this. `CURRENT_USER_ID = 'teacher-002'` is hard-coded in `data.js`, `participants` sits on the conversation, reactions are counts plus a local "did I react" `Set`, and everything is in-memory.
+>
+> **Production-ready principles** (these apply to 24a, 24b and every later lifecycle brief):
+> 1. **Match the Supabase schema** in the local model: normalized tables, the same names, derived views.
+> 2. **Per-user state lives on the membership, not the conversation.** Starred, archived and last-read belong to `conversation_members` (per user). Otherwise starring would star a chat for everyone. Shared state (name, deletion) lives on `conversations`.
+> 3. **Reactions are rows** (`message_id`, `user_id`, `emoji`); counts and "did I react" are derived.
+> 4. **One data seam:** the UI never touches storage. Reads are synchronous from an in-memory cache. **Writes are async** (they return Promises) through a store, which updates the cache optimistically, persists through an **adapter**, and emits change events. Today's adapter is `LocalAdapter` (`localStorage`); later a `SupabaseAdapter` implements the same interface, and realtime pushes into the same cache and events.
+> 5. **An auth seam:** `getCurrentUserId()` resolves the session to a profile id. There are no hard-coded ids in UI code.
+> 6. **New ids are `crypto.randomUUID()`;** seed ids keep their text form (Postgres `text` ids). Timestamps are ISO 8601 UTC.
+> 7. **Permissions are written down** for when RLS exists: owner vs member for rename and delete, and communities are public-read. The UI checks through a `can(action, conversation)` helper, so the rules live in one place.
+> 8. **UI preferences** (panel widths, collapsed sections, theme) stay in their own `localStorage` keys. They're device preferences, not data.
+
+### LIME-24a → `tend` (after LIME-19b-fix): the data contract (docs only, no code)
+
+**Goal:** a written, reviewable contract that the local implementation (24b) and a future Supabase implementation both follow.
+
+**Capability assumptions:** can create files and commit. There's no code to run.
+
+**Scope:**
+- **May touch:** create `docs/data-model.md` and `docs/schema.sql`; `TEND.md`.
+- **May not touch:** app code or the seed data.
+
+**Contents:**
+1. **`docs/schema.sql`:** Postgres DDL for Supabase.
+   - The 5 tables from `seed.ts`, with types, primary and foreign keys, and `on delete cascade` where appropriate. Ids are `text`, since the seed uses readable ids and new ones are UUID strings.
+   - **Added columns:**
+     - `conversations.deleted_at timestamptz null`, for soft deletes (owner only)
+     - `conversation_members.starred boolean not null default false`
+     - `conversation_members.archived_at timestamptz null`
+     - `conversation_members.last_read_at timestamptz null`
+     - `profiles.email` must be unique
+     - `message_reactions` is unique on (`message_id`, `user_id`, `emoji`)
+   - Indexes for `messages (conversation_id, created_at)` and `messages (reply_to)`.
+   - **An RLS section**, as commented, not-yet-enabled policies:
+     - members read their conversations and messages;
+     - members insert messages into conversations they belong to;
+     - only the `owner` renames or soft-deletes;
+     - each user updates only their own membership row (star, archive, read);
+     - communities are readable by any authenticated user and joinable.
+   - A header comment: "Draft. Aligns with seed-data/seed.ts."
+2. **`docs/data-model.md`:**
+   - the principles above;
+   - an entity diagram, as a text list;
+   - how each current UI concept maps to tables:
+     - title = `name`, or derived from members
+     - a DM = type `direct` with 2 members
+     - starred and archived = your membership row
+     - reply = `reply_to`
+     - reaction count = count of rows
+   - **The store API** (the adapter contract): the function names, arguments, return types (Promises for writes) and the event names 24b will implement, listed in item 3;
+   - the auth seam: `getCurrentUserId()`, how the demo session maps email → profile, and how Supabase auth replaces it;
+   - **the switch checklist:** add a `SupabaseAdapter` implementing the contract, add config (URL and anon key via a gitignored `*.local.js`, like `demo-config.local.js`), enable RLS, run `seed.ts` (updated for the new columns), and flip `LIME_BACKEND` from `'local'` to `'supabase'`.
+3. **The contract to write down (plot's proposal; tend copies it faithfully and flags anything inconsistent with the schema):**
+   - **Reads (sync, from the cache):**
+     - `getProfile(id)`, `getCurrentUserId()`, `getCurrentUser()`
+     - `listConversations({ types, includeArchived })`, `getConversation(id)`, `getMembers(conversationId)`, `getMyMembership(conversationId)`
+     - `listMessages(conversationId, { threadOnly })`, `listReplies(messageId)`, `getReactions(messageId)` returning `[{ emoji, count, mine }]`
+     - `getConversationTitle(conversation)`, `getLatestActivity(conversationId)`, `can(action, conversation)`
+   - **Writes (async; each returns a Promise of the record):**
+     - `sendMessage(conversationId, { content, type, metadata, replyTo })`
+     - `toggleReaction(messageId, emoji)`
+     - `createConversation({ type, memberIds, name, description })`
+     - `renameConversation(id, name)`
+     - `setStarred(id, bool)`, `setArchived(id, bool)`
+     - `deleteConversation(id)` (a soft delete)
+     - `markRead(conversationId)`
+   - **Events** (on `document`): `lime:conversations-changed`, `lime:messages-changed`, `lime:reactions-changed`, each with `detail: { conversationId, messageId?, kind }`.
+   - **Lifecycle:** `await LimeStore.init()` before the first render; `LimeStore.reset()` for the local adapter only.
+
+**Gate:** the user skims `docs/data-model.md`, mainly the principles and the switch checklist, to confirm it matches their intent. Plot also reviews the contract before 24b is sent.
+
+**Record:** add a `## LIME-24a` entry to `TEND.md`. Commit: `docs: data model and Supabase schema draft`, trailer `Brief: LIME-24a`, plus the attribution trailer.
+
+---
+
+### LIME-24a-fix → `tend` (before LIME-24b): plot's review of the data contract (docs only)
+
+**Plot reviewed `9e5506f` (2026-09-27).** It's solid overall: principles 1–8 are captured faithfully, the switch checklist is clear, and both flagged gaps are real and well reasoned. **Five issues need fixing before 24b builds on it**, the first two because they're exactly what "multiple email logins" depends on.
+
+**Scope:**
+- **May touch:** `docs/schema.sql`, `docs/data-model.md`, and `TEND.md`.
+- **May not touch:** app code or the seed data. `seed.ts` is fixed in 24b.
+
+**The changes:**
+1. **Link profiles to real logins.** `profiles.id` is readable text (`teacher-002`), but Supabase's `auth.uid()` is a **uuid**, so every drafted policy comparing `user_id = auth.uid()` would never match: it's a type mismatch, and the ids differ anyway.
+   - Add `profiles.auth_user_id uuid unique references auth.users(id)` (nullable; seed profiles get linked when their accounts are created).
+   - Add a SQL helper `current_profile_id()`, `returns text`, `stable security definer`, that selects `id` from `profiles` where `auth_user_id = auth.uid()`.
+   - Rewrite **every** policy to use `current_profile_id()` instead of `auth.uid()`.
+   - In `data-model.md`'s auth seam: on Supabase, `getCurrentUserId()` = the profile whose `auth_user_id` matches the session. **Onboarding:** a new signup gets a profile row, via trigger or on first login; a seed teacher is linked by matching email on first login.
+   - Add both to the switch checklist.
+2. **Avoid the policy recursion trap.** Policies on `conversation_members` that query `conversation_members` recurse infinitely in Postgres/Supabase (a well-known RLS pitfall).
+   - Add a `security definer` helper `is_member(conv_id text) returns boolean` and `is_owner(conv_id text)`, and use them in all policies.
+   - **Complete the policy set:**
+     - `conversation_members` **select** for members of the same conversation, so a user can see who's in their chats;
+     - **insert** on `conversations` and `conversation_members` for creating a conversation (the creator becomes owner; the creator may add members);
+     - `message_reactions` select (members) and insert/delete of your **own** rows only;
+     - `messages` update/delete of your own rows (not used yet, but define intent);
+     - community **messages** readable by any authenticated user (today only the community's conversation row is public);
+     - **filter `deleted_at is null`** in the select policies.
+3. **Make DMs unique between two people.** Nothing stops two direct conversations between the same pair, and the contract's `createConversation` promises to return the existing DM.
+   - Add `conversations.dm_key text` = the two member ids sorted and joined with `:`, set only for `type = 'direct'`, with `create unique index … on conversations (dm_key) where dm_key is not null`.
+   - Document that the store computes it.
+4. **Fix the status values.** The seed uses `online` / `offline` / `busy` (the schema matches), but the UI shows *Active / Away / Busy / DND* via `presenceFor`.
+   - Document the mapping in the mapping table. The schema is fine; just note that "away" and "dnd" have no stored value yet: they're a UI fallback, and a future presence feature decides.
+5. **Fix the reactor algorithm.** Replace the "dedupe the senders" suggestion with plot's decision:
+   - A reaction's reactors are **the conversation's distinct members** (participant order), sliced to `min(count, member count)`.
+   - Reason: a reaction count can't exceed the number of people who can react. The only seed reaction today is `msg-006` 😍×5 in a **2-person DM**, so it becomes 😍×2, one of them the current user's ("mine").
+   - `seed.ts` and the local adapter both use this. `seed.ts` is changed in 24b.
+   - Update both the `schema.sql` comment and the known-gaps entry.
+
+**Verification:** re-read both docs for internal consistency. Every policy uses the helpers, and every table has its select policy defined. Report the final policy list, one line each.
+
+**Gate:** plot re-reviews. The user needs nothing here beyond the note about reaction counts (😍5 → 😍2 in Jean's chat, which becomes visible in 24b).
+
+**Record:** add a `## LIME-24a-fix` entry to `TEND.md`. Commit: `docs: auth-linked profiles, recursion-safe RLS, DM uniqueness, reactor rule`, trailer `Brief: LIME-24a-fix`, plus the attribution trailer.
+
+---
+
+### LIME-24b → `tend` (after LIME-24a-fix): the local implementation of the contract
+
+**Goal:** the app runs entirely on the contract from 24a, through a `LocalAdapter` persisted to `localStorage`.
+- Behaviour is **identical** to now, except that changes survive reload, there's "Reset demo data", and list clicks are delegated.
+- The current user comes from the session.
+- No UI code reads the seed arrays or `localStorage` data directly.
+
+**Capability assumptions:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). Use headless Chrome with a throwaway `--user-data-dir` in the scratchpad for the reload checks.
+
+**Scope:**
+- **May touch:** `public/js/data.js` (it becomes the store plus the local adapter, split into `store.js` and `local-adapter.js` if that's clearer; add them to `index.html`'s script list in order), `public/js/app.js` (switch every data call to the contract, delegate the two load-time bindings ~1406/~1471, add reset), `public/index.html` (script tags and the "Reset demo data" menu item), `docs/data-model.md` (only to record deviations), and `TEND.md`.
+- **May not touch:** the seed JSON or its embedded copy, CSS, `login.html` logic (read `lime-demo-session` only), or visible behaviour.
+
+**Plot's re-review of 24a-fix (`30563a8`): passed**, with one gap to close in this brief.
+- `messages_insert_member` (`docs/schema.sql` ~273) checks membership but **not the sender**, so a member could insert a message as someone else. Change it to `with check (is_member(conversation_id) and sender_id = current_profile_id())`. Add `docs/schema.sql` to this brief's scope for that one line only.
+- The store's local `sendMessage` must likewise always set `sender_id = getCurrentUserId()`, never take it from the caller.
+
+**Phase 1 — Survey:** list every place in `app.js` that calls a `data.js` function or reads `CURRENT_USER_ID`, `messages`, `conversations`, `teachers`, `userReactedKeys` or `reply_count`. That's the migration checklist; report its size. **If migrating everything in one commit becomes unwieldy (over ~40 call sites or so), stop and propose a split to the user** (e.g. reads first, then writes).
+
+**Phase 2 — The change:**
+1. **Normalize at load (`LocalAdapter`):**
+   - Build `profiles`, `conversations` (with `dm_key` for DMs, per 24a-fix), `conversation_members` (from `participants`, `role = owner` if `created_by`, all flags default), `messages` and `message_reactions` from the embedded seed.
+   - Reactions come from `{emoji, count}` using **the corrected reactor rule from 24a-fix**: the conversation's distinct members in participant order, sliced to `min(count, member count)`.
+   - **Also apply the same rule to `seed-data/seed.ts`** (the only change allowed there; add `seed-data/seed.ts` to scope), so local and database seeds match.
+   - If a valid snapshot (`lime-state-v1`, with the `seedVersion` fingerprint check) exists, load it instead.
+2. **The store** implements the contract as written in `docs/data-model.md`: sync reads from the cache; async writes that update the cache, persist through the adapter (debounced ~100ms is fine), then emit the documented events.
+3. **Auth seam:** `getCurrentUserId()` reads `lime-demo-session`'s email and matches it to `profiles.email`. With no match or no session, fall back to `teacher-002` and log once. Remove the `CURRENT_USER_ID` constant from UI use.
+4. **Reactions:**
+   - Render from `getReactions(messageId)` → `[{emoji, count, mine}]`; `mine` drives the neutral "active" chip.
+   - Delete `userReactedKeys`.
+   - **Seed side effect (expected; the user has been told):** `msg-006`'s 😍 goes from 5 to **2** (a 2-person DM can't have 5 reactors), and it shows as "mine" (neutral active chip). Report it.
+5. **Async writes in the UI:** `handleSend`, `submitReply` and the reaction handlers `await` (or `.then`) the store call, and render from the returned record or the event.
+   - Keep the UI instant: optimistic cache updates happen synchronously before the Promise resolves.
+   - Wrap the first render in `LimeStore.init().then(...)`.
+   - **Keep the script-order and TDZ lessons in mind** (LIME-18-fix, LIME-20). Load-order crashes have happened twice.
+6. **Delegated clicks:** replace the two load-time `.lime-contact, .lime-recent__item` `forEach` bindings with delegated `document` listeners. Behaviour stays identical.
+7. **The list** subscribes to `lime:conversations-changed` and `lime:messages-changed` (re-render or re-sort; rows can now be created at any time). Replace 19b's `lime:activity` with `lime:messages-changed`, and remove `lime:activity`.
+8. **Reset:** add "Reset demo data" to the profile menu, above Sign Out. A native `confirm()` for now (LIME-26 brings the real dialog), then `LimeStore.reset()` and reload.
+9. **`can(action, conversation)`:** implement it per the doc (owner can rename and delete; DMs can't be renamed). Nothing in the UI uses it yet; LIME-25/26 will.
+
+**Phase 3 — Verification:**
+1. `node --check` on every JS file, and the real app in jsdom (zero errors).
+2. **The migration grep:** `app.js` no longer references `CURRENT_USER_ID`, `userReactedKeys`, the raw seed arrays or `window.LIME_SEED_DATA`. Report the grep results.
+3. **In jsdom:** every read function returns data consistent with the pre-change UI (the same list order and the same message counts per conversation). Each write resolves and emits its event.
+4. **Headless Chrome, a throwaway profile:**
+   - **Run 1:** send a message, reply, react and star (via a temporary script).
+   - **Run 2:** all persisted.
+   - **Reset:** back to the seed.
+   - **Session:** with `lime-demo-session` set to Jean's email, the app renders as Jean. Her messages are on the "sent" side, and the list shows her conversations. Report 3 facts.
+   - Remove the diagnostic script afterwards; `git diff public/index.html` shows only the intended changes.
+5. **Visually identical** to before at 1567px (a screenshot comparison or key rects), apart from reaction chips that are now "mine" per item 4.
+
+**Gate:** in Firefox:
+- **Everything works as before.**
+- **Remembering:** send, reply and react, then reload. It's all still there.
+- **Reset:** Profile menu → "Reset demo data" brings back the original.
+- Tend reports which reaction chips now show as "yours" from the seed. Confirm that's fine.
+
+**Record:** add a `## LIME-24b` entry to `TEND.md`, listing any deviations from the contract (also recorded in `docs/data-model.md`). Commit: `feat: store + local adapter on the data contract, persisted, session-based current user`, trailer `Brief: LIME-24b`, plus the attribution trailer.
+
+---
+
+### LIME-19b-fix → `tend`: drop the list member count; fix the group header's avatars
+
+**The user's check of LIME-19b (`0b5b3c7`, 2026-09-27):**
+1. "The number count for the group next to the names in the messages [list] is confusing and can be mistaken for the number of recent comments. Remove [it from] the list and leave it in the chat's top right."
+2. The header ("4 members" / "10 members") is a good place for the count, "however I can't see the avatars, let's give them more space."
+3. "The hover is broken, and the avatar order should change: it should be all the avatars and +# at the right end. Also the spacing between a larger group and a small group in this component is inconsistent."
+
+**Root causes (plot read `app.js` ~483–509 and `lime.css` ~320–340, ~973–996 and ~1156–1174, plus Seed's `avatar.css` ~142–161):**
+- `.lime-topbar__avatars` is fixed at **36px wide** with `margin-left: -20px` on each 28px avatar. That was sized for a DM's 2 avatars. A group's 5 or 6 avatars show only about 8px each, so the initials are hidden, and the row **overflows its box to the left**.
+- **The hover is broken** because `.lime-avatar-trigger`'s hover background only covers its box, and the avatars spill outside it.
+- **Seed's `.seed-avatar-group` is `flex-direction: row-reverse`,** so the first DOM child renders at the *right*. `conversationHeaderAvatarsHtml` appends "+N" last, so it lands on the **left**.
+- **The spacing differs between group sizes** because `.lime-topbar__member-count` uses a `margin-left: 20px` hack to clear the overflow. The overflow width depends on the avatar count, so the gap changes.
+
+**Goal:**
+- The list rows show no member count.
+- In the thread header, a group shows its avatars left to right (most recent speaker first), each clearly readable, with "+N" at the **right** end, then "N members".
+- The spacing is identical for small and large groups.
+- The hover highlight covers the whole avatar row and the label.
+- The DM header is unchanged.
+
+**Capability assumptions:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). **Measure with headless Chrome** (see Patterns).
+
+**Scope:**
+- **May touch:** `conversationHeaderAvatarsHtml` and the row builder's count in `public/js/app.js`; header avatar, member-count and trigger rules plus the `.lime-contact__count` rule in `public/css/lime.css`; and `TEND.md`.
+- **May not touch:** the list's avatar cluster, the DM header's look, Seed files, or the mobile contacts-view rule at ~3328 (except to keep it working).
+
+**Phase 2 — The change:**
+1. **List:** remove the member count from the row builder (app.js ~467) and delete the `.lime-contact__count` rule (~1702). Update any comment that mentions it.
+2. **Group header markup:** give the group's avatar span an extra `lime-topbar__avatars--group` class. Build its children **in reverse DOM order**, so Seed's `row-reverse` shows them left to right: `+N` tile first (if any), then the shown avatars from last to first. The result reads, left to right: most recent speaker … 5th speaker, then +N. Keep the `title` with every name. The member-count label stays a sibling after the group.
+3. **Group header CSS** (new `--group` rules; the DM rules stay as they are):
+   - `.lime-topbar__avatars--group`: `width: auto; margin-right: 0;`
+   - `.lime-topbar__avatars--group .seed-avatar`: 28px, with `margin-left: -8px` (Seed's standard overlap, so about 20px of each avatar shows). The `:last-child` (visually leftmost) keeps `margin-left: 0`.
+   - **Rings:** the avatar border colour is `var(--lime-cluster-ring, var(--soil-bg-canvas))`. `.lime-avatar-trigger:hover` sets `--lime-cluster-ring: var(--calm-bg-subtle-hover)`, so the rings match the hover pill.
+   - `.lime-topbar__member-count`: remove the 20px margin hack. The trigger's `gap` (`--seed-space-2`) provides the spacing. Update the trigger's comment, which describes the old collision workaround.
+   - `.lime-avatar-trigger`: make sure its padding fully contains the avatars and the label (a small horizontal padding, e.g. `--seed-space-1` vertical and `--seed-space-2` horizontal). Keep the negative margin only if it's still needed to align with the header edge, and measure that.
+
+**Phase 3 — Verification:**
+1. Run `node --check`, the brace count, and the real app in jsdom (zero errors). List rows contain no `.lime-contact__count`.
+2. **Headless Chrome, 1567px.** Open conv-011 (10 members), then conv-006 (4 members), then Jean's DM. Report:
+   - each avatar's visible width (≥ 18px for all but the frontmost);
+   - the left-to-right order of `data-name` (must be the most-recent-speaker order) with the "+N" tile rightmost;
+   - the gap between the last avatar or "+N" and "N members": **the same for conv-011 and conv-006** (±1px);
+   - the trigger's rect, which fully contains every avatar and the label;
+   - that the DM header's rects are unchanged from before this fix.
+3. **At 767px:** the header fits on one line without overlapping the breadcrumb or the "…" button.
+
+**Gate:** the user checks in Firefox:
+- **List:** no numbers after group names.
+- **Big group:** open "PS 113 Staff Room". Five readable faces, then "+4" at the right end, then "10 members".
+- **Small group:** open "PS 113 7th Grade Team". The same spacing before "4 members".
+- **Hover:** the grey highlight covers the whole avatar-and-label area.
+- **DMs:** look the same as before.
+
+**Record:** add a `## LIME-19b-fix` entry to `TEND.md`. Commit: `fix: group header avatars readable and ordered, list member count removed`, trailer `Brief: LIME-19b-fix`, plus the attribution trailer.
 
 > **Shared context for LIME-19b and 19c: the merged "Messages" list.**
 >
