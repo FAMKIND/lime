@@ -65,9 +65,13 @@ const LimeAppearance = (function () {
   // live raw ramp (tokens.css), so selecting it changes nothing.
   // 'lemon'/'sage'/'lilac' are LIME-50's own 3 additions, generated
   // (not hand-picked) via makeCanvasRamp from a chosen pale base hex —
-  // 'sage' needed its base hex tuned once (see TEND.md) to clear the
-  // muted-text contrast check below; the other two cleared it on the
-  // first try.
+  // 'sage' needed its base hex tuned twice: once in LIME-50 (#EAF1E6 ->
+  // #E3EDDC, to clear muted-text-vs-canvas) and again in LIME-50-fix
+  // (#E3EDDC -> #D8E6D0), once --lime-layer-surface (lime.css) — a
+  // slightly darker layer than bare canvas — became what muted text
+  // actually sits on; 'lemon'/'lilac' cleared both rounds on the first
+  // try. See TEND.md's own LIME-50/LIME-50-fix entries for the measured
+  // tables.
   const CANVAS_P = {
     warm: ['#F9F8F4', '#E8E4DB', '#D8D3C8', '#C0BAB0', '#A09890', '#787068', '#504840', '#342E28', '#221E18', '#141210', '#1C1B18'],
     'cool-gray': ['#F8F8F8', '#EBEBEB', '#DEDEDE', '#CECECE', '#ABABAB', '#888888', '#555555', '#333333', '#1F1F1F', '#111111', '#1A1A1A'],
@@ -75,7 +79,7 @@ const LimeAppearance = (function () {
     'blue-tint': ['#F0F4F8', '#E0E8F0', '#CCD9E8', '#AABDD0', '#8AA0B8', '#6A8098', '#4A6070', '#2D4055', '#1A2838', '#0E1620', '#182030'],
     'pure-white': ['#FFFFFF', '#F0F0F0', '#E0E0E0', '#CCCCCC', '#AAAAAA', '#888888', '#555555', '#333333', '#1A1A1A', '#0D0D0D', '#1A1A1A'],
     lemon: makeCanvasRamp('#FBF3D0'),
-    sage: makeCanvasRamp('#E3EDDC'),
+    sage: makeCanvasRamp('#D8E6D0'),
     lilac: makeCanvasRamp('#F1ECF6'),
   };
 

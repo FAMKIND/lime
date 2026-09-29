@@ -26,16 +26,54 @@
      instead of a hardcoded literal, so public/js/appearance.js's
      applyCanvas() actually has something to retune — Seed's own stock
      'warm' ramp already opens at #F9F8F4, so this is zero visual change
-     for the default preset. --soil-bg-surface stays a hardcoded literal,
-     deliberately NOT ramp-routed (matching Seed's own reference
-     behaviour, where bg-surface is independently hardcoded too, not
-     derived from the neutral ramp) — bubbles/composer/search fields
-     keep one fixed warm tone regardless of canvas tone, the same
-     surface tier bubbles already used to contrast against every
-     preset (verified in TEND.md's LIME-50 entry, "bubble vs canvas").
-     See appearance.js for the full CANVAS_P/makeCanvasRamp port. */
+     for the default preset. See appearance.js for the full CANVAS_P/
+     makeCanvasRamp port. */
   --soil-bg-canvas:  var(--seed-soil-0);
-  --soil-bg-surface: #f0eee6; /* --lime-warm — message bubbles, composer, search fields */
+  /* LIME-50-fix — the tone-relative layer system. LIME-50 only routed
+     --soil-bg-canvas through the ramp; --soil-bg-surface stayed a
+     hardcoded literal and Seed's own --calm-bg-subtle-x / --calm-bg-normal-x
+     tokens map to ramp stops (soil-25/30/40/50/75) that CANVAS_P's 11-value
+     presets never touch at all — so on every tone but Warm, the bubbles,
+     composer box, segmented toggle, hovered/selected list rows and the
+     mic pill stayed the old Warm-tinted beige/grey, clashing with the
+     canvas around them (the user's own screenshots, lemon and sage).
+     One relative system fixes all of it at once: each layer is the
+     canvas itself, mixed toward ink (light) or white (dark) in
+     perceptually-uniform OKLab space (not srgb — avoids the same "grey
+     dip" srgb produces in a plain gradient, LIME-46's own reasoning,
+     here for a flat mix instead of a gradient). Percentages tuned by
+     measurement across all 8 tones (TEND.md's own table), not guessed:
+     surface/hover/active/border here are close to but not identical to
+     the brief's own starting suggestions — sage's own base hue needed a
+     second retune (LIME-50: #EAF1E6 -> #E3EDDC; here: #E3EDDC ->
+     #D8E6D0, appearance.js) to keep muted-text-on-surface >= 4.5:1 once
+     surface itself darkened slightly off canvas. */
+  --lime-layer-raised:  color-mix(in oklab, var(--soil-bg-canvas) 30%, white 70%);
+  --lime-layer-surface: color-mix(in oklab, var(--soil-bg-canvas) 97%, var(--seed-soil-900) 3%);
+  --lime-layer-hover:   color-mix(in oklab, var(--soil-bg-canvas) 92%, var(--seed-soil-900) 8%);
+  --lime-layer-active:  color-mix(in oklab, var(--soil-bg-canvas) 88%, var(--seed-soil-900) 12%);
+  --lime-border-subtle: color-mix(in oklab, var(--soil-bg-canvas) 86%, var(--seed-soil-900) 14%);
+  /* Every one of these previously either hardcoded a literal or read a
+     ramp stop CANVAS_P never retunes — remapped to the layers above so
+     every component that already reads them (bubbles, the composer box,
+     search fields, menus/modals, list-row hover/selected, the segmented
+     toggle's track and active pill — vendor/seed/components/tabs/
+     tabs.css reads --calm-bg-subtle-default/--soil-bg-elevated directly,
+     no vendor edit needed) follows the tone with zero per-component
+     changes. --calm-bg-subtle-default and --calm-bg-normal-default both
+     land on the same "surface" layer, and their own -hover partners
+     both land on "hover" — Seed's two-tier subtle/normal naming isn't a
+     distinction this app's own usage ever needed to preserve (checked
+     each call site, TEND.md). */
+  --soil-bg-surface: var(--lime-layer-surface); /* --lime-warm was here — now tone-relative */
+  --soil-bg-elevated: var(--lime-layer-raised);
+  --calm-bg-subtle-default: var(--lime-layer-surface);
+  --calm-bg-subtle-hover: var(--lime-layer-hover);
+  --calm-bg-subtle-active: var(--lime-layer-active);
+  --calm-bg-normal-default: var(--lime-layer-surface);
+  --calm-bg-normal-hover: var(--lime-layer-hover);
+  --soil-border-subtle: var(--lime-border-subtle);
+  --calm-border-normal-default: var(--lime-border-subtle);
   /* LIME-50: computed, not assumed — --soil-text-muted at its Seed
      default (--seed-soil-500) passed contrast against today's own
      'warm' canvas by the barest margin (4.58:1) and failed outright
@@ -44,11 +82,16 @@
      (--seed-soil-600) clears >=4.5:1 against all 8 shipped presets with
      real margin (5.09-8.44:1) — the fix that makes "every preset must
      pass" achievable at all, not a cosmetic preference. Visibly, if
-     subtly, darker than before; flagged for the gate. */
+     subtly, darker than before; flagged for the gate, and confirmed
+     fine by the user (2026-09-29). Re-verified >= 4.5:1 against the new
+     --lime-layer-surface too (LIME-50-fix), not just bare canvas —
+     4.67-7.86:1 across all 8 tones, TEND.md. */
   --soil-text-muted: var(--seed-soil-600);
   /* Lime's "chosen / current" colour (LIME-14): Seed's own --selected-*
      family, retuned from Seed's mint to the lime the nav has always used.
-     Stepped per Seed's flower convention: resting, hover, pressed. */
+     Stepped per Seed's flower convention: resting, hover, pressed.
+     LIME-50-fix: unchanged — checked against all 8 tones (TEND.md),
+     still >= 3:1 for the non-text fills against every canvas. */
   --selected-bg-subtle-default: var(--seed-lime-100);
   --selected-bg-subtle-hover:   var(--seed-lime-200);
   --selected-bg-subtle-active:  var(--seed-lime-300);
@@ -69,6 +112,28 @@
 }
 
 [data-theme="dark"] {
+  /* LIME-50-fix: the same relative layer system, mixed toward white
+     instead of ink (a dark surface "lifts" by getting lighter, the
+     opposite convention from light mode, same reasoning Material's own
+     dark-theme elevation overlays use) — replacing whatever per-token
+     dark values LIME-51 (landed first) relied on Seed's own tokens.css
+     for. LIME-51's own fixes (body's text colour, the dark avatar
+     pastels, the scrollbar thumb, above) are untouched — none of them
+     read any of the tokens remapped here. */
+  --lime-layer-raised:  color-mix(in oklab, var(--soil-bg-canvas) 78%, white 22%);
+  --lime-layer-surface: color-mix(in oklab, var(--soil-bg-canvas) 94%, white 6%);
+  --lime-layer-hover:   color-mix(in oklab, var(--soil-bg-canvas) 90%, white 10%);
+  --lime-layer-active:  color-mix(in oklab, var(--soil-bg-canvas) 86%, white 14%);
+  --lime-border-subtle: color-mix(in oklab, var(--soil-bg-canvas) 82%, white 18%);
+  --soil-bg-surface: var(--lime-layer-surface);
+  --soil-bg-elevated: var(--lime-layer-raised);
+  --calm-bg-subtle-default: var(--lime-layer-surface);
+  --calm-bg-subtle-hover: var(--lime-layer-hover);
+  --calm-bg-subtle-active: var(--lime-layer-active);
+  --calm-bg-normal-default: var(--lime-layer-surface);
+  --calm-bg-normal-hover: var(--lime-layer-hover);
+  --soil-border-subtle: var(--lime-border-subtle);
+  --calm-border-normal-default: var(--lime-border-subtle);
   --lime-scrollbar-thumb: rgba(255, 255, 255, 0.18);
 }
 
@@ -4501,10 +4566,11 @@ body {
 }
 
 /* Mic + chevron grouped in one rounded-rect pill, not a circle
-   (LIME-10-fix11) — --soil-bg-subtle doesn't exist (checked; real
-   soil-bg tiers are only canvas/surface/elevated), so using
-   --calm-bg-subtle-default instead: it's exactly one step lighter than
-   the --calm-bg-subtle-hover this brief already specifies for :hover. */
+   (LIME-10-fix11). LIME-50-fix: no fill at rest any more, same as the +
+   button (.lime-composer__aux's own background:none, above) — the
+   brief's own explicit ask, since a permanent --calm-bg-subtle-default
+   fill here read as a separate warm-grey chip once every *other* subtle
+   fill in the app started following the tone. */
 .lime-composer__voice {
   display: inline-flex;
   align-items: center;
@@ -4512,7 +4578,6 @@ body {
   width: auto;
   padding: 6px 10px;
   border-radius: var(--seed-radius-md);
-  background: var(--calm-bg-subtle-default);
 }
 
 .lime-composer__voice:hover {

@@ -875,6 +875,60 @@ revert of LIME-50 itself, which also carries the app-wide canvas work).
   `e.stopPropagation()` too, for the same reason and against the same
   shared `wireDropdownToggle` document-level close listener.
 
+### Tone-relative layers (LIME-50-fix)
+
+- **Root cause, found by reading `lime.css` rather than guessed:** LIME-50
+  only routed `--soil-bg-canvas` through the ramp. `--soil-bg-surface`
+  stayed a hardcoded literal, and Seed's own `--calm-bg-subtle-*`/
+  `--calm-bg-normal-*` map to ramp stops (`soil-25/30/40/50/75`) that
+  `CANVAS_P`'s 11-value presets never touch at all — so on every tone but
+  Warm, bubbles, the composer box, the segmented toggle, hovered/selected
+  list rows and the mic pill stayed the old Warm-tinted beige/grey,
+  clashing with the tinted canvas around them (the user's own QA
+  screenshots, lemon and sage).
+- **One relative system, both themes.** Five tokens
+  (`--lime-layer-raised`/`-surface`/`-hover`/`-active`, `--lime-border-subtle`)
+  are each the canvas mixed toward ink (light) or white (dark) via
+  `color-mix(in oklab, ...)` — OKLab specifically, not `srgb`, for the
+  same reason LIME-46 picked it for fades: perceptually-uniform mixing
+  avoids a "grey dip" partway through. Every dependent Seed token
+  (`--soil-bg-surface`, `--soil-bg-elevated`, `--calm-bg-subtle-default/
+  -hover/-active`, `--calm-bg-normal-default/-hover`, `--soil-border-subtle`,
+  `--calm-border-normal-default`) is remapped to one of the five in
+  Lime's own theme blocks — every component that already reads those
+  tokens (including Seed's own `tabs.css`, unedited) follows the tone
+  with no per-component changes.
+- **Percentages tuned by measurement, not guessed** — light: surface 3%,
+  hover 8%, active 12%, border 14% (toward ink), raised 70% (toward
+  white); dark: surface 6%, hover 10%, active 14%, border 18%, raised
+  22% (toward white). Verified across all 8 canvas tones plus dark: body
+  text and muted text both ≥4.5:1 on surface and active; surface-vs-
+  canvas, hover-vs-surface, and active-vs-hover each ΔL(OKLab) ≥ ~0.02;
+  the raised layer clearly distinct from surface. `sage` needed a second
+  base-hue retune (`#E3EDDC` → `#D8E6D0`, `appearance.js`) once its
+  muted-text margin, already thin from LIME-50, met the new surface
+  layer's own slight darkening. Full table in TEND.md.
+- **A real, self-inflicted parser bug found live, not from reading the
+  diff:** a comment written as `--calm-bg-subtle-*/--calm-bg-normal-*`
+  contains a literal `*/` — closing the CSS comment early and silently
+  truncating every declaration after it in the stylesheet (confirmed via
+  the browser's own parsed `CSSStyleSheet.cssRules`: only 2 rules
+  registered from a ~660-rule file). Every layer token, and everything
+  remapped to them, was empty until this was found and fixed — a good
+  reminder that "the file has no syntax errors" isn't the same claim as
+  "the CSS parser agrees," and that a real browser's own parsed
+  stylesheet is worth checking directly when computed styles don't match
+  what the source appears to say.
+- **The mic pill has no fill at rest**, matching the `+` button
+  (`.lime-composer__voice`'s own permanent `--calm-bg-subtle-default`
+  background removed; `.lime-composer__aux`'s shared `background: none`
+  now applies to both) — the brief's own explicit ask, once every other
+  subtle fill in the app started following the tone and a permanently-lit
+  mic pill read as a separate, disconnected chip.
+- **The lime accent (`--selected-*`, the nav active state and primary
+  buttons) is unchanged** — checked against all 8 tones, still clearing
+  the brief's own ≥3:1 bar for the non-text fills.
+
 ### Mode (LIME-51)
 
 - **Why this needed its own brief, confirmed in survey rather than
