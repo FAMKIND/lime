@@ -57,6 +57,8 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - **C.** Signature moments only (profile and details avatars, empty states, a lime-slice loading spinner); list avatars unchanged.
   - Either way, prototype at 20/24/32/40/64px in light and dark before calling it done.
 - **DECIDED (the user, 2026-09-30): palette "B", then revised to "keep all 8"**, so: **no tones dropped or replaced**, only B's refinements to existing tones (Warm's surfaces → `#f0eee6`, Sage retuned so lime stands out, and every tone verified). **Shape "A":** lime-silhouette avatars at ≥ 28px. Briefs: **LIME-56** (palette) and **LIME-57** (lime avatars, a preview stop first).
+- **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **Waiting on the user's OK for Phase 2.**
+- **New finding (tend, LIME-56): white text on the solid green `#09a950` buttons** (e.g. "Continue with email", Seed's `seed-button--primary`) is **under 4.5:1 on every tone** (white on `#09a950` ≈ 3.1:1, computed). It's a brand-level decision. Options put to the user: **A.** ink text `#131b17` on `#09a950` (≈ 5.7:1, computed; keeps the brand green); **B.** darker green `#078040` (`--seed-lime-600`) with white text (≈ 5.0:1, computed); **C.** leave it (large or bold text only needs 3:1, and a 16px semibold button label doesn't qualify). Plot's lean: **A.** Upstream candidate for Seed too. **DECIDED: A (the user, 2026-09-30) → LIME-58 drafted.** Its hover and press go lighter (lime-400/300), because ink on the darker lime-600 is only ≈ 3.5:1.
 
 ### Unbriefed candidates (offer when the queue thins)
 - **"Forgot password?" on `auth.html`** (raised 2026-09-30: the user got confused between their own password and the seed demo password, and between `file://` and localhost accounts). Locally: reset a local account's password after confirming the email (demo-grade). Production: Supabase `resetPasswordForEmail`. Also consider showing on the password step which kind of account it is ("Demo teacher: use the shared demo password").
@@ -221,6 +223,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - `public/signup.html` + `public/js/supabase.js` (commit `8066506`) already use Supabase auth via CDN, with **placeholder** URL and key constants in the file.
   - When the switch happens, consolidate: one Supabase client and config (from a gitignored `*.local.js`, per the switch checklist), shared by signup, login and the future `SupabaseAdapter`. Don't leave placeholder constants in committed code.
   - LIME-24b left `supabase.js` untouched.
+- **Upstream to Seed, added 2026-09-30:** the light theme's `seed-button--primary` should use ink text on lime-500, with lighter hover and press (LIME-58).
 - **Upstream to Seed (Seed's owner is FAM, the same person as the user):** `.seed-dropdown__item` is `width: 100%` plus padding with no `box-sizing: border-box`, so it overflows its menu. Lime works around it in LIME-21. Also candidates: the lime `selected` scale (LIME-14), and whether Seed should ship a global border-box reset.
 - **The 768px breakpoint doesn't match.** Seed's layout.css mobile rules use `max-width: 768px` and Lime's use `max-width: 767px`. At exactly 768px wide, Seed hides the left panel (`display: none`) and Lime's hamburger isn't shown, so there's probably no way to reach the nav at that single width. It isn't reported yet. Candidate small brief: align Lime's queries to 768px, or override Seed's. Verify live first.
 - **Briefs keep re-proposing overlays.** An overlay/backdrop version of the mobile nav was proposed three times against the settled push model (LIME-12-fix2/3/4/6). The decision is now logged in `README.md` → "Decisions (2026-09-23)". Any brief touching the mobile nav must be checked against it.
@@ -266,6 +269,78 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-59 → `tend` (after LIME-58): softer hovers and selected rows; header and composer icons at one consistent size
+
+**The user (2026-09-30, screenshot):** "soften the hovers in the center panel hovers of the messages list and the top icons. Also the share icons and the theme icons need to be consistent in size, I feel the same way about the chat box link button." In the screenshot:
+- the **selected list row** (a strong grey) and hovered rows read heavy;
+- in the header, the **Share** glyph (`dew-share`, an upload arrow) looks visibly **larger and heavier** than the **Appearance** palette (a hand-drawn SVG) and the "…";
+- the chat box's bottom icons (+ attach, mic, ⌄) and the ↵ return button don't follow one size.
+
+**Plot's interpretation of "chat box link button"** (the user can correct it at the gate): **every icon in the composer**, i.e. + attach, mic, ⌄ and ↵ return, follows the same icon-size standard as the header.
+
+**Survey (plot, 2026-09-30, `lime.css`):**
+- The layer tokens are `--lime-layer-hover` (canvas + 8% ink) and `--lime-layer-active` (+12% ink) at ~80–81. Warm's overrides are at ~159–160 (based on `#F0EEE6` from LIME-56), and dark's at ~174–175 (+10% / +14% white).
+- They feed `--calm-bg-subtle-hover/-active`, used by list rows, menus, icon buttons and (since LIME-55-fix) the nav's active item, **which must keep matching the selected list row**.
+- `.lime-icon-btn` is 36px with `.dew` at 18px (~621–649). The palette SVG is sized to 18px (~651).
+
+**Assumptions:** the agent can edit CSS (and markup only to swap a glyph), run Playwright and jsdom, and commit.
+
+**The change:**
+1. **Softer hover and selected, app-wide and in step:** lower the light-theme mix from **8% → ~5%** (hover) and **12% → ~8%** (active/selected), for the default and Warm overrides alike; dark from **10% → ~7%** and **14% → ~10%**. **The order must hold:** surface < hover < selected, each **still clearly distinguishable** in all 8 tones and dark. Measure OKLab ΔE between neighbours and pick the lowest percentages that keep ΔE ≥ a threshold you state (for example, the value at which hover is still obvious on Warm). Report the final percentages and the table. The nav's active item still equals the selected list row.
+2. **One icon standard for header and composer:** every icon button in the **thread header** (Share, Appearance, "…", and the right-panel toggle) and the **composer** (+ attach, mic, ⌄, and ↵ return) renders at the **same visible glyph size** (target: a visible bounding box of ~18px for 24-grid icons, ±1px), the same stroke weight, and the same hit-area size within each group (header 36px; composer at its current size unless a mismatch is found). **Measure each glyph's rendered bounding box** (not just `font-size`: dew glyphs vary optically) and adjust per icon where needed. **If `dew-share` can't be matched in weight, draw it as an inline SVG in dew's stroke style** (as LIME-50 did for the palette), and report it.
+3. **Header icon hovers soften too** (they use the same tokens, via item 1). Their hover shape and size must match each other.
+4. **Chat bubbles match the list's hover colour (the user, 2026-09-30):** "I'd like the colour of the chat bubbles to be the same as the messages list hover or similar (currently it's slightly darker)." Bubbles are `.lime-message__content { background: var(--soil-bg-surface) }` (`lime.css` ~4125), i.e. `--lime-layer-surface` (on Warm, `#F0EEE6` since LIME-56). List hover is `--lime-layer-hover`. **Point the bubble background at the same colour as the list-row hover (after item 1's softening)**, through one shared token, so they stay identical in every tone and in dark. Apply it to the reply panel's bubbles too, if they're styled separately. Leave the composer box and other surface users alone. **Measure and report** the bubble and list-hover colours before and after on Warm, Sage and dark (the user perceived the bubbles as darker; confirm what was actually true). Ink text on the bubble stays ≥ 4.5:1, and a bubble on a **hovered message row** (the message hover state, if any) must still be distinguishable. Report it.
+
+**Scope:**
+- **May touch:** `public/css/lime.css` (the layer percentages and icon sizing), `public/index.html` (only to swap a glyph for an inline SVG), and `TEND.md`.
+- **May not touch:** colours other than the layer mix and the bubble token (item 4), the primary buttons, layout, and behaviour.
+
+**Verification:**
+- The ΔE table (surface/hover/selected, 8 tones + dark), before and after.
+- The measured glyph bounding boxes for every header and composer icon, before and after.
+- Screenshots: the list with a hovered and a selected row, the header icons (at rest, hovered), and the composer icons. In light and dark.
+- Report the browser-parsed CSS rule counts. The real app loads in jsdom with zero errors.
+
+**Gate:** hovering and selecting chats in the list feels lighter. Chat bubbles are the same soft shade as a hovered chat in the list. The Share, palette and "…" icons at the top look the same size, and the chat box icons match each other. **If "chat box link button" meant something else, say which button.**
+
+**Record:** add a `## LIME-59` entry to `TEND.md`. Commit: `fix: softer hover/selected layers; consistent icon sizes`, trailer `Brief: LIME-59`, plus the attribution trailer.
+
+---
+
+### LIME-58 → `tend` (after LIME-57 Phase 2): dark ink text on the solid green buttons
+
+**The user (2026-09-30): chose "A"**: text on the solid brand-green buttons becomes ink `#131b17` instead of white. White on `#09a950` is ≈ 3.1:1, which fails 4.5:1 (found by tend in LIME-56).
+
+**Survey (plot, 2026-09-30):**
+- `seed-button--primary` (`vendor/seed/components/button/button.css` ~75–88) reads `--selected-bg-bold-default/-hover/-active` and `--selected-text-bold-default`.
+- **Light theme** (`tokens.css` ~241–250): bg lime-500 `#09A950` → hover **lime-600 `#078040`** → active **lime-700** (darker), text `--seed-soil-0` (white).
+- **Dark theme** (~370–379): already ink-style text (`--seed-soil-950`) on lime-500, with **lighter** hover and active (lime-400, lime-300).
+- **Plot computed:** ink on lime-500 ≈ **5.7:1** ✓; ink on lime-600 ≈ **3.5:1** ✗. So the light theme's darker hover/press steps don't work with ink. **Hover and press must go lighter instead** (ink on lime-400 `#5DC870` ≈ 8.4:1 ✓; on lime-300 `#A3E18A` higher), which is **exactly Seed's own dark-theme pattern**.
+- Other Lime consumers of `--selected-bg-bold-*`/`--selected-text-bold-default`: `lime.css` ~4521 and ~4778 (e.g. the voice-note play button). They inherit the change. Check that they still look right.
+
+**Assumptions:** the agent can edit CSS, run Playwright and jsdom, and commit. **Don't edit `vendor/seed/`.** Override in Lime's own theme block in `lime.css`, where Lime already retunes `--selected-*`.
+
+**The change (in `public/css/lime.css`, light theme only):**
+1. `--selected-text-bold-default` → Lime's pinned ink (`#131b17`, the existing ink token).
+2. `--selected-bg-bold-hover` → `--seed-lime-400`; `--selected-bg-bold-active` → `--seed-lime-300` (mirroring dark mode).
+3. Any icon token paired with these on solid green (e.g. `--selected-icon-bold-default`, currently `--seed-soil-0` in light) → ink as well, so icons match text.
+4. **Leave dark mode as it is** (it's already correct); just re-verify it.
+
+**Scope:**
+- **May touch:** `public/css/lime.css` (the token overrides) and `TEND.md`.
+- **May not touch:** `vendor/seed/`, `auth.css` beyond what the tokens already drive, and the pale `--lime-primary-*` (Add and Send) buttons.
+
+**Verification:**
+- A contrast table: text and icon on rest, hover and press, in light and dark, for every solid-green consumer (the auth "Continue with email", "Sign in", "Create account", Settings Save, the picker's "Start", the Share popover's "Copy link", the voice-note play button, and any others found). All ≥ 4.5:1.
+- Screenshots of each, at rest and hovered.
+- Report the browser-parsed CSS rule counts. The real app loads in jsdom with zero errors.
+
+**Gate:** the green buttons (sign-in page, Settings Save, New message Start, Copy link) now have dark text that's easy to read, and hovering makes them lighter, not darker.
+
+**Record:** add a `## LIME-58` entry to `TEND.md`, and note it as an **upstream candidate for Seed** (the same change in Seed's light theme). Commit: `fix: ink text on solid green buttons (contrast)`, trailer `Brief: LIME-58`, plus the attribution trailer.
+
+---
 
 ### LIME-56 → `tend` (after LIME-48-fix2): the 8 canvas tones tuned to the brand palette (keep all 8)
 
