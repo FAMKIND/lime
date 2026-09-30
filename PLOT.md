@@ -17,7 +17,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 2. ~~LIME-52-fix4~~ **SUPERSEDED (never sent), the user, 2026-09-30:** "get rid of the subtle patterns and the credit and let's just refine the ones we have now instead and the upload." Drop the 6 samples in `public/assets/patterns/` (untracked; delete them) and every credit line. Keep the 4 generated SVG presets (dots, grid, diagonal, noise) and refine them and the upload. **LIME-52-fix5 was investigated with no code change** (`4ad3566`, 2026-09-30; `PLOT.md` committed as `cc910fd`). Tend drove the **real installed Firefox (157.0)** through the real file dialog: both surfaces, `file://` and localhost, strict privacy settings, and chat attachments. **Everything passed; it couldn't reproduce the failure.** The likely cause is something in the user's own Firefox profile (an extension, broken site storage, or stale cached code). **Waiting on the user:** the console errors (⌥⌘K) during an upload, and a retry in Firefox's Troubleshoot Mode (extensions off). If it works in Troubleshoot Mode, it's an extension and no brief is needed. If the console shows an error, draft **LIME-52-fix6** from it. **→ PARKED by the user 2026-09-30** (see "PARKED: pattern upload fails" above). **LIME-53 DROPPED 2026-09-30; next is LIME-54 (delete the samples and the probing code), then LIME-49.** (Old plan, for history: then LIME-53 (a pattern lab of 12 in-house SVG candidates outside the repo; the user picks by number; drafted) **→ LIME-53b** (integrate the picks, remove the file-name probing, delete the samples, strip the credit mentions; drafted after the picks).)
 3. ~~LIME-54~~ **landed as `5c138b0`** (samples and tile probing removed; `PLOT.md` committed as `c254323`). ~~LIME-49~~ **landed as `912240a`** (2026-09-30): the modal body moved to normal flow so it grows to its content; one shared avatar helper everywhere; photo upload verified in the real Firefox 157 and Chrome, and it does **not** hit the parked Firefox bug. **The user's gate check on 49 found a bug:** replying to your own message stacks copies of your photo on its avatar. **LIME-49-fix is drafted and runs next.** (LIME-33 ran first, because the user sent its prompt before 49-fix was drafted.)
 4. ~~LIME-33~~ **landed as `a398ca3`** (2026-09-30; `PLOT.md` committed as `ac77bd1`): PBKDF2 local accounts, the `lime-auth-v1` store, `createProfile` with a synchronous flush (a 100ms debounced save could lose a new account on redirect), and `seedVersion` now keeps snapshots that hold local profiles. Verified in the real Firefox 157 and Chrome 154. **The user's gate check FAILED (2026-09-30):** in their Firefox, sign-up bounces straight back to sign-in and the account is gone. Probably the same root cause as the parked upload bug (their Firefox profile won't keep local storage). **LIME-33-fix landed as `769c268`; LIME-49-fix landed as `9cd68d2`** (2026-09-30). **Cause:** Firefox's default `security.fileuri.strict_origin_policy` gives **every `file://` page its own separate `localStorage`**, so `signup.html`, `login.html` and `index.html` can't share accounts or the session. It can't be fixed in the app, so there's now a plain message plus the seed-password hint. It works over `http://localhost` (a server from the repo root) and in Chrome. Tend also found that `puppeteer-core` silently writes a `user.js` into any Firefox profile it launches (turning that pref **off**), which hides this bug. **It does NOT explain the parked upload bug** (that's within one page). **PREVIEW CHANGE:** from now on, every gate uses `http://localhost:8000/public/…` with `python3 -m http.server 8000` started in the repo root, **not** `file://` (this supersedes the older Patterns-learned note). The demo password for seed teachers is in the gitignored `public/js/demo-config.local.js`. **The user's gate checks on both are pending.**
-5. **LIME-48**: the sign-in redesign (email-first; the Pexels video `teacher.webm` plus a small re-encoded MP4 via `avconvert`; a poster; a pause control; copy: "Where teachers connect")
+5. ~~LIME-48~~ **landed as `3ac4b6d`** (2026-09-30; `PLOT.md` committed as `d9d2fc5`): one `auth.html` (email-first), `login.html`/`signup.html` redirect with the query string kept, the video as `auth-hero.webm` plus a 360×640 `auth-hero.mp4` (2.5 MB) and a poster. The 18.9 MB original and the `.ogg` are deleted. The page is fixed at 100vh (the portrait video had stretched it to 1396px). **The user's gate check:** they refined the page in the Inspector (bigger logo, smaller bold headline with a full stop, tighter spacing) and said to use plot's judgement from their screenshot. **LIME-48-fix drafted, then LIME-29 (amended).**
 6. **LIME-29**: New message (search by name, email, phone or school; "Invite (Soon)"; the documented invites design)
 7. **LIME-27 (revised)**: the Share header button and a Claude-style popover (add people by email for groups; who has access; Copy link), deep links, toasts
 8. **LIME-28 Communities: BLOCKED on a planning pass.** Present a **decision surface** from the user's mockups (the discovery cards, the feed of posts with likes, community pages with channels) before briefing.
@@ -243,6 +243,36 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-48-fix → `tend` (next, before LIME-29): the user's Inspector refinements to the sign-in page (bigger logo, smaller bold headline, spacing)
+
+**The user (2026-09-30):** refined `auth.html` live in Firefox's Inspector (not saved to disk; the tree is clean) and shared a screenshot: "note the logo font size, spacing etc." Asked for exact values, they said: "no need, just use your best judgement based on the screen capture." **So these values are plot's estimates from the screenshot. Match the look; don't treat the numbers as sacred.**
+
+**How plot measured:** the screenshot's scale is ≈ 0.93 of CSS pixels. Calibrated against things the user didn't change: the card is 372px wide in the screenshot versus its 400px `max-width`; the inputs and buttons are ~41px versus 44px; the video panel's margin is ~22px versus 24px. All targets below are already converted to CSS px.
+
+**Assumptions:** the agent can edit files, run Playwright, drive the real Firefox, and commit. Current values are from `public/css/auth.css` (2026-09-30).
+
+**The change (in `public/css/auth.css` and `public/auth.html` only):**
+1. **Logo, bigger:** mark `32px` → **`40px`**; wordmark image height `16px` → **about `28px`** (target: rendered wordmark ≈ 69px wide; check the SVG's aspect ratio and adjust the height to hit it). The gap stays `--seed-space-2`. Keep `margin-bottom: --seed-space-8`; target ≈ 32–36px of clear space between the logo's bottom and the headline's glyph tops.
+2. **Headline, smaller and bolder:** `--seed-text-3xl` (48px) semibold → **`28px`, `--seed-weight-bold`**, line-height ~1.2. Target: "Where teachers connect." renders ≈ 335px wide (±10). **Add the full stop** to the headline text (the subline has none, as in the screenshot).
+3. **Subline:** `--seed-text-lg` (20px) → **`22px`**, line-height ~1.4, same muted colour. It should wrap as "Messages, groups and communities / for educators" inside the 400px column. Headline-to-subline margin `--seed-space-3` → **`--seed-space-2`**. Keep the subline-to-card gap at `--seed-space-8`.
+4. **Everything else is unchanged:** the card, buttons, inputs, divider, legal text, video panel, vertical centring, and the other steps (password and create).
+
+**Scope:**
+- **May touch:** `public/css/auth.css`, the headline text in `public/auth.html`, and `TEND.md`.
+- **May not touch:** anything else. If a value doesn't match a Seed token, a raw px value is fine here, scoped to `auth.css`, with a one-line comment "user's refinement, 2026-09-30".
+
+**Verification (at `http://localhost:8000/public/auth.html`, 1567×905 and 767px, Playwright Firefox is fine for this layout-only change):**
+- Report the measured mark size, the wordmark width, the headline width and font size, the subline's line breaks, and the gaps logo→headline, headline→subline and subline→card.
+- The form column still fits at 1567×905 with no scroll, on the email, password and create steps alike.
+- Screenshots at desktop, mobile and dark.
+- Report the browser-parsed CSS rule counts for `auth.css` (and `lime.css`, unchanged).
+
+**Gate:** open `http://localhost:8000/public/auth.html`. It should look like your Inspector version: the bigger logo, the smaller bold "Where teachers connect.", and the tighter spacing under it.
+
+**Record:** add a `## LIME-48-fix` entry to `TEND.md`. Commit: `fix: sign-in page refinements (logo size, headline, spacing)`, trailer `Brief: LIME-48-fix`, plus the attribution trailer.
+
+---
 
 ### LIME-33-fix → `tend` (next, before LIME-49-fix): accounts don't survive a page change in the user's Firefox
 
@@ -1630,7 +1660,7 @@ The image's max height reserves room above and below, so nothing goes off-screen
 
 ---
 
-### LIME-29 → `tend` (after LIME-33; reprioritised): New message: find any teacher and start a DM or group
+### LIME-29 → `tend` (next, after LIME-48's check; amended 2026-09-30): New message: find any teacher and start a DM or group
 
 **Goal:**
 - A **New message** button next to the Messages/Communities tabs opens a people picker in the search-modal style.
@@ -1674,7 +1704,14 @@ The image's max height reserves room above and below, so nothing goes off-screen
    - sign out, sign in as Test Teacher: the DM is there, with "Welcome!".
 4. **Playwright + Firefox:** the picker is centred over the blur, the chips wrap without overflow, and the New message button doesn't crowd the tabs at 1567px or 767px.
 
-**Gate:** the user runs the milestone in Firefox:
+**Amendment (plot, 2026-09-30, before sending):**
+- **Sign-in and sign-up now live in `auth.html`** (LIME-48 `3ac4b6d`; `login.html`/`signup.html` redirect there). Every end-to-end step goes through it.
+- **Preview and verify over `http://localhost:8000/public/…`**, not `file://`. Verify the end-to-end scenario in the **real installed Firefox and in Chrome**. With `puppeteer-core`, restore Firefox's real defaults via `extraPrefsFirefox` (see `TEND.md` LIME-33-fix).
+- Both accounts share one browser's local data, which is what makes "the other person sees it on sign-in" work locally. Say so in `docs/data-model.md`: production gets it from Supabase membership rows plus RLS.
+- **Confirm `profiles.phone` exists** in the schema and seed data before building phone search. If it doesn't, stop and ask the user.
+- The line references above predate LIME-49 to 48. Survey first.
+
+**Gate:** the user runs the milestone in Firefox at `http://localhost:8000/public/auth.html`:
 1. Sign up a new teacher.
 2. Sign out.
 3. Sign in as yourself.
