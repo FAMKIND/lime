@@ -131,9 +131,15 @@ function patternUserTileThumbHtml(tile, isSelected) {
 // placeholder carrying data-attachment-path/-style and relies on
 // paintAttachments() (below) to fill it in, same two-step pattern every
 // other attachment thumbnail in this app already uses.
-function patternUploadThumbHtml(pattern) {
+// LIME-52-fix3: `busy` shows a processing state on the "+" tile itself
+// (disabled, a spinner glyph instead of the plus, a "Processing…"
+// title) — real feedback for however long a large photo's own decode +
+// canvas processing + upload actually takes, and a native `disabled`
+// blocks a second pick outright, on top of handleAppearanceClick's own
+// uploadBusy check.
+function patternUploadThumbHtml(pattern, busy) {
   const isUpload = pattern && pattern.kind === 'upload';
-  const addTile = '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--upload" data-pattern-action="upload" title="Upload your own…" aria-label="Upload your own…"><span class="dew dew-plus"></span></button>';
+  const addTile = '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--upload' + (busy ? ' is-busy' : '') + '" data-pattern-action="upload" title="' + (busy ? 'Processing…' : 'Upload your own…') + '" aria-label="' + (busy ? 'Processing…' : 'Upload your own…') + '"' + (busy ? ' disabled aria-busy="true"' : '') + '>' + (busy ? '<span class="lime-spinner"></span>' : '<span class="dew dew-plus"></span>') + '</button>';
   if (!isUpload) return addTile;
   const isPhoto = pattern.treatment === 'photo';
   const previewPath = isPhoto ? pattern.photoPath : pattern.texturePath;
@@ -149,7 +155,7 @@ function patternGridHtml(pattern, userTiles, compact) {
   const tiles = patternNoneThumbHtml(kind === 'none')
     + LimeAppearance.PATTERN_PRESETS.map((p) => patternPresetThumbHtml(p, kind === 'preset' && pattern.presetId === p.id)).join('')
     + (userTiles || []).map((t) => patternUserTileThumbHtml(t, kind === 'user-tile' && pattern.tileId === t.id)).join('')
-    + patternUploadThumbHtml(pattern);
+    + patternUploadThumbHtml(pattern, uploadBusy);
   return '<div class="lime-appearance-grid' + (compact ? ' lime-appearance-grid--compact' : '') + '">' + tiles + '</div>';
 }
 
@@ -207,6 +213,102 @@ if (window.LimeAppearance) {
   LimeAppearance.detectUserPatternTiles().then((tiles) => { cachedUserPatternTiles = tiles; }).catch(console.error);
 }
 
+// LIME-52-fix3 — reliable pattern uploads.
+// uploadActiveSurface: which caller (popover or Settings) started the
+// current pick — set right before the persistent #pattern-upload-input
+// is clicked, read by its own change listener (below), since the input
+// itself carries no per-surface context of its own (it's one shared
+// element, not rendered fresh per surface any more).
+// uploadJobToken/uploadBusy: "one job at a time, latest wins" — a stale
+// job (superseded by a second pick before the first finished) discards
+// its own result instead of racing the newer one; uploadBusy blocks a
+// second pick outright and drives the Upload tile's "Processing…" state.
+let uploadActiveSurface = null;
+let uploadJobToken = 0;
+let uploadBusy = false;
+
+// Deletes whichever of a REPLACED upload's blobs the new state doesn't
+// still reference (LIME-52-fix3's own finding: IndexedDB grew by two
+// full blobs — Texture + Photo — on every single attempt, including
+// ones immediately replaced or cleared). A session-only (blob:) path
+// was never written to IndexedDB, so there's nothing to delete for it —
+// LimeStore.deleteAttachment already no-ops on those.
+function deleteSupersededUploadBlobs(previousPattern, nextPattern) {
+  if (!previousPattern || previousPattern.kind !== 'upload') return;
+  const nextTexture = nextPattern && nextPattern.texturePath;
+  const nextPhoto = nextPattern && nextPattern.photoPath;
+  if (previousPattern.texturePath && previousPattern.texturePath !== nextTexture) {
+    LimeStore.deleteAttachment(previousPattern.texturePath).catch(console.error);
+  }
+  if (previousPattern.photoPath && previousPattern.photoPath !== nextPhoto) {
+    LimeStore.deleteAttachment(previousPattern.photoPath).catch(console.error);
+  }
+}
+
+// Runs one upload job end to end: process -> apply live -> persist ->
+// clean up the blobs it replaced -> re-render. Never fails silently —
+// every rejection path (a validation error, a decode failure, a null
+// blob from canvasToBlob, an IndexedDB write failure) reaches setError
+// with a message safe to show directly, falling back to a generic one
+// if a rejection somehow carries none. A stale, superseded job (token
+// mismatch by the time it resolves) discards its own result quietly —
+// that's an expected supersession, not a failure, so it isn't reported
+// as one.
+function runPatternUpload(file, surface) {
+  const token = ++uploadJobToken;
+  uploadBusy = true;
+  surface.rerender();
+  const previousPattern = LimeStore.getAppearance().pattern;
+  // setError is called strictly AFTER rerender() in every branch below,
+  // never before/alongside it — rerender() fully replaces the pane's
+  // innerHTML (a fresh, blank error slot each time), so a message set
+  // any earlier gets silently wiped the instant the busy-state render
+  // that necessarily follows it runs. This was itself a real "fails
+  // silently" bug caught while verifying LIME-52-fix3's own fix.
+  LimeAppearance.processUploadFile(file).then((pattern) => {
+    if (token !== uploadJobToken) return;
+    LimeAppearance.applyPattern(pattern);
+    return LimeStore.setAppearance({ pattern }).then(() => {
+      deleteSupersededUploadBlobs(previousPattern, pattern);
+      uploadBusy = false;
+      surface.rerender();
+      if (surface.setError) {
+        surface.setError(pattern.sessionOnly
+          ? 'This browsing session doesn\'t support saving uploads (private browsing?) — it\'ll work for now, but won\'t be here next time you open Lime.'
+          : '');
+      }
+    });
+  }).catch((err) => {
+    console.error(err);
+    if (token !== uploadJobToken) return;
+    uploadBusy = false;
+    surface.rerender();
+    if (surface.setError) surface.setError((err && err.message) || 'Couldn\'t use that image. Try a different PNG or JPG.');
+  });
+}
+
+// The one persistent pattern-upload input (index.html) — wired here,
+// once, directly, rather than delegated from a container that LIME-52/
+// fix2's own popover and Settings innerHTML both used to re-render the
+// input away inside of. uploadActiveSurface (set by handleAppearanceClick's
+// own upload-tile branch, below) says which caller to report back to.
+const patternUploadInput = document.getElementById('pattern-upload-input');
+if (patternUploadInput) {
+  patternUploadInput.addEventListener('change', (e) => {
+    const input = e.target;
+    const surface = uploadActiveSurface;
+    uploadActiveSurface = null;
+    // Reset immediately, not in a .then/.finally — a native file input
+    // never fires a second `change` for re-picking the exact same file
+    // otherwise (no value change to detect), which the brief's own
+    // matrix explicitly tests ("the same file twice in a row").
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!surface || !file) return;
+    runPatternUpload(file, surface);
+  });
+}
+
 // LIME-52-fix: one shared handler for every Mode/Canvas/Pattern click,
 // used identically by the popover and Settings -> Preferences ->
 // Appearance — their two containers each still wire their own click
@@ -214,7 +316,7 @@ if (window.LimeAppearance) {
 // the other doesn't), but the branching logic inside is this one
 // function, not two copies. Returns true once it has handled the
 // event, so a call site can bail out of its own remaining branches.
-function handleAppearanceClick(e, container, rerender) {
+function handleAppearanceClick(e, container, rerender, setError) {
   const modeBtn = e.target.closest('[data-theme-mode]');
   if (modeBtn) {
     const mode = modeBtn.dataset.themeMode;
@@ -231,8 +333,12 @@ function handleAppearanceClick(e, container, rerender) {
   }
   const noneBtn = e.target.closest('[data-pattern-kind="none"]');
   if (noneBtn) {
+    const previousPattern = LimeStore.getAppearance().pattern;
     LimeAppearance.applyPattern(null);
-    LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(rerender).catch(console.error);
+    LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(() => {
+      deleteSupersededUploadBlobs(previousPattern, null);
+      rerender();
+    }).catch(console.error);
     return true;
   }
   const presetBtn = e.target.closest('[data-pattern-preset]');
@@ -261,13 +367,23 @@ function handleAppearanceClick(e, container, rerender) {
   }
   const uploadBtn = e.target.closest('[data-pattern-action="upload"]');
   if (uploadBtn) {
-    container.querySelector('[data-pattern-upload-input]')?.click();
+    // Ignored outright while a previous pick is still processing (a
+    // disabled native `disabled` attribute already blocks this too,
+    // below — belt and suspenders, since e.target.closest still finds
+    // the button underneath a disabled state in some engines).
+    if (uploadBusy || !patternUploadInput) return true;
+    uploadActiveSurface = { rerender, setError };
+    patternUploadInput.click();
     return true;
   }
   const removeUploadBtn = e.target.closest('[data-pattern-action="remove-upload"]');
   if (removeUploadBtn) {
+    const previousPattern = LimeStore.getAppearance().pattern;
     LimeAppearance.applyPattern(null);
-    LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(rerender).catch(console.error);
+    LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(() => {
+      deleteSupersededUploadBlobs(previousPattern, null);
+      rerender();
+    }).catch(console.error);
     return true;
   }
   const intensityBtn = e.target.closest('[data-pattern-intensity]');
@@ -290,25 +406,6 @@ function handleAppearanceClick(e, container, rerender) {
     return true;
   }
   return false;
-}
-
-// LIME-52-fix: the pattern upload file input's change handler — shared
-// the same way handleAppearanceClick's click logic is, since the
-// validation/processing/store-write sequence is identical in both the
-// popover and Settings.
-function handleAppearanceUploadChange(e, rerender, setError) {
-  const input = e.target.closest('[data-pattern-upload-input]');
-  if (!input || !input.files || !input.files[0]) return;
-  const file = input.files[0];
-  LimeAppearance.processUploadFile(file).then((pattern) => {
-    LimeAppearance.applyPattern(pattern);
-    return LimeStore.setAppearance({ pattern });
-  }).then(rerender).catch((err) => {
-    // Friendly inline message (validateUploadFile's own text) — no
-    // native window.alert() (this app deliberately replaces those, per
-    // confirmDialog's own history).
-    if (setError) setError(err.message);
-  }).finally(() => { input.value = ''; });
 }
 
 // ── Rich-text sanitiser (LIME-37) ────────────────────────
@@ -1951,11 +2048,15 @@ function initMessagesList() {
       + '<div class="lime-menu__label">Pattern</div>'
       + patternGridHtml(appearance.pattern, cachedUserPatternTiles, true)
       + patternControlsHtml(appearance.pattern)
-      + '<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden data-pattern-upload-input>'
       + '<p class="lime-appearance-upload-error"></p>'
       + '<div class="lime-menu__divider"></div>'
       + '<button type="button" class="lime-menu__item" data-appearance-action="more"><span class="dew dew-gear"></span>More in Settings</button>';
     paintAttachments(appearanceMenu);
+  }
+
+  function setAppearanceMenuUploadError(msg) {
+    const errorEl = appearanceMenu && appearanceMenu.querySelector('.lime-appearance-upload-error');
+    if (errorEl) errorEl.textContent = msg || '';
   }
 
   if (appearanceMenu) {
@@ -1964,25 +2065,22 @@ function initMessagesList() {
       // a few picks (a live preview), so interior clicks never reach
       // wireDropdownToggle's shared document-level close listener.
       e.stopPropagation();
-      if (handleAppearanceClick(e, appearanceMenu, renderAppearanceMenu)) return;
+      if (handleAppearanceClick(e, appearanceMenu, renderAppearanceMenu, setAppearanceMenuUploadError)) return;
       if (e.target.closest('[data-appearance-action="more"]')) {
         appearanceMenu.classList.remove('is-open');
         document.getElementById('settings-btn')?.click();
       }
     });
-    appearanceMenu.addEventListener('change', (e) => {
-      if (!e.target.closest('[data-pattern-upload-input]')) return;
-      const errorEl = appearanceMenu.querySelector('.lime-appearance-upload-error');
-      if (errorEl) errorEl.textContent = '';
-      handleAppearanceUploadChange(e, renderAppearanceMenu, (msg) => {
-        if (errorEl) errorEl.textContent = msg;
-      });
-    });
   }
 
   if (appearanceToggle && appearanceMenu) {
     appearanceToggle.addEventListener('click', renderAppearanceMenu);
-    wireDropdownToggle('appearance-toggle', 'appearance-menu', { fixed: true });
+    // LIME-52-fix3: suppressClose keeps this popover open across the
+    // native file picker and while an upload is still processing —
+    // uploadActiveSurface is set the instant the Upload tile is clicked
+    // (handleAppearanceClick, above) and only cleared once the picker's
+    // own change event lands, so it spans the whole OS-dialog window.
+    wireDropdownToggle('appearance-toggle', 'appearance-menu', { fixed: true, suppressClose: () => uploadBusy || uploadActiveSurface !== null });
     new MutationObserver(() => {
       appearanceToggle.setAttribute('aria-expanded', String(appearanceMenu.classList.contains('is-open')));
     }).observe(appearanceMenu, { attributes: true, attributeFilter: ['class'] });
@@ -3434,7 +3532,7 @@ function renderCrumbs() {
 // document when switching between two open menus. Fixed-mode menus
 // also flip to whichever side of the trigger actually has room instead
 // of always opening upward, and Escape closes whichever is open.
-function wireDropdownToggle(toggleId, dropdownId, { fixed = false, placement = 'vertical' } = {}) {
+function wireDropdownToggle(toggleId, dropdownId, { fixed = false, placement = 'vertical', suppressClose } = {}) {
   const toggle = document.getElementById(toggleId);
   const dropdown = document.getElementById(dropdownId);
   if (!toggle || !dropdown) return;
@@ -3483,7 +3581,15 @@ function wireDropdownToggle(toggleId, dropdownId, { fixed = false, placement = '
       dropdown.style.left = Math.max(8, Math.min(rect.left, maxLeft)) + 'px';
     }
   });
-  document.addEventListener('click', () => dropdown.classList.remove('is-open'));
+  // LIME-52-fix3: the appearance popover passes suppressClose so an
+  // in-flight pattern upload keeps it open across the native file
+  // picker and while processing runs, instead of an incidental outside
+  // click (or one that lands oddly during/after the OS dialog) closing
+  // it mid-pick.
+  document.addEventListener('click', () => {
+    if (suppressClose && suppressClose()) return;
+    dropdown.classList.remove('is-open');
+  });
 }
 
 // One shared listener — Escape closes whichever registered dropdown is
@@ -4506,7 +4612,7 @@ document.addEventListener('keydown', (e) => {
       + '<h3 class="lime-settings__subsection-heading">Appearance</h3>'
       + stackedRowHtml('mode', 'Mode', modeTabsHtml('settings', appearance.theme))
       + stackedRowHtml('canvas', 'Canvas', (isDark ? canvasDisabledNoticeHtml() : '') + canvasGridHtml(isDark))
-      + stackedRowHtml('pattern', 'Pattern', patternGridHtml(appearance.pattern, cachedUserPatternTiles) + patternControlsHtml(appearance.pattern) + '<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden data-pattern-upload-input>')
+      + stackedRowHtml('pattern', 'Pattern', patternGridHtml(appearance.pattern, cachedUserPatternTiles) + patternControlsHtml(appearance.pattern))
       + '<p class="lime-settings__description">A subtle texture behind every panel. Sits at low intensity by default, and stays out of the way of anything you read.</p>'
       + '</div>'
       + SETTINGS_BODY_FRAME_CLOSE;
@@ -4565,20 +4671,9 @@ document.addEventListener('keydown', (e) => {
       document.getElementById('sign-out-btn')?.click();
       return;
     }
-    if (handleAppearanceClick(e, pane, renderPreferencesSection)) return;
+    if (handleAppearanceClick(e, pane, renderPreferencesSection, (msg) => (msg ? setFieldError('pattern', msg) : clearFieldError('pattern')))) return;
     const changeBtn = e.target.closest('[data-change]');
     if (changeBtn) toggleInlineForm(changeBtn.dataset.change);
-  });
-
-  // LIME-52-fix: the pattern upload input's change event, handled by
-  // the same shared handleAppearanceUploadChange the header popover
-  // uses — clearFieldError first (this app's own inline-error
-  // convention, not a native window.alert()) so a previous rejection
-  // message doesn't linger once a new file is chosen.
-  pane.addEventListener('change', (e) => {
-    if (!e.target.closest('[data-pattern-upload-input]')) return;
-    clearFieldError('pattern');
-    handleAppearanceUploadChange(e, renderPreferencesSection, (msg) => setFieldError('pattern', msg));
   });
 
   function filterSettings() {

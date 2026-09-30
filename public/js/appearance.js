@@ -381,8 +381,44 @@ const LimeAppearance = (function () {
     return { canvas, width: w, height: h, lumMin: Math.round(lumMin), lumMax: Math.round(lumMax) };
   }
 
-  function canvasToBlob(canvas) {
-    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
+  // LIME-52-fix3: rejects on a null blob instead of silently resolving
+  // with one — toBlob() returns null (never throws) if the canvas is
+  // too large for the browser's own memory/size ceiling, which
+  // otherwise produced a garbage 0-byte "upload" that looked like it
+  // had worked. Texture keeps PNG (alpha is the signal); Photo moved to
+  // JPEG at ~0.85 (a full-size processed photo as PNG could run several
+  // MB — slow to encode, slow to write to IndexedDB, and the likely
+  // cause of at least some of the reported intermittent failures).
+  function canvasToBlob(canvas, mime, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error('Couldn\'t process that image. Try a different PNG or JPG.')); return; }
+        resolve(blob);
+      }, mime || 'image/png', quality);
+    });
+  }
+
+  // LIME-52-fix3: probed once per session (not per upload) — Firefox
+  // private browsing can leave IndexedDB open()-able but reject a real
+  // write, so this is a real put/delete round trip, not just whether
+  // open() resolves (LocalAdapter.checkStorageAvailable). When it
+  // fails, the processed result is kept in memory for the session
+  // instead (an object URL, never written anywhere) rather than losing
+  // the upload outright — sessionOnly on the returned pattern is how
+  // the UI shows the one-time "won't persist" note.
+  let storageAvailablePromise = null;
+  function isStorageAvailable() {
+    if (!storageAvailablePromise) storageAvailablePromise = window.LimeStore.checkStorageAvailable();
+    return storageAvailablePromise;
+  }
+
+  // Stores a processed file the normal way (IndexedDB, a real path) when
+  // storage works, or falls back to an in-memory object URL — used
+  // directly as the "path" (LocalAdapter.getAttachmentUrl passes a
+  // blob: path straight through) — when it doesn't.
+  function storeUploadFile(file, available) {
+    if (available) return window.LimeStore.uploadAttachment(file, { conversationId: 'appearance' });
+    return Promise.resolve({ path: URL.createObjectURL(file), sessionOnly: true });
   }
 
   // Orchestrates the whole "file -> stored, processed pattern" pipeline.
@@ -391,44 +427,50 @@ const LimeAppearance = (function () {
   // afterwards without re-reading the original file or reprocessing —
   // each treatment reads its own already-uploaded path.
   // Resolves { kind: 'upload', texturePath, photoPath, treatment,
-  // isVector, width, height, lumMin?, lumMax? } or rejects with a
-  // message safe to show the user directly.
+  // isVector, width, height, lumMin?, lumMax?, sessionOnly? } or rejects
+  // with a message safe to show the user directly.
   function processUploadFile(file, treatmentOverride) {
     const error = validateUploadFile(file);
     if (error) return Promise.reject(new Error(error));
 
-    if (file.type === 'image/svg+xml') {
-      // Already a vector mask, used exactly like a built-in preset — no
-      // canvas processing needed or possible (SVG dimensions are
-      // usually viewBox-relative, not meaningful pixel measurements),
-      // and no Photo form (nothing to blur/cover with a flat vector).
-      return window.LimeStore.uploadAttachment(file, { conversationId: 'appearance' }).then(({ path }) => ({
-        kind: 'upload', texturePath: path, photoPath: null, treatment: 'texture', isVector: true, width: 120, height: 120,
-      }));
-    }
-
-    return loadImageFromFile(file).then((img) => {
-      const treatment = treatmentOverride || defaultTreatmentFor(img.naturalWidth, img.naturalHeight);
-      const texture = processTexture(img);
-      const photo = processPhoto(img);
-      URL.revokeObjectURL(img.src);
-      return Promise.all([canvasToBlob(texture.canvas), canvasToBlob(photo.canvas)]).then(([textureBlob, photoBlob]) => {
-        const textureFile = new File([textureBlob], 'pattern-texture.png', { type: 'image/png' });
-        const photoFile = new File([photoBlob], 'pattern-photo.png', { type: 'image/png' });
-        return Promise.all([
-          window.LimeStore.uploadAttachment(textureFile, { conversationId: 'appearance' }),
-          window.LimeStore.uploadAttachment(photoFile, { conversationId: 'appearance' }),
-        ]).then(([textureResult, photoResult]) => ({
-          kind: 'upload',
-          texturePath: textureResult.path,
-          photoPath: photoResult.path,
-          treatment,
-          isVector: false,
-          width: texture.width,
-          height: texture.height,
-          lumMin: photo.lumMin,
-          lumMax: photo.lumMax,
+    return isStorageAvailable().then((available) => {
+      if (file.type === 'image/svg+xml') {
+        // Already a vector mask, used exactly like a built-in preset — no
+        // canvas processing needed or possible (SVG dimensions are
+        // usually viewBox-relative, not meaningful pixel measurements),
+        // and no Photo form (nothing to blur/cover with a flat vector).
+        return storeUploadFile(file, available).then(({ path, sessionOnly }) => ({
+          kind: 'upload', texturePath: path, photoPath: null, treatment: 'texture', isVector: true, width: 120, height: 120, sessionOnly,
         }));
+      }
+
+      return loadImageFromFile(file).then((img) => {
+        const treatment = treatmentOverride || defaultTreatmentFor(img.naturalWidth, img.naturalHeight);
+        const texture = processTexture(img);
+        const photo = processPhoto(img);
+        URL.revokeObjectURL(img.src);
+        return Promise.all([
+          canvasToBlob(texture.canvas, 'image/png'),
+          canvasToBlob(photo.canvas, 'image/jpeg', 0.85),
+        ]).then(([textureBlob, photoBlob]) => {
+          const textureFile = new File([textureBlob], 'pattern-texture.png', { type: 'image/png' });
+          const photoFile = new File([photoBlob], 'pattern-photo.jpg', { type: 'image/jpeg' });
+          return Promise.all([
+            storeUploadFile(textureFile, available),
+            storeUploadFile(photoFile, available),
+          ]).then(([textureResult, photoResult]) => ({
+            kind: 'upload',
+            texturePath: textureResult.path,
+            photoPath: photoResult.path,
+            treatment,
+            isVector: false,
+            sessionOnly: textureResult.sessionOnly || photoResult.sessionOnly,
+            width: texture.width,
+            height: texture.height,
+            lumMin: photo.lumMin,
+            lumMax: photo.lumMax,
+          }));
+        });
       });
     });
   }

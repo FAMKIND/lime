@@ -791,6 +791,35 @@ html[data-pattern-treatment="photo"] body::before {
   font-size: 16px;
 }
 
+/* LIME-52-fix3: a real processing state — "one job at a time," shown,
+   not just enforced silently. Disabled (blocks a second pick outright,
+   on top of handleAppearanceClick's own uploadBusy check) and a plain
+   CSS spinner (dew has no loader/spinner glyph — checked). */
+.lime-pattern-thumb--upload.is-busy {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.lime-spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--soil-border-subtle);
+  border-top-color: var(--soil-text-muted);
+  border-radius: var(--seed-radius-full);
+  animation: lime-spin 0.7s linear infinite;
+}
+
+@keyframes lime-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lime-spinner {
+    animation: none;
+  }
+}
+
 /* LIME-52-fix2: an active upload's tile is a plain, unclipped wrapper
    (.lime-pattern-tile, sized/outlined by the shared rule above) around
    two children — the fill (.lime-pattern-tile__preview, absolutely

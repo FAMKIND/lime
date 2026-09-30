@@ -744,6 +744,14 @@
   <button type="button" class="lime-lightbox__nav lime-lightbox__nav--prev" id="lightbox-prev" aria-label="Previous photo" title="Previous" hidden><span class="dew dew-chevron-left"></span></button>
   <button type="button" class="lime-lightbox__nav lime-lightbox__nav--next" id="lightbox-next" aria-label="Next photo" title="Next" hidden><span class="dew dew-chevron-right"></span></button>
 
+  <!-- LIME-52-fix3: one persistent pattern-upload input, at the document
+       level — NOT rendered inside #appearance-menu's or #settings-modal's
+       own innerHTML (LIME-52's/fix2's original approach), which could be
+       replaced out from under an in-flight OS file picker by any
+       unrelated re-render, silently losing the selection. app.js wires
+       its own change listener directly, once, at script load. -->
+  <input type="file" id="pattern-upload-input" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden>
+
   <script src="js/seed-data.js"></script>
   <script src="js/local-adapter.js"></script>
   <script src="js/store.js"></script>

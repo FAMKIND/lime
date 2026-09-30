@@ -519,6 +519,15 @@ const LimeStore = (function () {
     return adapter().getAttachmentUrl(path);
   }
 
+  // LIME-52-fix3.
+  function deleteAttachment(path) {
+    return adapter().deleteAttachment(path);
+  }
+
+  function checkStorageAvailable() {
+    return adapter().checkStorageAvailable();
+  }
+
   // LIME-44.
   function getLinkPreview(url) {
     return adapter().getLinkPreview(url);
@@ -557,6 +566,8 @@ const LimeStore = (function () {
     markRead,
     uploadAttachment,
     getAttachmentUrl,
+    deleteAttachment,
+    checkStorageAvailable,
     getLinkPreview,
     updateProfile,
     setProfileEmail,

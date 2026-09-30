@@ -47,7 +47,12 @@ const LocalAdapter = (function () {
   // A fresh object URL every call, never cached here — object URLs are
   // only valid for this page's current lifetime anyway, so there's
   // nothing worth persisting between calls.
+  // LIME-52-fix3: a `path` that's already a blob: URL (the private-
+  // browsing session-only fallback, appearance.js's own
+  // processUploadFile) is returned as-is — there's nothing to look up,
+  // it was never written to IndexedDB in the first place.
   function getAttachmentUrl(path) {
+    if (path.indexOf('blob:') === 0) return Promise.resolve(path);
     return openFilesDb().then((db) => new Promise((resolve, reject) => {
       const tx = db.transaction(FILES_STORE_NAME, 'readonly');
       const request = tx.objectStore(FILES_STORE_NAME).get(path);
@@ -57,6 +62,47 @@ const LocalAdapter = (function () {
       };
       request.onerror = () => reject(request.error);
     }));
+  }
+
+  // LIME-52-fix3: deletes a previous upload's blob(s) when a new one
+  // replaces it, or when the pattern is cleared to None — otherwise
+  // IndexedDB grows by two full blobs (Texture + Photo) on every single
+  // upload attempt, including ones the user immediately replaces. A
+  // blob: URL (the session-only fallback) was never stored here, so
+  // there's nothing to delete — resolves immediately. Best-effort: a
+  // failed delete shouldn't block the new upload it's making room for.
+  function deleteAttachment(path) {
+    if (!path || path.indexOf('blob:') === 0) return Promise.resolve();
+    return openFilesDb().then((db) => new Promise((resolve) => {
+      const tx = db.transaction(FILES_STORE_NAME, 'readwrite');
+      tx.objectStore(FILES_STORE_NAME).delete(path);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    })).catch(() => {});
+  }
+
+  // LIME-52-fix3: a private-browsing IndexedDB can exist but reject a
+  // real write (some Firefox versions), so this probes with an actual
+  // put/delete round trip, not just whether `indexedDB.open` resolves.
+  // Used up front by appearance.js's own processUploadFile to decide
+  // between the normal persisted path and the in-memory, session-only
+  // fallback (a note shown once, not a silent difference).
+  function checkStorageAvailable() {
+    return openFilesDb().then((db) => new Promise((resolve) => {
+      try {
+        const tx = db.transaction(FILES_STORE_NAME, 'readwrite');
+        const probePath = '__lime-storage-probe__';
+        tx.objectStore(FILES_STORE_NAME).put({ path: probePath, blob: new Blob(['x']), name: 'probe', mime: 'text/plain', size: 1 });
+        tx.oncomplete = () => {
+          const cleanupTx = db.transaction(FILES_STORE_NAME, 'readwrite');
+          cleanupTx.objectStore(FILES_STORE_NAME).delete(probePath);
+          resolve(true);
+        };
+        tx.onerror = () => resolve(false);
+      } catch (e) {
+        resolve(false);
+      }
+    })).catch(() => false);
   }
 
   // Best-effort, like save()'s own try/catch below — a reset that can't
@@ -348,6 +394,8 @@ const LocalAdapter = (function () {
 
     uploadAttachment,
     getAttachmentUrl,
+    deleteAttachment,
+    checkStorageAvailable,
     getLinkPreview,
   };
 })();
