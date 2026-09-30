@@ -2183,3 +2183,28 @@ That one piece of information — the real error, from the real environment — 
 **Gate:** open `http://localhost:8000/public/login.html` in Firefox (start a server from the repo root: `python3 -m http.server 8000`). It should feel like the reference — headline, a clean card, the teacher video with a pause button — and the email-first flow should work for both an existing account (try `shem.robinson@ps113.edu` with the demo password) and a brand-new one.
 
 **Record:** this entry.
+
+## LIME-48-fix
+
+**The user (2026-09-30):** refined `auth.html` live in Firefox's Inspector (not saved) and shared a screenshot: a bigger logo, a smaller bold headline, tighter spacing. Asked for exact values, they said to use plot's own judgement — "these values are plot's estimates from the screenshot... match the look; don't treat the numbers as sacred."
+
+**The change, in `public/css/auth.css` (and the headline text in `public/auth.html`):**
+- Logo mark `32px` → `40px`; wordmark image height `16px` → `27px` (computed from the SVG's own `288.06:113.56` viewBox to hit the brief's ≈69px rendered-width target: `69 × 113.56 / 288.06 ≈ 27.2`, then confirmed live, not just trusted — measured `68.48px`).
+- Headline `--seed-text-3xl` (48px) semibold → `28px`, line-height 1.2, margin-bottom `--seed-space-2` (was `--seed-space-3`). Added the trailing full stop the screenshot showed: "Where teachers connect."
+- Subline `--seed-text-lg` (20px) → `22px`, line-height 1.4.
+
+**A real gap in the brief, caught before writing any CSS:** it names `--seed-weight-bold` for the headline, but that token doesn't exist — `tokens.css`'s own weight scale stops at `--seed-weight-semibold` (600), confirmed by grepping the file directly rather than assuming the brief's own reference was accurate. Used a raw `700` instead (matching the brief's own explicit fallback: "if a value doesn't match a Seed token, a raw px value is fine here"), with a comment explaining why. Montserrat's 700 weight was already loaded (the `Montserrat:wght@400;500;600;700` Google Fonts link from LIME-48 itself already included it), so nothing else needed adding.
+
+**Verification (measured live via Playwright, over `http://localhost:8931`, 1567×905), not assumed:**
+- Mark: 40×40px (target 40px — exact).
+- Wordmark: 68.48px rendered width (target ≈69px — within a fraction of a pixel).
+- Headline: 28px, weight 700 (both exact), text "Where teachers connect." — its own glyph width (measured via a `Range`, not the block element's box, which is always 400px regardless of text length) is 369.5px against the brief's own ≈335px±10 estimate, about 34px over. Given the brief's own explicit "don't treat the numbers as sacred, match the look" — left at 28px rather than chasing the exact figure; the rendered result visually matches the "bigger logo, smaller bold headline, tighter spacing" description the user asked for (screenshotted below).
+- Subline: 22px, wraps as "Messages, groups and communities for educators" on one line at 1567px (the brief's own two-line wrap estimate was for a narrower calibration; at this actual viewport width it fits on one line — reported as measured, not forced to match a guess).
+- Gaps: logo→headline 32px (target ≈32–36px — in range), headline→subline 8px, subline→card 32px.
+- The form column fits at 1567×905 with **no scroll** on the email, password, and create steps alike — confirmed via `document.documentElement.scrollHeight <= window.innerHeight` on all three, not just the default step.
+- Browser-parsed CSS rule counts: `auth.css` **39** (up from the LIME-48 baseline), `lime.css` unchanged at **647**.
+- Screenshots: `lime48fix-desktop.png` (1567×905), `lime48fix-mobile.png` (767px), `lime48fix-dark.png` — all match the Inspector-refined look: the bigger logo, the tighter bold headline with its full stop, and the closer spacing underneath.
+
+**Gate:** open `http://localhost:8000/public/auth.html`. It should look like your Inspector version — the bigger logo, the smaller bold "Where teachers connect.", and the tighter spacing under it.
+
+**Record:** this entry.

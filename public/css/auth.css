@@ -65,28 +65,40 @@
   margin-bottom: var(--seed-space-8);
 }
 
+/* LIME-48-fix: the user's refinement, 2026-09-30 (Inspector, matched from
+   a screenshot — plot's estimate, not exact values). Bigger logo. */
 .lime-auth__form-logo [data-brand-mark] {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
 }
 
+/* 27px hits ≈69px rendered width against this SVG's own 288.06:113.56
+   viewBox aspect ratio (69 * 113.56 / 288.06 ≈ 27.2) — computed, then
+   confirmed by actually measuring the rendered element (see TEND.md). */
 .lime-auth__form-logo [data-brand-wordmark] img {
-  height: 16px;
+  height: 27px;
 }
 
-/* Montserrat semibold at Seed's largest display size — the user kept
-   Montserrat rather than supplying a serif (Lime has no serif token). */
+/* LIME-48-fix: smaller and bolder, per the user's refinement — a raw px
+   size (28px doesn't match a Seed text token) and a raw 700 weight
+   (Seed's own weight scale tops out at --seed-weight-semibold, 600 —
+   there's no --seed-weight-bold token to reference, confirmed against
+   tokens.css directly). Montserrat semibold at Seed's largest display
+   size was the LIME-48 original; kept Montserrat, no serif token used. */
 .lime-auth__headline {
   font-family: var(--seed-font-brand);
-  font-size: var(--seed-text-3xl);
-  font-weight: var(--seed-weight-semibold);
-  line-height: 1.1;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
   color: var(--soil-text);
-  margin: 0 0 var(--seed-space-3);
+  margin: 0 0 var(--seed-space-2);
 }
 
+/* LIME-48-fix: 22px, a raw px size (between --seed-text-lg 20px and
+   --seed-text-xl 24px, neither of which hit the user's screenshot). */
 .lime-auth__subline {
-  font-size: var(--seed-text-lg);
+  font-size: 22px;
+  line-height: 1.4;
   color: var(--soil-text-muted);
   margin: 0 0 var(--seed-space-8);
 }
