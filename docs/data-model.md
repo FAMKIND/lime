@@ -1091,6 +1091,33 @@ revert of LIME-50 itself, which also carries the app-wide canvas work).
   dims it further — "Low" is already the minimum intensity this app
   offers, so there's no lower step to fall back to.
 
+### Pattern — user tiles and credits (LIME-52-fix)
+
+- **User-tile file format and naming.** A tile placed directly in
+  `public/assets/patterns/` (not a subfolder, no manifest file) is
+  picked up automatically if its filename matches one of a fixed
+  candidate list — `paper`, `linen`, `dots`, `grid`, `diagonal`,
+  `topography`, `texture`, `noise`, `wave`, `grain`, `weave`, `stripes`
+  — with either an `.svg` or `.png` extension (e.g.
+  `public/assets/patterns/linen.png`). This list is fixed, not
+  discovered, because `file://` allows neither a directory listing nor
+  `fetch()`/XHR; `LimeAppearance.detectUserPatternTiles()` instead
+  probes each candidate filename via a plain `<img>` element (the one
+  loading mechanism that does work over `file://`) and keeps whichever
+  ones actually load. A tile outside this exact name list is invisible
+  to the app regardless of its contents. Still empty and unexercised
+  with a real file as of this brief — confirmed via `ls` and a
+  repo-wide search for any `.png`/`.jpg`/`.svg` under that path, both
+  empty — the mechanism is in place but has nothing to find yet.
+- **Credit-line status is unchanged from LIME-52: still "to verify",
+  still not shown.** Nothing in this app is sourced from Subtle
+  Patterns (the 4 built-ins are inline-generated SVGs, and a user tile
+  is whatever the user drops in themselves) — the CC BY-SA credit line
+  a *real* Subtle Patterns asset would require stays undecided-and-
+  unshown until a later brief actually adds one to
+  `public/assets/patterns/`, at which point this note is the reminder
+  that it becomes necessary.
+
 ## Known gaps, flagged rather than silently resolved
 
 - **"Delete for me" (`cleared_at`) hides messages at the store/UI layer

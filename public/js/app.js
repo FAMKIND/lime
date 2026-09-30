@@ -75,6 +75,231 @@ function canvasDisabledNoticeHtml() {
   return '<p class="lime-appearance-disabled-note">Tones apply in light mode.</p>';
 }
 
+// LIME-52-fix — one shared picker for Canvas and Pattern, used
+// identically by the header popover (#appearance-menu) and Settings ->
+// Preferences -> Appearance. Not two copies (LIME-50/52's own
+// duplicated appearanceSwatchButtonHtml/canvasSwatchButtonHtml,
+// renderAppearanceMenu's Canvas section/renderPreferencesSection's
+// Canvas section) — the brief's own explicit ask.
+function canvasSwatchButtonHtml(name, hex, isSelected, disabled) {
+  return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + (disabled ? ' disabled' : '') + '></button>';
+}
+
+function canvasGridHtml(isDark) {
+  const current = LimeStore.getAppearance().canvas;
+  return '<div class="lime-appearance-grid' + (isDark ? ' is-disabled' : '') + '">'
+    + Object.keys(LimeAppearance.CANVAS_P).map((name) => canvasSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === current, isDark)).join('')
+    + '</div>';
+}
+
+// "None" is its own tile (a plain thumb, not a missing one) so every
+// option — including turning patterns off — lives in the same grid,
+// same reasoning the canvas swatches don't have a separate "no tone"
+// control either. Clicking it also replaces LIME-52's separate
+// "Remove" text button for an active upload (per the brief's own
+// extension: "None" now does that job for every pattern kind).
+function patternNoneThumbHtml(isSelected) {
+  return '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--none' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="none" title="None" aria-label="None"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
+}
+
+function patternPresetThumbHtml(preset, isSelected) {
+  const uri = LimeAppearance.patternMaskDataUri(preset.id);
+  return '<button type="button" class="lime-pattern-thumb' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="preset" data-pattern-preset="' + preset.id + '" style="mask-image:url(&quot;' + uri + '&quot;);-webkit-mask-image:url(&quot;' + uri + '&quot;)" title="' + escapeHtml(preset.label) + '" aria-label="' + escapeHtml(preset.label) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
+}
+
+// LIME-52-fix: any tile the user has dropped into public/assets/patterns/
+// (LimeAppearance.detectUserPatternTiles(), file://-safe <img>
+// load-probing — no directory listing or fetch works over file://).
+function patternUserTileThumbHtml(tile, isSelected) {
+  return '<button type="button" class="lime-pattern-thumb' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="user-tile" data-pattern-tile-id="' + escapeHtml(tile.id) + '" style="mask-image:url(&quot;' + tile.src + '&quot;);-webkit-mask-image:url(&quot;' + tile.src + '&quot;)" title="' + escapeHtml(tile.label) + '" aria-label="' + escapeHtml(tile.label) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
+}
+
+// An active upload is its own tile — its Texture preview via the same
+// mask treatment as every other tile above, its Photo preview via
+// background-image, cover — with a small x overlaid to delete it. The
+// actual URL only resolves async (LimeStore.getAttachmentUrl), so this
+// renders a placeholder carrying data-attachment-path/-style and relies
+// on paintAttachments() (below) to fill it in, same two-step pattern
+// every other attachment thumbnail in this app already uses.
+function patternUploadThumbHtml(pattern) {
+  const isUpload = pattern && pattern.kind === 'upload';
+  const addTile = '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--upload" data-pattern-action="upload" title="Upload your own…" aria-label="Upload your own…"' + (isUpload ? '' : '') + '><span class="dew dew-plus"></span></button>';
+  if (!isUpload) return addTile;
+  const isPhoto = pattern.treatment === 'photo';
+  const previewPath = isPhoto ? pattern.photoPath : pattern.texturePath;
+  const previewTile = '<span class="lime-pattern-thumb is-selected' + (isPhoto ? ' lime-pattern-thumb--upload-preview' : '') + '" data-attachment-path="' + escapeHtml(previewPath || '') + '" data-attachment-style="' + (isPhoto ? 'photo-bg' : 'mask') + '" title="Your upload" aria-label="Your upload" aria-current="true">'
+    + '<button type="button" class="lime-pattern-tile__delete" data-pattern-action="remove-upload" title="Remove upload" aria-label="Remove upload">&times;</button>'
+    + '</span>';
+  return previewTile + addTile;
+}
+
+function patternGridHtml(pattern, userTiles) {
+  const kind = (pattern && pattern.kind) || 'none';
+  const tiles = patternNoneThumbHtml(kind === 'none')
+    + LimeAppearance.PATTERN_PRESETS.map((p) => patternPresetThumbHtml(p, kind === 'preset' && pattern.presetId === p.id)).join('')
+    + (userTiles || []).map((t) => patternUserTileThumbHtml(t, kind === 'user-tile' && pattern.tileId === t.id)).join('')
+    + patternUploadThumbHtml(pattern);
+  return '<div class="lime-appearance-grid">' + tiles + '</div>';
+}
+
+function intensityTabsHtml(current) {
+  const levels = [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }];
+  return '<div class="seed-tabs seed-tabs--pill seed-tabs--sm" role="tablist" aria-label="Intensity">'
+    + levels.map((l) => {
+      const active = l.id === (current || 'low');
+      return '<button type="button" class="seed-tab' + (active ? ' seed-tab--active' : '') + '" role="tab" aria-selected="' + active + '" data-pattern-intensity="' + l.id + '">' + l.label + '</button>';
+    }).join('')
+    + '</div>';
+}
+
+// LIME-52-fix: shown only once an upload exists — switches between the
+// two processed forms (appearance.js's own processTexture/processPhoto)
+// without needing to re-pick the file.
+function treatmentTabsHtml(current) {
+  const options = [{ id: 'texture', label: 'Texture' }, { id: 'photo', label: 'Photo' }];
+  return '<div class="seed-tabs seed-tabs--pill seed-tabs--sm" role="tablist" aria-label="Treatment">'
+    + options.map((o) => {
+      const active = o.id === current;
+      return '<button type="button" class="seed-tab' + (active ? ' seed-tab--active' : '') + '" role="tab" aria-selected="' + active + '" data-pattern-treatment-toggle="' + o.id + '">' + o.label + '</button>';
+    }).join('')
+    + '</div>';
+}
+
+// Intensity applies to every pattern kind (preset, user tile, or an
+// uploaded Texture); the Treatment toggle only ever applies to an
+// upload — Photo has no "intensity" (it's a full-bleed layer, not a
+// low-alpha tint), so it replaces the intensity tabs rather than
+// sitting alongside them once an upload is a Photo.
+function patternControlsHtml(pattern) {
+  if (!pattern || pattern.kind === 'none') return '';
+  if (pattern.kind === 'upload') {
+    // An uploaded SVG has no Photo form (nothing to blur/cover with a
+    // flat vector) — no toggle, just the intensity tabs every other
+    // mask-based kind gets.
+    if (pattern.isVector) return '<div class="lime-pattern-controls">' + intensityTabsHtml(pattern.intensity) + '</div>';
+    return '<div class="lime-pattern-controls">'
+      + (pattern.treatment === 'photo' ? '' : intensityTabsHtml(pattern.intensity))
+      + treatmentTabsHtml(pattern.treatment || 'texture')
+      + '</div>';
+  }
+  return '<div class="lime-pattern-controls">' + intensityTabsHtml(pattern.intensity) + '</div>';
+}
+
+// Resolved once at startup (file:// has no directory listing, so
+// detection is <img> load-probing — see appearance.js's own
+// detectUserPatternTiles). Empty until/unless it resolves — both
+// pickers below just render the built-ins plus None/Upload until then;
+// by the time either one is first opened (a user interaction, not page
+// load) this has almost always already settled.
+let cachedUserPatternTiles = [];
+if (window.LimeAppearance) {
+  LimeAppearance.detectUserPatternTiles().then((tiles) => { cachedUserPatternTiles = tiles; }).catch(console.error);
+}
+
+// LIME-52-fix: one shared handler for every Mode/Canvas/Pattern click,
+// used identically by the popover and Settings -> Preferences ->
+// Appearance — their two containers each still wire their own click
+// listener (one needs e.stopPropagation() to stay open across picks,
+// the other doesn't), but the branching logic inside is this one
+// function, not two copies. Returns true once it has handled the
+// event, so a call site can bail out of its own remaining branches.
+function handleAppearanceClick(e, container, rerender) {
+  const modeBtn = e.target.closest('[data-theme-mode]');
+  if (modeBtn) {
+    const mode = modeBtn.dataset.themeMode;
+    LimeAppearance.applyTheme(mode);
+    LimeStore.setAppearance({ theme: mode }).then(rerender).catch(console.error);
+    return true;
+  }
+  const swatch = e.target.closest('[data-canvas]');
+  if (swatch && !swatch.disabled) {
+    const name = swatch.dataset.canvas;
+    LimeAppearance.applyCanvas(name);
+    LimeStore.setAppearance({ canvas: name }).then(rerender).catch(console.error);
+    return true;
+  }
+  const noneBtn = e.target.closest('[data-pattern-kind="none"]');
+  if (noneBtn) {
+    LimeAppearance.applyPattern(null);
+    LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(rerender).catch(console.error);
+    return true;
+  }
+  const presetBtn = e.target.closest('[data-pattern-preset]');
+  if (presetBtn) {
+    const presetId = presetBtn.dataset.patternPreset;
+    // Keeps whichever intensity was already set (switching presets
+    // shouldn't reset a Medium pick back to Low), defaulting to Low —
+    // the brief's own "user-invisible-by-default" — only the first
+    // time any pattern is ever chosen.
+    const currentIntensity = (LimeStore.getAppearance().pattern || {}).intensity || 'low';
+    const pattern = { kind: 'preset', presetId, intensity: currentIntensity };
+    LimeAppearance.applyPattern(pattern);
+    LimeStore.setAppearance({ pattern }).then(rerender).catch(console.error);
+    return true;
+  }
+  const tileBtn = e.target.closest('[data-pattern-tile-id]');
+  if (tileBtn) {
+    const tile = cachedUserPatternTiles.find((t) => t.id === tileBtn.dataset.patternTileId);
+    if (tile) {
+      const currentIntensity = (LimeStore.getAppearance().pattern || {}).intensity || 'low';
+      const pattern = { kind: 'user-tile', tileId: tile.id, src: tile.src, width: tile.width, height: tile.height, isVector: tile.isVector, intensity: currentIntensity };
+      LimeAppearance.applyPattern(pattern);
+      LimeStore.setAppearance({ pattern }).then(rerender).catch(console.error);
+    }
+    return true;
+  }
+  const uploadBtn = e.target.closest('[data-pattern-action="upload"]');
+  if (uploadBtn) {
+    container.querySelector('[data-pattern-upload-input]')?.click();
+    return true;
+  }
+  const removeUploadBtn = e.target.closest('[data-pattern-action="remove-upload"]');
+  if (removeUploadBtn) {
+    LimeAppearance.applyPattern(null);
+    LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(rerender).catch(console.error);
+    return true;
+  }
+  const intensityBtn = e.target.closest('[data-pattern-intensity]');
+  if (intensityBtn) {
+    const intensity = intensityBtn.dataset.patternIntensity;
+    const current = LimeStore.getAppearance().pattern || { kind: 'none' };
+    const pattern = Object.assign({}, current, { intensity });
+    LimeAppearance.applyPattern(pattern);
+    LimeStore.setAppearance({ pattern }).then(rerender).catch(console.error);
+    return true;
+  }
+  const treatmentBtn = e.target.closest('[data-pattern-treatment-toggle]');
+  if (treatmentBtn) {
+    const treatment = treatmentBtn.dataset.patternTreatmentToggle;
+    const current = LimeStore.getAppearance().pattern || {};
+    if (current.kind !== 'upload' || current.treatment === treatment) return true;
+    const pattern = Object.assign({}, current, { treatment });
+    LimeAppearance.applyPattern(pattern);
+    LimeStore.setAppearance({ pattern }).then(rerender).catch(console.error);
+    return true;
+  }
+  return false;
+}
+
+// LIME-52-fix: the pattern upload file input's change handler — shared
+// the same way handleAppearanceClick's click logic is, since the
+// validation/processing/store-write sequence is identical in both the
+// popover and Settings.
+function handleAppearanceUploadChange(e, rerender, setError) {
+  const input = e.target.closest('[data-pattern-upload-input]');
+  if (!input || !input.files || !input.files[0]) return;
+  const file = input.files[0];
+  LimeAppearance.processUploadFile(file).then((pattern) => {
+    LimeAppearance.applyPattern(pattern);
+    return LimeStore.setAppearance({ pattern });
+  }).then(rerender).catch((err) => {
+    // Friendly inline message (validateUploadFile's own text) — no
+    // native window.alert() (this app deliberately replaces those, per
+    // confirmDialog's own history).
+    if (setError) setError(err.message);
+  }).finally(() => { input.value = ''; });
+}
+
 // ── Rich-text sanitiser (LIME-37) ────────────────────────
 // The one allow-list, used identically on send (before anything is
 // stored) and on render (before metadata.html ever reaches the DOM) —
@@ -1135,6 +1360,11 @@ function paintAttachments(container) {
       // its src resolved the same lazy, two-step way every other
       // attachment already does — an IMG's own .src assignment.
       if (el.tagName === 'IMG' || el.tagName === 'AUDIO') el.src = url;
+      // LIME-52-fix: the appearance-upload preview tile isn't an <img>
+      // (it needs mask-image for a Texture, background-image for a
+      // Photo) — data-attachment-style names which.
+      else if (el.dataset.attachmentStyle === 'photo-bg') el.style.backgroundImage = 'url("' + url + '")';
+      else if (el.dataset.attachmentStyle === 'mask') { el.style.maskImage = 'url("' + url + '")'; el.style.webkitMaskImage = 'url("' + url + '")'; }
       else el.href = url;
     }).catch(console.error);
   });
@@ -1690,10 +1920,11 @@ function initMessagesList() {
   const appearanceToggle = document.getElementById('appearance-toggle');
   const appearanceMenu = document.getElementById('appearance-menu');
 
-  function appearanceSwatchButtonHtml(name, hex, isSelected, disabled) {
-    return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + (disabled ? ' disabled' : '') + '></button>';
-  }
-
+  // LIME-52-fix: Pattern joins Mode/Canvas here (previously Settings-
+  // only — "More in Settings" was the only way to reach it from the
+  // popover). canvasGridHtml/patternGridHtml/patternControlsHtml are
+  // the shared top-level builders also used by Settings ->
+  // Preferences -> Appearance, below in this file — not two copies.
   function renderAppearanceMenu() {
     if (!appearanceMenu) return;
     const appearance = LimeStore.getAppearance();
@@ -1704,11 +1935,16 @@ function initMessagesList() {
       + '<div class="lime-menu__divider"></div>'
       + '<div class="lime-menu__label">Canvas</div>'
       + (isDark ? canvasDisabledNoticeHtml() : '')
-      + '<div class="lime-appearance-swatches' + (isDark ? ' is-disabled' : '') + '">'
-      + Object.keys(LimeAppearance.CANVAS_P).map((name) => appearanceSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === appearance.canvas, isDark)).join('')
-      + '</div>'
+      + canvasGridHtml(isDark)
+      + '<div class="lime-menu__divider"></div>'
+      + '<div class="lime-menu__label">Pattern</div>'
+      + patternGridHtml(appearance.pattern, cachedUserPatternTiles)
+      + patternControlsHtml(appearance.pattern)
+      + '<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden data-pattern-upload-input>'
+      + '<p class="lime-appearance-upload-error"></p>'
       + '<div class="lime-menu__divider"></div>'
       + '<button type="button" class="lime-menu__item" data-appearance-action="more"><span class="dew dew-gear"></span>More in Settings</button>';
+    paintAttachments(appearanceMenu);
   }
 
   if (appearanceMenu) {
@@ -1717,24 +1953,19 @@ function initMessagesList() {
       // a few picks (a live preview), so interior clicks never reach
       // wireDropdownToggle's shared document-level close listener.
       e.stopPropagation();
-      const modeBtn = e.target.closest('[data-theme-mode]');
-      if (modeBtn) {
-        const mode = modeBtn.dataset.themeMode;
-        LimeAppearance.applyTheme(mode);
-        LimeStore.setAppearance({ theme: mode }).then(() => renderAppearanceMenu()).catch(console.error);
-        return;
-      }
-      const swatch = e.target.closest('[data-canvas]');
-      if (swatch && !swatch.disabled) {
-        const name = swatch.dataset.canvas;
-        LimeAppearance.applyCanvas(name);
-        LimeStore.setAppearance({ canvas: name }).then(() => renderAppearanceMenu()).catch(console.error);
-        return;
-      }
+      if (handleAppearanceClick(e, appearanceMenu, renderAppearanceMenu)) return;
       if (e.target.closest('[data-appearance-action="more"]')) {
         appearanceMenu.classList.remove('is-open');
         document.getElementById('settings-btn')?.click();
       }
+    });
+    appearanceMenu.addEventListener('change', (e) => {
+      if (!e.target.closest('[data-pattern-upload-input]')) return;
+      const errorEl = appearanceMenu.querySelector('.lime-appearance-upload-error');
+      if (errorEl) errorEl.textContent = '';
+      handleAppearanceUploadChange(e, renderAppearanceMenu, (msg) => {
+        if (errorEl) errorEl.textContent = msg;
+      });
     });
   }
 
@@ -3901,6 +4132,18 @@ document.addEventListener('keydown', (e) => {
     return '<input class="seed-input" id="settings-field-' + key + '" ' + (inputAttrs || 'type="text"') + ' value="' + escapeHtml(value || '') + '">';
   }
 
+  // LIME-52-fix: label-above, control-below (Mode/Canvas/Pattern) — not
+  // label-left/control-right like compactRowHtml above, which was built
+  // for a single ≤280px value (an input, a select). A tab strip or a
+  // 4-column grid needs its own full-width row, matching the header
+  // popover's own label-above structure (.lime-menu__label + control).
+  function stackedRowHtml(key, label, controlHtml) {
+    return '<div class="lime-settings__stacked-row" data-field="' + key + '" data-row-label="' + escapeHtml(label) + '">'
+      + '<div class="lime-settings__stacked-label">' + escapeHtml(label) + '</div>'
+      + '<div class="lime-settings__stacked-control">' + controlHtml + '<p class="lime-settings__field-error"></p></div>'
+      + '</div>';
+  }
+
   // Login & security row: label + muted description, "Change" opens an
   // inline form after it (see toggleInlineForm).
   function accountRowHtml(key, label, description) {
@@ -4237,54 +4480,12 @@ document.addEventListener('keydown', (e) => {
       + SETTINGS_BODY_FRAME_CLOSE;
   }
 
-  // LIME-50. Round swatch, per the brief — .lime-appearance-swatch (not
-  // reused from LIME-45's now-removed .lime-chat-bg-swatch, a different
-  // shape). Applies live on click (no Save/Cancel — same "changes are
-  // per-row" pattern as Login & security's own rows), so the only state
-  // that ever needs re-deriving is which one is currently selected.
-  function canvasSwatchButtonHtml(name, hex, isSelected, disabled) {
-    return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + (disabled ? ' disabled' : '') + '></button>';
-  }
-
-  function canvasSwatchesHtml(isDark) {
-    const current = LimeStore.getAppearance().canvas;
-    return Object.keys(LimeAppearance.CANVAS_P).map((name) => canvasSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === current, isDark)).join('');
-  }
-
-  // LIME-52. "None" is its own thumbnail (a plain swatch, not a missing
-  // one) so every option — including turning patterns off — lives in the
-  // same row, same reasoning the canvas swatches don't have a separate
-  // "no tone" control either.
-  function patternNoneThumbHtml(isSelected) {
-    return '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--none' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="none" title="None" aria-label="None"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
-  }
-
-  function patternPresetThumbHtml(preset, isSelected) {
-    const uri = LimeAppearance.patternMaskDataUri(preset.id);
-    return '<button type="button" class="lime-pattern-thumb' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="preset" data-pattern-preset="' + preset.id + '" style="mask-image:url(&quot;' + uri + '&quot;);-webkit-mask-image:url(&quot;' + uri + '&quot;)" title="' + escapeHtml(preset.label) + '" aria-label="' + escapeHtml(preset.label) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
-  }
-
-  function intensityTabsHtml(current) {
-    const levels = [{ id: 'low', label: 'Low' }, { id: 'medium', label: 'Medium' }];
-    return '<div class="seed-tabs seed-tabs--pill seed-tabs--sm" role="tablist" aria-label="Intensity" id="settings-intensity-tabs">'
-      + levels.map((l) => {
-        const active = l.id === (current || 'low');
-        return '<button type="button" class="seed-tab' + (active ? ' seed-tab--active' : '') + '" role="tab" aria-selected="' + active + '" data-pattern-intensity="' + l.id + '">' + l.label + '</button>';
-      }).join('')
-      + '</div>';
-  }
-
-  function patternRowHtml(pattern) {
-    const kind = (pattern && pattern.kind) || 'none';
-    const thumbs = patternNoneThumbHtml(kind === 'none')
-      + LimeAppearance.PATTERN_PRESETS.map((p) => patternPresetThumbHtml(p, kind === 'preset' && pattern.presetId === p.id)).join('')
-      + '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--upload' + (kind === 'upload' ? ' is-selected' : '') + '" data-pattern-action="upload" title="Upload your own…" aria-label="Upload your own…"' + (kind === 'upload' ? ' aria-current="true"' : '') + '><span class="dew dew-plus"></span></button>'
-      + '<input type="file" accept="image/*" hidden data-pattern-upload-input>';
-    const hasPattern = kind !== 'none';
-    return '<div class="lime-pattern-thumbs" id="settings-pattern-thumbs">' + thumbs + '</div>'
-      + (hasPattern ? '<div class="lime-pattern-controls">' + intensityTabsHtml(pattern.intensity) + '<button type="button" class="lime-menu__item lime-pattern-remove" data-pattern-action="remove">Remove</button></div>' : '');
-  }
-
+  // LIME-52-fix: canvasGridHtml/patternGridHtml/patternControlsHtml are
+  // the shared top-level builders also used by the header popover's
+  // renderAppearanceMenu, above — not two copies. stackedRowHtml
+  // (label-above, control-below) replaces compactRowHtml here for
+  // Mode/Canvas/Pattern specifically — a tab strip or a 4-column grid
+  // doesn't fit compactRowHtml's ≤280px label-left/control-right shape.
   function renderPreferencesSection() {
     const appearance = LimeStore.getAppearance();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -4292,12 +4493,13 @@ document.addEventListener('keydown', (e) => {
       + settingsBodyFrameOpen()
       + '<div class="lime-settings__body">'
       + '<h3 class="lime-settings__subsection-heading">Appearance</h3>'
-      + compactRowHtml('mode', 'Mode', modeTabsHtml('settings', appearance.theme))
-      + compactRowHtml('canvas', 'Canvas', (isDark ? canvasDisabledNoticeHtml() : '') + '<div class="lime-appearance-swatches' + (isDark ? ' is-disabled' : '') + '" id="settings-canvas-swatches">' + canvasSwatchesHtml(isDark) + '</div>')
-      + compactRowHtml('pattern', 'Pattern', patternRowHtml(appearance.pattern))
+      + stackedRowHtml('mode', 'Mode', modeTabsHtml('settings', appearance.theme))
+      + stackedRowHtml('canvas', 'Canvas', (isDark ? canvasDisabledNoticeHtml() : '') + canvasGridHtml(isDark))
+      + stackedRowHtml('pattern', 'Pattern', patternGridHtml(appearance.pattern, cachedUserPatternTiles) + patternControlsHtml(appearance.pattern) + '<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden data-pattern-upload-input>')
       + '<p class="lime-settings__description">A subtle texture behind every panel. Sits at low intensity by default, and stays out of the way of anything you read.</p>'
       + '</div>'
       + SETTINGS_BODY_FRAME_CLOSE;
+    paintAttachments(pane);
   }
 
   const SETTINGS_SECTIONS = [
@@ -4352,88 +4554,20 @@ document.addEventListener('keydown', (e) => {
       document.getElementById('sign-out-btn')?.click();
       return;
     }
-    const modeBtn = e.target.closest('[data-theme-mode]');
-    if (modeBtn) {
-      const mode = modeBtn.dataset.themeMode;
-      LimeAppearance.applyTheme(mode);
-      LimeStore.setAppearance({ theme: mode }).then(() => renderPreferencesSection()).catch(console.error);
-      return;
-    }
-    const canvasSwatch = e.target.closest('[data-canvas]');
-    if (canvasSwatch && !canvasSwatch.disabled) {
-      const name = canvasSwatch.dataset.canvas;
-      LimeAppearance.applyCanvas(name); // live preview, before the write resolves
-      LimeStore.setAppearance({ canvas: name }).then(() => renderPreferencesSection()).catch(console.error);
-      return;
-    }
-    const patternNoneBtn = e.target.closest('[data-pattern-kind="none"]');
-    if (patternNoneBtn) {
-      LimeAppearance.applyPattern(null);
-      LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(() => renderPreferencesSection()).catch(console.error);
-      return;
-    }
-    const patternPresetBtn = e.target.closest('[data-pattern-preset]');
-    if (patternPresetBtn) {
-      const presetId = patternPresetBtn.dataset.patternPreset;
-      // Keeps whichever intensity was already set (switching presets
-      // shouldn't reset a Medium pick back to Low), defaulting to Low —
-      // the brief's own "user-invisible-by-default" — only the first
-      // time any pattern is ever chosen.
-      const currentIntensity = (LimeStore.getAppearance().pattern || {}).intensity || 'low';
-      const pattern = { kind: 'preset', presetId, intensity: currentIntensity };
-      LimeAppearance.applyPattern(pattern);
-      LimeStore.setAppearance({ pattern }).then(() => renderPreferencesSection()).catch(console.error);
-      return;
-    }
-    const patternUploadBtn = e.target.closest('[data-pattern-action="upload"]');
-    if (patternUploadBtn) {
-      pane.querySelector('[data-pattern-upload-input]')?.click();
-      return;
-    }
-    const patternRemoveBtn = e.target.closest('[data-pattern-action="remove"]');
-    if (patternRemoveBtn) {
-      LimeAppearance.applyPattern(null);
-      LimeStore.setAppearance({ pattern: { kind: 'none' } }).then(() => renderPreferencesSection()).catch(console.error);
-      return;
-    }
-    const intensityBtn = e.target.closest('[data-pattern-intensity]');
-    if (intensityBtn) {
-      const intensity = intensityBtn.dataset.patternIntensity;
-      const current = LimeStore.getAppearance().pattern || { kind: 'none' };
-      const pattern = Object.assign({}, current, { intensity });
-      LimeAppearance.applyPattern(pattern);
-      LimeStore.setAppearance({ pattern }).then(() => renderPreferencesSection()).catch(console.error);
-      return;
-    }
+    if (handleAppearanceClick(e, pane, renderPreferencesSection)) return;
     const changeBtn = e.target.closest('[data-change]');
     if (changeBtn) toggleInlineForm(changeBtn.dataset.change);
   });
 
-  // LIME-52: the pattern upload input — a separate delegated listener
-  // (change, not click) for the same reason LIME-45's own photo-upload
-  // input needed one. Path is namespaced under 'appearance' (not a real
-  // conversation id) so it reads clearly in IndexedDB, matching the
-  // brief's own "path appearance/pattern".
+  // LIME-52-fix: the pattern upload input's change event, handled by
+  // the same shared handleAppearanceUploadChange the header popover
+  // uses — clearFieldError first (this app's own inline-error
+  // convention, not a native window.alert()) so a previous rejection
+  // message doesn't linger once a new file is chosen.
   pane.addEventListener('change', (e) => {
-    const input = e.target.closest('[data-pattern-upload-input]');
-    if (!input || !input.files || !input.files[0]) return;
-    const file = input.files[0];
-    if (file.size > 1024 * 1024) {
-      // Same inline-error pattern the Profile form already uses
-      // (setFieldError/fieldErrorEl) — compactRowHtml already gives the
-      // Pattern row its own .lime-settings__field-error, so no native
-      // window.alert() (this app deliberately replaces those, per
-      // confirmDialog's own history).
-      setFieldError('pattern', 'Please choose an image under 1 MB.');
-      input.value = '';
-      return;
-    }
-    const currentIntensity = (LimeStore.getAppearance().pattern || {}).intensity || 'low';
-    LimeStore.uploadAttachment(file, { conversationId: 'appearance' }).then(({ path }) => {
-      const pattern = { kind: 'upload', path, intensity: currentIntensity };
-      LimeAppearance.applyPattern(pattern);
-      return LimeStore.setAppearance({ pattern });
-    }).then(() => renderPreferencesSection()).catch(console.error);
+    if (!e.target.closest('[data-pattern-upload-input]')) return;
+    clearFieldError('pattern');
+    handleAppearanceUploadChange(e, renderPreferencesSection, (msg) => setFieldError('pattern', msg));
   });
 
   function filterSettings() {

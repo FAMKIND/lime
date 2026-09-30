@@ -177,16 +177,15 @@ body {
    needing to touch #layout itself, which stays background: transparent
    so this shows through it, same reasoning LIME-50 already documents
    there.
-   Presets: a low-alpha ink tint (--lime-pattern-tint), masked into the
-   pattern's own shape (--lime-pattern-mask) — recolours with the tone
-   and mode for free, since the tint is a token-derived colour, not a
-   fixed asset.
-   Uploads: the image itself (--lime-pattern-image), blended against
-   body's own canvas-coloured background (the very next thing behind
-   this layer in paint order) via mix-blend-mode
-   (--lime-pattern-blend: multiply in light, screen in dark — the
-   brief's own explicit choice, appearance.js), at a capped opacity
-   (--lime-pattern-opacity) rather than shown at full strength. */
+   Presets, user tiles and an uploaded Texture all share one mechanism:
+   a low-alpha ink tint (--lime-pattern-tint), masked into the pattern's
+   own shape (--lime-pattern-mask) — recolours with the tone and mode
+   for free, since the tint is a token-derived colour, not a fixed
+   asset. (LIME-52-fix retires the live mix-blend-mode/opacity upload
+   path this comment used to describe — an ordinary opaque photo under
+   multiply blend at a 10% cap was nearly invisible; see TEND.md's
+   LIME-52-fix diagnosis. An uploaded Photo instead gets its own
+   full-bleed override just below.) */
 body::before {
   content: '';
   position: fixed;
@@ -200,17 +199,33 @@ body::before {
   mask-repeat: repeat;
   -webkit-mask-size: var(--lime-pattern-size, 24px 24px);
   mask-size: var(--lime-pattern-size, 24px 24px);
-  background-image: var(--lime-pattern-image, none);
   background-repeat: repeat;
   background-size: 160px 160px;
-  mix-blend-mode: var(--lime-pattern-blend, normal);
-  opacity: var(--lime-pattern-opacity, 1);
 }
 
-/* The brief's own explicit accessibility fallback: a pattern (of either
-   kind) is hidden outright rather than dimmed further under a
-   heightened-contrast preference, since "minimum intensity" is already
-   what the Low setting is. */
+/* LIME-52-fix: an uploaded Photo is a full-bleed cover layer, not a
+   repeating masked tint. appearance.js sets data-pattern-treatment
+   only for this kind, alongside --lime-pattern-image (the processed,
+   downscaled+blurred photo) and --lime-pattern-scrim (a flat
+   canvas-tinted colour whose opacity is computed per-photo,
+   computeScrimOpacity(), to guarantee >= 4.5:1 contrast for on-canvas
+   text against the photo's own darkest/lightest pixels) — stacked as a
+   second background layer over the photo. */
+html[data-pattern-treatment="photo"] body::before {
+  mask-image: none;
+  -webkit-mask-image: none;
+  background-color: transparent;
+  background-image: var(--lime-pattern-scrim, none), var(--lime-pattern-image, none);
+  background-repeat: no-repeat, no-repeat;
+  background-size: cover, cover;
+  background-position: center, center;
+}
+
+/* The brief's own explicit accessibility fallback: a pattern (of any
+   kind — preset, user tile, or an upload in either treatment) is
+   hidden outright rather than dimmed further under a heightened-
+   contrast preference, since "minimum intensity" is already what the
+   Low setting is. */
 @media (prefers-contrast: more) {
   body::before {
     display: none;
@@ -594,37 +609,64 @@ body::before {
   height: 18px;
 }
 
-/* Round canvas swatches (the brief's own spec) — shared by the header
-   popover (#appearance-menu) and Settings -> Preferences -> Appearance
-   (the same markup/class, not two copies). */
-.lime-appearance-swatches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--seed-space-2);
-  padding: 0 var(--seed-space-2) var(--seed-space-2);
+/* Overrides .lime-menu--wide's 280px floor (index.html) so the popover
+   shrinks to fit exactly 4 grid columns instead of spreading 8 canvas
+   swatches across one wide row — measured live via Playwright, not
+   assumed (see TEND.md). */
+.lime-appearance-menu {
+  min-width: 0;
+  width: fit-content;
 }
 
-.lime-settings__compact-control > .lime-appearance-swatches {
+/* LIME-52-fix — one shared 4-column grid for both Canvas and Pattern,
+   in both the header popover and Settings -> Preferences -> Appearance
+   (app.js's canvasGridHtml()/patternGridHtml() are the one place that
+   ever builds this markup — not two copies, per the brief's own
+   explicit ask). */
+.lime-appearance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 36px);
+  gap: var(--seed-space-2);
+  padding: 0 var(--seed-space-2) var(--seed-space-2);
+  width: fit-content;
+}
+
+.lime-settings__stacked-control > .lime-appearance-grid {
   padding: 0;
 }
 
-.lime-appearance-swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--seed-radius-full);
+/* Round for a flat colour (canvas), square for a texture preview
+   (pattern) — a circle would clip a repeating tile's own corners
+   oddly at this size. Both share this base. */
+.lime-appearance-swatch,
+.lime-pattern-thumb {
+  width: 36px;
+  height: 36px;
   border: 2px solid transparent;
   outline: 1px solid var(--soil-border-subtle);
   outline-offset: 1px;
   cursor: pointer;
   padding: 0;
   flex-shrink: 0;
+  position: relative;
 }
 
-.lime-appearance-swatch:hover {
+.lime-appearance-swatch {
+  border-radius: var(--seed-radius-full);
+}
+
+.lime-pattern-thumb {
+  border-radius: var(--seed-radius-md);
+  background-color: var(--soil-bg-elevated);
+}
+
+.lime-appearance-swatch:hover,
+.lime-pattern-thumb:hover {
   outline-color: var(--soil-text-muted);
 }
 
-.lime-appearance-swatch.is-selected {
+.lime-appearance-swatch.is-selected,
+.lime-pattern-thumb.is-selected {
   border-color: var(--soil-bg-elevated);
   outline: 2px solid var(--selected-border-subtle-default, var(--soil-text));
   outline-offset: 1px;
@@ -637,7 +679,7 @@ body::before {
   cursor: not-allowed;
 }
 
-.lime-appearance-swatches.is-disabled {
+.lime-appearance-grid.is-disabled {
   opacity: 0.5;
 }
 
@@ -647,38 +689,24 @@ body::before {
   color: var(--soil-text-muted);
 }
 
-/* LIME-52 — pattern thumbnails. Square, not round like the canvas
-   swatches (they're previewing a *texture*, not a flat colour, and a
-   circle would clip a repeating tile's own corners oddly at this size).
-   The mask-image itself is set inline per swatch (app.js) — this rule
-   just gives every one of them the same visible fill to mask (dark ink
-   at a much higher, thumbnail-only opacity than the actual low-intensity
-   production layer, body::before, ever uses — a preview needs to read
-   clearly at 36px, not match the real subtlety 1:1). */
-.lime-pattern-thumbs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--seed-space-2);
-  padding: 0 var(--seed-space-2) var(--seed-space-2);
+/* LIME-52-fix: an upload's own inline rejection message (an oversized
+   file, an unsupported type) — the Profile form's own setFieldError
+   pattern, not a native window.alert(). Empty and invisible until
+   handleAppearanceUploadChange sets it. */
+.lime-appearance-upload-error {
+  margin: 0 var(--seed-space-2) var(--seed-space-2);
+  font-size: var(--seed-text-xs);
+  color: var(--bad-text-normal-default, var(--soil-text-muted));
 }
 
-.lime-settings__compact-control > .lime-pattern-thumbs {
-  padding: 0;
+.lime-appearance-upload-error:empty {
+  display: none;
 }
 
-.lime-pattern-thumb {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--seed-radius-md);
-  border: 2px solid transparent;
-  outline: 1px solid var(--soil-border-subtle);
-  outline-offset: 1px;
-  background-color: var(--soil-bg-elevated);
-  cursor: pointer;
-  padding: 0;
-  flex-shrink: 0;
-}
-
+/* A mask-based preview (a built-in preset, a user tile, or an uploaded
+   Texture) — dark ink at a much higher, thumbnail-only opacity than the
+   real low-intensity production layer (body::before) ever uses, so it
+   still reads clearly at 36px. */
 .lime-pattern-thumb[style*="mask-image"] {
   background-color: var(--soil-text);
   mask-repeat: repeat;
@@ -702,30 +730,51 @@ body::before {
   font-size: 16px;
 }
 
-.lime-pattern-thumb:hover {
-  outline-color: var(--soil-text-muted);
+/* LIME-52-fix: an active upload is its own tile (its Photo preview
+   shown via background-image, cover; a Texture preview via the same
+   mask treatment as every other pattern tile above), with a small x
+   overlaid to delete it — replaces LIME-52's separate "Remove" text
+   button entirely (the brief's own explicit ask: "None" now does that
+   job for every pattern kind, uploads included). */
+.lime-pattern-thumb--upload-preview {
+  background-size: cover;
+  background-position: center;
 }
 
-.lime-pattern-thumb.is-selected {
-  border-color: var(--soil-bg-elevated);
-  outline: 2px solid var(--selected-border-subtle-default, var(--soil-text));
-  outline-offset: 1px;
+.lime-pattern-tile__delete {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--seed-radius-full);
+  background: var(--soil-bg-elevated);
+  outline: 1px solid var(--soil-border-subtle);
+  color: var(--soil-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.lime-pattern-tile__delete:hover {
+  color: var(--bad-text-normal-default, var(--soil-text));
+  outline-color: var(--bad-border-normal-default, var(--soil-text-muted));
 }
 
 .lime-pattern-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--seed-space-3);
-  padding: 0 var(--seed-space-2);
+  padding: 0 var(--seed-space-2) var(--seed-space-2);
 }
 
-.lime-settings__compact-control > .lime-pattern-controls {
+.lime-settings__stacked-control > .lime-pattern-controls {
   padding: var(--seed-space-2) 0 0;
-}
-
-.lime-pattern-remove {
-  width: auto;
-  color: var(--bad-text-normal-default, var(--soil-text-muted));
 }
 
 /* ─────────────────────────────────────────────────────
@@ -2312,6 +2361,31 @@ body::before {
 .lime-settings__compact-control .lime-settings__field-error {
   align-self: flex-end;
   text-align: right;
+}
+
+/* LIME-52-fix — label-above, control-below (Mode/Canvas/Pattern), not
+   label-left/control-right like the compact rows above: a tab strip or
+   a 4-column grid needs its own full-width row, matching the header
+   popover's own label-above structure (.lime-menu__label + control)
+   instead of the ≤280px-wide value slot compactRowHtml was built for. */
+.lime-settings__stacked-row {
+  padding: var(--seed-space-2) 0;
+  border-bottom: 1px solid var(--soil-border-subtle);
+}
+
+.lime-settings__stacked-row:last-child {
+  border-bottom: none;
+}
+
+.lime-settings__stacked-label {
+  margin-bottom: var(--seed-space-2);
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text);
+}
+
+.lime-settings__stacked-control {
+  min-width: 0;
 }
 
 /* ── Login & security's own row style — a label with a muted value

@@ -215,6 +215,249 @@ const LimeAppearance = (function () {
     return 'data:image/svg+xml,' + encodeURIComponent(patternMaskSvg(presetId));
   }
 
+  // LIME-52-fix — user-supplied tiles from public/assets/patterns/.
+  // file:// has no directory listing and no fetch() access (LIME-44's
+  // own finding, still true), so the only way to know what's actually
+  // there is to try loading a fixed list of plausible filenames as real
+  // <img> elements (which DO work over file://, unlike fetch/XHR) and
+  // keep whichever ones succeed. Covers common seamless-tile names from
+  // Hero Patterns / Subtle Patterns-style libraries, both extensions.
+  // The folder was still empty when this ran (confirmed, not assumed —
+  // TEND.md) — this exists so dropping real files in later needs no
+  // code change, not because any of these names are known to exist.
+  const USER_TILE_CANDIDATES = [
+    'paper', 'linen', 'dots', 'grid', 'diagonal', 'topography', 'texture',
+    'noise', 'wave', 'grain', 'weave', 'stripes',
+  ];
+  const USER_TILE_EXTENSIONS = ['svg', 'png'];
+  let userTilesPromise = null;
+
+  function probeImage(src) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
+  // Resolves an array of { id, label, src, isVector } for every
+  // candidate file that actually loaded — appended after the 4 built-ins
+  // wherever PATTERN_PRESETS is read for rendering. Cached (probed once
+  // per page load, not on every menu open).
+  function detectUserPatternTiles() {
+    if (userTilesPromise) return userTilesPromise;
+    const attempts = [];
+    USER_TILE_CANDIDATES.forEach((name) => {
+      USER_TILE_EXTENSIONS.forEach((ext) => {
+        const src = 'assets/patterns/' + name + '.' + ext;
+        attempts.push(probeImage(src).then((img) => (img ? {
+          id: 'user-' + name + '-' + ext, label: name, src,
+          isVector: ext === 'svg',
+          // An SVG's "natural" size is usually its viewBox, not a
+          // meaningful tile pixel size — fall back to a fixed,
+          // reasonable tile for those; a PNG's real dimensions tile at
+          // their own actual size, same as an upload-texture would.
+          width: ext === 'svg' ? 120 : img.naturalWidth,
+          height: ext === 'svg' ? 120 : img.naturalHeight,
+        } : null)));
+      });
+    });
+    userTilesPromise = Promise.all(attempts).then((results) => results.filter(Boolean));
+    return userTilesPromise;
+  }
+
+  // ── Uploads (LIME-52-fix) ────────────────────────────────────
+  // LIME-52's own upload mechanism (an opaque image, live mix-blend-mode
+  // + low opacity) is why the user's PNG upload "didn't show" — an
+  // ordinary, mostly-light photo under multiply blend at 10% opacity is
+  // close to imperceptible against an already-light canvas (confirmed
+  // live, reproduced with a representative test PNG, before writing any
+  // of the code below: TEND.md has the exact before/after). Replaced
+  // entirely: uploads are processed **once, on a canvas, at upload
+  // time** into one of two treatments, never blended live against the
+  // canvas at all.
+  const UPLOAD_ACCEPTED_MIME = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'];
+  const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+  const UPLOAD_TEXTURE_MAX_DIM = 400;
+  const UPLOAD_PHOTO_MAX_DIM = 1600;
+  const UPLOAD_PHOTO_BLUR_PX = 10;
+  const UPLOAD_SCRIM_FLOOR = 0.75;
+
+  function validateUploadFile(file) {
+    if (!UPLOAD_ACCEPTED_MIME.includes(file.type)) {
+      return 'Please choose a PNG, JPG, WebP, GIF or SVG image (that looked like a ' + (file.type || 'file type this app doesn\'t recognise') + ').';
+    }
+    if (file.size > UPLOAD_MAX_BYTES) {
+      return 'Please choose an image under 10 MB.';
+    }
+    return null;
+  }
+
+  // Small/square-ish images default to Texture; larger ones default to
+  // Photo. Either way the user can switch via the toggle shown once an
+  // upload exists.
+  function defaultTreatmentFor(width, height) {
+    const longest = Math.max(width, height);
+    const ratio = width / height;
+    const squareish = ratio >= 0.8 && ratio <= 1.25;
+    return (longest <= 600 || squareish) ? 'texture' : 'photo';
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read this image.')); };
+      img.src = url;
+    });
+  }
+
+  function relLum255(r, g, b) { return 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+
+  // Grayscale -> auto-level (stretch the real min/max to 0-255, so a
+  // faint, low-contrast texture still registers once tinted) -> a mild
+  // gamma curve (caps density: a busy source photo's alpha doesn't
+  // flatten into solid noise once repeated at a small tile size) ->
+  // downscale to <=400px. Alpha *is* the processed signal; RGB is set
+  // to flat white since only alpha is ever read (mask-image's default
+  // mode), matching every built-in preset.
+  function processTexture(img) {
+    const scale = Math.min(1, UPLOAD_TEXTURE_MAX_DIM / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+    const gray = new Uint8ClampedArray(w * h);
+    let min = 255, max = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const g = Math.round(relLum255(data[i], data[i + 1], data[i + 2]));
+      gray[i / 4] = g;
+      if (g < min) min = g;
+      if (g > max) max = g;
+    }
+    const range = Math.max(max - min, 1);
+    for (let i = 0; i < data.length; i += 4) {
+      const levelled = (gray[i / 4] - min) / range; // 0-1, auto-levelled
+      const alpha = Math.round(255 * Math.pow(levelled, 1.4)); // gentle gamma, not a hard clip
+      data[i] = 255; data[i + 1] = 255; data[i + 2] = 255; data[i + 3] = alpha;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return { canvas, width: w, height: h };
+  }
+
+  // Downscale to <=1600px with a blur baked in at processing time
+  // (Canvas2D's own filter, applied once here — never a live CSS filter
+  // repainted every frame). Also returns the *processed* image's own
+  // luminance range (sampled from a tiny 32x32 copy — plenty for a
+  // min/max scan) so applyPattern can compute a scrim that actually
+  // guarantees contrast against how the photo really looks once
+  // blurred, not the sharp original.
+  function processPhoto(img) {
+    const scale = Math.min(1, UPLOAD_PHOTO_MAX_DIM / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.filter = 'blur(' + UPLOAD_PHOTO_BLUR_PX + 'px)';
+    ctx.drawImage(img, 0, 0, w, h);
+    ctx.filter = 'none';
+    const sample = document.createElement('canvas');
+    sample.width = 32; sample.height = 32;
+    sample.getContext('2d').drawImage(canvas, 0, 0, 32, 32);
+    const data = sample.getContext('2d').getImageData(0, 0, 32, 32).data;
+    let lumMin = 255, lumMax = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const g = relLum255(data[i], data[i + 1], data[i + 2]);
+      if (g < lumMin) lumMin = g;
+      if (g > lumMax) lumMax = g;
+    }
+    return { canvas, width: w, height: h, lumMin: Math.round(lumMin), lumMax: Math.round(lumMax) };
+  }
+
+  function canvasToBlob(canvas) {
+    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
+  }
+
+  // Orchestrates the whole "file -> stored, processed pattern" pipeline.
+  // Both treatments are processed and uploaded up front (not just the
+  // chosen default) so the Texture<->Photo toggle can switch instantly
+  // afterwards without re-reading the original file or reprocessing —
+  // each treatment reads its own already-uploaded path.
+  // Resolves { kind: 'upload', texturePath, photoPath, treatment,
+  // isVector, width, height, lumMin?, lumMax? } or rejects with a
+  // message safe to show the user directly.
+  function processUploadFile(file, treatmentOverride) {
+    const error = validateUploadFile(file);
+    if (error) return Promise.reject(new Error(error));
+
+    if (file.type === 'image/svg+xml') {
+      // Already a vector mask, used exactly like a built-in preset — no
+      // canvas processing needed or possible (SVG dimensions are
+      // usually viewBox-relative, not meaningful pixel measurements),
+      // and no Photo form (nothing to blur/cover with a flat vector).
+      return window.LimeStore.uploadAttachment(file, { conversationId: 'appearance' }).then(({ path }) => ({
+        kind: 'upload', texturePath: path, photoPath: null, treatment: 'texture', isVector: true, width: 120, height: 120,
+      }));
+    }
+
+    return loadImageFromFile(file).then((img) => {
+      const treatment = treatmentOverride || defaultTreatmentFor(img.naturalWidth, img.naturalHeight);
+      const texture = processTexture(img);
+      const photo = processPhoto(img);
+      URL.revokeObjectURL(img.src);
+      return Promise.all([canvasToBlob(texture.canvas), canvasToBlob(photo.canvas)]).then(([textureBlob, photoBlob]) => {
+        const textureFile = new File([textureBlob], 'pattern-texture.png', { type: 'image/png' });
+        const photoFile = new File([photoBlob], 'pattern-photo.png', { type: 'image/png' });
+        return Promise.all([
+          window.LimeStore.uploadAttachment(textureFile, { conversationId: 'appearance' }),
+          window.LimeStore.uploadAttachment(photoFile, { conversationId: 'appearance' }),
+        ]).then(([textureResult, photoResult]) => ({
+          kind: 'upload',
+          texturePath: textureResult.path,
+          photoPath: photoResult.path,
+          treatment,
+          isVector: false,
+          width: texture.width,
+          height: texture.height,
+          lumMin: photo.lumMin,
+          lumMax: photo.lumMax,
+        }));
+      });
+    });
+  }
+
+  // The scrim opacity that guarantees >= 4.5:1 for on-canvas text
+  // against the photo's own darkest AND lightest processed pixels —
+  // computed fresh on every apply (cheap: a short numeric search, not
+  // re-processing the image) from the lumMin/lumMax stored once at
+  // upload time, so it stays correct across a later tone or mode
+  // switch, not just the combination active when the photo was
+  // uploaded. Floored at 75% per the brief regardless of how safe a
+  // lower value would measure; prefers-reduced-transparency raises that
+  // floor further.
+  function computeScrimOpacity(scrimHex, textHex, lumMin, lumMax) {
+    const scrim = hexToRgb01(scrimHex);
+    const reducedTransparency = window.matchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
+    const floor = reducedTransparency ? 0.9 : UPLOAD_SCRIM_FLOOR;
+    for (let o = floor; o <= 1; o += 0.01) {
+      const worstDark = mixOverGray(scrim, lumMin, o);
+      const worstLight = mixOverGray(scrim, lumMax, o);
+      if (contrastRatio(textHex, worstDark) >= 4.5 && contrastRatio(textHex, worstLight) >= 4.5) return Math.round(o * 100) / 100;
+    }
+    return 1;
+  }
+  function hexToRgb01(hex) { hex = hex.replace('#', ''); return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)); }
+  function mixOverGray(scrimRgb, gray, opacity) { return scrimRgb.map((c) => Math.round(c * opacity + gray * (1 - opacity))); }
+  function relLumFromRgb([r, g, b]) { const c = [r, g, b].map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
+  function contrastRatio(hexA, rgbB) { const la = relLumFromRgb(hexToRgb01(hexA)), lb = relLumFromRgb(rgbB); const hi = Math.max(la, lb), lo = Math.min(la, lb); return (hi + 0.05) / (lo + 0.05); }
+
   function applyPattern(pattern) {
     const root = document.documentElement.style;
     const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
@@ -223,32 +466,48 @@ const LimeAppearance = (function () {
 
     root.removeProperty('--lime-pattern-mask');
     root.removeProperty('--lime-pattern-tint');
+    root.removeProperty('--lime-pattern-size');
     root.removeProperty('--lime-pattern-image');
-    root.removeProperty('--lime-pattern-blend');
+    root.removeProperty('--lime-pattern-scrim');
+    root.removeProperty('--lime-pattern-blend'); // LIME-52's own live-blend mechanism, retired below
     root.removeProperty('--lime-pattern-opacity');
+    document.documentElement.removeAttribute('data-pattern-treatment');
 
     if (kind === 'preset') {
       root.setProperty('--lime-pattern-mask', 'url("' + patternMaskDataUri(pattern.presetId) + '")');
       root.setProperty('--lime-pattern-size', PATTERN_TILE_SIZE[pattern.presetId] || '24px 24px');
-      // Tints toward ink in light, white in dark — matching LIME-50-fix's
-      // own established convention for every other tone-relative layer
-      // (surface/hover/active). Mixing toward ink unconditionally (an
-      // earlier draft of this function did) would darken an
-      // already-dark canvas further in dark mode instead of lifting it,
-      // fighting that convention rather than following it — found while
-      // writing this brief's own contrast verification, not visually.
-      const tintTarget = theme === 'dark' ? 'white' : 'var(--seed-soil-900)';
-      root.setProperty('--lime-pattern-tint', 'color-mix(in srgb, ' + tintTarget + ' ' + intensity.tintPct + '%, transparent)');
-    } else if (kind === 'upload' && pattern.path && window.LimeStore) {
-      // getAttachmentUrl is async (IndexedDB) — applies once resolved,
-      // same pattern LIME-45's own photo backgrounds used for the same
-      // reason (a fresh object URL isn't available synchronously).
-      LimeStore.getAttachmentUrl(pattern.path).then((url) => {
-        root.setProperty('--lime-pattern-image', 'url("' + url + '")');
-        root.setProperty('--lime-pattern-blend', theme === 'dark' ? 'screen' : 'multiply');
-        root.setProperty('--lime-pattern-opacity', String(intensity.blendOpacity));
+      applyPresetTint(root, theme, intensity.tintPct);
+    } else if (kind === 'user-tile' && pattern.src) {
+      root.setProperty('--lime-pattern-mask', 'url("' + pattern.src + '")');
+      root.setProperty('--lime-pattern-size', (pattern.width || 120) + 'px ' + (pattern.height || 120) + 'px');
+      applyPresetTint(root, theme, intensity.tintPct);
+    } else if (kind === 'upload' && window.LimeStore) {
+      const path = pattern.treatment === 'photo' ? pattern.photoPath : pattern.texturePath;
+      if (!path) return;
+      LimeStore.getAttachmentUrl(path).then((url) => {
+        if (pattern.treatment === 'photo') {
+          document.documentElement.setAttribute('data-pattern-treatment', 'photo');
+          const canvasHex = getComputedStyle(document.documentElement).getPropertyValue('--seed-soil-0').trim() || (theme === 'dark' ? '#131B17' : '#F9F8F4');
+          const textHex = getComputedStyle(document.documentElement).getPropertyValue('--soil-text-muted').trim() || '#787068';
+          const scrimOpacity = computeScrimOpacity(canvasHex, textHex, pattern.lumMin != null ? pattern.lumMin : 0, pattern.lumMax != null ? pattern.lumMax : 255);
+          const scrimRgba = 'rgba(' + hexToRgb01(canvasHex).join(',') + ',' + scrimOpacity + ')';
+          root.setProperty('--lime-pattern-image', 'url("' + url + '")');
+          root.setProperty('--lime-pattern-scrim', 'linear-gradient(' + scrimRgba + ',' + scrimRgba + ')');
+        } else {
+          // 'texture' (raster, processed; or an uploaded SVG used as-is)
+          root.setProperty('--lime-pattern-mask', 'url("' + url + '")');
+          root.setProperty('--lime-pattern-size', pattern.isVector ? '120px 120px' : (pattern.width || 120) + 'px ' + (pattern.height || 120) + 'px');
+          applyPresetTint(root, theme, intensity.tintPct);
+        }
       }).catch(console.error);
     }
+  }
+
+  // Shared by presets, user tiles, and upload-texture — the one formula
+  // every mask-based pattern tints through.
+  function applyPresetTint(root, theme, tintPct) {
+    const tintTarget = theme === 'dark' ? 'white' : 'var(--seed-soil-900)';
+    root.setProperty('--lime-pattern-tint', 'color-mix(in srgb, ' + tintTarget + ' ' + tintPct + '%, transparent)');
   }
 
   function init() {
@@ -260,6 +519,7 @@ const LimeAppearance = (function () {
 
   return {
     CANVAS_P, CANVAS_LABELS, makeCanvasRamp, applyCanvas, applyTheme, resolveTheme, init,
+    detectUserPatternTiles, processUploadFile, validateUploadFile, defaultTreatmentFor,
     PATTERN_PRESETS, PATTERN_INTENSITY, patternMaskDataUri, applyPattern,
   };
 })();
