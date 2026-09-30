@@ -106,10 +106,67 @@ window.addEventListener('pagehide', () => {
 // click) are delegated listeners now instead of one-time scans, exactly
 // so they don't care when — or whether — a given row exists yet.
 const PRESENCE = { online: 'active', busy: 'busy', offline: 'away' };
-const PRESENCE_LABEL = { active: 'Active', busy: 'Busy', away: 'Away' };
+// LIME-57-fixb: 'dnd' has no data status yet (presenceFor never returns
+// it — same as before this brief) but stays styled/labelled, per the
+// brief's own "this replaces today's red DND; the user can ask for red
+// back at the gate."
+const PRESENCE_LABEL = { active: 'Active', busy: 'Busy', away: 'Away', dnd: 'Do not disturb' };
 
 function presenceFor(status) {
   return PRESENCE[status] || 'away';
+}
+
+// LIME-57-fixb: the four presence states, drawn as small inline SVGs
+// instead of a CSS box-shadow ring (the old ring read the wrong colour
+// wherever the avatar itself wasn't --soil-bg-canvas — hovered/selected
+// rows, non-Warm tones, dark). One 24x24 viewBox per state; the actual
+// on-screen size comes entirely from .lime-presence's own CSS
+// width/height (per .lime-avatar-frame--xs/sm/md/lg/xl), so a single
+// SVG design scales cleanly to every size without redrawing it.
+// Busy/DND's notch is an SVG <mask>, not a CSS mask — it never needs to
+// interact with the avatar's own mask at all, so there's no risk of it
+// clipping into the avatar (item 5's own requirement, satisfied
+// structurally: this whole SVG lives inside .lime-presence, which is a
+// sibling of the masked avatar, never a descendant of it).
+// showZ is dropped at xs/sm (7-8px) per the brief — the letter can't be
+// read at that size, but the notch/gap alone still shows the state.
+let presenceMaskUid = 0;
+function presenceIconSvg(state, showZ) {
+  const uid = 'lime-presence-mask-' + (presenceMaskUid++);
+  const z = showZ
+    ? '<text x="17" y="9.5" font-size="8" font-weight="700" text-anchor="middle" font-family="var(--seed-font-ui)" fill="CURRENT">z</text>'
+    : '';
+  if (state === 'active') {
+    return '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="var(--good-bg-bold-default)"/></svg>';
+  }
+  if (state === 'busy') {
+    return '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">'
+      + '<mask id="' + uid + '"><rect width="24" height="24" fill="#fff"/><circle cx="17.5" cy="6.5" r="6.5" fill="#000"/></mask>'
+      + '<circle cx="12" cy="12" r="10" fill="var(--good-bg-bold-default)" mask="url(#' + uid + ')"/>'
+      + z.replace('CURRENT', 'var(--good-bg-bold-default)')
+      + '</svg>';
+  }
+  if (state === 'dnd') {
+    return '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">'
+      + '<mask id="' + uid + '"><rect width="24" height="24" fill="#fff"/><circle cx="17.5" cy="6.5" r="6.5" fill="#000"/></mask>'
+      + '<circle cx="12" cy="12" r="9" fill="none" stroke="var(--soil-text-muted)" stroke-width="3" mask="url(#' + uid + ')"/>'
+      + z.replace('CURRENT', 'var(--soil-text-muted)')
+      + '</svg>';
+  }
+  // away (the default from presenceFor — a hollow ring, no notch/z)
+  return '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="var(--soil-text-muted)" stroke-width="3"/></svg>';
+}
+
+// size is the avatar-frame size ('xs'|'sm'|'md'|'lg'|'xl') — only 'lg'
+// has a live caller today (survey, TEND.md), but every size is built
+// correctly per the brief's own table. inline is LIME-57-fixb's own
+// .lime-presence--inline case (profile text) — no notch/frame involved
+// there, so it's always shown at full size with the z.
+function presenceHtml(status, size, inline) {
+  const state = presenceFor(status);
+  const showZ = inline || size === 'md' || size === 'lg' || size === 'xl';
+  const cls = 'lime-presence' + (inline ? ' lime-presence--inline' : '');
+  return '<span class="' + cls + '" data-presence="' + state + '" role="img" aria-label="' + PRESENCE_LABEL[state] + '">' + presenceIconSvg(state, showZ) + '</span>';
 }
 
 function shortName(name) {
@@ -1990,7 +2047,6 @@ function initMessagesList() {
   }
 
   function messageHtml(message, sender, isSent) {
-    const presence = presenceFor(sender.status);
     // LIME-35: data-profile-id on both the avatar and the sender name —
     // the one delegated [data-profile-id] listener (top-level, below)
     // opens that sender's own details, never a hard-coded person. Empty
@@ -1999,7 +2055,7 @@ function initMessagesList() {
     return '<div class="lime-message ' + (isSent ? 'lime-message--sent' : 'lime-message--received') + '" data-message-id="' + message.id + '">'
       + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
       + '<span class="seed-avatar seed-avatar--lg lime-avatar" ' + avatarAttrsHtml(sender) + ' data-profile-id="' + escapeHtml(sender.id || '') + '"></span>'
-      + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
+      + presenceHtml(sender.status, 'lg')
       + '</span>'
       + '<div class="lime-message__col">'
       + '<div class="lime-message__meta">'
@@ -2091,10 +2147,9 @@ function initMessagesList() {
 
   function directAvatarHtml(conversation) {
     const other = otherParticipants(conversation)[0];
-    const presence = presenceFor(other ? other.status : 'offline');
     return '<span class="lime-avatar-frame lime-avatar-frame--lg">'
       + '<span class="seed-avatar seed-avatar--lg lime-avatar" ' + avatarAttrsHtml(other) + '></span>'
-      + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
+      + presenceHtml(other ? other.status : 'offline', 'lg')
       + '</span>';
   }
 
@@ -2598,7 +2653,6 @@ function initMessagesList() {
   }
 
   function recentItemHtml(person, { isMe, unread, active } = {}) {
-    const presence = presenceFor(person.status);
     const classes = ['lime-recent__item'];
     if (active) classes.push('lime-recent__item--active');
     if (unread) classes.push('lime-recent__item--unread');
@@ -2612,15 +2666,16 @@ function initMessagesList() {
     // mechanism — reused deliberately, not reinvented).
     return '<div class="' + classes.join(' ') + '" data-search-text="' + escapeHtml(searchText) + '"'
       + (isMe ? ' data-profile-id="' + person.id + '"' : ' data-person-id="' + person.id + '"') + '>'
-      // LIME-57 Phase 2: .lime-avatar-ring always wraps the frame now —
-      // at padding:0 (the default, see lime.css) it's invisible, so a
-      // read row's markup renders pixel-identical to before; only
-      // .lime-recent__item--unread on the ancestor gives it a fill.
-      + '<span class="lime-avatar-ring">'
+      // LIME-57-fixb: .lime-avatar-ring (LIME-57's own wrapper-around-
+      // the-frame) is gone — it was always masked, and since it was an
+      // ancestor of .lime-presence, the presence dot was always clipped
+      // into the lime shape too, unread or not (the bug this brief
+      // fixes). The unread ring is now .lime-avatar-frame::after
+      // (lime.css), a layer BEHIND the avatar, never an ancestor of
+      // anything — .lime-avatar-frame itself needs no change here.
       + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
       + '<span class="seed-avatar seed-avatar--lg lime-avatar" ' + avatarAttrsHtml(person) + '></span>'
-      + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
-      + '</span>'
+      + presenceHtml(person.status, 'lg')
       + '</span>'
       + '<span class="lime-recent__name">' + escapeHtml(label) + '</span>'
       + '</div>';
@@ -3636,7 +3691,7 @@ function renderProfilePanel(person) {
   let contact = '';
   if (person.email) contact += '<p><span class="dew dew-chat"></span>' + escapeHtml(person.email) + '</p>';
   if (localTime) contact += '<p><span class="dew dew-calendar"></span>' + escapeHtml(localTime) + '</p>';
-  contact += '<p><span class="lime-presence lime-presence--inline" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>' + PRESENCE_LABEL[presence] + '</p>';
+  contact += '<p>' + presenceHtml(person.status, null, true) + PRESENCE_LABEL[presence] + '</p>';
   html += '<section class="lime-profile__section"><h3>Contact Information</h3>' + contact + '</section>';
 
   if (isOwn) {
