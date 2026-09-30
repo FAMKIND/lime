@@ -1945,3 +1945,40 @@ Plus: with a second Lime tab open, the upload still completes (never hangs); the
 - `public/assets/patterns/`'s 6 sample files were copied to the scratchpad before use (per the brief's own instruction, since LIME-53b will delete the originals from the repo later) and were not themselves touched, deleted, or committed — confirmed by `git status` showing that directory still untracked and unchanged.
 
 **Gate:** in Firefox, **hard-reload first (⌘⇧R)** — this fix has no effect if the browser is still running pre-fix3 cached JS. Then upload one of your images from the palette menu, and another from Settings. Each time, the background should visibly change and the upload tile should show your image. If it can't, a message should say why. Nothing should ever just silently do nothing.
+
+## LIME-52-fix5 (continued) — real Firefox 157, could not reproduce
+
+**The user's own follow-up (2026-09-30), after checking LIME-52-fix5 (`173765b`) with a hard reload in their real Firefox: still "nothing happens," and "certainly happening in firefox because chrome it works."** Plot re-opened the brief with a hard finding: `firefox.launch()` (Playwright) runs Playwright's own patched Firefox build (Juggler automation branch), not the user's installed `/Applications/Firefox.app` — every "headed Firefox" verification in this whole LIME-52 sequence, including LIME-52-fix5's own 14-cell matrix, was run against that patched build, never the real one. A pass there was never proof the real browser worked.
+
+**Driving the real Firefox.** Playwright's own `executablePath` override was tried first and fails immediately — the stock Firefox binary has no Juggler pipe, so Playwright's launch handshake times out. Installed `puppeteer-core` (25.12.0) instead, which supports **WebDriver BiDi** — modern stock Firefox's own native remote-automation protocol — directly: `puppeteer.launch({ browser: 'firefox', protocol: 'webDriverBiDi', executablePath: '/Applications/Firefox.app/Contents/MacOS/firefox' })`. Confirmed via `navigator.userAgent` (`rv:157.0`) that this is genuinely the user's installed Firefox 157, not a bundled one, on a fresh throwaway profile each run (never the user's own, per the standing rule).
+
+**Every hypothesis in the revised brief, tested directly in real Firefox 157, both `file://` and `http://localhost` (a server started from the repo root, per the brief's own requirement):**
+
+| # | Hypothesis | Test | Result |
+|---|---|---|---|
+| 5 | `file://` origin rules break IndexedDB / Blob / `canvas.toBlob` | A direct primitive probe: open+write IndexedDB, read back, make a `blob:` URL, load it as `<img>`, use that same URL as a CSS `background-image`, draw the image into a second canvas and call `getImageData`/`toBlob` on it — the exact chain `processUploadFile` performs | **All OK**, in both real Firefox and real Chrome. Firefox does report `location.origin` as the literal string `"null"` under `file://` (Chrome reports `"file://"`) — a real, confirmed difference — but it didn't break any of the tested primitives. |
+| 6 | The hidden input's `.click()`/`change` doesn't work in stock Firefox | The real app's real Upload tile, real click, `page.waitForFileChooser()` (a genuine native-dialog wait, not `setInputFiles`) | **Filechooser fired and `change` was delivered correctly**, every time — popover and Settings, `file://` and `http://localhost`, and with 4 different privacy-hardened preference sets applied (`privacy.resistFingerprinting`, ETP Strict, `security.fileuri.strict_origin_policy`, tracking-protection storage blocking). |
+| — | Shared-storage control: does the chat composer's own photo attachment (LIME-38, the same IndexedDB) work in real Firefox? | Clicked the real "Attach" button, picked a file via a real filechooser | **Works** — 6 attachment chips rendered correctly. Rules out a broken storage layer generally. |
+
+**Full reproduction matrix, real Firefox 157, real native file dialog — 4/4 passing (both surfaces × `file://`/`http://localhost`), plus all 4 hardened-privacy variants also passing:** every one of these applied the picked image, selected the upload tile, and produced a real, valid `{kind:'upload', texturePath, photoPath, ...}` pattern — using `ripples.png` from the user's own sample set each time (the file most likely to expose the "applied but invisible" bug LIME-52-fix5's first pass fixed, since it's the least-invisible-by-default of the 6, chosen deliberately to isolate this round's testing from that already-fixed issue).
+
+**Conclusion: this could not be reproduced.** Every hypothesis in the revised brief was tested directly against the user's actual installed Firefox binary — not assumed, not inferred from Playwright's build — and every one of them passed, including with several privacy-hardened preference profiles a real user might plausibly have enabled. **No code change was made this round** — there is nothing in the reproduction to fix, and changing code without a confirmed, reproduced cause would be exactly the kind of guess this brief's own discipline (and this whole LIME-52 sequence's repeated lesson: test before assuming) argues against.
+
+**What's left, that only the user's own machine can answer:** since a clean, throwaway profile can't reproduce it, the most likely remaining explanations are specific to the user's own real Firefox profile — a browser extension (an ad/privacy blocker interfering with blob: URLs or IndexedDB specifically), a corrupted or quota-exceeded IndexedDB from earlier testing, a full disk, or (still open, and impossible to rule out from here) genuinely stale cached JS despite a reported hard reload. Per this brief's own explicit fallback for exactly this situation, the next step needs the user directly:
+
+1. Open the browser console first — **⌥⌘K** in Firefox (or the ≡ menu → More Tools → Web Developer Tools → Console tab).
+2. Try the upload again — from either the palette menu or Settings, pick any image.
+3. Look at the console for **anything in red**, and copy/screenshot it exactly as shown, however technical-looking.
+
+That one piece of information — the real error, from the real environment — is the one thing this session cannot get on its own.
+
+**Verification performed, no code changed:**
+- Real Firefox 157 (`/Applications/Firefox.app`, via `puppeteer-core` + WebDriver BiDi) — confirmed by `navigator.userAgent`, not assumed. Real Chrome used as the explicit control (same binary family the user reported success with).
+- Both `file://` (the user's own preview method) and `http://localhost:8901/public/index.html` (a server started from the repo root, per the brief's own requirement to rule out a `file://`-only cause).
+- Both surfaces (the header popover and Settings → Preferences).
+- The real native file-picker dialog throughout (`page.waitForFileChooser()`), never `setInputFiles()` — the exact gap LIME-52-fix3's own matrix had.
+- 4 privacy-hardened Firefox preference profiles, on top of the default throwaway one.
+- A shared-storage control test (the chat composer's own photo attachment).
+- All throwaway profiles, confirmed by their own `puppeteer_dev_firefox_profile-*` path — the user's real profile was never touched, opened, or read.
+
+**Record:** this entry, plus the "Playwright's Firefox is not the user's Firefox" pattern plot already logged, now has a second real-Firefox confirmation attached: the underlying app code is verified correct against the real browser under every condition tested. Nothing is committed to `app.js`/`appearance.js`/`local-adapter.js` this round — this entry itself is the deliverable, committed to `TEND.md` alone.
