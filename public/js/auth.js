@@ -49,6 +49,17 @@ const LimeAuth = (function () {
     localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(creds));
   }
 
+  // LIME-48: the email-first flow's own "does this email already have an
+  // account" check, read before deciding whether to show the password
+  // step or the create step. Same definition of "taken" signUp's own
+  // uniqueness check already uses — a local credential OR a seed profile
+  // with no local credential yet both count as an existing account.
+  function accountExists(email) {
+    const normalized = (email || '').trim().toLowerCase();
+    const credentials = loadCredentials();
+    return !!(credentials[normalized] || LimeStore.findProfileByEmail(normalized));
+  }
+
   function bufToBase64(buf) {
     return btoa(String.fromCharCode(...new Uint8Array(buf)));
   }
@@ -268,7 +279,7 @@ const LimeAuth = (function () {
     localStorage.removeItem(CREDENTIALS_KEY);
   }
 
-  return { signUp, signInWithPassword, signOut, getSession, changeEmail, changePassword, resetCredentials, checkStorageWorks };
+  return { signUp, signInWithPassword, signOut, getSession, changeEmail, changePassword, resetCredentials, checkStorageWorks, accountExists };
 })();
 
 window.LimeAuth = LimeAuth;

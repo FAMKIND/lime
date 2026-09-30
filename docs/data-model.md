@@ -383,14 +383,31 @@ of `localStorage`:
    `supabase.auth.signOut()`. `resetCredentials()` and the seed-teacher
    demo-password fallback in `signInWithPassword` both drop out — neither
    has a Supabase equivalent.
-7. `public/signup.html` used to load the Supabase JS CDN script and
-   `public/js/supabase.js` (an unconfigured placeholder client) directly —
-   LIME-33 removed both script tags since nothing in the local flow used
-   them, but `supabase.js` itself is still sitting there, untouched and
-   unused. Either wire it up as the real client this checklist's
-   `SupabaseAdapter`/`auth.js` need, or delete it once its logic has been
-   absorbed elsewhere.
-8. Flip `LIME_BACKEND` from `'local'` to `'supabase'`.
+7. `auth.html` (LIME-48; replaces the old separate `login.html`/
+   `signup.html` pages, now thin redirects to it) used to load the
+   Supabase JS CDN script and `public/js/supabase.js` (an unconfigured
+   placeholder client) directly before LIME-33 removed both tags — neither
+   is wired into the local flow. Either wire `supabase.js` up as the real
+   client this checklist's `SupabaseAdapter`/`auth.js` need, or delete it
+   once its logic has been absorbed elsewhere.
+8. **Google and Apple sign-in (LIME-48):** the two buttons on `auth.html`
+   are disabled with a "Soon" tag today — wire them to
+   `supabase.auth.signInWithOAuth({ provider: 'google' | 'apple' })` and
+   remove `disabled` (each provider also needs enabling in the Supabase
+   dashboard first). No local equivalent exists or is planned; this is a
+   Supabase-only capability.
+9. **Account enumeration (LIME-48):** `auth.html`'s email-first flow
+   calls `LimeAuth.accountExists(email)` to decide whether to show the
+   password step or the create step — which means the response itself
+   reveals whether an email has an account. That's an acceptable
+   simplification for the local demo (there's no real security boundary
+   to protect locally), but production should avoid it — either a
+   Supabase magic-link/OTP flow (no password step to reveal the
+   distinction at all) or a uniform "Continue" response regardless of
+   whether the email exists. `accountExists` itself has no Supabase
+   equivalent and should be removed, not reimplemented, when this is
+   built for real.
+10. Flip `LIME_BACKEND` from `'local'` to `'supabase'`.
 
 Nothing else changes — the store, the events, and every UI call site stay
 exactly as they are, because they were never talking to `localStorage` or

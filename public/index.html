@@ -11,9 +11,12 @@
        the same raw localStorage key that function keeps in sync,
        replacing the old, never-synced `lime-theme` read that used to
        live in app.js (LIME-45: "It also applies on login.html and
-       signup.html" — this exact block is duplicated on both, on
-       purpose; a shared external file would itself be a render-blocking
-       request this brief exists to avoid). -->
+       signup.html" — LIME-48 replaced those two with auth.html, which
+       carries this exact block too, duplicated on purpose; a shared
+       external file would itself be a render-blocking request this
+       brief exists to avoid. login.html/signup.html are now bare
+       redirects with no rendered content of their own, so they don't
+       need it). -->
   <script>
     (function () {
       try {

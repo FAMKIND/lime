@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- LIME-51: see index.html's identical block for the full reasoning —
+       sets data-theme before any stylesheet below starts downloading. -->
+  <script>
+    (function () {
+      try {
+        var mode = localStorage.getItem('lime-theme') || 'system';
+        var dark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+      } catch (e) { /* localStorage unavailable (private mode, etc.) — light default stands */ }
+    })();
+  </script>
+  <title>Sign In — Lime</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../vendor/seed/tokens/tokens.css">
+  <link rel="stylesheet" href="../vendor/seed/components/button/button.css">
+  <link rel="stylesheet" href="../vendor/seed/components/input/input.css">
+  <link rel="stylesheet" href="../vendor/seed/icons/dew/dist/dew.css">
+  <link rel="stylesheet" href="css/lime.css">
+  <link rel="stylesheet" href="css/auth.css">
+</head>
+<body>
+
+  <div class="lime-auth">
+    <div class="lime-auth__form">
+      <div class="lime-auth__form-inner">
+        <div class="lime-auth__form-logo">
+          <span data-brand-mark aria-hidden="true"><img src="assets/logo-mark.svg" alt=""></span>
+          <span data-brand-wordmark aria-hidden="true"><img src="assets/logo-wordmark.svg" alt=""></span>
+        </div>
+
+        <h1 class="lime-auth__headline">Where teachers connect</h1>
+        <p class="lime-auth__subline">Messages, groups and communities for educators</p>
+
+        <div class="lime-auth__card">
+          <div class="lime-auth__error" id="auth-error" role="alert"></div>
+
+          <!-- ── Email step ── -->
+          <div class="lime-auth__step" data-step="email">
+            <button type="button" class="seed-button seed-button--secondary seed-button--md lime-auth__oauth" disabled aria-label="Continue with Google (coming soon)" title="Coming soon">
+              Continue with Google<span class="lime-badge--soon">Soon</span>
+            </button>
+            <button type="button" class="seed-button seed-button--secondary seed-button--md lime-auth__oauth" disabled aria-label="Continue with Apple (coming soon)" title="Coming soon">
+              Continue with Apple<span class="lime-badge--soon">Soon</span>
+            </button>
+
+            <div class="lime-auth__divider"><span>OR</span></div>
+
+            <form id="auth-email-form" novalidate>
+              <div class="lime-auth__field">
+                <label class="seed-label" for="auth-email">Email</label>
+                <input class="seed-input" id="auth-email" name="email" type="email" placeholder="you@example.com" required autofocus>
+              </div>
+              <button type="submit" class="seed-button seed-button--primary seed-button--md lime-auth__submit">Continue with email</button>
+            </form>
+            <p class="lime-auth__legal">By continuing, you agree to Lime's <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</p>
+          </div>
+
+          <!-- ── Password step (an existing account) ── -->
+          <div class="lime-auth__step" data-step="password" hidden>
+            <h2 class="lime-auth__welcome" id="auth-welcome-heading">Welcome back</h2>
+            <p class="lime-auth__step-email" id="auth-password-email"></p>
+            <form id="auth-password-form" novalidate>
+              <div class="lime-auth__field">
+                <label class="seed-label" for="auth-password">Password</label>
+                <div class="lime-password-field">
+                  <input class="seed-input" id="auth-password" name="password" type="password" placeholder="Your password" required>
+                  <button type="button" class="lime-password-field__toggle" aria-label="Show password">
+                    <span class="dew dew-eye-closed"></span>
+                  </button>
+                </div>
+              </div>
+              <button type="submit" class="seed-button seed-button--primary seed-button--md lime-auth__submit">Sign in</button>
+            </form>
+            <a href="#" class="lime-auth__alt" data-back-to-email>Use a different email</a>
+          </div>
+
+          <!-- ── Create step (a new account) ── -->
+          <div class="lime-auth__step" data-step="create" hidden>
+            <h2 class="lime-auth__welcome">Create your account</h2>
+            <p class="lime-auth__step-email" id="auth-create-email"></p>
+            <form id="auth-create-form" novalidate>
+              <div class="lime-auth__field">
+                <label class="seed-label" for="auth-name">Display name</label>
+                <input class="seed-input" id="auth-name" name="displayName" type="text" placeholder="Jean Chung" required>
+              </div>
+              <div class="lime-auth__field">
+                <label class="seed-label" for="auth-create-password">Password</label>
+                <div class="lime-password-field">
+                  <input class="seed-input" id="auth-create-password" name="password" type="password" placeholder="At least 8 characters" minlength="8" required>
+                  <button type="button" class="lime-password-field__toggle" aria-label="Show password">
+                    <span class="dew dew-eye-closed"></span>
+                  </button>
+                </div>
+              </div>
+              <label class="lime-auth__terms">
+                <input class="seed-checkbox" type="checkbox" id="auth-terms" required>
+                <span>I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</span>
+              </label>
+              <button type="submit" class="seed-button seed-button--primary seed-button--md lime-auth__submit">Create account</button>
+            </form>
+            <a href="#" class="lime-auth__alt" data-back-to-email>Use a different email</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── The media panel — video/poster loaded via JS only at ≥768px
+         (auth.css hides this column below that anyway; this also skips
+         the network request, per the brief's own "the poster isn't
+         downloaded either" instruction).
+
+         auth-hero.webm/.mp4/-poster.jpg source: Pexels video 12896417,
+         "Businesswoman Doing A Presentation In An Office"
+         https://www.pexels.com/video/businesswoman-doing-a-presentation-in-an-office-12896417/
+         Pexels License — free for commercial use, no attribution
+         required. Re-encoded from the original 2160×3840/18.9MB source
+         (deleted, re-downloadable from the URL above): auth-hero.webm is
+         the original WebM untouched; auth-hero.mp4 is a 360×640/2.5MB
+         Safari fallback made with macOS's avconvert (Preset640x480 —
+         confirmed it preserves portrait orientation, no letterboxing);
+         auth-hero-poster.jpg is a frame captured at t=1s via a headless
+         browser canvas draw, 22.8KB. -->
+    <div class="lime-auth__media" id="auth-media">
+      <video id="auth-hero-video" muted loop playsinline aria-hidden="true"></video>
+      <button type="button" class="lime-auth__media-pause" id="auth-media-pause" aria-label="Pause video">
+        <span class="dew dew-play"></span>
+      </button>
+    </div>
+  </div>
+
+  <script src="js/password-toggle.js"></script>
+
+  <!-- Gitignored (*.local.js) — sets window.LIME_DEMO_CREDENTIALS locally.
+       404s silently if absent; LimeAuth.signInWithPassword handles that
+       case (only for a seed-teacher email — see its own comment). -->
+  <script src="js/demo-config.local.js"></script>
+  <script src="js/seed-data.js"></script>
+  <script src="js/local-adapter.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/auth.js"></script>
+  <script>
+    // ── The hero video: gated on viewport width and prefers-reduced-motion ──
+    (function () {
+      const video = document.getElementById('auth-hero-video');
+      const pauseBtn = document.getElementById('auth-media-pause');
+      const widthQuery = window.matchMedia('(min-width: 768px)');
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      let loaded = false;
+
+      function syncPauseButton() {
+        const playing = !video.paused && !video.ended;
+        // Same pattern as the voice-message player (app.js's
+        // syncAudioPlayerButton) — an inline two-bar SVG for pause (no
+        // dew-pause icon exists), dew-play for play.
+        pauseBtn.innerHTML = playing
+          ? '<svg class="lime-auth__media-pause-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>'
+          : '<span class="dew dew-play"></span>';
+        pauseBtn.setAttribute('aria-label', playing ? 'Pause video' : 'Play video');
+      }
+
+      function loadVideo() {
+        if (loaded) return;
+        loaded = true;
+        video.poster = 'assets/auth-hero-poster.jpg';
+        const webm = document.createElement('source');
+        webm.src = 'assets/auth-hero.webm';
+        webm.type = 'video/webm';
+        const mp4 = document.createElement('source');
+        mp4.src = 'assets/auth-hero.mp4';
+        mp4.type = 'video/mp4';
+        video.appendChild(webm);
+        video.appendChild(mp4);
+        video.load();
+        // WCAG 2.2.2: moving content longer than 5s needs a pause
+        // control (the button below already provides one) — but
+        // reduced-motion means not even starting it automatically.
+        if (!reduceMotion) video.play().catch(() => {});
+        syncPauseButton();
+      }
+
+      function checkVisibility() {
+        if (widthQuery.matches) loadVideo();
+      }
+      checkVisibility();
+      widthQuery.addEventListener('change', checkVisibility);
+
+      video.addEventListener('play', syncPauseButton);
+      video.addEventListener('pause', syncPauseButton);
+      pauseBtn.addEventListener('click', () => {
+        if (video.paused) video.play().catch(() => {});
+        else video.pause();
+      });
+    })();
+
+    // ── The email-first flow ──
+    // LIME-48: replaces separate login.html/signup.html pages — one
+    // email-first flow, decided by whether LimeAuth.accountExists(email)
+    // (LimeStore.init() below must run first, same reasoning login.html/
+    // signup.html already had: findProfileByEmail needs the real
+    // persisted snapshot loaded, not an empty just-booted cache).
+    LimeStore.init().then(() => {
+      const steps = document.querySelectorAll('.lime-auth__step');
+      const errorEl = document.getElementById('auth-error');
+      const params = new URLSearchParams(location.search);
+      // signup.html's own redirect carries ?step=create — forces the
+      // create step regardless of whether the email already has an
+      // account (if it does, LimeAuth.signUp's own "already in use"
+      // rejection surfaces normally, same as any other duplicate).
+      const forceCreate = params.get('step') === 'create';
+      let currentEmail = (params.get('email') || '').trim();
+
+      function showStep(name) {
+        steps.forEach((el) => { el.hidden = el.dataset.step !== name; });
+      }
+
+      function clearError() {
+        errorEl.classList.remove('is-visible');
+        errorEl.textContent = '';
+      }
+
+      function showError(message) {
+        errorEl.textContent = message;
+        errorEl.classList.add('is-visible');
+      }
+
+      function firstNameOf(name) {
+        return name.trim().split(/\s+/)[0];
+      }
+
+      // A ?reason= from the session gate, carried here via login.html's
+      // own query-string-preserving redirect (see login.html itself).
+      const gateReason = params.get('reason');
+      if (gateReason === 'storage') {
+        showError('Your browser isn\'t letting Lime save data on this computer right now — private browsing or blocked cookies/site data are the most common causes.');
+      } else if (gateReason === 'fileorigin') {
+        showError('Your account didn\'t carry over from the last page — Firefox treats each file:// page in this folder as separate. Try opening Lime through a local web address instead of a file:// link, or use Chrome for now.');
+      }
+
+      function goToAccountStep(email) {
+        currentEmail = email;
+        if (!forceCreate && LimeAuth.accountExists(email)) {
+          const profile = LimeStore.findProfileByEmail(email);
+          const welcomeName = profile ? firstNameOf(profile.display_name) : '';
+          document.getElementById('auth-welcome-heading').textContent = welcomeName ? ('Welcome back, ' + welcomeName) : 'Welcome back';
+          document.getElementById('auth-password-email').textContent = email;
+          document.getElementById('auth-password').value = '';
+          showStep('password');
+          document.getElementById('auth-password').focus();
+        } else {
+          document.getElementById('auth-create-email').textContent = email;
+          showStep('create');
+          document.getElementById('auth-name').focus();
+        }
+      }
+
+      if (currentEmail) goToAccountStep(currentEmail);
+
+      document.getElementById('auth-email-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        clearError();
+        const input = document.getElementById('auth-email');
+        if (!input.checkValidity()) { input.reportValidity(); return; }
+        goToAccountStep(input.value.trim());
+      });
+
+      document.getElementById('auth-password-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        clearError();
+        const password = document.getElementById('auth-password').value;
+        LimeAuth.signInWithPassword({ email: currentEmail, password }).then(() => {
+          // ?from=auth — LIME-33-fix's own marker (document.referrer is
+          // empty for file:// navigations in Firefox, confirmed
+          // directly — see TEND.md's LIME-33-fix entry).
+          window.location.href = 'index.html?from=auth';
+        }).catch((err) => {
+          showError(err.message);
+        });
+      });
+
+      document.getElementById('auth-create-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        clearError();
+        const displayName = document.getElementById('auth-name').value;
+        const password = document.getElementById('auth-create-password').value;
+        LimeAuth.signUp({ email: currentEmail, password, displayName }).then(() => {
+          window.location.href = 'index.html?from=auth';
+        }).catch((err) => {
+          showError(err.message);
+        });
+      });
+
+      document.querySelectorAll('[data-back-to-email]').forEach((link) => {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          clearError();
+          showStep('email');
+          document.getElementById('auth-email').focus();
+        });
+      });
+    });
+  </script>
+</body>
+</html>

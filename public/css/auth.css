@@ -1,9 +1,20 @@
-/* auth.css — Sign up / log in split-layout pages (LIME-05a). */
+/* auth.css — the email-first sign in / sign up flow (LIME-48), replacing
+   LIME-05a's split-illustration layout. Two columns: the form column (logo,
+   headline, card) on the left, a full-height rounded video panel on the
+   right — modeled on the user's own reference (Claude's sign-in page). */
 
+/* height, not min-height: the media column's <video> has no intrinsic
+   height of its own to size against (see .lime-auth__media below) until
+   this container gives the grid row a DEFINITE height — min-height alone
+   sets a floor, not a ceiling, so a tall portrait video's own aspect
+   ratio was free to stretch the whole row (and the page) past 100vh,
+   pushing the form column's bottom-most content off-screen (confirmed
+   live: the row was rendering ~1396px tall against a 905px viewport). */
 .lime-auth {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  min-height: 100vh;
+  height: 100vh;
+  background: var(--soil-bg-canvas);
 }
 
 /* Seed's .seed-input and .seed-button--md share the same padding and
@@ -21,74 +32,24 @@
   box-sizing: border-box;
 }
 
-.lime-auth__marketing {
-  position: relative;
-  background: var(--good-bg-subtle-default);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: var(--seed-space-8);
-  text-align: center;
-  gap: var(--seed-space-6);
-}
-
-.lime-auth__marketing-logo {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-2);
-}
-
-.lime-auth__marketing-logo [data-brand-mark] {
-  width: 40px;
-  height: 40px;
-}
-
-.lime-auth__marketing-logo [data-brand-wordmark] img {
-  height: 20px;
-}
-
-.lime-auth__tagline {
-  font-size: var(--seed-text-lg);
-  font-weight: var(--seed-weight-medium);
-  color: var(--soil-text);
-  max-width: 320px;
-  margin: 0;
-}
-
-.lime-auth__illustration {
-  width: 100%;
-  max-width: 320px;
-  aspect-ratio: 4 / 3;
-  border-radius: var(--seed-radius-lg);
-  background: var(--good-bg-subtle-hover);
+/* LIME-31-fix's neutral-focus rule (no green glow), scoped here the same
+   way lime.css's own .lime-settings copy is — a visible indicator still
+   has to remain for keyboard users, so the darker border stands in for
+   the removed shadow rather than nothing at all. */
+.lime-auth .seed-input:focus {
+  box-shadow: none;
+  border-color: var(--calm-border-bold-default);
 }
 
 .lime-auth__form {
-  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding: var(--seed-space-8);
-  background: var(--soil-bg-canvas);
-}
-
-.lime-auth__toggle {
-  position: absolute;
-  top: var(--seed-space-4);
-  right: var(--seed-space-4);
-  font-size: var(--seed-text-sm);
-  color: var(--soil-text-muted);
-}
-
-.lime-auth__toggle a {
-  color: var(--calm-text-bold-default);
-  font-weight: var(--seed-weight-medium);
-  text-decoration: none;
-}
-
-.lime-auth__toggle a:hover {
-  text-decoration: underline;
+  /* A definite-height row (above) means content taller than the
+     viewport needs its own scroll instead of silently clipping. */
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .lime-auth__form-inner {
@@ -101,7 +62,7 @@
   display: flex;
   align-items: center;
   gap: var(--seed-space-2);
-  margin-bottom: var(--seed-space-6);
+  margin-bottom: var(--seed-space-8);
 }
 
 .lime-auth__form-logo [data-brand-mark] {
@@ -113,11 +74,61 @@
   height: 16px;
 }
 
-.lime-auth__heading {
-  font-size: var(--seed-text-xl);
+/* Montserrat semibold at Seed's largest display size — the user kept
+   Montserrat rather than supplying a serif (Lime has no serif token). */
+.lime-auth__headline {
+  font-family: var(--seed-font-brand);
+  font-size: var(--seed-text-3xl);
   font-weight: var(--seed-weight-semibold);
+  line-height: 1.1;
   color: var(--soil-text);
-  margin: 0 0 var(--seed-space-6);
+  margin: 0 0 var(--seed-space-3);
+}
+
+.lime-auth__subline {
+  font-size: var(--seed-text-lg);
+  color: var(--soil-text-muted);
+  margin: 0 0 var(--seed-space-8);
+}
+
+/* The card: elevated surface, soft shadow, per the user's reference. */
+.lime-auth__card {
+  position: relative;
+  background: var(--soil-bg-elevated);
+  border-radius: var(--seed-radius-xl);
+  box-shadow: var(--seed-shadow-md);
+  padding: var(--seed-space-6);
+}
+
+.lime-auth__oauth {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: var(--seed-space-3);
+}
+
+/* .lime-badge--soon (lime.css) is a status tag, not a disabled look —
+   pairing it with a genuinely `disabled` button communicates both:
+   this action exists, and it isn't wired up yet. */
+.lime-auth__oauth .lime-badge--soon {
+  margin-left: var(--seed-space-2);
+}
+
+.lime-auth__divider {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  margin: var(--seed-space-4) 0;
+  color: var(--soil-text-muted);
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-medium);
+}
+
+.lime-auth__divider::before,
+.lime-auth__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--soil-border-subtle);
 }
 
 .lime-auth__field {
@@ -158,6 +169,20 @@
   font-size: 16px;
 }
 
+.lime-auth__welcome {
+  font-size: var(--seed-text-xl);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+  margin: 0 0 var(--seed-space-1);
+}
+
+.lime-auth__step-email {
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+  margin: 0 0 var(--seed-space-5);
+  word-break: break-all;
+}
+
 .lime-auth__terms {
   display: flex;
   align-items: flex-start;
@@ -167,18 +192,27 @@
   color: var(--soil-text-muted);
 }
 
-.lime-auth__terms a {
+.lime-auth__terms a,
+.lime-auth__legal a {
   color: var(--calm-text-bold-default);
   text-decoration: none;
 }
 
-.lime-auth__terms a:hover {
+.lime-auth__terms a:hover,
+.lime-auth__legal a:hover {
   text-decoration: underline;
 }
 
 .lime-auth__submit {
   width: 100%;
-  margin-bottom: var(--seed-space-4);
+  margin-bottom: var(--seed-space-3);
+}
+
+.lime-auth__legal {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+  text-align: center;
+  margin: var(--seed-space-3) 0 0;
 }
 
 .lime-auth__error {
@@ -196,41 +230,77 @@
   display: block;
 }
 
-.lime-auth__divider {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-3);
-  margin: var(--seed-space-4) 0;
-  color: var(--soil-text-muted);
-  font-size: var(--seed-text-xs);
-}
-
-.lime-auth__divider::before,
-.lime-auth__divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--soil-border-subtle);
-}
-
 .lime-auth__alt {
   display: block;
   text-align: center;
   font-size: var(--seed-text-sm);
   color: var(--calm-text-bold-default);
   text-decoration: none;
+  margin-top: var(--seed-space-4);
 }
 
 .lime-auth__alt:hover {
   text-decoration: underline;
 }
 
-@media (max-width: 768px) {
+/* ── The media panel ──
+   A large rounded video, filling most of the column's height, hidden
+   below 768px (its sources/poster aren't even requested there — see
+   auth.html's own loadVideo(), gated on the same breakpoint). */
+.lime-auth__media {
+  position: relative;
+  margin: var(--seed-space-6);
+  border-radius: var(--seed-radius-xl);
+  overflow: hidden;
+  background: var(--calm-bg-subtle-default);
+}
+
+.lime-auth__media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lime-auth__media-pause {
+  position: absolute;
+  bottom: var(--seed-space-4);
+  right: var(--seed-space-4);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--seed-radius-full);
+  background: rgba(19, 27, 23, 0.55);
+  color: #fff;
+  cursor: pointer;
+}
+
+.lime-auth__media-pause:hover {
+  background: rgba(19, 27, 23, 0.75);
+}
+
+.lime-auth__media-pause .dew {
+  font-size: 16px;
+}
+
+.lime-auth__media-pause-icon {
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 767px) {
   .lime-auth {
     grid-template-columns: 1fr;
   }
 
-  .lime-auth__marketing {
+  .lime-auth__media {
     display: none;
+  }
+
+  .lime-auth__form {
+    padding: var(--seed-space-6) var(--seed-space-4);
   }
 }

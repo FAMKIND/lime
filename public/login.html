@@ -1,138 +1,21 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- LIME-51: see index.html's identical block for the full reasoning —
-       sets data-theme before any stylesheet below starts downloading. -->
-  <script>
-    (function () {
-      try {
-        var mode = localStorage.getItem('lime-theme') || 'system';
-        var dark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
-      } catch (e) { /* localStorage unavailable (private mode, etc.) — light default stands */ }
-    })();
-  </script>
   <title>Sign In — Lime</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="../vendor/seed/tokens/tokens.css">
-  <link rel="stylesheet" href="../vendor/seed/components/button/button.css">
-  <link rel="stylesheet" href="../vendor/seed/components/input/input.css">
-  <link rel="stylesheet" href="../vendor/seed/icons/dew/dist/dew.css">
-  <link rel="stylesheet" href="css/lime.css">
-  <link rel="stylesheet" href="css/auth.css">
+  <!-- LIME-48: login.html is now a redirect, not a real page — the
+       email-first flow lives in auth.html, which handles both an
+       existing account and a new one from a single email field. Kept as
+       a real file (not just removed) because LimeAuth.signOut() and the
+       session gate in app.js both still target it directly, and because
+       a bookmark or old link to /login.html should keep working.
+       Preserves the full query string — the gate appends
+       ?reason=storage|fileorigin (LIME-33-fix) for auth.html to read. -->
+  <script>
+    window.location.replace('auth.html' + window.location.search);
+  </script>
 </head>
 <body>
-
-  <div class="lime-auth">
-    <div class="lime-auth__marketing">
-      <div class="lime-auth__marketing-logo">
-        <span data-brand-mark aria-hidden="true"><img src="assets/logo-mark.svg" alt=""></span>
-        <span data-brand-wordmark aria-hidden="true"><img src="assets/logo-wordmark.svg" alt=""></span>
-      </div>
-      <p class="lime-auth__tagline">Connect families and teachers, effortlessly.</p>
-      <div class="lime-auth__illustration" role="img" aria-label="Illustration placeholder"></div>
-    </div>
-
-    <div class="lime-auth__form">
-      <div class="lime-auth__toggle">
-        Don't have an account? <a href="signup.html">Sign Up</a>
-      </div>
-
-      <div class="lime-auth__form-inner">
-        <div class="lime-auth__form-logo">
-          <span data-brand-mark aria-hidden="true"><img src="assets/logo-mark.svg" alt=""></span>
-          <span data-brand-wordmark aria-hidden="true"><img src="assets/logo-wordmark.svg" alt=""></span>
-        </div>
-
-        <h1 class="lime-auth__heading">Sign in to your account</h1>
-
-        <div class="lime-auth__error" id="login-error" role="alert"></div>
-
-        <form id="login-form">
-          <div class="lime-auth__field">
-            <label class="seed-label" for="login-email">Email</label>
-            <input class="seed-input" id="login-email" name="email" type="email" placeholder="you@example.com" required>
-          </div>
-
-          <div class="lime-auth__field">
-            <label class="seed-label" for="login-password">Password</label>
-            <div class="lime-password-field">
-              <input class="seed-input" id="login-password" name="password" type="password" placeholder="Your password" required>
-              <button type="button" class="lime-password-field__toggle" aria-label="Show password">
-                <span class="dew dew-eye-closed"></span>
-              </button>
-            </div>
-          </div>
-
-          <button type="submit" class="seed-button seed-button--primary seed-button--md lime-auth__submit">Sign In</button>
-        </form>
-
-        <div class="lime-auth__divider"><span>or</span></div>
-
-        <a class="lime-auth__alt" href="#" title="Not available yet">Use phone number instead</a>
-      </div>
-    </div>
-  </div>
-
-  <script src="js/password-toggle.js"></script>
-
-  <!-- Gitignored (*.local.js) — sets window.LIME_DEMO_CREDENTIALS locally.
-       404s silently if absent; LimeAuth.signInWithPassword handles that
-       case (only for a seed-teacher email — see its own comment). -->
-  <script src="js/demo-config.local.js"></script>
-  <!-- LIME-33: LimeStore.init() (below) must load the persisted snapshot
-       before LimeAuth looks anyone up in it — same load order as
-       index.html. -->
-  <script src="js/seed-data.js"></script>
-  <script src="js/local-adapter.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/auth.js"></script>
-  <script>
-    // LIME-33: real local accounts via LimeAuth — no more single hardcoded
-    // credential. "local demo only; Supabase auth replaces this entirely."
-    LimeStore.init().then(() => {
-      // LIME-33-fix: app.js's session gate carries a ?reason= when it
-      // bounces here instead of just landing with no explanation — see
-      // describeGateRedirectReason()'s own comment in app.js for why
-      // these two specific cases exist.
-      const gateReason = new URLSearchParams(location.search).get('reason');
-      if (gateReason) {
-        const errorEl = document.getElementById('login-error');
-        if (gateReason === 'storage') {
-          errorEl.textContent = 'Your browser isn\'t letting Lime save data on this computer right now — private browsing or blocked cookies/site data are the most common causes.';
-          errorEl.classList.add('is-visible');
-        } else if (gateReason === 'fileorigin') {
-          errorEl.textContent = 'Your account didn\'t carry over from the last page — Firefox treats each file:// page in this folder as separate. Try opening Lime through a local web address instead of a file:// link, or use Chrome for now.';
-          errorEl.classList.add('is-visible');
-        }
-      }
-
-      document.getElementById('login-form').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const errorEl = document.getElementById('login-error');
-        errorEl.classList.remove('is-visible');
-        errorEl.textContent = '';
-
-        const email = document.getElementById('login-email').value;
-        const password = document.getElementById('login-password').value;
-
-        LimeAuth.signInWithPassword({ email, password }).then(() => {
-          // LIME-33-fix: ?from=auth, not document.referrer — confirmed via
-          // the real Firefox profile copy that document.referrer comes
-          // back empty for file:// navigations, so the gate can't use it
-          // to tell "just came from a Lime auth page" apart from "opened
-          // index.html completely fresh."
-          window.location.href = 'index.html?from=auth';
-        }).catch((err) => {
-          errorEl.textContent = err.message;
-          errorEl.classList.add('is-visible');
-        });
-      });
-    });
-  </script>
+  <noscript><a href="auth.html">Continue to sign in</a></noscript>
 </body>
 </html>

@@ -1,125 +1,23 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- LIME-51: see index.html's identical block for the full reasoning —
-       sets data-theme before any stylesheet below starts downloading. -->
-  <script>
-    (function () {
-      try {
-        var mode = localStorage.getItem('lime-theme') || 'system';
-        var dark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
-      } catch (e) { /* localStorage unavailable (private mode, etc.) — light default stands */ }
-    })();
-  </script>
   <title>Sign Up — Lime</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="../vendor/seed/tokens/tokens.css">
-  <link rel="stylesheet" href="../vendor/seed/components/button/button.css">
-  <link rel="stylesheet" href="../vendor/seed/components/input/input.css">
-  <link rel="stylesheet" href="../vendor/seed/icons/dew/dist/dew.css">
-  <link rel="stylesheet" href="css/lime.css">
-  <link rel="stylesheet" href="css/auth.css">
+  <!-- LIME-48: signup.html is now a redirect, not a real page — the
+       email-first flow lives in auth.html. Redirects straight to the
+       create step (?step=create), preserving the rest of the query
+       string (e.g. a future ?email=… prefill) — auth.html's own script
+       reads ?step=create to skip the "does this email already have an
+       account" branch entirely, since arriving here is an explicit
+       "I want to sign up" signal. Kept as a real file for the same
+       reason login.html is: an old link or bookmark should keep working. -->
+  <script>
+    var params = new URLSearchParams(window.location.search);
+    params.set('step', 'create');
+    window.location.replace('auth.html?' + params.toString());
+  </script>
 </head>
 <body>
-
-  <div class="lime-auth">
-    <div class="lime-auth__marketing">
-      <div class="lime-auth__marketing-logo">
-        <span data-brand-mark aria-hidden="true"><img src="assets/logo-mark.svg" alt=""></span>
-        <span data-brand-wordmark aria-hidden="true"><img src="assets/logo-wordmark.svg" alt=""></span>
-      </div>
-      <p class="lime-auth__tagline">Connect families and teachers, effortlessly.</p>
-      <div class="lime-auth__illustration" role="img" aria-label="Illustration placeholder"></div>
-    </div>
-
-    <div class="lime-auth__form">
-      <div class="lime-auth__toggle">
-        Already have an account? <a href="login.html">Sign In</a>
-      </div>
-
-      <div class="lime-auth__form-inner">
-        <div class="lime-auth__form-logo">
-          <span data-brand-mark aria-hidden="true"><img src="assets/logo-mark.svg" alt=""></span>
-          <span data-brand-wordmark aria-hidden="true"><img src="assets/logo-wordmark.svg" alt=""></span>
-        </div>
-
-        <h1 class="lime-auth__heading">Create your account</h1>
-
-        <div class="lime-auth__error" id="signup-error" role="alert"></div>
-
-        <form id="signup-form">
-          <div class="lime-auth__field">
-            <label class="seed-label" for="signup-email">Email</label>
-            <input class="seed-input" id="signup-email" name="email" type="email" placeholder="you@example.com" required>
-          </div>
-
-          <div class="lime-auth__field">
-            <label class="seed-label" for="signup-password">Password</label>
-            <div class="lime-password-field">
-              <input class="seed-input" id="signup-password" name="password" type="password" placeholder="At least 8 characters" minlength="8" required>
-              <button type="button" class="lime-password-field__toggle" aria-label="Show password">
-                <span class="dew dew-eye-closed"></span>
-              </button>
-            </div>
-          </div>
-
-          <div class="lime-auth__field">
-            <label class="seed-label" for="signup-name">Display name</label>
-            <input class="seed-input" id="signup-name" name="displayName" type="text" placeholder="Jean Chung" required>
-          </div>
-
-          <label class="lime-auth__terms">
-            <input class="seed-checkbox" type="checkbox" id="signup-terms" required>
-            <span>I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</span>
-          </label>
-
-          <button type="submit" class="seed-button seed-button--primary seed-button--md lime-auth__submit">Create account</button>
-        </form>
-
-        <div class="lime-auth__divider"><span>or</span></div>
-
-        <a class="lime-auth__alt" href="#" title="Not available yet">Use phone number instead</a>
-      </div>
-    </div>
-  </div>
-
-  <script src="js/password-toggle.js"></script>
-  <!-- LIME-33: real local accounts via LimeAuth — supabase.js (the
-       Supabase CDN client and its unconfigured placeholder wrapper) is no
-       longer wired in here; see docs/data-model.md's switch checklist. -->
-  <script src="js/seed-data.js"></script>
-  <script src="js/local-adapter.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/auth.js"></script>
-  <script>
-    LimeStore.init().then(() => {
-      document.getElementById('signup-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const errorEl = document.getElementById('signup-error');
-        errorEl.classList.remove('is-visible');
-        errorEl.textContent = '';
-
-        const email = document.getElementById('signup-email').value;
-        const password = document.getElementById('signup-password').value;
-        const displayName = document.getElementById('signup-name').value;
-
-        try {
-          await LimeAuth.signUp({ email, password, displayName });
-          // LIME-33-fix: ?from=auth — see login.html's identical comment
-          // (document.referrer is empty for file:// navigations in
-          // Firefox, confirmed via the user's own real profile copy).
-          window.location.href = 'index.html?from=auth';
-        } catch (err) {
-          errorEl.textContent = err.message || 'Something went wrong. Please try again.';
-          errorEl.classList.add('is-visible');
-        }
-      });
-    });
-  </script>
+  <noscript><a href="auth.html?step=create">Continue to sign up</a></noscript>
 </body>
 </html>

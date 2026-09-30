@@ -51,8 +51,8 @@ function describeGateRedirectReason() {
   // Not document.referrer — confirmed via the user's own real Firefox
   // profile copy that it comes back empty for file:// navigations, so it
   // can't distinguish "just came from signup/login" from "opened fresh."
-  // signup.html/login.html mark their own post-auth redirect with
-  // ?from=auth instead, which survives the navigation regardless.
+  // auth.html (LIME-48) marks its own post-auth redirect with ?from=auth
+  // instead, which survives the navigation regardless.
   const cameFromAuthPage = new URLSearchParams(location.search).get('from') === 'auth';
   if (cameFromAuthPage && location.protocol === 'file:') return 'fileorigin';
   return null;
