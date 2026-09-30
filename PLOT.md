@@ -15,7 +15,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ### The authoritative queue
 1. ~~**LIME-52-fix3**~~ **landed as `c646917`.** Root cause: the upload input was re-rendered away while the OS file dialog was open. The gate check is pending.
 2. ~~LIME-52-fix4~~ **SUPERSEDED (never sent), the user, 2026-09-30:** "get rid of the subtle patterns and the credit and let's just refine the ones we have now instead and the upload." Drop the 6 samples in `public/assets/patterns/` (untracked; delete them) and every credit line. Keep the 4 generated SVG presets (dots, grid, diagonal, noise) and refine them and the upload. **LIME-52-fix5 was investigated with no code change** (`4ad3566`, 2026-09-30; `PLOT.md` committed as `cc910fd`). Tend drove the **real installed Firefox (157.0)** through the real file dialog: both surfaces, `file://` and localhost, strict privacy settings, and chat attachments. **Everything passed; it couldn't reproduce the failure.** The likely cause is something in the user's own Firefox profile (an extension, broken site storage, or stale cached code). **Waiting on the user:** the console errors (⌥⌘K) during an upload, and a retry in Firefox's Troubleshoot Mode (extensions off). If it works in Troubleshoot Mode, it's an extension and no brief is needed. If the console shows an error, draft **LIME-52-fix6** from it. **→ PARKED by the user 2026-09-30** (see "PARKED: pattern upload fails" above). **LIME-53 DROPPED 2026-09-30; next is LIME-54 (delete the samples and the probing code), then LIME-49.** (Old plan, for history: then LIME-53 (a pattern lab of 12 in-house SVG candidates outside the repo; the user picks by number; drafted) **→ LIME-53b** (integrate the picks, remove the file-name probing, delete the samples, strip the credit mentions; drafted after the picks).)
-3. **LIME-49**: Settings Profile fits with no scrolling, plus real profile photos everywhere
+3. ~~LIME-54~~ **landed as `5c138b0`** (samples and tile probing removed; `PLOT.md` committed as `c254323`). ~~LIME-49~~ **landed as `912240a`** (2026-09-30): the modal body moved to normal flow so it grows to its content; one shared avatar helper everywhere; photo upload verified in the real Firefox 157 and Chrome, and it does **not** hit the parked Firefox bug. **The user's gate check on 49 is pending.**
 4. **LIME-33**: local accounts (sign up and sign in; PBKDF2; session gate; reset clears accounts)
 5. **LIME-48**: the sign-in redesign (email-first; the Pexels video `teacher.webm` plus a small re-encoded MP4 via `avconvert`; a poster; a pause control; copy: "Where teachers connect")
 6. **LIME-29**: New message (search by name, email, phone or school; "Invite (Soon)"; the documented invites design)
@@ -1480,7 +1480,7 @@ The image's max height reserves room above and below, so nothing goes off-screen
 >
 > **Capability assumptions for both briefs:** can edit files, run commands and commit. Load the real app in jsdom (zero errors). Measure with Playwright + Firefox per `TEND.md` LIME-31-fix. Check `git diff` of the HTML files before committing.
 
-### LIME-33 → `tend` (after LIME-32's check): local accounts, with real sign up and sign in
+### LIME-33 → `tend` (next, after LIME-49's check; amended 2026-09-30): local accounts, with real sign up and sign in
 
 **Goal:**
 - `signup.html` creates a real (browser-local) account, and a profile that appears in the teacher directory.
@@ -1529,6 +1529,11 @@ The image's max height reserves room above and below, so nothing goes off-screen
    - `changePassword` works for the local account;
    - reset wipes both keys.
 3. **Playwright + Firefox:** the end-to-end sign up → land in the app as the new user (an empty list) → sign out → the login page.
+
+**Amendment (plot, 2026-09-30, before sending):**
+- **Verify the end-to-end flow in the real installed Firefox and in Chrome** (the LIME-52-fix5 rule: `crypto.subtle`, `localStorage` and redirects all have per-browser `file://` behaviour), not only Playwright's bundled Firefox. Report which binaries were used. `crypto.subtle` needs a secure context, so **confirm it exists on `file://` in both browsers before building on it**. If it doesn't, stop and ask the user.
+- LIME-49 (`912240a`) added `avatar_url` handling and a shared avatar helper. A new account starts with no photo (initials) and can add one in Settings. Include that in the end-to-end test.
+- Survey the current code first: many line references across `PLOT.md` predate LIME-50 to 54.
 
 **Gate:** in Firefox:
 - **Sign up:** open `file:///Users/shem/Sites/lime/public/signup.html` and sign up as a new teacher. You land in Lime as them, with an empty list.
