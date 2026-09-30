@@ -19,6 +19,18 @@
 
 :root {
   --seed-soil-900: #131b17; /* --lime-ink */
+  /* LIME-55-fix: the shared primary-action background steps. The lime
+     rule changed (2026-09-30) — lime is for primary actions only, not
+     nav hover/active any more — so the Send button
+     (.lime-composer__return.is-active) and the nav Add button both
+     read these three instead of --selected-bg-subtle-* directly, so
+     the two can never drift apart. Same underlying values either way
+     (light: --seed-lime-100/200/300; dark: Seed's own stock dark-green
+     --selected-bg-subtle-* — lime.css doesn't override it) — this is
+     purely an extra level of indirection, not a new colour. */
+  --lime-primary-bg: var(--selected-bg-subtle-default);
+  --lime-primary-bg-hover: var(--selected-bg-subtle-hover);
+  --lime-primary-bg-active: var(--selected-bg-subtle-active);
 }
 
 [data-theme="light"] {
@@ -1225,16 +1237,24 @@ html[data-pattern-treatment="photo"] body::before {
   padding: var(--seed-space-2) var(--seed-space-2);
 }
 
-/* ── LIME-55: the split "+ Add | ⌄" button ──
-   Matches the Search field's own height/radius/fill (neutral, not lime —
-   the lime rule reserves lime for the active nav item and primary
-   buttons; a lime block here would compete with the active "Link" row
-   right below it). Two halves in one pill, a 1px divider between. */
+/* ── LIME-55-fix: the split "+ Add | ⌄" button is the lime primary
+   action ──
+   The lime rule changed (2026-09-30): lime is for primary actions
+   only now (Add, Send), not the active nav item any more — see
+   .lime-nav__btn above. Matches the Search field's own height/radius
+   (keeping LIME-55's layout), filled with --lime-primary-bg. No
+   border and no visible divider at rest — each half is a plain
+   transparent box over the one shared lime fill, so the pair reads
+   as a single control. On hover/press, each half gets its OWN inset
+   rounded pill (a 3px margin on every side, including the shared
+   inner edge, so hovering one half never touches the other) filled
+   one/two steps darker — matching the two reference crops of a split
+   mic ⌄ button the user gave. */
 .lime-nav-add {
   display: flex;
   align-items: stretch;
   border-radius: var(--seed-radius-full);
-  background: var(--calm-bg-normal-default);
+  background: var(--lime-primary-bg);
   overflow: hidden;
 }
 
@@ -1244,9 +1264,11 @@ html[data-pattern-treatment="photo"] body::before {
   align-items: center;
   gap: var(--seed-space-2);
   min-width: 0;
-  height: 36px;
+  height: 30px; /* 36px container - 2 * 3px inset */
+  margin: 3px 0 3px 3px;
   padding: 0 var(--seed-space-3);
   border: none;
+  border-radius: var(--seed-radius-full);
   background: transparent;
   color: var(--soil-text-muted);
   font-family: var(--seed-font-ui);
@@ -1258,7 +1280,11 @@ html[data-pattern-treatment="photo"] body::before {
 }
 
 .lime-nav-add__main:hover {
-  background: var(--calm-bg-normal-hover);
+  background: var(--lime-primary-bg-hover);
+}
+
+.lime-nav-add__main:active {
+  background: var(--lime-primary-bg-active);
 }
 
 .lime-nav-add__main .dew {
@@ -1271,9 +1297,11 @@ html[data-pattern-treatment="photo"] body::before {
   align-items: center;
   justify-content: center;
   width: 32px;
+  height: 30px;
+  margin: 3px 3px 3px 0;
   flex-shrink: 0;
   border: none;
-  border-left: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-full);
   background: transparent;
   color: var(--soil-text-muted);
   cursor: pointer;
@@ -1281,11 +1309,26 @@ html[data-pattern-treatment="photo"] body::before {
 }
 
 .lime-nav-add__toggle:hover {
-  background: var(--calm-bg-normal-hover);
+  background: var(--lime-primary-bg-hover);
+}
+
+.lime-nav-add__toggle:active {
+  background: var(--lime-primary-bg-active);
 }
 
 .lime-nav-add__toggle .dew {
   font-size: 16px;
+}
+
+/* A real, visible ring — same neutral pattern as .lime-lightbox__close,
+   the other spot this file gives a lime-filled/dark control its own
+   ring instead of just a background swap, since a background-only
+   change wouldn't read as a focus indicator over a fill that's
+   already this saturated. */
+.lime-nav-add__main:focus-visible,
+.lime-nav-add__toggle:focus-visible {
+  outline: 2px solid var(--calm-border-bold-default);
+  outline-offset: 2px;
 }
 
 /* Same visual weight as .lime-menu__item-reason (a disabled item's own
@@ -1310,15 +1353,25 @@ html[data-pattern-treatment="photo"] body::before {
   display: none;
 }
 
+/* LIME-55-fix: the rail "+" is the lime primary action too — the
+   single 40px button (no split, the toggle is hidden above) carries
+   the fill itself, margin reset to 0 since there's no inset pill to
+   show inside a container this size. */
 .seed-layout--collapsed-left .lime-nav-add__main {
   height: 40px;
+  margin: 0;
   padding: 0;
   justify-content: center;
   border-radius: 12px;
+  background: var(--lime-primary-bg);
 }
 
 .seed-layout--collapsed-left .lime-nav-add__main:hover {
-  background: var(--calm-bg-subtle-hover);
+  background: var(--lime-primary-bg-hover);
+}
+
+.seed-layout--collapsed-left .lime-nav-add__main:active {
+  background: var(--lime-primary-bg-active);
 }
 
 .seed-layout--collapsed-left .lime-nav-add__label {
@@ -1407,22 +1460,28 @@ html[data-pattern-treatment="photo"] body::before {
   padding: 0;
 }
 
+/* LIME-55-fix: nav items are neutral now — lime is reserved for
+   primary actions (the Add button, Send). Same token/step pattern as
+   before (resting, one step darker on top while active-hover or
+   pressed), just off the calm family instead of the lime one: the
+   same --calm-bg-subtle-hover a menu item or the selected list row
+   uses at rest, and --calm-bg-subtle-active for the deeper step. */
 .lime-nav__btn:hover {
-  background: var(--selected-bg-subtle-default);
+  background: var(--calm-bg-subtle-hover);
   color: var(--soil-text);
 }
 
 .lime-nav__btn--active {
-  background: var(--selected-bg-subtle-default);
+  background: var(--calm-bg-subtle-hover);
   color: var(--soil-text);
 }
 
 .lime-nav__btn--active:hover {
-  background: var(--selected-bg-subtle-hover);
+  background: var(--calm-bg-subtle-active);
 }
 
 .lime-nav__btn:active {
-  background: var(--selected-bg-subtle-active);
+  background: var(--calm-bg-subtle-active);
 }
 
 .lime-nav__btn .dew {
@@ -1747,12 +1806,13 @@ html[data-pattern-treatment="photo"] body::before {
   font-size: var(--seed-text-xs);
 }
 
+/* LIME-55-fix: neutral, same family as the nav items above. */
 .lime-sidebar__user-trigger:hover {
-  background: var(--selected-bg-subtle-default);
+  background: var(--calm-bg-subtle-hover);
 }
 
 .lime-sidebar__user-trigger:active {
-  background: var(--selected-bg-subtle-active);
+  background: var(--calm-bg-subtle-active);
 }
 
 .seed-layout--collapsed-left .lime-sidebar__footer {
@@ -5354,17 +5414,20 @@ html[data-pattern-treatment="photo"] body::before {
 .lime-composer__return.is-active {
   opacity: 1;
   cursor: pointer;
-  /* Seed's --selected-* scale, same as the nav (LIME-14): resting,
-     deeper on hover, deeper again while pressed. */
-  background: var(--selected-bg-subtle-default);
+  /* LIME-55-fix: now reads the shared --lime-primary-bg* steps (see
+     :root above) instead of --selected-bg-subtle-* directly — the nav
+     Add button reads the same three, so this button's look can never
+     drift from it. Values are identical either way (the lime rule
+     made this button and Add the only two lime consumers left). */
+  background: var(--lime-primary-bg);
 }
 
 .lime-composer__return.is-active:hover {
-  background: var(--selected-bg-subtle-hover);
+  background: var(--lime-primary-bg-hover);
 }
 
 .lime-composer__return.is-active:active {
-  background: var(--selected-bg-subtle-active);
+  background: var(--lime-primary-bg-active);
 }
 
 .lime-composer__return:hover {
@@ -6263,12 +6326,16 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   /* LIME-55: the split button, forced back to its full expanded shape in
      the mobile drawer — same reasoning as .lime-nav-search just below:
      the drawer always shows the full nav regardless of the desktop
-     collapse state underneath it. */
+     collapse state underneath it. LIME-55-fix: the lime fill and the
+     inset-pill dimensions need the same forcing — the rail's own 40px
+     .lime-nav-add__main override (margin: 0, radius 12px) would
+     otherwise win here too, same specificity fight LIME-55 already
+     solved for width/height/padding. */
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-add {
     width: 100% !important;
     height: 36px !important;
     border-radius: var(--seed-radius-full) !important;
-    background: var(--calm-bg-normal-default) !important;
+    background: var(--lime-primary-bg) !important;
   }
 
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-add__toggle {
@@ -6277,10 +6344,11 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
 
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-add__main {
     width: auto !important;
-    height: 36px !important;
+    height: 30px !important;
+    margin: 3px 0 3px 3px !important;
     padding: 0 var(--seed-space-3) !important;
     justify-content: flex-start !important;
-    border-radius: 0 !important;
+    border-radius: var(--seed-radius-full) !important;
   }
 
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-add__label {
