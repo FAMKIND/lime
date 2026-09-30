@@ -15,8 +15,8 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ### The authoritative queue
 1. ~~**LIME-52-fix3**~~ **landed as `c646917`.** Root cause: the upload input was re-rendered away while the OS file dialog was open. The gate check is pending.
 2. ~~LIME-52-fix4~~ **SUPERSEDED (never sent), the user, 2026-09-30:** "get rid of the subtle patterns and the credit and let's just refine the ones we have now instead and the upload." Drop the 6 samples in `public/assets/patterns/` (untracked; delete them) and every credit line. Keep the 4 generated SVG presets (dots, grid, diagonal, noise) and refine them and the upload. **LIME-52-fix5 was investigated with no code change** (`4ad3566`, 2026-09-30; `PLOT.md` committed as `cc910fd`). Tend drove the **real installed Firefox (157.0)** through the real file dialog: both surfaces, `file://` and localhost, strict privacy settings, and chat attachments. **Everything passed; it couldn't reproduce the failure.** The likely cause is something in the user's own Firefox profile (an extension, broken site storage, or stale cached code). **Waiting on the user:** the console errors (⌥⌘K) during an upload, and a retry in Firefox's Troubleshoot Mode (extensions off). If it works in Troubleshoot Mode, it's an extension and no brief is needed. If the console shows an error, draft **LIME-52-fix6** from it. **→ PARKED by the user 2026-09-30** (see "PARKED: pattern upload fails" above). **LIME-53 DROPPED 2026-09-30; next is LIME-54 (delete the samples and the probing code), then LIME-49.** (Old plan, for history: then LIME-53 (a pattern lab of 12 in-house SVG candidates outside the repo; the user picks by number; drafted) **→ LIME-53b** (integrate the picks, remove the file-name probing, delete the samples, strip the credit mentions; drafted after the picks).)
-3. ~~LIME-54~~ **landed as `5c138b0`** (samples and tile probing removed; `PLOT.md` committed as `c254323`). ~~LIME-49~~ **landed as `912240a`** (2026-09-30): the modal body moved to normal flow so it grows to its content; one shared avatar helper everywhere; photo upload verified in the real Firefox 157 and Chrome, and it does **not** hit the parked Firefox bug. **The user's gate check on 49 is pending.**
-4. **LIME-33**: local accounts (sign up and sign in; PBKDF2; session gate; reset clears accounts)
+3. ~~LIME-54~~ **landed as `5c138b0`** (samples and tile probing removed; `PLOT.md` committed as `c254323`). ~~LIME-49~~ **landed as `912240a`** (2026-09-30): the modal body moved to normal flow so it grows to its content; one shared avatar helper everywhere; photo upload verified in the real Firefox 157 and Chrome, and it does **not** hit the parked Firefox bug. **The user's gate check on 49 found a bug:** replying to your own message stacks copies of your photo on its avatar. **LIME-49-fix is drafted and runs next.** (LIME-33 ran first, because the user sent its prompt before 49-fix was drafted.)
+4. ~~LIME-33~~ **landed as `a398ca3`** (2026-09-30; `PLOT.md` committed as `ac77bd1`): PBKDF2 local accounts, the `lime-auth-v1` store, `createProfile` with a synchronous flush (a 100ms debounced save could lose a new account on redirect), and `seedVersion` now keeps snapshots that hold local profiles. Verified in the real Firefox 157 and Chrome 154. **The user's gate check FAILED (2026-09-30):** in their Firefox, sign-up bounces straight back to sign-in and the account is gone. Probably the same root cause as the parked upload bug (their Firefox profile won't keep local storage). **LIME-33-fix drafted and runs next** (the user approved testing on a copy of their Firefox profile), **then LIME-49-fix.**
 5. **LIME-48**: the sign-in redesign (email-first; the Pexels video `teacher.webm` plus a small re-encoded MP4 via `avconvert`; a poster; a pause control; copy: "Where teachers connect")
 6. **LIME-29**: New message (search by name, email, phone or school; "Invite (Soon)"; the documented invites design)
 7. **LIME-27 (revised)**: the Share header button and a Claude-style popover (add people by email for groups; who has access; Copy link), deep links, toasts
@@ -33,6 +33,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ### PARKED: pattern upload fails in the user's Firefox (the user, 2026-09-30)
 "upload pattern still not fully working on firefox, but is on chrome, let's make note and move on we can come back to it after all the major parts are done."
 - **Where it stands:** LIME-52-fix3 (`c646917`) fixed the input being re-rendered away. LIME-52-fix5 (`4ad3566`, investigation only) **couldn't reproduce** the failure in the real installed Firefox 157 (both surfaces, `file://` and localhost, strict privacy, chat attachments all passed). It works in the user's Chrome.
+- **New clue (plot, 2026-09-30):** the user's LIME-49 gate screenshot shows a **round blue icon button inside the Reply composer** that isn't Lime's. It's almost certainly a Firefox add-on injecting into text fields (a writing, translation or accessibility tool). That makes an add-on the leading suspect. **When this resumes, first retry with that add-on disabled** (or in Troubleshoot Mode).
 - **Unchecked:** the user hasn't yet reported the console errors (⌥⌘K) or a Troubleshoot Mode (add-ons off) retry. **Start there when this comes back.** An add-on or a broken site-storage area in the user's profile is the leading suspect.
 - **When to return:** after the major parts are done (the milestone: LIME-49, 33, 48, 29, 27 and Communities). Don't re-raise it before then.
 
@@ -242,6 +243,83 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-33-fix → `tend` (next, before LIME-49-fix): accounts don't survive a page change in the user's Firefox
+
+**The user's gate check on LIME-33 (`a398ca3`, 2026-09-30, screenshot + answers):**
+- Created a new account **twice** with the same email in **Firefox**. **Right after "Sign up" it went straight back to the sign-in page** (not into Lime), and signing in then says "Incorrect email or password."
+- The second sign-up with the same email **wasn't** refused as "already in use", so **the first account wasn't there even on `signup.html` itself.**
+- They also tried `shem.robinson@ps113.edu` with a password they made up. **That's expected to fail:** seed teachers sign in with the shared demo password unless they've changed it in Settings. The fix is to explain it, not to change the rule (see 4 below).
+
+**Plot's reading (survey of `auth.js` ~80–147 and ~225–238, `login.html` and `signup.html`, 2026-09-30):** the sign-up and sign-in logic is correct. **The data written to `localStorage` on one page isn't visible on the next page load in the user's Firefox,** so the session is missing on `index.html` (bounce to login) and the credential is missing on `login.html` and `signup.html`. **This very likely has the same root cause as the parked pattern upload bug** (IndexedDB, also working in Chrome and in tend's clean Firefox). Suspects: a user preference (cookies or site data blocked or cleared for local files; Enhanced Tracking Protection "strict"/custom), `file://` origin handling for this profile, or an add-on (the user's screenshot of LIME-49 shows an injected blue button in the Reply composer).
+
+**The user APPROVED (2026-09-30) testing on a private copy of their Firefox profile:**
+- Copy their default profile (from `~/Library/Application Support/Firefox/Profiles/`; `profiles.ini` names the default) **to a temporary folder**, excluding `lock`/`.parentlock`. **Never launch or modify the real profile.**
+- Launch the real `/Applications/Firefox.app` with `-profile <copy> -no-remote`.
+- **Don't read, print or record personal data** (history, cookies, saved logins, form data). Only read **preferences and the add-on list** (`prefs.js`, `user.js`, `extensions.json` names/ids), and only what's relevant.
+- **Delete the copy afterwards** and say so in `TEND.md`.
+
+**Assumptions:** the agent can copy files, drive the real Firefox (as in LIME-52-fix5), edit files and commit.
+
+**Phase 1: reproduce and find the cause (read-only for the repo).**
+1. With the profile copy, over `file://`: sign up → does `index.html` see the session? Record `localStorage` keys on each page (`signup.html`, `index.html`, `login.html`), and whether `localStorage.setItem` throws or silently doesn't persist.
+2. **Find the exact cause:** bisect by disabling add-ons (all, then one at a time) and by comparing relevant prefs with the clean profile (e.g. `privacy.file_unique_origin`, `network.cookie.cookieBehavior`, `dom.storage.enabled`, `browser.privatebrowsing.autostart`, any "delete cookies and site data on close", cookie exceptions). **Name the exact add-on or preference.**
+3. **Also run the pattern upload** with the profile copy (both surfaces). Record whether it fails and whether the same cause explains it. **Don't fix the upload in this brief;** just record it for the parked item.
+4. Repeat 1 over `http://localhost` (a server from the repo root) to see if it's `file://`-only.
+
+**Phase 2: the change (only after Phase 1 names a cause).**
+1. **Never fail confusingly:** on `signup.html`, `login.html` and the session gate in `index.html`, run a **storage check** (write a probe key, read it back; and on `index.html` right after sign-up, detect "I was just sent here from sign-up but there's no session"). If storage doesn't work or doesn't persist, show one clear message in plain words instead of bouncing to sign-in or saying "Incorrect": e.g. "Your browser isn't letting Lime save your account on this computer. [one-line cause-specific fix]". **The wording of the fix comes from Phase 1's finding.**
+2. **If the cause is a Firefox setting or add-on the app can't work around:** don't try to bypass it. Write the exact steps for the user to change it in `TEND.md` and in the gate below. **If it can be worked around safely** (e.g. something about `file://` handling), propose the workaround in `TEND.md` and **stop and ask the user** before building it.
+3. **Seed-teacher sign-in hint:** when a seed email fails with the wrong password, the message says: "Incorrect password. Demo teachers use the shared demo password unless you've changed it in Settings."
+
+**Scope:**
+- **May touch:** `public/js/auth.js`, `public/login.html`, `public/signup.html`, the session gate in `public/index.html`/`app.js`/`store.js`, `docs/data-model.md` (a note), and `TEND.md`.
+- **May not touch:** the pattern upload code (parked), the password hashing, and anything else.
+- If the survey turns up related issues, raise them before fixing. If a decision isn't covered here, stop and ask the user.
+
+**Verification:**
+- Phase 1's findings table: each page × `file://`/localhost × profile copy/clean profile, and the named cause. Also the upload result with the profile copy.
+- With the cause present: the new storage message appears (screenshot) instead of the bounce or "Incorrect".
+- With the cause removed (add-on off or pref restored in the **copy**): sign up → land in Lime → sign out → sign back in works, in the real Firefox and in Chrome.
+- The real app loads in jsdom with zero errors. Report browser-parsed CSS rule counts if CSS is touched.
+- The profile copy is deleted (say so).
+
+**Gate:** follow the fix steps tend gives for your Firefox (if any), then sign up again. You should land in Lime as the new teacher, and signing out and back in should work. If anything still blocks it, Lime should now tell you plainly why.
+
+**Record:** add a `## LIME-33-fix` entry to `TEND.md` with the findings table and the named cause (plot reads it from there; tend doesn't edit `PLOT.md`). Commit: `fix: clear message when the browser won't save accounts; seed sign-in hint`, trailer `Brief: LIME-33-fix`, plus the attribution trailer. **Stop for the user's check.**
+
+---
+
+### LIME-49-fix → `tend` (next, before LIME-33): replying stacks copies of your photo on the original message's avatar
+
+**The user's gate check on LIME-49 (`912240a`, 2026-09-30, screenshot):** "everytime i reply the main chat avatar breaks and duplicates my photo. this only happens if I reply my own messages." In the screenshot, the parent message (a voice note with "4 replies") has an avatar showing **4 side-by-side copies** of the user's photo. Other messages' avatars are fine.
+
+**Root cause (plot's survey, 2026-09-30):**
+- `paintAvatar` (`app.js` ~1637) **isn't idempotent for photos.** The photo branch **appends** a new `<img>` every call, while the initials branch sets `textContent` (which replaces). Before LIME-49 every avatar was initials, so repainting was harmless.
+- `refreshReplyIndicator` (`app.js` ~1583–1591) runs after each reply, replaces the footer, then repaints **every** `.lime-avatar[data-name]` in the whole message, **including the sender's own avatar**, which was already painted. With a photo, each reply adds one more `<img>`, so 4 replies make 4 copies. "Only on my own messages" = only the user has a photo so far.
+- Other bulk sweeps (`app.js` ~1912, 2105, 2315, 2506, 2559, 2828, 3132, 3449, 4614) could repaint already-painted avatars in the same way.
+
+**Assumptions:** the agent can edit files, run jsdom and Playwright (and the real Firefox), and commit.
+
+**The change:**
+1. **Make `paintAvatar` idempotent:** before painting, clear the element's own content (`el.textContent = ''`) and remove any `lime-avatar--p<N>` palette class (as `repaintAvatar` ~2713 already does). **First confirm `.lime-avatar` never holds other children that must survive** (e.g. the presence badge sits in a separate frame wrapper per the `lime.css` ~390 comment). If something does, stop and ask. `repaintAvatar` can then drop its own duplicate clearing.
+2. **Scope `refreshReplyIndicator`'s repaint to the new footer only** (`.lime-message__footer .lime-avatar[data-name]`), so it doesn't touch the sender avatar at all.
+3. **Photos added later still update:** the photo in an already-rendered message changes live when the user changes or removes their photo (the existing `lime:profile-changed` path via `repaintAvatar`).
+
+**Scope:**
+- **May touch:** `paintAvatar`, `repaintAvatar` and `refreshReplyIndicator` in `public/js/app.js`, and `TEND.md`.
+- **May not touch:** anything else. **If other sweeps need scoping too, list them in `TEND.md` rather than changing them,** since idempotency already fixes them.
+
+**Verification:**
+- **jsdom (real app, zero errors):** with the current user given a photo, reply 5 times to their own message. The parent's avatar contains **exactly 1 `<img>`** afterwards, and every avatar in the app has at most 1 `<img>` (report the max found). The footer's reply avatars have 1 each. An initials avatar repainted 3 times still shows its initials once, with exactly one palette class.
+- **Real Firefox and Chrome:** the same, by hand-driven replies from the thread panel. Screenshot the parent message after 4 replies.
+- Changing and then removing the photo updates the parent message's avatar live.
+
+**Gate:** reply to your own message a few times. Its avatar stays a single, normal photo. Also reply to someone else's message, and check that the little avatars in "N replies" look right.
+
+**Record:** add a `## LIME-49-fix` entry to `TEND.md`. Commit: `fix: avatars never stack duplicate photos on repaint`, trailer `Brief: LIME-49-fix`, plus the attribution trailer. **Stop for the user's check.**
+
+---
 
 ### LIME-54 → `tend` (next, then LIME-49): delete the Subtle Patterns samples and the tile-probing code
 
