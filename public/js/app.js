@@ -1654,7 +1654,13 @@ function refreshReplyIndicator(messageId) {
   if (existing) existing.remove();
   const reactionsEl = messageEl.querySelector('.lime-message__reactions');
   if (reactionsEl) reactionsEl.insertAdjacentHTML('afterend', replyIndicatorHtml(messageId));
-  messageEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+  // LIME-49-fix: scoped to the new footer only — this used to sweep
+  // every .lime-avatar in the whole message, including the sender's own
+  // avatar higher up, which was already painted. paintAvatar is now
+  // idempotent regardless, but there's still no reason to repaint an
+  // avatar this footer rebuild didn't touch.
+  const newFooter = messageEl.querySelector('.lime-message__footer');
+  if (newFooter) newFooter.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
 }
 
 // ── Avatar identity system ──────────────────────────────
@@ -1701,7 +1707,17 @@ function initialsFor(name) {
 // fills in its real src once the blob URL resolves. data-image (a
 // pre-resolved absolute URL, never actually produced by any caller
 // today) stays supported for anything that might use it directly.
+// LIME-49-fix: idempotent — a repaint (e.g. refreshReplyIndicator's own
+// sweep after each reply) must never stack a second <img> onto a photo
+// avatar that's already painted. Clears any existing content and any
+// stale lime-avatar--pN palette class first, every time, regardless of
+// which branch below actually runs. .lime-avatar never holds any other
+// children that need to survive this (confirmed: the presence badge
+// lives in a sibling .lime-avatar-frame wrapper, per lime.css's own
+// comment there, never inside .lime-avatar itself).
 function paintAvatar(el) {
+  el.textContent = '';
+  [...el.classList].forEach((c) => { if (/^lime-avatar--p\d+$/.test(c)) el.classList.remove(c); });
   const name = el.dataset.name;
   const avatarPath = el.dataset.avatarPath;
   if (avatarPath) {
@@ -2773,16 +2789,14 @@ function updateProfileEverywhere() {
 // Every existing paintAvatar call site before LIME-31 only ever painted a
 // brand-new element (renderThread/buildRow/etc. always build fresh
 // markup), so a stale lime-avatar--pN class was never a real scenario —
-// this is the first place that repaints an *existing* element in place,
-// so the old palette class has to be removed first or both would apply,
-// and whichever one wins would depend on stylesheet order, not on which
-// was painted more recently.
+// this is the first place that repaints an *existing* element in place.
+// LIME-49-fix: paintAvatar is now idempotent itself (clears content and
+// any stale palette class before painting), so this no longer needs its
+// own duplicate clearing first.
 function repaintAvatar(el, name, avatarPath) {
-  [...el.classList].forEach((c) => { if (/^lime-avatar--p\d+$/.test(c)) el.classList.remove(c); });
   el.dataset.name = name;
   if (avatarPath) el.dataset.avatarPath = avatarPath;
   else delete el.dataset.avatarPath;
-  el.textContent = '';
   paintAvatar(el);
 }
 
