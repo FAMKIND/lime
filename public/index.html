@@ -48,6 +48,9 @@
   <link rel="stylesheet" href="../vendor/seed/components/button/button.css">
   <link rel="stylesheet" href="../vendor/seed/components/nav/nav.css">
   <link rel="stylesheet" href="../vendor/seed/components/dropdown/dropdown.css">
+  <!-- LIME-27: Seed's own toast component, not linked until now — see
+       showToast() in app.js. -->
+  <link rel="stylesheet" href="../vendor/seed/components/toast/toast.css">
   <link rel="stylesheet" href="../vendor/seed/icons/dew/dist/dew.css">
   <!-- Lucide (LIME-10-fix4) for 3 composer icons dew doesn't have — list
        numbers/bullets/quote. Real classes are icon-<name>, not lucide-<name>
@@ -218,6 +221,44 @@
             </span>
           </button>
 
+          <!-- LIME-27: header order becomes avatars · Share · palette ·
+               "…" (the REVISED brief's own explicit order). Not a
+               .lime-menu dropdown — a Claude-style popover with its own
+               richer layout, positioned the same way every other
+               wireDropdownToggle-driven panel already is (fixed,
+               anchored off the trigger's own rect), just a different
+               inner shape. -->
+          <div class="lime-share">
+            <button type="button" class="lime-icon-btn" id="share-btn" title="Share" aria-label="Share" aria-haspopup="dialog" aria-expanded="false">
+              <span class="dew dew-share"></span>
+            </button>
+            <div class="lime-share-popover" id="share-popover" role="dialog" aria-modal="false" aria-labelledby="share-popover-title">
+              <div class="lime-share-popover__header">
+                <h2 class="lime-share-popover__title" id="share-popover-title">Share</h2>
+                <button type="button" class="lime-icon-btn" id="share-popover-close" aria-label="Close" title="Close"><span class="dew dew-close"></span></button>
+              </div>
+              <p class="lime-share-popover__subline" id="share-popover-subline"></p>
+
+              <!-- Filled by renderSharePopover() (app.js): the add-by-email
+                   form for a group, or a muted line for a DM. -->
+              <div class="lime-share-popover__invite" id="share-popover-invite"></div>
+
+              <div class="lime-share-popover__access-row">
+                <span class="lime-share-popover__access-icon" id="share-popover-access-icon" aria-hidden="true"></span>
+                <span class="lime-share-popover__access-text" id="share-popover-access-text"></span>
+                <button type="button" class="lime-icon-btn" disabled aria-label="Link access settings (coming soon)" title="Coming soon"><span class="dew dew-chevron-right"></span></button>
+              </div>
+              <div class="lime-share-popover__members" id="share-popover-members" role="list"></div>
+
+              <p class="lime-share-popover__note">Don't share personal information about students or families without permission.</p>
+
+              <div class="lime-share-popover__footer">
+                <input type="text" class="seed-input seed-input--sm lime-share-popover__link-input" id="share-popover-link-input" readonly aria-label="Conversation link">
+                <button type="button" class="seed-button seed-button--primary seed-button--sm" id="share-popover-copy-btn"><span class="dew dew-link"></span>Copy link</button>
+              </div>
+            </div>
+          </div>
+
           <!-- LIME-50: replaces LIME-45's per-chat background icon (a sun)
                with an app-wide Appearance shortcut — a palette icon, since
                dew has no sun/palette icon (checked against the set dew.css
@@ -242,9 +283,10 @@
           <div class="lime-more-menu">
             <button class="lime-icon-btn" id="more-menu-toggle" title="More"><span class="dew dew-ellipsis-menu"></span></button>
             <div class="lime-menu" id="more-menu">
+              <!-- LIME-27: "Share link" moved out to its own header
+                   button (right after the avatars) — removed from here. -->
               <button type="button" class="lime-menu__item"><span class="dew dew-camera-on"></span>Video call</button>
               <button type="button" class="lime-menu__item"><span class="dew dew-pencil"></span>Jam</button>
-              <button type="button" class="lime-menu__item"><span class="dew dew-link"></span>Share link</button>
             </div>
           </div>
         </header>
@@ -816,6 +858,10 @@
        reused is the *shape* (a persistent input, a job token, a busy
        state, never fail silently), not the DOM node. -->
   <input type="file" id="avatar-upload-input" accept="image/*" hidden>
+
+  <!-- LIME-27: one shared toast container, bottom-center — showToast()
+       in app.js appends/removes .seed-toast children here. -->
+  <div class="seed-toast-container seed-toast-container--bottom-center" id="toast-container" role="status" aria-live="polite"></div>
 
   <script src="js/seed-data.js"></script>
   <script src="js/local-adapter.js"></script>

@@ -64,8 +64,25 @@ function describeGateRedirectReason() {
 const LIME_AUTH_GATE_REDIRECTING = LIME_AUTH_GATE_ACTIVE && !hasValidSession();
 if (LIME_AUTH_GATE_REDIRECTING) {
   const reason = describeGateRedirectReason();
-  window.location.href = 'login.html' + (reason ? '?reason=' + reason : '');
+  // LIME-27: a deep link (#c=<id>) opened while signed out has to survive
+  // this whole redirect trip — login.html's own script already forwards
+  // the query string onward; appending the hash here (and reading it back
+  // in index.html's own deep-link logic below, once signed back in) is
+  // the other half of "carry the hash through the session gate and the
+  // ?from=auth redirect."
+  window.location.href = 'login.html' + (reason ? '?reason=' + reason : '') + location.hash;
 }
+
+// LIME-27: the general fix for the scheduleSave() debounce race
+// LIME-29's own flush() first addressed only for signOut() — pagehide
+// fires on a real navigation away OR a tab/window close, either of which
+// can otherwise drop a still-pending 100ms save (confirmed exploitable
+// there; this closes the same gap for "closed the tab" specifically,
+// which signOut()'s own flush call can't reach since no sign-out happens
+// on close). A no-op when nothing's pending.
+window.addEventListener('pagehide', () => {
+  if (window.LimeStore) LimeStore.flush();
+});
 
 // LIME-51: theme is now set by index.html's own inline <head> script
 // (before first paint) and confirmed/corrected once the real profile
@@ -113,6 +130,47 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
+}
+
+// LIME-27: Seed's own toast pattern (vendor/seed/components/toast/toast.html),
+// adapted to this app's own single-line usage — every call site here
+// ("Link copied", "That chat isn't available to you.") is one short
+// message, not Seed's own title+message two-line shape, so this uses
+// .seed-toast__title alone (the heavier-weight line) rather than adding
+// an empty/unused .seed-toast__message every time. Top-level, not
+// IIFE-private — called from the deep-link load logic (this file's very
+// first synchronous pass, same reasoning paintAvatar is top-level for)
+// and from the Share popover's own Copy link handler.
+function showToast(message, options) {
+  const opts = options || {};
+  const tone = opts.tone || 'neutral';
+  const duration = opts.duration != null ? opts.duration : 3000;
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const icon = tone === 'good' ? 'dew-check' : tone === 'bad' ? 'dew-negative' : tone === 'warn' ? 'dew-alert-triangle' : 'dew-information-circle';
+  const toast = document.createElement('div');
+  toast.className = 'seed-toast seed-toast--' + tone;
+  toast.innerHTML = '<span class="seed-toast__icon dew ' + icon + '" aria-hidden="true"></span>'
+    + '<div class="seed-toast__content"><span class="seed-toast__title">' + escapeHtml(message) + '</span></div>'
+    + '<button type="button" class="seed-toast__dismiss dew dew-close" aria-label="Dismiss"></button>';
+  container.appendChild(toast);
+
+  function dismiss() {
+    toast.classList.add('seed-toast--exiting');
+    setTimeout(() => toast.remove(), 150);
+  }
+  toast.querySelector('.seed-toast__dismiss').addEventListener('click', dismiss);
+  let timer = setTimeout(dismiss, duration);
+  toast.addEventListener('mouseenter', () => clearTimeout(timer));
+  toast.addEventListener('mouseleave', () => { timer = setTimeout(dismiss, 1000); });
+}
+
+// LIME-27: the deep-link format, #c=<conversationId> on the app's own
+// URL — built from location.href without its existing hash, so calling
+// this while already on a #c=... link replaces it rather than appending
+// a second one.
+function conversationLink(id) {
+  return location.href.split('#')[0] + '#c=' + id;
 }
 
 // LIME-51 — shared by both places Mode appears (the header popover and
@@ -2206,6 +2264,12 @@ function initMessagesList() {
       showConversationHeaderPanel(conversation, false);
     }
     renderCrumbs(); // crumbThread's own text is renderCrumbs' job now, not set directly here
+    // LIME-27: replaceState, not pushState — a reload keeps your place
+    // (the brief's own explicit requirement), but selecting conversation
+    // after conversation while browsing shouldn't fill up browser history
+    // with one entry each (history.length stays the same, confirmed in
+    // verification).
+    history.replaceState(null, '', conversationLink(conversation.id));
   }
 
   // LIME-26: after Delete, the conversation menu always acts on
@@ -2968,9 +3032,197 @@ function initMessagesList() {
   }
   if (conversationMenuToggle) wireDropdownToggle('conversation-menu-toggle', 'conversation-menu', { fixed: true });
 
-  if (messageConversations.length > 0) {
-    selectConversation(messageConversations[0]);
+  // LIME-27: deep links (#c=<id>) — checked after LimeStore.init() (this
+  // whole function only ever runs as its .then(), so that's already
+  // guaranteed), per the brief's own explicit ordering requirement,
+  // since the conversation has to actually be in the loaded store before
+  // membership/existence can be checked at all. A named function, not a
+  // one-shot IIFE — also wired to 'hashchange' below, for a real gap
+  // found in verification: navigating to a #c=… link that differs from
+  // the CURRENT page only by its hash is a same-document navigation in
+  // every real browser (no reload, no script re-run), so a one-time-only
+  // check would silently never re-run for that case — e.g. clicking a
+  // shared link to a chat you're not in, while already sitting on
+  // index.html in that same tab, would just update the address bar and
+  // do nothing, instead of showing the "not available" toast.
+  function openFromDeepLinkOrDefault() {
+    const hashMatch = location.hash.match(/^#c=(.+)$/);
+    const hashConversationId = hashMatch ? decodeURIComponent(hashMatch[1]) : null;
+    if (hashConversationId) {
+      const hashConversation = LimeStore.getConversation(hashConversationId);
+      // Per the RLS draft this whole app is built toward: only members
+      // can open a DM or group; any signed-in user can open a community.
+      const readable = !!hashConversation && !hashConversation.deleted_at
+        && (hashConversation.type === 'community' || !!LimeStore.getMyMembership(hashConversationId));
+      if (readable) {
+        if (hashConversationId !== currentConversationId) selectConversation(hashConversation);
+        return;
+      }
+      showToast('That chat isn\'t available to you.', { tone: 'neutral' });
+      // Restore the address bar instead of leaving the inaccessible id
+      // sitting in it (a reload would just show the toast again on an
+      // otherwise-unrelated chat): if something's already open (a
+      // hashchange to a bad link while already viewing a real chat),
+      // just restore its own URL, don't re-select/re-render it. On the
+      // very first load there's nothing open yet — fall through to the
+      // same "select the default" path a plain hashless load takes.
+      if (currentConversationId) {
+        history.replaceState(null, '', conversationLink(currentConversationId));
+        return;
+      }
+    }
+    if (messageConversations.length > 0) {
+      selectConversation(messageConversations[0]);
+    }
   }
+  openFromDeepLinkOrDefault();
+  window.addEventListener('hashchange', openFromDeepLinkOrDefault);
+
+  // ── Share popover (LIME-27) ─────────────────────────────
+  // A Claude-style popover, not a .lime-menu dropdown (richer content:
+  // title, subline, an invite form or DM line, who-has-access, the
+  // member list, a note, Copy link) — but positioned exactly the way
+  // every other panel in this app already is, via wireDropdownToggle's
+  // own fixed-positioning path, which doesn't care what's inside.
+  (function () {
+    const shareBtn = document.getElementById('share-btn');
+    const popover = document.getElementById('share-popover');
+    const closeBtn = document.getElementById('share-popover-close');
+    if (!shareBtn || !popover) return;
+
+    // dew has no lock or globe icon (checked against the full set dew.css
+    // ships, same as LIME-50's own palette icon before this) — drawn to
+    // match its stroke style: 24px viewBox, stroke-width 2, round
+    // caps/joins, currentColor.
+    const LOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>';
+    const GLOBE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3c2.5 2.5 3.8 5.7 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.7-3.8-9s1.3-6.5 3.8-9Z"></path></svg>';
+
+    function renderSharePopover(conversation) {
+      const title = LimeStore.getConversationTitle(conversation);
+      document.getElementById('share-popover-title').textContent = 'Share "' + title + '"';
+      const isCommunity = conversation.type === 'community';
+      document.getElementById('share-popover-subline').textContent = isCommunity
+        ? 'Anyone in Lime can view this community'
+        : 'Only people in this chat can see its messages';
+      document.getElementById('share-popover-access-icon').innerHTML = isCommunity ? GLOBE_SVG : LOCK_SVG;
+      document.getElementById('share-popover-access-text').textContent = isCommunity ? 'Anyone in Lime' : 'Only people in this chat';
+
+      const inviteEl = document.getElementById('share-popover-invite');
+      if (conversation.type === 'group') {
+        inviteEl.innerHTML = '<form class="lime-share-popover__invite-form" id="share-popover-invite-form">'
+          + '<input type="email" class="seed-input seed-input--sm" id="share-popover-invite-email" placeholder="Add people by email" aria-label="Add people by email">'
+          + '<button type="submit" class="seed-button seed-button--secondary seed-button--sm">Invite</button>'
+          + '</form>'
+          + '<p class="lime-share-popover__invite-result" id="share-popover-invite-result" role="status"></p>';
+      } else if (conversation.type === 'direct') {
+        inviteEl.innerHTML = '<p class="lime-share-popover__invite-dm-line">To add people, start a group from New message.</p>';
+      } else {
+        inviteEl.innerHTML = '';
+      }
+
+      const membersEl = document.getElementById('share-popover-members');
+      const members = LimeStore.getMembers(conversation.id);
+      membersEl.innerHTML = members.map((m) => {
+        const isOwner = m.id === conversation.created_by;
+        const isMe = m.id === currentUserId;
+        return '<div class="lime-share-popover__member" role="listitem">'
+          + '<span class="seed-avatar seed-avatar--sm lime-avatar" ' + avatarAttrsHtml(m) + '></span>'
+          + '<div class="lime-share-popover__member-body">'
+          + '<span class="lime-share-popover__member-name">' + escapeHtml(m.display_name) + (isMe ? ' <span class="lime-share-popover__member-you">(you)</span>' : '') + '</span>'
+          + '<span class="lime-share-popover__member-email">' + escapeHtml(m.email || '') + '</span>'
+          + '</div>'
+          + '<span class="lime-share-popover__member-role">' + (isOwner ? 'Owner' : 'Member') + '</span>'
+          + '</div>';
+      }).join('');
+      membersEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+
+      document.getElementById('share-popover-link-input').value = conversationLink(conversation.id);
+    }
+
+    // Same "select the text, let the user Cmd/Ctrl+C by hand" last resort
+    // the brief's own fallback chain asks for — the popover's own
+    // read-only link field is what gets focused/selected for it.
+    function selectLinkFieldAsFallback() {
+      const input = document.getElementById('share-popover-link-input');
+      if (input) { input.focus(); input.select(); }
+    }
+
+    function copyLink(link) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(() => {
+          showToast('Link copied');
+        }).catch(() => copyViaTextarea(link));
+        return;
+      }
+      copyViaTextarea(link);
+    }
+
+    // Clipboard API unavailable or rejected (can happen on file://) —
+    // the classic hidden-textarea + execCommand('copy') fallback.
+    function copyViaTextarea(link) {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = link;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        textarea.remove();
+        if (ok) {
+          showToast('Link copied');
+          return;
+        }
+      } catch (e) { /* execCommand itself can throw — fall through */ }
+      selectLinkFieldAsFallback();
+    }
+
+    shareBtn.addEventListener('click', () => {
+      if (!currentConversationId) return;
+      const conversation = LimeStore.getConversation(currentConversationId);
+      if (conversation) renderSharePopover(conversation);
+    });
+    wireDropdownToggle('share-btn', 'share-popover', { fixed: true });
+    if (closeBtn) closeBtn.addEventListener('click', () => popover.classList.remove('is-open'));
+
+    document.getElementById('share-popover-copy-btn').addEventListener('click', () => {
+      if (!currentConversationId) return;
+      copyLink(conversationLink(currentConversationId));
+    });
+
+    // Delegated (the invite form is rebuilt fresh by renderSharePopover
+    // every time the popover opens, same reasoning every other
+    // re-rendered-content listener in this file is delegated).
+    popover.addEventListener('submit', (e) => {
+      const form = e.target.closest('#share-popover-invite-form');
+      if (!form) return;
+      e.preventDefault();
+      if (!currentConversationId) return;
+      const conversation = LimeStore.getConversation(currentConversationId);
+      if (!conversation) return;
+      const emailInput = document.getElementById('share-popover-invite-email');
+      const resultEl = document.getElementById('share-popover-invite-result');
+      const email = emailInput.value.trim();
+      if (!email) return;
+      const profile = LimeStore.findProfileByEmail(email);
+      if (!profile) {
+        resultEl.innerHTML = 'No teacher with that email · Invite <span class="lime-badge--soon">Soon</span>';
+        return;
+      }
+      LimeStore.addMembers(conversation.id, [profile.id]).then(() => {
+        emailInput.value = '';
+        // .textContent, not escapeHtml() — that helper is for building
+        // HTML strings (innerHTML); textContent never interprets markup
+        // at all, so escaping first would double-escape (a name with an
+        // apostrophe would literally show "&#39;" instead of "'").
+        resultEl.textContent = profile.display_name + ' added.';
+        renderSharePopover(LimeStore.getConversation(conversation.id));
+      }).catch((err) => {
+        resultEl.textContent = err.message;
+      });
+    });
+  })();
 
   // LIME-26: fills in the module-scope bridge CONVERSATION_ACTIONS' own
   // rename/delete entries call through (see conversationActionHooks'
@@ -3034,9 +3286,9 @@ function repaintAvatar(el, name, avatarPath) {
 // this stays the only place that needs to change. Final order (the
 // brief's own): Star · Rename · Archive/Unarchive · divider · Delete, on
 // EVERY conversation now (LIME-34: no more hiding an unavailable item —
-// `disabled`/`reason` grey it out with an explanation instead). LIME-27
-// will add Share and Copy link here too, between Rename and Archive,
-// visible everywhere like the rest.
+// `disabled`/`reason` grey it out with an explanation instead). LIME-27's
+// own amendment moved Share and Copy link to a header button + popover
+// instead — this menu's order is unchanged.
 const CONVERSATION_ACTIONS = [
   {
     id: 'star',
@@ -3059,7 +3311,6 @@ const CONVERSATION_ACTIONS = [
       return Promise.resolve();
     },
   },
-  // LIME-27 adds Share and Copy link here, between Rename and Archive.
   {
     id: 'archive',
     label: (conversation, membership) => (membership && membership.archived_at ? 'Unarchive' : 'Archive'),

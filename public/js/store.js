@@ -276,6 +276,12 @@ const LimeStore = (function () {
     const isOwner = !!membership && membership.role === 'owner';
     if (action === 'rename') return isOwner && conversation.type !== 'direct';
     if (action === 'delete') return isOwner || conversation.type === 'direct';
+    // LIME-27: groups only — a DM's "owner" flag (whoever created it) is
+    // never surfaced as real ownership anywhere else in the app (LIME-34's
+    // own "there's no owner of a DM" decision), and the Share popover's UI
+    // never shows the add-by-email field for a DM in the first place, so
+    // this stays false for one regardless of the stored role.
+    if (action === 'addMembers') return isOwner && conversation.type === 'group';
     return false;
   }
 
@@ -293,6 +299,7 @@ const LimeStore = (function () {
       if (!isOwner) return 'Only the group owner can rename';
     }
     if (action === 'delete' && !isOwner) return 'Only the group owner can delete.';
+    if (action === 'addMembers' && conversation.type === 'group' && !isOwner) return 'Only the group owner can add people.';
     return null;
   }
 
@@ -423,6 +430,39 @@ const LimeStore = (function () {
     });
     scheduleSave();
     emit('lime:conversations-changed', { conversationId: conversation.id, kind: 'create' });
+    return Promise.resolve(conversation);
+  }
+
+  // LIME-27: the Share popover's own "Add people by email" write —
+  // owner-only, groups only (can('addMembers') above). A profile already
+  // a member is silently skipped, not an error — inviting someone twice
+  // (e.g. two people submitting the same email moments apart) should be a
+  // no-op, not a failure. Same member-row shape as createConversation's
+  // own push, for consistency.
+  function addMembers(conversationId, profileIds) {
+    const conversation = getConversation(conversationId);
+    if (!conversation) return Promise.reject(new Error('LimeStore: no such conversation'));
+    if (!can('addMembers', conversation)) return Promise.reject(new Error('LimeStore: not allowed to add members to this conversation'));
+    const now = new Date().toISOString();
+    const existingIds = new Set(getMembers(conversationId).map((p) => p.id));
+    const added = [];
+    (profileIds || []).forEach((userId) => {
+      if (existingIds.has(userId)) return;
+      members.push({
+        conversation_id: conversationId,
+        user_id: userId,
+        role: 'member',
+        starred: false,
+        archived_at: null,
+        last_read_at: null,
+        joined_at: now,
+      });
+      added.push(userId);
+    });
+    if (added.length === 0) return Promise.resolve(conversation);
+    conversation.updated_at = now;
+    scheduleSave();
+    emit('lime:conversations-changed', { conversationId, kind: 'addMembers' });
     return Promise.resolve(conversation);
   }
 
@@ -650,6 +690,7 @@ const LimeStore = (function () {
     sendMessage,
     toggleReaction,
     createConversation,
+    addMembers,
     renameConversation,
     setStarred,
     setArchived,

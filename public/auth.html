@@ -277,8 +277,12 @@
         LimeAuth.signInWithPassword({ email: currentEmail, password }).then(() => {
           // ?from=auth — LIME-33-fix's own marker (document.referrer is
           // empty for file:// navigations in Firefox, confirmed
-          // directly — see TEND.md's LIME-33-fix entry).
-          window.location.href = 'index.html?from=auth';
+          // directly — see TEND.md's LIME-33-fix entry). The hash
+          // (LIME-27): a deep link carried all the way from index.html's
+          // own gate, through login.html's redirect, to here — forwarded
+          // on so index.html's own deep-link logic opens the right chat
+          // once signed back in, instead of losing it to the default.
+          window.location.href = 'index.html?from=auth' + location.hash;
         }).catch((err) => {
           showError(err.message);
         });
@@ -290,7 +294,8 @@
         const displayName = document.getElementById('auth-name').value;
         const password = document.getElementById('auth-create-password').value;
         LimeAuth.signUp({ email: currentEmail, password, displayName }).then(() => {
-          window.location.href = 'index.html?from=auth';
+          // Same hash carry-through as the sign-in path above, for consistency.
+          window.location.href = 'index.html?from=auth' + location.hash;
         }).catch((err) => {
           showError(err.message);
         });

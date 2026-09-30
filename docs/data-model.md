@@ -127,6 +127,7 @@ only ever calls the store, never the adapter directly.
 - `sendMessage(conversationId, { content, type, metadata, replyTo, attachments })` — `metadata.html` (LIME-37) carries the sanitised rich-text version of `content`, omitted when the message has no formatting. `attachments` (LIME-41, `duration_seconds` added LIME-42) is an array of `{ path, name, size, mime, width, height, duration_seconds }` — already-uploaded files (via `uploadAttachment` below) that become that same message's album; `content`, if present alongside them, is that album's caption, not a separate message
 - `toggleReaction(messageId, emoji)`
 - `createConversation({ type, memberIds, name, description })`
+- `addMembers(conversationId, profileIds)` — added in LIME-27 (see "Deviations from the contract" below)
 - `renameConversation(id, name)`
 - `setStarred(id, bool)`
 - `setArchived(id, bool)`
@@ -1355,6 +1356,57 @@ The production design, for whenever this is actually built:
   moment "The auth seam" above already describes for a returning seed
   teacher, just triggered by an invite instead of a matched email.
 
+## Deep links and sharing (LIME-27)
+
+**Format:** `#c=<conversationId>` on the app's own URL — built by one
+helper, `conversationLink(id)`, from `location.href` with its own
+existing hash stripped first (so calling it while already on a `#c=…`
+link replaces that link rather than appending a second one). Locally
+this is `file:///…/index.html#c=conv-004` or, over a local server,
+`http://localhost:8000/public/index.html#c=conv-004`. **In production
+this is the deployed app's own URL** — the `file://` form only ever
+makes sense for local preview, and a link copied from a `file://` session
+would be meaningless to anyone else (it points at a path on the
+copier's own disk) — worth flagging to the user if this ever ships
+before the app has a real deployed URL.
+
+**The access rule**, checked both on load (a deep link) and implicitly
+by every other read in this app: **a DM or group is only readable by its
+own members; a community is readable by any signed-in user.** On load,
+after `LimeStore.init()` (the conversation has to actually be in the
+loaded store before membership can be checked at all), a `#c=<id>` hash
+naming a conversation that exists, isn't soft-deleted
+(`conversations.deleted_at`), and passes that rule opens it; otherwise
+the default conversation opens instead and a toast reads "That chat
+isn't available to you." This is the same rule the commented-out
+`conversations_select_member`-style RLS policies in `schema.sql` already
+draft for the real backend — the local version is just a JS-side
+re-implementation of the identical check (`getMyMembership` standing in
+for `is_member()`, `type === 'community'` standing in for the
+community-specific `using` clause), not a new design.
+
+**Selecting a conversation calls `history.replaceState`** (not
+`pushState`) to keep the hash in sync — a reload keeps your place, but
+browsing from conversation to conversation doesn't fill up browser
+history with one entry per chat.
+
+**Carrying a deep link through sign-in:** opening a deep link while
+signed out hits the session gate, which redirects to `login.html`
+*with the current hash appended* (`login.html?reason=…#c=<id>`, or just
+`login.html#c=<id>` with no reason); `login.html`'s own redirect forwards
+both the query string and the hash to `auth.html`; after a successful
+sign-in there, `auth.html` redirects to `index.html?from=auth` *with the
+same hash appended*, so the deep-link check above (which runs
+unconditionally on every `index.html` load) opens the right conversation
+the moment the session actually exists, rather than the link being lost
+somewhere in the four-page round trip.
+
+**Toasts:** Seed's own `toast.css`/`.seed-toast` component, one shared
+`bottom-center` container (`role="status"`, `aria-live="polite"`),
+`showToast(message, { tone, duration })` in `app.js`. The neutral tone
+uses neutral Seed tokens only — never lime, per the app's own standing
+"lime is reserved for the nav and primary actions" rule (LIME-50-fix).
+
 ## Deviations from the contract (LIME-24b)
 
 - **Added `getMessage(id)`** to the reads — a plain lookup of one message
@@ -1436,3 +1488,38 @@ layer replaces `LocalAdapter` (writes go straight to the database, not
 through a client-side debounce), so `flush()` should be removed, not
 reimplemented, when this checklist is used for real — and `signOut()`'s
 own call to it drops out along with it.
+
+**LIME-27 added a `pagehide` listener (`app.js`) that also calls
+`LimeStore.flush()`** — the same debounce race, but for "closed the tab
+or navigated away some other way," which `signOut()`'s own call can't
+reach since no sign-out happens on a plain tab close. Also local-only,
+also dropped alongside `flush()` itself on the switch checklist.
+
+## Deviations from the contract (LIME-27)
+
+- **Added `addMembers(conversationId, profileIds)`** to the writes — the
+  Share popover's own "Add people by email," for groups only. Owner-only
+  (`can('addMembers', conversation)`, which also requires
+  `conversation.type === 'group'` — a DM's stored `role: 'owner'` on
+  whoever created it is never treated as real ownership anywhere else in
+  this app, per LIME-34's own decision, and the popover's UI never shows
+  this field for a DM in the first place). A profile already a member is
+  silently skipped, not an error, since submitting the same email twice
+  should be a no-op. **Maps directly onto the already-drafted
+  `conversation_members_insert_creator` RLS policy in `schema.sql`**
+  (commented out, not yet enabled) — its third `or is_owner(conversation_id)`
+  branch is exactly this write; no new policy is needed when that
+  checklist item gets enabled for real, only this function's body
+  swapping from a local array push to a real `insert`.
+- **The newly added member's own visibility on sign-in is the same local
+  artifact LIME-29's own doc note already describes** — one shared
+  `lime-state-v1` snapshot, no message-passing involved. **No system
+  message ("Shem added Valene") was added** — the brief's own instruction
+  was explicit: only build one if a system-message `type` already exists,
+  and `messages.type` is constrained to `('text', 'voice', 'location',
+  'image', 'file')` in `schema.sql` today (confirmed by reading the
+  column definition directly, not assumed) — no `'system'` value. Noted
+  here as a real, deliberately-skipped gap rather than quietly worked
+  around with, say, a `type: 'text'` message that *looks* like a system
+  line; a future brief adding a real system-message type should wire this
+  in then.

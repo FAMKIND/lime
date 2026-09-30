@@ -10,9 +10,11 @@
        session gate in app.js both still target it directly, and because
        a bookmark or old link to /login.html should keep working.
        Preserves the full query string — the gate appends
-       ?reason=storage|fileorigin (LIME-33-fix) for auth.html to read. -->
+       ?reason=storage|fileorigin (LIME-33-fix) for auth.html to read —
+       and (LIME-27) the hash, a deep link (#c=<id>) the gate is carrying
+       through this redirect on its way back to index.html after sign-in. -->
   <script>
-    window.location.replace('auth.html' + window.location.search);
+    window.location.replace('auth.html' + window.location.search + window.location.hash);
   </script>
 </head>
 <body>

@@ -767,6 +767,185 @@ html[data-pattern-treatment="photo"] body::before {
   display: none;
 }
 
+/* ── LIME-27: the Share popover ──
+   .lime-share wraps the trigger the same way .lime-appearance does above
+   it — a positioning context for the popover, not a styled element of
+   its own. */
+.lime-share {
+  position: relative;
+  display: flex;
+}
+
+.lime-share-popover {
+  display: none;
+  position: fixed;
+  width: min(360px, calc(100vw - 32px));
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--soil-bg-elevated);
+  border-radius: var(--seed-radius-lg);
+  box-shadow: var(--seed-shadow-xl);
+  z-index: var(--seed-z-modal);
+  padding: var(--seed-space-5);
+}
+
+.lime-share-popover.is-open {
+  display: block;
+}
+
+.lime-share-popover__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--seed-space-3);
+  margin-bottom: var(--seed-space-1);
+}
+
+.lime-share-popover__title {
+  margin: 0;
+  font-size: var(--seed-text-base);
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+  /* Long conversation titles shouldn't push the close button out of the
+     popover's own fixed width. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lime-share-popover__subline {
+  margin: 0 0 var(--seed-space-4);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+}
+
+.lime-share-popover__invite {
+  margin-bottom: var(--seed-space-4);
+}
+
+.lime-share-popover__invite-form {
+  display: flex;
+  gap: var(--seed-space-2);
+}
+
+.lime-share-popover__invite-form .seed-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.lime-share-popover__invite-result {
+  margin: var(--seed-space-2) 0 0;
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.lime-share-popover__invite-result:empty {
+  display: none;
+}
+
+.lime-share-popover__invite-dm-line {
+  margin: 0;
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+}
+
+.lime-share-popover__access-row {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  padding: var(--seed-space-2) 0;
+  border-top: 1px solid var(--soil-border-subtle);
+}
+
+.lime-share-popover__access-icon {
+  display: flex;
+  color: var(--soil-text-muted);
+  flex-shrink: 0;
+}
+
+.lime-share-popover__access-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.lime-share-popover__access-text {
+  flex: 1;
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+}
+
+.lime-share-popover__members {
+  max-height: 180px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--soil-border-subtle);
+  padding-bottom: var(--seed-space-2);
+}
+
+.lime-share-popover__member {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-3);
+  padding: var(--seed-space-2) 0;
+}
+
+.lime-share-popover__member-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lime-share-popover__member-name {
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lime-share-popover__member-you {
+  color: var(--soil-text-muted);
+  font-weight: var(--seed-weight-regular);
+}
+
+.lime-share-popover__member-email {
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lime-share-popover__member-role {
+  flex-shrink: 0;
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.lime-share-popover__note {
+  margin: var(--seed-space-3) 0;
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.lime-share-popover__footer {
+  display: flex;
+  gap: var(--seed-space-2);
+}
+
+.lime-share-popover__link-input {
+  flex: 1;
+  min-width: 0;
+  /* Read-only but not disabled — disabled inputs can't be focused/
+     selected, which the copy fallback chain's last resort needs. */
+  color: var(--soil-text-muted);
+  background: var(--calm-bg-subtle-default);
+}
+
+.lime-share-popover__footer .seed-button {
+  flex-shrink: 0;
+}
+
 /* A mask-based preview (a built-in preset or a user tile) — dark ink at
    a much higher, thumbnail-only opacity than the real low-intensity
    production layer (body::before) ever uses, tiled small so the repeat
