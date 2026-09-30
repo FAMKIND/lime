@@ -1,5 +1,45 @@
 'use strict';
 
+// ── Session gate (LIME-33) ────────────────────────────────
+// index.html requires a signed-in session now — with none, redirect to
+// login.html rather than rendering (this replaces the earlier LIME-05a
+// "no gate" decision, made back when there was no real backend or real
+// session to check). Runs first, before anything else in this file, so
+// nothing downstream (LimeStore.init(), rendering, event bindings)
+// assumes a session that isn't there.
+//
+// jsdom test harnesses load this file without ever setting up a session
+// and don't want this redirect getting in the way, so it auto-skips
+// whenever navigator.userAgent identifies jsdom — true for every existing
+// and future jsdom harness with zero per-test configuration.
+// window.LIME_TEST_FORCE_AUTH_GATE lets a test that specifically wants to
+// exercise the redirect turn the gate on anyway; window.LIME_TEST_SKIP_AUTH_GATE
+// force-skips it regardless of environment (e.g. a real-browser Playwright
+// run that deliberately opens index.html pre-authenticated by seeding
+// localStorage itself, without going through login.html first).
+function hasValidSession() {
+  try {
+    const raw = localStorage.getItem('lime-demo-session');
+    if (!raw) return false;
+    const session = JSON.parse(raw);
+    return !!(session && (session.userId || session.email));
+  } catch (e) {
+    return false;
+  }
+}
+
+const LIME_AUTH_GATE_ACTIVE = window.LIME_TEST_FORCE_AUTH_GATE
+  ? true
+  : (window.LIME_TEST_SKIP_AUTH_GATE ? false : navigator.userAgent.indexOf('jsdom') === -1);
+
+// Read by the LimeStore.init() call far below — skips real initialization
+// and rendering when redirecting away, rather than doing that work only
+// to have it discarded by the navigation.
+const LIME_AUTH_GATE_REDIRECTING = LIME_AUTH_GATE_ACTIVE && !hasValidSession();
+if (LIME_AUTH_GATE_REDIRECTING) {
+  window.location.href = 'login.html';
+}
+
 // LIME-51: theme is now set by index.html's own inline <head> script
 // (before first paint) and confirmed/corrected once the real profile
 // loads (LimeAppearance.init(), called from initMessagesList below) —
@@ -2801,7 +2841,12 @@ const CONVERSATION_ACTIONS = [
   },
 ];
 
-LimeStore.init().then(initMessagesList).catch(console.error);
+// LIME-33: skipped when the session gate above is already redirecting to
+// login.html — no point loading and rendering data for a page that's
+// about to navigate away (the redirect itself doesn't stop this script).
+if (!LIME_AUTH_GATE_REDIRECTING) {
+  LimeStore.init().then(initMessagesList).catch(console.error);
+}
 
 // ── Contact preview truncation ───────────────────────────
 // text-overflow: ellipsis has no effect on a flex container (only on
@@ -3688,28 +3733,29 @@ wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropd
 // ── Reset demo data (LIME-24b, dialog swapped in LIME-26) ───
 // Clears the persisted snapshot and reloads, so the next LimeStore.init()
 // normalizes fresh from the embedded seed again, exactly like a
-// first-ever visit.
+// first-ever visit. LIME-33: also wipes local accounts (lime-auth-v1) and
+// signs out — without that, a locally-created account's credential would
+// outlive the profile the reset just erased, silently orphaned.
 document.getElementById('reset-demo-data-btn')?.addEventListener('click', () => {
   confirmDialog({
     title: 'Reset demo data?',
-    message: 'Anything you’ve sent, replied, or reacted with will be cleared, and the original seed data comes back.',
+    message: 'Anything you’ve sent, replied, or reacted with will be cleared, the original seed data comes back, and any accounts you created here will be removed.',
     confirmLabel: 'Reset',
   }).then((confirmed) => {
     if (!confirmed) return;
-    LimeStore.reset().then(() => window.location.reload());
+    LimeAuth.resetCredentials();
+    LimeStore.reset().then(() => { LimeAuth.signOut(); });
   });
 });
 
 // ── Sign out ───────────────────────────────────────────────
-// index.html has no auth-gate check on load (a deliberate LIME-05a
-// decision — a real gate would redirect here on every direct open,
-// breaking this whole workflow without a real backend), so this only
-// ends the *current* session; nothing stops opening index.html directly
-// again afterward. LIME-31: the actual clear-session-and-redirect logic
-// now lives in LimeAuth.signOut() (the auth seam's own signOut, which
-// the Settings modal's own Sign out row also calls, via this same
-// button) — this handler just calls it, rather than the two duplicating
-// the same two lines.
+// LIME-31: the actual clear-session-and-redirect logic lives in
+// LimeAuth.signOut() (the auth seam's own signOut, which the Settings
+// modal's own Sign out row also calls, via this same button) — this
+// handler just calls it, rather than the two duplicating the same two
+// lines. LIME-33 added the real session gate above, so this is no longer
+// the only thing standing between an ended session and the app: opening
+// index.html directly with no session now redirects to login.html too.
 document.getElementById('sign-out-btn')?.addEventListener('click', () => {
   LimeAuth.signOut();
 });

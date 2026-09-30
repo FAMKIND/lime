@@ -31,18 +31,22 @@ const LimeStore = (function () {
     document.dispatchEvent(new CustomEvent(name, { detail }));
   }
 
+  function persistNow() {
+    adapter().save({
+      profiles: [...profiles.values()],
+      conversations,
+      conversation_members: members,
+      messages,
+      message_reactions: reactions,
+      message_attachments: messageAttachments, // LIME-41
+    });
+  }
+
   function scheduleSave() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      adapter().save({
-        profiles: [...profiles.values()],
-        conversations,
-        conversation_members: members,
-        messages,
-        message_reactions: reactions,
-        message_attachments: messageAttachments, // LIME-41
-      });
+      persistNow();
     }, 100);
   }
 
@@ -59,21 +63,32 @@ const LimeStore = (function () {
     messageAttachments = state.message_attachments || [];
   }
 
-  // The auth seam (docs/data-model.md): reads lime-demo-session's email
-  // and matches it to a profile. No match or no session at all falls back
-  // to teacher-002, logged once — not on every call — so the console
-  // doesn't fill up with the same notice on every render.
+  // The auth seam (docs/data-model.md): reads lime-demo-session and
+  // resolves it to a profile. LIME-33: the session shape is now
+  // { userId, email } (written by LimeAuth.signUp/signInWithPassword) —
+  // resolved by userId first, falling back to email for an old-shape
+  // session (one written before this brief, still just { email }) so an
+  // already-signed-in browser doesn't get silently logged out by this
+  // change alone. No match or no session at all falls back to
+  // teacher-002, logged once — not on every call. In the real app this
+  // fallback is never actually reached: index.html's own session gate
+  // (app.js) redirects to login.html first whenever there's no valid
+  // session, before LimeStore.init() ever runs. It stays here mainly for
+  // jsdom tests that don't bother setting up a session at all.
   function resolveCurrentUserId() {
-    let email = null;
+    let session = null;
     try {
       const raw = localStorage.getItem('lime-demo-session');
-      if (raw) email = JSON.parse(raw).email;
+      if (raw) session = JSON.parse(raw);
     } catch (e) {
       // Malformed session value — treat the same as "no session".
     }
-    if (email) {
-      const match = [...profiles.values()].find((p) => p.email === email);
-      if (match) return match.id;
+    if (session) {
+      if (session.userId && profiles.has(session.userId)) return session.userId;
+      if (session.email) {
+        const match = [...profiles.values()].find((p) => p.email === session.email);
+        if (match) return match.id;
+      }
     }
     if (!loggedFallback) {
       console.log('[LimeStore] No session matched a profile — defaulting to teacher-002.');
@@ -493,6 +508,52 @@ const LimeStore = (function () {
     return Promise.resolve(profile);
   }
 
+  // LIME-33: the write half of sign-up — a real profile row for a new
+  // local account, shaped exactly like a seeded one (normalizeSeed in
+  // local-adapter.js) so the new teacher appears in the directory,
+  // presence and avatar-initials code identically to a seed teacher. Per
+  // the brief, every field but id/email/display_name is null; app.js
+  // already guards array fields with `|| []` (e.g. ~4567) and
+  // presenceFor(null) already falls back to 'away', so this doesn't need
+  // its own defaults for those. auth.js's signUp is the only intended
+  // caller — email/password validation and uniqueness live there, not
+  // here (mirrors why setProfileEmail doesn't re-validate either).
+  function createProfile(options) {
+    const opts = options || {};
+    const profile = {
+      id: opts.id,
+      auth_user_id: null,
+      display_name: opts.display_name,
+      email: opts.email,
+      role: null,
+      pronouns: null,
+      school: null,
+      grade_levels: null,
+      subjects: null,
+      bio: null,
+      timezone: null,
+      phone: null,
+      status: null,
+      avatar_url: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    profiles.set(profile.id, profile);
+    // A synchronous flush, not scheduleSave()'s 100ms debounce: signUp
+    // (auth.js) redirects to index.html right after this resolves, and a
+    // debounced write racing a real page navigation can lose the write
+    // entirely (browsers can drop a pending timer on unload) — the new
+    // account would silently vanish. Account creation isn't a hot path
+    // where the debounce's batching matters, unlike per-keystroke writes.
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    persistNow();
+    emit('lime:profile-changed', { profileId: profile.id });
+    return Promise.resolve(profile);
+  }
+
   // ── lifecycle ──────────────────────────────────────────────
 
   function init() {
@@ -573,6 +634,7 @@ const LimeStore = (function () {
     getLinkPreview,
     updateProfile,
     setProfileEmail,
+    createProfile,
   };
 })();
 

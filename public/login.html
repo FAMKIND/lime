@@ -81,37 +81,36 @@
   <script src="js/password-toggle.js"></script>
 
   <!-- Gitignored (*.local.js) — sets window.LIME_DEMO_CREDENTIALS locally.
-       404s silently if absent; the check below handles that case. -->
+       404s silently if absent; LimeAuth.signInWithPassword handles that
+       case (only for a seed-teacher email — see its own comment). -->
   <script src="js/demo-config.local.js"></script>
+  <!-- LIME-33: LimeStore.init() (below) must load the persisted snapshot
+       before LimeAuth looks anyone up in it — same load order as
+       index.html. -->
+  <script src="js/seed-data.js"></script>
+  <script src="js/local-adapter.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/auth.js"></script>
   <script>
-    // Mocked auth, matching this project's own "Prototype: mocked auth"
-    // decision — no real backend call. Checks the submitted email/
-    // password against window.LIME_DEMO_CREDENTIALS (set by the
-    // gitignored demo-config.local.js, never committed) and, on match,
-    // stores a mock session flag before redirecting.
-    document.getElementById('login-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const errorEl = document.getElementById('login-error');
-      errorEl.classList.remove('is-visible');
-      errorEl.textContent = '';
+    // LIME-33: real local accounts via LimeAuth — no more single hardcoded
+    // credential. "local demo only; Supabase auth replaces this entirely."
+    LimeStore.init().then(() => {
+      document.getElementById('login-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const errorEl = document.getElementById('login-error');
+        errorEl.classList.remove('is-visible');
+        errorEl.textContent = '';
 
-      const email = document.getElementById('login-email').value;
-      const password = document.getElementById('login-password').value;
-      const demo = window.LIME_DEMO_CREDENTIALS;
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
 
-      if (!demo) {
-        errorEl.textContent = 'Demo credentials aren\'t configured locally (public/js/demo-config.local.js is gitignored and missing).';
-        errorEl.classList.add('is-visible');
-        return;
-      }
-
-      if (email === demo.email && password === demo.password) {
-        localStorage.setItem('lime-demo-session', JSON.stringify({ email, displayName: demo.displayName }));
-        window.location.href = 'index.html';
-      } else {
-        errorEl.textContent = 'Incorrect email or password.';
-        errorEl.classList.add('is-visible');
-      }
+        LimeAuth.signInWithPassword({ email, password }).then(() => {
+          window.location.href = 'index.html';
+        }).catch((err) => {
+          errorEl.textContent = err.message;
+          errorEl.classList.add('is-visible');
+        });
+      });
     });
   </script>
 </body>

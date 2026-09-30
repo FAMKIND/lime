@@ -176,13 +176,52 @@ rename) without requiring three more event names per action.
 ## The auth seam
 
 `getCurrentUserId()` is the one function anything in the UI calls to find
-out "who am I." Today: it reads `lime-demo-session` from `localStorage`
-(`{ email, displayName }`, set by `public/login.html` after checking one
-hardcoded credential in the gitignored `public/js/demo-config.local.js`),
-and matches `email` against `profiles.email` in the cache. With no session,
-or no matching profile, it falls back to `teacher-002` and logs once, so
-the app still renders something during local development without a login
-step.
+out "who am I." As of LIME-33: it reads `lime-demo-session` from
+`localStorage` — `{ userId, email }`, written by `LimeAuth.signUp`/
+`signInWithPassword` — and resolves by `userId` first (checked against
+`profiles.has(...)`), falling back to a lookup by `email` for an
+old-shape session (one written before this brief, still just `{ email }`
+or `{ email, displayName }`), so a browser that was already signed in
+isn't silently logged out by the shape change alone. With no session, or
+no match either way, it falls back to `teacher-002` and logs once — but
+that fallback is **not actually reachable in real browser use any more**:
+`app.js`'s own session gate (below) redirects to `login.html` before
+`LimeStore.init()` ever runs without a valid session. The fallback stays
+in `resolveCurrentUserId()` mainly for jsdom test harnesses that don't
+bother setting up a session at all, avoiding a mass rewrite of every
+existing test.
+
+**The session gate (`app.js`, LIME-33):** the very first executable logic
+in `app.js` checks for a valid session and, with none, redirects to
+`login.html` — replacing the earlier LIME-05a "no gate" decision, made
+back when there was no real backend or real session to check against. It
+auto-skips whenever `navigator.userAgent` contains `jsdom` (every jsdom
+test harness, with zero per-test configuration needed), with two explicit
+overrides for a test that wants non-default behavior:
+`window.LIME_TEST_FORCE_AUTH_GATE` (exercise the redirect even under
+jsdom) and `window.LIME_TEST_SKIP_AUTH_GATE` (skip it regardless of
+environment). `LimeStore.init()` itself is also skipped when the gate is
+redirecting, so a page about to navigate away doesn't waste time loading
+and rendering data for it first.
+
+**Local credentials (`lime-auth-v1`, LIME-33):** a separate `localStorage`
+key, `{ [email]: { userId, salt, hash } }` — entirely apart from
+`lime-demo-session` and from `LimeStore`'s own `lime-state-v1` snapshot.
+The hash is PBKDF2-SHA256 via `crypto.subtle`
+(`crypto.subtle.importKey` → `crypto.subtle.deriveBits`), a random
+16-byte salt, 100,000 iterations, salt/hash stored as base64 (JSON has no
+binary type). **Never the plain password, in any form, anywhere.** Local
+demo only; Supabase auth replaces this entirely — a real login never
+touches `lime-auth-v1`, Supabase's own `auth.users` table replaces it.
+
+**Seed teachers can still sign in**, with no `lime-auth-v1` credential of
+their own: `signInWithPassword` falls back to accepting
+`window.LIME_DEMO_CREDENTIALS.password` (the existing gitignored
+`demo-config.local.js`) when the email matches a seed `profiles` row and
+no local credential exists for it yet. If a seed teacher later calls
+`changePassword`, that claims the account — a real `lime-auth-v1`
+credential is stored, and the shared demo password no longer works for
+that email.
 
 When Supabase auth replaces this: `getCurrentUserId()` resolves to the
 profile whose `profiles.auth_user_id` matches the current session's
@@ -209,26 +248,61 @@ would simply never have matched).
 Nothing else in the UI changes, because nothing else in the UI calls
 anything auth-related directly — `getCurrentUserId()` is the only seam.
 
-### `auth.js` — the write half of the auth seam (LIME-31)
+### `auth.js` — the write half of the auth seam (LIME-31, real accounts LIME-33)
 
 `getCurrentUserId()` above is the *read* half of the auth seam (who am
 I); `auth.js` is the *write* half (change who I am, or how I sign in).
-Three functions, all returning Promises, all called directly by the UI —
+Every function returns a Promise and is called directly by the UI —
 never through `LimeStore`, since email and password are explicitly **not**
 `updateProfile`'s concern (production-ready rule: they belong to the auth
-provider, not `profiles`).
+provider, not `profiles`). Shaped like Supabase's own auth client
+(`signUp`/`signInWithPassword`/`signOut`/`getSession`) so the switch
+checklist below can swap each function's body for its Supabase equivalent
+without changing a single call site.
 
+- **`signUp({ email, password, displayName })`**
+  - **Local:** validates email format, password ≥ 8 characters, and a
+    non-empty display name; rejects if the email is already taken —
+    checked against **both** `lime-auth-v1` credentials **and**
+    `LimeStore.findProfileByEmail` (a seed teacher's email is taken too,
+    even with no local credential yet — signing up with it would
+    otherwise create a second, disconnected identity for the same
+    person). Generates a `crypto.randomUUID()` id, hashes the password
+    (PBKDF2-SHA256, see "The auth seam" above) into `lime-auth-v1`, calls
+    `LimeStore.createProfile({ id, email, display_name })`, then writes
+    the session and resolves `{ userId, email }`. The UI redirects to
+    `index.html` on success.
+  - **Supabase:** `supabase.auth.signUp({ email, password })`, with
+    `displayName` passed as user metadata a trigger on `auth.users`
+    insert reads to create the matching `profiles` row (see
+    "Onboarding" above) — `createProfile` itself becomes unnecessary,
+    since the trigger does that job.
+- **`signInWithPassword({ email, password })`**
+  - **Local:** two paths. A `lime-auth-v1` credential for that email
+    verifies the password against the stored PBKDF2 hash. With no local
+    credential, a matching seed `profiles` row accepts
+    `window.LIME_DEMO_CREDENTIALS.password` instead — the "demo
+    credentials aren't configured" message only ever applies to this
+    seed-teacher path; a local account never needs that file to exist.
+    Either path writes `{ userId, email }` to `lime-demo-session` and
+    resolves the same shape.
+  - **Supabase:** `supabase.auth.signInWithPassword({ email, password })` —
+    the seed-teacher demo-password fallback has no Supabase equivalent
+    and is dropped entirely; every real account authenticates against
+    Supabase's own stored credential.
+- **`getSession()`** — resolves the parsed `lime-demo-session` value, or
+  `null`. **Supabase:** `supabase.auth.getSession()`.
 - **`changeEmail(newEmail)`**
   - **Local:** validates the format, rejects if another profile already
     has that email (`LimeStore.findProfileByEmail`), then writes
     `profiles.email` (via a narrow store method, not `updateProfile` —
-    see "Deviations" below) and updates the `email` field inside the
-    `lime-demo-session` `localStorage` value, so the session still
-    resolves to the same profile on the next `LimeStore.init()`. Without
-    that second part, changing your email would silently log you back in
-    as `teacher-002` (the fallback) on your very next reload, since
-    `getCurrentUserId()` would no longer find a profile matching the
-    session's stale email.
+    see "Deviations" below), updates the `email` field inside
+    `lime-demo-session` so the session still resolves to the same
+    profile on the next `LimeStore.init()`, and (LIME-33) renames the
+    `lime-auth-v1` credential's own key from the old email to the new
+    one — `signInWithPassword` looks credentials up *by* email, so a
+    stale key would permanently lock this person out of signing back in
+    with the password they already set.
   - **Supabase:** `supabase.auth.updateUser({ email })`, which sends a
     confirmation email and only takes effect once it's clicked —
     `profiles.email` updates via a database trigger on that
@@ -236,22 +310,28 @@ provider, not `profiles`).
     "succeeds immediately" behavior is a deliberate simplification for
     the prototype, not a preview of production behavior.
 - **`changePassword({ current, next, confirm })`**
-  - **Local:** validates only — `next` is at least 8 characters, `next`
-    differs from `current`, and `next` matches `confirm`. **Stores
-    nothing, anywhere, in any form** — there is no real password to check
-    `current` against locally (the demo login's one hardcoded credential
-    lives in the gitignored `demo-config.local.js`, which this module
-    never reads), so `current` is validated for shape only, never
-    verified. Resolves with a message the UI shows as-is: "Password
-    changes take effect once connected to the real account system."
+  - **Local (LIME-33):** validates `next` is at least 8 characters,
+    differs from `current`, and matches `confirm` — then **really
+    verifies** `current`: against the stored `lime-auth-v1` hash for a
+    local account, or against `window.LIME_DEMO_CREDENTIALS.password` for
+    a seed teacher who's never set their own password yet. On success,
+    stores a real new PBKDF2 hash. For a seed teacher this **claims the
+    account** — from then on they have a real local credential and the
+    shared demo password no longer works for their email.
   - **Supabase:** `supabase.auth.updateUser({ password })`, after
     Supabase itself re-authenticates `current` server-side (this module
     would still send `current`, just to Supabase instead of validating it
     locally).
 - **`signOut()`** — clears `lime-demo-session` and redirects to
-  `login.html`. Identical to what `#sign-out-btn`'s own handler already
-  did before this brief; that handler now just calls this instead, so
-  the logic exists in exactly one place.
+  `login.html`. Called by both `#sign-out-btn`'s own handler and the
+  Settings modal's Sign out row (via the same button), so the logic
+  exists in exactly one place.
+- **`resetCredentials()`** (LIME-33) — clears `lime-auth-v1`. Called
+  alongside `LimeStore.reset()` by the "Reset demo data" handler, not
+  folded into `LimeStore.reset()` itself — accounts are this module's own
+  concern, the same reasoning email/password never go through
+  `LimeStore.updateProfile` either. **Local only** — "reset" has no
+  Supabase equivalent, same as `LimeStore.reset()` itself.
 
 ## The switch checklist
 
@@ -268,18 +348,29 @@ of `localStorage`:
    (as comments) — the policies call the helpers, so the helpers have to
    exist first.
 4. Wire up the onboarding linking described in "The auth seam" above (new
-   signup → a profile row with `auth_user_id` set; existing seed teacher →
+   signup → a profile row with `auth_user_id` set, via a Supabase trigger
+   on `auth.users` insert rather than `LimeStore.createProfile` — that
+   local-only write drops out entirely here; existing seed teacher →
    linked by email on first login), so `current_profile_id()` actually
    resolves to something for every real login.
 5. Run `seed-data/seed.ts` against the new database (it's fixed to use the
    corrected reactor rule in LIME-24b — no longer a blocker by the time
    this checklist is used for real).
-6. Swap `auth.js`'s local `changeEmail`/`changePassword` bodies for their
-   Supabase equivalents (`supabase.auth.updateUser({ email })` /
-   `updateUser({ password })`) — same function names and signatures, so
-   nothing calling `LimeAuth.changeEmail`/`changePassword` needs to change.
-   `signOut()` swaps to `supabase.auth.signOut()`.
-7. Flip `LIME_BACKEND` from `'local'` to `'supabase'`.
+6. Swap `auth.js`'s local `signUp`/`signInWithPassword`/`changeEmail`/
+   `changePassword` bodies for their Supabase equivalents (listed next to
+   each above) — same function names and signatures, so nothing calling
+   `LimeAuth.*` needs to change. `signOut()` swaps to
+   `supabase.auth.signOut()`. `resetCredentials()` and the seed-teacher
+   demo-password fallback in `signInWithPassword` both drop out — neither
+   has a Supabase equivalent.
+7. `public/signup.html` used to load the Supabase JS CDN script and
+   `public/js/supabase.js` (an unconfigured placeholder client) directly —
+   LIME-33 removed both script tags since nothing in the local flow used
+   them, but `supabase.js` itself is still sitting there, untouched and
+   unused. Either wire it up as the real client this checklist's
+   `SupabaseAdapter`/`auth.js` need, or delete it once its logic has been
+   absorbed elsewhere.
+8. Flip `LIME_BACKEND` from `'local'` to `'supabase'`.
 
 Nothing else changes — the store, the events, and every UI call site stay
 exactly as they are, because they were never talking to `localStorage` or
@@ -1216,3 +1307,19 @@ updated to this rule as of LIME-24b** — see that brief's `TEND.md` entry.
   change. Emits the same `lime:profile-changed` event `updateProfile`
   does, since email is still profile data from the UI's own rendering
   perspective (it shows in Login & security and the profile menu header).
+
+## Deviations from the contract (LIME-33)
+
+- **Added `createProfile({ id, email, display_name })`** to the writes —
+  `auth.js`'s `signUp` is its only intended caller. `id` is a
+  `crypto.randomUUID()` generated by `signUp` before this is called (so
+  the credential and the profile share the same id from the start); every
+  other field is `null`, shaped exactly like a seeded profile
+  (`normalizeSeed` in `local-adapter.js`) so a brand-new account renders
+  identically to a seed teacher everywhere else in the app (presence,
+  avatar initials, the directory). Persists synchronously, not through the
+  usual 100ms-debounced `scheduleSave()` — `signUp` redirects to
+  `index.html` right after this resolves, and a debounced write racing a
+  real page navigation can lose the write outright (a browser can drop a
+  pending timer on unload). Emits `lime:profile-changed`, same as
+  `updateProfile`/`setProfileEmail`.

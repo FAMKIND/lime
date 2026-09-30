@@ -89,26 +89,33 @@
   </div>
 
   <script src="js/password-toggle.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase.js"></script>
+  <!-- LIME-33: real local accounts via LimeAuth — supabase.js (the
+       Supabase CDN client and its unconfigured placeholder wrapper) is no
+       longer wired in here; see docs/data-model.md's switch checklist. -->
+  <script src="js/seed-data.js"></script>
+  <script src="js/local-adapter.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/auth.js"></script>
   <script>
-    document.getElementById('signup-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const errorEl = document.getElementById('signup-error');
-      errorEl.classList.remove('is-visible');
-      errorEl.textContent = '';
+    LimeStore.init().then(() => {
+      document.getElementById('signup-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const errorEl = document.getElementById('signup-error');
+        errorEl.classList.remove('is-visible');
+        errorEl.textContent = '';
 
-      const email = document.getElementById('signup-email').value;
-      const password = document.getElementById('signup-password').value;
-      const displayName = document.getElementById('signup-name').value;
+        const email = document.getElementById('signup-email').value;
+        const password = document.getElementById('signup-password').value;
+        const displayName = document.getElementById('signup-name').value;
 
-      try {
-        await signUp(email, password, displayName);
-        window.location.href = 'index.html';
-      } catch (err) {
-        errorEl.textContent = err.message || 'Something went wrong. Please try again.';
-        errorEl.classList.add('is-visible');
-      }
+        try {
+          await LimeAuth.signUp({ email, password, displayName });
+          window.location.href = 'index.html';
+        } catch (err) {
+          errorEl.textContent = err.message || 'Something went wrong. Please try again.';
+          errorEl.classList.add('is-visible');
+        }
+      });
     });
   </script>
 </body>

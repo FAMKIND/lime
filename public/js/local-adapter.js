@@ -391,6 +391,33 @@ const LocalAdapter = (function () {
               message_attachments: snapshot.message_attachments || [],
             };
           }
+          // LIME-33: a version bump (a future seed-data.js or schema-version
+          // edit) must not silently delete every locally-signed-up account.
+          // A fingerprint mismatch alone doesn't mean the snapshot is
+          // stale garbage — it might just be OLDER than the embedded seed,
+          // while still holding real profiles (and their conversations/
+          // messages) that no fresh normalizeSeed(...) would ever recreate.
+          // If any stored profile's id isn't one a fresh reseed would
+          // produce, it was created locally (sign-up, not seeding) — keep
+          // the whole snapshot exactly as stored rather than reseeding
+          // over it. This deliberately skips a partial field-by-field
+          // merge (e.g. picking up a new seed teacher's phone number)
+          // in favor of never risking an orphaned reference; a real
+          // seed-data.js edit that needs old snapshots migrated should
+          // bump PROFILE_SCHEMA_VERSION/MEMBER_SCHEMA_VERSION and handle
+          // migration explicitly, not rely on this fallback.
+          const freshIds = new Set(normalizeSeed(window.LIME_SEED_DATA).profiles.map((p) => p.id));
+          const hasUserProfiles = Array.isArray(snapshot.profiles) && snapshot.profiles.some((p) => !freshIds.has(p.id));
+          if (hasUserProfiles) {
+            return {
+              profiles: snapshot.profiles,
+              conversations: snapshot.conversations,
+              conversation_members: snapshot.conversation_members,
+              messages: snapshot.messages,
+              message_reactions: snapshot.message_reactions,
+              message_attachments: snapshot.message_attachments || [],
+            };
+          }
         }
       } catch (e) {
         // Corrupt or unparseable snapshot — fall through to a fresh
