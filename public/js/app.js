@@ -2612,9 +2612,15 @@ function initMessagesList() {
     // mechanism — reused deliberately, not reinvented).
     return '<div class="' + classes.join(' ') + '" data-search-text="' + escapeHtml(searchText) + '"'
       + (isMe ? ' data-profile-id="' + person.id + '"' : ' data-person-id="' + person.id + '"') + '>'
+      // LIME-57 Phase 2: .lime-avatar-ring always wraps the frame now —
+      // at padding:0 (the default, see lime.css) it's invisible, so a
+      // read row's markup renders pixel-identical to before; only
+      // .lime-recent__item--unread on the ancestor gives it a fill.
+      + '<span class="lime-avatar-ring">'
       + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
       + '<span class="seed-avatar seed-avatar--lg lime-avatar" ' + avatarAttrsHtml(person) + '></span>'
       + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
+      + '</span>'
       + '</span>'
       + '<span class="lime-recent__name">' + escapeHtml(label) + '</span>'
       + '</div>';

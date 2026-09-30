@@ -520,6 +520,75 @@ html[data-pattern-treatment="photo"] body::before {
 
 .lime-presence[data-presence="dnd"]::after { content: '–'; }
 
+/* ── LIME-57 Phase 2: lime-shaped avatars, >= 28px ──
+   md (32), lg (40) and xl (56 — and its two size overrides, the 64px
+   Settings profile button and the ~220px contact-details photo, both
+   still carry .seed-avatar--xl so they're covered automatically) get
+   the silhouette; xs (20) and sm (24) stay round — confirmed by tally
+   (TEND.md) that no other avatar usage bypasses these five classes.
+   .lime-avatar-cluster__member (below) is deliberately excluded: it
+   never carries a size class at all (its own rules set width/height
+   directly, always under 28px), and the brief asked clusters to stay
+   as they are regardless.
+
+   @supports-gated, not applied unconditionally: measured directly
+   (not assumed) that .seed-avatar's own border-radius:50% clips the
+   mask's nub almost entirely when both apply to the same element (the
+   circle clip and the mask clip intersect) — a real, non-obvious
+   interaction, not a hypothetical. Only removing border-radius WHERE
+   mask-image is actually supported keeps the brief's own "border-radius
+   stays as a fallback where masks are unsupported" true in the case
+   that fallback is for: no support means no @supports match, means
+   border-radius:50% (the existing circle) is all that was ever there
+   to begin with. */
+@supports (mask-image: url('data:image/svg+xml,')) or (-webkit-mask-image: url('data:image/svg+xml,')) {
+  .seed-avatar--md,
+  .seed-avatar--lg,
+  .seed-avatar--xl {
+    border-radius: 0;
+    -webkit-mask-image: url('../assets/lime-silhouette.svg');
+    mask-image: url('../assets/lime-silhouette.svg');
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+  }
+}
+
+/* ── LIME-57 Phase 2: the unread ring, rebuilt ──
+   The old box-shadow ring (kept only as history here) is invisible
+   once its own element is masked — measured directly: mask-image
+   clips box-shadow to nothing, not just to a rough edge (TEND.md).
+   Wrapper instead: .lime-avatar-ring sits around .lime-avatar-frame,
+   always present in the markup but only visually a ring once
+   .lime-recent__item--unread gives it padding + a fill — at padding:0
+   it's an invisible, zero-size wrapper around an unread item's frame,
+   so read rows are pixel-identical to before. The wrapper carries the
+   SAME normalized silhouette mask as the avatar inside it, so the
+   ring's outer edge follows the nub too, not just a circle. */
+.lime-avatar-ring {
+  display: inline-flex;
+  padding: 0;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.lime-recent__item--unread .lime-avatar-ring {
+  padding: 2px;
+  background: var(--selected-border-bold-default);
+}
+
+@supports (mask-image: url('data:image/svg+xml,')) or (-webkit-mask-image: url('data:image/svg+xml,')) {
+  .lime-avatar-ring {
+    -webkit-mask-image: url('../assets/lime-silhouette.svg');
+    mask-image: url('../assets/lime-silhouette.svg');
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+  }
+}
+
 /* ── Group avatar cluster (LIME-19b) ──
    Sits in the same 40px square a DM's single .lime-avatar-frame--lg
    occupies. data-count picks the layout; a >4-member group still shows
@@ -3778,9 +3847,9 @@ html[data-pattern-treatment="photo"] body::before {
   cursor: pointer;
 }
 
-.lime-recent__item--unread .seed-avatar {
-  box-shadow: 0 0 0 2px var(--selected-border-bold-default);
-}
+/* LIME-57 Phase 2: the unread ring moved to .lime-avatar-ring, a
+   wrapper around .lime-avatar-frame (app.js), since this element
+   itself is now masked and a box-shadow here would be invisible. */
 
 .lime-recent__name {
   font-size: var(--seed-text-xs);
