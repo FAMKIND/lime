@@ -16,15 +16,35 @@ const LocalAdapter = (function () {
   const FILES_STORE_NAME = 'attachments';
   const FILES_DB_VERSION = 1;
 
+  // LIME-52-fix5: no stage of the upload pipeline may hang silently.
+  // withTimeout races any promise against a plain timer — IndexedDB
+  // requests have no built-in timeout of their own, and a request that
+  // never calls back (a `blocked` open with another tab holding an
+  // older connection open; a transaction that `abort`s rather than
+  // `error`s, which has no handler by default) would otherwise leave
+  // the caller waiting forever with no way to know anything went wrong.
+  const STORAGE_TIMEOUT_MS = 10000;
+  function withTimeout(promise, ms, message) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
   function openFilesDb() {
-    return new Promise((resolve, reject) => {
+    return withTimeout(new Promise((resolve, reject) => {
       const request = indexedDB.open(FILES_DB_NAME, FILES_DB_VERSION);
       request.onupgradeneeded = () => {
         request.result.createObjectStore(FILES_STORE_NAME, { keyPath: 'path' });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
-    });
+      // Fires instead of onsuccess/onerror when another tab holds an
+      // older-version connection open during an upgrade — neither of
+      // the two handlers above would otherwise ever run.
+      request.onblocked = () => reject(new Error('Another Lime tab is blocking the database.'));
+    }), STORAGE_TIMEOUT_MS, 'Opening storage timed out.');
   }
 
   // `conversationId` is all `uploadAttachment` gets — there's no
@@ -36,12 +56,13 @@ const LocalAdapter = (function () {
   function uploadAttachment(file, options) {
     const conversationId = (options && options.conversationId) || 'unfiled';
     const path = conversationId + '/' + crypto.randomUUID() + '-' + file.name;
-    return openFilesDb().then((db) => new Promise((resolve, reject) => {
+    return withTimeout(openFilesDb().then((db) => new Promise((resolve, reject) => {
       const tx = db.transaction(FILES_STORE_NAME, 'readwrite');
       tx.objectStore(FILES_STORE_NAME).put({ path, blob: file, name: file.name, mime: file.type, size: file.size });
       tx.oncomplete = () => resolve({ path });
       tx.onerror = () => reject(tx.error);
-    }));
+      tx.onabort = () => reject(tx.error || new Error('The write was aborted.'));
+    })), STORAGE_TIMEOUT_MS, 'Saving the upload timed out.');
   }
 
   // A fresh object URL every call, never cached here — object URLs are
@@ -53,7 +74,7 @@ const LocalAdapter = (function () {
   // it was never written to IndexedDB in the first place.
   function getAttachmentUrl(path) {
     if (path.indexOf('blob:') === 0) return Promise.resolve(path);
-    return openFilesDb().then((db) => new Promise((resolve, reject) => {
+    return withTimeout(openFilesDb().then((db) => new Promise((resolve, reject) => {
       const tx = db.transaction(FILES_STORE_NAME, 'readonly');
       const request = tx.objectStore(FILES_STORE_NAME).get(path);
       request.onsuccess = () => {
@@ -61,7 +82,8 @@ const LocalAdapter = (function () {
         resolve(URL.createObjectURL(request.result.blob));
       };
       request.onerror = () => reject(request.error);
-    }));
+      tx.onabort = () => reject(tx.error || new Error('The read was aborted.'));
+    })), STORAGE_TIMEOUT_MS, 'Reading the upload timed out.');
   }
 
   // LIME-52-fix3: deletes a previous upload's blob(s) when a new one
@@ -88,7 +110,7 @@ const LocalAdapter = (function () {
   // between the normal persisted path and the in-memory, session-only
   // fallback (a note shown once, not a silent difference).
   function checkStorageAvailable() {
-    return openFilesDb().then((db) => new Promise((resolve) => {
+    return withTimeout(openFilesDb().then((db) => new Promise((resolve) => {
       try {
         const tx = db.transaction(FILES_STORE_NAME, 'readwrite');
         const probePath = '__lime-storage-probe__';
@@ -99,10 +121,14 @@ const LocalAdapter = (function () {
           resolve(true);
         };
         tx.onerror = () => resolve(false);
+        // A real, distinct IndexedDB event from `error` — an unhandled
+        // abort left this promise (and, upstream, appearance.js's own
+        // cached storageAvailablePromise) pending forever.
+        tx.onabort = () => resolve(false);
       } catch (e) {
         resolve(false);
       }
-    })).catch(() => false);
+    })), STORAGE_TIMEOUT_MS, 'Storage check timed out.').catch(() => false);
   }
 
   // Best-effort, like save()'s own try/catch below — a reset that can't

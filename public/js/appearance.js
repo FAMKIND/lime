@@ -283,6 +283,13 @@ const LimeAppearance = (function () {
   const UPLOAD_PHOTO_MAX_DIM = 1600;
   const UPLOAD_PHOTO_BLUR_PX = 10;
   const UPLOAD_SCRIM_FLOOR = 0.75;
+  // LIME-52-fix5: below this, a Texture mask reads as an almost-uniform
+  // tint rather than a texture — calibrated against the user's own 6
+  // samples (ep_naturalwhite: 9.6, geometry2: 17.3, bananas: 19.2,
+  // cork-board: 31.8, leaves: 43.0, ripples: 64.0) plus a live
+  // before/after screenshot confirming 9.6 is genuinely invisible and
+  // 17.3 is genuinely visible — 15 sits cleanly between the two.
+  const UPLOAD_TEXTURE_MIN_STDDEV = 15;
 
   function validateUploadFile(file) {
     if (!UPLOAD_ACCEPTED_MIME.includes(file.type)) {
@@ -342,13 +349,33 @@ const LimeAppearance = (function () {
       if (g > max) max = g;
     }
     const range = Math.max(max - min, 1);
+    let alphaSum = 0;
+    const alphas = new Uint8ClampedArray(w * h);
     for (let i = 0; i < data.length; i += 4) {
       const levelled = (gray[i / 4] - min) / range; // 0-1, auto-levelled
       const alpha = Math.round(255 * Math.pow(levelled, 1.4)); // gentle gamma, not a hard clip
       data[i] = 255; data[i + 1] = 255; data[i + 2] = 255; data[i + 3] = alpha;
+      alphas[i / 4] = alpha;
+      alphaSum += alpha;
     }
     ctx.putImageData(imageData, 0, 0);
-    return { canvas, width: w, height: h };
+    // LIME-52-fix5: auto-levelling always stretches to a full 0-255
+    // *range*, even for a barely-textured source — the built-in
+    // pre-flight step LIME-52-fix5 was actually root-caused with. A
+    // near-white "paper" texture (e.g. the user's own ep_naturalwhite
+    // sample) auto-levels into a mask with plenty of range but almost
+    // no *variation* — mean alpha 199.6, stddev only 9.6 — which tints
+    // the whole canvas by a nearly uniform amount and reads as "nothing
+    // happened," confirmed with a live before/after screenshot (TEND.md)
+    // showing no visible difference at all. Mean alone doesn't predict
+    // this (that same sample's mean was higher than several genuinely
+    // visible ones) — standard deviation does, checked against all 6 of
+    // the user's own samples plus a mid-tone photo, not guessed.
+    const alphaMean = alphaSum / alphas.length;
+    let varianceSum = 0;
+    for (let i = 0; i < alphas.length; i++) varianceSum += (alphas[i] - alphaMean) ** 2;
+    const alphaStddev = Math.sqrt(varianceSum / alphas.length);
+    return { canvas, width: w, height: h, alphaStddev };
   }
 
   // Downscale to <=1600px with a blur baked in at processing time
@@ -406,10 +433,21 @@ const LimeAppearance = (function () {
   // instead (an object URL, never written anywhere) rather than losing
   // the upload outright — sessionOnly on the returned pattern is how
   // the UI shows the one-time "won't persist" note.
+  // LIME-52-fix5: only a TRUE (genuinely available) result is cached.
+  // A false one — which now also covers a timeout, since
+  // checkStorageAvailable never rejects — is deliberately NOT cached:
+  // caching it would mean one transient failure (another tab briefly
+  // blocking the database; a one-off slow disk) silently downgrades
+  // every later upload for the rest of the session, with no way to
+  // recover without a reload.
   let storageAvailablePromise = null;
   function isStorageAvailable() {
-    if (!storageAvailablePromise) storageAvailablePromise = window.LimeStore.checkStorageAvailable();
-    return storageAvailablePromise;
+    if (storageAvailablePromise) return storageAvailablePromise;
+    const probe = window.LimeStore.checkStorageAvailable().then((available) => {
+      if (available) storageAvailablePromise = Promise.resolve(true);
+      return available;
+    });
+    return probe;
   }
 
   // Stores a processed file the normal way (IndexedDB, a real path) when
@@ -445,9 +483,22 @@ const LimeAppearance = (function () {
       }
 
       return loadImageFromFile(file).then((img) => {
-        const treatment = treatmentOverride || defaultTreatmentFor(img.naturalWidth, img.naturalHeight);
+        let treatment = treatmentOverride || defaultTreatmentFor(img.naturalWidth, img.naturalHeight);
         const texture = processTexture(img);
         const photo = processPhoto(img);
+        // LIME-52-fix5: a Texture default whose own processed mask is
+        // too faint to read as a texture (see UPLOAD_TEXTURE_MIN_STDDEV,
+        // above) auto-switches to Photo instead — "applied but
+        // invisible" confirmed as this brief's actual root cause for
+        // the user's own near-white sample images, not a hang or a
+        // dialog that never opened (both directly tested and ruled
+        // out). autoSwitchedToPhoto tells app.js to explain the switch
+        // rather than silently doing something the user didn't ask for.
+        let autoSwitchedToPhoto = false;
+        if (treatment === 'texture' && texture.alphaStddev < UPLOAD_TEXTURE_MIN_STDDEV) {
+          treatment = 'photo';
+          autoSwitchedToPhoto = true;
+        }
         URL.revokeObjectURL(img.src);
         return Promise.all([
           canvasToBlob(texture.canvas, 'image/png'),
@@ -464,6 +515,7 @@ const LimeAppearance = (function () {
             photoPath: photoResult.path,
             treatment,
             isVector: false,
+            autoSwitchedToPhoto,
             sessionOnly: textureResult.sessionOnly || photoResult.sessionOnly,
             width: texture.width,
             height: texture.height,

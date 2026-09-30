@@ -258,6 +258,12 @@ function runPatternUpload(file, surface) {
   const token = ++uploadJobToken;
   uploadBusy = true;
   surface.rerender();
+  // LIME-52-fix5: "a real processing state" means both the tile's own
+  // spinner (patternUploadThumbHtml's busy param, reads uploadBusy) AND
+  // a message the user can't miss even if they're not looking right at
+  // the tiny tile — the brief's own explicit "the spinner AND the
+  // surface's message line."
+  if (surface.setError) surface.setError('Processing…', false);
   const previousPattern = LimeStore.getAppearance().pattern;
   // setError is called strictly AFTER rerender() in every branch below,
   // never before/alongside it — rerender() fully replaces the pane's
@@ -273,9 +279,10 @@ function runPatternUpload(file, surface) {
       uploadBusy = false;
       surface.rerender();
       if (surface.setError) {
-        surface.setError(pattern.sessionOnly
-          ? 'This browsing session doesn\'t support saving uploads (private browsing?) — it\'ll work for now, but won\'t be here next time you open Lime.'
-          : '');
+        const notes = [];
+        if (pattern.autoSwitchedToPhoto) notes.push('This image is very light, so we\'re showing it as a photo instead of a texture.');
+        if (pattern.sessionOnly) notes.push('This browsing session doesn\'t support saving uploads (private browsing?) — it\'ll work for now, but won\'t be here next time you open Lime.');
+        surface.setError(notes.join(' '), false);
       }
     });
   }).catch((err) => {
@@ -2054,9 +2061,15 @@ function initMessagesList() {
     paintAttachments(appearanceMenu);
   }
 
-  function setAppearanceMenuUploadError(msg) {
+  // LIME-52-fix5: isError === false (Processing…, an informational note)
+  // gets the neutral style; a real failure (the default) gets the
+  // error-red one, same is-note/is-error split as Settings' own
+  // setFieldError/setFieldNote.
+  function setAppearanceMenuUploadError(msg, isError) {
     const errorEl = appearanceMenu && appearanceMenu.querySelector('.lime-appearance-upload-error');
-    if (errorEl) errorEl.textContent = msg || '';
+    if (!errorEl) return;
+    errorEl.textContent = msg || '';
+    errorEl.classList.toggle('is-note', isError === false);
   }
 
   if (appearanceMenu) {
@@ -4320,6 +4333,19 @@ document.addEventListener('keydown', (e) => {
     if (errorEl) errorEl.textContent = message;
   }
 
+  // LIME-52-fix5: an informational message ("Processing…", "this image
+  // is very light so we're showing it as a photo") — same text slot as
+  // setFieldError, deliberately without .has-error, so it reads as
+  // neutral status rather than a problem (lime.css's own
+  // .has-error .lime-settings__field-error is what turns the text red).
+  function setFieldNote(key, message) {
+    const field = pane.querySelector('[data-field="' + key + '"]');
+    if (!field) return;
+    field.classList.remove('has-error');
+    const errorEl = fieldErrorEl(key);
+    if (errorEl) errorEl.textContent = message;
+  }
+
   function getProfileFormValues() {
     const values = {};
     PROFILE_FIELD_KEYS.forEach((key) => {
@@ -4671,7 +4697,11 @@ document.addEventListener('keydown', (e) => {
       document.getElementById('sign-out-btn')?.click();
       return;
     }
-    if (handleAppearanceClick(e, pane, renderPreferencesSection, (msg) => (msg ? setFieldError('pattern', msg) : clearFieldError('pattern')))) return;
+    if (handleAppearanceClick(e, pane, renderPreferencesSection, (msg, isError) => {
+      if (!msg) clearFieldError('pattern');
+      else if (isError === false) setFieldNote('pattern', msg);
+      else setFieldError('pattern', msg);
+    })) return;
     const changeBtn = e.target.closest('[data-change]');
     if (changeBtn) toggleInlineForm(changeBtn.dataset.change);
   });

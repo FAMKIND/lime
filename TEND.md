@@ -1883,3 +1883,65 @@ Plus every named scenario, all passing: the same file twice in a row (re-picking
 - Spot-checked no regressions in unrelated attachment code: `run-lime38.js`, `run-lime44.js`, `run-lime41.js`, `run-lime34.js` all still pass clean (the `LocalAdapter: no attachment` console noise in `run-lime38.js` is the same pre-existing, unrelated artifact of that test's own intentional-rejection scenario, confirmed present regardless of this brief's changes, first identified during LIME-52-fix).
 
 **Gate:** in Firefox, upload PNGs repeatedly from the palette menu and from Settings, including the same file twice and a big photo — it should work every time now, or tell you clearly why not (never a silent no-op). Try it in a private window: it should either work for that session or say plainly that it needs normal browsing.
+
+## LIME-52-fix5
+
+**Ground rule taken seriously: tend's own LIME-52-fix3 matrix passed in headless Firefox, and the user's real, headed Firefox still showed "nothing happens."** Every reproduction in this brief ran in **headed** Firefox (`headless: false`), and — critically — through the *real* native file dialog (`page.waitForEvent('filechooser')`, then `filechooser.setFiles(...)`), not `locator.setInputFiles()` directly on the input. That distinction turned out to matter: `setInputFiles()` bypasses the click-to-open step entirely, so LIME-52-fix3's own matrix could never have caught a dialog-never-opens bug even if one existed — it simply never exercised that code path. It doesn't, but the gap in the old matrix's own coverage is worth recording, not just the result.
+
+**Every hypothesis tested directly, not assumed:**
+
+| # | Hypothesis | Test | Result |
+|---|---|---|---|
+| 1 | Applied but invisible | Uploaded all 6 of the user's real samples via the real filechooser flow, from both surfaces, traced every stage, then diffed real before/after screenshots | **Confirmed — this was it.** All 6 samples (plus an ordinary photo) completed every stage (tile click → input click → change → storage check → decoded → processed → stored → applied → re-rendered) successfully, every time. But `ep_naturalwhite.png`'s own before/after screenshots were visually indistinguishable — the upload had genuinely, silently done nothing a human could see. |
+| 2 | The pipeline hangs (a `blocked` open, an unhandled `abort`, cached forever) | Forced a real `onblocked` event and a real transaction `abort` directly; forced `indexedDB.open()` to never call back at all, with a second real Lime tab open at the same time | **Not reproduced as an actual hang in this session** (the sandbox's own IndexedDB never genuinely blocked), but the *mechanism* was real: `openFilesDb()` had no `onblocked` handler and `checkStorageAvailable()`'s own transaction had no `onabort` handler — either one firing instead of `onsuccess`/`onerror` would have left the promise pending forever, and `isStorageAvailable()`'s caching would have then silently poisoned every later upload for the rest of the session. Fixed regardless, and verified by forcing exactly that: a permanently non-responding `indexedDB.open()` now settles in ~10.6s via a timeout, not never. |
+| 3 | The dialog never opens / `change` never reaches the listener | The real filechooser-based matrix (below) | **Not reproduced** — the dialog opened and `change` fired correctly in all 14 real attempts, plus a second-tab scenario. Ruled out, not assumed. |
+| 4 | Stale cached pre-fix3 JS in the user's own browser | Can't be tested from here — the user's own browser cache isn't reachable | Flagged, not silently dropped: the gate below opens with **hard-reload first (⌘⇧R)**. |
+
+**The real root cause, in detail (hypothesis 1):** `processTexture`'s auto-level step always stretches whatever luminance range exists in the source to a full 0–255 alpha range — even a genuinely near-white "paper" texture. But *stretching the range* isn't the same as *creating variation*: `ep_naturalwhite.png`'s own processed mask measured mean alpha 199.6 with a standard deviation of only **9.6** — almost every pixel landed near the same value, so the resulting tint was close to a flat, uniform wash rather than a texture with any visible shape. Mean alone doesn't predict this (that same sample's mean was *higher* than several genuinely-visible ones); standard deviation does — checked against all 6 of the user's own samples plus a mid-tone photo:
+
+| sample | mean alpha | **stddev** | visible? (real screenshot) |
+|---|---|---|---|
+| ep_naturalwhite.png | 199.6 | **9.6** | No — before/after screenshots identical |
+| geometry2.png | 195.9 | 17.3 | Yes — scattered shapes clearly visible |
+| bananas.png | 158.5 | 19.2 | Yes |
+| cork-board.png | 113.0 | 31.8 | Yes |
+| leaves.png | 241.2 | 43.0 | Yes |
+| ripples.png | 165.9 | 64.0 | Yes — waves clearly visible, despite the source itself reading as faint to the eye |
+
+`UPLOAD_TEXTURE_MIN_STDDEV = 15` sits cleanly between the confirmed-invisible case (9.6) and the lowest confirmed-visible one (17.3). A Texture default whose own processed mask falls under that threshold now auto-switches to Photo instead — `autoSwitchedToPhoto` on the resulting pattern — with a note ("This image is very light, so we're showing it as a photo instead of a texture."), rather than the brief's other offered option (a message with no correction) — automatically fixing the actual problem seemed more useful than just explaining it. Verified with a real pixel-diff between before/after screenshots (not just the data model): `ep_naturalwhite.png` now produces a real, measurable visible change; `ripples.png` (stddev 64, well clear of the threshold) is confirmed to stay Texture — the fix is targeted, not a blanket switch to Photo for everything.
+
+**Every "no stage can hang silently" fix from hypothesis 2, made regardless of not reproducing a live hang:**
+- `openFilesDb()` gained an `onblocked` handler (fires instead of `onsuccess`/`onerror` when another tab holds an older-version connection open — neither existing handler would ever have run).
+- Every transaction-based call (`checkStorageAvailable`, `uploadAttachment`, `getAttachmentUrl`) gained an `onabort` handler — a real, distinct IndexedDB event from `error`, previously unhandled anywhere.
+- A shared `withTimeout(promise, 10000, message)` now wraps `openFilesDb`, `uploadAttachment`, `getAttachmentUrl`, and `checkStorageAvailable` — the brief's own "~10s around the storage check and the store writes."
+- `isStorageAvailable()` (`appearance.js`) now caches **only a `true` result** — a `false` one (which now also covers a timeout, since `checkStorageAvailable` never rejects) is deliberately not cached, so one transient failure can't silently downgrade every later upload for the rest of the session, which the brief's own hypothesis 2 explicitly named as the actual mechanism by which one hang would have blocked everything afterward.
+
+**Busy state "that can't be missed":** the Upload tile's own spinner (from LIME-52-fix3) is joined by the surface's own message line reading "**Processing…**" for the whole duration of a job — shown in a new neutral style (`.lime-settings__field-error`/`.lime-appearance-upload-error` are now grey by default, red only when a row is actually marked `.has-error`), so an in-progress or informational message (Processing…, the auto-switch note, the session-only note) doesn't read as an error the way a real rejection message still does.
+
+**The temporary trace** (`console.log('[FIX5-TRACE] ...')` at each of the 9 stages the brief asked for: tile click, input click, change, storage check resolved, decoded, processed, stored, applied, re-rendered) was added to `app.js`/`appearance.js`, used for every reproduction run above, then fully removed before committing — confirmed by grepping both files for the marker string (jsdom section 1 of `run-lime52fix5.js` also asserts this directly, so a future regression can't silently reintroduce it).
+
+**Reproduction matrix (headed Firefox, real filechooser flow) — 14/14 passing after the fix, plus every named scenario:**
+
+| file | popover | Settings |
+|---|---|---|
+| bananas.png | PASS | PASS |
+| cork-board.png | PASS | PASS |
+| ep_naturalwhite.png | PASS | PASS |
+| geometry2.png | PASS | PASS |
+| leaves.png | PASS | PASS |
+| ripples.png | PASS | PASS |
+| an ordinary mid-tone photo | PASS | PASS |
+
+Plus: with a second Lime tab open, the upload still completes (never hangs); the same file twice in a row still fires `change` both times and succeeds; a new file picked immediately after also works cleanly.
+
+**Browser-parsed CSS rule counts:** `lime.css` **638** (up from fix3's 636 — net +2 for the neutral-note color rules), `gradients.css` unchanged at **25**. The real app loads in jsdom with zero errors.
+
+**Verification:**
+- `node --check` clean on `app.js`, `appearance.js`, `local-adapter.js`.
+- **jsdom, `run-lime52fix5.js`, 6 sections:** the real app boots with zero errors and no leftover trace logging; a forced `onblocked` resolves `checkStorageAvailable` to `false` in milliseconds rather than hanging; a failed check is confirmed not cached (a second, working check on a later upload succeeds normally); the "Processing…" note is confirmed neutral, not error-styled; the mask-invisibility fix (needs a real `<canvas>`, unavailable in jsdom — no `canvas` npm package installed, checked) is explicitly deferred to Playwright rather than silently skipped; `gradients.css` untouched. (One test — forcing `onblocked` — initially raced a synthetic event against the app's own already-open real connection from boot and came back flaky; fixed by not touching the real connection at all, confirmed deterministic across 3 repeated runs before moving on.)
+- **Headless-vs-headed note, itself part of this brief's own finding:** the reproduction matrix above intentionally ran `headless: false` throughout, per the brief's own explicit ask, since that's the setting the original bug report only showed up in.
+- **Headed Firefox (Playwright), `measure-lime52fix5.js`, all passing:** the full 14-cell real-filechooser matrix; the second-tab scenario; same-file-twice and a new-file-right-after; the auto-switch threshold (both the positive case, `ep_naturalwhite.png`, and the negative case, `ripples.png` staying Texture) with a real pixel-diff proving the canvas visibly changed, not just the stored data; a genuinely non-responding `indexedDB.open()` settling in ~10.6s instead of hanging forever, correctly falling back to the session-only path; CSS rule counts; the full `run-lime52fix5.js` jsdom suite folded in.
+- Spot-checked no regressions: `run-lime52fix3.js`, `run-lime52fix2.js`, `run-lime38.js`, `run-lime44.js`, `run-lime41.js`, `run-lime34.js`, `run-lime50.js`, `run-lime51.js` all still pass clean.
+- `public/assets/patterns/`'s 6 sample files were copied to the scratchpad before use (per the brief's own instruction, since LIME-53b will delete the originals from the repo later) and were not themselves touched, deleted, or committed — confirmed by `git status` showing that directory still untracked and unchanged.
+
+**Gate:** in Firefox, **hard-reload first (⌘⇧R)** — this fix has no effect if the browser is still running pre-fix3 cached JS. Then upload one of your images from the palette menu, and another from Settings. Each time, the background should visibly change and the upload tile should show your image. If it can't, a message should say why. Nothing should ever just silently do nothing.

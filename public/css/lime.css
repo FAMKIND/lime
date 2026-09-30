@@ -757,6 +757,12 @@ html[data-pattern-treatment="photo"] body::before {
   color: var(--bad-text-normal-default, var(--soil-text-muted));
 }
 
+/* LIME-52-fix5: an informational note ("Processing…", the auto-switch-
+   to-Photo explanation) isn't an error and shouldn't read as one. */
+.lime-appearance-upload-error.is-note {
+  color: var(--soil-text-muted);
+}
+
 .lime-appearance-upload-error:empty {
   display: none;
 }
@@ -2574,9 +2580,18 @@ html[data-pattern-treatment="photo"] body::before {
   resize: vertical;
 }
 
+/* LIME-52-fix5: neutral by default — an informational note ("Processing…",
+   "this image is very light so we're showing it as a photo") isn't an
+   error and shouldn't read as one. Only a row actually marked
+   .has-error (setFieldError, a real validation/decode failure) turns
+   this red, below. */
 .lime-settings__field-error {
   margin: var(--seed-space-1) 0 0;
   font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
+}
+
+.has-error .lime-settings__field-error {
   color: var(--bad-text-bold-default);
 }
 
