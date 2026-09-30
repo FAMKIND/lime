@@ -57,7 +57,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - **C.** Signature moments only (profile and details avatars, empty states, a lime-slice loading spinner); list avatars unchanged.
   - Either way, prototype at 20/24/32/40/64px in light and dark before calling it done.
 - **DECIDED (the user, 2026-09-30): palette "B", then revised to "keep all 8"**, so: **no tones dropped or replaced**, only B's refinements to existing tones (Warm's surfaces → `#f0eee6`, Sage retuned so lime stands out, and every tone verified). **Shape "A":** lime-silhouette avatars at ≥ 28px. Briefs: **LIME-56** (palette) and **LIME-57** (lime avatars, a preview stop first).
-- **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **Waiting on the user's OK for Phase 2.**
+- **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **The user confirmed 28px. Landed (2026-09-30):** LIME-57 `5a17cbb` (no 28–31px avatars exist, so in practice md/lg/xl = 32/40/56px are shaped and sm/xs stay round; `border-radius: 0` is needed, or the circle clip eats the nub; the unread ring is now a `.lime-avatar-ring` wrapper, because box-shadow on a masked element is invisible), LIME-58 `f578558`, LIME-59 `6db2847` (a hand-drawn Share SVG; bubbles = list hover through one token). **The user's gate checks on 56–59 are pending.** `Logomark-outline.svg` and `signin-teachers.mp4` are still untracked. Ask whether to commit the logomark as a brand asset. **The user's check found the Recent row's presence dots clipped** (the ring wrapper is an always-masked ancestor), so LIME-57-fix was drafted. The user then asked for Slack-style status icons in a cut-out notch, so **LIME-57-fixb (which supersedes it) runs next.** Then: the Communities decision surface.
 - **New finding (tend, LIME-56): white text on the solid green `#09a950` buttons** (e.g. "Continue with email", Seed's `seed-button--primary`) is **under 4.5:1 on every tone** (white on `#09a950` ≈ 3.1:1, computed). It's a brand-level decision. Options put to the user: **A.** ink text `#131b17` on `#09a950` (≈ 5.7:1, computed; keeps the brand green); **B.** darker green `#078040` (`--seed-lime-600`) with white text (≈ 5.0:1, computed); **C.** leave it (large or bold text only needs 3:1, and a 16px semibold button label doesn't qualify). Plot's lean: **A.** Upstream candidate for Seed too. **DECIDED: A (the user, 2026-09-30) → LIME-58 drafted.** Its hover and press go lighter (lime-400/300), because ink on the darker lime-600 is only ≈ 3.5:1.
 
 ### Unbriefed candidates (offer when the queue thins)
@@ -256,6 +256,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
     - clean up with `pkill -f -- '--headless=new'` if a run is killed. **Never `pkill -f "Google Chrome"`**, which quits the user's real Chrome windows (tend did this during LIME-31-fix).
     - The user's rule is "preview to the user in Firefox only". Headless Chrome as an internal measuring tool is allowed and isn't the cause of the hangs.
   - Never wait on a monitor for more than ~2 minutes.
+- **CSS masks clip every descendant** (LIME-57): a masked wrapper hides child badges and dots, and box-shadows on masked elements vanish. Any mask brief must verify that no indicator sits inside a masked **ancestor**, with element screenshots of each indicator.
 - **Debounced saves lose data on navigation** (LIME-33, LIME-29): `scheduleSave()` waits 100ms, and a sign-out, redirect or reload inside that window drops the write. Only the real Firefox and Chrome caught it. Any brief that writes and then navigates must flush first (`LimeStore.flush()`); a `pagehide` flush is the general fix (folded into LIME-27).
 - **Playwright's Firefox is not the user's Firefox (found 2026-09-30, LIME-52-fix3).** Uploads passed tend's whole matrix in Playwright's patched Firefox build but did nothing in the user's installed Firefox 156, while working in Chrome. **Any brief touching browser APIs with per-browser behaviour (files, IndexedDB, blobs, canvas, clipboard, `file://` origin rules) must verify in `/Applications/Firefox.app` itself** (BiDi, or Playwright with `executablePath`), and state which binary it used. Layout-only measurements can keep using Playwright's Firefox.
 - **`[hidden]` is unreliable here:** any class that sets `display` (e.g. `.lime-icon-btn { display: flex }`) beats the browser's default `[hidden]` rule (found in LIME-40). Candidate for the global-reset brief: `[hidden] { display: none !important; }` alongside the border-box reset.
@@ -269,6 +270,83 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-57-fixb → `tend` (next; SUPERSEDES LIME-57-fix, which was never sent): polished status icons in a cut-out notch, never clipped
+
+**The user (2026-09-30), after LIME-57-fix was drafted:** "we need to refine those to make them more polished, the status icons. I like how it is done in this example" (a Slack-style reference). What the reference does:
+- **the avatar has a cut-out "bite"** where the status icon sits, so there's a clean gap of whatever is behind it, **not a painted border ring**;
+- the icon is fairly large (~28% of the avatar width), at the bottom-right, overlapping the edge;
+- the four states:
+  - **Active:** a solid green circle;
+  - **Busy:** a solid green circle with a small notch at the top-right, and a tiny **"z"** sitting in that notch;
+  - **Away:** a hollow ring (outline only);
+  - **Do not disturb:** a hollow ring with a gap at the top-right, and a tiny **"z"**.
+
+**Everything in LIME-57-fix below still applies** (the root cause and the rule "no masked ancestor around a presence icon; rebuild the unread ring as a masked layer behind the avatar"). **This brief adds the new design on top.**
+
+**Survey (plot, 2026-09-30, `lime.css` ~500–547):**
+- `.lime-presence` is an absolutely positioned dot with a **`box-shadow` ring in `--soil-bg-canvas`** (so on hovered or selected rows, and in other tones, the ring is the wrong colour).
+- Sizes: xs 6, sm 7, md 9, lg 11px.
+- States: `active` (green), `busy` (green with a knocked-out "z" inside), `away` (a canvas fill with a 1.5px grey border), `dnd` (red with a knocked-out dash).
+- `app.js` maps data statuses `online → active`, `busy → busy`, `offline → away` (~108). `dnd` is styled but has no data status yet.
+- There's also an inline variant, `.lime-presence--inline` (~705), used in profile text.
+
+**The change (on top of LIME-57-fix's items 1–3):**
+1. **The cut-out notch:** every avatar that shows a presence icon is masked with **its shape minus a circle** centred on the icon: the lime silhouette for ≥ 32px, a circle for smaller ones. Use two mask layers with `mask-composite: subtract` (and `-webkit-mask-composite: source-out`). The circle's radius = icon radius + gap (gap ≈ 2px at 40px, scaled by size). **Remove the `box-shadow` canvas ring:** the gap is truly transparent, so it's right on any tone, hover, selected row, or dark. **The unread ring layer (from LIME-57-fix) gets the same bite,** so the ring never runs into the icon. If `mask-composite` is unsupported, `@supports` falls back to today's `box-shadow` ring.
+2. **Icon sizes:** about 28% of the avatar: xs 20 → **7px**, sm 24 → **8px**, md 32 → **10px**, lg 40 → **12px**, xl 56 → **16px**. Placement: the icon's centre sits on the avatar's edge at the bottom-right, at roughly 45°. On the lime silhouette, place it where the edge actually is (the silhouette isn't a perfect circle), and report the offsets.
+3. **The four states, drawn as small inline SVGs** (crisp at small sizes, `currentColor`, one shared definition):
+   - **Active:** a solid circle in the brand green (`--good-bg-bold-default`, `#09a950`).
+   - **Busy:** a solid green circle with a top-right notch, plus a tiny "z" in the notch.
+   - **Away:** a hollow ring, stroke ≈ 1.5–2px (scaled), in `--soil-text-muted`.
+   - **Do not disturb:** a hollow muted ring with a top-right gap, plus a "z" (as in the reference). **This replaces today's red DND**; the user can ask for red back at the gate.
+   - **At xs and sm (7–8px), drop the "z"** (it can't be read); keep the notch or gap so the state still differs.
+   - Colour never carries the meaning alone: keep `role="img"` and `aria-label` on every icon.
+4. **The inline variant** (`.lime-presence--inline`, e.g. next to "Active" in profiles) uses the same SVGs at text size, with no cut-out.
+5. **The "z" colour** matches its state (green for Busy, muted for DND). The "z" sits in the notch, so it's inside the cut-out gap. Make sure it isn't clipped by the avatar's mask; it lives in the icon element, outside any mask.
+
+**Scope:** as in LIME-57-fix, plus the presence markup/SVG (in `app.js`, wherever presence icons are rendered) and `lime.css`'s presence styles. **May not touch:** the presence data logic (the `online/busy/offline` mapping), the avatar colours, and the silhouette itself.
+
+**Verification (on top of LIME-57-fix's):**
+- A **zoomed sheet** of all 4 states × the 5 avatar sizes (shaped and round), on the canvas, on a **hovered** list row and on a **selected** row, in light, dark, Warm and Sage. The gap always shows the true background, and no icon or "z" is clipped.
+- The measured icon sizes and offsets.
+- In the real Firefox and Chrome (confirm `mask-composite` works in both; report the versions).
+- The fallback works when masks are disabled (force it by removing the `@supports` match in a test).
+- Report the browser-parsed CSS rule counts. The real app loads in jsdom with zero errors.
+
+**Gate:** status icons look like your example: a clean notch cut into the avatar, green for active, green with a little "z" for busy, a ring for away, and a broken ring with a "z" for do-not-disturb. Nothing is cut off, including in the Recent row, and it looks right on hovered and selected chats.
+
+**Record:** add a `## LIME-57-fixb` entry to `TEND.md`. Commit: `feat: polished status icons in a cut-out notch; never clipped`, trailer `Brief: LIME-57-fixb`, plus the attribution trailer. **Stop for the user's check.**
+
+---
+
+### LIME-57-fix → SUPERSEDED (never sent) by LIME-57-fixb above; its root cause and items 1–3 still apply through 57-fixb. Kept for reference:
+
+**The user (2026-09-30, screenshot of the Recent row):** "recent section, the status icons are cut off." Every Recent avatar's presence dot (green online, grey away) is **clipped to the lime silhouette**, whether or not the item has an unread ring.
+
+**Root cause (plot's survey of LIME-57 `5a17cbb`):** `.lime-avatar-ring` (`lime.css` ~595–616) is **always** present in the Recent markup (`app.js` ~2615–2619), wraps `.lime-avatar-frame`, and **always carries the silhouette mask**. The presence dot is a child of the frame, so it's inside a masked ancestor and gets clipped. Tend's LIME-57 check confirmed the dot is a sibling of the avatar, but not that no masked **ancestor** wraps it, and it didn't screenshot the Recent row's dots.
+
+**Assumptions:** the agent can edit CSS and JS, run Playwright and jsdom, drive the real Firefox and Chrome, and commit.
+
+**The change:**
+1. **No masked element may be an ancestor of a presence dot, anywhere.** Rebuild the unread ring so it's a **masked layer behind the avatar**, not a wrapper around the frame: for example, `.lime-avatar-frame::before` (or a sibling span placed before the avatar) absolutely positioned at `inset: -2px`, carrying the silhouette mask and the ring fill, and shown only for `.lime-recent__item--unread`. The avatar sits above it and the presence dot above both, **outside any mask**. Remove the always-present `.lime-avatar-ring` wrapper if it's no longer needed.
+2. **Keep the ring's look** from LIME-57: 2px, `--selected-border-bold-default`, following the nub. **Read items: zero layout shift**, as before.
+3. **Audit every masked avatar in the app** (md/lg/xl): confirm that no presence dot, badge (e.g. the "z" away/DND mark), or focus outline sits inside a masked ancestor. List each place checked.
+
+**Scope:**
+- **May touch:** the ring styles in `public/css/lime.css`, the Recent row markup in `public/js/app.js`, and `TEND.md`.
+- **May not touch:** the silhouette, avatar sizes or cutoff, presence logic, and anything else.
+
+**Verification:**
+- **Element screenshots of every Recent avatar,** read and unread, online, away and offline: the full round dot with its canvas-coloured border is visible.
+- The same for a thread-header avatar, the details panel and Settings Profile.
+- The unread ring still follows the nub (a zoomed crop).
+- In the real Firefox and Chrome, plus Playwright. The real app loads in jsdom with zero errors. Report the browser-parsed CSS rule counts.
+
+**Gate:** in the Recent row, every green or grey status dot is a complete circle again, and the green unread rings still follow the lime shape.
+
+**Record:** add a `## LIME-57-fix` entry to `TEND.md`. Commit: `fix: presence dots never clipped by the lime mask`, trailer `Brief: LIME-57-fix`, plus the attribution trailer. **Stop for the user's check.**
+
+---
 
 ### LIME-59 → `tend` (after LIME-58): softer hovers and selected rows; header and composer icons at one consistent size
 
