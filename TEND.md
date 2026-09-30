@@ -2350,3 +2350,41 @@ That one piece of information — the real error, from the real environment — 
 **Gate:** at `http://localhost:8000/public/index.html` — **+ Add** is now the green button (both halves, and the collapsed rail's "+"), the same green as the chat box's Send button once you start typing. Hovering the **Add** half or the **⌄** half highlights just that one half with a slightly deeper green, inset from the edge — like your two mic-button examples. **Link** and the other nav items (Notifications, your name at the bottom) now use the same soft grey as the selected chat in your list, not green. **One open item:** on the "Lemon" canvas colour specifically, the green Add button's text is very slightly below our usual contrast bar while you're hovering it (still easily readable — this is a technical measurement, not a visual complaint) — flagged above for you to decide whether it's worth a follow-up.
 
 **Record:** this entry.
+
+## LIME-48-fix2
+
+**Goal:** swap the sign-in page's hero video for the one the user supplied — `public/assets/signin-teachers.mp4` — replacing the old Pexels stock clip from LIME-48.
+
+**Video source:** the user's own prompt for this brief didn't name where the clip came from (the tend prompt's "Video source:" field was left as the unfilled placeholder). Per the brief's own instruction for exactly this case: **recorded as "supplied by the user, source not recorded."** Flagging it here rather than guessing — if the user knows where it's from (stock library, a real school, an internal shoot), worth adding once, since `auth.html`'s comment block currently carries the same "not recorded" note LIME-48's own Pexels credit used to occupy.
+
+**Survey confirmed the brief's own inspection:** `signin-teachers.mp4` is H.264 + AAC, 4096×2160 landscape, 12s, 11.49MB (`mdls`, matches the brief's figures exactly). `ffmpeg` is still not installed on this machine (confirmed via `which`), so the brief's own fallback assumption held: `avconvert` only, MP4-only output, no custom bitrate or crop filter available — `avconvert --help` lists trim (`--start`/`--duration`) but no spatial crop and no audio-disable flag on any preset.
+
+**The change:**
+- **Re-encode attempts, all from the untouched 11.49MB/4096×2160 source, reported in full (not just the winner):**
+
+  | Preset | Output size | Dimensions | Video bitrate | Audio |
+  |---|---|---|---|---|
+  | `Preset1920x1080` | 13.03 MB | 1920×1012 | 8681 kbps | AAC, 2ch (kept) |
+  | `Preset1280x720` | 8.97 MB | 1280×676 | 5971 kbps | AAC, 2ch (kept) |
+  | **`Preset960x540` (chosen)** | **5.68 MB** | **960×508** | **3779 kbps** | **AAC, 2ch (kept)** |
+  | `PresetMediumQuality` | 1.09 MB | 480×252 | 719 kbps | AAC, 2ch (kept) |
+  | `PresetLowQuality` | 0.20 MB | 192×100 | 130 kbps | AAC, 1ch (kept) |
+
+  **None of the five fixed presets avconvert offers hit the brief's own ≤3MB target while still looking sharp** — the two below the target (`MediumQuality`, `LowQuality`) are visibly soft once rendered at the actual panel size (confirmed by loading each candidate in a real browser inside a 740×880 CSS-px box at the sign-in page's own scale and screenshotting — not judged from the raw frame alone, where softness is far less obvious). `Preset960x540` was the smallest of the three sharp-looking options, so it's the one installed as `public/assets/auth-hero.mp4` (5.68MB) — **just under 2× the target, reported plainly rather than silently accepted as a pass.** AVFoundation's presets are fixed quality/resolution tiers with no bitrate dial and no crop filter, so getting closer to 3MB without ffmpeg (not installed, per LIME-48's own finding, reconfirmed here) isn't possible with the tools this brief authorized. **Not a blocker, flagged for the gate** — same "report a real limitation rather than force a number" move as LIME-55-fix's contrast finding.
+- **Audio:** every preset kept the AAC track; `avconvert` exposes no per-preset audio-disable switch. Reported as the brief asked ("if it can't [drop the audio], report it") rather than worked around — the `<video>` element stays `muted` regardless, so the extra bytes cost download size only, never an actual audible track.
+- **Poster:** `public/assets/auth-hero-poster.jpg`, a frame captured at t=1s (same method as LIME-48: a headless browser canvas draw from the chosen `auth-hero.mp4`, not the raw source), JPEG quality 0.85, **60.1KB** (well under the 200KB cap; 0.75 and 0.65 were also tried — 45.5KB and 38.4KB — but 0.85 was kept since size was never the binding constraint here).
+- **Framing:** sampled frames at t = 0s, 2s, 4s, 6s, 8s, 10s, 11s through the panel's own `object-fit: cover` crop at 1x. **Both people stay fully in frame at every sampled timestamp with the default `object-position: 50% 50%`** — the shot is fairly static (two people seated together, centred), so **no `object-position` override was needed; `auth.css` was left untouched.** Reported as the brief asked ("report the value chosen") even though the value chosen was "no change."
+- **Sources:** `auth-hero.webm` (the old Pexels clip) deleted. The `<video>` element's `loadVideo()` (`auth.html`'s inline script) now appends a single `video/mp4` `<source>` — the `webm` source-creation block is gone, not just emptied. The provenance comment above the media panel (`auth.html` ~114–135) rewritten to describe the new file, the encode method, the ≤3MB shortfall and why, and the audio-track situation — replacing the old Pexels/Pexels-License paragraph entirely, not appending to it.
+- **The original:** `signin-teachers.mp4` (11.49MB) is untouched and still untracked — confirmed via `git status` before and after every step of this brief. Not committed, not deleted, not moved.
+
+**Verification:**
+- `node --check` clean on the inline script (extracted and checked separately, since `auth.html` itself isn't a `.js` file).
+- **Real installed Firefox 157.0 and real Chrome 154.0.0.0** (`puppeteer-core` + WebDriver BiDi, Firefox with the same `extraPrefsFirefox` restore this session always uses) at `http://localhost:8000/public/auth.html`, 1567×905: video is muted, loops, autoplays; exactly one `<source>` (`video/mp4`); poster is set; **no `.webm` request was made at all** (checked the full request log, not just the DOM); pause button pauses, play button resumes; zero console/page errors. All of the above passed identically in both browsers.
+- **Playwright + Firefox, `reducedMotion: 'reduce'`:** the video does not autoplay (stays paused) while the poster and sources still load — matching the existing `loadVideo()` behaviour, which this brief didn't touch (only gated on viewport width, never on motion preference, by design from LIME-48).
+- **767px, both real browsers:** no `auth-hero*`/`auth-hero-poster*` request of any kind — confirmed from the actual network log, not inferred from the CSS `display: none`.
+- **Framing screenshots** at 1567×905 and 1024×768, both real browsers: both people fully visible, sharp, well-composed at every size checked.
+- `git status` before commit: `auth-hero.mp4`/`auth-hero-poster.jpg` modified, `auth-hero.webm` deleted, `auth.html` modified, `signin-teachers.mp4` still untracked. `public/assets/Logomark-outline.svg` also shows untracked — **pre-existing, not this brief's, left alone.**
+
+**Gate:** open the sign-in page. The new video plays on the right — two people reading a magazine together — loops cleanly, and both stay in frame the whole time. **One open item:** the file is 5.68MB, not the ≤3MB target — the tools available on this machine (macOS's `avconvert`, no `ffmpeg`) only offer fixed quality presets, and every preset small enough to hit 3MB looked noticeably soft once actually sized into the panel. 960×540 was the smallest one that still looked sharp. If you want it smaller, the real fix is installing `ffmpeg` (custom bitrate + a crop pass, since most of the frame width is cropped away by the portrait panel anyway) — happy to do that on your say-so, since installing new tools wasn't something this brief authorized on its own.
+
+**Record:** this entry.

@@ -116,17 +116,23 @@
          the network request, per the brief's own "the poster isn't
          downloaded either" instruction).
 
-         auth-hero.webm/.mp4/-poster.jpg source: Pexels video 12896417,
-         "Businesswoman Doing A Presentation In An Office"
-         https://www.pexels.com/video/businesswoman-doing-a-presentation-in-an-office-12896417/
-         Pexels License — free for commercial use, no attribution
-         required. Re-encoded from the original 2160×3840/18.9MB source
-         (deleted, re-downloadable from the URL above): auth-hero.webm is
-         the original WebM untouched; auth-hero.mp4 is a 360×640/2.5MB
-         Safari fallback made with macOS's avconvert (Preset640x480 —
-         confirmed it preserves portrait orientation, no letterboxing);
-         auth-hero-poster.jpg is a frame captured at t=1s via a headless
-         browser canvas draw, 22.8KB. -->
+         auth-hero.mp4/-poster.jpg (LIME-48-fix2, 2026-09-30): supplied
+         by the user as public/assets/signin-teachers.mp4 (untracked,
+         left in place — not this brief's to commit or delete), source
+         not recorded. Original: H.264+AAC, 4096×2160 landscape, 12s,
+         11.5MB. Re-encoded with macOS's avconvert — no ffmpeg on this
+         machine, so no custom bitrate/crop, only avconvert's fixed
+         presets: auth-hero.mp4 is Preset960x540 (960×508, 5.7MB,
+         ~3.8Mbps video) — the smallest of the resolution presets tried
+         that still looked sharp in the panel; still over the 3MB
+         target (TEND.md has the full attempt table and why). The AAC
+         audio track could not be stripped — avconvert exposes no
+         audio-disable option on any preset — but the element stays
+         muted regardless. auth-hero-poster.jpg is a frame captured at
+         t=1s via a headless browser canvas draw, 60.1KB. The old
+         auth-hero.webm (Pexels video 12896417) is deleted; this
+         element now has a single MP4 source (Firefox on macOS plays
+         H.264 fine, per the brief's own fallback note). -->
     <div class="lime-auth__media" id="auth-media">
       <video id="auth-hero-video" muted loop playsinline aria-hidden="true"></video>
       <button type="button" class="lime-auth__media-pause" id="auth-media-pause" aria-label="Pause video">
@@ -169,13 +175,11 @@
         if (loaded) return;
         loaded = true;
         video.poster = 'assets/auth-hero-poster.jpg';
-        const webm = document.createElement('source');
-        webm.src = 'assets/auth-hero.webm';
-        webm.type = 'video/webm';
+        // LIME-48-fix2: the webm source (the old Pexels video) is gone
+        // — one MP4 source now. Firefox on macOS plays H.264 fine.
         const mp4 = document.createElement('source');
         mp4.src = 'assets/auth-hero.mp4';
         mp4.type = 'video/mp4';
-        video.appendChild(webm);
         video.appendChild(mp4);
         video.load();
         // WCAG 2.2.2: moving content longer than 5s needs a pause
