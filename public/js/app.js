@@ -111,13 +111,6 @@ function patternPresetThumbHtml(preset, isSelected) {
   return '<button type="button" class="lime-pattern-thumb' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="preset" data-pattern-preset="' + preset.id + '" style="mask-image:url(&quot;' + uri + '&quot;);-webkit-mask-image:url(&quot;' + uri + '&quot;)" title="' + escapeHtml(preset.label) + '" aria-label="' + escapeHtml(preset.label) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
 }
 
-// LIME-52-fix: any tile the user has dropped into public/assets/patterns/
-// (LimeAppearance.detectUserPatternTiles(), file://-safe <img>
-// load-probing — no directory listing or fetch works over file://).
-function patternUserTileThumbHtml(tile, isSelected) {
-  return '<button type="button" class="lime-pattern-thumb' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="user-tile" data-pattern-tile-id="' + escapeHtml(tile.id) + '" style="mask-image:url(&quot;' + tile.src + '&quot;);-webkit-mask-image:url(&quot;' + tile.src + '&quot;)" title="' + escapeHtml(tile.label) + '" aria-label="' + escapeHtml(tile.label) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
-}
-
 // LIME-52-fix2: an active upload's tile is a plain, unclipped wrapper
 // (.lime-pattern-tile) around two SIBLING children — the fill
 // (.lime-pattern-tile__preview) and the delete button — not the button
@@ -150,11 +143,10 @@ function patternUploadThumbHtml(pattern, busy) {
   return previewTile + addTile;
 }
 
-function patternGridHtml(pattern, userTiles, compact) {
+function patternGridHtml(pattern, compact) {
   const kind = (pattern && pattern.kind) || 'none';
   const tiles = patternNoneThumbHtml(kind === 'none')
     + LimeAppearance.PATTERN_PRESETS.map((p) => patternPresetThumbHtml(p, kind === 'preset' && pattern.presetId === p.id)).join('')
-    + (userTiles || []).map((t) => patternUserTileThumbHtml(t, kind === 'user-tile' && pattern.tileId === t.id)).join('')
     + patternUploadThumbHtml(pattern, uploadBusy);
   return '<div class="lime-appearance-grid' + (compact ? ' lime-appearance-grid--compact' : '') + '">' + tiles + '</div>';
 }
@@ -200,17 +192,6 @@ function patternControlsHtml(pattern) {
       + '</div>';
   }
   return '<div class="lime-pattern-controls">' + intensityTabsHtml(pattern.intensity) + '</div>';
-}
-
-// Resolved once at startup (file:// has no directory listing, so
-// detection is <img> load-probing — see appearance.js's own
-// detectUserPatternTiles). Empty until/unless it resolves — both
-// pickers below just render the built-ins plus None/Upload until then;
-// by the time either one is first opened (a user interaction, not page
-// load) this has almost always already settled.
-let cachedUserPatternTiles = [];
-if (window.LimeAppearance) {
-  LimeAppearance.detectUserPatternTiles().then((tiles) => { cachedUserPatternTiles = tiles; }).catch(console.error);
 }
 
 // LIME-52-fix3 — reliable pattern uploads.
@@ -359,17 +340,6 @@ function handleAppearanceClick(e, container, rerender, setError) {
     const pattern = { kind: 'preset', presetId, intensity: currentIntensity };
     LimeAppearance.applyPattern(pattern);
     LimeStore.setAppearance({ pattern }).then(rerender).catch(console.error);
-    return true;
-  }
-  const tileBtn = e.target.closest('[data-pattern-tile-id]');
-  if (tileBtn) {
-    const tile = cachedUserPatternTiles.find((t) => t.id === tileBtn.dataset.patternTileId);
-    if (tile) {
-      const currentIntensity = (LimeStore.getAppearance().pattern || {}).intensity || 'low';
-      const pattern = { kind: 'user-tile', tileId: tile.id, src: tile.src, width: tile.width, height: tile.height, isVector: tile.isVector, intensity: currentIntensity };
-      LimeAppearance.applyPattern(pattern);
-      LimeStore.setAppearance({ pattern }).then(rerender).catch(console.error);
-    }
     return true;
   }
   const uploadBtn = e.target.closest('[data-pattern-action="upload"]');
@@ -2053,7 +2023,7 @@ function initMessagesList() {
       + canvasGridHtml(isDark, true)
       + '<div class="lime-menu__divider"></div>'
       + '<div class="lime-menu__label">Pattern</div>'
-      + patternGridHtml(appearance.pattern, cachedUserPatternTiles, true)
+      + patternGridHtml(appearance.pattern, true)
       + patternControlsHtml(appearance.pattern)
       + '<p class="lime-appearance-upload-error"></p>'
       + '<div class="lime-menu__divider"></div>'
@@ -4638,7 +4608,7 @@ document.addEventListener('keydown', (e) => {
       + '<h3 class="lime-settings__subsection-heading">Appearance</h3>'
       + stackedRowHtml('mode', 'Mode', modeTabsHtml('settings', appearance.theme))
       + stackedRowHtml('canvas', 'Canvas', (isDark ? canvasDisabledNoticeHtml() : '') + canvasGridHtml(isDark))
-      + stackedRowHtml('pattern', 'Pattern', patternGridHtml(appearance.pattern, cachedUserPatternTiles) + patternControlsHtml(appearance.pattern))
+      + stackedRowHtml('pattern', 'Pattern', patternGridHtml(appearance.pattern) + patternControlsHtml(appearance.pattern))
       + '<p class="lime-settings__description">A subtle texture behind every panel. Sits at low intensity by default, and stays out of the way of anything you read.</p>'
       + '</div>'
       + SETTINGS_BODY_FRAME_CLOSE;

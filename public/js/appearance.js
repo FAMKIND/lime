@@ -159,12 +159,11 @@ const LimeAppearance = (function () {
   // — the brief's own explicit choice, since those two modes darken/
   // lighten toward the backdrop rather than fighting it).
   //
-  // public/assets/patterns/ was empty when this ran — no Subtle
-  // Patterns tiles to use — so all 4 presets here are generated inline
-  // (SVG data URIs), the brief's own documented fallback. Nothing here
-  // is sourced from Subtle Patterns, so no CC BY-SA credit line is
-  // shown; TEND.md/data-model.md both flag this so a later brief adding
-  // real Subtle Patterns assets knows to add the credit then, not now.
+  // LIME-54: these 4 presets are drawn in-house as inline SVG data URIs
+  // — no third-party assets, no credit owed. (An earlier draft tried
+  // sourcing real third-party tile files plus a matching pick-your-own
+  // upload slot for them; the user dropped that direction on
+  // 2026-09-30 and both were removed.)
   const PATTERN_PRESETS = [
     { id: 'dots', label: 'Dots' },
     { id: 'grid', label: 'Grid' },
@@ -213,58 +212,6 @@ const LimeAppearance = (function () {
 
   function patternMaskDataUri(presetId) {
     return 'data:image/svg+xml,' + encodeURIComponent(patternMaskSvg(presetId));
-  }
-
-  // LIME-52-fix — user-supplied tiles from public/assets/patterns/.
-  // file:// has no directory listing and no fetch() access (LIME-44's
-  // own finding, still true), so the only way to know what's actually
-  // there is to try loading a fixed list of plausible filenames as real
-  // <img> elements (which DO work over file://, unlike fetch/XHR) and
-  // keep whichever ones succeed. Covers common seamless-tile names from
-  // Hero Patterns / Subtle Patterns-style libraries, both extensions.
-  // The folder was still empty when this ran (confirmed, not assumed —
-  // TEND.md) — this exists so dropping real files in later needs no
-  // code change, not because any of these names are known to exist.
-  const USER_TILE_CANDIDATES = [
-    'paper', 'linen', 'dots', 'grid', 'diagonal', 'topography', 'texture',
-    'noise', 'wave', 'grain', 'weave', 'stripes',
-  ];
-  const USER_TILE_EXTENSIONS = ['svg', 'png'];
-  let userTilesPromise = null;
-
-  function probeImage(src) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-  }
-
-  // Resolves an array of { id, label, src, isVector } for every
-  // candidate file that actually loaded — appended after the 4 built-ins
-  // wherever PATTERN_PRESETS is read for rendering. Cached (probed once
-  // per page load, not on every menu open).
-  function detectUserPatternTiles() {
-    if (userTilesPromise) return userTilesPromise;
-    const attempts = [];
-    USER_TILE_CANDIDATES.forEach((name) => {
-      USER_TILE_EXTENSIONS.forEach((ext) => {
-        const src = 'assets/patterns/' + name + '.' + ext;
-        attempts.push(probeImage(src).then((img) => (img ? {
-          id: 'user-' + name + '-' + ext, label: name, src,
-          isVector: ext === 'svg',
-          // An SVG's "natural" size is usually its viewBox, not a
-          // meaningful tile pixel size — fall back to a fixed,
-          // reasonable tile for those; a PNG's real dimensions tile at
-          // their own actual size, same as an upload-texture would.
-          width: ext === 'svg' ? 120 : img.naturalWidth,
-          height: ext === 'svg' ? 120 : img.naturalHeight,
-        } : null)));
-      });
-    });
-    userTilesPromise = Promise.all(attempts).then((results) => results.filter(Boolean));
-    return userTilesPromise;
   }
 
   // ── Uploads (LIME-52-fix) ────────────────────────────────────
@@ -571,10 +518,6 @@ const LimeAppearance = (function () {
       root.setProperty('--lime-pattern-mask', 'url("' + patternMaskDataUri(pattern.presetId) + '")');
       root.setProperty('--lime-pattern-size', PATTERN_TILE_SIZE[pattern.presetId] || '24px 24px');
       applyPresetTint(root, theme, intensity.tintPct);
-    } else if (kind === 'user-tile' && pattern.src) {
-      root.setProperty('--lime-pattern-mask', 'url("' + pattern.src + '")');
-      root.setProperty('--lime-pattern-size', (pattern.width || 120) + 'px ' + (pattern.height || 120) + 'px');
-      applyPresetTint(root, theme, intensity.tintPct);
     } else if (kind === 'upload' && window.LimeStore) {
       const path = pattern.treatment === 'photo' ? pattern.photoPath : pattern.texturePath;
       if (!path) return;
@@ -613,7 +556,7 @@ const LimeAppearance = (function () {
 
   return {
     CANVAS_P, CANVAS_LABELS, makeCanvasRamp, applyCanvas, applyTheme, resolveTheme, init,
-    detectUserPatternTiles, processUploadFile, validateUploadFile, defaultTreatmentFor,
+    processUploadFile, validateUploadFile, defaultTreatmentFor,
     PATTERN_PRESETS, PATTERN_INTENSITY, patternMaskDataUri, applyPattern,
   };
 })();
