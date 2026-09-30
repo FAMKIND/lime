@@ -32,12 +32,39 @@ const LIME_AUTH_GATE_ACTIVE = window.LIME_TEST_FORCE_AUTH_GATE
   ? true
   : (window.LIME_TEST_SKIP_AUTH_GATE ? false : navigator.userAgent.indexOf('jsdom') === -1);
 
+// LIME-33-fix: root cause of "signed up, bounced straight back to sign-in,
+// then sign-in itself says Incorrect" (the user's real Firefox, confirmed
+// via a copy of their actual profile) — Firefox's real default for
+// security.fileuri.strict_origin_policy (true) makes every distinct
+// file:// URL a SEPARATE, storage-isolated origin, even different HTML
+// files in the exact same folder. signup.html/login.html/index.html each
+// get their own localStorage bucket, so nothing written on one is ever
+// visible on another — a session gate here will always redirect after a
+// fresh file:// sign-up, no matter how correct the auth code is. Chrome
+// has no such per-file isolation (confirmed directly), which is why it
+// works there. This can't be worked around in app code — it's a real
+// browser security boundary — so instead of a silent, confusing bounce,
+// detect the specific shape of this failure and carry a reason to
+// login.html to explain it in plain words.
+function describeGateRedirectReason() {
+  if (!LimeAuth.checkStorageWorks()) return 'storage';
+  // Not document.referrer — confirmed via the user's own real Firefox
+  // profile copy that it comes back empty for file:// navigations, so it
+  // can't distinguish "just came from signup/login" from "opened fresh."
+  // signup.html/login.html mark their own post-auth redirect with
+  // ?from=auth instead, which survives the navigation regardless.
+  const cameFromAuthPage = new URLSearchParams(location.search).get('from') === 'auth';
+  if (cameFromAuthPage && location.protocol === 'file:') return 'fileorigin';
+  return null;
+}
+
 // Read by the LimeStore.init() call far below — skips real initialization
 // and rendering when redirecting away, rather than doing that work only
 // to have it discarded by the navigation.
 const LIME_AUTH_GATE_REDIRECTING = LIME_AUTH_GATE_ACTIVE && !hasValidSession();
 if (LIME_AUTH_GATE_REDIRECTING) {
-  window.location.href = 'login.html';
+  const reason = describeGateRedirectReason();
+  window.location.href = 'login.html' + (reason ? '?reason=' + reason : '');
 }
 
 // LIME-51: theme is now set by index.html's own inline <head> script

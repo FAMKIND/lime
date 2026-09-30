@@ -95,6 +95,22 @@
     // LIME-33: real local accounts via LimeAuth — no more single hardcoded
     // credential. "local demo only; Supabase auth replaces this entirely."
     LimeStore.init().then(() => {
+      // LIME-33-fix: app.js's session gate carries a ?reason= when it
+      // bounces here instead of just landing with no explanation — see
+      // describeGateRedirectReason()'s own comment in app.js for why
+      // these two specific cases exist.
+      const gateReason = new URLSearchParams(location.search).get('reason');
+      if (gateReason) {
+        const errorEl = document.getElementById('login-error');
+        if (gateReason === 'storage') {
+          errorEl.textContent = 'Your browser isn\'t letting Lime save data on this computer right now — private browsing or blocked cookies/site data are the most common causes.';
+          errorEl.classList.add('is-visible');
+        } else if (gateReason === 'fileorigin') {
+          errorEl.textContent = 'Your account didn\'t carry over from the last page — Firefox treats each file:// page in this folder as separate. Try opening Lime through a local web address instead of a file:// link, or use Chrome for now.';
+          errorEl.classList.add('is-visible');
+        }
+      }
+
       document.getElementById('login-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const errorEl = document.getElementById('login-error');
@@ -105,7 +121,12 @@
         const password = document.getElementById('login-password').value;
 
         LimeAuth.signInWithPassword({ email, password }).then(() => {
-          window.location.href = 'index.html';
+          // LIME-33-fix: ?from=auth, not document.referrer — confirmed via
+          // the real Firefox profile copy that document.referrer comes
+          // back empty for file:// navigations, so the gate can't use it
+          // to tell "just came from a Lime auth page" apart from "opened
+          // index.html completely fresh."
+          window.location.href = 'index.html?from=auth';
         }).catch((err) => {
           errorEl.textContent = err.message;
           errorEl.classList.add('is-visible');

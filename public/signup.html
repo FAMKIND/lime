@@ -110,7 +110,10 @@
 
         try {
           await LimeAuth.signUp({ email, password, displayName });
-          window.location.href = 'index.html';
+          // LIME-33-fix: ?from=auth — see login.html's identical comment
+          // (document.referrer is empty for file:// navigations in
+          // Firefox, confirmed via the user's own real profile copy).
+          window.location.href = 'index.html?from=auth';
         } catch (err) {
           errorEl.textContent = err.message || 'Something went wrong. Please try again.';
           errorEl.classList.add('is-visible');

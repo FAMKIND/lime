@@ -17,6 +17,23 @@ const LimeAuth = (function () {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
 
+  // LIME-33-fix: a write-then-read-back probe, not just a try/catch
+  // around a single call — some failure modes (a full quota, certain
+  // "block all site data" configurations) let setItem succeed but never
+  // actually persist the value, which a bare try/catch around setItem
+  // alone wouldn't catch.
+  function checkStorageWorks() {
+    const probeKey = '__lime_storage_probe__';
+    try {
+      localStorage.setItem(probeKey, '1');
+      const ok = localStorage.getItem(probeKey) === '1';
+      localStorage.removeItem(probeKey);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // ── Credential storage: { [email]: { userId, salt, hash } } ──
   // salt/hash are stored as base64 (JSON has no binary type). Never the
   // plain password, in any form, anywhere.
@@ -90,6 +107,12 @@ const LimeAuth = (function () {
     if (!isValidEmail(email)) return Promise.reject(new Error('Enter a valid email address.'));
     if (password.length < 8) return Promise.reject(new Error('Password must be at least 8 characters.'));
     if (!displayName) return Promise.reject(new Error('Display name is required.'));
+    // LIME-33-fix: fail with a clear reason up front, rather than
+    // completing sign-up only to have the redirect that follows bounce
+    // back to login.html with no session and no explanation.
+    if (!checkStorageWorks()) {
+      return Promise.reject(new Error('Your browser isn\'t letting Lime save data on this computer right now — private browsing or blocked cookies/site data are the most common causes.'));
+    }
 
     const credentials = loadCredentials();
     // Unique across BOTH credentials and profiles — a seed teacher's
@@ -121,6 +144,9 @@ const LimeAuth = (function () {
     const password = opts.password || '';
 
     if (!isValidEmail(email)) return Promise.reject(new Error('Enter a valid email address.'));
+    if (!checkStorageWorks()) {
+      return Promise.reject(new Error('Your browser isn\'t letting Lime save data on this computer right now — private browsing or blocked cookies/site data are the most common causes.'));
+    }
 
     const credentials = loadCredentials();
     const credential = credentials[email];
@@ -140,7 +166,12 @@ const LimeAuth = (function () {
       return Promise.reject(new Error('Demo credentials aren\'t configured locally (public/js/demo-config.local.js is gitignored and missing).'));
     }
     if (password !== demo.password) {
-      return Promise.reject(new Error('Incorrect email or password.'));
+      // LIME-33-fix: distinct from the generic "Incorrect email or
+      // password" above — a seed teacher's own real gate check surfaced
+      // this as confusing (they tried a password they made up, not
+      // realizing seed teachers share one demo password until they've
+      // changed it themselves via Settings).
+      return Promise.reject(new Error('Incorrect password. Demo teachers use the shared demo password unless you\'ve changed it in Settings.'));
     }
     writeSession(seedProfile.id, email);
     return Promise.resolve({ userId: seedProfile.id, email });
@@ -237,7 +268,7 @@ const LimeAuth = (function () {
     localStorage.removeItem(CREDENTIALS_KEY);
   }
 
-  return { signUp, signInWithPassword, signOut, getSession, changeEmail, changePassword, resetCredentials };
+  return { signUp, signInWithPassword, signOut, getSession, changeEmail, changePassword, resetCredentials, checkStorageWorks };
 })();
 
 window.LimeAuth = LimeAuth;

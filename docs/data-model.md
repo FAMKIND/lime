@@ -204,6 +204,26 @@ environment). `LimeStore.init()` itself is also skipped when the gate is
 redirecting, so a page about to navigate away doesn't waste time loading
 and rendering data for it first.
 
+**A `file://`-specific caveat (LIME-33-fix):** Firefox's real default for
+`security.fileuri.strict_origin_policy` (`true`) treats every distinct
+`file://` URL as its own storage-isolated origin — including different
+HTML files in the same folder — so `signup.html`, `login.html` and
+`index.html` each get a **separate** `localStorage` with no sharing at
+all when opened directly off disk in Firefox. Confirmed directly against
+a copy of a real Firefox profile (see `TEND.md`'s `## LIME-33-fix` for
+the full investigation, including how easy this is to miss: even
+`puppeteer-core`'s own Firefox launcher silently overrides this exact
+preference for "testing convenience," so an automated repro has to
+explicitly restore it to see the bug at all). Chrome has no such per-path
+isolation, and neither does any `http://`/`https://` origin — this is
+`file://`-and-Firefox-specific. Since no app code can bridge two
+genuinely separate storage origins, the fix is `LimeAuth.checkStorageWorks()`
+(a real write-then-read-back probe) plus `describeGateRedirectReason()`
+in `app.js`, which explain the failure in plain words (`login.html?reason=storage`
+or `?reason=fileorigin`) instead of a silent bounce — not a workaround.
+The real fix for previewing this app in Firefox is to serve it over a
+local `http://` server instead of `file://`.
+
 **Local credentials (`lime-auth-v1`, LIME-33):** a separate `localStorage`
 key, `{ [email]: { userId, salt, hash } }` — entirely apart from
 `lime-demo-session` and from `LimeStore`'s own `lime-state-v1` snapshot.
