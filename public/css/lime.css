@@ -77,8 +77,15 @@
      surface itself darkened slightly off canvas. */
   --lime-layer-raised:  color-mix(in oklab, var(--soil-bg-canvas) 30%, white 70%);
   --lime-layer-surface: color-mix(in oklab, var(--soil-bg-canvas) 97%, var(--seed-soil-900) 3%);
-  --lime-layer-hover:   color-mix(in oklab, var(--soil-bg-canvas) 92%, var(--seed-soil-900) 8%);
-  --lime-layer-active:  color-mix(in oklab, var(--soil-bg-canvas) 88%, var(--seed-soil-900) 12%);
+  /* LIME-59: softened from 8%/12% — measured (not guessed) the OKLab
+     distance between neighbouring steps at several percentages across
+     all 8 tones + dark, picked the lowest that stayed clearly nonzero
+     everywhere (TEND.md has the full table). 6% was already
+     indistinguishable from surface on Sage (byte-identical hex); 5%/8%
+     is the softest step that still separates on every tone, including
+     Sage, its own tightest case. */
+  --lime-layer-hover:   color-mix(in oklab, var(--soil-bg-canvas) 95%, var(--seed-soil-900) 5%);
+  --lime-layer-active:  color-mix(in oklab, var(--soil-bg-canvas) 92%, var(--seed-soil-900) 8%);
   --lime-border-subtle: color-mix(in oklab, var(--soil-bg-canvas) 86%, var(--seed-soil-900) 14%);
   /* Every one of these previously either hardcoded a literal or read a
      ramp stop CANVAS_P never retunes — remapped to the layers above so
@@ -165,13 +172,15 @@
    SAME formula as every other tone (92%/8% and 88%/12% toward ink),
    just anchored on the new surface instead of canvas, so they stay the
    same two steps darker — measured, not just visually close
-   (TEND.md's LIME-56 entry has the computed hex for every tone). Only
+   (TEND.md's LIME-56 and LIME-59 entries have the computed hex for
+   every tone; LIME-59 softened the percentages from 92%/8%/88%/12%
+   to 95%/5%/92%/8%). Only
    Warm's *canvas* (--soil-bg-canvas, the page background outside every
    panel) is untouched — it stays #F9F8F4, unlike the surface above it. */
 [data-theme="light"].lime-canvas-warm {
   --lime-layer-surface: #F0EEE6;
-  --lime-layer-hover:   color-mix(in oklab, #F0EEE6 92%, var(--seed-soil-900) 8%);
-  --lime-layer-active:  color-mix(in oklab, #F0EEE6 88%, var(--seed-soil-900) 12%);
+  --lime-layer-hover:   color-mix(in oklab, #F0EEE6 95%, var(--seed-soil-900) 5%);
+  --lime-layer-active:  color-mix(in oklab, #F0EEE6 92%, var(--seed-soil-900) 8%);
 }
 
 [data-theme="dark"] {
@@ -185,8 +194,11 @@
      read any of the tokens remapped here. */
   --lime-layer-raised:  color-mix(in oklab, var(--soil-bg-canvas) 78%, white 22%);
   --lime-layer-surface: color-mix(in oklab, var(--soil-bg-canvas) 94%, white 6%);
-  --lime-layer-hover:   color-mix(in oklab, var(--soil-bg-canvas) 90%, white 10%);
-  --lime-layer-active:  color-mix(in oklab, var(--soil-bg-canvas) 86%, white 14%);
+  /* LIME-59: softened from 10%/14%, same reasoning as the light block
+     above — 6% was measured indistinguishable from surface (identical
+     hex); 7%/10% is the lowest that stays nonzero. */
+  --lime-layer-hover:   color-mix(in oklab, var(--soil-bg-canvas) 93%, white 7%);
+  --lime-layer-active:  color-mix(in oklab, var(--soil-bg-canvas) 90%, white 10%);
   --lime-border-subtle: color-mix(in oklab, var(--soil-bg-canvas) 82%, white 18%);
   --soil-bg-surface: var(--lime-layer-surface);
   --soil-bg-elevated: var(--lime-layer-raised);
@@ -731,12 +743,34 @@ html[data-pattern-treatment="photo"] body::before {
   font-size: 18px;
 }
 
+/* LIME-59: dew-sidebar-right-closed's own ink fills nearly the full
+   24-unit viewBox (unlike most dew glyphs, which sit inside more
+   padding) — at the same 18px font-size as every other header icon it
+   measured 20.3px tall vs. the appearance icon's 15.3px (real pixel
+   measurement, TEND.md, not font-size alone — "dew glyphs vary
+   optically"). 13.5px is the size that lands it back at 15.3px, the
+   same visible height the rest of the header group already share. */
+#right-panel-toggle .dew {
+  font-size: 13.5px;
+}
+
 /* LIME-50: #appearance-toggle's icon (a palette) is a real <svg>, not a
    .dew glyph (dew has no sun/palette icon — checked) — sized to match
    every other .lime-icon-btn glyph at 18px, and stroke="currentColor"
    (markup) picks up the same hover/muted color .dew icons already
    inherit here. */
 .lime-appearance-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* LIME-59: same pattern as .lime-appearance-icon just above — a real
+   <svg>, not a .dew glyph, sized directly (not via font-size/em) so it
+   can't inherit the 1.5em mask box .dew itself uses. Measured to match
+   .lime-appearance-icon's own rendered height exactly (15.3px real
+   pixels, both at this same 18x18 box) — see index.html's own comment
+   for why dew-share couldn't just be shrunk instead. */
+.lime-share-icon {
   width: 18px;
   height: 18px;
 }
@@ -4206,7 +4240,16 @@ html[data-pattern-treatment="photo"] body::before {
 }
 
 .lime-message__content {
-  background: var(--soil-bg-surface);
+  /* LIME-59: was --soil-bg-surface (one step lighter than the list's own
+     hover). The user perceived bubbles as "slightly darker" than a
+     hovered list row — measured, not assumed: on Warm they *were*
+     genuinely two different colours (surface #F0EEE6 vs hover #E3E2DA
+     pre-LIME-59, further apart than they looked in a screenshot).
+     Pointed at --calm-bg-subtle-hover — the exact token
+     .lime-contact:hover already uses — so the two can never drift
+     apart again, in any tone or theme, the same reuse-the-token
+     reasoning the rest of this file already follows. */
+  background: var(--calm-bg-subtle-hover);
   padding: 14px 18px;
   /* LIME-47: reuses .lime-composer__box's own token (var(--seed-radius-lg))
      directly, per the brief's own "read it and reuse the same token,
@@ -5526,7 +5569,12 @@ html[data-pattern-treatment="photo"] body::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  /* LIME-59: was 18px, measuring only 11.7px tall (a text glyph, ↵,
+     not a dew/SVG icon — real pixels, not font-size). 23px lands it at
+     15.0px, matching the rest of the composer/header icon standard
+     (±1px of the 15.3px reference) while staying comfortably inside
+     the 32px button. */
+  font-size: 23px;
   opacity: 0.4;
   cursor: default;
 }
@@ -5631,7 +5679,14 @@ html[data-pattern-treatment="photo"] body::before {
 }
 
 .lime-composer__voice .dew-microphone {
-  font-size: 14px; /* was 18px (LIME-10-fix11), then 16px (LIME-10-fix12) — this brief wants it smaller too, alongside the plus icon */
+  /* was 18px (LIME-10-fix11), then 16px (LIME-10-fix12), then 14px —
+     LIME-59: at 14px it still measured 19.7px tall (real pixels, not
+     font-size), taller than the header's own 15.3px standard despite
+     matching the + button's font-size number — dew-microphone's own
+     glyph just carries more ink at the same nominal size (LIME-59's
+     own "glyphs vary optically" finding, same as dew-share). 10.5px is
+     the size that lands it at 15.3px too. */
+  font-size: 10.5px;
 }
 
 .lime-composer__voice .dew-chevron-down {

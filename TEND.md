@@ -2501,3 +2501,55 @@ Every rest/hover pair measured in Firefox via `getComputedStyle`, not assumed fr
 **Gate:** the green buttons across the app (sign-in page, Settings Save, New message Start, Copy link) now have dark, easy-to-read text, and hovering makes each one lighter, not darker.
 
 **Record:** this entry.
+
+## LIME-59
+
+**Goal:** soften the list's hover/selected fills and the header icon hovers (the user: "heavy"); make the header (Share, Appearance, "…", right-panel toggle) and composer (+ attach, mic, ⌄, ↵ return) icons one consistent visible size; point chat bubbles at the same colour as a hovered list row, since the user perceived them as darker.
+
+**Survey confirmed the brief's own token map exactly** (`--lime-layer-hover`/`-active` at the percentages named, Warm's own override, dark's own override, `--calm-bg-subtle-hover/-active` feeding list rows/menus/icon buttons/the nav active item). Two things the brief's own text didn't establish, measured fresh:
+- **Item 2's real root cause.** Every header/composer icon's *actual rendered ink* was measured (screenshot each glyph, scan for non-background pixels — font-size/em alone doesn't tell you this, exactly per the brief's own "dew glyphs vary optically" warning): Share 24.0px tall, right-panel-toggle 20.3px, mic 19.7px — all real outliers — against a ~15.3px standard every other icon in both groups already shares (Appearance's hand-drawn SVG, dew-plus, the composer chevron and header ellipsis both naturally shorter by shape, not by mismatch). `dew`'s own icons render inside a `1.5em` mask box (`vendor/seed/icons/dew/dist/dew.css`'s `.dew` base rule) — not a plain font-size box — so "font-size 18px" across different `.dew` glyphs doesn't produce equal ink even before accounting for each SVG's own internal padding; confirmed directly from the icon source, not inferred.
+- **Share couldn't be fixed by resizing alone.** Tested a range of font-sizes on `dew-share`: 11.5px matched the target height but read visibly thinner-stroked than its neighbours; 13px was a closer compromise but still slightly heavier. No single font-size matched both height and stroke weight at once (the underlying SVG's own proportions don't scale onto the 15.3px target cleanly) — exactly the brief's own anticipated case, redrawn as a hand-drawn inline SVG instead (LIME-50's own palette-icon precedent), landing on the target height exactly (15.3px, matched to Appearance's own) with a matching stroke-width.
+
+**The change:**
+1. **Softer layers, measured not guessed.** Computed OKLab ΔE between neighbouring layer steps (surface→hover, hover→active) across all 8 tones + dark at several candidate percentage pairs, cross-checked the OKLab math against a real browser's `color-mix()` output via canvas pixel readback before trusting any of it (6 test mixes, all matched exactly). 6%/9% (light) and 6%/9% (dark) both produced a **byte-identical hex** between surface and hover on at least one tone (Sage in light; the fixed dark canvas in dark) — a real zero, not almost-zero. **5%/8% (light) and 7%/10% (dark)** are the lowest percentages that stay genuinely nonzero everywhere (Sage's own tightest light-mode gap: ΔE 0.0127; dark's tightest: ΔE 0.0083) — both the brief's own suggested starting numbers, now confirmed rather than assumed. Applied to the default light block, Warm's own override (anchored on `#F0EEE6` since LIME-56, same formula), and dark. `--lime-border-subtle`/`--lime-layer-raised` untouched — outside the brief's own item 1 scope.
+2. **Icon sizing, all measured before AND after** (not just adjusted and assumed fixed):
+   - `dew-share` → a new hand-drawn `.lime-share-icon` inline SVG (`index.html`, 18×18 direct size, `viewBox 0 0 24 24`, `stroke-width 2`, round caps/joins — the exact `.lime-appearance-icon` pattern), rendering at 15.3px tall, matching Appearance exactly.
+   - `#right-panel-toggle .dew` font-size 18px → 13.5px (20.3px → 15.3px tall).
+   - `.lime-composer__voice .dew-microphone` font-size 14px → 10.5px (19.7px → 15.3px tall).
+   - `.lime-composer__return` (Send, a literal `↵` text glyph, not a `dew`/SVG icon — kept as text, just resized rather than redrawn, since a plain font-size change matched the target within the brief's own ±1px tolerance with no weight mismatch) font-size 18px → 23px (11.7px → 15.0px tall).
+   - `dew-plus` (composer +) and `dew-chevron-down`/`dew-ellipsis-menu`: **left untouched** — already within ±1px of the standard (attach) or naturally short by shape, not by mismatch (chevron, ellipsis) — confirmed by measurement, not assumed fine because the user didn't name them.
+3. **Header hovers soften automatically** — they already read `--calm-bg-subtle-hover`, so item 1's change alone covers them; no separate rule needed (confirmed by reading `.lime-icon-btn:hover`, unchanged).
+4. **Bubbles → `--calm-bg-subtle-hover`** (`.lime-message__content`, was `--soil-bg-surface`) — the exact token `.lime-contact:hover` already uses, so the two can never drift again. One shared rule covers the reply panel too: `.lime-message__content` turned out to be the same class in both contexts (confirmed by reading `app.js`'s own render functions — no separate reply-bubble rule existed to begin with, simpler than the brief anticipated). Checked for a message-row hover state that might now collide with the new bubble colour: `.lime-message:hover` only reveals `.lime-message__actions` (the react/reply hover buttons), never touches the bubble's own background — no collision exists.
+
+**Verification:**
+- `node --check` clean on `app.js`; `lime.css` braces balanced (782/782); `index.html`'s 3 `<svg>` tags all close.
+- **The OKLab math was cross-checked against a real Firefox `color-mix()` canvas readback** before being trusted (same method as LIME-56), not assumed correct from the formula alone.
+- **Colour verification, measured live (canvas pixel readback, not just computed offline):**
+
+  | | Bubble | Hovered list row | Selected list row | Composer box (surface, untouched) |
+  |---|---|---|---|---|
+  | Warm | `#E3E2DA` | `#E3E2DA` | `#E3E2DA` | `#F0EEE6` |
+  | Dark | `#202824` | `#202824` | — | — |
+
+  Bubble and list-hover are **identical** in both themes, confirming the user's own perception was correct (they genuinely were two different colours before — Warm's old surface `#F1F0EC`/`#F0EEE6` vs. hover `#E3E2DA`, a real, measurable gap, not just a screenshot artifact) and that the fix actually closed it, not just brought them closer.
+- **Icon bounding boxes, before → after** (real pixels, `deviceScaleFactor: 3`, corner-pixel-diff scan):
+
+  | Icon | Before | After |
+  |---|---|---|
+  | Header: Share | 17.0×24.0 | 12.0×**15.3** |
+  | Header: Appearance (reference) | 14.7×15.3 | unchanged |
+  | Header: "…" | 17.0×3.7 | unchanged (naturally short) |
+  | Header: right-panel toggle | 22.3×20.3 | 16.7×**15.3** |
+  | Composer: + attach | 14.3×15.0 | unchanged (already within range) |
+  | Composer: mic | 12.3×19.7 | 9.0×**15.3** |
+  | Composer: chevron | 12.7×7.0 | unchanged (naturally short) |
+  | Composer: Send (↵) | 14.3×11.7 | 14.3×**15.0** |
+
+- **Real installed Firefox and Chrome** (`puppeteer-core`/WebDriver BiDi): signed in, confirmed the bubble background resolves to a real colour, confirmed Share renders as the new 18px inline SVG, confirmed Send's font-size is 23px, zero console/page errors — identical in both.
+- **Screenshots**, light and dark: the header icon row at rest (Share/Appearance/"…" now visually even), the composer icon row at rest (+/mic/⌄ even), Send active (lime-filled, legible), the list with a hovered and a selected row next to a message bubble (visibly the same shade). All viewed directly, not just measured.
+- The existing LIME-33, LIME-49-fix, LIME-48, LIME-29, LIME-55, LIME-27 jsdom suites all still pass.
+- Browser-parsed CSS rule count: `lime.css` **714** (up from 712 — two new selectors, `#right-panel-toggle .dew` and `.lime-share-icon`). `gradients.css` untouched.
+
+**Gate:** hovering and selecting chats in the list feels lighter than before. Chat bubbles are now the exact same shade as a hovered chat in the list (verified identical, not just close). The Share, palette and "…" icons at the top are the same visible size; the composer's +, mic, ⌄ and ↵ match each other too. "Chat box link button" was read as *every* composer icon, per plot's own interpretation — flagged in case that's not what was meant.
+
+**Record:** this entry.

@@ -229,8 +229,20 @@
                anchored off the trigger's own rect), just a different
                inner shape. -->
           <div class="lime-share">
+            <!-- LIME-59: dew-share replaced with a hand-drawn SVG in dew's
+                 own stroke style (the LIME-50 palette-icon precedent) —
+                 dew-share's own glyph measured 24px tall at the header's
+                 18px standard font-size, vs. the palette icon's 15.3px
+                 (real pixel measurement, TEND.md); no font-size shrink
+                 could match both its height AND its stroke weight at
+                 once, so it's redrawn instead, sized directly like
+                 .lime-appearance-icon rather than via a .dew font-size. -->
             <button type="button" class="lime-icon-btn" id="share-btn" title="Share" aria-label="Share" aria-haspopup="dialog" aria-expanded="false">
-              <span class="dew dew-share"></span>
+              <svg class="lime-share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 15V3"></path>
+                <path d="M7 8l5-5 5 5"></path>
+                <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"></path>
+              </svg>
             </button>
             <div class="lime-share-popover" id="share-popover" role="dialog" aria-modal="false" aria-labelledby="share-popover-title">
               <div class="lime-share-popover__header">
