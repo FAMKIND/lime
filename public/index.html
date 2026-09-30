@@ -85,6 +85,32 @@
         </div>
 
         <div class="lime-nav">
+          <!-- LIME-55: a split "+ Add | ⌄" button, first in the nav —
+               "+ Add" opens the New message picker directly (LIME-29's
+               own [data-open-picker]); ⌄ opens a small menu (New
+               message, New jam — Soon). Collapsed rail: only the "+"
+               half shows, sized and styled like the rail's other icon
+               buttons — see lime.css's own collapsed-left rules. -->
+          <div class="lime-nav-add">
+            <button type="button" class="lime-nav-add__main" id="nav-add-btn" data-open-picker title="New message" aria-label="New message">
+              <span class="dew dew-plus"></span>
+              <span class="lime-nav-add__label">Add</span>
+            </button>
+            <button type="button" class="lime-nav-add__toggle" id="nav-add-toggle" aria-haspopup="menu" aria-expanded="false" aria-label="More start options" title="More options">
+              <span class="dew dew-chevron-down"></span>
+            </button>
+            <div class="lime-menu" id="nav-add-dropdown" role="menu" aria-label="Start">
+              <button type="button" class="lime-menu__item" role="menuitem" data-open-picker>
+                <span class="dew dew-chat"></span>
+                <span class="lime-menu__item-label">New message<span class="lime-nav-add__item-hint">Link</span></span>
+              </button>
+              <button type="button" class="lime-menu__item" role="menuitem" disabled aria-label="New jam (coming soon)" title="Coming soon">
+                <span class="dew dew-pencil"></span>
+                <span class="lime-menu__item-label">New jam</span>
+                <span class="lime-badge--soon">Soon</span>
+              </button>
+            </div>
+          </div>
           <button class="lime-nav-search" id="nav-search-trigger" type="button" aria-haspopup="dialog" title="Search">
             <span class="dew dew-search"></span>
             <span class="lime-nav-search__label">Search</span>
@@ -235,18 +261,13 @@
                 </div>
               </div>
 
-              <!-- LIME-29: the tabs and the New message trigger share one
-                   row — a new wrapper, not a change to .seed-tabs itself
-                   (its --active-index pill math is keyed to its own
-                   width/children; adding a sibling button inside it would
-                   risk that, a plain flex row alongside it doesn't). -->
-              <div class="lime-list-col__tabs-row">
-                <div class="seed-tabs seed-tabs--pill seed-tabs--sm lime-segmented" role="tablist" aria-label="Link scope" id="scope-tablist" style="--active-index: 0;">
-                  <div class="lime-segmented__pill" aria-hidden="true"></div>
-                  <button class="seed-tab seed-tab--active" role="tab" aria-selected="true" data-scope="messages">Messages</button>
-                  <button class="seed-tab" role="tab" aria-selected="false" data-scope="communities">Communities</button>
-                </div>
-                <button type="button" class="lime-icon-btn" id="new-message-btn" data-open-picker title="New message" aria-label="New message"><span class="dew dew-plus"></span></button>
+              <!-- LIME-55: the tabs row's own New message trigger moved to
+                   the nav (the split Add button, top of .lime-nav) — the
+                   tabs get their row's full width back. -->
+              <div class="seed-tabs seed-tabs--pill seed-tabs--sm lime-segmented" role="tablist" aria-label="Link scope" id="scope-tablist" style="--active-index: 0;">
+                <div class="lime-segmented__pill" aria-hidden="true"></div>
+                <button class="seed-tab seed-tab--active" role="tab" aria-selected="true" data-scope="messages">Messages</button>
+                <button class="seed-tab" role="tab" aria-selected="false" data-scope="communities">Communities</button>
               </div>
 
               <!-- Messages scope: direct + group conversations, one merged

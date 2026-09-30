@@ -1046,6 +1046,106 @@ html[data-pattern-treatment="photo"] body::before {
   padding: var(--seed-space-2) var(--seed-space-2);
 }
 
+/* ── LIME-55: the split "+ Add | ⌄" button ──
+   Matches the Search field's own height/radius/fill (neutral, not lime —
+   the lime rule reserves lime for the active nav item and primary
+   buttons; a lime block here would compete with the active "Link" row
+   right below it). Two halves in one pill, a 1px divider between. */
+.lime-nav-add {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--seed-radius-full);
+  background: var(--calm-bg-normal-default);
+  overflow: hidden;
+}
+
+.lime-nav-add__main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--seed-space-3);
+  border: none;
+  background: transparent;
+  color: var(--soil-text-muted);
+  font-family: var(--seed-font-ui);
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.lime-nav-add__main:hover {
+  background: var(--calm-bg-normal-hover);
+}
+
+.lime-nav-add__main .dew {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.lime-nav-add__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-left: 1px solid var(--soil-border-subtle);
+  background: transparent;
+  color: var(--soil-text-muted);
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.lime-nav-add__toggle:hover {
+  background: var(--calm-bg-normal-hover);
+}
+
+.lime-nav-add__toggle .dew {
+  font-size: 16px;
+}
+
+/* Same visual weight as .lime-menu__item-reason (a disabled item's own
+   muted sub-line), but a different class — this hint sits on an ENABLED
+   row (it's not saying the row is unavailable, just what surface it
+   opens), so reusing the "-reason" name here would misdescribe it to
+   anyone reading the CSS later even though the declarations match. */
+.lime-nav-add__item-hint {
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-regular);
+  color: var(--soil-text-muted);
+}
+
+.seed-layout--collapsed-left .lime-nav-add {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: transparent;
+}
+
+.seed-layout--collapsed-left .lime-nav-add__toggle {
+  display: none;
+}
+
+.seed-layout--collapsed-left .lime-nav-add__main {
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 12px;
+}
+
+.seed-layout--collapsed-left .lime-nav-add__main:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.seed-layout--collapsed-left .lime-nav-add__label {
+  display: none;
+}
+
 /* Nav "Search" is a field-styled trigger, not a nav row — clicking it
    opens the global search modal, but it never accepts typed input
    itself (see #nav-search-trigger in app.js). */
@@ -3155,24 +3255,6 @@ html[data-pattern-treatment="photo"] body::before {
 
 .lime-text-btn:hover {
   text-decoration: underline;
-}
-
-/* The tabs row now also holds the New message trigger (LIME-29) — a
-   plain flex row, not a change to .seed-tabs itself, so its own
-   --active-index pill math (keyed to its own width) is unaffected. */
-.lime-list-col__tabs-row {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-2);
-}
-
-.lime-list-col__tabs-row .seed-tabs {
-  flex: 1;
-  min-width: 0;
-}
-
-.lime-list-col__tabs-row .lime-icon-btn {
-  flex-shrink: 0;
 }
 
 /* ── 2a. Conversation list ── */
@@ -5997,6 +6079,33 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav {
     align-items: stretch !important;
     padding: var(--seed-space-2) var(--seed-space-3) !important;
+  }
+
+  /* LIME-55: the split button, forced back to its full expanded shape in
+     the mobile drawer — same reasoning as .lime-nav-search just below:
+     the drawer always shows the full nav regardless of the desktop
+     collapse state underneath it. */
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-add {
+    width: 100% !important;
+    height: 36px !important;
+    border-radius: var(--seed-radius-full) !important;
+    background: var(--calm-bg-normal-default) !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-add__toggle {
+    display: flex !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-add__main {
+    width: auto !important;
+    height: 36px !important;
+    padding: 0 var(--seed-space-3) !important;
+    justify-content: flex-start !important;
+    border-radius: 0 !important;
+  }
+
+  .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-add__label {
+    display: inline !important;
   }
 
   .seed-layout--mobile-open.seed-layout--collapsed-left .lime-nav-search {

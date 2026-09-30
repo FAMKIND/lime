@@ -3958,6 +3958,37 @@ wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
 // real formatting behavior wired regardless of width, so this dropdown
 // doesn't need to either.
 wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropdown', { fixed: true });
+// LIME-55: the split Add button's own ⌄ menu (New message, New jam —
+// Soon). "+ Add" itself needs no wiring here — it's just another
+// [data-open-picker] trigger, the same delegated listener LIME-29's own
+// picker already responds to.
+wireDropdownToggle('nav-add-toggle', 'nav-add-dropdown', { fixed: true });
+
+// A small, scoped arrow-key handler — none of this app's other dropdown
+// menus have one (confirmed by survey: LIME-21b's own record only ever
+// describes their shared visual style, never a keyboard behavior), so
+// this doesn't extend to them; it's this one new menu's own explicit
+// requirement. Skips disabled items (New jam) automatically, since
+// querySelectorAll('.lime-menu__item:not([disabled])') never includes them.
+(function () {
+  const dropdown = document.getElementById('nav-add-dropdown');
+  if (!dropdown) return;
+  function items() {
+    return [...dropdown.querySelectorAll('.lime-menu__item:not([disabled])')];
+  }
+  document.addEventListener('keydown', (e) => {
+    if (!dropdown.classList.contains('is-open')) return;
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const list = items();
+    if (list.length === 0) return;
+    e.preventDefault();
+    const currentIndex = list.indexOf(document.activeElement);
+    let nextIndex;
+    if (currentIndex === -1) nextIndex = e.key === 'ArrowDown' ? 0 : list.length - 1;
+    else nextIndex = e.key === 'ArrowDown' ? (currentIndex + 1) % list.length : (currentIndex - 1 + list.length) % list.length;
+    list[nextIndex].focus();
+  });
+})();
 
 // LIME-10's original expandable-composer IIFE (expand-on-focus, auto-grow,
 // is-active Send) is gone — createComposer (LIME-37, above, called once
