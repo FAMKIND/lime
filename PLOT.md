@@ -37,6 +37,27 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **Unchecked:** the user hasn't yet reported the console errors (⌥⌘K) or a Troubleshoot Mode (add-ons off) retry. **Start there when this comes back.** An add-on or a broken site-storage area in the user's profile is the leading suspect.
 - **When to return:** after the major parts are done (the milestone: LIME-49, 33, 48, 29, 27 and Communities). Don't re-raise it before then.
 
+### Open decision: brand palette vs the 8 canvas tones, and lime-shaped avatars (raised 2026-09-30, decision surface sent)
+- **The user's brand palette:** ink `#131b17` (= `--seed-soil-925`/`--seed-lime-950`, Lime's ink), green `#09a950` (= `--seed-lime-500`, primary buttons), light green `#a3e18a` (= `--seed-lime-300`, the pressed step), pale lime `#e4f9be` (= `--seed-lime-100`, `--lime-primary-bg`), warm light `#f0eee6` (**not used anywhere yet**; the warm ramp's step 100 is `#E8E4DB`), and off-white `#f9f8f4` (= Warm's canvas). **The brand is already wired in, apart from `#f0eee6`.**
+- **Plot's read of the 8 tones** (from hex values, not measured):
+  - **Warm** is the brand's off-white; keep it as the default.
+  - **Warm cream** `#FDF8F0` is a near-duplicate of Warm.
+  - **Pure white** and **Cool gray** are neutral and fine.
+  - **Blue tint** `#F0F4F8` is cool and clinical next to a warm green brand.
+  - **Lemon** `#FBF3D0` is citrus and on-brand.
+  - **Sage** `#D8E6D0` is green on green: the pale-lime Add/Send button likely blends in. Measure it.
+  - **Lilac** `#F1ECF6` is the complement of green, so it makes the lime pop, even though it isn't in the brand family.
+- **Options sent:**
+  - **A.** Keep all 8; align Warm's surface layer to `#f0eee6`.
+  - **B (plot's lean).** A curated "citrus" set of 7: Warm (default, surfaces aligned to `#f0eee6`), Pure white, Cool gray, Lemon, Lilac; retune Sage greyer so lime stands out; replace Blue tint with a pale grapefruit/peach (~`#FBEEE6`); drop Warm cream. Each tone is verified so the primary lime reads as distinct and all text contrast holds.
+  - **C.** Cut to 4 (Warm, Pure white, Lemon, Lilac).
+- **Lime-shaped shapes (`public/assets/Logomark-outline.svg`, untracked):** a hand-drawn, slightly wobbly circle with a small nub at the lower left, which works as a CSS `mask-image` at any size. **Options sent:**
+  - **A (plot's lean).** Avatars **≥ 28px** use the lime silhouette; smaller avatars (clusters, reply rows, the rail) stay circles, because the nub is only 1–2px there and reads as a glitch. Icon hovers stay as they are. The presence dot sits bottom-right, so it doesn't conflict with the nub.
+  - **B.** Everything round becomes a lime: noisy, with small-size artefacts and stacked-avatar rings needing mask-based borders.
+  - **C.** Signature moments only (profile and details avatars, empty states, a lime-slice loading spinner); list avatars unchanged.
+  - Either way, prototype at 20/24/32/40/64px in light and dark before calling it done.
+- **DECIDED (the user, 2026-09-30): palette "B", then revised to "keep all 8"**, so: **no tones dropped or replaced**, only B's refinements to existing tones (Warm's surfaces → `#f0eee6`, Sage retuned so lime stands out, and every tone verified). **Shape "A":** lime-silhouette avatars at ≥ 28px. Briefs: **LIME-56** (palette) and **LIME-57** (lime avatars, a preview stop first).
+
 ### Unbriefed candidates (offer when the queue thins)
 - **"Forgot password?" on `auth.html`** (raised 2026-09-30: the user got confused between their own password and the seed demo password, and between `file://` and localhost accounts). Locally: reset a local account's password after confirming the email (demo-grade). Production: Supabase `resetPasswordForEmail`. Also consider showing on the password step which kind of account it is ("Demo teacher: use the shared demo password").
 - **Real notifications** (the bell is a mockup; the user wants these instead of ✓/✓✓).
@@ -245,6 +266,77 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-56 → `tend` (after LIME-48-fix2): the 8 canvas tones tuned to the brand palette (keep all 8)
+
+**The user (2026-09-30):** shared Lime's brand palette and asked whether the 8 canvas tones complement it. They chose to **keep all 8** tones and refine them.
+
+**Brand palette → existing tokens (plot's survey):** ink `#131b17` = `--seed-soil-925` / Lime's pinned ink; green `#09a950` = `--seed-lime-500` (primary buttons); `#a3e18a` = `--seed-lime-300` (the pressed step of `--lime-primary-*`); `#e4f9be` = `--seed-lime-100` (`--lime-primary-bg`: Add and Send); `#f9f8f4` = Warm's canvas. **`#f0eee6` is unused.** Canvas presets: `CANVAS_P` in `public/js/appearance.js` (~77–86). The surface layers are tone-relative mixes in `lime.css` ~63–66 (`--lime-layer-surface` = canvas 97% + ink 3%; hover 8%; active 12%; raised = canvas 30% + white 70%).
+
+**Assumptions:** the agent can edit files, run Playwright (Firefox) and jsdom, and commit. Preview at `http://localhost:8000/public/index.html`.
+
+**The change:**
+1. **Warm's surface layer becomes the brand's `#f0eee6`:** on the Warm tone, the surface (bubbles, the composer box, the segmented toggle, the selected list row and the nav active item) renders **`#f0eee6` (±2 per channel)**. Choose the cleanest mechanism (a Warm-only override of `--lime-layer-surface`, or a Warm ramp adjustment) and report why. Hover and active must stay progressively darker than surface on Warm. **Other tones' layers don't change** unless a contrast check forces it (report any).
+2. **Sage is retuned so lime stands out:** move Sage's base `#D8E6D0` greyer (lower chroma, same lightness family) until `--lime-primary-bg` (`#e4f9be`) is **at least as distinguishable** from Sage's canvas **and** surface as it is on Warm (measure OKLab ΔE for both pairs on Warm, then require Sage ≥ that). Keep all Sage text-contrast targets from LIME-50/50-fix (≥ 4.5:1 ink and muted on canvas and surface).
+3. **Every tone is verified against the brand:** for all 8 tones, measure and report (a table):
+   - ink and muted text on canvas and surface (≥ 4.5:1);
+   - `--lime-primary-bg` vs canvas and vs surface (ΔE; flag any tone below Warm's);
+   - the primary green `#09a950` button text contrast (unchanged tokens, re-confirmed);
+   - **primary-button icon/text on rest, hover and pressed lime** (≥ 4.5:1).
+   **Known gap:** on Lemon, the hover text is 4.43:1 (from LIME-55-fix). **If any primary-button state is below 4.5:1, switch `--lime-primary-*`'s icon/text colour to full ink (`--seed-soil-900`/the pinned ink)** for both Add and Send, and report it. The user may veto this at the gate.
+   Any other tone that falls below a target: adjust that tone's base minimally, report before/after, and **stop and ask the user if the fix would visibly change a tone's character**.
+4. **Labels, order and ids are unchanged** (stored preferences keep working).
+
+**Scope:**
+- **May touch:** `CANVAS_P` in `public/js/appearance.js`, the layer tokens in `public/css/lime.css` (Warm-only if possible), the `--lime-primary-*` text colour (only under item 3's condition), and `TEND.md`.
+- **May not touch:** dark mode, patterns, the swatch UI, and anything else.
+
+**Verification:**
+- The full table from item 3 (before and after), and the measured Warm surface colour.
+- Screenshots of the app in all 8 tones (the list with a selected row, a chat with bubbles, the composer, the Add button).
+- Report the browser-parsed CSS rule counts for `lime.css` and `gradients.css`. The real app loads in jsdom with zero errors.
+
+**Gate:** open the palette menu and click through all 8 tones. On **Warm**, the panels and bubbles now use the brand's warm grey. On **Sage**, the green Add and Send buttons stand out clearly. Everything stays easy to read.
+
+**Record:** add a `## LIME-56` entry to `TEND.md`, including the tables. Commit: `fix: canvas tones tuned to the brand palette`, trailer `Brief: LIME-56`, plus the attribution trailer.
+
+---
+
+### LIME-57 → `tend` (after LIME-56; TWO stops): lime-shaped avatars at 28px and up
+
+**The user (2026-09-30):** added `public/assets/Logomark-outline.svg` (untracked) and asked about making circles lime-shaped. **They chose option A: avatars ≥ 28px use the lime silhouette; smaller avatars stay round; icon hovers are unchanged.**
+
+**Survey (plot, 2026-09-30):**
+- The SVG is a 245.37×245.54 export with lots of wrapper cruft. **The outer silhouette is its first `<path>`**: a hand-drawn, slightly wobbly circle with a **small nub at the lower left** (~x 30–62, y 210–225). The segment paths inside are the logo's slices, not needed here.
+- Seed avatar sizes (`vendor/seed/components/avatar/avatar.css`): xs 20, sm 24, **md 32, lg 40, xl 56**. Lime also has custom-sized avatars (profile/details, the Recent row, Settings 64px). Find them all.
+- **Masks clip borders and box-shadows.** The Recent row's unread ring is a `box-shadow` (`lime.css` ~3745), and focus rings on avatar buttons would be clipped too.
+
+**Phase 1: a preview, then STOP for the user.**
+1. Extract the outer path into a clean, minimal SVG: `public/assets/lime-silhouette.svg` (a single path, a `viewBox` normalised to a square so it's centred, `fill="#000"`, no ids or cruft; ≤ 3 KB). **Don't edit or commit `Logomark-outline.svg`; ask the user in the report whether to commit it as a brand asset.**
+2. Make a **scratch preview page (outside the repo)** showing the silhouette applied via `mask-image` (with `-webkit-mask-image`, `mask-size: 100% 100%`) to initials avatars and photo avatars at **20, 24, 28, 32, 40, 56 and 64px**, in light and dark, with the presence dot, and with the unread ring (built the way item 3 below proposes). Put circles side by side for comparison.
+3. **Stop and show the user the screenshot** (a path to the PNG). Ask: is 28px the right cut-off, and does the nub read well?
+
+**Phase 2 (only after the user approves, with any cut-off change they give):**
+1. Apply the silhouette to **every avatar ≥ the cut-off** app-wide (a size-based class or selectors covering md, lg, xl and the custom sizes). Smaller ones stay circles. **Group avatar clusters stay as they are.**
+2. **Presence dots** stay outside the mask (they already sit in a separate frame wrapper); confirm none is clipped.
+3. **Rings:** rebuild the Recent row's unread ring and any avatar focus ring so they follow the lime shape. For example, a wrapper that carries the same mask, filled with the ring colour and padded by the ring width, with the avatar inside. **No clipped rings anywhere.**
+4. Photos are masked the same way. The avatar's `border-radius` stays as a fallback where masks are unsupported.
+
+**Scope:**
+- **May touch:** `public/css/lime.css`, `public/assets/lime-silhouette.svg` (new), avatar markup in `public/js/app.js` only if a wrapper is needed for rings, and `TEND.md`.
+- **May not touch:** icon-button hovers, avatar colours, presence logic, and anything else.
+
+**Verification (Phase 2, `http://localhost:8000/public/index.html`, Playwright Firefox, plus a check in the real Firefox and Chrome):**
+- Screenshots: the list, the Recent row (with an unread ring), the thread, details and members panels, Settings Profile, and the picker. In light and dark.
+- List every avatar size found and whether it's shaped or round.
+- No ring or presence dot is clipped (element screenshots).
+- Report the browser-parsed CSS rule counts. The real app loads in jsdom with zero errors.
+
+**Gate:** Phase 1: look at the preview and approve (or change the cut-off). Phase 2: avatars across Lime are little limes, the tiny ones stay round, and the unread rings and green online dots still look right.
+
+**Record:** add a `## LIME-57` entry to `TEND.md`. Commit (Phase 2): `feat: lime-shaped avatars`, trailer `Brief: LIME-57`, plus the attribution trailer. If Phase 1 creates files in the repo (the silhouette SVG), commit them with the Phase 2 commit, not before.
+
+---
 
 ### LIME-48-fix2 → `tend` (next): swap the sign-in video for the user's `signin-teachers.mp4`
 
