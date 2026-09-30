@@ -266,8 +266,16 @@ const LimeAuth = (function () {
     });
   }
 
+  // LIME-29: flush any pending debounced store write before navigating —
+  // a real page navigation can drop a still-pending scheduleSave() timer,
+  // silently losing whatever the user just did (a new conversation, a
+  // sent message) if they sign out quickly afterward. Confirmed live in
+  // real Firefox and real Chrome before this fix existed: LimeStore.flush()
+  // is a synchronous no-op when there's nothing pending, so this is safe
+  // to call unconditionally on every sign-out, not just after a write.
   function signOut() {
     localStorage.removeItem(SESSION_KEY);
+    if (window.LimeStore) LimeStore.flush();
     window.location.href = 'login.html';
   }
 

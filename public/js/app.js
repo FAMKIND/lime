@@ -2603,19 +2603,34 @@ function initMessagesList() {
       .catch(console.error);
   });
 
+  // LIME-29: syncSection's own emptyMessage param only ever escapes plain
+  // text (every existing caller passes a static string, e.g. Starred's
+  // "Star a chat from its title menu.") — the All/Messages list needs a
+  // real button inside its empty state, so this runs as a separate step
+  // right after syncSection leaves the list empty (no <li> at all, since
+  // no emptyMessage is passed to it here), rather than extending
+  // syncSection itself for one caller's own richer markup.
+  function updateMessagesListEmptyState() {
+    if (messageConversations.length > 0) return;
+    list.innerHTML = '<li class="lime-contact-list__empty">No conversations yet. <button type="button" class="lime-text-btn" data-open-picker>New message</button></li>';
+  }
+
   let messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
+  updateMessagesListEmptyState();
   if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
   syncArchivedSection();
   renderRecentRow();
 
   document.addEventListener('lime:conversations-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
+    updateMessagesListEmptyState();
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
     syncArchivedSection();
     renderRecentRow();
   });
   document.addEventListener('lime:messages-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
+    updateMessagesListEmptyState();
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
     syncArchivedSection();
     renderRecentRow();
@@ -2629,6 +2644,7 @@ function initMessagesList() {
   // none of the lighter per-row update paths above ever look at.
   document.addEventListener('lime:profile-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }), null, true);
+    updateMessagesListEmptyState();
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.', true);
     syncArchivedSection(true);
 
@@ -2646,6 +2662,220 @@ function initMessagesList() {
 
     updateProfileEverywhere();
   });
+
+  // ── New message picker (LIME-29) ────────────────────────
+  // Find any teacher (including one who just signed up — listProfiles()
+  // reads the same live cache createProfile writes into) and start a DM
+  // or group. Lives here, not a separate top-level IIFE, because it
+  // needs selectConversation/currentUserId/messageConversations — all
+  // local to this function's own closure, same reasoning every other
+  // list-col/thread interaction in this file already lives here.
+  (function () {
+    const backdrop = document.getElementById('picker-backdrop');
+    const modal = document.getElementById('picker-modal');
+    const input = document.getElementById('picker-input');
+    const closeBtn = document.getElementById('picker-close');
+    const chipsEl = document.getElementById('picker-chips');
+    const groupNameField = document.getElementById('picker-group-name-field');
+    const groupNameInput = document.getElementById('picker-group-name');
+    const resultsEl = document.getElementById('picker-results');
+    const startBtn = document.getElementById('picker-start-btn');
+    if (!modal || !input || !resultsEl) return;
+
+    let selectedIds = [];
+    let activeIndex = -1;
+    let currentResults = []; // profiles currently rendered as selectable rows (excludes the no-match/empty rows)
+
+    function digitsOnly(s) {
+      return (s || '').replace(/\D/g, '');
+    }
+
+    function isEmailQuery(q) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q);
+    }
+
+    function isPhoneLikeQuery(q) {
+      return digitsOnly(q).length >= 7;
+    }
+
+    // Whitespace-insensitive, not just case-insensitive — "ps113" has to
+    // find "PS 113" (a real seed school name with a space in it), so both
+    // sides drop whitespace before comparing, not just get lowercased.
+    function normalizeForSearch(s) {
+      return (s || '').toLowerCase().replace(/\s+/g, '');
+    }
+
+    function matchesQuery(person, q, qDigits) {
+      if (!q) return true;
+      const normalizedQuery = normalizeForSearch(q);
+      if (normalizeForSearch(person.display_name).includes(normalizedQuery)) return true;
+      if (normalizeForSearch(person.email).includes(normalizedQuery)) return true;
+      if (normalizeForSearch(person.school).includes(normalizedQuery)) return true;
+      // Only once ≥4 digits are typed — a 1-3 digit query would match
+      // nearly every phone number in the directory, which isn't useful.
+      if (qDigits.length >= 4 && person.phone && digitsOnly(person.phone).includes(qDigits)) return true;
+      return false;
+    }
+
+    function candidateProfiles() {
+      return LimeStore.listProfiles().filter((p) => p.id !== currentUserId);
+    }
+
+    function pickerResultRowHtml(person, index) {
+      const selected = selectedIds.includes(person.id);
+      return '<button type="button" class="lime-menu__item lime-picker__result' + (selected ? ' is-selected' : '') + (index === activeIndex ? ' is-active' : '') + '" role="option" aria-selected="' + (selected ? 'true' : 'false') + '" data-profile-id="' + escapeHtml(person.id) + '" data-index="' + index + '">'
+        + '<span class="seed-avatar seed-avatar--sm lime-avatar" ' + avatarAttrsHtml(person) + '></span>'
+        + '<span class="lime-notif__body"><span class="lime-notif__name">' + escapeHtml(person.display_name) + '</span><p class="lime-notif__preview">' + escapeHtml(person.school || person.email || '') + '</p></span>'
+        + '</button>';
+    }
+
+    function renderResults() {
+      const rawQuery = input.value;
+      const q = rawQuery.trim().toLowerCase();
+      const qDigits = digitsOnly(rawQuery);
+      const all = candidateProfiles();
+      const matches = q
+        ? all.filter((p) => matchesQuery(p, q, qDigits))
+        : all.slice();
+      matches.sort((a, b) => a.display_name.localeCompare(b.display_name));
+      currentResults = matches;
+      if (activeIndex >= matches.length) activeIndex = matches.length - 1;
+
+      if (matches.length > 0) {
+        resultsEl.innerHTML = matches.map((p, i) => pickerResultRowHtml(p, i)).join('');
+        // A real bug caught in verification (a live screenshot showed
+        // blank circles, not initials) — every other avatar-inserting
+        // path in this file does this same paint pass right after its
+        // own innerHTML write; this one was missing it.
+        resultsEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+        return;
+      }
+
+      const trimmed = rawQuery.trim();
+      if (trimmed && (isEmailQuery(trimmed) || isPhoneLikeQuery(trimmed))) {
+        resultsEl.innerHTML = '<div class="lime-menu__item lime-picker__no-match" role="option" aria-disabled="true">'
+          + '<span class="lime-picker__no-match-text">No teacher found with &ldquo;' + escapeHtml(trimmed) + '&rdquo;</span>'
+          + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" disabled aria-label="Invite (coming soon)" title="Coming soon">Invite<span class="lime-badge--soon">Soon</span></button>'
+          + '</div>';
+      } else if (trimmed) {
+        resultsEl.innerHTML = '<div class="lime-menu__label lime-picker__empty">No teachers match &ldquo;' + escapeHtml(trimmed) + '&rdquo;</div>';
+      } else {
+        resultsEl.innerHTML = '<div class="lime-menu__label lime-picker__empty">No other teachers yet.</div>';
+      }
+    }
+
+    function renderChips() {
+      if (selectedIds.length === 0) {
+        chipsEl.hidden = true;
+        chipsEl.innerHTML = '';
+        groupNameField.hidden = true;
+        startBtn.disabled = true;
+        return;
+      }
+      chipsEl.hidden = false;
+      chipsEl.innerHTML = selectedIds.map((id) => {
+        const person = LimeStore.getProfile(id);
+        const name = person ? person.display_name : 'Unknown';
+        return '<span class="lime-picker__chip" data-profile-id="' + escapeHtml(id) + '"><span class="lime-picker__chip-name">' + escapeHtml(name) + '</span>'
+          + '<button type="button" class="lime-picker__chip-remove" data-profile-id="' + escapeHtml(id) + '" aria-label="Remove ' + escapeHtml(name) + '"><span class="dew dew-close"></span></button></span>';
+      }).join('');
+      // 2+ chips → group: the optional name field appears only then, per
+      // the brief's own "One chip → DM" / "2+ chips → group" rule.
+      groupNameField.hidden = selectedIds.length < 2;
+      startBtn.disabled = false;
+    }
+
+    function toggleSelect(profileId) {
+      const idx = selectedIds.indexOf(profileId);
+      if (idx === -1) selectedIds.push(profileId);
+      else selectedIds.splice(idx, 1);
+      renderChips();
+      renderResults();
+    }
+
+    function start() {
+      if (selectedIds.length === 0) return;
+      const promise = selectedIds.length === 1
+        ? LimeStore.createConversation({ type: 'direct', memberIds: selectedIds })
+        : LimeStore.createConversation({ type: 'group', memberIds: selectedIds, name: groupNameInput.value.trim() || null });
+      promise.then((conversation) => {
+        pickerModal.close();
+        selectConversation(conversation);
+        const composerInput = document.querySelector('#composer .lime-composer__input');
+        if (composerInput) composerInput.focus();
+      }).catch(console.error);
+    }
+
+    const pickerModal = createModal({
+      backdrop, modal, closeBtn,
+      onOpen: () => {
+        selectedIds = [];
+        activeIndex = -1;
+        input.value = '';
+        // A real bug caught in verification, not just the obvious
+        // resets: without this, a group name typed in one session
+        // silently carried into the next picker session's own group,
+        // since the field's own value otherwise survives close/reopen.
+        groupNameInput.value = '';
+        renderChips();
+        renderResults();
+        input.focus();
+      },
+    });
+
+    // Both the header icon button and the empty-state's own text button
+    // open the same picker — a shared attribute + one delegated
+    // listener, rather than createModal's single `trigger` option (which
+    // only ever binds one element).
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('[data-open-picker]')) pickerModal.open();
+    });
+
+    input.addEventListener('input', () => {
+      activeIndex = -1;
+      renderResults();
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (currentResults.length === 0) return;
+        activeIndex = Math.min(activeIndex + 1, currentResults.length - 1);
+        renderResults();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (currentResults.length === 0) return;
+        activeIndex = Math.max(activeIndex - 1, 0);
+        renderResults();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (activeIndex >= 0 && currentResults[activeIndex]) {
+          toggleSelect(currentResults[activeIndex].id);
+          input.value = '';
+          activeIndex = -1;
+          renderResults();
+        } else if (!input.value.trim() && selectedIds.length > 0) {
+          // "Enter with the query empty... creates it" — the brief's own
+          // second trigger for Start, alongside clicking the button.
+          start();
+        }
+      }
+    });
+
+    resultsEl.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-profile-id]');
+      if (!row || row.closest('.lime-picker__no-match')) return;
+      toggleSelect(row.dataset.profileId);
+    });
+
+    chipsEl.addEventListener('click', (e) => {
+      const removeBtn = e.target.closest('.lime-picker__chip-remove');
+      if (!removeBtn) return;
+      toggleSelect(removeBtn.dataset.profileId);
+    });
+
+    startBtn.addEventListener('click', start);
+  })();
 
   // ── Conversation actions menu (LIME-25) ─────────────────
   // Rebuilt fresh from CONVERSATION_ACTIONS every time it opens, for

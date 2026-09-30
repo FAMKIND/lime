@@ -3037,6 +3037,144 @@ html[data-pattern-treatment="photo"] body::before {
    gone (LIME-21b) — fully replaced by the shared .lime-menu__label/
    __item above, which the search results now use directly. */
 
+/* ── LIME-29: the New message picker ──
+   .lime-picker sits alongside .lime-search-modal on the same element
+   (both classes at once) — same positioning/backdrop/field/results
+   shell, just a taller cap (chips + an optional group-name field + a
+   Start footer all need room .lime-search-modal's own results-only
+   layout never had to account for). */
+.lime-picker {
+  max-height: 70vh;
+}
+
+.lime-picker__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--seed-space-2);
+  padding: var(--seed-space-3) var(--seed-space-4) 0;
+}
+
+.lime-picker__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--seed-space-1);
+  padding: var(--seed-space-1) var(--seed-space-1) var(--seed-space-1) var(--seed-space-3);
+  background: var(--calm-bg-subtle-default);
+  color: var(--calm-text-bold-default);
+  border-radius: var(--seed-radius-full);
+  font-size: var(--seed-text-sm);
+  font-weight: var(--seed-weight-medium);
+  max-width: 100%;
+}
+
+.lime-picker__chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lime-picker__chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--seed-radius-full);
+}
+
+.lime-picker__chip-remove:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-picker__chip-remove .dew {
+  font-size: 12px;
+}
+
+.lime-picker__group-name-field {
+  padding: var(--seed-space-3) var(--seed-space-4) 0;
+}
+
+.lime-picker__result.is-selected {
+  background: var(--calm-bg-subtle-default);
+}
+
+.lime-picker__result.is-active {
+  background: var(--calm-bg-subtle-hover);
+}
+
+/* Not disabled (the row itself stays hoverable-looking per .lime-menu__item's
+   own base) — the actual disabled affordance is the Invite button inside it;
+   the row's own cursor is default since clicking elsewhere in the row does
+   nothing. */
+.lime-picker__no-match {
+  justify-content: space-between;
+  cursor: default;
+}
+
+.lime-picker__no-match:hover {
+  background: none;
+}
+
+.lime-picker__no-match-text {
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lime-picker__empty {
+  padding: var(--seed-space-3) var(--seed-space-2);
+}
+
+.lime-picker__footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--seed-space-3) var(--seed-space-4);
+  border-top: 1px solid var(--soil-border-subtle);
+}
+
+/* The list column's own "New message" text-button (empty-state) and the
+   header icon button share this: a bare inline action, not a real Seed
+   button. */
+.lime-text-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--calm-text-bold-default);
+  font-size: inherit;
+  font-weight: var(--seed-weight-medium);
+  cursor: pointer;
+}
+
+.lime-text-btn:hover {
+  text-decoration: underline;
+}
+
+/* The tabs row now also holds the New message trigger (LIME-29) — a
+   plain flex row, not a change to .seed-tabs itself, so its own
+   --active-index pill math (keyed to its own width) is unaffected. */
+.lime-list-col__tabs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--seed-space-2);
+}
+
+.lime-list-col__tabs-row .seed-tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.lime-list-col__tabs-row .lime-icon-btn {
+  flex-shrink: 0;
+}
+
 /* ── 2a. Conversation list ── */
 
 /* LIME-46: #list-col keeps its own identity/id — the center-divider drag

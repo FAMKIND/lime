@@ -235,10 +235,18 @@
                 </div>
               </div>
 
-              <div class="seed-tabs seed-tabs--pill seed-tabs--sm lime-segmented" role="tablist" aria-label="Link scope" id="scope-tablist" style="--active-index: 0;">
-                <div class="lime-segmented__pill" aria-hidden="true"></div>
-                <button class="seed-tab seed-tab--active" role="tab" aria-selected="true" data-scope="messages">Messages</button>
-                <button class="seed-tab" role="tab" aria-selected="false" data-scope="communities">Communities</button>
+              <!-- LIME-29: the tabs and the New message trigger share one
+                   row — a new wrapper, not a change to .seed-tabs itself
+                   (its --active-index pill math is keyed to its own
+                   width/children; adding a sibling button inside it would
+                   risk that, a plain flex row alongside it doesn't). -->
+              <div class="lime-list-col__tabs-row">
+                <div class="seed-tabs seed-tabs--pill seed-tabs--sm lime-segmented" role="tablist" aria-label="Link scope" id="scope-tablist" style="--active-index: 0;">
+                  <div class="lime-segmented__pill" aria-hidden="true"></div>
+                  <button class="seed-tab seed-tab--active" role="tab" aria-selected="true" data-scope="messages">Messages</button>
+                  <button class="seed-tab" role="tab" aria-selected="false" data-scope="communities">Communities</button>
+                </div>
+                <button type="button" class="lime-icon-btn" id="new-message-btn" data-open-picker title="New message" aria-label="New message"><span class="dew dew-plus"></span></button>
               </div>
 
               <!-- Messages scope: direct + group conversations, one merged
@@ -642,6 +650,28 @@
       <button class="lime-menu__item" type="button"><span class="dew dew-people"></span> Grade Three</button>
       <button class="lime-menu__item" type="button"><span class="dew dew-chat"></span> "voice message"</button>
       <button class="lime-menu__item" type="button"><span class="dew dew-person"></span> Alexi Daily</button>
+    </div>
+  </div>
+
+  <!-- New message picker (LIME-29): find any teacher and start a DM or
+       group. Same visual shape as the global search modal above
+       (.lime-search-modal's own field/results classes, reused directly,
+       not copied) plus a chip row, an optional group-name field, and a
+       Start footer this one needs and the search modal doesn't. -->
+  <div class="lime-modal-backdrop" id="picker-backdrop"></div>
+  <div class="lime-search-modal lime-picker" id="picker-modal" role="dialog" aria-modal="true" aria-label="New message">
+    <div class="lime-search-modal__field">
+      <span class="dew dew-search"></span>
+      <input type="search" class="lime-search-modal__input" id="picker-input" placeholder="Search teachers by name, email, phone or school" autocomplete="off">
+      <button type="button" class="lime-icon-btn lime-search-modal__close" id="picker-close" aria-label="Close" title="Close"><span class="dew dew-close"></span></button>
+    </div>
+    <div class="lime-picker__chips" id="picker-chips" hidden></div>
+    <div class="lime-picker__group-name-field" id="picker-group-name-field" hidden>
+      <input type="text" class="seed-input seed-input--sm" id="picker-group-name" placeholder="Group name (optional)" aria-label="Group name">
+    </div>
+    <div class="lime-search-modal__results" id="picker-results" role="listbox" aria-label="Teachers"></div>
+    <div class="lime-picker__footer">
+      <button type="button" class="seed-button seed-button--primary seed-button--sm" id="picker-start-btn" disabled>Start</button>
     </div>
   </div>
 

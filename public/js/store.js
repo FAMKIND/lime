@@ -42,6 +42,25 @@ const LimeStore = (function () {
     });
   }
 
+  // LIME-29: flushes a pending debounced save immediately, if there is
+  // one — a real bug found in verification (not assumed): signOut()
+  // navigates away right after, and a real page navigation can drop a
+  // still-pending scheduleSave() timer, silently losing whatever wrote
+  // most recently (confirmed live: a DM created via the New message
+  // picker, then a message sent, then a quick sign-out, lost both in
+  // real Firefox and real Chrome — the conversation was gone on the next
+  // sign-in). This is the general form of the exact race LIME-33's own
+  // createProfile fix (persistNow(), called synchronously from signUp)
+  // addressed for one specific write; auth.js's signOut() calls this for
+  // every other write.
+  function flush() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      persistNow();
+    }
+  }
+
   function scheduleSave() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -122,6 +141,15 @@ const LimeStore = (function () {
   // email" without reaching into the cache directly.
   function findProfileByEmail(email) {
     return [...profiles.values()].find((p) => p.email === email) || null;
+  }
+
+  // Not in docs/data-model.md's original contract list — added in
+  // LIME-29 (see "Deviations from the contract" there) for the New
+  // message picker's own directory search, which needs every profile to
+  // filter client-side (name/email/school/phone) — excluding the current
+  // user, and sorting, are the picker's own concern, not this read's.
+  function listProfiles() {
+    return [...profiles.values()];
   }
 
   function getCurrentUserId() {
@@ -599,8 +627,10 @@ const LimeStore = (function () {
   return {
     init,
     reset,
+    flush,
     getProfile,
     findProfileByEmail,
+    listProfiles,
     getCurrentUserId,
     getCurrentUser,
     getConversation,

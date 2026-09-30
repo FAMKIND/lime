@@ -1310,6 +1310,51 @@ reasoning and the same `conv-001`/`msg-006` repro (😍×5 → 😍×2, since it
 a 2-person DM) are in `schema.sql`'s comments. **`seed-data/seed.ts` is
 updated to this rule as of LIME-24b** — see that brief's `TEND.md` entry.
 
+## Finding people and starting conversations (LIME-29)
+
+**The New message picker** searches `LimeStore.listProfiles()` client-side
+— every teacher in the local directory, including one who signed up
+moments ago in the same browser (`listProfiles()` reads the same live
+cache `createProfile` writes into, no extra plumbing needed). Matching is
+case- and whitespace-insensitive (so "ps113" finds the seed school name
+"PS 113") against `display_name`, `email` and `school`; `phone` matches
+separately, comparing **digits only** on both sides, and only once the
+query itself has ≥4 digits (fewer would match nearly every phone number
+in a small directory, which isn't useful).
+
+**"Both accounts see each other" is a local artifact, not a designed
+feature.** Locally, every account lives in the one shared
+`lime-state-v1` snapshot in this browser's own `localStorage` — Shem and
+a newly-signed-up "Test Teacher" are really just two `currentUserId`
+views over the exact same in-memory tables, so a DM one of them starts is
+already sitting in the other's own `conversation_members` rows the moment
+they next sign in, with no message-passing involved at all. **In
+production this is real, not incidental:** the equivalent guarantee comes
+from Supabase membership rows (a `conversation_members` insert is what
+makes a conversation visible to someone) plus RLS (`is_member()`
+enforcing that only actual members can read it) — the local demo's
+"shared browser" behavior and production's "shared database plus RLS"
+behavior land on the same visible-to-members-only result through
+different mechanisms, and neither needed to be built to match the other;
+they already do.
+
+**Invites (documented only — not built).** When a picker search for a
+valid email address or a ≥7-digit phone number matches no profile, the
+row shows "No teacher found with `<query>`" and a disabled **Invite**
+button with a "Soon" pill and an accessible "Invites coming soon" label.
+The production design, for whenever this is actually built:
+- An `invites` table: `id`, `inviter_id` (→ `profiles.id`), `email` or
+  `phone` (exactly one set), `conversation_id` (the DM or group waiting
+  for them), `status` (`pending` / `accepted` / `expired`), `created_at`.
+- Sending one is a server action — a Supabase Edge Function calling the
+  Supabase Auth invite API for email, or a provider like Twilio for SMS —
+  never a client-side write, since it has to actually deliver something.
+- Accepting one (clicking the invite link during sign-up) links the new
+  `auth.users` row to the waiting `conversation_id` by inserting the
+  matching `conversation_members` row, the same "onboarding linking"
+  moment "The auth seam" above already describes for a returning seed
+  teacher, just triggered by an invite instead of a matched email.
+
 ## Deviations from the contract (LIME-24b)
 
 - **Added `getMessage(id)`** to the reads — a plain lookup of one message
@@ -1360,3 +1405,34 @@ updated to this rule as of LIME-24b** — see that brief's `TEND.md` entry.
   real page navigation can lose the write outright (a browser can drop a
   pending timer on unload). Emits `lime:profile-changed`, same as
   `updateProfile`/`setProfileEmail`.
+
+## Deviations from the contract (LIME-29)
+
+- **Added `listProfiles()`** to the reads — a plain `[...profiles.values()]`,
+  same shape as `getMessage(id)`'s own LIME-24b justification. The New
+  message picker's own directory search needs every profile to filter
+  client-side (name, email, school, phone); excluding the current user and
+  sorting are the picker's own concern, not this read's.
+- **Added `LimeStore.flush()`** — not really a new capability so much as a
+  real bug's fix exposed as one. `scheduleSave()`'s 100ms debounce can race
+  a real page navigation (confirmed live, in both real Firefox and real
+  Chrome: create a DM via the picker, send a message, sign out quickly —
+  the conversation and message were both silently gone on the next
+  sign-in, because `signOut()`'s own `window.location.href = 'login.html'`
+  navigated away before the pending debounced save ever fired). `flush()`
+  immediately runs any pending save and clears the timer; a no-op when
+  nothing's pending. `LimeAuth.signOut()` now calls it unconditionally
+  before navigating — the general form of the exact race LIME-33's own
+  `createProfile` fix (a synchronous `persistNow()` call) addressed for
+  one specific write. Every other debounced write (`sendMessage`,
+  `createConversation`, `toggleReaction`, etc.) was still exposed to this
+  race until this fix; `signOut()` is the one place in the app that
+  navigates away on demand, so flushing there covers all of them.
+
+**`flush()` is local-only, no Supabase equivalent** — it exists purely
+because `localStorage` writes are debounced and a real navigation can
+race them. That problem doesn't exist once Supabase's own persistence
+layer replaces `LocalAdapter` (writes go straight to the database, not
+through a client-side debounce), so `flush()` should be removed, not
+reimplemented, when this checklist is used for real — and `signOut()`'s
+own call to it drops out along with it.
