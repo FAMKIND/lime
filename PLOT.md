@@ -17,7 +17,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 2. ~~LIME-52-fix4~~ **SUPERSEDED (never sent), the user, 2026-09-30:** "get rid of the subtle patterns and the credit and let's just refine the ones we have now instead and the upload." Drop the 6 samples in `public/assets/patterns/` (untracked; delete them) and every credit line. Keep the 4 generated SVG presets (dots, grid, diagonal, noise) and refine them and the upload. **LIME-52-fix5 was investigated with no code change** (`4ad3566`, 2026-09-30; `PLOT.md` committed as `cc910fd`). Tend drove the **real installed Firefox (157.0)** through the real file dialog: both surfaces, `file://` and localhost, strict privacy settings, and chat attachments. **Everything passed; it couldn't reproduce the failure.** The likely cause is something in the user's own Firefox profile (an extension, broken site storage, or stale cached code). **Waiting on the user:** the console errors (⌥⌘K) during an upload, and a retry in Firefox's Troubleshoot Mode (extensions off). If it works in Troubleshoot Mode, it's an extension and no brief is needed. If the console shows an error, draft **LIME-52-fix6** from it. **→ PARKED by the user 2026-09-30** (see "PARKED: pattern upload fails" above). **LIME-53 DROPPED 2026-09-30; next is LIME-54 (delete the samples and the probing code), then LIME-49.** (Old plan, for history: then LIME-53 (a pattern lab of 12 in-house SVG candidates outside the repo; the user picks by number; drafted) **→ LIME-53b** (integrate the picks, remove the file-name probing, delete the samples, strip the credit mentions; drafted after the picks).)
 3. ~~LIME-54~~ **landed as `5c138b0`** (samples and tile probing removed; `PLOT.md` committed as `c254323`). ~~LIME-49~~ **landed as `912240a`** (2026-09-30): the modal body moved to normal flow so it grows to its content; one shared avatar helper everywhere; photo upload verified in the real Firefox 157 and Chrome, and it does **not** hit the parked Firefox bug. **The user's gate check on 49 found a bug:** replying to your own message stacks copies of your photo on its avatar. **LIME-49-fix is drafted and runs next.** (LIME-33 ran first, because the user sent its prompt before 49-fix was drafted.)
 4. ~~LIME-33~~ **landed as `a398ca3`** (2026-09-30; `PLOT.md` committed as `ac77bd1`): PBKDF2 local accounts, the `lime-auth-v1` store, `createProfile` with a synchronous flush (a 100ms debounced save could lose a new account on redirect), and `seedVersion` now keeps snapshots that hold local profiles. Verified in the real Firefox 157 and Chrome 154. **The user's gate check FAILED (2026-09-30):** in their Firefox, sign-up bounces straight back to sign-in and the account is gone. Probably the same root cause as the parked upload bug (their Firefox profile won't keep local storage). **LIME-33-fix landed as `769c268`; LIME-49-fix landed as `9cd68d2`** (2026-09-30). **Cause:** Firefox's default `security.fileuri.strict_origin_policy` gives **every `file://` page its own separate `localStorage`**, so `signup.html`, `login.html` and `index.html` can't share accounts or the session. It can't be fixed in the app, so there's now a plain message plus the seed-password hint. It works over `http://localhost` (a server from the repo root) and in Chrome. Tend also found that `puppeteer-core` silently writes a `user.js` into any Firefox profile it launches (turning that pref **off**), which hides this bug. **It does NOT explain the parked upload bug** (that's within one page). **PREVIEW CHANGE:** from now on, every gate uses `http://localhost:8000/public/…` with `python3 -m http.server 8000` started in the repo root, **not** `file://` (this supersedes the older Patterns-learned note). The demo password for seed teachers is in the gitignored `public/js/demo-config.local.js`. **The user's gate checks on both are pending.**
-5. ~~LIME-48~~ **landed as `3ac4b6d`** (2026-09-30; `PLOT.md` committed as `d9d2fc5`): one `auth.html` (email-first), `login.html`/`signup.html` redirect with the query string kept, the video as `auth-hero.webm` plus a 360×640 `auth-hero.mp4` (2.5 MB) and a poster. The 18.9 MB original and the `.ogg` are deleted. The page is fixed at 100vh (the portrait video had stretched it to 1396px). **The user's gate check:** they refined the page in the Inspector (bigger logo, smaller bold headline with a full stop, tighter spacing) and said to use plot's judgement from their screenshot. **LIME-48-fix drafted, then LIME-29 (amended).**
+5. ~~LIME-48~~ **landed as `3ac4b6d`** (2026-09-30; `PLOT.md` committed as `d9d2fc5`): one `auth.html` (email-first), `login.html`/`signup.html` redirect with the query string kept, the video as `auth-hero.webm` plus a 360×640 `auth-hero.mp4` (2.5 MB) and a poster. The 18.9 MB original and the `.ogg` are deleted. The page is fixed at 100vh (the portrait video had stretched it to 1396px). **The user's gate check:** they refined the page in the Inspector (bigger logo, smaller bold headline with a full stop, tighter spacing) and said to use plot's judgement from their screenshot. **LIME-48-fix landed as `8890a6b`** (the user signed in on it successfully, 2026-09-30). **LIME-29 was in progress in tend** at that point (uncommitted `lime.css`, `index.html`, `app.js`, `store.js`). **Don't touch the tree until tend reports.** **LIME-29 landed as `629bcff`** (2026-09-30): the picker, plus two fixes: blank picker avatars, and a **data-loss race** (a 100ms debounced save lost to sign-out's navigation; `LimeStore.flush()` now runs before `signOut`). It only showed in the real Firefox and Chrome. **The milestone (sign up → sign in → find a teacher → message them) is built; the user's gate check is pending.** Next: **LIME-55 (the split "+ Add | ⌄" nav button, the user's request from 2026-09-30)**, then **LIME-27 (amended)**, then the **Communities decision surface** (LIME-28).
 6. **LIME-29**: New message (search by name, email, phone or school; "Invite (Soon)"; the documented invites design)
 7. **LIME-27 (revised)**: the Share header button and a Claude-style popover (add people by email for groups; who has access; Copy link), deep links, toasts
 8. **LIME-28 Communities: BLOCKED on a planning pass.** Present a **decision surface** from the user's mockups (the discovery cards, the feed of posts with likes, community pages with channels) before briefing.
@@ -38,6 +38,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **When to return:** after the major parts are done (the milestone: LIME-49, 33, 48, 29, 27 and Communities). Don't re-raise it before then.
 
 ### Unbriefed candidates (offer when the queue thins)
+- **"Forgot password?" on `auth.html`** (raised 2026-09-30: the user got confused between their own password and the seed demo password, and between `file://` and localhost accounts). Locally: reset a local account's password after confirming the email (demo-grade). Production: Supabase `resetPasswordForEmail`. Also consider showing on the password step which kind of account it is ("Demo teacher: use the shared demo password").
 - **Real notifications** (the bell is a mockup; the user wants these instead of ✓/✓✓).
 - **A cleanup brief:** a global border-box reset, `[hidden] { display: none !important }`, the dead `.lime-message__file` block, the unused Seed `dropdown.css` link, and the placeholder "Jean Chung" HTML.
 - **The right panel is unreachable at 768–1024px.**
@@ -231,6 +232,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
     - clean up with `pkill -f -- '--headless=new'` if a run is killed. **Never `pkill -f "Google Chrome"`**, which quits the user's real Chrome windows (tend did this during LIME-31-fix).
     - The user's rule is "preview to the user in Firefox only". Headless Chrome as an internal measuring tool is allowed and isn't the cause of the hangs.
   - Never wait on a monitor for more than ~2 minutes.
+- **Debounced saves lose data on navigation** (LIME-33, LIME-29): `scheduleSave()` waits 100ms, and a sign-out, redirect or reload inside that window drops the write. Only the real Firefox and Chrome caught it. Any brief that writes and then navigates must flush first (`LimeStore.flush()`); a `pagehide` flush is the general fix (folded into LIME-27).
 - **Playwright's Firefox is not the user's Firefox (found 2026-09-30, LIME-52-fix3).** Uploads passed tend's whole matrix in Playwright's patched Firefox build but did nothing in the user's installed Firefox 156, while working in Chrome. **Any brief touching browser APIs with per-browser behaviour (files, IndexedDB, blobs, canvas, clipboard, `file://` origin rules) must verify in `/Applications/Firefox.app` itself** (BiDi, or Playwright with `executablePath`), and state which binary it used. Layout-only measurements can keep using Playwright's Firefox.
 - **`[hidden]` is unreliable here:** any class that sets `display` (e.g. `.lime-icon-btn { display: flex }`) beats the browser's default `[hidden]` rule (found in LIME-40). Candidate for the global-reset brief: `[hidden] { display: none !important; }` alongside the border-box reset.
 - **CSS verification must check what the browser parsed** (found in LIME-50-fix): a `*/` inside a comment (e.g. writing `--calm-bg-*/…`) closes it early and silently drops the rest of the stylesheet. Brace counts and `node --check` can't catch it. Every CSS-touching brief should report `document.styleSheets[i].cssRules.length` for `lime.css` (≈ 660) and `gradients.css` in the real browser, and never write `*/` inside comment text.
@@ -243,6 +245,42 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-55 → `tend` (next, before LIME-27): a split "+ Add | ⌄" button in the left nav replaces the + beside the tabs
+
+**The user (2026-09-30, screenshot of the app after LIME-29):** "I would like to move the add button to the nav with a multi action [ + Add | v ]. When you press Add it adds a new chat; if you press the arrow it should open a dropdown for Link, Jam (soon). When the menu is toggled to collapsed you only see the plus sign."
+
+**Plot's decisions (the user can overrule at the gate):**
+- **Placement:** the **first item in `.lime-nav`**, directly **above the Search field** (`index.html` ~87–88), full nav width, the way Claude puts "New chat" at the top.
+- **Style:** neutral, matching the Search field's height, radius and fill (`.lime-nav-search`). **Not lime** (the lime rule keeps lime for the *active* nav item and primary buttons; a lime block above a lime active "Link" row would compete). Two halves in one pill: the left half "+ Add" (`dew-plus` + label) and the right half a narrow ⌄ (`dew-chevron-down`), with a 1px neutral divider between. Each half has its own hover and focus.
+- **"+ Add"** opens LIME-29's New message picker (the same code path as `#new-message-btn`/`[data-open-picker]`).
+- **⌄** opens a menu in the LIME-21b menu pattern (the search-modal style, one menu open at a time via the dropdown registry, Escape and outside-click close, arrow keys):
+  - **"New message"**, with `dew-chat` and a muted "Link" hint, opening the picker;
+  - **"New jam"**, with `dew-pencil`, **disabled** with the LIME-23 "Soon" pill and an accessible label "New jam (coming soon)".
+- **The collapsed rail** (`seed-layout--collapsed-left`): only a **"+" icon button** (the rail's icon-button style, tooltip and `aria-label` "New message"), opening the picker. No chevron.
+- **The mobile drawer** shows the full split button, the same as desktop.
+- **Remove** the `+` beside the Messages/Communities tabs (`#new-message-btn`, `index.html` ~249) and let the tabs take the row's width back. **Keep** LIME-29's empty-state "New message" text button in the list.
+
+**Assumptions:** the agent can edit files, run jsdom and Playwright, drive the real Firefox and Chrome, and commit. Preview at `http://localhost:8000/public/index.html` (server from the repo root).
+
+**Scope:**
+- **May touch:** `public/index.html` (the nav markup; removing `#new-message-btn`), `public/js/app.js` (wiring; reuse the picker opener and `wireDropdownToggle`), `public/css/lime.css`, and `TEND.md`.
+- **May not touch:** the picker itself, the Jam page, and anything else.
+- **Check the `PLOT.md` pattern note:** any change to a sidebar row's styling must also be checked in (a) the desktop collapsed rail and (b) the `.seed-layout--mobile-open.seed-layout--collapsed-left` `!important` overrides in `lime.css`'s mobile media query.
+- If a decision isn't covered here, stop and ask the user.
+
+**Verification:**
+- The real app loads in jsdom with zero errors. "+ Add" opens the picker; ⌄ opens the menu; "New message" opens the picker; "New jam" is disabled and does nothing; Escape and outside-click close the menu; opening it closes any other open menu.
+- **Playwright Firefox, measured at 1567×905, in the collapsed rail, and at 767px (drawer open):** the split button's height and radius equal the Search field's (±1px); it fits the nav width with no overflow; the rail shows only "+", centred like the other rail icons; the tabs row no longer has the +.
+- Screenshots in light and dark.
+- Report the browser-parsed CSS rule counts for `lime.css` and `gradients.css`.
+- `git diff public/index.html` shows only intended changes.
+
+**Gate:** at `http://localhost:8000/public/index.html`: the new **+ Add | ⌄** button sits at the top of the left nav. **Add** starts a new message; the **arrow** shows New message and New jam (Soon). Collapse the sidebar and you only see **+**. The + beside the tabs is gone.
+
+**Record:** add a `## LIME-55` entry to `TEND.md`. Commit: `feat: split Add button in the nav (new message, new jam soon)`, trailer `Brief: LIME-55`, plus the attribution trailer.
+
+---
 
 ### LIME-48-fix → `tend` (next, before LIME-29): the user's Inspector refinements to the sign-in page (bigger logo, smaller bold headline, spacing)
 
@@ -1721,7 +1759,7 @@ The image's max height reserves room above and below, so nothing goes off-screen
 
 **Record:** add a `## LIME-29` entry to `TEND.md`. Commit: `feat: new message picker: find any teacher, start a DM or group`, trailer `Brief: LIME-29`, plus the attribution trailer.
 
-### LIME-27 → `tend` (after LIME-32): Share and Copy link, deep links, and toasts
+### LIME-27 → `tend` (next, after LIME-29's check; amended 2026-09-30): Share and Copy link, deep links, and toasts
 
 > **REVISED 2026-09-29 (user feedback; this supersedes the Actions section below where they conflict):**
 > - **Share moves out of the menus into its own header button.** Remove "Share link" from the header "…" menu (`#more-menu`, `index.html` ~177). **Don't** add Copy link or Share to the title ⌄ menu (drop that part of item 3 below).
@@ -1782,8 +1820,16 @@ The image's max height reserves room above and below, so nothing goes off-screen
    - the Share dialog is centred over the blur, and its field doesn't overflow;
    - **a real deep-link load in Firefox** opens the right chat.
 
-**Gate:** in Firefox:
-- **Copy link:** ⌄ → Copy link, and a small "Link copied" notice appears. Paste the link into a new tab: it opens straight to that chat.
+**Amendment (plot, 2026-09-30, before sending): this settles every conflict between the REVISED box and the older sections.**
+- **Where Share lives:** only the header **Share button** (right after the header avatars, then the palette/Appearance button from LIME-50 to 52, then "…"). **Neither Copy link nor Share… goes into the title ⌄ menu**, so skip "3. Actions" and remove the LIME-26 slot comment in `CONVERSATION_ACTIONS`. Remove "Share link" from the "…" menu. **Copy link is the popover's footer button**; its clipboard fallback chain (clipboard API → hidden textarea → select the link text in a read-only field in the popover) stays as specified. The "Share…" small dialog is replaced by the Claude-style popover from the REVISED box.
+- **Verification is replaced accordingly:** the ⌄ menu order is unchanged from today (Star · Rename · Archive · Delete); the header order is avatars · Share · palette · "…"; the popover shows the title, subline, add-by-email (groups only; a DMs line instead), "Who has access", members with roles, the students note, and Copy link.
+- **`addMembers(conversationId, profileIds)`** is a new store write: owner-only via `can('addMembers')`, persisted, visible to the added member on sign-in, and documented with its RLS. **The newly added member gets a system line in the chat** ("Shem added Valene") **only if** a system-message type already exists. Otherwise skip it and note it for later.
+- **Preview and verify over `http://localhost:8000/public/…`**, not `file://`. The deep link is `http://localhost:8000/public/index.html#c=<id>` locally. **Verify in the real installed Firefox and in Chrome** (clipboard behaviour differs), and with `puppeteer-core`, restore Firefox's real defaults via `extraPrefsFirefox` (`TEND.md` LIME-33-fix). **A deep link opened while signed out** goes to `auth.html`, then **back to the linked chat** after sign-in (carry the hash through the session gate and the `?from=auth` redirect).
+- **Saving:** LIME-29 added `LimeStore.flush()` before sign-out. **Anything this brief writes must survive an immediate reload or tab close.** Add a `pagehide` flush (the general fix for the 100ms debounce race) if it's small. If not, report it.
+- The line references above predate LIME-33 to 29. Survey first.
+
+**Gate:** in Firefox, at `http://localhost:8000/public/index.html`:
+- **Copy link:** Share → Copy link, and a small "Link copied" notice appears. Paste the link into a new tab: it opens straight to that chat.
 - **Share…:** ⌄ → Share… shows the link with a Copy button and who can open it.
 - **Reload:** reloading keeps you on the chat you were in.
 - **No access:** open a link to a chat you're not in (tend will give you one), and it says it isn't available.
