@@ -139,12 +139,14 @@ only ever calls the store, never the adapter directly.
 - `setAppearance(patch)` — added in LIME-50; merges `patch` onto the current user's own `{ theme, canvas, pattern }`, so `{ canvas: 'sage' }` alone never touches `theme`/`pattern`. Emits `lime:appearance-changed`. LIME-45's `setChatBackground`/`getEffectiveBackground` (per-chat backgrounds) were removed 2026-09-29 in favor of this one app-wide setting (see "Appearance" below)
 - `updateProfile(patch)` — updates the **current user's own** profile.
   `patch` may only contain `display_name`, `pronouns`, `role`, `school`,
-  `grade_levels`, `subjects`, `bio`, `timezone`, `phone`; any other key
-  rejects the whole call (nothing partially applies). `display_name`, if
-  present in the patch, may not be empty. **Email and password are never
-  accepted here** — they belong to the auth seam below, not this
-  whitelist, because on Supabase they're auth-provider concerns, not
-  columns this call would ever be allowed to touch directly.
+  `grade_levels`, `subjects`, `bio`, `timezone`, `phone`, `avatar_url`
+  (added LIME-49 — the column already existed, this is its first
+  writer); any other key rejects the whole call (nothing partially
+  applies). `display_name`, if present in the patch, may not be empty.
+  **Email and password are never accepted here** — they belong to the
+  auth seam below, not this whitelist, because on Supabase they're
+  auth-provider concerns, not columns this call would ever be allowed
+  to touch directly.
 
 ### Events (dispatched on `document`)
 
@@ -1087,6 +1089,67 @@ revert of LIME-50 itself, which also carries the app-wide canvas work).
 - **`prefers-contrast: more` hides the pattern outright**, not just
   dims it further — "Low" is already the minimum intensity this app
   offers, so there's no lower step to fall back to.
+
+## Real profile photos (LIME-49)
+
+- **The pipeline:** pick (`image/*`, ≤ 5 MB) → decode → centre-crop to a
+  square (the shorter side) → resize to 256px on a canvas, once, at
+  upload time (never a live/repeated resize) → `LimeStore.uploadAttachment`
+  under `profile-photos/<profileId>/…` → the resolved path saved as
+  `profiles.avatar_url` via `updateProfile`. A null canvas blob (the
+  browser's own memory ceiling, the exact "silently successful, garbage
+  result" bug LIME-52-fix3 found in the pattern-upload pipeline)
+  rejects with a friendly message instead of resolving with nothing.
+- **A second persistent, document-level file input** (`#avatar-upload-input`,
+  `index.html`), not the pattern upload's own `#pattern-upload-input` —
+  LIME-52-fix3's own hard lesson (a file input rendered inside markup
+  that gets replaced loses an in-flight OS picker silently) applies
+  here too, so the *shape* is reused (one persistent input, a job
+  token, a busy state, never fail silently) — but the two inputs stay
+  separate, since the accept type and the entire processing pipeline
+  (one square crop, not a Texture/Photo split) are different enough
+  that sharing the DOM node would mean branching on "which feature is
+  this for" at every step of a shared change listener.
+- **The photo is "part of the form"** (saves with Save changes, reverts
+  with Cancel) but its own live preview can't wait for Save and can't
+  come from a full `renderProfileSection()` re-render either — that
+  would discard whatever the user's already typed into every other
+  field. A module-level `pendingAvatarPath` (undefined: no pending
+  change; `null`: pending removal; a string: a newly processed path)
+  tracks the staged change, and a small `updateProfileAvatarPreview()`
+  surgically updates just the avatar + Remove-photo affordances,
+  leaving the rest of the form untouched. A render (a fresh load, a
+  Discard, or a successful Save) resets it, and also bumps the job
+  token so a late-arriving upload result from before that reset is
+  discarded as stale rather than silently reinstating a change the
+  user already walked away from.
+- **Avatars everywhere:** every avatar-markup call site in `app.js`
+  (lists, the Recent row, the thread, replies, headers, clusters,
+  members, the profile detail panel, the sidebar) now goes through one
+  shared `avatarAttrsHtml(person)`, which adds `data-avatar-path` next
+  to the existing `data-name` whenever `person.avatar_url` is set.
+  `paintAvatar` resolves that path the same two-step way every other
+  attachment in this app already does (`LimeStore.getAttachmentUrl`,
+  async) — an `<img>` placeholder immediately, its real `src` filled in
+  once the blob URL resolves. `repaintAvatar` (the live-update path,
+  `lime:profile-changed`) takes the same path as a third argument.
+- **Verified in the real installed browsers, not just Playwright's
+  bundled Firefox** — per the amendment LIME-52-fix5's own findings
+  added to this brief: Playwright's `firefox.launch()` runs a patched
+  fork with its own Juggler automation branch, confirmed unable to even
+  launch the real `/Applications/Firefox.app` binary directly
+  (`executablePath` fails immediately — no Juggler pipe in a stock
+  build). Verified instead with `puppeteer-core`'s WebDriver BiDi
+  support, which drives the real installed Firefox (confirmed via
+  `navigator.userAgent`, not assumed) and real Chrome identically. The
+  full upload → save → sidebar/topbar/thread propagation → persist →
+  remove cycle passed cleanly in both real binaries — this feature does
+  **not** hit the pattern-upload's own parked Firefox-specific failure.
+- **Production:** a Supabase Storage bucket `avatars`, publicly
+  readable (any signed-in teacher can see any other's photo, same as
+  `display_name` already works), writable only by the photo's own owner
+  — see `docs/schema.sql`'s own policy draft, mirroring the
+  `attachments` bucket's existing shape.
 
 ## Known gaps, flagged rather than silently resolved
 

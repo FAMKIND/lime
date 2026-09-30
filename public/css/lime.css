@@ -2223,7 +2223,13 @@ html[data-pattern-treatment="photo"] body::before {
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(960px, calc(100vw - 64px));
-  height: min(720px, calc(100vh - 64px));
+  /* LIME-49: grows to fit whichever section's own content — Profile no
+     longer scrolls to reach Bio at 1567x905 (measured live, not
+     assumed). max-height is the only cap; height:auto lets shorter
+     sections (Login & security) size down naturally instead of leaving
+     empty space the old fixed 720px reserved regardless of content. */
+  height: auto;
+  max-height: calc(100vh - 64px);
   /* Elevated tier of the canvas ladder (LIME-50: canvas -> surface for
      bubbles/cards -> elevated for menus/modals). No --surface-bg needed
      any more — .lime-settings__body's own fade is a mask (gradients.css). */
@@ -2398,15 +2404,25 @@ html[data-pattern-treatment="photo"] body::before {
    wrapping .lime-settings__body-frame (app.js's settingsBodyFrameOpen),
    since this element itself became the frame's absolute-fill scroller.
    LIME-50: its own edge fade is a mask now (gradients.css), not a
-   sibling div, but the frame/scroller split here is unchanged. */
+   sibling div, but the frame/scroller split here is unchanged.
+   LIME-49: `.lime-settings` moved from a fixed height to height:auto (a
+   content-driven modal) — an absolutely-positioned .lime-settings__body
+   (the old approach) is removed from flow entirely, so it can no longer
+   contribute to that auto height at all; it would render as a
+   zero-height scroller regardless of how much content it actually has.
+   flex:1/min-height:0 here is what makes this frame the one flexible
+   zone that shrinks first (letting .lime-settings__body scroll inside
+   it) once total content exceeds max-height — and, just as
+   importantly, what lets it size down to *less* than that when there's
+   nothing to scroll, instead of a modal that's always 720px tall
+   whether or not Login & security's own shorter content needs it. */
 .lime-settings__body-frame {
   flex: 1;
   min-height: 0;
 }
 
 .lime-settings__body {
-  position: absolute;
-  inset: 0;
+  height: 100%;
   overflow-y: auto;
   padding: var(--seed-space-4) var(--seed-space-6) var(--seed-space-6);
 }
@@ -2420,10 +2436,15 @@ html[data-pattern-treatment="photo"] body::before {
   border-radius: var(--seed-radius-md);
 }
 
-/* ── Profile's top block: photo beside Display name (Notion) ── */
+/* ── Profile's top block: photo beside Display name (Notion) ──
+   LIME-49: align-items changed from flex-start to center — a 64px
+   avatar and a label+input field are two different natural heights;
+   center is what actually makes their midpoints line up (the brief's
+   own "vertically centred with the Display name field"), not a
+   specific height either block has to match. */
 .lime-settings__profile-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--seed-space-4);
   margin-bottom: var(--seed-space-4);
 }
@@ -2434,18 +2455,109 @@ html[data-pattern-treatment="photo"] body::before {
   margin-bottom: 0;
 }
 
-.lime-settings__profile-photo {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--seed-space-2);
+/* LIME-49: a real 64px, not Seed's own --xl (56px) — no built-in size
+   matches the brief's own exact spec, so a local override, the same
+   pattern .lime-profile__avatar (LIME-35) already uses for its own
+   non-standard size. */
+.lime-settings__profile-avatar-btn {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--seed-radius-full);
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
   flex-shrink: 0;
 }
 
-.lime-settings__profile-photo-actions {
+.lime-settings__profile-avatar-btn .lime-avatar {
+  width: 64px;
+  height: 64px;
+  font-size: 20px;
+}
+
+/* The brief's own "clicking the avatar, with a hover overlay reading
+   'Change'" — a plain dark scrim + centered label, shown on :hover/
+   :focus-visible only (never permanently, unlike the old always-visible
+   "Upload photo" button + "Soon" badge this replaces). */
+.lime-settings__profile-avatar-overlay {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
-  gap: var(--seed-space-2);
+  justify-content: center;
+  border-radius: var(--seed-radius-full);
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-medium);
+  opacity: 0;
+  transition: opacity 100ms ease;
+  pointer-events: none;
+}
+
+.lime-settings__profile-avatar-btn:hover .lime-settings__profile-avatar-overlay,
+.lime-settings__profile-avatar-btn:focus-visible .lime-settings__profile-avatar-overlay {
+  opacity: 1;
+}
+
+.lime-settings__profile-avatar-btn:focus-visible {
+  outline: 2px solid var(--calm-border-bold-default);
+  outline-offset: 2px;
+}
+
+/* Busy: the overlay's own "Change" text is replaced by the shared
+   .lime-spinner (LIME-52-fix3) and stays visible (not hover-gated)
+   for the whole upload, so processing a photo is never silent. */
+.lime-settings__profile-avatar-btn.is-busy .lime-settings__profile-avatar-overlay {
+  opacity: 1;
+  pointer-events: none;
+}
+
+/* A direct sibling of the avatar button and the Display name field now
+   (LIME-49) — not nested inside a shared wrapper with the avatar, which
+   was pulling the avatar's own vertical centre away from the field's
+   (measured live: off by ~13px, not the required ≤2px — the wrapper's
+   own extra height from these links was the cause). align-items:center
+   on .lime-settings__profile-top centers each of its three children
+   independently, so the avatar's own 64px height gets its centre
+   aligned to the field's, regardless of how tall this column is. */
+.lime-settings__profile-photo-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--seed-space-1);
+  flex-shrink: 0;
+}
+
+/* Neutral text links — "Change photo" always shown, "Remove photo"
+   only once a real photo is set (toggled via hidden, not re-rendered
+   away, so it survives whatever else on the row changes). Replaces the
+   old disabled "Upload photo" button and "Soon" badge entirely. */
+.lime-settings__profile-photo-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: var(--seed-text-xs);
+  font-weight: var(--seed-weight-medium);
+  color: var(--soil-text-muted);
+  cursor: pointer;
+}
+
+.lime-settings__profile-photo-link:hover {
+  color: var(--soil-text);
+  text-decoration: underline;
+}
+
+.lime-settings__profile-photo-link[data-profile-photo-action="remove"] {
+  color: var(--bad-text-normal-default, var(--soil-text-muted));
+}
+
+.lime-settings__profile-photo-note {
+  margin: 0;
+  font-size: var(--seed-text-xs);
+  color: var(--soil-text-muted);
 }
 
 /* ── Compact rows (Claude-style: label left, a bounded control right) —

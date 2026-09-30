@@ -752,6 +752,17 @@
        its own change listener directly, once, at script load. -->
   <input type="file" id="pattern-upload-input" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden>
 
+  <!-- LIME-49: a second persistent input, the same lesson (never rendered
+       inside #settings-modal's own innerHTML) — not shared with the
+       pattern upload's own input above. The accept type and the whole
+       processing pipeline (one square crop + a 256px resize, not a
+       Texture/Photo split) are different enough that routing both
+       through one shared change listener would mean branching on
+       "which feature is this for" at every step; what's actually
+       reused is the *shape* (a persistent input, a job token, a busy
+       state, never fail silently), not the DOM node. -->
+  <input type="file" id="avatar-upload-input" accept="image/*" hidden>
+
   <script src="js/seed-data.js"></script>
   <script src="js/local-adapter.js"></script>
   <script src="js/store.js"></script>

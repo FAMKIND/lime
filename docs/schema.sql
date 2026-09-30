@@ -287,6 +287,25 @@ create table link_previews (
 -- conversationId — so both policies reduce to the same is_member() check
 -- everything else here already uses. The local adapter has no equivalent
 -- to enable: IndexedDB is private to this browser profile already.
+
+-- ── Profile photos (LIME-49, draft, not yet created) ─────────
+-- A second, separate Storage bucket, `avatars` — not folded into
+-- `attachments` above, since its own access rule is different:
+-- profiles.avatar_url (already a column, this brief just gave it a
+-- writer) points into it, publicly readable (any signed-in teacher can
+-- see any other's photo, the same as display_name already works),
+-- writable only by the profile's own owner:
+--
+-- create policy "avatars_read" on storage.objects for select
+--   using (bucket_id = 'avatars');
+-- create policy "avatars_write" on storage.objects for insert
+--   using (bucket_id = 'avatars' and (storage.foldername(name))[1] = current_profile_id());
+--
+-- The local adapter stores the exact same processed 256px square in
+-- IndexedDB instead, under `profile-photos/<profileId>/<uuid>-avatar.png`
+-- (app.js's own runAvatarUpload) — same path shape, same "first segment
+-- is the owner" convention, no policy needed locally for the same
+-- reason attachments above doesn't.
 -- alter table message_reactions enable row level security;
 --
 -- -- The current auth session's profile id, or null if unlinked. `stable`

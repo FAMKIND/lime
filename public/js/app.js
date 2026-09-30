@@ -1562,7 +1562,7 @@ function replyIndicatorHtml(messageId) {
     if (seenSenders.has(senderId)) continue;
     seenSenders.add(senderId);
     const sender = LimeStore.getProfile(senderId);
-    if (sender) avatars.push('<span class="seed-avatar seed-avatar--xs lime-avatar" data-name="' + escapeHtml(sender.display_name) + '"></span>');
+    if (sender) avatars.push('<span class="seed-avatar seed-avatar--xs lime-avatar" ' + avatarAttrsHtml(sender) + '></span>');
   }
   const last = replies[replies.length - 1];
   return '<div class="lime-message__footer">'
@@ -1626,8 +1626,25 @@ function initialsFor(name) {
   return (first + last).toUpperCase();
 }
 
+// LIME-49: data-avatar-path (a real profile photo, an uploadAttachment
+// path — asserts nothing about its own naming other than pointing into
+// the same store LIME-38 already gave the app) resolves the same
+// two-step way every other attachment in this app does — paintAvatar
+// paints an <img> placeholder immediately, then LimeStore.getAttachmentUrl
+// fills in its real src once the blob URL resolves. data-image (a
+// pre-resolved absolute URL, never actually produced by any caller
+// today) stays supported for anything that might use it directly.
 function paintAvatar(el) {
   const name = el.dataset.name;
+  const avatarPath = el.dataset.avatarPath;
+  if (avatarPath) {
+    const img = document.createElement('img');
+    img.alt = '';
+    el.appendChild(img);
+    el.setAttribute('aria-label', name);
+    LimeStore.getAttachmentUrl(avatarPath).then((url) => { img.src = url; }).catch(console.error);
+    return;
+  }
   if (el.dataset.image) {
     const img = document.createElement('img');
     img.src = el.dataset.image;
@@ -1639,6 +1656,17 @@ function paintAvatar(el) {
   el.classList.add('lime-avatar--p' + hashName(name));
   el.textContent = initialsFor(name);
   el.setAttribute('aria-label', name);
+}
+
+// LIME-49: the one place every avatar-markup generator below builds its
+// data-name (+ data-avatar-path when the person has a real photo)
+// attribute string — replacing over a dozen near-identical inline
+// concatenations with one shared call, so a future avatar-related
+// attribute never needs adding in more than one place again.
+function avatarAttrsHtml(person) {
+  if (!person) return 'data-name=""';
+  return 'data-name="' + escapeHtml(person.display_name || '') + '"'
+    + (person.avatar_url ? ' data-avatar-path="' + escapeHtml(person.avatar_url) + '"' : '');
 }
 
 // LIME-20: shared registry for wireDropdownToggle (defined much later
@@ -1829,7 +1857,7 @@ function initMessagesList() {
     // on a lookup miss, same as it would for any other bad/missing id.
     return '<div class="lime-message ' + (isSent ? 'lime-message--sent' : 'lime-message--received') + '" data-message-id="' + message.id + '">'
       + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
-      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(sender.display_name) + '" data-profile-id="' + escapeHtml(sender.id || '') + '"></span>'
+      + '<span class="seed-avatar seed-avatar--lg lime-avatar" ' + avatarAttrsHtml(sender) + ' data-profile-id="' + escapeHtml(sender.id || '') + '"></span>'
       + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
       + '</span>'
       + '<div class="lime-message__col">'
@@ -1903,7 +1931,7 @@ function initMessagesList() {
   // still caps at 4 tiles — the last becomes a neutral "+N" tile rather
   // than trying to fit a 5th face at this size.
   function avatarClusterMemberHtml(teacher) {
-    return '<span class="seed-avatar lime-avatar lime-avatar-cluster__member" data-name="' + escapeHtml(teacher.display_name) + '"></span>';
+    return '<span class="seed-avatar lime-avatar lime-avatar-cluster__member" ' + avatarAttrsHtml(teacher) + '></span>';
   }
 
   function avatarClusterHtml(conversation) {
@@ -1924,7 +1952,7 @@ function initMessagesList() {
     const other = otherParticipants(conversation)[0];
     const presence = presenceFor(other ? other.status : 'offline');
     return '<span class="lime-avatar-frame lime-avatar-frame--lg">'
-      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(other ? other.display_name : '') + '"></span>'
+      + '<span class="seed-avatar seed-avatar--lg lime-avatar" ' + avatarAttrsHtml(other) + '></span>'
       + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
       + '</span>';
   }
@@ -1977,8 +2005,8 @@ function initMessagesList() {
     if (conversation.type !== 'group') {
       const other = otherParticipants(conversation)[0];
       return '<span class="seed-avatar-group lime-topbar__avatars">'
-        + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(me.display_name) + '"></span>'
-        + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(other ? other.display_name : '') + '"></span>'
+        + '<span class="seed-avatar seed-avatar--sm lime-avatar" ' + avatarAttrsHtml(me) + '></span>'
+        + '<span class="seed-avatar seed-avatar--sm lime-avatar" ' + avatarAttrsHtml(other) + '></span>'
         + '</span>';
     }
     const others = orderedOthers(conversation);
@@ -1992,7 +2020,7 @@ function initMessagesList() {
     if (extra > 0) {
       avatarsHtml += '<span class="seed-avatar seed-avatar--sm lime-avatar-cluster__more" aria-hidden="true">+' + extra + '</span>';
     }
-    avatarsHtml += [...shown].reverse().map((t) => '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(t.display_name) + '"></span>').join('');
+    avatarsHtml += [...shown].reverse().map((t) => '<span class="seed-avatar seed-avatar--sm lime-avatar" ' + avatarAttrsHtml(t) + '></span>').join('');
     const allNames = others.map((t) => t.display_name).join(', ');
     return '<span class="seed-avatar-group lime-topbar__avatars" title="' + escapeHtml(allNames) + '">' + avatarsHtml + '</span>'
       + '<span class="lime-topbar__member-count">' + LimeStore.getMembers(conversation.id).length + ' members</span>';
@@ -2438,7 +2466,7 @@ function initMessagesList() {
     return '<div class="' + classes.join(' ') + '" data-search-text="' + escapeHtml(searchText) + '"'
       + (isMe ? ' data-profile-id="' + person.id + '"' : ' data-person-id="' + person.id + '"') + '>'
       + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
-      + '<span class="seed-avatar seed-avatar--lg lime-avatar" data-name="' + escapeHtml(person.display_name) + '"></span>'
+      + '<span class="seed-avatar seed-avatar--lg lime-avatar" ' + avatarAttrsHtml(person) + '></span>'
       + '<span class="lime-presence" data-presence="' + presence + '" role="img" aria-label="' + PRESENCE_LABEL[presence] + '"></span>'
       + '</span>'
       + '<span class="lime-recent__name">' + escapeHtml(label) + '</span>'
@@ -2660,8 +2688,19 @@ function updateProfileEverywhere() {
   // Sidebar user name + avatar (LIME-31).
   const sidebarAvatar = document.querySelector('#user-btn .lime-avatar');
   const sidebarName = document.querySelector('#user-btn .lime-sidebar__user-name');
-  if (sidebarAvatar) repaintAvatar(sidebarAvatar, user.display_name);
+  if (sidebarAvatar) repaintAvatar(sidebarAvatar, user.display_name, user.avatar_url);
   if (sidebarName) sidebarName.textContent = shortName(user.display_name);
+
+  // LIME-49: the topbar avatar cluster (#open-profile-avatars) shows
+  // the current user among its faces whenever it's open on the active
+  // conversation — repainted here too so a changed photo reflects there
+  // immediately, the same live-update guarantee as the sidebar.
+  // A plain filter, not an interpolated attribute-value selector
+  // (CSS.escape isn't available in every JS environment this app is
+  // verified in — found running the real app in jsdom, not assumed).
+  document.querySelectorAll('#open-profile-avatars .lime-avatar[data-name]').forEach((el) => {
+    if (el.dataset.name === user.display_name) repaintAvatar(el, user.display_name, user.avatar_url);
+  });
 }
 
 // Every existing paintAvatar call site before LIME-31 only ever painted a
@@ -2671,9 +2710,11 @@ function updateProfileEverywhere() {
 // so the old palette class has to be removed first or both would apply,
 // and whichever one wins would depend on stylesheet order, not on which
 // was painted more recently.
-function repaintAvatar(el, name) {
+function repaintAvatar(el, name, avatarPath) {
   [...el.classList].forEach((c) => { if (/^lime-avatar--p\d+$/.test(c)) el.classList.remove(c); });
   el.dataset.name = name;
+  if (avatarPath) el.dataset.avatarPath = avatarPath;
+  else delete el.dataset.avatarPath;
   el.textContent = '';
   paintAvatar(el);
 }
@@ -3005,7 +3046,7 @@ function renderProfilePanel(person) {
     html += '<button type="button" class="lime-profile__back" aria-label="Back to Members" title="Back"><span class="dew dew-chevron-left"></span></button>';
   }
   html += '<div class="lime-profile__header">'
-    + '<span class="seed-avatar seed-avatar--xl lime-avatar lime-profile__avatar" data-name="' + escapeHtml(person.display_name) + '"></span>'
+    + '<span class="seed-avatar seed-avatar--xl lime-avatar lime-profile__avatar" ' + avatarAttrsHtml(person) + '></span>'
     + '</div>'
     + '<h2 class="lime-profile__name">' + escapeHtml(person.display_name) + '</h2>';
   if (roleSchool) html += '<p class="lime-profile__title">' + escapeHtml(roleSchool) + '</p>';
@@ -3081,7 +3122,7 @@ function renderMembersPanel(conversation) {
   listEl.innerHTML = members.map((m) => {
     const isOwner = m.id === conversation.created_by;
     return '<button type="button" class="lime-members-panel__row" data-profile-id="' + m.id + '">'
-      + '<span class="seed-avatar seed-avatar--md lime-avatar" data-name="' + escapeHtml(m.display_name) + '"></span>'
+      + '<span class="seed-avatar seed-avatar--md lime-avatar" ' + avatarAttrsHtml(m) + '></span>'
       + '<div class="lime-members-panel__row-body">'
       + '<span class="lime-members-panel__row-name">' + escapeHtml(m.display_name) + '</span>'
       + '<span class="lime-members-panel__row-role">' + (isOwner ? 'Owner' : 'Member') + '</span>'
@@ -3342,7 +3383,7 @@ function renderCrumbs() {
     // unwrapped output here (the reply list has no message bubble chrome).
     const replyAttachments = LimeStore.getAttachments(message.id);
     return '<div class="lime-reply" data-message-id="' + message.id + '">'
-      + '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '" data-profile-id="' + escapeHtml(sender.id) + '"></span>'
+      + '<span class="seed-avatar seed-avatar--sm lime-avatar" ' + avatarAttrsHtml(sender) + ' data-profile-id="' + escapeHtml(sender.id) + '"></span>'
       + '<div class="lime-reply__col">'
       + '<div class="lime-reply__meta">'
       + '<span class="lime-reply__sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
@@ -3363,7 +3404,7 @@ function renderCrumbs() {
     // data-sender-id (LIME-35): renderCrumbs reads this for the mobile
     // "Thread · <parent sender's short name>" panel-crumb format.
     quoteEl.dataset.senderId = sender.id;
-    quoteEl.innerHTML = '<span class="seed-avatar seed-avatar--sm lime-avatar" data-name="' + escapeHtml(sender.display_name) + '" data-profile-id="' + escapeHtml(sender.id) + '"></span>'
+    quoteEl.innerHTML = '<span class="seed-avatar seed-avatar--sm lime-avatar" ' + avatarAttrsHtml(sender) + ' data-profile-id="' + escapeHtml(sender.id) + '"></span>'
       + '<div class="lime-replies-panel__quote-body">'
       + '<span class="lime-replies-panel__quote-sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + quoteMediaHtml(message)
@@ -4188,6 +4229,19 @@ document.addEventListener('keydown', (e) => {
   // load, a Discard, or a successful Save all count as "clean" again).
   let profileOriginal = null;
 
+  // LIME-49: the photo is "part of the form" (saves with Save changes,
+  // reverts with Cancel) but its own preview updates live the instant a
+  // pick finishes processing — it can't wait for Save, and a full
+  // renderProfileSection() re-render to show it would discard whatever
+  // the user's already typed into every other field. undefined: no
+  // pending change (the saved user.avatar_url still applies). null:
+  // pending removal. a string: a newly processed-and-uploaded path,
+  // staged until Save actually persists it.
+  let pendingAvatarPath;
+  let avatarUploadJobToken = 0;
+  let avatarUploadBusy = false;
+  const avatarUploadInput = document.getElementById('avatar-upload-input');
+
   // LIME-46: wraps whichever section's .lime-settings__body in the shared
   // fade-frame pattern — a non-scrolling .lime-fade-frame that
   // wireScrollFades toggles is-scrolled-* classes on (LIME-50: the mask
@@ -4254,6 +4308,21 @@ document.addEventListener('keydown', (e) => {
       + '</div>'
       + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" data-change="' + key + '">Change</button>'
       + '</div>';
+  }
+
+  // LIME-49: the clickable avatar itself (not just the "Change photo"
+  // link below it) — the brief's own "clicking the avatar, with a hover
+  // overlay reading 'Change'". avatarAttrsHtml (top-level, shared with
+  // every other avatar in the app) reads user.avatar_url directly, so
+  // this shows the real saved photo on every fresh render; a pending,
+  // not-yet-saved pick is reflected afterward by updateProfileAvatarPreview
+  // (below), not by re-calling this function (a full re-render would
+  // discard every other field's own unsaved edits, not just the photo's).
+  function profileAvatarButtonHtml(user) {
+    return '<button type="button" class="lime-settings__profile-avatar-btn" id="settings-profile-avatar-btn" aria-label="Change photo" title="Change photo">'
+      + '<span class="seed-avatar seed-avatar--xl lime-avatar" ' + avatarAttrsHtml(user) + '></span>'
+      + '<span class="lime-settings__profile-avatar-overlay">Change</span>'
+      + '</button>';
   }
 
   function fieldHtml(key, label, value, inputAttrs) {
@@ -4339,7 +4408,7 @@ document.addEventListener('keydown', (e) => {
     if (!profileOriginal) return false;
     if (!document.getElementById('settings-field-display_name')) return false;
     const current = getProfileFormValues();
-    return PROFILE_FIELD_KEYS.some((key) => current[key] !== profileOriginal[key]);
+    return pendingAvatarPath !== undefined || PROFILE_FIELD_KEYS.some((key) => current[key] !== profileOriginal[key]);
   }
 
   // LIME-31-fix: the footer is always visible; Save/Cancel are disabled
@@ -4350,6 +4419,125 @@ document.addEventListener('keydown', (e) => {
     const discardBtn = document.getElementById('settings-discard-btn');
     if (saveBtn) saveBtn.disabled = !dirty;
     if (discardBtn) discardBtn.disabled = !dirty;
+  }
+
+  // LIME-49: ≤5MB, image/* — the brief's own exact limit. Same friendly-
+  // message convention as the pattern upload's own validateUploadFile
+  // (appearance.js), not duplicated from it: the accept type and the
+  // limit are different enough (any image/*, not a fixed MIME list; 5MB
+  // not 10MB) that sharing the function would need its own parameters
+  // for both, which is more indirection than just having two short,
+  // independently-readable checks.
+  const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+  function validateAvatarFile(file) {
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+      return 'Please choose an image file (that looked like a ' + (file.type || 'file type this app doesn\'t recognise') + ').';
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      return 'Please choose an image under 5 MB.';
+    }
+    return null;
+  }
+
+  // Decode -> centre-crop to a square (the shorter side) -> resize to
+  // 256px on a canvas, once, at upload time — the same "process once,
+  // never live" discipline the pattern-upload pipeline settled on
+  // (appearance.js's own processTexture/processPhoto).
+  function cropAndResizeAvatarFile(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read this image.')); };
+      img.src = url;
+    }).then((img) => {
+      const size = Math.min(img.naturalWidth, img.naturalHeight);
+      const sx = (img.naturalWidth - size) / 2;
+      const sy = (img.naturalHeight - size) / 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = 256; canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, sx, sy, size, size, 0, 0, 256, 256);
+      URL.revokeObjectURL(img.src);
+      return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          // A null blob (canvas too large for the browser's own memory
+          // ceiling — the exact "successful upload, garbage result" bug
+          // LIME-52-fix3 found and fixed for the pattern pipeline)
+          // rejects with a friendly message instead of silently
+          // resolving with nothing.
+          if (!blob) { reject(new Error('Couldn\'t process that image. Try a different photo.')); return; }
+          resolve(blob);
+        }, 'image/png');
+      });
+    });
+  }
+
+  // LIME-49: surgically updates just the avatar preview + the busy/
+  // Remove-photo affordances — never a full renderProfileSection(),
+  // which would discard whatever's already typed into every other
+  // field. path: undefined shows the saved user.avatar_url, null shows
+  // initials (a pending removal), a string shows that path directly.
+  function updateProfileAvatarPreview(path, busy) {
+    const btn = document.getElementById('settings-profile-avatar-btn');
+    if (!btn) return;
+    btn.classList.toggle('is-busy', !!busy);
+    const overlay = btn.querySelector('.lime-settings__profile-avatar-overlay');
+    if (overlay) overlay.innerHTML = busy ? '<span class="lime-spinner"></span>' : 'Change';
+    const avatarEl = btn.querySelector('.lime-avatar');
+    if (avatarEl) {
+      const user = LimeStore.getCurrentUser();
+      const effectivePath = path !== undefined ? path : (user && user.avatar_url);
+      avatarEl.innerHTML = '';
+      delete avatarEl.dataset.avatarPath;
+      [...avatarEl.classList].forEach((c) => { if (/^lime-avatar--p\d+$/.test(c)) avatarEl.classList.remove(c); });
+      if (effectivePath) avatarEl.dataset.avatarPath = effectivePath;
+      paintAvatar(avatarEl);
+    }
+    const removeBtn = document.querySelector('[data-profile-photo-action="remove"]');
+    if (removeBtn) removeBtn.hidden = !(path !== undefined ? path : (LimeStore.getCurrentUser() || {}).avatar_url);
+  }
+
+  // Runs one avatar-upload job end to end — the same shape as
+  // runPatternUpload (LIME-52-fix3/5): a job token so a stale result
+  // never overwrites a newer pick, a busy state shown both on the
+  // avatar itself and via the inline error/note slot, and every
+  // rejection path (validation, decode, a null canvas blob, an
+  // IndexedDB write failure/timeout — the last two already handled by
+  // LimeStore.uploadAttachment's own LIME-52-fix5 timeout) reaching
+  // setFieldError with a message safe to show directly.
+  function runAvatarUpload(file) {
+    const error = validateAvatarFile(file);
+    if (error) { setFieldError('photo', error); return; }
+    const token = ++avatarUploadJobToken;
+    avatarUploadBusy = true;
+    updateProfileAvatarPreview(pendingAvatarPath, true);
+    clearFieldError('photo');
+    cropAndResizeAvatarFile(file).then((blob) => {
+      const namedFile = new File([blob], 'avatar.png', { type: 'image/png' });
+      return LimeStore.uploadAttachment(namedFile, { conversationId: 'profile-photos/' + LimeStore.getCurrentUserId() });
+    }).then(({ path }) => {
+      if (token !== avatarUploadJobToken) return;
+      avatarUploadBusy = false;
+      pendingAvatarPath = path;
+      updateProfileAvatarPreview(path, false);
+      updateFooterState();
+    }).catch((err) => {
+      console.error(err);
+      if (token !== avatarUploadJobToken) return;
+      avatarUploadBusy = false;
+      updateProfileAvatarPreview(pendingAvatarPath, false);
+      setFieldError('photo', (err && err.message) || 'Couldn\'t use that image. Try a different photo.');
+    });
+  }
+
+  if (avatarUploadInput) {
+    avatarUploadInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = ''; // same re-pick-the-same-file fix as the pattern input
+      if (!file) return;
+      runAvatarUpload(file);
+    });
   }
 
   // The brief's own "leaving the section, or closing the modal, with
@@ -4382,19 +4570,30 @@ document.addEventListener('keydown', (e) => {
       timezone: user.timezone || '',
       phone: user.phone || '',
     };
+    // LIME-49: a fresh render always discards any pending, unsaved photo
+    // change — matching profileOriginal's own reset just above, the
+    // exact same "a fresh load, a Discard, or a successful Save all
+    // count as clean again" rule, now covering the photo too.
+    pendingAvatarPath = undefined;
+    // Also invalidates any upload still in flight (a Cancel clicked
+    // mid-upload, or navigating back to Profile again) — its own job
+    // token check (runAvatarUpload) then discards that stale result
+    // when it eventually resolves, rather than silently reinstating a
+    // pending change the user already walked away from.
+    avatarUploadJobToken++;
+    avatarUploadBusy = false;
     // LIME-31-fix layout: avatar beside Display name, then compact
     // label-left/control-right rows, Bio last, an always-visible footer
     // (Save/Cancel disabled until dirty — see updateFooterState).
     pane.innerHTML = paneHeaderHtml('Profile', 'Your details as others see them across Lime.')
       + settingsBodyFrameOpen()
       + '<div class="lime-settings__body" id="settings-profile-form">'
-      + '<div class="lime-settings__profile-top" data-row-label="Photo">'
-      + '<div class="lime-settings__profile-photo">'
-      + '<span class="seed-avatar seed-avatar--xl lime-avatar" data-name="' + escapeHtml(user.display_name) + '"></span>'
+      + '<div class="lime-settings__profile-top" data-row-label="Photo" data-field="photo">'
+      + profileAvatarButtonHtml(user)
       + '<div class="lime-settings__profile-photo-actions">'
-      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" disabled>Upload photo</button>'
-      + '<span class="lime-badge--soon">Soon</span>'
-      + '</div>'
+      + '<button type="button" class="lime-settings__profile-photo-link" data-profile-photo-action="change">Change photo</button>'
+      + '<button type="button" class="lime-settings__profile-photo-link" data-profile-photo-action="remove"' + (user.avatar_url ? '' : ' hidden') + '>Remove photo</button>'
+      + '<p class="lime-settings__field-error"></p>'
       + '</div>'
       + fieldHtml('display_name', 'Display name', profileOriginal.display_name)
       + '</div>'
@@ -4425,7 +4624,15 @@ document.addEventListener('keydown', (e) => {
       saveBtn.addEventListener('click', () => {
         const values = getProfileFormValues();
         PROFILE_FIELD_KEYS.forEach(clearFieldError);
+        clearFieldError('photo');
 
+        // LIME-49: a photo still processing has no path to save yet —
+        // never fail silently by saving without it or racing the
+        // upload's own async write.
+        if (avatarUploadBusy) {
+          setFieldError('photo', 'Still processing your photo — try Save again in a moment.');
+          return;
+        }
         if (!values.display_name.trim()) {
           setFieldError('display_name', 'Display name is required.');
           return;
@@ -4438,6 +4645,7 @@ document.addEventListener('keydown', (e) => {
           return;
         }
 
+        const user = LimeStore.getCurrentUser();
         const patch = {
           display_name: values.display_name.trim(),
           pronouns: values.pronouns.trim() || null,
@@ -4448,6 +4656,7 @@ document.addEventListener('keydown', (e) => {
           bio: values.bio.trim() || null,
           timezone: values.timezone,
           phone: phone || null,
+          avatar_url: pendingAvatarPath !== undefined ? pendingAvatarPath : ((user && user.avatar_url) || null),
         };
         saveBtn.disabled = true;
         LimeStore.updateProfile(patch).then(() => {
@@ -4665,6 +4874,17 @@ document.addEventListener('keydown', (e) => {
     }
     if (e.target.closest('#settings-sign-out-btn')) {
       document.getElementById('sign-out-btn')?.click();
+      return;
+    }
+    if (e.target.closest('#settings-profile-avatar-btn') || e.target.closest('[data-profile-photo-action="change"]')) {
+      if (avatarUploadBusy) return; // a real busy-block, same reasoning as the pattern upload's own
+      avatarUploadInput?.click();
+      return;
+    }
+    if (e.target.closest('[data-profile-photo-action="remove"]')) {
+      pendingAvatarPath = null;
+      updateProfileAvatarPreview(null, false);
+      updateFooterState();
       return;
     }
     if (handleAppearanceClick(e, pane, renderPreferencesSection, (msg, isError) => {

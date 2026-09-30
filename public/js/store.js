@@ -445,7 +445,9 @@ const LimeStore = (function () {
   // LIME-31. Email and password are deliberately absent from this list —
   // they're the auth seam's concern (auth.js), not this whitelist; see
   // docs/data-model.md's production-ready rules.
-  const PROFILE_EDITABLE_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone'];
+  // LIME-49: avatar_url added — the profiles.avatar_url column already
+  // existed in the schema, just never had a writer.
+  const PROFILE_EDITABLE_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone', 'avatar_url'];
 
   function updateProfile(patch) {
     const profile = getProfile(currentUserId);
