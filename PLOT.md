@@ -2,6 +2,54 @@
 
 Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execution record.
 
+## ▶ START HERE: session-end note (plot, 2026-09-29, written at "end")
+
+**The next plot session (`rtb`) reads this first.** The history below it is kept for reference. Anything above the "Continuation note (2026-09-27)" heading supersedes older queue lines.
+
+### Where things stand
+- **HEAD is `378c82c`** (LIME-52-fix2). The tree is clean apart from `PLOT.md` (plot's own) and untracked assets that are **deliberately uncommitted**: `public/assets/teacher.{mp4,ogg,webm}` (for LIME-48) and `public/assets/patterns/` (the user's 6 samples, committed by LIME-52-fix4).
+- **Tend was sent LIME-52-fix3, then 52-fix4, then LIME-49** as one instruction at session end. **Check `git log` first** to see how far it got. Don't assume.
+- **Gate checks the user may still owe** (ask briefly, then move on): LIME-50, 51, 50-fix, 52, 52-fix and 52-fix2. The user said "everything else looks good" after 52-fix2, apart from the uploads.
+- **LIME-50's two open questions are answered:** keep the header palette shortcut, and the darker muted text is fine (the user approved both in the prompt plot drafted).
+
+### The authoritative queue
+1. ~~**LIME-52-fix3**~~ **landed as `c646917`.** Root cause: the upload input was re-rendered away while the OS file dialog was open. The gate check is pending.
+2. ~~LIME-52-fix4~~ **SUPERSEDED (never sent), the user, 2026-09-30:** "get rid of the subtle patterns and the credit and let's just refine the ones we have now instead and the upload." Drop the 6 samples in `public/assets/patterns/` (untracked; delete them) and every credit line. Keep the 4 generated SVG presets (dots, grid, diagonal, noise) and refine them and the upload. **Next: LIME-52-fix5** (uploads still "do nothing" in both surfaces; drafted) **→ LIME-53** (a pattern lab of 12 in-house SVG candidates outside the repo; the user picks by number; drafted) **→ LIME-53b** (integrate the picks, remove the file-name probing, delete the samples, strip the credit mentions; drafted after the picks).
+3. **LIME-49**: Settings Profile fits with no scrolling, plus real profile photos everywhere
+4. **LIME-33**: local accounts (sign up and sign in; PBKDF2; session gate; reset clears accounts)
+5. **LIME-48**: the sign-in redesign (email-first; the Pexels video `teacher.webm` plus a small re-encoded MP4 via `avconvert`; a poster; a pause control; copy: "Where teachers connect")
+6. **LIME-29**: New message (search by name, email, phone or school; "Invite (Soon)"; the documented invites design)
+7. **LIME-27 (revised)**: the Share header button and a Claude-style popover (add people by email for groups; who has access; Copy link), deep links, toasts
+8. **LIME-28 Communities: BLOCKED on a planning pass.** Present a **decision surface** from the user's mockups (the discovery cards, the feed of posts with likes, community pages with channels) before briefing.
+
+Items 4–6 complete the user's milestone: sign up → sign in → find a teacher → message them.
+
+### Waiting on the user
+- ~~The pattern credit source~~ **Answered 2026-09-29: Subtle Patterns, credit it.** Folded into LIME-52-fix4.
+- **The LIME-52-fix3 gate check** (landed as `c646917`, 2026-09-29). Tend couldn't test 16-bit, palette or interlaced PNGs, or a real private window (it simulated one by forcing IndexedDB to fail).
+- Optionally, the failing PNGs that tend should test (a Desktop folder path).
+- Communities planning answers, when LIME-28 comes up.
+
+### Unbriefed candidates (offer when the queue thins)
+- **Real notifications** (the bell is a mockup; the user wants these instead of ✓/✓✓).
+- **A cleanup brief:** a global border-box reset, `[hidden] { display: none !important }`, the dead `.lime-message__file` block, the unused Seed `dropdown.css` link, and the placeholder "Jean Chung" HTML.
+- **The right panel is unreachable at 768–1024px.**
+- The mobile duplicate "Thread" heading.
+- "Leave group" for non-owners.
+- A `STATUS.md` refresh.
+- **Mobile/offline Bluetooth planning:** the product differentiator, which needs its own decision surface.
+
+### Steward: one assumption to question next session
+**Plot has been drafting one brief per QA screenshot, and the appearance work alone took 8 briefs (45 → 52-fix4).** Before the next visual feature, propose a short **design pass first** (a decision surface with 2–3 options and mock descriptions) rather than build, QA, rebuild. That's cheaper in the user's usage limits, which the user mentions often.
+
+### Session lessons (also in Patterns learned)
+- **Prompt wording:** "implement …, commit, and stop for my check" (never "re-read it, then stop").
+- **Plot must `assert` anchors when editing `PLOT.md` with scripts.** A silent no-op lost two notes this session (since restored).
+- **Tend runs `/loop` wakeups** that re-report the same result. Tell the user to stop them, and include "stop any /loop wakeups" in prompts.
+- **Measure with Playwright + Firefox;** CSS changes report the browser-parsed rule counts; JS changes load the real app in jsdom.
+- **The user pastes tend's output here.** Tend only acts on text typed into *its* window. Say so plainly when the user re-pastes an old message.
+- **The lime rule:** lime is only for the nav and primary actions; everything else stays neutral, and neutral layers derive from the canvas tone (LIME-50-fix).
+
 ## Continuation note (2026-09-27)
 
 - **LIME-13 landed as `cd39519`. Gate passed (2026-09-27):** the user checked it at the file:// URL and it looks fine.
@@ -47,7 +95,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
       - **The user's edits were committed as `3ed7352`.** LIME-37 `f43ee40` landed (the WYSIWYG composer, and a sanitiser plot reviewed and found sound: a `<template>`-inert allow-list, attributes stripped, `javascript:` blocked, applied on send and on render; `<strike>` normalised to `<s>`). There's no `--seed-font-mono` token, so it uses a system monospace stack. **LIME-39 is drafted** for the composer covering the last message (pre-existing). **Queue: LIME-38 → LIME-39 → LIME-33 → LIME-29 → 27 → 28.**
       - LIME-39 `4c824b7` landed: `--composer-clearance` via `ResizeObserver`, pinned-to-bottom on reload and image load, and it no longer yanks the view on every keystroke. The reply panel needs no clearance (it flows). **The padding rule is now in both `lime.css` and `gradients.css`.** LIME-46 should leave it in exactly one place. Its gate check is pending.
       - LIME-47 `d081912` landed: `overflow-wrap`, code blocks scroll inside the bubble, the composer-radius token, reply-quote thumbnails (ready for "+N"), the DM "Profile" crumb, and the duplicate padding rule removed. Its gate check is pending. Next: LIME-40, then 41. The three `teacher.*` video files in `public/assets/` are deliberately **untracked** until LIME-48.
-      - LIME-41-fix `a67d834` and LIME-43 `c1516a6` landed: receipts are derived from `last_read_at`, with native-`title` tooltips, in-place patching, and a z-index fix so the tick is hoverable under the action bar. Both gate checks are pending. **Tend thought the queue was finished. It isn't.** Remaining: **LIME-43-revert (the user dropped receipts)** → LIME-44 → 45 → 33 → 48 → 29 → 27 → 28.
+      - LIME-41-fix `a67d834` and LIME-43 `c1516a6` landed: receipts are derived from `last_read_at`, with native-`title` tooltips, in-place patching, and a z-index fix so the tick is hoverable under the action bar. Both gate checks are pending. **Tend thought the queue was finished. It isn't.** Remaining: **LIME-43-revert (the user dropped receipts; landed as `6cb8e4e`, `public/` is identical to `a67d834` as plot verified, and `PLOT.md` was committed as `d12c283`)** → LIME-44 (landed as `8bd114a`: `getLinkPreview` with 3 fixtures and a minimal fallback, no network, `link_previews` and `unfurl` documented; its gate check is pending) → 45 → **49 (settings profile and real photos)** → 33 → 48 → 29 → 27 (Share, **revised**: a header Share button and popover) → **28 (Communities: needs a planning pass first, see Open threads)**.
       - LIME-40-fix `90c5672` and LIME-42 `e8430e3` landed: the lightbox bar outside the image, real audio playback, typed file cards with badges ≥ 6.4:1, and PDFs opening via a real `<a target=_blank>`. Both gate checks are pending. **Next: LIME-41-fix** (the user's QA: captions, viewer controls, the photo wall), then LIME-43.
         - **Cleanup backlog:** a dead `.lime-message__file` block in `lime.css` (from LIME-38) overrides the Download button's size by class collision. Remove it in a cleanup brief, with the border-box and `[hidden]` global resets.
       - LIME-41 `848f271` landed: the `message_attachments` table, albums and gallery, **and the user removed LIME-38's 5-file cap** (tend asked mid-brief). The gallery-plus-lightbox double-Escape was fixed by a hand-off. Its gate check is pending. **LIME-40-fix is drafted and runs next,** before 42: the close button sits in a bar outside the image.
@@ -104,6 +152,28 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   4. **Actions live only in the title caret menu,** Claude-style. There's no row hover "…" and no header icons. The caret (`.lime-topbar__crumb-caret`, currently a dead "Switch conversation" button) becomes the actions menu.
 - **Revised sequence:** LIME-24 (foundation, drafted) → LIME-25 (the title actions menu with Star; Starred driven by state, replacing 19c) → LIME-26 (inline rename, archive with the Archived section, delete with confirm) → LIME-27 (share: copy link plus deep link, and a toast) → LIME-28 (live Communities) → LIME-29 (Create modal). 25 onward are drafted once 24 lands.
 
+## Open threads
+
+- **Product context (user, 2026-09-29):** Lime's key differentiator is planned native **iOS and Android apps with offline, Bluetooth (mesh-style) messaging** for when networks are down: natural disasters, strikes, and so on. It isn't scoped yet. When it is, it affects the data layer (local-first sync, conflict handling, message ids and ordering without a server). The store/adapter seam and UUID ids from LIME-24 already point the right way. It needs its own planning pass (a decision surface) before any mobile work. The sign-in page's under-card area is reserved for future app-download links (LIME-48).
+- **Real notifications (user, 2026-09-29):** "we can use notifications for that [read status] to start." The notifications dropdown is still a **static mockup** (Jean/Mary/Valene). Candidate brief: data-driven notifications (new messages, replies to you, reactions, mentions), derived from messages and `last_read_at`, with the bell's count real. Production: a `notifications` table, or derived views, plus push later. Receipts (LIME-43) can return later by reverting LIME-43-revert (`6cb8e4e`).
+- **Communities need a planning pass before LIME-28 is briefed (user, 2026-09-29, earlier mobile mockups):**
+  - **A discovery row of community cards:** a cover image, the name, stacked member avatars with a count ("12.3k"), and "✓ Member".
+  - **A feed/wall of posts:** image cards with a caption and @mentions, a heart/like with a count, and the source community with its member count, in a two-column masonry.
+  - **A community page:** a cover banner, a square community avatar, the name with ⌄, a description, member avatars with "12.3k members", "✓ Member", then **channels inside the community** ("Bulletin Board" with an unread badge, a "Starred" section, and a "Groups" section: "NYC Teachers", "Bookclub", "Announcements").
+  - A bottom tab bar, Link and Jam, on mobile.
+  - **Implications:** communities **contain channels** (sub-conversations: `conversations.parent_id`), **posts with likes** (a new content type, maybe Jam-adjacent), **cover and avatar images**, and **large member counts** (the seed's `member_count` question from LIME-24a).
+  - **This is a decision surface, not a brief.** Present the options (e.g. channels-only first, versus channels plus a feed) before drafting LIME-28. The old LIME-28 draft ("a live Communities list, the same as Messages") is **superseded** by this.
+- **Pattern tiles need a manifest (plot, reviewing LIME-52-fix):** over `file://`, the app can't list a folder, so `appearance.js` ~228 only probes **12 fixed names** (`paper`, `linen`, `dots`, `grid`, `diagonal`, `topography`, `texture`, `noise`, `wave`, `grain`, `weave`, `stripes`), in `.svg`/`.png`. Any other file name is silently ignored.
+  - **Follow-up when the user adds SVGs:** a small `public/assets/patterns/patterns.js` manifest (`window.LIME_PATTERN_TILES = [{ file, label, credit }]`, loaded by a script tag and `file://`-safe) replaces the probing. The credit line in Settings is generated from its `credit` fields.
+  - Until then, the user must name files from that list.
+- **Cleanup brief candidates (not yet drafted):**
+  - a global `*, *::before, *::after { box-sizing: border-box }` reset (the bug has hit 5+ times), with a visual regression pass;
+  - `[hidden] { display: none !important }`;
+  - remove the dead `.lime-message__file` block (LIME-42) and the unused Seed `dropdown.css` link;
+  - empty the "Jean Chung" placeholder HTML in the breadcrumb and header.
+  - Also open: **the right panel is unreachable at 768–1024px** (LIME-32 finding), and the mobile duplicate "Thread" heading (LIME-35 finding).
+- **Plot process lesson:** a Python `str.replace` on a heading that doesn't exist silently does nothing. That's how the notifications and product-context notes were lost for a while. Always `assert` the anchor exists before replacing.
+
 - **State-colour system: DECIDED 2026-09-27, option A, stepped.** LIME-14 is drafted below. Follow-up briefs in order: disabled (one consistent look instead of opacity 0.4 vs `--soil-text-disabled`), focus (restore visible outlines, e.g. `.lime-search-field` where LIME-03b removed Seed's focus glow), then a hover/default tidy-up. Error needs no brief until Lime has something that can fail. Candidate later: upstream the lime `selected` scale into Seed (option C). Original notes: The user wants the nav's active colour (`--lime-nav-hover` = `--seed-lime-100`, #E4F9BE) promoted to a reusable system colour with Seed-style default/hover/active/disabled states. Error is Seed's `bad-*` family, not a state.
   - Survey findings:
     - `--lime-nav-hover` has 7 uses (nav hover and active, divider hover, user trigger, the button at ~1355, and Send active and active-hover).
@@ -155,6 +225,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
     - The user's rule is "preview to the user in Firefox only". Headless Chrome as an internal measuring tool is allowed and isn't the cause of the hangs.
   - Never wait on a monitor for more than ~2 minutes.
 - **`[hidden]` is unreliable here:** any class that sets `display` (e.g. `.lime-icon-btn { display: flex }`) beats the browser's default `[hidden]` rule (found in LIME-40). Candidate for the global-reset brief: `[hidden] { display: none !important; }` alongside the border-box reset.
+- **CSS verification must check what the browser parsed** (found in LIME-50-fix): a `*/` inside a comment (e.g. writing `--calm-bg-*/…`) closes it early and silently drops the rest of the stylesheet. Brace counts and `node --check` can't catch it. Every CSS-touching brief should report `document.styleSheets[i].cssRules.length` for `lime.css` (≈ 660) and `gradients.css` in the real browser, and never write `*/` inside comment text.
 - **JS verification must load the real app.** `node --check` and testing extracted functions missed LIME-18's load-order crash, which froze every click in the app. Every brief that touches JS must require that `seed-data.js`, `data.js` and `app.js` are loaded as real scripts against the real `index.html` (jsdom in the session scratchpad, not the repo, when Chrome isn't connected), with zero errors reported. Tend adopted this from LIME-18-fix onward.
 - **Handoff:** every brief handoff ends with a copy-paste prompt for tend, e.g. `tend LIME-14`. Tend reads the full brief from this file, so the brief must be saved here before handing off.
 - The user isn't technical. Explain decisions in plain terms: what the user will see, not selector mechanics.
@@ -164,6 +235,485 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ---
 
 ## Drafted briefs
+
+### LIME-52-fix5 → `tend` (next, before LIME-53): uploads still do nothing, in both surfaces
+
+**The user (2026-09-30, after LIME-52-fix3 `c646917`):** the upload is "still buggy and want to try it working." Asked what happens: **"Nothing happens"** (no change, no message), from **both the palette menu and Settings**. Tend's own fix3 matrix passed in headless Firefox, so **the failure only shows in the user's real, headed Firefox.** Treat tend's earlier green matrix as not proving anything about this.
+
+**Assumptions:** the agent can edit files, run Node + Playwright (Firefox, headed and headless), and commit. **Plot's assumption:** the user most likely tested with their own sample files in `public/assets/patterns/` (very light, near-white images; two are WebP named `.png`). Use all 6 as test files. **Copy them to the scratchpad first,** because LIME-53b will delete them from the repo.
+
+**Hypotheses (plot's reading of `app.js` ~216–378, `appearance.js` ~296–470 and `local-adapter.js`). Test each one; don't assume any:**
+1. **Applied but invisible.** A near-white source (ripples, natural white, geometry) defaults to **Texture**. After auto-levelling, it may still produce a mask so faint that at Low (6%) it looks like nothing changed. "Nothing happens" might really be "it worked, invisibly." Check whether the selected state and the upload preview tile change.
+2. **The pipeline hangs.** `processUploadFile` waits on `isStorageAvailable()` (`checkStorageAvailable` in `local-adapter.js`) before doing anything. If `openFilesDb()` never settles (a `blocked` open because another Lime tab holds an older DB version; a transaction that **aborts** rather than errors, since there's no `onabort` handler), the promise never resolves. The job stays busy forever and the only sign is a 28px spinner the user might not notice. The result is also **cached for the session**, so one hang blocks every later upload.
+3. **The file dialog never opens,** or `change` never reaches the listener in headed Firefox (a programmatic `.click()` on a `hidden` input after user activation was consumed or lost; `uploadActiveSurface` being null when `change` fires).
+4. **Stale code:** the user's Firefox may be running cached pre-fix3 JS. Rule this out by loading with a cache bypass, and **tell the user to hard-reload (⌘⇧R) in the gate**.
+
+**The change:**
+1. **Reproduce in headed Firefox** (Playwright `headless: false`, a throwaway profile), from both surfaces, with each of the user's 6 files plus one ordinary mid-tone photo. Add a **temporary** trace (`console.log` at: tile click → input click → `change` → storage check resolved → decoded → processed → stored → applied → re-rendered) to find exactly where each attempt stops. Also run it **with a second Lime tab open**. Record in `TEND.md` which hypothesis (or which new cause) it was.
+2. **Fix every root cause found.** At minimum:
+   - **No stage can hang silently:** add a timeout (~10s) around the storage check and the store writes. On timeout, fall back to the session-only path with its note. Handle `onabort` and `onblocked` everywhere `checkStorageAvailable` and `openFilesDb` wait. Don't cache a failed or timed-out check.
+   - **A visible result, every time:** after a successful upload, the new upload tile is selected and shows the image, and the background visibly changes. If a Texture comes out too faint to see (measure: the processed mask's mean alpha under a threshold you choose and report), default that upload to **Photo** instead, or say "This image is very light, so we're showing it as a photo."
+   - **Busy state that can't be missed:** while processing, the upload tile shows the spinner **and** the surface's message line says "Processing…".
+3. **Remove the temporary trace** before committing. `git diff public/index.html` shows only intended changes.
+
+**Scope:**
+- **May touch:** the upload code in `public/js/app.js` and `public/js/appearance.js`, `public/js/local-adapter.js` (timeouts and handlers only), related CSS in `public/css/lime.css`, and `TEND.md`.
+- **May not touch:** the preset patterns (LIME-53 owns them), the sample files in `public/assets/patterns/` (don't delete or commit them), and everything else.
+- If the survey turns up related issues, **raise them before fixing**. If a decision isn't covered here, **stop and ask the user**.
+
+**Verification:**
+- **In headed Firefox:** every one of the 7 files, from both surfaces, visibly changes the background and selects the upload tile. Report a pass/fail table with the stage each failure stopped at **before** the fix and pass **after**.
+- With a second Lime tab open: an upload either works or shows a clear message within ~10s. It never hangs.
+- The same file twice in a row, and a new file right after, both work.
+- Report the browser-parsed CSS rule counts for `lime.css` and `gradients.css`. The real app loads in jsdom with zero errors.
+
+**Gate:** in Firefox, **hard-reload first (⌘⇧R)**. Then upload one of your images from the palette menu, and another from Settings. Each time, the background should visibly change and the upload tile should show your image. If it can't, a message should say why. Nothing should ever just silently do nothing.
+
+**Record:** add a `## LIME-52-fix5` entry to `TEND.md`, including the stage-by-stage table and which cause it was. Commit: `fix: uploads never hang or apply invisibly (timeouts, visible result, busy message)`, trailer `Brief: LIME-52-fix5`, plus the attribution trailer. **Stop for the user's check.**
+
+---
+
+### LIME-53 → `tend` (after LIME-52-fix5): a pattern lab to choose new designs (no app changes)
+
+**The user (2026-09-30):** get rid of the Subtle Patterns samples and credit, and **refine the patterns we have now.** On the current four (Dots, Grid, Diagonal, Noise): they **"look plain or cheap"** and the user **"wants different designs"**.
+
+**Why a lab first (plot's steward lesson):** the appearance work took 8 build-and-QA rounds. Choosing designs from a single page of candidates costs one round instead.
+
+**Assumptions:** the agent can write files and run Playwright (Firefox). **Every pattern is drawn by us as an inline SVG** (no third-party assets, so no credit is owed). Each renders as a **tinted mask**, exactly like today's presets (`appearance.js` `patternMaskSvg`, ~193): white shapes on transparent, recoloured by `--lime-pattern-tint`.
+
+**The change:**
+1. Create **`/Users/shem/Sites/lime-pattern-lab/index.html`, outside the repo** (not committed). It's a standalone page that opens by `file://`.
+2. Include **12 candidates** as SVG mask tiles, with care for polish (fine strokes of 0.75–1px, generous spacing, tiles of 32–80px, seamless edges, and no visible repeat seams):
+   - refined versions of the current 4: **soft dots** (sparser, offset rows), **fine grid** (hairline, larger cells), **pinstripe diagonal**, and **paper grain** (subtler noise);
+   - 8 new: **waves**, **topography** (contour lines), **crosses/plus**, **circles** (overlapping rings), **hexagons**, **scales** (overlapping arcs), **chevron**, and **confetti** (small scattered strokes).
+3. Show each candidate as a **labelled card at a realistic size** (~320×200) with a fake message bubble and a date divider on top, at **Low and Medium intensity** (today's 6% and 9% tint). Show it in **3 canvas tones** (Warm, Sage, Lemon: use the real `CANVAS_P` canvas colours from `appearance.js`) **and dark mode**. Number every card (1–12) so the user can answer "3, 7, 9, 11".
+4. Screenshot the page with Playwright Firefox to check it renders, and that every candidate is visible but calm (text contrast is still ≥ 4.5:1 at Medium; reuse the method from LIME-52).
+
+**Scope:**
+- **May touch:** only the new folder `/Users/shem/Sites/lime-pattern-lab/`, plus a short note in `TEND.md`.
+- **May not touch:** anything in the repo's `public/`. **No commit of project code;** commit only the `TEND.md` note.
+
+**Verification:** the page opens over `file://` with no console errors; all 12 × (3 tones + dark) × 2 intensities render; contrast is ≥ 4.5:1 for every card at Medium (report any failure, don't hide it).
+
+**Gate:** open `file:///Users/shem/Sites/lime-pattern-lab/index.html` in Firefox and pick your favourites by number (4 to 8). Say if any are close but need a tweak (bigger, finer, fewer).
+
+**Record:** add a `## LIME-53` entry to `TEND.md` with the path and the candidate list. Commit only `TEND.md`: `docs: pattern lab for choosing preset designs`, trailer `Brief: LIME-53`, plus the attribution trailer. **Stop for the user's picks.** Plot then drafts **LIME-53b**, which (a) replaces the presets with the user's picks, (b) removes `USER_TILE_CANDIDATES`/`detectUserPatternTiles` (the file-name probing) and every Subtle Patterns/credit mention in code comments and `docs/`, and (c) deletes the 6 untracked samples in `public/assets/patterns/`. Stored appearance pointing at a removed preset falls back to None.
+
+---
+
+### LIME-52-fix4 → SUPERSEDED (never sent), 2026-09-30: the user dropped the Subtle Patterns samples and the credit. Replaced by LIME-52-fix5, LIME-53 and 53b. Kept for history.
+
+### (old) LIME-52-fix4 → `tend` (after LIME-52-fix3, before LIME-49): the user's samples become the preset patterns
+
+**The user (2026-09-29):** "can we use the samples I give as our starting patterns, instead of the ones we have now?" **Yes. They replace the 4 generated presets (dots, grid, diagonal, noise).**
+
+**The samples (plot inspected them in `public/assets/patterns/`; all 400×400, none has an alpha channel):**
+- `ripples.png`: 8-bit greyscale, subtle white-on-white waves.
+- `geometry2.png`: **actually WebP**; faint grey scattered shapes (circles, triangles, squiggles).
+- `ep_naturalwhite.png`: **actually WebP**; off-white paper with flecks.
+- `leaves.png`: RGB; pale green leaf outlines on white.
+- `bananas.png`: RGB; **full-colour** yellow bananas on teal.
+- `cork-board.png`: RGB; **full-colour** cork texture.
+- **The source is Subtle Patterns (CONFIRMED by the user, 2026-09-29: "they're from subtle pattern so please credit").** Toptal, licensed **CC BY-SA 3.0: attribution required, and adaptations (e.g. our tinted versions) are shared alike.** Credit: "Patterns from Subtle Patterns by Toptal (CC BY-SA 3.0)". The credit is required, not optional.
+
+**The design:** one model for presets **and** uploads. Each has two looks, **Texture** and **Original** (this renames LIME-52-fix's "Photo" for clarity; **update the UI and docs**):
+- **Texture** (the default for every preset): the tile turned into a **tone-tinted mask** (grayscale, then luminance inverted to alpha, then auto-levelled), repeating at Low/Medium intensity. It follows the canvas tone and light/dark mode, and is calm and on-brand.
+- **Original:** the tile **as designed, in its real colours,** repeating (or, for large uploaded photos, covering) under the computed scrim that guarantees ≥ 4.5:1 for on-canvas text. Bananas and cork are loud, so the scrim does real work there.
+- The Texture/Original toggle shows whenever a pattern (preset or upload) is active.
+
+**Why a one-time build step:** Firefox treats every `file://` page as its own origin, so drawing a local asset into a `<canvas>` **taints** it (`getImageData` throws). Converting presets at runtime therefore won't work over `file://`. Uploaded files aren't affected, because they're same-origin blobs. So:
+1. **Normalise the source files:** convert the two disguised WebPs to real PNGs with macOS `sips -s format png` (rename them so the extension matches the content), or keep them as `.webp` with the correct extension. Choose one and report.
+2. **Generate the Texture masks once:**
+   - use a small **Node + Playwright (Firefox)** script in the scratchpad (not the repo): read each file as bytes, pass it into a blank page as a **data URL** (not tainted), run the same luminance-to-alpha plus auto-level function the upload path uses (**share the function**; don't duplicate the maths), and write out `public/assets/patterns/texture/<name>.png` (alpha PNGs, ≤ 50 KB each ideally);
+   - commit the generated files;
+   - record the exact command in `TEND.md`, so adding a new preset later means dropping in a file and re-running it.
+3. **A manifest replaces the name probing:** `public/assets/patterns/patterns.js`, loaded by a script tag and `file://`-safe, sets `window.LIME_PATTERNS = [{ id, label, original: 'ripples.png', texture: 'texture/ripples.png', credit: 'subtle-patterns' }, …]`. Labels: Ripples, Geometry, Natural white, Leaves, Bananas, Cork board. **Delete** LIME-52-fix's `USER_TILE_CANDIDATES` probing and the 4 generated SVG presets.
+4. **The credit line** in Settings → Appearance (and a docs note) is generated from the manifest's `credit` values: "Patterns from Subtle Patterns by Toptal (CC BY-SA 3.0)".
+5. **Stored appearance** referencing a removed preset (dots, grid, diagonal or noise) falls back to None without errors.
+
+**Scope:**
+- **May touch:** `public/assets/patterns/` (the normalised originals, the generated `texture/`, and `patterns.js`), `public/js/appearance.js` + `app.js`, `public/index.html` (the manifest script tag), `public/css/lime.css`, `docs/data-model.md` (credits, the manifest and the build step), and `TEND.md`.
+- **May not touch:** the upload pipeline's behaviour from LIME-52-fix3, except sharing the conversion function and renaming Photo to Original.
+
+**Verification (Playwright + Firefox):**
+- The palette popover and Settings show exactly the 6 presets plus None and Upload, **4 per row**.
+- **For each preset:** its Texture looks right in 2 tones and in dark; its Original shows the real colours; on-canvas text contrast is ≥ 4.5:1 in both looks (report the table); there are no fade bands.
+- The old stored preset ids fall back cleanly.
+- The generated textures exist and are committed, with their sizes reported.
+- The credit line is visible.
+- Report the browser-parsed CSS rule counts. The real app loads in jsdom with zero errors.
+
+**Gate:** open the palette menu. Your six patterns are the presets. Each one is quiet and tinted by default (**Texture**), and **Original** shows it in its true colours with text still readable. The credit line shows in Settings.
+
+**Record:** add a `## LIME-52-fix4` entry to `TEND.md`, including the build command. Commit: `feat: user's sample patterns as presets (Texture/Original), manifest, credits`, trailer `Brief: LIME-52-fix4`, plus the attribution trailer.
+
+---
+
+### LIME-52-fix3 → `tend` (next, before LIME-49): intermittent pattern-upload failures
+
+**The user (2026-09-29):** "the pattern upload is still not functioning properly. Sometimes I upload a .png and it works, sometimes not. I tried in a private window as well. Everything else looks good."
+
+**Plot's read of the code** (app.js ~295–311 `handleAppearanceUploadChange`; appearance.js ~395–420 `processUploadFile`): the flow is validate → decode (`new Image` plus an object URL) → build **both** the Texture and Photo canvases → two `toBlob` calls → two `uploadAttachment` writes → `applyPattern` → `setAppearance` → re-render, with `input.value` reset in `finally`.
+
+**Hypotheses, to test (not to assume), most likely first:**
+1. **Popover lifecycle:** the file picker opens *from inside the palette popover*. If opening the OS dialog (focus loss, or an outside-click or Escape path, or a re-render) closes or re-renders the popover, the `<input>` is **detached** before `change` fires. The delegated `change` listener on the menu then never sees it, **silently**. That would explain "sometimes" (it depends on timing) and it working from Settings but not the popover, or the reverse.
+2. **Silent errors:** if `setError` isn't wired for a given surface, or the error element isn't visible, failures show nothing.
+3. **Overlapping jobs:** a second pick while the first is still processing (large PNGs take a moment) causes a race in which a stale job's result overwrites the new one, or `rerender` replaces the input mid-flight.
+4. **Heavy output:** the Photo form is saved as **PNG** at up to 1600px, which can be several MB for photos (slow `toBlob`, a large IndexedDB write). Consider JPEG at ~0.85 for the Photo form. Old uploads are never deleted, so IndexedDB grows with each try.
+5. **Mislabelled files (plot found this in the user's own samples):** `public/assets/patterns/ep_naturalwhite.png` and `geometry2.png` are **WebP files with a `.png` name** (`file` reports "Web/P image"). If the user's failing uploads were files like these, check whether any extension- or MIME-based branch mishandles them (the browser reports `image/png` from the name while the bytes are WebP). Sniff the magic bytes, or rely only on a successful decode.
+6. **Decode edge cases:** 16-bit, palette or interlaced PNGs, very large dimensions (over 8000px), and colour profiles. Check `naturalWidth`/`Height` of 0, and canvas size limits.
+7. **Private windows:** IndexedDB in Firefox private browsing behaves differently (in-memory, some versions restricted). Detect a failed open or write and show a clear message instead of failing silently.
+
+**The change:**
+1. **Reproduce first, with a matrix:** from **both** the popover and Settings, and in a normal **and** a private (ephemeral) context, upload:
+   - a small transparent PNG, a large opaque PNG photo (~4000px), a 16-bit PNG, a palette PNG and an interlaced PNG;
+   - a JPG, a WebP, an SVG, and a 9.5 MB file;
+   - **the same file twice in a row**, **two files quickly one after another**, and **an upload followed immediately by closing the popover.**
+   Record pass or fail for each cell **and the failure reason** in `TEND.md`. **If the user has provided failing files** (see below), include them.
+2. **Fix every root cause found.** At minimum, whatever the matrix shows:
+   - **The file input must survive the picker:** keep a **single persistent hidden `<input type=file>`** outside the popover (at the document level), triggered by the Upload tiles, with its `change` handled directly, not by delegation from a container that can re-render or close. The popover must not close or re-render while the picker is open.
+   - **One job at a time, latest wins:** a job token; stale results are discarded. Show a processing state on the Upload tile (a spinner or "Processing…"), and prevent a double pick while busy.
+   - **Never fail silently:** every failure path shows an inline message in whichever surface started it, with a generic fallback: "Couldn't use that image. Try a different PNG or JPG." Log the technical error to the console.
+   - **Lighter output:** the Photo form as JPEG at ~0.85; the Texture form as PNG (alpha needed). Cap canvases at safe sizes. Delete the **previous** upload's blobs from IndexedDB when a new upload replaces them (and on "None").
+   - **Private windows:** detect IndexedDB unavailability or failure up front and show "Uploads need normal browsing (not private)". Or, if feasible, keep the processed result **in memory for the session** so it still works, with a note that it won't persist. Report which.
+3. Keep everything that works (the treatments, the scrim maths, the toggle, the popover size).
+
+**Scope:** the upload and processing code in `public/js/appearance.js` and `app.js`, the related markup and CSS, `public/js/local-adapter.js` (only for blob deletion if needed), and `TEND.md`.
+
+**Verification:** the full matrix above re-run, **every cell passing** (or showing its intended friendly message), the report of what the original failure(s) actually were, IndexedDB blob count stable after 5 successive uploads, browser-parsed CSS rule counts, and the real app loading in jsdom with zero errors.
+
+**Gate:** in Firefox, upload PNGs repeatedly from the palette menu and from Settings, including the same file twice and a big photo. It works every time or tells you clearly why not. In a private window, it either works for the session or clearly says it needs normal browsing.
+
+**Record:** add a `## LIME-52-fix3` entry to `TEND.md`, including the matrix. Commit: `fix: reliable pattern uploads (persistent input, single job, no silent failures)`, trailer `Brief: LIME-52-fix3`, plus the attribution trailer.
+
+---
+
+### LIME-52-fix2 → `tend` (next, before LIME-49): a narrower palette menu, the upload tile preview and its ×, and a band under the composer
+
+**The user's QA of LIME-52-fix (`345d749`, 2026-09-29, screenshots):**
+1. **"Can we make the min width smaller?"** The palette popover is wide: 4-column grids of large (~76px) swatch circles and pattern tiles.
+2. **The upload works, but its tile preview is broken:** it shows a solid dark square instead of the texture or photo. **The tile's delete × is cut off** (clipped at the tile's corner).
+3. **"I still see a broken gradient or background under the main chat box."** With a pattern active, a **flat, pattern-less band** fills the bottom of the thread behind and around the composer.
+
+**Root causes (plot read `lime.css` ~643–749 and ~4295–4311):**
+- **The band:** `.lime-composer` (the full-width absolute bar) still has `background: var(--soil-bg-canvas)`, a solid canvas-coloured block that hides the pattern layer. Since LIME-50, the thread's own content is masked before it reaches the bar, so **the bar doesn't need a background at all.** Only `.lime-composer__box` (the input) and its controls need their surface.
+- **The ×:** `.lime-pattern-tile__delete` sits at `top: -6px; right: -6px`, outside a tile that (plot suspects) has `overflow: hidden` or a clipping mask. The mask used for the Texture preview clips **all** its children, including the ×.
+- **The preview:** likely the async `paintAttachments()` fill for `data-attachment-style="mask"`/`photo-bg` isn't running for pattern tiles, or it applies the mask to the wrong element. **Reproduce and report.**
+
+**The change:**
+1. **The composer bar is transparent:** `.lime-composer { background: transparent; }`, and update its comment. Verify the masked thread content still fades out **above** the composer box, and that the area around the box shows the canvas plus the pattern with **no band**, in light, dark, and with a Photo upload. If content would now show *through* the gap between the bar's edges and the box, extend the thread's bottom mask to cover the composer zone. Report which.
+2. **Upload tile:**
+   - **Structure:** the tile becomes a wrapper (`position: relative`, **no** clipping) containing (a) a preview element that carries the mask or background image and the radius, and (b) the × button as a **sibling** of the preview, not a child. The × can then sit on the corner without being clipped.
+   - **The × style:** a 18px circle on `--lime-layer-raised`, with a `--soil-text` ×, a soft shadow, hover and focus styles, and `aria-label="Remove upload"`.
+   - **Fix the preview fill** so Texture shows the tinted mask and Photo shows the image (cover), matching what's applied to the app.
+3. **A narrower popover:**
+   - swatches and pattern tiles become **28px** (circles for Canvas, rounded squares for Pattern) with an 8px gap, 4 per row, so the grid is 136px wide;
+   - the popover takes padding plus the grid, **≈ 168–184px** wide;
+   - Mode's segmented control and the Low/Medium and Texture/Photo toggles fit that width (smaller text, or full-width segments);
+   - "More in Settings" stays;
+   - **the Settings → Appearance grids keep their larger size** (the shared component takes a size variant);
+   - hit targets stay ≥ 24px (WCAG 2.2 target size);
+   - the selected ring stays visible at the smaller size.
+
+**Scope:** the related rules in `public/css/lime.css`, the shared picker and pattern-tile markup and `paintAttachments` in `public/js/app.js`/`appearance.js`, and `TEND.md`.
+
+**Verification (Playwright + Firefox):**
+- The popover's width is reported (target ≤ 184px) and it's fully on-screen.
+- The swatch and tile rects are 28px with 8px gaps; the Appearance grids are unchanged.
+- The upload tile shows the correct preview for Texture **and** Photo (report computed `mask-image`/`background-image` non-empty), and the × is fully visible (its rect is not clipped: `elementFromPoint` at its centre hits the ×).
+- **No band:** sample pixels across the bottom 120px of the thread with the dots pattern active. The pattern's dots appear right up to the composer box's edges; report the sample positions.
+- Report the browser-parsed CSS rule counts. The real app loads in jsdom with zero errors.
+
+**Gate:** in Firefox:
+- **Palette menu:** it's compact, with small swatches in rows of 4.
+- **Your upload:** its tile shows a preview, and its × is fully visible.
+- **Around the message box:** with a pattern on, the pattern runs right up to the message box, with no flat band.
+
+**Record:** add a `## LIME-52-fix2` entry to `TEND.md`. Commit: `fix: compact palette popover, upload tile preview and delete, no band under composer`, trailer `Brief: LIME-52-fix2`, plus the attribution trailer.
+
+---
+
+### LIME-52-fix → `tend` (next, before LIME-49): patterns in the palette popover with live preview; 4-per-row swatches; a tidy Pattern row; user-supplied pattern tiles
+
+**The user's QA of LIME-52 (`c2964be`, 2026-09-29, screenshots):**
+1. "The patterns need to come into the palette dropdown so that you can preview the changes in real time." The header palette popover currently has only Mode, Canvas and "More in Settings".
+2. "We can make the palette dropdown 4 colours per line, so the dropdown takes up less width." It's currently 8 swatches in one row.
+3. **(Plot's observation)** In Settings → Preferences, the Pattern row is untidy: the thumbnails and "+" wrap onto their own line, with the Low/Medium toggle and a free-floating "Remove" text button beneath. The Canvas swatches crowd the right edge.
+4. **The user will provide example patterns.** Plot told the user the format: **SVG (preferred) or PNG with a transparent background**, one colour on transparency, **a seamless tile**, 100–400px square (PNG at 2×), ideally ≤ 50 KB, saved in `public/assets/patterns/`. Presets render as **tinted masks** (alpha only), so the file's colour doesn't matter. Suggested source: **Hero Patterns** (transparent SVG tiles, **CC BY 4.0, attribution required**). Subtle Patterns tiles are opaque textures and need converting.
+
+**The change:**
+1. **The popover gains Pattern:** the header palette popover shows **Mode**, **Canvas** (a **4-column** swatch grid), **Pattern** (a 4-column thumbnail grid: None, the presets, and an "Upload" tile; with the Low/Medium intensity toggle shown only when a pattern is active) and "More in Settings". **Every choice applies live** (that's already the case; confirm for patterns). The popover width shrinks to fit 4 columns (≈ 4 × 40px swatches plus gaps plus padding). Measure it and make sure it stays fully on-screen (the LIME-20 clamp).
+2. **One shared picker component** renders Canvas and Pattern in both the popover and Settings → Appearance. **Don't keep two copies.**
+3. **The Settings → Appearance layout:** use the same 4-column grids for Canvas and Pattern, left-aligned under each row's label (the label above the grid, as a stacked row), with intensity as a small segmented control beside the "Pattern" label. **"Remove" is replaced by the "None" tile** (delete the separate button). An uploaded pattern appears as its own tile, with a small × to delete it. It fits without scrolling (it'll be shared with LIME-49's modal sizing).
+4. **User-supplied tiles:**
+   - **if** files exist in `public/assets/patterns/` when this runs, add them as presets **after** the 4 built-ins: SVGs used directly as masks; transparent PNGs as masks; opaque PNGs **converted** (luminance to alpha, on a canvas, at load, cached) with a note in `TEND.md`;
+   - show the file names as tooltips;
+   - add the credit line for their source (ask the user in `TEND.md` if it's unknown; e.g. "Patterns from Hero Patterns (CC BY 4.0)") in Settings → Appearance and in the docs;
+   - if the folder is still empty, skip this and note it.
+
+5. **Uploads that work tastefully with any everyday image** (user, 2026-09-29: "I tried uploading a .png pattern and it didn't show. I imagine everyday teachers would upload PNG, JPG, whatever, so how do we make that work tastefully, not only with SVGs?"; the user will also supply some SVGs for presets):
+   - **Diagnose first:** reproduce the user's PNG upload failure and report the **root cause** (a size-limit rejection, an opaque image blending away under `mix-blend-mode`, a MIME check, a storage error, …) before redesigning.
+   - **Accept** PNG, JPG/JPEG, WebP, GIF (first frame) and SVG. Show a friendly inline message for unsupported ones (e.g. HEIC: "Please export as JPG or PNG"). Take files **up to 10 MB**.
+   - **Process once, at upload, on a canvas** (never live on every paint). Store only the processed result, via `uploadAttachment`, in IndexedDB.
+   - **Two treatments, auto-chosen with a user toggle ("Texture" / "Photo")** in the Pattern area once an upload is selected:
+     - **Texture** (the default for small or square-ish images ≤ 600px, or anything the user marks as Texture): convert to **grayscale, then luminance to alpha**, auto-levelled (stretch the contrast so faint textures still register, and cap density so busy images don't turn noisy), then downscale to a ≤ 400px tile. It's then used **exactly like the presets:** a tinted mask coloured by the tone and mode, repeating, at Low/Medium intensity. This makes *any* photo or texture look on-brand and calm.
+     - **Photo** (the default for larger images): a full-bleed, fixed layer behind all panels (`background-size: cover`), **softened** (downscaled to ≤ 1600px, plus a slight blur of ~8–12px baked in at processing time) under a **tone-coloured scrim** (the canvas colour at high opacity; dark-mode aware). **The scrim opacity is computed to guarantee ≥ 4.5:1 for on-canvas text** (date dividers, names, times) against the photo's darkest and lightest regions: measure the processed image's luminance range and set the scrim accordingly, with a floor of ~75%. Panels and surfaces stay tone layers (LIME-50-fix), so reading areas are never over busy imagery.
+   - **The fades** (LIME-50 masks) need no change. Verify with a Photo upload.
+   - **Accessibility:** `prefers-contrast: more` hides uploads, as it does presets. `prefers-reduced-transparency`, where supported, raises the scrim.
+   - **Production note for the docs:** uploads become objects in a user-scoped storage path (`appearance/<userId>/pattern`). The processing stays client-side.
+
+**Scope:** the palette popover and Appearance markup and JS, the shared picker, the upload processing (canvas), the related `lime.css` rules, the `public/assets/patterns/` reading, `docs/data-model.md` (only for credits and the tile format), and `TEND.md`.
+
+**Verification (Playwright + Firefox):**
+- The popover shows a 4-column grid for Canvas and Pattern (report the width, and that it's on-screen at 1567 and 767px).
+- Picking a pattern in the popover updates the app immediately without closing it.
+- The Settings Appearance grids match the popover.
+- There's no separate "Remove" button; "None" clears the pattern.
+- Any user tiles load, and recolour across 2 tones and dark.
+- **Uploads:** the user's failing-PNG root cause is reported and fixed. Upload a real JPG photo, a real opaque PNG texture and a transparent PNG from the scratchpad. Each renders **visibly but subtly** in the right treatment (Texture or Photo), the toggle switches it, it persists across reload, and the on-canvas text contrast is ≥ 4.5:1 in light and dark (report the measured values). HEIC gets the friendly message; an 11 MB file is rejected clearly.
+- Report the browser-parsed CSS rule counts. The real app loads in jsdom with zero errors.
+
+**Gate:** click the palette icon. Canvas and Pattern both sit in tidy rows of 4, and trying a pattern changes the app live behind the menu. Settings → Appearance looks the same and tidy. **Upload an everyday PNG or JPG:** it shows up tastefully, as a soft texture or a softened photo behind the app, and you can switch between Texture and Photo.
+
+**Record:** add a `## LIME-52-fix` entry to `TEND.md`. Commit: `fix: patterns in palette popover with live preview, 4-column grids, tidy Appearance`, trailer `Brief: LIME-52-fix`, plus the attribution trailer.
+
+---
+
+### LIME-50-fix → `tend` (before LIME-51): every neutral layer derives from the chosen tone (surfaces, hovers, selected states, toggles, bubbles)
+
+> **Amended 2026-09-29: LIME-51 (dark mode) landed FIRST, as `d44b4be`.** This brief never ran before it. So this brief now defines the layer tokens for **both** themes: the light values as below, **and the dark values** (mixing toward white) under `[data-theme="dark"]`, replacing whatever per-token dark values LIME-51 relied on for these same fills (surface, hovers, selected states, borders). Verify **both** modes: the 8 tones in light, plus dark. Don't regress LIME-51's fixes (the body text colour, the dark avatar pastels, the scrollbar thumb).
+
+**The user's QA of LIME-50 (2026-09-29, screenshots on the lemon and sage tones):**
+- "the toggle, chat bubbles, the chatbox mic with chevron (no background by default, like the plus), and the hover and active states in the Messages section of the center panel all need to be dynamic and relate to the chosen background colour, or they look visually broken. They need balance, contrast, and a minimal aesthetic, but modern and timeless."
+- **In the screenshots:** on lemon and sage canvases, the segmented toggle track and its active pill, the chat bubbles, the composer box, the selected and hovered list rows, and the mic pill all stay **warm beige/grey** (the old Warm tone's values), so they clash with the tinted canvas.
+
+**Root cause (plot read `lime.css` ~20–50):**
+- **LIME-50 routed only `--soil-bg-canvas` through the ramp.** `--soil-bg-surface` is still hard-coded `#f0eee6`.
+- **Seed's `--calm-bg-subtle-*`/`--calm-bg-normal-*` map to ramp stops *between* the ones `CANVAS_P` retunes** (soil-25, 30, 40, 50 and 75 aren't in `SOIL_K`), so hover, active and subtle fills never follow the tone.
+- The mic pill has a permanent `--calm-bg-subtle-default` fill (~4447).
+
+**The design:** one **relative layer system,** derived from the canvas with `color-mix(in oklab, …)`, so **any** tone (and dark mode in LIME-51) stays in balance by construction. Defined once on `:root` (and adjusted under `[data-theme="dark"]` in 51), **then Seed's semantic tokens are remapped to it**, so every component follows without per-component edits.
+- **Canvas:** `--soil-bg-canvas` (the tone).
+- **Raised**, for things that should lift (the segmented active pill, menus, modals, popovers): light mode mixes the canvas with white (~70% white); dark mixes it with white at ~8%.
+- **Surface**, for resting filled elements (chat bubbles, the composer box, the segmented track, input fields, the search field): the canvas mixed ~4% toward the ink (black) in light, ~6% toward white in dark.
+- **Hover:** ~6% toward the ink (light), ~9% toward white (dark).
+- **Active/selected** (the selected list row, a pressed state): ~9% toward the ink, ~12% toward white.
+- **Border-subtle:** ~10% toward the ink, ~14% toward white.
+- The exact percentages are **tuned by measurement**, not guessed. Targets across **all 8 tones**:
+  - body text on surface, and on active, ≥ 4.5:1;
+  - muted text on surface ≥ 4.5:1;
+  - **surface vs canvas, hover vs surface, and active vs hover each clearly distinguishable** (ΔL in OKLab ≥ ~0.02–0.03, tuned by eye on screenshots and reported);
+  - the raised pill vs the track is distinguishable.
+  Pick one set of percentages that works for all 8 tones. Report the table.
+
+**The change:**
+1. **Define the layer tokens:** `--lime-layer-raised`, `--lime-layer-surface`, `--lime-layer-hover`, `--lime-layer-active` and `--lime-border-subtle`.
+2. **Remap** `--soil-bg-surface`, `--soil-bg-elevated`, `--calm-bg-subtle-default/-hover/-active`, `--calm-bg-normal-default/-hover`, `--soil-border-subtle` and `--calm-border-normal-default` to them in Lime's theme block. List every remapped token, and **grep for components using hard-coded fills** that bypass the tokens (the segmented pill, list-row selected and hover, bubbles, the composer box, the search fields, the mic pill, the avatar-trigger hover, menus, the settings nav, the lightbox bar). Route each through a token.
+3. **The mic and chevron button** has **no background at rest,** like the + button; hover and active use the layer tokens.
+4. **The lime accent** (the nav active, the primary Send, the unread ring) is unchanged. Check that it still reads on every tone (≥ 3:1 for the non-text fills against the canvas); report it.
+5. **Timeless and minimal:** no new shadows or gradients. Rely on the tonal layering, and keep radii as they are.
+
+**Scope:** the theme and token block and any bypassing component fills in `public/css/lime.css` (and `gradients.css` if touched), and `TEND.md`. **No JS**, except removing any inline style colours if found.
+
+**Verification (Playwright + Firefox, all 8 tones, 1567×905):** screenshots of the Messages view with a row hovered and one selected, the segmented toggle, bubbles and the composer (paths in `TEND.md`); the contrast and ΔL table; no hard-coded fill left on the listed components (grep); the mic pill transparent at rest; the real app in jsdom with zero errors.
+
+**Gate:** in Firefox, switch between tones (Warm, lemon, sage, lilac, blue). The toggle, bubbles, message box, hovered and selected chats, and the mic button all shift with the tone, staying balanced, clear and quiet on each one.
+
+**Record:** add a `## LIME-50-fix` entry to `TEND.md`. Commit: `fix: tone-relative layer system for surfaces, hovers and selected states`, trailer `Brief: LIME-50-fix`, plus the attribution trailer.
+
+---
+
+> **Shared context for LIME-50, 51 and 52: app-wide appearance, replacing per-chat backgrounds.** User, 2026-09-29, with screenshots:
+> - "The chat feature needs to be simplified: think two modes, light/dark, and patterns (preselected, or upload your own)" (source: <https://www.toptal.com/designers/subtlepatterns/>).
+> - "It should change the entire body, not just the chat area."
+> - "Reference Seed's customise background colours, thinking about colour theory and accessibility."
+>
+> **The screenshots:** LIME-45's per-chat colour paints only the chat card (a saturated green block beside cream panels), which looks broken. The user's example tints **every panel** with one pale tone, which looks right.
+>
+> **Plot's survey of Seed's brand customiser** (`vendor/seed/components/layout/layout.html` ~60–100): it retunes the **entire neutral (soil) ramp** from one canvas choice.
+> - Presets are in `CANVAS_P`: `warm` (today's default), `cool-gray`, `warm-cream`, `blue-tint` and `pure-white`, each 11 stops.
+> - `makeCanvasRamp(hex)` builds a ramp from any colour **with saturation heavily attenuated** (≤ 8%) and lightness clamped, "so dark stops stay warm-grey, never golden". That's the colour-theory safeguard: canvases stay pale, and every semantic token derived from the ramp keeps its contrast.
+> - **The canvas applies in light mode only.** Dark mode comes from Seed's `[data-theme="dark"]` tokens (tokens.css ~264).
+>
+> **Plot's decisions (flag at the gates; the user declined further questions for now):**
+> - **App-wide, not per chat.** The per-chat background feature from LIME-45 is **removed** (code reverted; the docs keep a note).
+> - **Where it lives:** Settings → Preferences → **Appearance**. The header palette button stays as a **shortcut** that opens the same Appearance controls (the user's example still shows it); remove it at the gate if unwanted.
+> - **Stored per user** in `user_settings` (`theme`, `canvas`, `pattern`). Local: the store snapshot, with pattern uploads in IndexedDB.
+> - **Colours come from Seed's method,** never raw saturated swatches.
+>
+> **Order:** LIME-50 → 51 → 52, then LIME-49 and the rest of the queue.
+
+### LIME-50 → `tend`: the appearance foundation: one app-wide canvas tone (Seed's method), background-agnostic fades, and per-chat backgrounds removed
+
+**The change:**
+1. **Remove per-chat backgrounds:**
+   - revert LIME-45's per-chat code: `setChatBackground` per conversation, the per-chat `--surface-bg` override on `.lime-chat-body`, and the popover's per-chat UI;
+   - keep `TEND.md` and add a note to `data-model.md`: "per-chat backgrounds removed on 2026-09-29 in favour of app-wide appearance";
+   - in the schema, drop `conversation_members.background` from the docs and keep `user_settings` with `theme`, `canvas` and `pattern`;
+   - **store:** `getAppearance()` and `setAppearance(patch)`, emitting `lime:appearance-changed`.
+2. **Canvas tone, applied app-wide:**
+   - **port Seed's approach:** the `CANVAS_P` presets plus `makeCanvasRamp` (copied into Lime with attribution to Seed, since `vendor/` can't be edited), applying the 11 soil stops on `:root` so **every** surface, panel, text, border and fade updates together;
+   - **presets:** Seed's 5 (Warm is the default, today's look), plus **2–3 extra pale tints generated through `makeCanvasRamp`** (e.g. a soft lemon like the user's example, a soft sage, a soft lilac). **Every preset must pass:** body text on canvas ≥ 4.5:1, muted text ≥ 4.5:1, bubble surface vs canvas ≥ 1.1:1 luminance difference (so bubbles remain distinguishable), and borders ≥ 1.5:1. Report a table and drop any preset that fails;
+   - **unify the panels:** the list column, the center and the right panel all show the **same canvas** (the user's example). Replace the right panel's distinct flush colour and any other panel-specific backgrounds with the canvas ladder (canvas, then surface for cards and bubbles, then elevated for menus and modals). Report which rules changed.
+3. **Fades become background-agnostic,** because patterns (LIME-52) and tones must never show bands:
+   - convert the LIME-46 overlay fades to **CSS masks on the scroll content** (`mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent)`, per side, toggled by the existing scroll-state classes), so content fades into **whatever** is behind it: tone, pattern or photo;
+   - keep the pinned-frame structure only where still needed;
+   - the composer fade becomes a mask on the thread above the composer;
+   - verify with a **checkerboard test background** (a temporary diagnostic): there's no band at any fade, and the pixel samples in the fade zone show the background unchanged where content is absent.
+4. **The Appearance UI:**
+   - Settings → Preferences (a new nav item) → **Appearance**: a "Canvas" row with round tone swatches (name tooltips, the current one marked). **Mode** and **Pattern** rows are added in 51 and 52.
+   - The header shortcut (the palette icon: an inline SVG matching the dew stroke style; replace the sun) opens a compact popover with the same controls plus "More in Settings".
+   - Changes apply live and persist.
+
+**Scope:** `public/js/store.js` + `local-adapter.js`, `public/js/app.js`, `public/css/lime.css` + `gradients.css`, `public/index.html`, `docs/data-model.md` + `docs/schema.sql`, and `TEND.md`.
+
+**Verification (Playwright + Firefox):**
+- Per-chat background code is gone (grep for it).
+- Each preset retunes every panel identically: sample the list column, the thread and the right panel background (all equal).
+- The contrast table is reported.
+- The checkerboard fade test passes.
+- It persists across reload.
+- The real app loads in jsdom with zero errors.
+
+**Gate:** in Firefox:
+- **Tones:** Settings → Preferences → Appearance (or the palette shortcut). Pick a tone, and the **whole app** changes together, staying pale and readable like your example.
+- **Fades:** they still blend, with no bands.
+- **Shortcut:** tell tend whether to keep the header palette shortcut.
+
+**Record:** add a `## LIME-50` entry to `TEND.md`. Commit: `feat: app-wide canvas tones (Seed method), masked fades; per-chat backgrounds removed`, trailer `Brief: LIME-50`, plus the attribution trailer.
+
+---
+
+### LIME-51 → `tend` (after LIME-50): dark mode: an app-wide design pass
+
+**Why it's its own brief:** Lime was built light-only. `lime.css` has light-only overrides (`[data-theme="light"]` canvas and surface), literal `rgba(...)` values, and theme-invariant avatar pastels. A switch alone would expose unfinished screens (the reason for the "light only" call on 2026-09-27; now the user wants two modes).
+
+**The change:**
+1. **The mode control:** Appearance gets **Mode: Light / Dark / System** (System follows `prefers-color-scheme`, live). It sets `data-theme` on `<html>`, stored in `user_settings.theme`, and **replaces** the old `lime-theme` `localStorage` read at app.js ~4. **Apply it before the first paint** (a tiny inline script in `<head>`) so there's no flash of light theme. It also applies on `login.html` and `signup.html`.
+2. **The canvas tone** applies in light mode only (as in Seed). In dark mode, the tone swatches show as disabled, with "Tones apply in light mode".
+3. **Audit and fix:**
+   - list every hard-coded colour in `lime.css`, `gradients.css` and the inline styles (`#hex`, `rgb()`, `rgba()`), and replace each with a Seed token or a Lime token defined for **both** themes;
+   - add Lime's `[data-theme="dark"]` values where light-only overrides exist (canvas and surface);
+   - **the avatar pastels** stay recognisable but get dark-mode variants with ≥ 4.5:1 initials contrast;
+   - **the lime accent** in the nav and primary buttons: pick the dark-mode lime step from Seed's ramp that passes 4.5:1 for text on it, or 3:1 for the non-text fill.
+4. **Every view** in dark mode: lists, the thread (bubbles, reactions, the reply summary, link cards, file cards, albums), the composer and toolbar, menus, the settings modal, the lightbox and wall, the search modal, dialogs, toasts, the details and members panels, and login/signup.
+
+**Verification (Playwright + Firefox):** screenshots of each of those views in dark **and** light (as file paths in `TEND.md`), a contrast table for the text and UI tokens in dark, grep proof that no raw colour literals remain outside token definitions (list any justified exceptions), no flash on reload in dark, and System mode following a simulated `prefers-color-scheme` change.
+
+**Gate:** switch to Dark. Every screen looks finished and readable, and switching back to Light (and each tone) still looks right.
+
+**Record:** add a `## LIME-51` entry to `TEND.md`. Commit: `feat: dark mode (app-wide design pass)`, trailer `Brief: LIME-51`, plus the attribution trailer.
+
+---
+
+### LIME-52 → `tend` (after LIME-51): background patterns: curated presets or upload your own, across the whole app
+
+**Sources:**
+- the user suggested **Subtle Patterns** (<https://www.toptal.com/designers/subtlepatterns/>);
+- **licensing:** Subtle Patterns are free to use under **CC BY-SA 3.0, which requires attribution.** Tend: confirm the current terms on the site's license page if you can reach it; otherwise record it as "to verify". Add a visible credit (Settings → Appearance → a small "Patterns from Subtle Patterns (CC BY-SA)" line) and a note in `docs/`;
+- **tend's sandbox can't download,** so the user saves **4–6 chosen patterns** (seamless PNG tiles) into `public/assets/patterns/` (e.g. `paper.png`, `linen.png`, `dots.png`, `grid.png`). If the folder is empty when this runs, **generate 4 subtle patterns as inline SVG/CSS** (dots, grid, diagonal lines, noise) as the built-in set, and flag it.
+
+**The change:**
+1. **The Pattern row** in Appearance: None (the default), the preset thumbnails, and "Upload your own…". An upload is an image tile (≤ 1 MB, stored in IndexedDB via `uploadAttachment`, path `appearance/pattern`), repeated.
+2. **Applied to the whole app canvas:** one fixed background layer behind all panels (`body` or a dedicated `.lime-app-bg` layer), repeating, at a **user-invisible-by-default intensity**. Panels are transparent over it (after LIME-50's unification), while bubbles, cards, menus and modals stay opaque surfaces.
+3. **Works in both modes and every tone:**
+   - presets render as **tinted masks** (the pattern as `mask-image` over a layer coloured from the soil ramp at low alpha), so they recolour with the tone and mode automatically;
+   - uploaded images use `background-blend-mode`/`mix-blend-mode` with an intensity cap (`multiply` in light, `screen` in dark), plus a scrim if needed;
+   - **accessibility:** measure the text directly on the canvas (date dividers, names, times) against the **darkest and lightest** pattern pixels, which must be ≥ 4.5:1. Provide an **"Intensity" slider** (Low / Medium) if needed to guarantee it. Also check `prefers-contrast: more`: patterns are hidden, or at minimum intensity.
+4. The fades (LIME-50 masks) need no change. Verify.
+
+**Verification (Playwright + Firefox):**
+- every preset in light (2 tones) and dark: screenshots, the min and max contrast of on-canvas text, and no fade bands;
+- an upload works and persists across reload;
+- None restores the plain canvas;
+- `prefers-contrast` behaves as specified.
+
+**Gate:** Settings → Appearance → Pattern. Pick a preset or upload your own. It sits subtly behind the **whole** app, in light and dark, and everything stays readable.
+
+**Record:** add a `## LIME-52` entry to `TEND.md`. Commit: `feat: app-wide background patterns (presets and upload)`, trailer `Brief: LIME-52`, plus the attribution trailer.
+
+---
+
+### LIME-45-fix → SUPERSEDED (never executed) by LIME-50/51/52 (app-wide appearance). Kept for history.
+
+### LIME-45-fix → `tend` (next, before LIME-49): simpler backgrounds: per chat in the popover, the global default in Settings → Preferences; a palette icon
+
+**LIME-45 landed as `a07b204`.** Plot reviewed it:
+- Using `--surface-bg` instead of the brief's `--chat-bg` is **correct**; it's what the brief's "builds on LIME-46" meant.
+- "Apply to all chats" silently overwrote existing per-chat picks.
+
+**The user's decisions (2026-09-29):**
+- "This feature needs to be simplified: think manual, one per chat. Then in Preferences you can do global changes."
+- **Replace the sun icon with a custom palette icon.**
+
+**The change:**
+1. **The popover is per chat only.** Remove the "Apply to all chats" checkbox and its logic from the popover. The popover's "Reset" becomes **"Use default"**: it clears this chat's override, so the chat shows your default.
+2. **A new Settings section, "Preferences"** (a nav item under Account, after Login & security, with a sliders-style icon from dew or neutral inline SVG):
+   - for now it holds one row, **"Default chat background"**, with a compact preview swatch and a "Change" control. It opens the **same picker component** as the header popover (factor it into one reusable picker; don't duplicate it), but it writes the **default** (`setChatBackground(null, …)`);
+   - add the muted description "Used in every chat where you haven't picked a background";
+   - the Preferences layout follows the LIME-31-fix row style, and the modal still fits without scrolling (LIME-49 targets the same).
+3. **Precedence stays:** a chat's own pick, then your default, then the app default. No destructive bulk overwrite anywhere.
+4. **Palette icon:** an inline SVG paint palette drawn to **match the dew icon style** (the same stroke width, rounded caps and joins, 24px viewBox, `currentColor`), used for the header button. Add it where the other inline SVGs live (or as a small icon helper), with `aria-label="Chat background"`.
+5. **Docs:** update the background section of `data-model.md` (the popover is per chat; the default is set in Preferences; no apply-to-all). The schema is unchanged.
+
+**Scope:** the background popover and picker code in `app.js`, the settings markup and JS (the Preferences section), the related `lime.css` rules, `index.html` (the icon and settings nav), `docs/data-model.md`, and `TEND.md`. The store API is unchanged.
+
+**Verification (Playwright + Firefox):**
+- The popover has no apply-to-all.
+- Setting a default in Preferences changes every chat without an override, and a chat with its own pick keeps it.
+- "Use default" on that chat switches it to the default.
+- Everything persists across reload.
+- The icon renders at the same visual weight as its neighbours (screenshot).
+- The Settings modal with Preferences fits without scrolling.
+- The real app loads in jsdom with zero errors.
+
+**Gate:** in Firefox:
+- **Header:** the palette icon changes only this chat's background.
+- **Default:** Settings → Preferences → Default chat background changes every chat you haven't customised.
+- **"Use default"** puts a customised chat back to your default.
+
+**Record:** add a `## LIME-45-fix` entry to `TEND.md`. Commit: `fix: per-chat backgrounds; default in Settings → Preferences; palette icon`, trailer `Brief: LIME-45-fix`, plus the attribution trailer.
+
+---
+
+### LIME-49 → `tend` (right after LIME-45): Settings Profile fits without scrolling; real profile photo upload
+
+**The user's QA (2026-09-29, screenshot):** "the profile section still needs tightening up. I'd rather the modal expand than have a scroll for one field. Also the profile picture alignment, and remove the Soon badge etc., can be cleaned up."
+- **In the screenshot:** the Profile pane scrolls just to reach Bio (LIME-31-fix measured ~106px of overflow). The avatar and "Upload photo" + "Soon" are stacked awkwardly in a narrow column to the left of Display name, misaligned with it.
+
+**The change:**
+1. **The modal grows to its content:**
+   - the settings modal's height becomes `min(content height, 100vh - 64px)` instead of a fixed `min(720px, …)`;
+   - **Profile must not scroll at 1567×905.** Only on genuinely short viewports does the body scroll (with the footer still fixed);
+   - keep the width;
+   - Login & security can simply be shorter.
+2. **The photo row** (Notion-style, cleaned up):
+   - **a 64px avatar on the left, vertically centred with the Display name field** on the right, which takes the remaining width;
+   - under the avatar, or as a text button beside the name label, a neutral **"Change photo"** link. **Remove the "Upload photo" button and the "Soon" badge.**
+3. **Real profile photos,** since LIME-38 gave us the storage:
+   - "Change photo" (or clicking the avatar, with a hover overlay reading "Change") opens an image picker (`image/*`, ≤ 5 MB);
+   - the image is **center-cropped to a square** and resized to 256px on a canvas, then uploaded via `LimeStore.uploadAttachment` into a `profile-photos/<profileId>` path;
+   - set `profiles.avatar_url` (the column already exists in the schema) through `updateProfile` (**allow `avatar_url`** in its field allow-list, and document it);
+   - "Remove photo" appears when one is set.
+   - **Production:** a Supabase Storage bucket `avatars`, publicly readable, writable only by the owner. Document it.
+   - **This is part of the form:** it saves with "Save changes" and reverts with Cancel.
+4. **Avatars everywhere show the photo:** `paintAvatar` (app.js ~1285) renders an `<img>` (`object-fit: cover`, rounded) when the profile has `avatar_url`, and falls back to initials otherwise. It updates live on `lime:profile-changed`. It covers every avatar: lists, the Recent row, the thread, replies, headers, clusters, members, details, and the sidebar.
+
+**Scope:** the settings markup and CSS, `paintAvatar`, the store's `updateProfile` allow-list, `local-adapter.js` (only if needed for the photo path), `docs/data-model.md` + `docs/schema.sql` (the avatars bucket note), and `TEND.md`.
+
+**Verification (Playwright + Firefox):**
+- At 1567×905 the Profile body doesn't scroll (report its `scrollHeight` against `clientHeight`) and the modal fits the viewport.
+- The avatar's vertical centre equals the Display name field's (±2px).
+- There's no "Soon" badge and no "Upload photo" button.
+- Upload a photo from the scratchpad: after Save, the avatar shows it in 5 different places (report which); Cancel reverts; Remove restores the initials.
+- It persists across reload. A group avatar cluster shows the photo for that member.
+- The real app loads in jsdom with zero errors.
+
+**Gate:** open Settings → Profile. Everything fits with no scrolling, and your picture sits neatly beside your name. Click "Change photo", pick a picture and Save. Your photo appears across Lime.
+
+**Record:** add a `## LIME-49` entry to `TEND.md`. Commit: `feat: settings profile fits; real profile photos across the app`, trailer `Brief: LIME-49`, plus the attribution trailer.
+
+---
 
 ### LIME-43-revert → `tend` (next, before LIME-44): remove the ✓/✓✓ receipts
 
@@ -989,6 +1539,21 @@ The image's max height reserves room above and below, so nothing goes off-screen
 **Record:** add a `## LIME-29` entry to `TEND.md`. Commit: `feat: new message picker: find any teacher, start a DM or group`, trailer `Brief: LIME-29`, plus the attribution trailer.
 
 ### LIME-27 → `tend` (after LIME-32): Share and Copy link, deep links, and toasts
+
+> **REVISED 2026-09-29 (user feedback; this supersedes the Actions section below where they conflict):**
+> - **Share moves out of the menus into its own header button.** Remove "Share link" from the header "…" menu (`#more-menu`, `index.html` ~177). **Don't** add Copy link or Share to the title ⌄ menu (drop that part of item 3 below).
+> - Add a **Share icon button** (`dew-share`) in the thread header **right after the avatars**. The header order becomes: avatars · Share · Background (LIME-45) · "…".
+> - **It opens a popover modelled on Claude's "Share session" panel:**
+>   - **Title** 'Share "<chat title>"', with the close × at the top right, and a muted subline: "Only people in this chat can see its messages" (for communities: "Anyone in Lime can view this community").
+>   - **"Add people by email"** field plus an **Invite** button, **for groups only.**
+>     - It looks up `findProfileByEmail`. A match gets added to the group (a new store write, `addMembers(conversationId, profileIds)`, allowed when `can('addMembers')` is the owner, with a greyed reason otherwise; document the RLS against the existing `is_owner` insert policy).
+>     - No match shows "No teacher with that email · Invite (Soon)", reusing LIME-29's invite placeholder.
+>     - **For DMs** the field is replaced by a muted line: "To add people, start a group from New message."
+>   - **"Who has access":** a row with a lock icon, "Only people in this chat" (a globe and "Anyone in Lime" for communities), and a disabled chevron (link-access settings are future); then the **member list**: avatar, name ("(you)" for yourself), email, and the role (Owner or Member), scrolling if long.
+>   - **A small muted note:** "Don't share personal information about students or families without permission."
+>   - **Footer:** a **"Copy link"** primary button (lime, the primary action) with `dew-link`. It uses the deep link and toast from this brief.
+>   - **Not included:** Claude's "Share with your team / Upgrade" row, and the settings gear.
+> - Deep links, the access rule and toasts stay as specified below.
 
 **Context:** the lifecycle sequence. LIME-26 (`e90bfd1`) left a slot comment in `CONVERSATION_ACTIONS` (app.js ~1045): "LIME-27 adds Share and Copy link here, between Rename and Archive." Seed ships a toast component (`vendor/seed/components/toast/toast.css`, with container positions; the JS pattern is in `toast.html`), which isn't linked yet. Per the RLS draft, **only members can open a DM or group; community conversations are readable by any signed-in user.**
 
