@@ -73,7 +73,12 @@ const LimeAppearance = (function () {
   // slightly darker layer than bare canvas — became what muted text
   // actually sits on; 'lemon'/'lilac' cleared both rounds on the first
   // try. See TEND.md's own LIME-50/LIME-50-fix entries for the measured
-  // tables.
+  // tables. LIME-56: a THIRD retune (#D8E6D0 -> #D9E1D5) — green-on-
+  // green next to the brand's lime buttons, measured (not eyeballed) by
+  // requiring Sage's OKLab distance from --lime-primary-bg, on both its
+  // canvas and its surface, to be at least as large as Warm's own —
+  // the smallest desaturation step that clears both (TEND.md's LIME-56
+  // entry has the search and the full table).
   const CANVAS_P = {
     warm: ['#F9F8F4', '#E8E4DB', '#D8D3C8', '#C0BAB0', '#A09890', '#787068', '#504840', '#342E28', '#221E18', '#141210', '#1C1B18'],
     'cool-gray': ['#F8F8F8', '#EBEBEB', '#DEDEDE', '#CECECE', '#ABABAB', '#888888', '#555555', '#333333', '#1F1F1F', '#111111', '#1A1A1A'],
@@ -81,7 +86,7 @@ const LimeAppearance = (function () {
     'blue-tint': ['#F0F4F8', '#E0E8F0', '#CCD9E8', '#AABDD0', '#8AA0B8', '#6A8098', '#4A6070', '#2D4055', '#1A2838', '#0E1620', '#182030'],
     'pure-white': ['#FFFFFF', '#F0F0F0', '#E0E0E0', '#CCCCCC', '#AAAAAA', '#888888', '#555555', '#333333', '#1A1A1A', '#0D0D0D', '#1A1A1A'],
     lemon: makeCanvasRamp('#FBF3D0'),
-    sage: makeCanvasRamp('#D8E6D0'),
+    sage: makeCanvasRamp('#D9E1D5'),
     lilac: makeCanvasRamp('#F1ECF6'),
   };
 
@@ -104,6 +109,13 @@ const LimeAppearance = (function () {
     const ramp = CANVAS_P[name] || CANVAS_P.warm;
     const root = document.documentElement.style;
     SOIL_KEYS.forEach((key, i) => root.setProperty(key, ramp[SOIL_RAMP_INDEXES[i]]));
+    // LIME-56: marks Warm specifically so lime.css's own
+    // [data-theme="light"].lime-canvas-warm rule can override just its
+    // surface layer with the brand's #f0eee6 — a class, not an inline
+    // custom-property override here, so it naturally has no effect
+    // under [data-theme="dark"] (a plain :root inline style would win
+    // over the dark block too, leaking Warm's light surface into dark).
+    document.documentElement.classList.toggle('lime-canvas-warm', (name || 'warm') === 'warm');
   }
 
   // LIME-51 — mode: 'light' | 'dark' | 'system'.

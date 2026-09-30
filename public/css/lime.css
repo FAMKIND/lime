@@ -31,6 +31,21 @@
   --lime-primary-bg: var(--selected-bg-subtle-default);
   --lime-primary-bg-hover: var(--selected-bg-subtle-hover);
   --lime-primary-bg-active: var(--selected-bg-subtle-active);
+  /* LIME-56: the Add/Send ink, split out from --soil-text-muted. Muted
+     ink is tone-relative (it reads --seed-soil-600, which
+     appearance.js's applyCanvas() retunes per canvas preset — LIME-55-fix
+     found this the hard way), and measured against the fixed lime-100/
+     200/300 steps it fails 4.5:1 on several tones/states (Lemon hover
+     4.43:1, and — newly measured here — Blue tint/Lemon/Sage/Lilac all
+     fail the pressed step too, as low as 3.70:1). --soil-text (full,
+     non-muted ink) clears every step on every LIGHT tone at once
+     (15.53/13.69/11.44:1) — and unlike hardcoding --seed-soil-900
+     directly (tried first; measured 1.03:1 in dark mode, since dark's
+     own lime steps are a near-black green, not a pale one — caught
+     before it shipped), --soil-text itself already resolves per theme
+     (--seed-soil-900 in light, --seed-soil-50 in dark), clearing dark's
+     own three steps too (15.32/13.63/11.63:1) with the same one token. */
+  --lime-primary-ink: var(--soil-text);
 }
 
 [data-theme="light"] {
@@ -121,6 +136,28 @@
      nearly invisible, so this needs a real per-theme value, not just a
      token wrapper around one fixed literal. */
   --lime-scrollbar-thumb: rgba(0, 0, 0, 0.15);
+}
+
+/* LIME-56: Warm's surface (bubbles, the composer box, the segmented
+   toggle, the selected list row, the nav active item — everything
+   --calm-bg-subtle-default/--calm-bg-normal-default resolve to) moves
+   to the brand's own #f0eee6, instead of the value the 97%-canvas/3%-ink
+   mix formula above produces for Warm's canvas (#f1f0ec — close, but
+   not the brand hex). Scoped to light + Warm specifically via a class
+   applyCanvas() toggles on <html> (public/js/appearance.js) — not an
+   inline custom-property override, which would win over
+   [data-theme="dark"] too and leak Warm's light-mode surface into dark
+   (out of this brief's scope). Hover/active are recomputed from the
+   SAME formula as every other tone (92%/8% and 88%/12% toward ink),
+   just anchored on the new surface instead of canvas, so they stay the
+   same two steps darker — measured, not just visually close
+   (TEND.md's LIME-56 entry has the computed hex for every tone). Only
+   Warm's *canvas* (--soil-bg-canvas, the page background outside every
+   panel) is untouched — it stays #F9F8F4, unlike the surface above it. */
+[data-theme="light"].lime-canvas-warm {
+  --lime-layer-surface: #F0EEE6;
+  --lime-layer-hover:   color-mix(in oklab, #F0EEE6 92%, var(--seed-soil-900) 8%);
+  --lime-layer-active:  color-mix(in oklab, #F0EEE6 88%, var(--seed-soil-900) 12%);
 }
 
 [data-theme="dark"] {
@@ -1270,7 +1307,7 @@ html[data-pattern-treatment="photo"] body::before {
   border: none;
   border-radius: var(--seed-radius-full);
   background: transparent;
-  color: var(--soil-text-muted);
+  color: var(--lime-primary-ink); /* LIME-56: was --soil-text-muted — see :root's own comment */
   font-family: var(--seed-font-ui);
   font-size: var(--seed-text-sm);
   font-weight: var(--seed-weight-medium);
@@ -1303,7 +1340,7 @@ html[data-pattern-treatment="photo"] body::before {
   border: none;
   border-radius: var(--seed-radius-full);
   background: transparent;
-  color: var(--soil-text-muted);
+  color: var(--lime-primary-ink); /* LIME-56: was --soil-text-muted — see :root's own comment */
   cursor: pointer;
   transition: background 80ms ease;
 }
@@ -5420,6 +5457,12 @@ html[data-pattern-treatment="photo"] body::before {
      drift from it. Values are identical either way (the lime rule
      made this button and Add the only two lime consumers left). */
   background: var(--lime-primary-bg);
+  /* LIME-56: was unset (inherited --soil-text-muted from the base rule
+     above) — now --lime-primary-ink, same switch as Add and for the
+     same reason (see :root's own comment). Only the active/lime-filled
+     state changes; the resting muted icon (opacity 0.4, no fill) is
+     untouched. */
+  color: var(--lime-primary-ink);
 }
 
 .lime-composer__return.is-active:hover {
