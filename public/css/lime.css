@@ -128,6 +128,20 @@
      need 3:1 so lime-600 (≈4.4:1) still clears it with room to spare. */
   --selected-text-normal-default: var(--seed-lime-700);
   --selected-icon-normal-default: var(--seed-lime-600);
+  /* LIME-58: the solid-green button family (seed-button--primary, the
+     voice/audio play buttons) — Seed's own light-theme default is white
+     text (--seed-soil-0) on lime-500, measured at ~3.1:1, under 4.5:1
+     (found in LIME-56's own contrast sweep). Ink text instead, ~5.7:1.
+     Darker hover/press steps (Seed's stock lime-600/-700) don't work
+     with ink (~3.5:1) — lighter ones do, mirroring the pattern Seed's
+     OWN dark theme already uses for this exact reason (tokens.css
+     ~370-379: light-on-dark text pairs with a lighter hover/press, not
+     a darker one). --selected-bg-bold-default (the rest state, lime-500)
+     is untouched; only the direction of hover/press flips. */
+  --selected-text-bold-default: var(--seed-soil-900);
+  --selected-icon-bold-default: var(--seed-soil-900);
+  --selected-bg-bold-hover: var(--seed-lime-400);
+  --selected-bg-bold-active: var(--seed-lime-300);
   /* LIME-51: the only other hardcoded-color gap the audit found (besides
      the avatar palette, above) — .lime-recent/.lime-messages' own
      visible scrollbar thumbs (every other scroller hides its thumb

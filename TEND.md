@@ -2466,3 +2466,38 @@ That one piece of information — the real error, from the real environment — 
 **Gate:** across the app, avatars 32px and up (the Recent row, thread headers, Settings Profile, contact details) are little limes with a small notch at the lower-left; anything smaller (message-row senders, the members panel, search/picker results) stays a plain circle. The Recent row's green unread ring follows the lime shape, not a circle. Presence dots and focus rings are unaffected.
 
 **Record:** this entry.
+
+## LIME-58
+
+**Goal:** the solid-green buttons (`seed-button--primary` — "Continue with email," "Create account," Settings "Save changes," the picker's "Start," Share's "Copy link," the confirm-dialog button, and the voice/audio play buttons) get dark ink text instead of white, since LIME-56's own contrast sweep found white-on-`#09a950` measures ~3.1:1, under 4.5:1, on every canvas tone.
+
+**Survey confirmed the brief's own figures exactly:** `.seed-button--primary` (`vendor/seed/components/button/button.css`) reads `--selected-bg-bold-default/-hover/-active` and `--selected-text-bold-default`. Light theme's stock values (`tokens.css`): bg lime-500 → hover lime-600 → active lime-700 (darker each step), text `--seed-soil-0` (white). Dark theme already uses ink text (`--seed-soil-950`) with **lighter** hover/active (lime-400, lime-300) — confirmed as the working precedent to mirror, not just assumed from the brief's description. Computed directly (not copied from the brief): ink on lime-500 = 5.68:1 ✓, ink on lime-600 = would be ~3.5:1 ✗ (the brief's own reason hover/active must go lighter, not darker, confirmed independently). Two other consumers of the same token pair found: `.lime-audio-attachment__play` and `.lime-voice__play` (voice-note play buttons) — no `:hover`/`:active` rules of their own, so they inherit the fix automatically with zero extra CSS.
+
+**The change** (`public/css/lime.css`, inside the existing `[data-theme="light"]` block only — `vendor/seed/` untouched, `[data-theme="dark"]` untouched):
+- `--selected-text-bold-default` → `var(--seed-soil-900)` (Lime's pinned ink, the same token `--lime-primary-ink` and the nav's own ink already use).
+- `--selected-icon-bold-default` → the same ink, so an icon paired with bold-green text (none currently render both together, but kept in step per the brief's own item 3).
+- `--selected-bg-bold-hover` → `--seed-lime-400`; `--selected-bg-bold-active` → `--seed-lime-300` — both now lighter than the lime-500 rest state, reversing the stock darker-on-hover direction. `--selected-bg-bold-default` (the rest fill) is untouched.
+
+**Verification, contrast table (measured live in a real browser, not computed offline and assumed to match):**
+
+| Consumer | Rest | Hover | Direction |
+|---|---|---|---|
+| Auth "Continue with email" | 5.68:1 | 8.32:1 | lighter ✓ |
+| Auth "Create account" | 5.68:1 | 8.23:1 | lighter ✓ |
+| Settings "Save changes" | 5.68:1 | 8.22:1 | lighter ✓ |
+| Confirm dialog "Confirm" | 5.68:1 | 7.15:1 | lighter ✓ |
+| Picker "Start" | 5.68:1 | 8.23:1 | lighter ✓ |
+| Share "Copy link" | 5.68:1 | 8.32:1 | lighter ✓ |
+| Dark mode (unchanged, re-verified) | 5.58:1 | 8.17:1 | lighter (already was) |
+
+Every rest/hover pair measured in Firefox via `getComputedStyle`, not assumed from the token math alone (the token math matched exactly: rest 5.68:1 on every light-mode consumer, since they all resolve the identical two custom properties). The voice/audio play buttons weren't screenshotted live — **no seed conversation has a voice message** (checked `seed-data.js` directly, none exist) — but they read the exact same `--selected-bg-bold-default`/`--selected-text-bold-default` pair every other passing consumer above does, confirmed by reading the CSS rule directly rather than assumed to "probably be fine."
+- `node --check` n/a (CSS-only change); braces balanced (780/780).
+- The existing LIME-33, LIME-49-fix, LIME-48, LIME-29, LIME-55, LIME-27 jsdom suites all still pass.
+- Browser-parsed CSS rule count: `lime.css` **712** (unchanged from LIME-57 — new custom-property declarations inside an existing rule block don't add a new CSSOM rule).
+- Screenshots: the auth "Continue with email" button at rest (clean green, dark legible text) and in dark mode (unchanged, already correct). Both viewed directly.
+
+**Upstream candidate for Seed:** the same fix (ink text + lighter hover/press on `seed-button--primary`'s light theme) is a genuine Seed-level bug, not Lime-specific — Seed's own dark theme already avoids it. Noted here per the brief; not actioned (Seed is a separate repo).
+
+**Gate:** the green buttons across the app (sign-in page, Settings Save, New message Start, Copy link) now have dark, easy-to-read text, and hovering makes each one lighter, not darker.
+
+**Record:** this entry.
