@@ -609,26 +609,79 @@ html[data-pattern-treatment="photo"] body::before {
   height: 18px;
 }
 
-/* Overrides .lime-menu--wide's 280px floor (index.html) so the popover
-   shrinks to fit exactly 4 grid columns instead of spreading 8 canvas
-   swatches across one wide row — measured live via Playwright, not
-   assumed (see TEND.md). */
-.lime-appearance-menu {
+/* LIME-52-fix2: the popover no longer carries .lime-menu--wide's 280px
+   floor at all (index.html) — an equal-specificity override here was
+   silently losing to it purely on source order (.lime-menu--wide's own
+   rule sits later in this file), so the class itself is removed from
+   the markup instead of fought with a same-specificity rule.
+   A fixed 184px (the brief's own target, and every child's own natural
+   content width measured well under it — the grid at 152px, Mode's
+   tabs at 168px, "More in Settings" at 163px) rather than width:
+   fit-content: fit-content sizes to a block child's *rendered* width,
+   and a flex row like .seed-tabs--pill defaults to filling 100% of
+   whatever the parent resolves to when the parent isn't itself a flex
+   container — circular against a shrink-to-fit parent, which is what
+   was silently keeping this at 220-238px even after the class above
+   was removed. A fixed width sidesteps that ambiguity outright.
+   min-width: 0 is still needed alongside it — .lime-menu's own base
+   min-width: 220px (not just .lime-menu--wide's 280px) is a hard floor
+   that always wins over a smaller `width` regardless of specificity.
+   .lime-menu.lime-appearance-menu (both classes, matching the one real
+   element that always carries both) is used here rather than plain
+   .lime-appearance-menu — equal single-class specificity against
+   .lime-menu's own base rule was losing the min-width tie purely
+   because that base rule sits later in this file (~line 1090); found
+   only by enumerating every matched rule directly rather than assuming
+   which one applied (TEND.md). */
+.lime-menu.lime-appearance-menu {
+  box-sizing: border-box; /* so 184px is the whole visible box (padding + border included), matching the brief's own target exactly, not just the content area */
+  width: 184px;
   min-width: 0;
-  width: fit-content;
+}
+
+/* LIME-52-fix2: Mode's segmented control and the Low/Medium and
+   Texture/Photo toggles stretch to full-width, equal-width segments
+   inside the popover instead of shrink-wrapping their own label text —
+   the brief's own "full-width segments" option — so they never become
+   the thing forcing the menu wider than the grid actually needs
+   (~168-184px). ".lime-contacts .seed-tabs"/".lime-segmented .seed-tab"
+   above are this file's own existing precedent for scoping a Seed
+   primitive's sizing to one local context instead of a global override. */
+.lime-appearance-menu .seed-tabs--pill {
+  display: flex;
+  align-self: stretch;
+}
+
+.lime-appearance-menu .seed-tabs--pill .seed-tab {
+  flex: 1;
+  text-align: center;
+}
+
+.lime-appearance-menu .lime-menu__item {
+  font-size: var(--seed-text-sm);
 }
 
 /* LIME-52-fix — one shared 4-column grid for both Canvas and Pattern,
    in both the header popover and Settings -> Preferences -> Appearance
    (app.js's canvasGridHtml()/patternGridHtml() are the one place that
    ever builds this markup — not two copies, per the brief's own
-   explicit ask). */
+   explicit ask).
+   LIME-52-fix2: --lime-tile-size makes the tile size a single variable
+   instead of a hardcoded 36px everywhere, so the popover can use a
+   --compact variant (28px, per the brief's own "make the min width
+   smaller") while Settings keeps the original, larger size — one
+   shared component, two size variants, not two copies. */
 .lime-appearance-grid {
+  --lime-tile-size: 36px;
   display: grid;
-  grid-template-columns: repeat(4, 36px);
+  grid-template-columns: repeat(4, var(--lime-tile-size));
   gap: var(--seed-space-2);
   padding: 0 var(--seed-space-2) var(--seed-space-2);
   width: fit-content;
+}
+
+.lime-appearance-grid--compact {
+  --lime-tile-size: 28px;
 }
 
 .lime-settings__stacked-control > .lime-appearance-grid {
@@ -637,11 +690,13 @@ html[data-pattern-treatment="photo"] body::before {
 
 /* Round for a flat colour (canvas), square for a texture preview
    (pattern) — a circle would clip a repeating tile's own corners
-   oddly at this size. Both share this base. */
+   oddly at this size. Both share this base. WCAG 2.2's 24px target-size
+   minimum is still cleared at the compact 28px variant. */
 .lime-appearance-swatch,
-.lime-pattern-thumb {
-  width: 36px;
-  height: 36px;
+.lime-pattern-thumb,
+.lime-pattern-tile {
+  width: var(--lime-tile-size, 36px);
+  height: var(--lime-tile-size, 36px);
   border: 2px solid transparent;
   outline: 1px solid var(--soil-border-subtle);
   outline-offset: 1px;
@@ -655,18 +710,21 @@ html[data-pattern-treatment="photo"] body::before {
   border-radius: var(--seed-radius-full);
 }
 
-.lime-pattern-thumb {
+.lime-pattern-thumb,
+.lime-pattern-tile {
   border-radius: var(--seed-radius-md);
   background-color: var(--soil-bg-elevated);
 }
 
 .lime-appearance-swatch:hover,
-.lime-pattern-thumb:hover {
+.lime-pattern-thumb:hover,
+.lime-pattern-tile:hover {
   outline-color: var(--soil-text-muted);
 }
 
 .lime-appearance-swatch.is-selected,
-.lime-pattern-thumb.is-selected {
+.lime-pattern-thumb.is-selected,
+.lime-pattern-tile.is-selected {
   border-color: var(--soil-bg-elevated);
   outline: 2px solid var(--selected-border-subtle-default, var(--soil-text));
   outline-offset: 1px;
@@ -703,10 +761,13 @@ html[data-pattern-treatment="photo"] body::before {
   display: none;
 }
 
-/* A mask-based preview (a built-in preset, a user tile, or an uploaded
-   Texture) — dark ink at a much higher, thumbnail-only opacity than the
-   real low-intensity production layer (body::before) ever uses, so it
-   still reads clearly at 36px. */
+/* A mask-based preview (a built-in preset or a user tile) — dark ink at
+   a much higher, thumbnail-only opacity than the real low-intensity
+   production layer (body::before) ever uses, tiled small so the repeat
+   itself reads as the pattern's own shape at this size. An upload's own
+   preview (.lime-pattern-tile__preview, below) is deliberately NOT
+   matched by this selector — it shows the whole processed image as one
+   shape, not a tiny repeat, so it needs its own sizing. */
 .lime-pattern-thumb[style*="mask-image"] {
   background-color: var(--soil-text);
   mask-repeat: repeat;
@@ -730,31 +791,59 @@ html[data-pattern-treatment="photo"] body::before {
   font-size: 16px;
 }
 
-/* LIME-52-fix: an active upload is its own tile (its Photo preview
-   shown via background-image, cover; a Texture preview via the same
-   mask treatment as every other pattern tile above), with a small x
-   overlaid to delete it — replaces LIME-52's separate "Remove" text
-   button entirely (the brief's own explicit ask: "None" now does that
-   job for every pattern kind, uploads included). */
-.lime-pattern-thumb--upload-preview {
+/* LIME-52-fix2: an active upload's tile is a plain, unclipped wrapper
+   (.lime-pattern-tile, sized/outlined by the shared rule above) around
+   two children — the fill (.lime-pattern-tile__preview, absolutely
+   positioned to cover the same box) and the delete button, SIBLINGS of
+   each other rather than the button nested inside the masked/
+   background-imaged element. A mask-image (or any background) applied
+   directly to an element clips that element's own box, including any
+   children rendered inside it — LIME-52-fix's own bug, the delete x was
+   a child of the masked span and got clipped away with everything else
+   outside the mask's shape. Keeping the wrapper itself free of any
+   mask/background is what keeps the x fully paintable. */
+.lime-pattern-tile__preview {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none; /* clicks pass through to the wrapper button underneath */
+}
+
+.lime-pattern-tile__preview[data-attachment-style="mask"] {
+  background-color: var(--soil-text);
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-size: cover;
+  -webkit-mask-size: cover;
+  mask-position: center;
+  -webkit-mask-position: center;
+}
+
+.lime-pattern-tile__preview[data-attachment-style="photo-bg"] {
   background-size: cover;
   background-position: center;
 }
 
+/* 18px circle on the raised layer token (LIME-50-fix's own tone-
+   relative layer system), a --soil-text x, a soft shadow — the brief's
+   own exact spec. A sibling of .lime-pattern-tile__preview (not nested
+   inside it), positioned off the corner of the shared .lime-pattern-tile
+   wrapper, which carries no mask/clip of its own to cut it off with. */
 .lime-pattern-tile__delete {
   position: absolute;
   top: -6px;
   right: -6px;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: var(--seed-radius-full);
-  background: var(--soil-bg-elevated);
-  outline: 1px solid var(--soil-border-subtle);
-  color: var(--soil-text-muted);
+  background: var(--lime-layer-raised, var(--soil-bg-elevated));
+  border: none;
+  color: var(--soil-text);
+  box-shadow: var(--seed-shadow-xs);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -762,7 +851,11 @@ html[data-pattern-treatment="photo"] body::before {
 
 .lime-pattern-tile__delete:hover {
   color: var(--bad-text-normal-default, var(--soil-text));
-  outline-color: var(--bad-border-normal-default, var(--soil-text-muted));
+}
+
+.lime-pattern-tile__delete:focus-visible {
+  outline: 2px solid var(--selected-border-subtle-default, var(--soil-text));
+  outline-offset: 1px;
 }
 
 .lime-pattern-controls {
@@ -4303,11 +4396,15 @@ html[data-pattern-treatment="photo"] body::before {
   align-items: center;
   gap: var(--seed-space-1);
   padding: var(--seed-space-3) var(--seed-space-4) var(--seed-space-2); /* bottom 16px -> 8px */
-  /* LIME-50: plain canvas background, same as every other surface — no
-     --surface-bg matching needed any more. The thread's own content
-     (not the composer bar) carries the mask that fades it out before
-     it would disappear under this bar (gradients.css). */
-  background: var(--soil-bg-canvas);
+  /* LIME-52-fix2: transparent, not the canvas colour. The thread's own
+     content already fades out via a mask (gradients.css) before it
+     would disappear under this bar, revealing whatever's actually
+     behind it (canvas, a pattern, or a photo, LIME-50/52). A solid
+     canvas-coloured bar here used to paint back OVER that same reveal
+     with a flat colour, hiding the pattern in a band right around the
+     message box — the exact bug this fixes. Only .lime-composer__box
+     (the input itself) needs its own opaque surface, below. */
+  background: transparent;
 }
 
 /* LIME-45's per-chat background code (the --surface-bg override on

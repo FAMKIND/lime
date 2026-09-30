@@ -85,9 +85,13 @@ function canvasSwatchButtonHtml(name, hex, isSelected, disabled) {
   return '<button type="button" class="lime-appearance-swatch' + (isSelected ? ' is-selected' : '') + '" data-canvas="' + name + '" style="background:' + hex + '" title="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '" aria-label="' + escapeHtml(LimeAppearance.CANVAS_LABELS[name]) + '"' + (isSelected ? ' aria-current="true"' : '') + (disabled ? ' disabled' : '') + '></button>';
 }
 
-function canvasGridHtml(isDark) {
+// LIME-52-fix2: `compact` shrinks the shared tile size (36px -> 28px,
+// via the --lime-tile-size variable a --compact grid modifier sets) —
+// the header popover's own ask ("make the min width smaller"); Settings
+// keeps the original, larger size, same shared component either way.
+function canvasGridHtml(isDark, compact) {
   const current = LimeStore.getAppearance().canvas;
-  return '<div class="lime-appearance-grid' + (isDark ? ' is-disabled' : '') + '">'
+  return '<div class="lime-appearance-grid' + (compact ? ' lime-appearance-grid--compact' : '') + (isDark ? ' is-disabled' : '') + '">'
     + Object.keys(LimeAppearance.CANVAS_P).map((name) => canvasSwatchButtonHtml(name, LimeAppearance.CANVAS_P[name][0], name === current, isDark)).join('')
     + '</div>';
 }
@@ -114,32 +118,39 @@ function patternUserTileThumbHtml(tile, isSelected) {
   return '<button type="button" class="lime-pattern-thumb' + (isSelected ? ' is-selected' : '') + '" data-pattern-kind="user-tile" data-pattern-tile-id="' + escapeHtml(tile.id) + '" style="mask-image:url(&quot;' + tile.src + '&quot;);-webkit-mask-image:url(&quot;' + tile.src + '&quot;)" title="' + escapeHtml(tile.label) + '" aria-label="' + escapeHtml(tile.label) + '"' + (isSelected ? ' aria-current="true"' : '') + '></button>';
 }
 
-// An active upload is its own tile — its Texture preview via the same
-// mask treatment as every other tile above, its Photo preview via
-// background-image, cover — with a small x overlaid to delete it. The
-// actual URL only resolves async (LimeStore.getAttachmentUrl), so this
-// renders a placeholder carrying data-attachment-path/-style and relies
-// on paintAttachments() (below) to fill it in, same two-step pattern
-// every other attachment thumbnail in this app already uses.
+// LIME-52-fix2: an active upload's tile is a plain, unclipped wrapper
+// (.lime-pattern-tile) around two SIBLING children — the fill
+// (.lime-pattern-tile__preview) and the delete button — not the button
+// nested inside the masked/background-imaged element. LIME-52-fix's own
+// bug: a mask-image (or any background) clips the element it's on,
+// including any children rendered inside it, which is exactly what cut
+// the x off. Keeping the wrapper itself free of any mask/background is
+// what keeps the x fully paintable and the preview showing the real
+// image instead of a plain filled square. The actual URL only resolves
+// async (LimeStore.getAttachmentUrl), so the preview renders as a
+// placeholder carrying data-attachment-path/-style and relies on
+// paintAttachments() (below) to fill it in, same two-step pattern every
+// other attachment thumbnail in this app already uses.
 function patternUploadThumbHtml(pattern) {
   const isUpload = pattern && pattern.kind === 'upload';
-  const addTile = '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--upload" data-pattern-action="upload" title="Upload your own…" aria-label="Upload your own…"' + (isUpload ? '' : '') + '><span class="dew dew-plus"></span></button>';
+  const addTile = '<button type="button" class="lime-pattern-thumb lime-pattern-thumb--upload" data-pattern-action="upload" title="Upload your own…" aria-label="Upload your own…"><span class="dew dew-plus"></span></button>';
   if (!isUpload) return addTile;
   const isPhoto = pattern.treatment === 'photo';
   const previewPath = isPhoto ? pattern.photoPath : pattern.texturePath;
-  const previewTile = '<span class="lime-pattern-thumb is-selected' + (isPhoto ? ' lime-pattern-thumb--upload-preview' : '') + '" data-attachment-path="' + escapeHtml(previewPath || '') + '" data-attachment-style="' + (isPhoto ? 'photo-bg' : 'mask') + '" title="Your upload" aria-label="Your upload" aria-current="true">'
+  const previewTile = '<span class="lime-pattern-tile is-selected" title="Your upload" aria-label="Your upload" aria-current="true">'
+    + '<span class="lime-pattern-tile__preview" data-attachment-path="' + escapeHtml(previewPath || '') + '" data-attachment-style="' + (isPhoto ? 'photo-bg' : 'mask') + '"></span>'
     + '<button type="button" class="lime-pattern-tile__delete" data-pattern-action="remove-upload" title="Remove upload" aria-label="Remove upload">&times;</button>'
     + '</span>';
   return previewTile + addTile;
 }
 
-function patternGridHtml(pattern, userTiles) {
+function patternGridHtml(pattern, userTiles, compact) {
   const kind = (pattern && pattern.kind) || 'none';
   const tiles = patternNoneThumbHtml(kind === 'none')
     + LimeAppearance.PATTERN_PRESETS.map((p) => patternPresetThumbHtml(p, kind === 'preset' && pattern.presetId === p.id)).join('')
     + (userTiles || []).map((t) => patternUserTileThumbHtml(t, kind === 'user-tile' && pattern.tileId === t.id)).join('')
     + patternUploadThumbHtml(pattern);
-  return '<div class="lime-appearance-grid">' + tiles + '</div>';
+  return '<div class="lime-appearance-grid' + (compact ? ' lime-appearance-grid--compact' : '') + '">' + tiles + '</div>';
 }
 
 function intensityTabsHtml(current) {
@@ -1935,10 +1946,10 @@ function initMessagesList() {
       + '<div class="lime-menu__divider"></div>'
       + '<div class="lime-menu__label">Canvas</div>'
       + (isDark ? canvasDisabledNoticeHtml() : '')
-      + canvasGridHtml(isDark)
+      + canvasGridHtml(isDark, true)
       + '<div class="lime-menu__divider"></div>'
       + '<div class="lime-menu__label">Pattern</div>'
-      + patternGridHtml(appearance.pattern, cachedUserPatternTiles)
+      + patternGridHtml(appearance.pattern, cachedUserPatternTiles, true)
       + patternControlsHtml(appearance.pattern)
       + '<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden data-pattern-upload-input>'
       + '<p class="lime-appearance-upload-error"></p>'
