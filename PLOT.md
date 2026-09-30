@@ -14,7 +14,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 
 ### The authoritative queue
 1. ~~**LIME-52-fix3**~~ **landed as `c646917`.** Root cause: the upload input was re-rendered away while the OS file dialog was open. The gate check is pending.
-2. ~~LIME-52-fix4~~ **SUPERSEDED (never sent), the user, 2026-09-30:** "get rid of the subtle patterns and the credit and let's just refine the ones we have now instead and the upload." Drop the 6 samples in `public/assets/patterns/` (untracked; delete them) and every credit line. Keep the 4 generated SVG presets (dots, grid, diagonal, noise) and refine them and the upload. **Next: LIME-52-fix5** (uploads still "do nothing" in both surfaces; drafted) **→ LIME-53** (a pattern lab of 12 in-house SVG candidates outside the repo; the user picks by number; drafted) **→ LIME-53b** (integrate the picks, remove the file-name probing, delete the samples, strip the credit mentions; drafted after the picks).
+2. ~~LIME-52-fix4~~ **SUPERSEDED (never sent), the user, 2026-09-30:** "get rid of the subtle patterns and the credit and let's just refine the ones we have now instead and the upload." Drop the 6 samples in `public/assets/patterns/` (untracked; delete them) and every credit line. Keep the 4 generated SVG presets (dots, grid, diagonal, noise) and refine them and the upload. **LIME-52-fix5 was investigated with no code change** (`4ad3566`, 2026-09-30; `PLOT.md` committed as `cc910fd`). Tend drove the **real installed Firefox (157.0)** through the real file dialog: both surfaces, `file://` and localhost, strict privacy settings, and chat attachments. **Everything passed; it couldn't reproduce the failure.** The likely cause is something in the user's own Firefox profile (an extension, broken site storage, or stale cached code). **Waiting on the user:** the console errors (⌥⌘K) during an upload, and a retry in Firefox's Troubleshoot Mode (extensions off). If it works in Troubleshoot Mode, it's an extension and no brief is needed. If the console shows an error, draft **LIME-52-fix6** from it. **→ PARKED by the user 2026-09-30** (see "PARKED: pattern upload fails" above). **LIME-53 DROPPED 2026-09-30; next is LIME-54 (delete the samples and the probing code), then LIME-49.** (Old plan, for history: then LIME-53 (a pattern lab of 12 in-house SVG candidates outside the repo; the user picks by number; drafted) **→ LIME-53b** (integrate the picks, remove the file-name probing, delete the samples, strip the credit mentions; drafted after the picks).)
 3. **LIME-49**: Settings Profile fits with no scrolling, plus real profile photos everywhere
 4. **LIME-33**: local accounts (sign up and sign in; PBKDF2; session gate; reset clears accounts)
 5. **LIME-48**: the sign-in redesign (email-first; the Pexels video `teacher.webm` plus a small re-encoded MP4 via `avconvert`; a poster; a pause control; copy: "Where teachers connect")
@@ -29,6 +29,12 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **The LIME-52-fix3 gate check** (landed as `c646917`, 2026-09-29). Tend couldn't test 16-bit, palette or interlaced PNGs, or a real private window (it simulated one by forcing IndexedDB to fail).
 - Optionally, the failing PNGs that tend should test (a Desktop folder path).
 - Communities planning answers, when LIME-28 comes up.
+
+### PARKED: pattern upload fails in the user's Firefox (the user, 2026-09-30)
+"upload pattern still not fully working on firefox, but is on chrome, let's make note and move on we can come back to it after all the major parts are done."
+- **Where it stands:** LIME-52-fix3 (`c646917`) fixed the input being re-rendered away. LIME-52-fix5 (`4ad3566`, investigation only) **couldn't reproduce** the failure in the real installed Firefox 157 (both surfaces, `file://` and localhost, strict privacy, chat attachments all passed). It works in the user's Chrome.
+- **Unchecked:** the user hasn't yet reported the console errors (⌥⌘K) or a Troubleshoot Mode (add-ons off) retry. **Start there when this comes back.** An add-on or a broken site-storage area in the user's profile is the leading suspect.
+- **When to return:** after the major parts are done (the milestone: LIME-49, 33, 48, 29, 27 and Communities). Don't re-raise it before then.
 
 ### Unbriefed candidates (offer when the queue thins)
 - **Real notifications** (the bell is a mockup; the user wants these instead of ✓/✓✓).
@@ -236,6 +242,38 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-54 → `tend` (next, then LIME-49): delete the Subtle Patterns samples and the tile-probing code
+
+**The user (2026-09-30):** "I want to dial back the pattern lab, delete the subtle patterns so we can get back to the major parts." **LIME-53 (the pattern lab) is DROPPED, never sent.** The 4 current presets stay exactly as they are.
+
+**Assumptions:** the agent can edit files, delete files, run Node/jsdom and Playwright, and commit. Plot surveyed (`grep`, 2026-09-30) every reference: `appearance.js` ~162–167 (comment), ~218–268 (`USER_TILE_CANDIDATES`, `USER_TILE_EXTENSIONS`, `probeImage`, `detectUserPatternTiles`), ~574 (the `'user-tile'` branch in `applyPattern`), ~616 (export); `app.js` ~114–118 (`patternUserTileThumbHtml`), ~157, ~207–213 (`cachedUserPatternTiles`), ~366–370 (the tile click branch), ~2056 and ~4641 (callers passing `cachedUserPatternTiles`); `docs/data-model.md` ~1027–1036 and ~1096–1118.
+
+**Phase 1: survey (read-only).** Confirm the references above, and find any others (`probeImage` may have other users; keep it if so). Confirm `public/assets/patterns/` holds only the 6 untracked samples (`bananas.png`, `cork-board.png`, `ep_naturalwhite.png`, `geometry2.png`, `leaves.png`, `ripples.png`) and is untracked in git. **If anything else is in that folder, stop and ask the user.**
+
+**Phase 2: the change.**
+1. **Delete** `public/assets/patterns/` and its 6 files (untracked, so they won't appear in the commit; the user asked for this explicitly).
+2. **Remove the user-tile feature:** everything named above in `appearance.js` and `app.js`. `patternGridHtml` loses its `userTiles` parameter; the grid shows None, the 4 presets, and the Upload tile, exactly as it did otherwise.
+3. **Stored appearance with `kind: 'user-tile'`** (the feature existed but the folder never held a matching file name, so this should be rare) is treated as None, without errors.
+4. **Comments and docs:** rewrite `appearance.js` ~162–167 to one line: the presets are drawn in-house as inline SVG, with no third-party assets and no credit owed. In `docs/data-model.md`, replace the Subtle Patterns and user-tile notes with the same fact in 2–3 lines. Don't touch `PLOT.md` or old `TEND.md` entries.
+
+**Scope:**
+- **May touch:** `public/js/appearance.js`, `public/js/app.js`, `docs/data-model.md`, `TEND.md`, and the deletion of `public/assets/patterns/`.
+- **May not touch:** the 4 presets, the upload pipeline (**parked**: see "PARKED: pattern upload fails"), CSS beyond removing a rule used only by user tiles (report it if so), and anything else.
+
+**Verification:**
+- `grep -rniE "subtle ?patterns|USER_TILE|detectUserPatternTiles|cachedUserPatternTiles|user-tile|assets/patterns" public docs` → **no matches**.
+- `ls public/assets/patterns` → no such directory.
+- The real app loads in jsdom with zero errors. In Playwright Firefox, the palette popover and Settings show None + 4 presets + Upload; picking each preset still works; a stored `{ kind: 'user-tile' }` loads as None with no console errors.
+- If CSS is touched, report the browser-parsed rule counts for `lime.css` and `gradients.css`.
+
+**Gate:** none needed from the user beyond a glance. The palette menu looks the same as before, with the four patterns plus Upload.
+
+**Record:** add a `## LIME-54` entry to `TEND.md`. Commit: `chore: remove sample patterns and tile-probing code`, trailer `Brief: LIME-54`, plus the attribution trailer. **Then continue straight to LIME-49** (the user wants to get back to the major parts), and stop after LIME-49 for the user's check.
+
+---
+
+### LIME-53 → DROPPED (never sent), the user, 2026-09-30: "dial back the pattern lab." Kept for history.
 
 ### LIME-52-fix5 → `tend` (next, before LIME-53): uploads still do nothing, in both surfaces
 
@@ -686,7 +724,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
-### LIME-49 → `tend` (right after LIME-45): Settings Profile fits without scrolling; real profile photo upload
+### LIME-49 → `tend` (after LIME-54; amended 2026-09-30): Settings Profile fits without scrolling; real profile photo upload
 
 **The user's QA (2026-09-29, screenshot):** "the profile section still needs tightening up. I'd rather the modal expand than have a scroll for one field. Also the profile picture alignment, and remove the Soon badge etc., can be cleaned up."
 - **In the screenshot:** the Profile pane scrolls just to reach Bio (LIME-31-fix measured ~106px of overflow). The avatar and "Upload photo" + "Soon" are stacked awkwardly in a narrow column to the left of Display name, misaligned with it.
@@ -708,6 +746,13 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
    - **Production:** a Supabase Storage bucket `avatars`, publicly readable, writable only by the owner. Document it.
    - **This is part of the form:** it saves with "Save changes" and reverts with Cancel.
 4. **Avatars everywhere show the photo:** `paintAvatar` (app.js ~1285) renders an `<img>` (`object-fit: cover`, rounded) when the profile has `avatar_url`, and falls back to initials otherwise. It updates live on `lime:profile-changed`. It covers every avatar: lists, the Recent row, the thread, replies, headers, clusters, members, details, and the sidebar.
+
+**Amendment (plot, 2026-09-30, before sending): lessons from the pattern upload (LIME-52-fix3/fix5).**
+- **The photo picker's `<input type=file>` must not live inside markup that re-renders** (the settings pane's `innerHTML`). Reuse fix3's pattern: one persistent, document-level input with its own `change` listener, and a record of which caller opened it. **Share it with the pattern upload if that's clean; otherwise add a second one.** Report which.
+- **Never fail silently:** a busy state while processing, a friendly inline error on every failure path, and a timeout on storage writes (fall back to a clear message).
+- **Verify the photo upload in the real installed Firefox** (`/Applications/Firefox.app`, driven as in LIME-52-fix5), not Playwright's bundled Firefox, **and** in Chrome. Report which binaries were used.
+- **The pattern upload is parked** because it fails in the user's own Firefox but not in tend's. If the profile photo fails the same way at the user's gate, **don't fix it inside LIME-49.** Note it in `TEND.md` as evidence for the parked bug.
+- The Settings modal has changed since this brief was drafted (Preferences → Appearance, from LIME-50 to 52-fix5). Survey the current markup first; the line numbers above are stale.
 
 **Scope:** the settings markup and CSS, `paintAvatar`, the store's `updateProfile` allow-list, `local-adapter.js` (only if needed for the photo path), `docs/data-model.md` + `docs/schema.sql` (the avatars bucket note), and `TEND.md`.
 
