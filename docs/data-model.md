@@ -1299,6 +1299,15 @@ Local-only behavior, written down as **the local stand-in for what a server does
 
 **Not covered (known).** Two tabs creating the same direct message at the same instant can make two conversations with the same `dm_key` (the local stand-in has no uniqueness lock; a server's unique constraint fixes it). Reaction rows created before this change have no `removed_at` field and are read as active.
 
+## The client API and sync contract (LIME-71)
+
+How these tables travel between a server and web, iOS and Android clients
+(ops, the changes feed, token auth, files, realtime, conflict rules, and the
+mapping from every `LimeStore` write to an op) is written down in
+[`api.md`](./api.md). It is a contract only; nothing implements it yet
+(LIME-72 does). It is built on LIME-69's merge rules above and lists every
+place it differs from them.
+
 ## Known gaps, flagged rather than silently resolved
 
 - **"Delete for me" (`cleared_at`) hides messages at the store/UI layer

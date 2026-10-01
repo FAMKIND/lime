@@ -3110,3 +3110,28 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app â€
 **The older jsdom suites (LIME-33, 29, 48, 55, 27, 49-fix) are not on disk any more**, so I could not rerun them by name; the checks above are what covers the same ground.
 
 **Gate:** open Lime in two tabs of one normal window (not private). Sign in as yourself in one and as another teacher in the other, message back and forth, and change your name or photo: each change should show in the other tab within a second. Also try: scroll up in one tab while the other sends; star a chat in one (the other must not change); Reset demo data in one (the other goes to sign-in).
+
+## LIME-71
+
+**Goal:** a written, reviewable client API and sync contract so web, iOS, Android and (later) a Bluetooth relay can share one protocol. Docs only; no code.
+
+**What landed:** `docs/api.md` (new): principles, the op envelope, a 12-op catalogue each with payload and who may perform it, endpoints (`/auth/*`, `/ops`, `/changes`, `/snapshot`, `/files`, `/events`, `/health`), error codes, conflict rules, how a client stays current, auth/visibility/files, offline and mesh notes, push note, the mapping table, the schema changes it implies, and a no-recommendation mobile options note. `docs/data-model.md` has a pointer. `schema.sql` is **not** edited (the needed changes are listed in `api.md`).
+
+**Verification:**
+- **Every store write is mapped to an op** (table in `api.md` section 11): `sendMessage`, `toggleReaction`, `createConversation`, `addMembers`, `renameConversation`, `setStarred`, `setArchived`, `deleteConversation`, `deleteForMe`, `markRead`, `updateProfile`, `setProfileEmail` become ops; `createProfile` is `POST /auth/signup`; `setAppearance` stays device-local; the three attachment functions are `/files`. A grep confirms each function name appears in the doc.
+- **Every op has a permission rule** (12 ops, 12 "May perform" lines, each tied to `canReason` and an RLS policy).
+- **Conflict rules diffed against LIME-69** (`3bb437b`): section 6 lists all 11 differences in a table; the rest match (union, reaction `removed_at`/`updated_at`, member `updated_at`, per-field merge, per-user fields).
+- Undefined terms: a Terms section defines op, outbox, `seq`, cursor, feed, device, actor, tombstone, RLS, local store; backfill and alias entries are defined where used.
+
+**Places the brief and the code disagreed, or the brief was silent (all in `api.md` "Open points" for plot to rule on):**
+1. No `attachment.attach` op: attachments ride inside `message.send` (the store records them together; a separate op could show a message without its album).
+2. Message `created_at` = `server_ts` and order = `seq` (brief: server is the authority), so an offline message shows its delivery time. Product decision.
+3. Appearance stays device-local, as asked.
+4. Added `POST /events/ticket` (a browser `EventSource` cannot send a bearer token).
+5. Privacy decisions needed: other people's `email`/`phone` visibility, and read receipts needing others' `last_read_at` (not sent by this contract).
+6. No directory endpoint is defined, but the new-message picker needs one.
+7. The brief's DM rule needed one extra piece: aliases, so a loser's offline ops map onto the kept conversation. Also `conversation.delete` is groups-only here, stricter than the RLS draft (difference 11).
+8. `store.js` line numbers in the brief have drifted since LIME-69; every function it names exists.
+
+**Gate:** none from the user beyond "ok". Plot reviews `docs/api.md` before LIME-72 is drafted.
+
