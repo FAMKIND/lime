@@ -276,6 +276,30 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ## Drafted briefs
 
+### LIME-64 → `tend` (after LIME-63): the person panel's back arrow moves up into the panel header row
+
+**The user (2026-10-01, screenshot):** in a group chat, clicking the member avatars opens the right panel (Members). Clicking a member shows their details, **but the back arrow sits on its own line below the header**. "The back arrow needs to be on the same line as the close toggle," i.e. **in the right panel's header row**, at the panel's left side, with the panel toggle staying at the right.
+
+**Survey:**
+- The back button is `.lime-profile__back` (rendered in the details HTML, `app.js` ~3778, "Back to Members").
+- The right panel's header row holds the toggle `#right-panel-toggle` (`.lime-panel-close`, absolutely positioned top-right, `lime.css`).
+- The Thread and Members views show a title ("Thread", the group name) in that same row.
+
+**The change:**
+1. When the details view is reached **from Members**, the back arrow renders **in the header row**, left-aligned with the panel's content padding and vertically centred with the toggle and the other panels' titles (the same row height as the Thread/Members header). There's no extra row, and the details content moves up accordingly.
+2. Keep its behaviour, label and keyboard focus ("Back to Members"). When details are opened **directly** (e.g. a DM's profile, or from a message sender), there's **no back arrow**, as today.
+3. Check the mobile layout (the panel as a full-screen view) too: the arrow stays in the header row there.
+
+**Scope:** the details-panel header markup in `app.js`, its CSS in `lime.css`, and `TEND.md`. Nothing else.
+
+**Verification:** screenshots of Members → a member's details at 1567px and on mobile. The measured vertical centres of the back arrow and toggle (±1px), and the back arrow's left edge against the content's left edge. Back returns to Members; the direct-open view has no arrow. The real app loads in jsdom with zero errors. Report the CSS rule counts.
+
+**Gate:** from a group's Members panel, open someone's details. The back arrow sits at the top-left of the panel, on the same line as the panel toggle, and the details move up.
+
+**Record:** add a `## LIME-64` entry to `TEND.md`. Commit: `fix: details back arrow in the panel header row`, trailer `Brief: LIME-64`, plus the attribution trailer. **Stop for the user's check.**
+
+---
+
 ### LIME-62 → `tend` (after LIME-57-fixf): the media viewer: × at the photo's corner, a 3-column wall, and slides that replace the wall
 
 **The user's QA (2026-09-30, screenshots):**
