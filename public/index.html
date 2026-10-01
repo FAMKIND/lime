@@ -860,16 +860,24 @@
        --seed-shadow-md for separation from the backdrop instead. -->
   <div class="lime-lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Image preview">
     <button type="button" class="lime-lightbox__close" id="lightbox-close" aria-label="Close" title="Close"><span class="dew dew-close"></span></button>
-    <button type="button" class="lime-lightbox__back" id="lightbox-back" aria-label="Back to all photos" title="Back to all photos" hidden>
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor"/>
-        <rect x="13" y="3" width="8" height="8" rx="1.5" fill="currentColor"/>
-        <rect x="3" y="13" width="8" height="8" rx="1.5" fill="currentColor"/>
-        <rect x="13" y="13" width="8" height="8" rx="1.5" fill="currentColor"/>
-      </svg>
-    </button>
     <img class="lime-lightbox__img" id="lightbox-img" alt="">
-    <span class="lime-lightbox__counter" id="lightbox-counter" hidden></span>
+    <!-- LIME-65: counter + "back to all photos" grid button now live
+         together in one centred pill-group below the image, not as two
+         independent controls (the grid button used to sit top-left,
+         mirroring Close) — grouped so hiding the grid button (a single
+         photo, no wall) leaves the counter still centred alone, same as
+         .lime-lightbox-counter-row's own flex layout. -->
+    <div class="lime-lightbox__counter-row">
+      <span class="lime-lightbox__counter" id="lightbox-counter" hidden></span>
+      <button type="button" class="lime-lightbox__back" id="lightbox-back" aria-label="Back to all photos" title="Back to all photos" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor"/>
+          <rect x="13" y="3" width="8" height="8" rx="1.5" fill="currentColor"/>
+          <rect x="3" y="13" width="8" height="8" rx="1.5" fill="currentColor"/>
+          <rect x="13" y="13" width="8" height="8" rx="1.5" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>
   </div>
   <button type="button" class="lime-lightbox__nav lime-lightbox__nav--prev" id="lightbox-prev" aria-label="Previous photo" title="Previous" hidden><span class="dew dew-chevron-left"></span></button>
   <button type="button" class="lime-lightbox__nav lime-lightbox__nav--next" id="lightbox-next" aria-label="Next photo" title="Next" hidden><span class="dew dew-chevron-right"></span></button>

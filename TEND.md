@@ -2957,3 +2957,29 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Gate:** from a group's Members panel, opening someone's details shows the back arrow at the panel's top-left, on the same line as the panel toggle, with the details content starting right below — confirmed live, not just reasoned from the CSS.
 
 **Record:** this entry.
+
+## LIME-65
+
+**Goal:** the slideshow's "back to all photos" grid button moves from its own top-left corner spot to sit directly beside the "4/6" counter, per the user's own one-line request.
+
+**Survey confirmed exactly as described:** `#lightbox-back` (the grid-glyph button, added by LIME-62 at the image's top-left, mirroring `#lightbox-close`) and `#lightbox-counter` (centred below the image) were two independent `position:absolute` siblings sharing the same combined CSS rule as Close. Neither is positioned via JS — both ride along purely because `.lime-lightbox`'s own box always equals the displayed image's rect (LIME-62's own established mechanism) — so the brief's "both still follow the photo's position if the counter does" is satisfied for free, no JS change needed.
+
+**The change:**
+1. Added a `.lime-lightbox__counter-row` wrapper (`index.html`) around the counter and the grid button, replacing their two independent absolute positions with one: the row itself sits exactly where the counter used to (`top: calc(100% + space-3); left:50%; transform:translateX(-50%)`), as a `display:flex; gap:6px` row. Hiding the grid button (`[hidden]`, a single-photo album with no wall) leaves the counter naturally centred alone inside the row — no separate CSS state needed for that case.
+2. `.lime-lightbox__back` split out of its old shared rule with `.lime-lightbox__close` (which keeps its own unchanged 40px corner position) into its own much smaller rule: a 24px round pill (measured the counter's own real height — 22-23.5px depending on browser antialiasing — and used the brief's explicit `>=24px` floor rather than the slightly-shorter measured value), its SVG scaled to 12px to optically match the counter's own 12px text.
+3. Kept its label, `aria-label`/`title` ("Back to all photos"), and keyboard focus (`:focus-visible` ring) unchanged — same button, same ids, same JS wiring (`lightboxEls.backBtn`), just moved and resized.
+
+**Scope check:** `public/css/lime.css` and `public/index.html` only (plus `TEND.md`) — no JS touched at all, confirmed via `git diff --stat`; every `lightboxEls.backBtn`/`lightboxEls.counter` reference in `app.js` is ID-based and unaffected by the DOM move.
+
+**Verification, real Firefox 157.0 and Chrome 154.0.8037.92 (WebDriver BiDi, puppeteer-core, real installed binaries), one script driving both, seeding a real 6-image album (wall trigger) and a real 2-image album (direct, no wall):**
+- `lime.css` rule count: **723** (+3 — the old combined `.lime-lightbox__close, .lime-lightbox__back` rules split into separate declarations plus the new `.lime-lightbox__counter-row` rule; no rules lost).
+- From the wall: counter and grid button both visible, vertically centred to within **0px** of each other in both browsers, gap measured **6.0px** (Chrome) / **5.999px** (Firefox, floating-point rounding) — matching the brief's ~6px exactly. Grid button height **24px**, clearing the `>=24px` floor.
+- Clicking the grid button returns to the wall, confirmed.
+- A direct (non-wall) 2-image album: counter shows alone, grid button `[hidden]`, and the counter's own centre still lands exactly on the row's centre (±1px) — "stays centred alone" confirmed, not just assumed from the flex layout.
+- Mobile (390×844): both visible, centre-aligned to within 0px, screenshot confirms the same pill-group pattern holds at that width.
+- Zero console/page errors in either browser.
+- Screenshots: the wall-opened slides (counter + grid button together), the direct album's slides (counter alone), and mobile — all three, Chrome shown, Firefox checked identically via the same script.
+
+**Gate:** in a slideshow opened from an album, the small grid button sits right beside "3/6" (the seeded album's own count) — confirmed live in both real browsers at desktop and mobile widths.
+
+**Record:** this entry.

@@ -2755,10 +2755,8 @@ html[data-pattern-treatment="photo"] body::before {
    the 48px/50px this needs plus the brief's own ≥12px floor (16px and
    42px to spare) — so the "clamped inside the viewport" requirement is
    structurally guaranteed by the existing layout, not something a
-   resize listener needs to enforce. The back button (not named in this
-   brief) keeps its original top-left position unchanged. */
-.lime-lightbox__close,
-.lime-lightbox__back {
+   resize listener needs to enforce. */
+.lime-lightbox__close {
   box-sizing: border-box;
   position: absolute;
   width: 40px;
@@ -2774,25 +2772,11 @@ html[data-pattern-treatment="photo"] body::before {
   box-shadow: var(--seed-shadow-md);
   cursor: pointer;
   transition: background 80ms ease;
-}
-
-.lime-lightbox__close {
   top: -50px;
   right: -48px;
 }
 
-.lime-lightbox__back {
-  bottom: calc(100% + var(--seed-space-3));
-  left: 0;
-}
-
-.lime-lightbox__back svg {
-  width: 16px;
-  height: 16px;
-}
-
-.lime-lightbox__close[hidden],
-.lime-lightbox__back[hidden] {
+.lime-lightbox__close[hidden] {
   display: none;
 }
 
@@ -2800,8 +2784,7 @@ html[data-pattern-treatment="photo"] body::before {
   font-size: 18px;
 }
 
-.lime-lightbox__close:hover,
-.lime-lightbox__back:hover {
+.lime-lightbox__close:hover {
   background: var(--calm-bg-subtle-hover);
 }
 
@@ -2809,10 +2792,24 @@ html[data-pattern-treatment="photo"] body::before {
    which only swap the background) — the brief explicitly calls for one
    here, since a modal control reachable only by Tab needs a keyboard
    user to be able to actually see where focus landed. */
-.lime-lightbox__close:focus-visible,
-.lime-lightbox__back:focus-visible {
+.lime-lightbox__close:focus-visible {
   outline: 2px solid var(--calm-border-bold-default);
   outline-offset: 2px;
+}
+
+/* LIME-65: counter + grid-button group, centred below the image exactly
+   where the counter alone used to sit — the group's own box (not each
+   child) carries the centring, so hiding the grid button (display:none
+   via [hidden], a single photo with no wall) leaves the counter's own
+   pill naturally centred alone, no separate CSS state needed. */
+.lime-lightbox__counter-row {
+  position: absolute;
+  top: calc(100% + var(--seed-space-3));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* LIME-40: the "N / M" counter — shown only alongside the arrows (more
@@ -2820,12 +2817,10 @@ html[data-pattern-treatment="photo"] body::before {
    attribute JS already uses for the arrows themselves.
    LIME-41-fix: centred just below the image (was inside the LIME-40-fix
    bar, above it) — no border, same --seed-shadow-md treatment as the
-   close/back buttons now. */
+   close/back buttons now.
+   LIME-65: position/centring moved to .lime-lightbox__counter-row
+   (above) — this is now a plain flex child, pill styling unchanged. */
 .lime-lightbox__counter {
-  position: absolute;
-  top: calc(100% + var(--seed-space-3));
-  left: 50%;
-  transform: translateX(-50%);
   background: var(--soil-bg-elevated);
   color: var(--soil-text);
   font-size: var(--seed-text-xs);
@@ -2837,6 +2832,48 @@ html[data-pattern-treatment="photo"] body::before {
 
 .lime-lightbox__counter[hidden] {
   display: none;
+}
+
+/* LIME-65: "back to all photos" (a 2x2 grid glyph) moved out of its old
+   top-left spot (mirroring Close) into this pill-group beside the
+   counter, per the user's own "move the grid icon next to 4/6." Sized to
+   the counter's own measured height (22px, live) raised to the brief's
+   explicit >=24px round-hover-target floor — a neutral round pill, not
+   a copy of Close's larger 40px circle, since it now sits inline with a
+   much smaller counter pill rather than floating alone over a corner. */
+.lime-lightbox__back {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--seed-radius-full);
+  background: var(--soil-bg-elevated);
+  color: var(--soil-text);
+  box-shadow: var(--seed-shadow-md);
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.lime-lightbox__back[hidden] {
+  display: none;
+}
+
+.lime-lightbox__back svg {
+  /* Optically matches the counter's own 12px text cap height. */
+  width: 12px;
+  height: 12px;
+}
+
+.lime-lightbox__back:hover {
+  background: var(--calm-bg-subtle-hover);
+}
+
+.lime-lightbox__back:focus-visible {
+  outline: 2px solid var(--calm-border-bold-default);
+  outline-offset: 2px;
 }
 
 /* LIME-40: siblings of .lime-lightbox (not children) — "vertically
