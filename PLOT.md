@@ -60,6 +60,26 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **The user confirmed 28px. Landed (2026-09-30):** LIME-57 `5a17cbb` (no 28–31px avatars exist, so in practice md/lg/xl = 32/40/56px are shaped and sm/xs stay round; `border-radius: 0` is needed, or the circle clip eats the nub; the unread ring is now a `.lime-avatar-ring` wrapper, because box-shadow on a masked element is invisible), LIME-58 `f578558`, LIME-59 `6db2847` (a hand-drawn Share SVG; bubbles = list hover through one token). **The user's gate checks on 56–59 are pending.** `Logomark-outline.svg` and `signin-teachers.mp4` are still untracked. Ask whether to commit the logomark as a brand asset. **The user's check found the Recent row's presence dots clipped** (the ring wrapper is an always-masked ancestor), so LIME-57-fix was drafted. The user then asked for Slack-style status icons in a cut-out notch, so **LIME-57-fixb (which supersedes it) runs next.** **LIME-57-fixb landed as `81a759d`** (2026-09-30): a `mask-composite` notch, SVG states, and the ring as a layer behind the avatar, verified in the real Firefox and Chrome plus the fallback. Tend's lesson: element-clipped screenshots in Firefox can hide mask effects; confirm with a full-page shot. **The user's gate check FAILED:** the icons shrank (LIME-59 normalised down; the left toggle is the right size), and the status icons have a halo and are too small. **LIME-59-fix and LIME-57-fixc are drafted and run next.** **Landed (2026-09-30):** LIME-59-fix `2db344f` (icons match the left toggle) and **LIME-57-fixc `d50d85a`** (four pre-composited notched SVG masks; `mask-composite` now appears only in comments, which plot verified; the path Z). **The user's check ("closer")** asked for a bigger Z and a tighter notch (**LIME-57-fixd**), the ↵ smaller again, a split mic button like Add, and the reply composer's clipped mic hover fixed (**LIME-60**). Both are drafted. **Landed:** LIME-57-fixd `167f3ee` and LIME-60 `9d09dd4` (2026-09-30). The user's check of 60 asked for the container outline → **LIME-60-fix drafted → landed as `55baa1b`**; then LIME-60-fix2 (outline on hover only) **landed as `fec746e`** (2026-09-30; the user's check is pending). **LIME-61 landed as `c045fca`** (all 12 primary CTAs use pale lime; on elevated surfaces in Lemon and Sage they get a thin lime-300 border; the user's check is pending). **Next: LIME-57-fixe** (the Montserrat Bold z). **LIME-57-fixe landed as `44e9db1`** (the real Montserrat Bold "z" outline, extracted from the font with fontTools; Montserrat is OFL, so artwork use is fine; lg ≈ 6.0px; the user's check is pending). **LIME-57-fixf landed as `f82d402`** (the z is smaller and clear of the circle). **The user's QA round (2026-09-30) → LIME-62** (the media viewer) **and LIME-63** (list radius, Share as a dropdown, composer fade, reply mic) **are drafted and run next.** **Landed (2026-10-01):** LIME-62 `23a7c5d`, LIME-63 `5d93386`, and LIME-64 `4e7b942` (the back arrow in the panel header row). **The user's gate checks on 57-fixf and 61–64 are pending.** Then: the Communities decision surface. Then: the Communities decision surface.
 - **New finding (tend, LIME-56): white text on the solid green `#09a950` buttons** (e.g. "Continue with email", Seed's `seed-button--primary`) is **under 4.5:1 on every tone** (white on `#09a950` ≈ 3.1:1, computed). It's a brand-level decision. Options put to the user: **A.** ink text `#131b17` on `#09a950` (≈ 5.7:1, computed; keeps the brand green); **B.** darker green `#078040` (`--seed-lime-600`) with white text (≈ 5.0:1, computed); **C.** leave it (large or bold text only needs 3:1, and a 16px semibold button label doesn't qualify). Plot's lean: **A.** Upstream candidate for Seed too. **DECIDED: A (the user, 2026-09-30) → LIME-58 drafted.** Its hover and press go lighter (lime-400/300), because ink on the darker lime-600 is only ≈ 3.5:1.
 
+### Open decision: real two-person testing (raised 2026-10-01, decision surface sent)
+- **The user (screenshot: two Firefox windows, one a private window, signed in as Shem and Jean):** each sees only their own changes. "Before Communities, how do we make this function so we can actually test Link (communicate), from the messages to the profile changes?"
+- **Why (plot's survey):**
+  - all data lives in **one browser's storage** (`lime-state-v1` snapshot in `localStorage`, attachments in IndexedDB), so a private window or another browser is a separate world;
+  - **the session is in `localStorage` too** (`lime-demo-session`, `auth.js` ~13), so two tabs in the same browser are always the **same** user;
+  - there's **no cross-tab sync** (no `storage` listener or BroadcastChannel);
+  - saves write the **whole snapshot** (`store.js` `scheduleSave`), so two writers would overwrite each other (last write wins: lost messages).
+- **Options sent:**
+  - **A. Two tabs, one browser, live (plot's lean for now):**
+    - the session moves to `sessionStorage` (per tab), so each tab can be a different user;
+    - a `storage` event / BroadcastChannel makes every other tab reload state and re-render live (messages, lists, unread, profile, members);
+    - saves become **merge-by-id** (re-read, then merge; messages append-only), so nothing gets overwritten.
+    - *Pro:* about one brief, no server, testable today; it also stress-tests the store's change events. *Con:* the same browser profile on one computer only (not a private window, another browser, or a phone).
+  - **B. A small local dev server** (Node, no dependencies) holding shared state, plus a `ServerAdapter` behind the existing store seam, with live updates (SSE).
+    - *Pro:* works across browsers, private windows and phones on the same Wi-Fi; it rehearses a real network seam. *Con:* 2–3 briefs, and a stepping stone that the real backend later replaces.
+  - **C. The real backend (Supabase, per `docs/schema.sql` and the switch checklist):** real auth, Postgres, RLS, realtime and storage.
+    - *Pro:* the actual path to launch. *Con:* needs a Supabase project and keys, network, RLS testing, and **a sync-architecture decision first**, because the offline Bluetooth differentiator ([[lime-offline-differentiator]]) argues for local-first sync, so choosing it deserves its own planning pass.
+  - **DECIDED (the user, 2026-10-01): "A, then B".** LIME-69 (A) and LIME-70 (B) are drafted. C (the real backend plus local-first sync) stays a later planning pass.
+  - **Plot's recommendation:** **A now** (test two-person messaging today), then a **planning pass for C** (backend plus local-first sync) as the next milestone, before or alongside Communities.
+
 ### Unbriefed candidates (offer when the queue thins)
 - **A CSS guard script** (the `*/`-inside-a-comment truncation hit a **second** time in LIME-61, 2026-09-30): a small Node script in the repo (e.g. `scripts/check-css.mjs`, no dependencies) that parses every `public/css/*.css` file, fails if any comment body contains `*/` or a `/*` nesting, and prints each file's rule count against an expected minimum. Tend runs it before every CSS commit. Fold it into the cleanup brief.
 - **Accessibility: `aria-expanded` is never updated by `wireDropdownToggle`** (found by tend in LIME-60-fix2, 2026-09-30). Every dropdown trigger's `aria-expanded` stays at its markup value, so screen readers never hear "expanded". Fix it centrally in `wireDropdownToggle` (set it on open and close, including outside-click and Escape), then audit the triggers. Fold it into the cleanup brief.
@@ -226,6 +246,13 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - `public/signup.html` + `public/js/supabase.js` (commit `8066506`) already use Supabase auth via CDN, with **placeholder** URL and key constants in the file.
   - When the switch happens, consolidate: one Supabase client and config (from a gitignored `*.local.js`, per the switch checklist), shared by signup, login and the future `SupabaseAdapter`. Don't leave placeholder constants in committed code.
   - LIME-24b left `supabase.js` untouched.
+- **Toasts landed (2026-10-01):** LIME-67 `65e40d2` (`toast.js`, `LimeToast.show`/`queue`, bottom-right, a neutral card) and LIME-68 `1191243` (the event table in `TEND.md`). Tend's flags:
+  - **(a) An out-of-scope one-liner in `local-adapter.js`** (dispatching `lime:storage-failed` inside `save()`'s catch, needed for the storage warning). Plot reviewed it: tiny and correct. **Plot's recommendation is to keep it**; the user decides.
+  - **(b)** The 10MB attachment limit is now a toast; `showAttachmentError` is dead code (cleanup brief).
+  - **(c)** dew has no proper error icon (`dew-negative` reads as a red minus). A **dew request: an alert-circle icon.**
+  - **(d) A possible bug: inline rename drops spaces** ("Planning crew" became "Planningcrew"). The breadcrumb rename input may sit inside a button that treats Space as a click. **Ask the user to try it by hand; if confirmed, it's a fix brief.**
+  - **(e)** LIME-67's behaviour suite was only run in Chrome. LIME-68's events ran in both browsers.
+  - The user's gate checks on 67 and 68 are pending.
 - **LIME-66 landed as `0e7b014`** (2026-10-01): Seed bumped to `2c911c2`; the paint brush, link-simple and code icons are in. Share keeps LIME-59's hand-drawn SVG (`dew-share` is the same icon whose sizing didn't match). **The user's checks of 62–66 are pending.**
 - **2026-10-01 update:** dew and Seed were pushed (Seed `2c911c2`, a clean diff: `icons/dew` plus Seed's `TEND.md`). LIME-65 landed as `bd5ee3e`. **LIME-66's submodule checkout was blocked by tend's sandbox**, so plot gave the user the commands to run. **Careful:** a `git submodule update --init --recursive` from Lime's **root** would reset `vendor/seed` back to the recorded `2bc0868`. Run it **inside** `vendor/seed` (`git -C vendor/seed submodule update --init --recursive`).
 - **Cross-project, open 2026-10-01: the new dew icons** (code, link-simple, paint-brush-broad, palette) are built in `~/Sites/dew` but uncommitted and unpushed (DEW-01, dew's own `PLOT.md`). LIME-66 is blocked until dew commits and pushes, then Seed bumps `icons/dew` and pushes. The user must run those in the dew and Seed sessions; pushing is their call.
@@ -278,6 +305,89 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-69 → `tend` (next): two people in two tabs, live
+
+**The user (2026-10-01): chose "A, then B"** for real two-person testing (see the open decision "real two-person testing"). This is A.
+
+**Goal:** in **one normal browser window**, tab 1 is signed in as one person and tab 2 as another. Everything one does (messages, replies, reactions, reads/unread, star/rename/archive/delete, new chats and groups, members added, profile and photo changes) **appears in the other tab within ~1s, without a reload**, and **nothing is ever lost** when both write.
+
+**Survey (plot, 2026-10-01):**
+- The session is `localStorage['lime-demo-session']` (`auth.js` ~13), shared by every tab.
+- State is one snapshot, `localStorage['lime-state-v1']` (`local-adapter.js` ~9), written whole by `store.js` `scheduleSave()` (~64, a 100ms debounce) plus `flush()`.
+- Attachments are in IndexedDB (shared by tabs already).
+- There's no `storage` listener or BroadcastChannel.
+- The UI already re-renders on store events (e.g. `lime:conversations-changed`, `lime:profile-changed`).
+
+**Assumptions:** the agent can edit files, run jsdom and Playwright, drive the real Firefox and Chrome with **two tabs in one context** (a shared storage partition), and commit. Preview: `http://localhost:8000/public/…`.
+
+**The change:**
+1. **A session per tab:** move the session to **`sessionStorage`** (per tab). New tabs and windows start signed out (the gate sends them to `auth.html`). A **duplicated** tab keeps its session (the browser copies `sessionStorage`; that's fine). Sign-out clears only that tab. Keep `?from=auth`, the gate reasons and the toasts working. **Reset demo data** still wipes the shared data and signs out the current tab; other tabs notice (item 3) and go to `auth.html`, with a toast queued for them ("Demo data was reset").
+2. **No lost writes: merge-by-id on save.** Before writing the snapshot, **re-read** the latest stored snapshot and **merge** it with this tab's changes:
+   - rows by `id`, newer `updated_at`/`created_at` wins per row;
+   - messages, attachments, memberships and reactions are **union by id** (append-only; deletes as tombstones or `deleted_at` where the model already has them; **don't** resurrect a row another tab deleted);
+   - per-user fields (`last_read_at`, `starred`, `cleared_at`) only ever change for that membership's own user.
+   - Document the merge rules in `docs/data-model.md` as **the local stand-in for server-side writes**. Keep `flush()` semantics.
+3. **Live updates:** listen for the **`storage` event** on `lime-state-v1` (it fires in *other* tabs) and/or a `BroadcastChannel('lime')` ping after every save. On a change: reload the snapshot into the store, then **emit the existing change events**, so every view updates (the list, the open thread and reply panel, Recent and unread, headers and members, the details panel, avatars and profile names). **Keep the user's place:** scroll position, the open conversation, the composer draft, open menus and modals untouched. If the open conversation was deleted or the user was removed from it, go to the default view and show a toast ("This chat is no longer available").
+4. **New-message cues for the other person:** an incoming message in another conversation bumps it to the top with unread (as on load). In the open conversation it appears at the bottom, using the existing stick-to-bottom behaviour. **No sound and no system notification** (that's the separate "real notifications" item).
+5. **Profile changes propagate:** a display name or photo change in tab 1 updates tab 2's avatars and names everywhere (the existing `repaintAvatar` / `updateProfileEverywhere`).
+
+**Scope:**
+- **May touch:** `public/js/auth.js` (session storage), `public/js/store.js` (reload, merge-on-save, events), `public/js/local-adapter.js` (snapshot read and write helpers), `public/js/app.js` (listening, re-render, keeping the user's place), `auth.html`/`index.html` gate bits if needed, `docs/data-model.md`, and `TEND.md`.
+- **May not touch:** the visual design, Communities, and the adapter seam's public contract (additions are OK, documented).
+- If a decision isn't covered here, stop and ask the user.
+
+**Verification (two tabs, one context, in the real Firefox **and** Chrome):**
+- Tab A = Shem, tab B = Jean (a seed or a new account). Script: A sends a DM to B → B sees it live in the list and in the thread. B replies in a thread → A sees the reply count and the panel live. Reactions both ways. A renames a shared group → B's header and list update. A adds B to a group → it appears for B. B changes their name and photo → A's avatars and names update. Star and archive are per-user (not mirrored to the other person). Read state: B opening the chat clears B's unread only.
+- **The no-lost-writes test:** both tabs send 20 messages each, interleaved as fast as possible. All 40 exist in both tabs afterwards, in order.
+- Reset demo data in A → B goes to sign-in with a toast.
+- A new tab starts signed out. Sign-out in A doesn't sign out B.
+- Report the measured live-update latency. Zero console errors. jsdom suites still pass.
+
+**Gate:** open Lime in **two tabs of the same normal window** (not a private window). Sign in as yourself in one and as another teacher in the other. Message back and forth: each message appears in the other tab within a second. Change your name or photo, and the other tab updates.
+
+**Record:** add a `## LIME-69` entry to `TEND.md`, including the merge rules. Commit: `feat: per-tab sessions, live cross-tab sync, merge-on-save`, trailer `Brief: LIME-69`, plus the attribution trailer. **Stop for the user's check.**
+
+---
+
+### LIME-70 → `tend` (after LIME-69's check): a local dev server so phones and other browsers share the same Lime
+
+**The user (2026-10-01): "A, then B".** This is B: shared state across **any** browser, private windows and **phones on the same Wi-Fi**.
+
+**Assumptions:** Node **v23** is installed (plot checked); there's **no npm dependency** (Node built-ins only: `http`, `fs`, `crypto`, `path`, `os`). The agent can run Node, edit files, drive the real browsers, and commit. **This is a dev tool: no internet exposure, and no production security claims.**
+
+**Plot's design (the user can overrule at the gate):**
+1. **`server/dev-server.mjs`** (new, run with `node server/dev-server.mjs`) replaces `python3 -m http.server`:
+   - serves the **repo root** statically (so `/public/…` and `../vendor/…` keep working), with correct MIME types and no caching for `.js`/`.css`/`.html`;
+   - **binds `0.0.0.0:8000`** and prints both `http://localhost:8000/public/index.html` and the **LAN URL** (`http://<Mac's IP>:8000/public/index.html`) for the phone;
+   - **a shared state API:** `GET /api/state` returns the snapshot plus a version. `POST /api/ops` applies a batch of **operations** (or a snapshot diff) using **the same merge-by-id rules as LIME-69**, server-side, then bumps the version;
+   - **live updates:** `GET /api/events` (Server-Sent Events) sends a `changed` event with the new version after every write;
+   - **files:** `POST /api/files` stores uploads under `data/uploads/` and `GET /api/files/<path>` serves them (the attachment, avatar and pattern blobs);
+   - **persistence:** `data/lime-dev.json`, written atomically (a temp file, then rename). **`data/` is gitignored.** It's seeded from `seed-data/` on first run. `POST /api/reset` restores the seed (the Reset demo data item calls it);
+   - **credentials** live in the shared state like today (hashes only; verification can stay in the browser for this dev tool; document that **production verifies on the server**, per the switch checklist).
+2. **`ServerAdapter`** (`public/js/server-adapter.js`) implements the **same contract** as `LocalAdapter` (state load and save through `/api/…`, attachments through `/api/files`, link previews as local fixtures). `store.js` picks it **automatically when `/api/health` answers** (served by the dev server); otherwise it falls back to `LocalAdapter` (`python3 -m http.server` or `file://` keep working as before). Show a small dev-only indicator? **No:** keep the UI unchanged; log which adapter is active in the console.
+3. **Sessions:** per tab (`sessionStorage`, from LIME-69), on each device.
+4. **Live updates** go through the SSE `changed` event → refetch → the same reload-and-emit path LIME-69 built, so the UI work is shared.
+5. **A README section:** how to start it, how to open it on a phone, and how to reset the data. Update the `lime-preview-url` guidance in `TEND.md`: **the dev server is the default preview from now on.**
+
+**Scope:**
+- **May touch:** `server/` (new), `public/js/server-adapter.js` (new), `public/js/store.js` (adapter selection), `public/index.html`/`auth.html` (script tags), `.gitignore` (`data/`), `README.md`, `docs/data-model.md`, and `TEND.md`.
+- **May not touch:** the UI, `LocalAdapter`'s behaviour, and anything in `vendor/`.
+
+**Verification:**
+- Start the server; both URLs print.
+- The real Firefox (normal **and** private window) and Chrome: three sessions as three users. A message, reply, reaction, rename, member add and profile/photo change made in any one appears live in the others. Attachments uploaded in one display in the others.
+- **The phone check is manual:** give the user the LAN URL and the steps.
+- The concurrent-write test (as in LIME-69, across two browsers): nothing is lost.
+- Restart the server: the data persists. Reset demo data restores the seed for everyone.
+- Opened via `python3 -m http.server` instead, the app still works as the local-only version.
+- Zero console errors. jsdom suites pass.
+
+**Gate:** stop the old Python server and start the new one with `node server/dev-server.mjs`. Open the localhost link in Firefox, a private window and Chrome (and the network link on your phone), sign in as different teachers, and chat. Everyone sees everything live.
+
+**Record:** add a `## LIME-70` entry to `TEND.md`. Commit: `feat: local dev server with shared state, files and live updates`, trailer `Brief: LIME-70`, plus the attribution trailer. **Stop for the user's check.**
+
+---
 
 ### LIME-67 → `tend` (next): toasts redesigned for Lime: title, body, an action, and cross-page messages
 
