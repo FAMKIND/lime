@@ -57,7 +57,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - **C.** Signature moments only (profile and details avatars, empty states, a lime-slice loading spinner); list avatars unchanged.
   - Either way, prototype at 20/24/32/40/64px in light and dark before calling it done.
 - **DECIDED (the user, 2026-09-30): palette "B", then revised to "keep all 8"**, so: **no tones dropped or replaced**, only B's refinements to existing tones (Warm's surfaces → `#f0eee6`, Sage retuned so lime stands out, and every tone verified). **Shape "A":** lime-silhouette avatars at ≥ 28px. Briefs: **LIME-56** (palette) and **LIME-57** (lime avatars, a preview stop first).
-- **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **The user confirmed 28px. Landed (2026-09-30):** LIME-57 `5a17cbb` (no 28–31px avatars exist, so in practice md/lg/xl = 32/40/56px are shaped and sm/xs stay round; `border-radius: 0` is needed, or the circle clip eats the nub; the unread ring is now a `.lime-avatar-ring` wrapper, because box-shadow on a masked element is invisible), LIME-58 `f578558`, LIME-59 `6db2847` (a hand-drawn Share SVG; bubbles = list hover through one token). **The user's gate checks on 56–59 are pending.** `Logomark-outline.svg` and `signin-teachers.mp4` are still untracked. Ask whether to commit the logomark as a brand asset. **The user's check found the Recent row's presence dots clipped** (the ring wrapper is an always-masked ancestor), so LIME-57-fix was drafted. The user then asked for Slack-style status icons in a cut-out notch, so **LIME-57-fixb (which supersedes it) runs next.** Then: the Communities decision surface.
+- **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **The user confirmed 28px. Landed (2026-09-30):** LIME-57 `5a17cbb` (no 28–31px avatars exist, so in practice md/lg/xl = 32/40/56px are shaped and sm/xs stay round; `border-radius: 0` is needed, or the circle clip eats the nub; the unread ring is now a `.lime-avatar-ring` wrapper, because box-shadow on a masked element is invisible), LIME-58 `f578558`, LIME-59 `6db2847` (a hand-drawn Share SVG; bubbles = list hover through one token). **The user's gate checks on 56–59 are pending.** `Logomark-outline.svg` and `signin-teachers.mp4` are still untracked. Ask whether to commit the logomark as a brand asset. **The user's check found the Recent row's presence dots clipped** (the ring wrapper is an always-masked ancestor), so LIME-57-fix was drafted. The user then asked for Slack-style status icons in a cut-out notch, so **LIME-57-fixb (which supersedes it) runs next.** **LIME-57-fixb landed as `81a759d`** (2026-09-30): a `mask-composite` notch, SVG states, and the ring as a layer behind the avatar, verified in the real Firefox and Chrome plus the fallback. Tend's lesson: element-clipped screenshots in Firefox can hide mask effects; confirm with a full-page shot. **The user's gate check FAILED:** the icons shrank (LIME-59 normalised down; the left toggle is the right size), and the status icons have a halo and are too small. **LIME-59-fix and LIME-57-fixc are drafted and run next.** Then: the Communities decision surface. Then: the Communities decision surface.
 - **New finding (tend, LIME-56): white text on the solid green `#09a950` buttons** (e.g. "Continue with email", Seed's `seed-button--primary`) is **under 4.5:1 on every tone** (white on `#09a950` ≈ 3.1:1, computed). It's a brand-level decision. Options put to the user: **A.** ink text `#131b17` on `#09a950` (≈ 5.7:1, computed; keeps the brand green); **B.** darker green `#078040` (`--seed-lime-600`) with white text (≈ 5.0:1, computed); **C.** leave it (large or bold text only needs 3:1, and a 16px semibold button label doesn't qualify). Plot's lean: **A.** Upstream candidate for Seed too. **DECIDED: A (the user, 2026-09-30) → LIME-58 drafted.** Its hover and press go lighter (lime-400/300), because ink on the darker lime-600 is only ≈ 3.5:1.
 
 ### Unbriefed candidates (offer when the queue thins)
@@ -256,6 +256,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
     - clean up with `pkill -f -- '--headless=new'` if a run is killed. **Never `pkill -f "Google Chrome"`**, which quits the user's real Chrome windows (tend did this during LIME-31-fix).
     - The user's rule is "preview to the user in Firefox only". Headless Chrome as an internal measuring tool is allowed and isn't the cause of the hangs.
   - Never wait on a monitor for more than ~2 minutes.
+- **Screenshot artefact (LIME-57-fixb):** a Playwright screenshot clipped tightly to one element can render masks as if uncut in Firefox. Confirm mask work with a full-page (or padded) screenshot before chasing a "browser bug".
 - **CSS masks clip every descendant** (LIME-57): a masked wrapper hides child badges and dots, and box-shadows on masked elements vanish. Any mask brief must verify that no indicator sits inside a masked **ancestor**, with element screenshots of each indicator.
 - **Debounced saves lose data on navigation** (LIME-33, LIME-29): `scheduleSave()` waits 100ms, and a sign-out, redirect or reload inside that window drops the write. Only the real Firefox and Chrome caught it. Any brief that writes and then navigates must flush first (`LimeStore.flush()`); a `pagehide` flush is the general fix (folded into LIME-27).
 - **Playwright's Firefox is not the user's Firefox (found 2026-09-30, LIME-52-fix3).** Uploads passed tend's whole matrix in Playwright's patched Firefox build but did nothing in the user's installed Firefox 156, while working in Chrome. **Any brief touching browser APIs with per-browser behaviour (files, IndexedDB, blobs, canvas, clipboard, `file://` origin rules) must verify in `/Applications/Firefox.app` itself** (BiDi, or Playwright with `executablePath`), and state which binary it used. Layout-only measurements can keep using Playwright's Firefox.
@@ -270,6 +271,57 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-59-fix → `tend` (next): icons back up to the left toggle's size
+
+**The user (2026-09-30, screenshot after LIME-59 `6db2847` and 57-fixb):** "the right toggle button: if you look at the left toggle size (which is correct), the right toggle and palette icon, the mic icon, the + icon all look smaller than they were." LIME-59 normalised the header and composer icons to a ~18px visible bounding box, **which shrank them.** **The reference size is the left sidebar toggle** (`#left-panel-toggle`, `index.html` ~84).
+
+**The change:** measure the **left toggle's rendered glyph bounding box and stroke weight** (in the real Firefox). Then make **every header icon** (Share, Appearance palette, "…", `#right-panel-toggle`) and **every composer icon** (+ attach, mic, ⌄, ↵ return) render at **that same visible size (±1px) and stroke weight**. Keep LIME-59's goal: all of them equal to each other. Hit areas are unchanged. The hand-drawn SVGs (Share, palette) scale accordingly. **Don't change the left toggle.**
+
+**Scope:** icon sizing in `public/css/lime.css` (and the inline SVGs' size attributes in `public/index.html` if needed), and `TEND.md`. Nothing else.
+
+**Verification:** a table of each icon's measured bounding box before and after, against the left toggle's; a screenshot of the header and composer next to the left toggle; the real app in jsdom with zero errors; and the browser-parsed CSS rule counts.
+
+**Gate:** the right-panel toggle, the palette, Share, "…", and the chat box's +, mic and ⌄ are all the same size as the left sidebar toggle.
+
+**Record:** add a `## LIME-59-fix` entry to `TEND.md`. Commit: `fix: header and composer icons match the left toggle's size`, trailer `Brief: LIME-59-fix`, plus the attribution trailer.
+
+---
+
+### LIME-57-fixc → `tend` (after LIME-59-fix; REVISED before sending, 2026-09-30, to follow the user's Penpot mockup): status icons drawn exactly like the mockup
+
+**The user (2026-09-30), on LIME-57-fixb `81a759d`:** "the status icon is also broken: the outline should be around the status only [on] the profile. There should be no background around the status icons." **Then the user made a Penpot mockup** "of how I want it executed". **The mockup is the spec. If the user exports it as an SVG into `public/assets/` (e.g. `status-mockup.svg`), use its exact geometry and override the numbers below. Otherwise use plot's measurements:**
+
+**The mockup (plot's description and measurements; the avatar silhouette is drawn as a white outline on purple only to show its shape):**
+- **The avatar is the lime silhouette** (nub at the lower left). **The status icon sits on the avatar's lower-right edge,** and the avatar is **cut away around it**: the silhouette's outline simply stops on either side of the icon, leaving a clean gap. **Nothing is drawn around the icon:** no disc, no ring, no halo. Inside the cut, you see the true background.
+- **Proportions (measured on the ~400px mockup avatar):**
+  - icon diameter ≈ **31% of the avatar width** (≈ 12.5px at 40, 10px at 32, 17.5px at 56);
+  - icon centre ≈ **(90%, 86%)** of the avatar's box (x, y);
+  - **the cut-away circle's radius ≈ icon radius + 5.5% of the avatar width** (≈ +2.2px at 40). **This replaces plot's earlier "thin 1–1.5px" guess, which was wrong.**
+- **The four states:**
+  - **Active:** a solid **green** filled circle (brand green `--good-bg-bold-default`).
+  - **Busy:** the solid green circle with a **round bite taken out of its top-right** (a bite circle of radius ≈ 30% of the icon's diameter, centred ≈ (+34%, −26%) of the icon diameter from the icon's centre). Plus a **green geometric "Z"** (a flat top bar, a diagonal, a flat bottom bar, drawn as a path, **not** a font glyph), height ≈ 30% of the icon's diameter, sitting **in that bite and slightly outside the icon's top-right bounds** (its left edge ≈ the icon centre + 18%, its top ≈ the icon top − 12%).
+  - **Away:** a **hollow ring**, stroke ≈ 10% of the icon's diameter, **in the muted colour** (`--soil-text-muted`; the mockup's white is its stand-in on purple). The inside is empty: the background shows through (the avatar is cut away there too).
+  - **Do not disturb:** the same muted ring **with the same top-right bite** (an open gap in the ring), plus the **muted "Z"** in the same position as Busy's.
+- The "Z" extends beyond the icon's box, so **the icon element must allow overflow** (or be sized to include the Z), and the avatar's cut-away must also clear the Z's area, so the Z never overlaps the avatar. **The Z is shown on md and larger only**; at sm/xs, keep the bite or gap so the state still differs.
+
+**What was wrong in `81a759d` (plot's survey; fix all of it):**
+- the icons' SVGs use a 24-unit viewBox with the circle at `r=10` (or a ring at `r=9`, stroke 3), so the visible icon is ~25% of the avatar, smaller than before and than the mockup. **Draw shapes that fill their box;**
+- the "Z" is an 8-unit **text** glyph (≈ 4px): unreadable and font-dependent. **Draw it as a path;**
+- a visible band shows around icons, most clearly in the Recent row (the unread ring layer showing through). **Cut the unread ring layer with the same cut-away circle (and the Z area),** confirm the fallback `box-shadow` is off where `mask-composite` works, and remove any background, border or shadow on `.lime-presence` and its SVG. **Report what caused the band.**
+
+**Scope:** the presence and cut-away CSS in `public/css/lime.css`, `presenceIconSvg` in `public/js/app.js`, and `TEND.md`. Not the silhouette, the avatar sizes, or presence data.
+
+**Verification:**
+- **A side-by-side sheet: the mockup's 4 states re-created at 400px in the real app's CSS** (a scratch page using the real classes, on the purple `#451a49`-ish background so it's directly comparable with the mockup), **plus** every state × md, lg and xl on the canvas, a hovered row, a selected row, and a Recent item with an unread ring. In light, dark and Warm. **Use full-page or padded screenshots, not element-clipped ones** (see Patterns learned).
+- Measured icon diameters, centre positions, cut-away radii and Z sizes, against the mockup's ratios (±1px at 40px).
+- In the real Firefox and Chrome. The real app loads in jsdom with zero errors. Report the CSS rule counts.
+
+**Gate:** status icons look like your Penpot mockup: a bigger icon on the lower-right edge, the avatar cut away around it with nothing around the icon; solid green for active, a bitten green circle with a green Z for busy, a grey ring for away, and an open grey ring with a Z for do-not-disturb.
+
+**Record:** add a `## LIME-57-fixc` entry to `TEND.md`. Commit: `fix: status icons match the mockup (cut-away, sizes, path Z)`, trailer `Brief: LIME-57-fixc`, plus the attribution trailer. **Stop for the user's check.**
+
+---
 
 ### LIME-57-fixb → `tend` (next; SUPERSEDES LIME-57-fix, which was never sent): polished status icons in a cut-out notch, never clipped
 
