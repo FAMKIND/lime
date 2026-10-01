@@ -77,7 +77,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
     - *Pro:* works across browsers, private windows and phones on the same Wi-Fi; it rehearses a real network seam. *Con:* 2–3 briefs, and a stepping stone that the real backend later replaces.
   - **C. The real backend (Supabase, per `docs/schema.sql` and the switch checklist):** real auth, Postgres, RLS, realtime and storage.
     - *Pro:* the actual path to launch. *Con:* needs a Supabase project and keys, network, RLS testing, and **a sync-architecture decision first**, because the offline Bluetooth differentiator ([[lime-offline-differentiator]]) argues for local-first sync, so choosing it deserves its own planning pass.
-  - **LIME-71 landed as `46dffb8`; plot reviewed it and APPROVED it with amendments** (see "Plot's review of LIME-71" in Drafted briefs). The user decided: **show the written time** (with "delivered" when it's more than 5 minutes later); **email visible to chat-mates only, phone never displayed, exact-match search only.** Next: **LIME-72** (a committed test harness) → **LIME-73** (the dev server plus contract amendments) → **LIME-74** (the web `ApiAdapter`; drafted after 73).
+  - **LIME-71 landed as `46dffb8`; plot reviewed it and APPROVED it with amendments** (see "Plot's review of LIME-71" in Drafted briefs). The user decided: **show the written time** (with "delivered" when it's more than 5 minutes later); **email visible to chat-mates only, phone never displayed, exact-match search only.** Next: **LIME-72** (a committed test harness) → **LIME-73** (the dev server plus contract amendments) → **LIME-74** (the web `ApiAdapter`; drafted after 73). **Landed 2026-10-01: LIME-72 `8b2e33b`** (`tests/`, puppeteer-core; run with `cd tests && npm install && npm test`) **and LIME-73 `fc16919`** (the dev server; 86 API checks; minimal presence; a single-page snapshot; no password endpoint yet). Tend's security note: the server exposes `demo-config.local.js` on the LAN; **LIME-74 Phase 0 fixes it with an allow-list.** **LIME-74 is drafted.**
   - **LIME-69 landed as `3bb437b`** (2026-10-01): per-tab sessions, merge-on-save, `storage`-event live sync (~130–150ms), reactions with a `removed_at` tombstone, memberships with `updated_at`, and read-on-visible. Limits: a simultaneous duplicate DM (now required in LIME-71's rules), a Reset racing an unsaved write (not hand-reachable), and a pre-existing Firefox `SecurityError` on sign-out with two tabs (cleanup candidate). **Tend's jsdom suites lived in a scratchpad and are gone** (cleanup candidate: commit a test harness). **The user's gate check is pending.**
   - **DECIDED (the user, 2026-10-01): "A, then B".** LIME-69 (A) and LIME-70 (B) are drafted. **Then the user added: plan the infrastructure for iOS and Android apps soon**, so B became **LIME-71** (the API and sync contract: an op log, token auth, a changes feed, files by id, realtime, push and mesh notes; docs only, plot reviews it) **then LIME-72** (the dev server plus web `ApiAdapter` implementing it). LIME-70 is superseded. C (the real backend plus local-first sync) stays a later planning pass.
   - **Plot's recommendation:** **A now** (test two-person messaging today), then a **planning pass for C** (backend plus local-first sync) as the next milestone, before or alongside Communities.
@@ -104,6 +104,12 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **DECIDED (the user, 2026-10-01): the framework is agreed. The environment badge is CUT.** The URL is the distinction (e.g. `localhost` for local, a `staging.` subdomain, and the production domain). Don't propose a badge again. Environment config (the API URL and keys per environment) still applies when the app talks to a hosted backend. The Supabase staging/production split belongs in the backend planning pass (option C).
 
 ### Unbriefed candidates (offer when the queue thins)
+- **A mobile layout pass** (seen in the user's iPhone screenshots of the LAN URL, 2026-10-01):
+  - the top-centre toast covers the header and list;
+  - the composer box is narrower than the screen and offset, and the bubble or location card is cut off on the right;
+  - the header is crowded (truncated crumbs plus four icons);
+  - the composer toolbar is expanded when the keyboard opens.
+  Offer it after LIME-74 as a focused mobile QA brief (measured at 390×844).
 - **A committed test harness** (2026-10-01: tend's jsdom and Playwright suites lived in session scratchpads and were lost between sessions, so LIME-69 couldn't re-run them). Add `tests/` with a `package.json` (devDependencies: jsdom, playwright), the smoke test (the real `index.html` and `auth.html` load with zero errors), and the key regression suites (auth, live sync / no lost writes, toasts), runnable with one command. Fold it into the cleanup brief, or make it its own brief before LIME-72.
 - **Firefox `SecurityError` on sign-out with a second tab open** (pre-existing; seen in LIME-69). Investigate in the cleanup brief.
 - **A CSS guard script** (the `*/`-inside-a-comment truncation hit a **second** time in LIME-61, 2026-09-30): a small Node script in the repo (e.g. `scripts/check-css.mjs`, no dependencies) that parses every `public/css/*.css` file, fails if any comment body contains `*/` or a `/*` nesting, and prints each file's rule count against an expected minimum. Tend runs it before every CSS commit. Fold it into the cleanup brief.
@@ -318,6 +324,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **Screenshot artefact (LIME-57-fixb):** a Playwright screenshot clipped tightly to one element can render masks as if uncut in Firefox. Confirm mask work with a full-page (or padded) screenshot before chasing a "browser bug".
 - **CSS masks clip every descendant** (LIME-57): a masked wrapper hides child badges and dots, and box-shadows on masked elements vanish. Any mask brief must verify that no indicator sits inside a masked **ancestor**, with element screenshots of each indicator.
 - **Debounced saves lose data on navigation** (LIME-33, LIME-29): `scheduleSave()` waits 100ms, and a sign-out, redirect or reload inside that window drops the write. Only the real Firefox and Chrome caught it. Any brief that writes and then navigates must flush first (`LimeStore.flush()`); a `pagehide` flush is the general fix (folded into LIME-27).
+- **The test harness lives in `tests/`** (LIME-72): it uses **puppeteer-core** driving the installed Firefox (BiDi, with real-default prefs) and Chrome. Run `cd tests && npm test` (the Python server) and `LIME_TEST_SERVER=dev npm test` (the dev server). Every brief touching `public/` must run it and report the result.
 - **Playwright's Firefox is not the user's Firefox (found 2026-09-30, LIME-52-fix3).** Uploads passed tend's whole matrix in Playwright's patched Firefox build but did nothing in the user's installed Firefox 156, while working in Chrome. **Any brief touching browser APIs with per-browser behaviour (files, IndexedDB, blobs, canvas, clipboard, `file://` origin rules) must verify in `/Applications/Firefox.app` itself** (BiDi, or Playwright with `executablePath`), and state which binary it used. Layout-only measurements can keep using Playwright's Firefox.
 - **`[hidden]` is unreliable here:** any class that sets `display` (e.g. `.lime-icon-btn { display: flex }`) beats the browser's default `[hidden]` rule (found in LIME-40). Candidate for the global-reset brief: `[hidden] { display: none !important; }` alongside the border-box reset.
 - **CSS verification must check what the browser parsed** (found in LIME-50-fix): a `*/` inside a comment (e.g. writing `--calm-bg-*/…`) closes it early and silently drops the rest of the stylesheet. Brace counts and `node --check` can't catch it. Every CSS-touching brief should report `document.styleSheets[i].cssRules.length` for `lime.css` (≈ 660) and `gradients.css` in the real browser, and never write `*/` inside comment text.
@@ -405,9 +412,76 @@ These amendments go into `docs/api.md` as **Phase 0 of LIME-73**.
 
 **Record:** add a `## LIME-73` entry to `TEND.md`. Commit: `feat: dev server implementing the v1 API (ops, feed, files, events)`, trailer `Brief: LIME-73`, plus the attribution trailer.
 
-### LIME-74 (to be drafted after LIME-73 lands): the web `ApiAdapter`
+### LIME-74 → `tend` (next): the web app talks to the dev server: everyone shares one Lime, live
 
-A local store plus an outbox in `localStorage`/IndexedDB, write → op, feed → local store, SSE, token handling, the "sent · delivered" display, the directory-backed picker, and the `LocalAdapter` fallback when `/api/v1/health` doesn't answer. End-to-end checks: Firefox, a private window, Chrome **and the user's phone**.
+**Context:** LIME-72 (`8b2e33b`, tests; **puppeteer-core** driving the installed Firefox and Chrome instead of Playwright, accepted) and LIME-73 (`fc16919`, `server/dev-server.mjs` implementing the amended `docs/api.md`; 86 API checks) landed on 2026-10-01. The web app still uses `LocalAdapter`. This brief connects it.
+
+**Assumptions:** the agent can edit files, run Node, run `tests/` (`npm test`, and `LIME_TEST_SERVER=dev npm test`), drive the real Firefox and Chrome, and commit. Read `docs/api.md` in full first.
+
+**Phase 0: contract and server fixes**
+1. **Password change:** add `POST /auth/password` `{ current_password, new_password }` to `docs/api.md` and the server (it verifies, re-hashes, and **revokes the user's other devices' refresh tokens**; the calling device stays signed in). Add api-suite checks.
+2. **Security: serve only what the app needs.** The dev server currently serves the whole repo root, so **`public/js/demo-config.local.js` (the demo password) is readable by anyone on the same Wi-Fi** (tend's note). Change static serving to an **allow-list**: `public/**` and `vendor/**` only, **never** `*.local.js`, dotfiles, `data/`, `server/`, `tests/`, `.git/`. The demo password is read **server-side** only (for seeding). Add api-suite checks that those paths return 404.
+
+3. **Two dedicated test accounts (the user, 2026-10-01: "create two test accounts so there is no confusion"):**
+   - **Shem Rajoon**, `[test account 1 email]`, phone `[test account 1 phone]`;
+   - **Jean Chung**, `[test account 2 email]`, phone `[test account 2 phone]`;
+   - **both with the password the user gave** (plot wrote it into the prompt the user pastes, not into this file).
+   - **They're real people's emails and phones, and a real password, and the repo has a GitHub remote (`FAMKIND/lime`), so NONE of it goes into committed files.** Put them in a **gitignored** `seed-data/test-accounts.local.json` (**add `*.local.json` to `.gitignore`**, and confirm with `git check-ignore`). The dev server reads it **server-side** on first run and on `/dev/reset`, creating both profiles with server-hashed credentials. Commit only a **`seed-data/test-accounts.example.json`** with obviously fake values and a README line.
+   - Make up the rest of their profiles, plausible and teacher-like:
+     - Shem Rajoon: Math teacher, PS 113, grades 7–8, he/him, a short bio;
+     - Jean Chung: Head of FAM, PS 113, life skills, she/her, a short bio;
+     - timezone `America/New_York`.
+   - Give them a **ready DM with each other** (no messages yet) and make both members of **PS 113 Staff Room**, so group testing works immediately.
+   - The existing seed teachers (including the older "Jean Chung" and "Shem Robinson" demo profiles) stay. **To avoid confusion, the server log line prints the two test emails at startup.**
+   - Phone numbers follow the privacy rule: **stored and searchable by exact match, never displayed.**
+
+**Phase 1: the `ApiAdapter`** (`public/js/api-adapter.js`, the same contract `LimeStore` already uses):
+1. **Selection:** `store.js` uses the `ApiAdapter` when `GET /api/v1/health` answers on the same origin; otherwise `LocalAdapter` (the Python server and `file://` keep working as the local-only version). Log which one is active in the console.
+2. **Auth:** `auth.js`'s signUp, signInWithPassword, signOut, changePassword and changeEmail go through the API (the email change is the `profile.setEmail` op).
+   - Access and refresh tokens are kept in **`sessionStorage`** (per tab, as LIME-69 decided); a `device_id` in `localStorage`.
+   - Silent refresh when the access token expires.
+   - Every existing UX stays: inline errors, the seed-teacher hint, `?from=auth`, toasts and the storage messages (adapted to the server's error codes).
+3. **The local store and outbox:** reads stay synchronous from the in-memory cache, persisted per user (IndexedDB or `localStorage`) together with the **cursor** and the **outbox**, so a reload is instant and works offline.
+   - **Every `LimeStore` write becomes an op** (the mapping table in `docs/api.md` section 11): apply it optimistically, queue it, flush it to `POST /ops` in order, and retry with the same `op_id`s.
+   - **A permanent rejection rolls back and shows an error toast.**
+   - Apply feed entries in `seq` order: confirm your own ops, and handle **backfill** and **alias** entries.
+4. **Realtime:** `POST /events/ticket`, then `EventSource('/api/v1/events?ticket=…')`. On `changed`, fetch `/changes`. Reconnect with backoff; poll every 30s as a fallback. **Presence:** update the presence icons from realtime `presence` messages.
+5. **Files:** uploads go to `POST /files`. **Images can't send a bearer header**, so `getAttachmentUrl` fetches `GET /files/:id` with the token, turns it into a `blob:` URL, and caches it per session. Note signed URLs as the production alternative in `docs/api.md`. This covers attachments, avatars and the photo wall alike.
+6. **Product rules from plot's review:**
+   - **message time:** show the **written** time (`min(client_ts, server_ts)`); when delivered more than 5 minutes later, show a compact "Sent 10:05 · delivered 10:35" (tend's exact copy, kept short);
+   - **privacy:** the UI handles **missing email** (not a chat-mate) and **never shows phone numbers**;
+   - **the New message picker** uses `GET /profiles?q=` once 2 characters are typed (partial name or school; exact email or phone, never revealing them), and shows the people you already chat with when empty;
+   - **link previews** come from `GET /link-preview`.
+7. **Reset demo data** (local dev only) calls `POST /dev/reset`. **Every** connected client gets `410 cursor_expired` and goes to sign-in with the "Demo data was reset" toast.
+8. **LIME-69's cross-tab `storage` sync** stays only for `LocalAdapter`. With the `ApiAdapter`, tabs sync through the server.
+9. **Remove `demo-config.local.js` from the HTML** when the `ApiAdapter` is active (the server verifies demo passwords), keeping it for the `LocalAdapter` fallback.
+
+**Scope:**
+- **May touch:** `public/js/` (new `api-adapter.js`; `store.js`, `auth.js`, `app.js` where needed), `public/index.html` and `auth.html` (script tags), `server/` (Phase 0), `docs/api.md` and `docs/data-model.md`, `tests/` (new suites), and `TEND.md`.
+- **May not touch:** the visual design, Communities, and `vendor/`.
+- If a decision isn't covered by the contract or this brief, **stop and ask the user.**
+
+**Verification:**
+- **All existing suites** pass under both `npm test` (the Python / `LocalAdapter` fallback) **and** `LIME_TEST_SERVER=dev npm test`.
+- **A new `e2e-server` suite** against the dev server, in the **real Firefox (a normal and a private window) and Chrome**, as three different users:
+  - a DM and a group message live;
+  - a thread reply;
+  - a reaction;
+  - rename, add member and delete;
+  - a name and photo change propagating;
+  - an attachment visible to members and **403 for a non-member**;
+  - per-user star and archive not leaking;
+  - DM dedup when two users create the same DM at once (one conversation);
+  - **offline:** stop the server, send messages in one client, restart → they deliver in order, and a gap over 5 minutes shows "delivered" (simulate the clock);
+  - no lost writes (20 + 20 across two browsers);
+  - Reset → everyone goes to sign-in.
+- The demo password file returns 404 over the LAN URL.
+- **Manual phone check, for the user:** give the exact LAN URL and steps.
+- Zero console errors.
+
+**Gate:** start `node server/dev-server.mjs`. Open the printed link in Firefox, a **private window** and Chrome, and the network link **on your phone**. Sign in as the **two test accounts** (`[test account 1 email]` and `[test account 2 email]`) and chat: everyone sees everything live, including photos and name changes. Stop the server for a minute, send a message, start it again: it arrives.
+
+**Record:** add a `## LIME-74` entry to `TEND.md`. Commit (Phase 0 may be a separate commit, each with the trailer): `feat: web ApiAdapter: shared live Lime via the dev server`, trailer `Brief: LIME-74`, plus the attribution trailer. **Stop for the user's check.**
 
 ---
 
