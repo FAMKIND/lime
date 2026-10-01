@@ -103,6 +103,38 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - feature flags for early-access features (later).
 - **DECIDED (the user, 2026-10-01): the framework is agreed. The environment badge is CUT.** The URL is the distinction (e.g. `localhost` for local, a `staging.` subdomain, and the production domain). Don't propose a badge again. Environment config (the API URL and keys per environment) still applies when the app talks to a hosted backend. The Supabase staging/production split belongs in the backend planning pass (option C).
 
+### Open decision: the mobile shell (raised by the user 2026-10-01; plot's proposal sent)
+- **The user's mobile QA (iPhone, LAN URL):**
+  - you can't get **back from a chat to the messages list**;
+  - the **breadcrumbs are illegible** ("M… / Sh…");
+  - **bubbles and the location card overflow** on the right;
+  - the **composer gets cut off**;
+  - the **paint-brush** button should move into the "⋯" menu on mobile.
+- **The user's questions:**
+  - (1) on mobile, should the nav become a **bottom dock** (like WhatsApp: Updates, Calls, Communities, Chats, You), freeing the top left and right for navigation, like Messages and WhatsApp?
+  - (2) can we use **native device elements** (dropdowns etc.)?
+- **Plot's proposal:**
+  - **(1) Yes, a bottom dock on phones** (≤ 767px). The current hamburger/push drawer was designed in LIME-12; this **supersedes the mobile drawer decision** recorded in the README ("Decisions 2026-09-23"). Plot needs the user's explicit OK, since it reverses a logged decision.
+    - **Dock items:** Link (chats), Communities, Notifications (with a badge), and You (profile and settings). **Jam isn't in it until it exists.**
+    - **The "+ Add" action** goes to the **top right** of the Chats screen, like WhatsApp's "+".
+    - **Screens stack like native apps:** the chat list is a full screen; tapping a chat pushes the chat screen, with **"‹" back at the top left** and the **title** (avatar, name, a member count you can tap for details) in the centre, plus Share and "⋯" at the top right. The **paint brush moves into "⋯"**.
+    - **No breadcrumbs on phones:** the back button plus the title replace them. That fixes "illegible breadcrumbs" by design.
+    - The thread and details panels push as full screens with "‹" back.
+  - **(2) Native where the web allows it:**
+    - **`navigator.share`** (the native share sheet) for Share / Copy link on phones;
+    - a **native `<select>`** for simple pickers (the microphone list, timezone);
+    - **native input types** (email, tel and search keyboards; `enterkeyhint="send"` on the composer, so the keyboard's return key says "Send");
+    - native file and photo pickers (already).
+    - **Action menus** ("⋯", the title menu) have no native web equivalent, so on phones they become **bottom sheets** in Lime's style (like the iOS action sheet).
+    - **Haptics** (`navigator.vibrate`) work on Android only. Skip them.
+  - **The layout bugs** (overflowing bubbles, the composer, the toast covering the header, the toolbar expanding when the keyboard opens) are fixed inside the same pass, measured at 390×844.
+  - **Steward point:** this is a big visual change, so plot proposes **one design brief first**: a static mock page of the 3 phone screens (the chat list with the dock, a chat, a bottom sheet) for the user to approve, then two or three build briefs. That avoids the build-and-QA loop.
+- **DECIDED (the user, 2026-10-01):**
+  - **(1) "ok with dock"**: the bottom dock on phones; **this supersedes the README's 2026-09-23 mobile drawer decision** (the build brief updates the README);
+  - **(2) "native when allowed"**;
+  - **(3) mock first: "sounds good"** → **LIME-77** (a static mock) is drafted.
+  - The test accounts' password works.
+
 ### Unbriefed candidates (offer when the queue thins)
 - **A mobile layout pass** (seen in the user's iPhone screenshots of the LAN URL, 2026-10-01):
   - the top-centre toast covers the header and list;
@@ -339,7 +371,87 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ## Drafted briefs
 
-### LIME-75 → `tend` (next): every demo email becomes @famkind.com; the two test accounts ARE the demo Shem and Jean
+### LIME-77 → `tend` (after LIME-76): a static mock of the phone shell, for the user to approve before building
+
+**The user (2026-10-01):** OK to a **bottom dock** on phones (superseding the push-drawer decision), **native elements where allowed**, and **a mock first**. See the open decision "the mobile shell" for the full proposal. **This brief builds no app behaviour.** It's a picture made of real CSS, so the user can say yes or no.
+
+**Assumptions:** the agent can write HTML/CSS, take screenshots with the installed browsers, and commit.
+
+**The change:** create **`public/mockups/mobile-shell.html`** (served by the dev server's allow-list; it isn't linked from the app). It's static HTML using **Lime's real tokens and CSS** (`vendor/seed` tokens, `public/css/lime.css`: the lime avatars, status icons, pale-lime primary, canvas tones, Montserrat). It shows **phone frames at 390×844** side by side, each labelled:
+1. **Chats (the list screen):**
+   - a large title "Messages", with a **"+"** at the top right (pale-lime primary; it opens New message);
+   - a search field;
+   - the Recent row, Starred and All (real-looking seed names);
+   - **the dock** at the bottom: **Link (selected), Communities, Notifications (badge "3"), You (your avatar)**. Styled as a **floating, rounded, translucent pill** (like the user's WhatsApp reference), clearing the iPhone home indicator (safe area).
+   - **A toast** shown at its phone position (just under the top bar, not covering the title).
+2. **A chat (the pushed screen):**
+   - the top bar has **"‹"** (back to Chats) at the left, the **avatar plus name plus status/member line** centred (tappable for details), and **Share and "⋯"** at the right;
+   - **no breadcrumbs, no dock** inside a chat (like WhatsApp and Messages);
+   - messages: text bubbles, a long URL wrapping, a photo album, a location card, a reply-count line, and the "Sent · delivered" note. **Everything fits the 390px width.**
+   - the composer pinned above the safe area: "+", the input with the keyboard's return labelled **Send** (note it), and mic ⌄.
+3. **The "⋯" bottom sheet:** a grab handle; items **Star, Rename, Appearance (paint brush), Share, Archive, and Delete (red)** in Lime's menu style, over a dimmed backdrop; the native look of an iOS action sheet, in Lime's style.
+4. **For comparison: the dock as a classic full-width tab bar** (a small frame, Chats only), so the user can choose between floating and classic.
+5. **One dark-mode frame** of screen 1.
+
+**Under the frames, short notes** listing what will be **native** in the build:
+- `navigator.share` for Share;
+- a native `<select>` for the microphone and timezone pickers;
+- `inputmode` / `type` keyboards for email, phone and search;
+- `enterkeyhint="send"`;
+- native file and photo pickers.
+
+Also note what **can't** be native on the web (action menus become bottom sheets; no haptics on iOS).
+
+**Scope:** `public/mockups/mobile-shell.html` (new), its own small CSS block inside it (mock-only, no changes to `lime.css`), and `TEND.md`.
+
+**Verification:** screenshots of the page in the real Firefox and Safari (Safari as the iOS proxy), with the paths given; text contrast holds; nothing overflows 390px. **There's no app regression risk** (no app files change); confirm with `git diff --stat` (only the new file plus `TEND.md`).
+
+**Gate:** open `http://localhost:8000/public/mockups/mobile-shell.html` (or the network link on your phone) and say yes, or what to change: the dock items, floating or classic, the top bar, the sheet.
+
+**Record:** add a `## LIME-77` entry to `TEND.md`. Commit: `docs: static mobile shell mock (dock, chat, sheet)`, trailer `Brief: LIME-77`, plus the attribution trailer. Push. **Stop for the user's verdict.** Plot then drafts the build briefs (the shell and navigation, the layout fixes, and the native elements and sheets).
+
+---
+
+### LIME-76 → `tend` (next, urgent): phones can't send. `crypto.randomUUID` doesn't exist on the LAN address
+
+**The user's QA (2026-10-01):** signed in as Jean and Shem on two phone browsers via `http://192.168.0.127:8000`. **No messages showed from either end, not even a profile change.**
+
+**Plot's diagnosis (from the dev server's own `data/oplog.jsonl` and the code):**
+- The phones **did** reach the server: 13 ops arrived (`markRead`, a `profile.update` by teacher-002 to "Shem Rajoon" with an audience of 15, and a `reaction.toggle`). **But there's not a single `message.send`.**
+- **Every op has `device_id: "web-volatile"`.** That's the fallback in `api-adapter.js` ~82–84, taken when `'web-' + crypto.randomUUID()` throws.
+- **`crypto.randomUUID()` (and `crypto.subtle`) exist only in secure contexts.** `http://localhost` is secure; **`http://192.168.x.x` isn't.** So on phones:
+  - (a) **`sendMessage` throws** at `store.js` ~632 (`crypto.randomUUID()` for the message id), and so do the attachment ids (~637) and new conversations (~749, ~760). **That's why no message was ever sent.**
+  - (b) every phone shares the **same** `device_id`, `"web-volatile"`, which can collide in per-device sessions and refresh tokens. That's a likely reason the other phone didn't receive the profile change (its session or feed may have been revoked or confused). Confirm it.
+- Tend's suites all ran on `localhost` (secure), so they never saw it.
+
+**The change:**
+1. **A shared id helper**, `public/js/ids.js` (loaded before everything that needs it): `newId()` returns a UUIDv4 using **`crypto.getRandomValues`** (available in insecure contexts), and `newOpId()` returns a **UUIDv7** the same way (the contract asks for v7 op ids; check what the adapter does today). **Replace every `crypto.randomUUID()`** in `public/js/` with it (the full list is the grep above: `auth.js` ~143, `api-adapter.js` ~82, `store.js` ~632/637/647/660/749/760, `local-adapter.js` ~58, and any others found).
+2. **`device_id`:** generated with the helper and stored per browser. **Never a shared constant:** if storage is unavailable, generate a random id per page load. Remove `"web-volatile"`.
+3. **`crypto.subtle`** (`auth.js` ~76, the `LocalAdapter`'s browser-side PBKDF2): with the `ApiAdapter`, passwords are verified by the server, so this path isn't used. Make sure it's **never reached in `ApiAdapter` mode**. In `LocalAdapter` mode on an insecure origin, show a clear message instead of a crash.
+4. **Never fail silently:** wrap op creation so any exception in a write shows the error toast and logs it, rather than leaving the UI looking sent while nothing was queued.
+5. **The server side of the collision:** confirm what `"web-volatile"` did to sessions and refresh tokens (e.g. signing in as Jean revoking Shem's session on the "same device"). The server should **reject an obviously invalid `device_id`** (not a UUID) with `bad_request`, so this can't recur silently.
+6. **Tests over an insecure origin:**
+   - add a `LIME_TEST_ORIGIN` option so the browser suites (and `e2e-server`) run against the **LAN IP** (`http://<this Mac's LAN IP>:8000`), not `localhost`;
+   - confirm in the test that `window.isSecureContext === false` there;
+   - run the whole `e2e-server` suite that way in Firefox and Chrome;
+   - **also drive Safari on the Mac** (`safaridriver`, WebDriver; the same WebKit engine as iOS Safari) for at least: sign in, send a DM, receive a DM live, and a profile change propagating. If `safaridriver` needs enabling (`safaridriver --enable` asks for the user's password), **stop and give the user the one command.**
+
+**Scope:** `public/js/` (the new `ids.js`, the replacements, error handling), `public/index.html` and `auth.html` (script tag), `server/` (`device_id` validation), `tests/` (the origin option, the Safari run), and `TEND.md`.
+
+**Verification:**
+- `grep crypto.randomUUID public/js` finds 0.
+- The full suites pass on localhost **and** on the LAN IP (insecure).
+- Safari passes its checks.
+- A fresh `data/` log after the e2e run shows `message.send` ops with **distinct** `device_id`s.
+- **Manual phone steps for the user,** listed exactly.
+
+**Gate:** restart the server (`rm -rf data` first, so the test accounts are fresh). On two phones (or two phone browsers), sign in as Shem and Jean and message each other: messages, a name change, a photo, all live.
+
+**Record:** add a `## LIME-76` entry to `TEND.md`, including the root cause. Commit: `fix: ids without crypto.randomUUID (insecure LAN origin); unique device ids`, trailer `Brief: LIME-76`, plus the attribution trailer. **Push** (the user approved pushing backups). **Stop for the user's check.**
+
+---
+
+### LIME-75 → LANDED as `e56fbf5` and **pushed** (2026-10-01; the first push in a long while, `origin/main` = `e56fbf5`; `PLOT.md` pushed as `c63a4bf`). Plot verified: 0 old-style emails in the seed, and 0 phone matches in history. **The user's gate check is pending** (delete `data/` or reset, then sign in as Shem and Jean). Original brief: every demo email becomes @famkind.com; the two test accounts ARE the demo Shem and Jean
 
 **The user (2026-10-01):** "any emails, make them @famkind.com, because Lime is a FAM project, so that would be jean@famkind.com."
 
