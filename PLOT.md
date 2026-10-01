@@ -77,7 +77,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
     - *Pro:* works across browsers, private windows and phones on the same Wi-Fi; it rehearses a real network seam. *Con:* 2–3 briefs, and a stepping stone that the real backend later replaces.
   - **C. The real backend (Supabase, per `docs/schema.sql` and the switch checklist):** real auth, Postgres, RLS, realtime and storage.
     - *Pro:* the actual path to launch. *Con:* needs a Supabase project and keys, network, RLS testing, and **a sync-architecture decision first**, because the offline Bluetooth differentiator ([[lime-offline-differentiator]]) argues for local-first sync, so choosing it deserves its own planning pass.
-  - **LIME-71 landed as `46dffb8`; plot reviewed it and APPROVED it with amendments** (see "Plot's review of LIME-71" in Drafted briefs). The user decided: **show the written time** (with "delivered" when it's more than 5 minutes later); **email visible to chat-mates only, phone never displayed, exact-match search only.** Next: **LIME-72** (a committed test harness) → **LIME-73** (the dev server plus contract amendments) → **LIME-74** (the web `ApiAdapter`; drafted after 73). **Landed 2026-10-01: LIME-72 `8b2e33b`** (`tests/`, puppeteer-core; run with `cd tests && npm install && npm test`) **and LIME-73 `fc16919`** (the dev server; 86 API checks; minimal presence; a single-page snapshot; no password endpoint yet). Tend's security note: the server exposes `demo-config.local.js` on the LAN; **LIME-74 Phase 0 fixes it with an allow-list.** **LIME-74 is drafted.**
+  - **LIME-71 landed as `46dffb8`; plot reviewed it and APPROVED it with amendments** (see "Plot's review of LIME-71" in Drafted briefs). The user decided: **show the written time** (with "delivered" when it's more than 5 minutes later); **email visible to chat-mates only, phone never displayed, exact-match search only.** Next: **LIME-72** (a committed test harness) → **LIME-73** (the dev server plus contract amendments) → **LIME-74** (the web `ApiAdapter`; drafted after 73). **Landed 2026-10-01: LIME-72 `8b2e33b`** (`tests/`, puppeteer-core; run with `cd tests && npm install && npm test`) **and LIME-73 `fc16919`** (the dev server; 86 API checks; minimal presence; a single-page snapshot; no password endpoint yet). Tend's security note: the server exposes `demo-config.local.js` on the LAN; **LIME-74 Phase 0 fixes it with an allow-list.** **LIME-74 is drafted.** **LIME-74 landed as `d6b1785`** (2026-10-01): the `ApiAdapter`, outbox, SSE, the allow-list, `POST /auth/password`, and the test accounts in a gitignored file; tend also added a dev-only `POST /auth/lookup`; 46 e2e checks across three browsers. **The user's gate check is pending** (phone and a true private window). **`34cf2a9` contains personal data, so LIME-74-redact must run before any push.**
   - **LIME-69 landed as `3bb437b`** (2026-10-01): per-tab sessions, merge-on-save, `storage`-event live sync (~130–150ms), reactions with a `removed_at` tombstone, memberships with `updated_at`, and read-on-visible. Limits: a simultaneous duplicate DM (now required in LIME-71's rules), a Reset racing an unsaved write (not hand-reachable), and a pre-existing Firefox `SecurityError` on sign-out with two tabs (cleanup candidate). **Tend's jsdom suites lived in a scratchpad and are gone** (cleanup candidate: commit a test harness). **The user's gate check is pending.**
   - **DECIDED (the user, 2026-10-01): "A, then B".** LIME-69 (A) and LIME-70 (B) are drafted. **Then the user added: plan the infrastructure for iOS and Android apps soon**, so B became **LIME-71** (the API and sync contract: an op log, token auth, a changes feed, files by id, realtime, push and mesh notes; docs only, plot reviews it) **then LIME-72** (the dev server plus web `ApiAdapter` implementing it). LIME-70 is superseded. C (the real backend plus local-first sync) stays a later planning pass.
   - **Plot's recommendation:** **A now** (test two-person messaging today), then a **planning pass for C** (backend plus local-first sync) as the next milestone, before or alongside Communities.
@@ -324,6 +324,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **Screenshot artefact (LIME-57-fixb):** a Playwright screenshot clipped tightly to one element can render masks as if uncut in Firefox. Confirm mask work with a full-page (or padded) screenshot before chasing a "browser bug".
 - **CSS masks clip every descendant** (LIME-57): a masked wrapper hides child badges and dots, and box-shadows on masked elements vanish. Any mask brief must verify that no indicator sits inside a masked **ancestor**, with element screenshots of each indicator.
 - **Debounced saves lose data on navigation** (LIME-33, LIME-29): `scheduleSave()` waits 100ms, and a sign-out, redirect or reload inside that window drops the write. Only the real Firefox and Chrome caught it. Any brief that writes and then navigates must flush first (`LimeStore.flush()`); a `pagehide` flush is the general fix (folded into LIME-27).
+- **Plot crossed a line (2026-10-01): never write personal data into `PLOT.md`.** Plot copied the user's test-account emails and phone numbers into the LIME-74 brief while that same brief said they must never be committed. Tend committed `PLOT.md` unedited (`34cf2a9`), as instructed. It was caught before any push (origin was 129 commits behind) and redacted. **Rule:** real emails, phone numbers, passwords and keys go **only** into the prompt the user pastes, pointing at a gitignored file. `PLOT.md` refers to them abstractly ("test account 1"). The history rewrite is LIME-74-redact.
 - **The test harness lives in `tests/`** (LIME-72): it uses **puppeteer-core** driving the installed Firefox (BiDi, with real-default prefs) and Chrome. Run `cd tests && npm test` (the Python server) and `LIME_TEST_SERVER=dev npm test` (the dev server). Every brief touching `public/` must run it and report the result.
 - **Playwright's Firefox is not the user's Firefox (found 2026-09-30, LIME-52-fix3).** Uploads passed tend's whole matrix in Playwright's patched Firefox build but did nothing in the user's installed Firefox 156, while working in Chrome. **Any brief touching browser APIs with per-browser behaviour (files, IndexedDB, blobs, canvas, clipboard, `file://` origin rules) must verify in `/Applications/Firefox.app` itself** (BiDi, or Playwright with `executablePath`), and state which binary it used. Layout-only measurements can keep using Playwright's Firefox.
 - **`[hidden]` is unreliable here:** any class that sets `display` (e.g. `.lime-icon-btn { display: flex }`) beats the browser's default `[hidden]` rule (found in LIME-40). Candidate for the global-reset brief: `[hidden] { display: none !important; }` alongside the border-box reset.
@@ -337,6 +338,26 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-74-redact → `tend` (next, BEFORE any push): rewrite history to remove the test-account details from `34cf2a9`
+
+**What happened:** plot wrote the two test accounts' **real emails and phone numbers** into `PLOT.md`. Tend committed it unedited as `34cf2a9` ("chore: update PLOT.md"), followed by `d6b1785` (LIME-74). **Neither is pushed** (`origin/main` = `a7a7fab`, 129 commits behind), so a local rewrite is safe. Plot has already redacted the working-tree `PLOT.md`. `git log -S` found the strings **only in `34cf2a9`**. The password was never in `PLOT.md`.
+
+**Assumptions:** the agent can run git (including `filter-branch`, or an equivalent non-interactive rewrite) and has the user's approval (given in the prompt). **No push.** Don't use interactive commands (`rebase -i` isn't available).
+
+**The change:**
+1. **Commit the current redacted `PLOT.md` first** (`chore: update PLOT.md`), so the working tree is clean.
+2. **Rewrite the commits from `34cf2a9` through `HEAD`** so that **no version of `PLOT.md` in that range** contains the two test emails or the two phone numbers. Tend knows them from the local accounts file (`seed-data/test-accounts.local.json`). **Read them from that file inside the rewrite command; don't type them into any committed file, `TEND.md`, or the report.** Replace each with a neutral placeholder (e.g. `[test account 1 email]`). A tree filter limited to `PLOT.md`, or `git filter-branch --tree-filter` over `34cf2a9^..HEAD`, is fine. **Keep every commit message, author, date and trailer unchanged.** Only `PLOT.md` content changes.
+3. **Verify:** for each of the four strings, `git log --all -S '<string>'` finds **no commit** (search with the values read from the local file; report only "0 matches for 4/4 strings"). `git diff <old HEAD> <new HEAD> -- . ':!PLOT.md'` is **empty** (no other file changed). The commit count is unchanged.
+4. **Clean up the backup refs** that `filter-branch` leaves (`refs/original/…`), and expire the reflog for those entries and `gc --prune=now`, so the old objects don't linger. **Report each command run.**
+
+**Scope:** git history only (`PLOT.md` content in that range) plus the new `PLOT.md` commit. **No push.**
+
+**Gate:** none. Tend reports "0 matches" and an empty non-`PLOT.md` diff. **The user decides when to push.**
+
+**Record:** add a `## LIME-74-redact` entry to `TEND.md` (without the strings).
+
+---
 
 ### Plot's review of LIME-71 (`docs/api.md`, `46dffb8`), 2026-10-01: APPROVED with amendments
 
@@ -423,8 +444,7 @@ These amendments go into `docs/api.md` as **Phase 0 of LIME-73**.
 2. **Security: serve only what the app needs.** The dev server currently serves the whole repo root, so **`public/js/demo-config.local.js` (the demo password) is readable by anyone on the same Wi-Fi** (tend's note). Change static serving to an **allow-list**: `public/**` and `vendor/**` only, **never** `*.local.js`, dotfiles, `data/`, `server/`, `tests/`, `.git/`. The demo password is read **server-side** only (for seeding). Add api-suite checks that those paths return 404.
 
 3. **Two dedicated test accounts (the user, 2026-10-01: "create two test accounts so there is no confusion"):**
-   - **Shem Rajoon**, `[test account 1 email]`, phone `[test account 1 phone]`;
-   - **Jean Chung**, `[test account 2 email]`, phone `[test account 2 phone]`;
+   - **Test account 1** ("Shem Rajoon") and **test account 2** ("Jean Chung"): emails, phone numbers and password **only in the gitignored `seed-data/test-accounts.local.json`** (the user gave them in chat on 2026-10-01; plot wrongly copied them here at first, and redacted them on 2026-10-01);
    - **both with the password the user gave** (plot wrote it into the prompt the user pastes, not into this file).
    - **They're real people's emails and phones, and a real password, and the repo has a GitHub remote (`FAMKIND/lime`), so NONE of it goes into committed files.** Put them in a **gitignored** `seed-data/test-accounts.local.json` (**add `*.local.json` to `.gitignore`**, and confirm with `git check-ignore`). The dev server reads it **server-side** on first run and on `/dev/reset`, creating both profiles with server-hashed credentials. Commit only a **`seed-data/test-accounts.example.json`** with obviously fake values and a README line.
    - Make up the rest of their profiles, plausible and teacher-like:
@@ -479,7 +499,7 @@ These amendments go into `docs/api.md` as **Phase 0 of LIME-73**.
 - **Manual phone check, for the user:** give the exact LAN URL and steps.
 - Zero console errors.
 
-**Gate:** start `node server/dev-server.mjs`. Open the printed link in Firefox, a **private window** and Chrome, and the network link **on your phone**. Sign in as the **two test accounts** (`[test account 1 email]` and `[test account 2 email]`) and chat: everyone sees everything live, including photos and name changes. Stop the server for a minute, send a message, start it again: it arrives.
+**Gate:** start `node server/dev-server.mjs`. Open the printed link in Firefox, a **private window** and Chrome, and the network link **on your phone**. Sign in as the **two test accounts** (their emails print at server startup) and chat: everyone sees everything live, including photos and name changes. Stop the server for a minute, send a message, start it again: it arrives.
 
 **Record:** add a `## LIME-74` entry to `TEND.md`. Commit (Phase 0 may be a separate commit, each with the trailer): `feat: web ApiAdapter: shared live Lime via the dev server`, trailer `Brief: LIME-74`, plus the attribution trailer. **Stop for the user's check.**
 
