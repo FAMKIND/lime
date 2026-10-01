@@ -57,7 +57,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - **C.** Signature moments only (profile and details avatars, empty states, a lime-slice loading spinner); list avatars unchanged.
   - Either way, prototype at 20/24/32/40/64px in light and dark before calling it done.
 - **DECIDED (the user, 2026-09-30): palette "B", then revised to "keep all 8"**, so: **no tones dropped or replaced**, only B's refinements to existing tones (Warm's surfaces → `#f0eee6`, Sage retuned so lime stands out, and every tone verified). **Shape "A":** lime-silhouette avatars at ≥ 28px. Briefs: **LIME-56** (palette) and **LIME-57** (lime avatars, a preview stop first).
-- **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **The user confirmed 28px. Landed (2026-09-30):** LIME-57 `5a17cbb` (no 28–31px avatars exist, so in practice md/lg/xl = 32/40/56px are shaped and sm/xs stay round; `border-radius: 0` is needed, or the circle clip eats the nub; the unread ring is now a `.lime-avatar-ring` wrapper, because box-shadow on a masked element is invisible), LIME-58 `f578558`, LIME-59 `6db2847` (a hand-drawn Share SVG; bubbles = list hover through one token). **The user's gate checks on 56–59 are pending.** `Logomark-outline.svg` and `signin-teachers.mp4` are still untracked. Ask whether to commit the logomark as a brand asset. **The user's check found the Recent row's presence dots clipped** (the ring wrapper is an always-masked ancestor), so LIME-57-fix was drafted. The user then asked for Slack-style status icons in a cut-out notch, so **LIME-57-fixb (which supersedes it) runs next.** **LIME-57-fixb landed as `81a759d`** (2026-09-30): a `mask-composite` notch, SVG states, and the ring as a layer behind the avatar, verified in the real Firefox and Chrome plus the fallback. Tend's lesson: element-clipped screenshots in Firefox can hide mask effects; confirm with a full-page shot. **The user's gate check FAILED:** the icons shrank (LIME-59 normalised down; the left toggle is the right size), and the status icons have a halo and are too small. **LIME-59-fix and LIME-57-fixc are drafted and run next.** **Landed (2026-09-30):** LIME-59-fix `2db344f` (icons match the left toggle) and **LIME-57-fixc `d50d85a`** (four pre-composited notched SVG masks; `mask-composite` now appears only in comments, which plot verified; the path Z). **The user's check ("closer")** asked for a bigger Z and a tighter notch (**LIME-57-fixd**), the ↵ smaller again, a split mic button like Add, and the reply composer's clipped mic hover fixed (**LIME-60**). Both are drafted. **Landed:** LIME-57-fixd `167f3ee` and LIME-60 `9d09dd4` (2026-09-30). The user's check of 60 asked for the container outline → **LIME-60-fix drafted → landed as `55baa1b`**; then LIME-60-fix2 (outline on hover only) **landed as `fec746e`** (2026-09-30; the user's check is pending). **LIME-61 landed as `c045fca`** (all 12 primary CTAs use pale lime; on elevated surfaces in Lemon and Sage they get a thin lime-300 border; the user's check is pending). **Next: LIME-57-fixe** (the Montserrat Bold z). **LIME-57-fixe landed as `44e9db1`** (the real Montserrat Bold "z" outline, extracted from the font with fontTools; Montserrat is OFL, so artwork use is fine; lg ≈ 6.0px; the user's check is pending). **LIME-57-fixf landed as `f82d402`** (the z is smaller and clear of the circle). **The user's QA round (2026-09-30) → LIME-62** (the media viewer) **and LIME-63** (list radius, Share as a dropdown, composer fade, reply mic) **are drafted and run next.** Then: the Communities decision surface. Then: the Communities decision surface.
+- **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **The user confirmed 28px. Landed (2026-09-30):** LIME-57 `5a17cbb` (no 28–31px avatars exist, so in practice md/lg/xl = 32/40/56px are shaped and sm/xs stay round; `border-radius: 0` is needed, or the circle clip eats the nub; the unread ring is now a `.lime-avatar-ring` wrapper, because box-shadow on a masked element is invisible), LIME-58 `f578558`, LIME-59 `6db2847` (a hand-drawn Share SVG; bubbles = list hover through one token). **The user's gate checks on 56–59 are pending.** `Logomark-outline.svg` and `signin-teachers.mp4` are still untracked. Ask whether to commit the logomark as a brand asset. **The user's check found the Recent row's presence dots clipped** (the ring wrapper is an always-masked ancestor), so LIME-57-fix was drafted. The user then asked for Slack-style status icons in a cut-out notch, so **LIME-57-fixb (which supersedes it) runs next.** **LIME-57-fixb landed as `81a759d`** (2026-09-30): a `mask-composite` notch, SVG states, and the ring as a layer behind the avatar, verified in the real Firefox and Chrome plus the fallback. Tend's lesson: element-clipped screenshots in Firefox can hide mask effects; confirm with a full-page shot. **The user's gate check FAILED:** the icons shrank (LIME-59 normalised down; the left toggle is the right size), and the status icons have a halo and are too small. **LIME-59-fix and LIME-57-fixc are drafted and run next.** **Landed (2026-09-30):** LIME-59-fix `2db344f` (icons match the left toggle) and **LIME-57-fixc `d50d85a`** (four pre-composited notched SVG masks; `mask-composite` now appears only in comments, which plot verified; the path Z). **The user's check ("closer")** asked for a bigger Z and a tighter notch (**LIME-57-fixd**), the ↵ smaller again, a split mic button like Add, and the reply composer's clipped mic hover fixed (**LIME-60**). Both are drafted. **Landed:** LIME-57-fixd `167f3ee` and LIME-60 `9d09dd4` (2026-09-30). The user's check of 60 asked for the container outline → **LIME-60-fix drafted → landed as `55baa1b`**; then LIME-60-fix2 (outline on hover only) **landed as `fec746e`** (2026-09-30; the user's check is pending). **LIME-61 landed as `c045fca`** (all 12 primary CTAs use pale lime; on elevated surfaces in Lemon and Sage they get a thin lime-300 border; the user's check is pending). **Next: LIME-57-fixe** (the Montserrat Bold z). **LIME-57-fixe landed as `44e9db1`** (the real Montserrat Bold "z" outline, extracted from the font with fontTools; Montserrat is OFL, so artwork use is fine; lg ≈ 6.0px; the user's check is pending). **LIME-57-fixf landed as `f82d402`** (the z is smaller and clear of the circle). **The user's QA round (2026-09-30) → LIME-62** (the media viewer) **and LIME-63** (list radius, Share as a dropdown, composer fade, reply mic) **are drafted and run next.** **Landed (2026-10-01):** LIME-62 `23a7c5d`, LIME-63 `5d93386`, and LIME-64 `4e7b942` (the back arrow in the panel header row). **The user's gate checks on 57-fixf and 61–64 are pending.** Then: the Communities decision surface. Then: the Communities decision surface.
 - **New finding (tend, LIME-56): white text on the solid green `#09a950` buttons** (e.g. "Continue with email", Seed's `seed-button--primary`) is **under 4.5:1 on every tone** (white on `#09a950` ≈ 3.1:1, computed). It's a brand-level decision. Options put to the user: **A.** ink text `#131b17` on `#09a950` (≈ 5.7:1, computed; keeps the brand green); **B.** darker green `#078040` (`--seed-lime-600`) with white text (≈ 5.0:1, computed); **C.** leave it (large or bold text only needs 3:1, and a 16px semibold button label doesn't qualify). Plot's lean: **A.** Upstream candidate for Seed too. **DECIDED: A (the user, 2026-09-30) → LIME-58 drafted.** Its hover and press go lighter (lime-400/300), because ink on the darker lime-600 is only ≈ 3.5:1.
 
 ### Unbriefed candidates (offer when the queue thins)
@@ -226,6 +226,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - `public/signup.html` + `public/js/supabase.js` (commit `8066506`) already use Supabase auth via CDN, with **placeholder** URL and key constants in the file.
   - When the switch happens, consolidate: one Supabase client and config (from a gitignored `*.local.js`, per the switch checklist), shared by signup, login and the future `SupabaseAdapter`. Don't leave placeholder constants in committed code.
   - LIME-24b left `supabase.js` untouched.
+- **Cross-project, open 2026-10-01: the new dew icons** (code, link-simple, paint-brush-broad, palette) are built in `~/Sites/dew` but uncommitted and unpushed (DEW-01, dew's own `PLOT.md`). LIME-66 is blocked until dew commits and pushes, then Seed bumps `icons/dew` and pushes. The user must run those in the dew and Seed sessions; pushing is their call.
 - **Upstream to Seed, added 2026-09-30:** the light theme's `seed-button--primary` should use ink text on lime-500, with lighter hover and press (LIME-58).
 - **Upstream to Seed (Seed's owner is FAM, the same person as the user):** `.seed-dropdown__item` is `width: 100%` plus padding with no `box-sizing: border-box`, so it overflows its menu. Lime works around it in LIME-21. Also candidates: the lime `selected` scale (LIME-14), and whether Seed should ship a global border-box reset.
 - **The 768px breakpoint doesn't match.** Seed's layout.css mobile rules use `max-width: 768px` and Lime's use `max-width: 767px`. At exactly 768px wide, Seed hides the left panel (`display: none`) and Lime's hamburger isn't shown, so there's probably no way to reach the nav at that single width. It isn't reported yet. Candidate small brief: align Lime's queries to 768px, or override Seed's. Verify live first.
@@ -275,6 +276,69 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-65 → `tend` (next): the slideshow's "all photos" grid button sits next to the counter
+
+**The user (2026-10-01):** "the gallery grid icon should be moved next to the slideshow number 4/6."
+
+**Survey:** the grid button is `#lightbox-back` ("Back to all photos", added by LIME-62), and the counter is `#lightbox-counter` (`index.html` ~860–872).
+
+**The change:**
+- Place the grid button **immediately beside the counter**, to its right, in one small pill-shaped group: the same height, centred under the photo as the counter is today, with a ~6px gap.
+- The grid icon size matches the counter's text cap height optically. It's a neutral, round hover target ≥ 24px, keeping its label and keyboard access.
+- It shows **only when the slides were opened from (or can open) the wall** (albums with a wall), as today. When it's hidden, the counter stays centred alone.
+- Both still follow the photo's position (LIME-62's rect-based placement) if the counter does.
+
+**Scope:** the lightbox markup and CSS (and positioning JS if the counter is positioned in JS), and `TEND.md`.
+
+**Verification:** screenshots of the slides from the wall (counter + grid) and from a single photo (counter alone), at 1567px and on mobile. Clicking the grid button opens the wall. Run in the real Firefox and Chrome; the real app loads in jsdom with zero errors; report the CSS rule counts.
+
+**Gate:** in a slideshow opened from an album, the small grid button sits right beside "4/6".
+
+**Record:** add a `## LIME-65` entry to `TEND.md`. Commit: `fix: gallery grid button beside the slide counter`, trailer `Brief: LIME-65`, plus the attribution trailer.
+
+---
+
+### LIME-66 → `tend` (BLOCKED until the new dew icons reach Seed): new dew icons: paint brush for Appearance; link-simple and code in both composers
+
+**The user (2026-10-01):** "I added a few [icons] to dew. Let's pull them and update the palette icon to the paint as well. Also update the link to simple link and code icons in the chat box main and reply."
+
+**Where the icons actually are (plot's survey, 2026-10-01):**
+- `~/Sites/dew` has `code`, `link-simple`, `paint-brush-broad` and `palette` built into `dist/dew.css` and `src/icons/`. That's dew's brief **DEW-01**, done in the working tree but **uncommitted and unpushed** (dew `HEAD` = `origin/main` = `b71327e`).
+- **Lime gets dew through two submodules:** `lime/vendor/seed` (→ `FAMKIND/seed`), which itself has `icons/dew` (→ `FAMKIND/dew`, pinned at `b71327e`). Lime's vendored `dew.css` has none of the new classes.
+- **The chain:**
+  1. dew commits and pushes;
+  2. Seed bumps its `icons/dew` submodule, then commits and pushes;
+  3. Lime bumps `vendor/seed`.
+
+  Steps 1–2 belong to the dew and Seed sessions, not Lime's.
+
+**Precondition (Phase 1 checks it first; if any fails, STOP and tell the user):**
+1. `git -C vendor/seed fetch` shows a Seed commit whose `icons/dew` includes `dew-paint-brush-broad`, `dew-link-simple` and `dew-code`.
+2. **The diff between Lime's current Seed commit (`2bc0868`) and that commit contains only the dew bump** (or only changes the user knows about). List anything else and stop if it's more than the dew bump.
+
+**The change:**
+1. Bump `vendor/seed` to that commit and run `git submodule update --init --recursive`. Confirm the three classes exist in `vendor/seed/icons/dew/dist/dew.css`.
+2. **Appearance button** (thread header, `#appearance-toggle`, `index.html` ~281): replace the hand-drawn palette `<svg class="lime-appearance-icon">` with `<span class="dew dew-paint-brush-broad">`. Remove the now-unused `.lime-appearance-icon` CSS. The size matches the header standard (LIME-59-fix: the left toggle's visible size). Measure it.
+3. **Both composers** (main ~518/526 and reply ~679/687, the toolbar buttons **and** their overflow-menu items):
+   - the **link** buttons → `dew-link-simple`;
+   - the **code** buttons (currently a text `</>`) → `dew-code`.
+   - Sizes match the neighbouring formatting buttons (B, I, U, S). Measure them.
+   - Leave other `dew-link` uses (e.g. Share's Copy link) as they are, unless the user says otherwise.
+4. Check the Share icon (LIME-59's hand-drawn SVG) against dew. If dew now ships a share icon, **report it; don't swap.**
+
+**Scope:** `vendor/seed` (the submodule pointer only), `public/index.html` (those icons), `public/css/lime.css` (removing `.lime-appearance-icon` and any size tweaks), and `TEND.md`. **Don't edit anything inside `vendor/`.**
+
+**Verification:**
+- The submodule commits before and after, and the Seed diff summary.
+- Screenshots of the header (paint brush beside Share and "…") and both composers' toolbars (expanded and overflow), with the measured icon sizes.
+- Run in the real Firefox and Chrome. The real app loads in jsdom with zero errors. Report the CSS rule counts.
+
+**Gate:** the Appearance button shows the paint brush, and both chat boxes use the new simple link and code icons.
+
+**Record:** add a `## LIME-66` entry to `TEND.md`. Commit: `chore: bump seed (new dew icons); paint brush, link-simple, code icons`, trailer `Brief: LIME-66`, plus the attribution trailer. **Stop for the user's check.**
+
+---
 
 ### LIME-64 → `tend` (after LIME-63): the person panel's back arrow moves up into the panel header row
 
