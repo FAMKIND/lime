@@ -77,10 +77,13 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
     - *Pro:* works across browsers, private windows and phones on the same Wi-Fi; it rehearses a real network seam. *Con:* 2–3 briefs, and a stepping stone that the real backend later replaces.
   - **C. The real backend (Supabase, per `docs/schema.sql` and the switch checklist):** real auth, Postgres, RLS, realtime and storage.
     - *Pro:* the actual path to launch. *Con:* needs a Supabase project and keys, network, RLS testing, and **a sync-architecture decision first**, because the offline Bluetooth differentiator ([[lime-offline-differentiator]]) argues for local-first sync, so choosing it deserves its own planning pass.
-  - **DECIDED (the user, 2026-10-01): "A, then B".** LIME-69 (A) and LIME-70 (B) are drafted. C (the real backend plus local-first sync) stays a later planning pass.
+  - **LIME-69 landed as `3bb437b`** (2026-10-01): per-tab sessions, merge-on-save, `storage`-event live sync (~130–150ms), reactions with a `removed_at` tombstone, memberships with `updated_at`, and read-on-visible. Limits: a simultaneous duplicate DM (now required in LIME-71's rules), a Reset racing an unsaved write (not hand-reachable), and a pre-existing Firefox `SecurityError` on sign-out with two tabs (cleanup candidate). **Tend's jsdom suites lived in a scratchpad and are gone** (cleanup candidate: commit a test harness). **The user's gate check is pending.**
+  - **DECIDED (the user, 2026-10-01): "A, then B".** LIME-69 (A) and LIME-70 (B) are drafted. **Then the user added: plan the infrastructure for iOS and Android apps soon**, so B became **LIME-71** (the API and sync contract: an op log, token auth, a changes feed, files by id, realtime, push and mesh notes; docs only, plot reviews it) **then LIME-72** (the dev server plus web `ApiAdapter` implementing it). LIME-70 is superseded. C (the real backend plus local-first sync) stays a later planning pass.
   - **Plot's recommendation:** **A now** (test two-person messaging today), then a **planning pass for C** (backend plus local-first sync) as the next milestone, before or alongside Communities.
 
 ### Unbriefed candidates (offer when the queue thins)
+- **A committed test harness** (2026-10-01: tend's jsdom and Playwright suites lived in session scratchpads and were lost between sessions, so LIME-69 couldn't re-run them). Add `tests/` with a `package.json` (devDependencies: jsdom, playwright), the smoke test (the real `index.html` and `auth.html` load with zero errors), and the key regression suites (auth, live sync / no lost writes, toasts), runnable with one command. Fold it into the cleanup brief, or make it its own brief before LIME-72.
+- **Firefox `SecurityError` on sign-out with a second tab open** (pre-existing; seen in LIME-69). Investigate in the cleanup brief.
 - **A CSS guard script** (the `*/`-inside-a-comment truncation hit a **second** time in LIME-61, 2026-09-30): a small Node script in the repo (e.g. `scripts/check-css.mjs`, no dependencies) that parses every `public/css/*.css` file, fails if any comment body contains `*/` or a `/*` nesting, and prints each file's rule count against an expected minimum. Tend runs it before every CSS commit. Fold it into the cleanup brief.
 - **Accessibility: `aria-expanded` is never updated by `wireDropdownToggle`** (found by tend in LIME-60-fix2, 2026-09-30). Every dropdown trigger's `aria-expanded` stays at its markup value, so screen readers never hear "expanded". Fix it centrally in `wireDropdownToggle` (set it on open and close, including outside-click and Escape), then audit the triggers. Fold it into the cleanup brief.
 - **"Forgot password?" on `auth.html`** (raised 2026-09-30: the user got confused between their own password and the seed demo password, and between `file://` and localhost accounts). Locally: reset a local account's password after confirming the email (demo-grade). Production: Supabase `resetPasswordForEmail`. Also consider showing on the password step which kind of account it is ("Demo teacher: use the shared demo password").
@@ -350,7 +353,64 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
-### LIME-70 → `tend` (after LIME-69's check): a local dev server so phones and other browsers share the same Lime
+### LIME-71 → `tend` (after LIME-69's check; docs only, no code): the client API and sync contract (web, iOS, Android, offline)
+
+**The user (2026-10-01):** "when we get to the small test server, keep in mind that we want this to be an iOS and Android app in the near future, so let's plan our infrastructure with that in mind." **This supersedes LIME-70's snapshot design** (LIME-70 below is kept for history, never sent). Same pattern as LIME-24a: **write the contract first, review it, then build.**
+
+**Why the design changes (plot):** LIME-70 synced the **whole snapshot** over `/api/state`. That's web-specific and doesn't scale to mobile clients that work **offline** and later relay over **Bluetooth** ([[lime-offline-differentiator]]). Mobile and offline-first clients need:
+- an **operation log**: each change is a small, self-contained, idempotent operation with a **client-generated id**;
+- an **incremental changes feed** (everything since a cursor);
+- **token auth**, not browser session storage;
+- **files by id**;
+- **realtime** that also works on phones;
+- **a hook for push notifications** later.
+
+Designed this way, the same protocol serves the web app now, native apps next, and the mesh later: ops can be carried peer-to-peer and merged by id. It also maps onto a production backend (an `ops` table + RLS + realtime on Supabase, or a custom server) without choosing one yet.
+
+**Assumptions:** docs only. The agent reads `public/js/store.js` (the write functions: `sendMessage` ~521, `toggleReaction` ~591, `createConversation` ~610, `addMembers` ~653, `renameConversation` ~680, `setStarred` ~690, `setArchived` ~699, `deleteConversation` ~708, `deleteForMe` ~721, `markRead` ~730, `updateProfile` ~746, `setAppearance` ~769, `setProfileEmail` ~780, `createProfile` ~800, and attachments), `docs/data-model.md`, `docs/schema.sql`, and **LIME-69's merge rules** (`TEND.md`).
+
+**Write `docs/api.md` (new), covering:**
+1. **Principles:**
+   - one versioned HTTP+JSON API (`/api/v1`) for every client;
+   - the server is the authority for ordering;
+   - clients are **local-first** (a local store plus an **outbox** of ops);
+   - **every write is an op**;
+   - reads come from the local store, kept current by the changes feed.
+2. **The op envelope:** `op_id` (UUIDv7, client-made, the idempotency key), `type`, `actor_id`, `device_id`, `client_ts`, `payload`; the server adds `seq` (a monotonic integer) and `server_ts`. Replaying the same `op_id` is a no-op.
+3. **The op catalogue:** one op per store write listed above (e.g. `message.send`, `reaction.toggle`, `conversation.create`, `conversation.rename`, `membership.add`, `membership.setStarred`, `membership.setArchived`, `membership.markRead`, `conversation.delete`, `conversation.deleteForMe`, `profile.update`, `profile.setEmail`, `attachment.attach`), with payload fields and **who may perform it** (mirroring `canReason` / the RLS draft).
+   - **Per-user ops** (star, archive, read, `deleteForMe`, appearance) affect only the actor.
+   - **Appearance stays device-local** (not synced) unless the user decides otherwise. Flag it.
+4. **Conflict rules (they must cover what LIME-69 `3bb437b` found):** **DMs are deduplicated by `dm_key`** (two clients creating the same DM at once must converge on one conversation: the server keeps the first and maps the second's later ops onto it; LIME-69's local merge can create two). Reactions use a `removed_at` tombstone, and memberships carry `updated_at` (as LIME-69 introduced). Messages, attachments and reactions are append-only/union; deletes are **tombstones** (never resurrected); scalar fields are **last-writer-wins by server `seq`**; membership rows are per user. This must match LIME-69's local merge rules exactly. List any differences.
+5. **Endpoints:**
+   - `POST /auth/signup`, `POST /auth/signin` (the server verifies; it returns an **access token** and a **refresh token**), `POST /auth/refresh`, `POST /auth/signout`;
+   - `POST /ops` (a batch, idempotent; returns the assigned `seq`s or per-op errors);
+   - `GET /changes?since=<seq>&limit=` (ops the caller is allowed to see, in order, plus `next` and `has_more`);
+   - `GET /snapshot` (a cold-start bootstrap scoped to the caller, plus its `seq`);
+   - `POST /files` (multipart → `file_id`, `size`, `mime`) and `GET /files/:id` (an authorised download);
+   - `GET /events` (realtime: **Server-Sent Events** for web; note that native clients may prefer WebSocket, so define the message format to be transport-neutral, `{ type: 'changed', seq }`);
+   - `GET /health`.
+6. **Auth model:** bearer tokens (short-lived access + a refresh); per-device sessions (`device_id`). Passwords are verified **on the server** (PBKDF2 or better; production uses the backend's auth). Web stores tokens in `sessionStorage` (per tab, matching LIME-69); **iOS uses the Keychain, Android the Keystore** (note only).
+7. **Visibility:** which ops a user receives through `/changes` (conversations they're a member of; their own profile and per-user rows; others' **public** profile fields), matching the RLS draft.
+8. **Offline and mesh notes (forward-looking, no design commitment):** the outbox and retry, ordering by `seq` after sync, and **ops as the unit for Bluetooth relay** later. Note the open questions: op signing (authenticity when relayed by a peer), end-to-end encryption, and dedup by `op_id`. **Flag these as a future planning pass.**
+9. **Push notifications (later):** where APNs/FCM hook in (the server emits on `message.send` to members not currently connected). Note only.
+10. **Mapping table:** each op → today's `store.js` function → `docs/schema.sql` tables touched → the RLS policy.
+11. **Errors:** `{ error: { code, message } }`, standard codes, and per-op errors in a batch.
+
+**Also:** a short **"Mobile client options"** note listing the choices the user will face later (fully native Swift/Kotlin; React Native/Expo; Capacitor wrapping the web app), with one line each on how Bluetooth mesh affects them (all need native Bluetooth modules). **Don't recommend one.** That's a future decision surface.
+
+**Scope:** `docs/api.md` (new), a pointer from `docs/data-model.md`, and `TEND.md`. **No code.**
+
+**Verification:** every store write function is mapped to an op (report the table); every op has a permission rule; the conflict rules match LIME-69's (diff them); there are no undefined terms. Plot reviews the doc before LIME-72 is drafted.
+
+**Gate:** none needed from the user beyond "ok". **Plot reviews it** (as with LIME-24a).
+
+**Record:** add a `## LIME-71` entry to `TEND.md`. Commit: `docs: client API and sync contract (web, mobile, offline)`, trailer `Brief: LIME-71`, plus the attribution trailer. **Stop.**
+
+**Next (drafted after plot's review): LIME-72**, the dev server implementing `docs/api.md` (Node built-ins only, binding `0.0.0.0`, a LAN URL for phones, the op log persisted under a gitignored `data/`, files, SSE), plus a web `ApiAdapter` that turns store writes into ops with an outbox, with the local adapter kept as a fallback. It reuses LIME-70's practical details (serving the repo root, the printed URLs, the README, the reset endpoint), with the snapshot API replaced by the op log.
+
+---
+
+### LIME-70 → SUPERSEDED (never sent) by LIME-71/72 (the user's mobile-first direction, 2026-10-01). Kept for history: a local dev server so phones and other browsers share the same Lime
 
 **The user (2026-10-01): "A, then B".** This is B: shared state across **any** browser, private windows and **phones on the same Wi-Fi**.
 
