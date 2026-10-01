@@ -1,7 +1,7 @@
 // node run.mjs [suite ...]   (default: all). Exit code 1 if anything fails.
 import { startServer, recorder } from './lib/harness.mjs';
 
-const ALL = ['smoke', 'css', 'auth', 'sync', 'toasts'];
+const ALL = ['smoke', 'css', 'auth', 'sync', 'toasts', 'api'];
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 const unknown = wanted.filter((s) => !ALL.includes(s));
 if (unknown.length) { console.error('Unknown suite(s): ' + unknown.join(', ') + '. Available: ' + ALL.join(', ')); process.exit(2); }
@@ -26,7 +26,7 @@ try {
     summary.push({ name, pass: rec.results.length - bad, fail: bad, secs: ((Date.now() - t0) / 1000).toFixed(1) });
   }
 } finally {
-  server.stop();
+  await server.stop();
 }
 console.log('\n== summary');
 for (const s of summary) console.log(`${s.fail ? 'FAIL' : 'ok  '}  ${s.name.padEnd(7)} ${s.pass} passed, ${s.fail} failed, ${s.secs}s`);

@@ -111,8 +111,14 @@ fields; every id is client-made. "May perform" mirrors `LimeStore.can` /
   message in the **same** conversation. A message must have `content` or at
   least one attachment. Attachments are part of the same op, so a message
   with an album never appears half-sent (see Open points 1).
-- Effect: the server stores the message (`sender_id = actor_id`,
-  `created_at = server_ts`, see Open points 2) and its attachment rows. If a
+- Effect: the server stores the message (`sender_id = actor_id`) with
+  **both times**: `client_ts` (when it was **written**, from the envelope)
+  and `created_at` = `server_ts` (when it was **delivered**), plus its
+  attachment rows. The time a client **displays** is `min(client_ts,
+  created_at)`, so a wrong device clock can never show a future time; and
+  when the two differ by **more than 5 minutes** it also shows the delivery
+  time ("Sent 10:05 · delivered 10:35"; exact copy is the client's). Thread
+  order is `seq` (arrival), never the displayed time (section 6, rule 8). If a
   member had "deleted for me" (`cleared_at`), this message makes the
   conversation reappear for them, with only what is after `cleared_at`, as
   today.
@@ -335,6 +341,51 @@ endpoint except `/auth/signup`, `/auth/signin`, `/auth/refresh` and
 - Realtime is an optimisation: a client that is not connected still
   converges by polling `/changes`.
 
+#### Presence (active, busy, away)
+
+Presence is **ephemeral**, so it is **not an op** and is never in the log or
+the feed. It travels over realtime only, as `{ "type": "presence",
+"user_id": "...", "status": "active" | "busy" | "away" }`.
+- **`away` is inferred**: a user with no open realtime connection is `away`;
+  with at least one, `active` (or `busy`, once a client can set it).
+- A client receives `presence` messages for **people it shares a
+  conversation with** (never for strangers), when someone's state changes
+  and, right after connecting, once for each such person who is currently
+  not `away`.
+- **Setting `busy` is not defined yet** (there is no client control for it
+  today); the status field is reserved. The seed profiles' stored `status`
+  values are display data only and are not presence.
+- The dev server (LIME-73) implements the minimal version: connected is
+  `active`, disconnected is `away`.
+
+### Directory
+
+`GET /profiles?q=<text>`
+- Finds people, for the new-message picker. `q` must be at least **2
+  characters** (otherwise `400 bad_request`).
+- Matches: **partial, case-insensitive text** in `display_name` and `school`;
+  **exact** (case-insensitive) `email`; **exact digits-only** `phone` (the
+  query is stripped to digits; it must be at least 7 digits to count as a
+  phone). Email and phone are **only** ever matched exactly, so the
+  directory cannot be used to browse or guess them.
+- Returns `{ profiles: [ ... ] }`, at most **50**, excluding the caller. Each
+  result has only the **public fields**: `id`, `display_name`, `school`,
+  `role`, `pronouns`, `grade_levels`, `subjects`, `bio`, `timezone`,
+  `avatar_url`. **It never reveals the email or phone** of a match, even
+  when that is what matched.
+
+### Link previews
+
+`GET /link-preview?url=<absolute http(s) URL>`
+- A read. The server unfurls the page and returns `{ url, minimal, title,
+  description, site_name, image_url }`. Never fails for a well-formed URL: an
+  unreachable or unknown page returns the minimal card (`minimal: true`,
+  the domain as `title`, the rest null). A malformed URL is `400`.
+- The dev server returns LIME-44's fixtures for a few known URLs and the
+  minimal card for everything else, and makes **no outbound requests**. A real
+  server must fetch with timeouts, a size cap, and **must refuse private
+  addresses** (an unfurler is a classic request-forgery hole).
+
 ### Health
 
 `GET /health` returns `{ ok: true, api: 'v1', seq }` with no auth.
@@ -427,9 +478,15 @@ listed in the table at the end.
    `last_read_at` never moves backwards.
 7. **Membership is additive.** There is no leave-group or remove-member op
    in the app. `membership.add` of an existing member is a no-op.
-8. **Ordering of messages:** by `seq` (see Open points 2). A message a client
-   has made but the server has not yet accepted is shown **last**, in outbox
-   order, until it is accepted and takes its `seq` place.
+8. **Ordering and time of messages.** Thread order is **`seq`** (arrival). A
+   message a client has made but the server has not yet accepted is shown
+   **last**, in outbox order, until it is accepted and takes its `seq` place.
+   The **displayed time** is `min(client_ts, created_at)` (the written time,
+   never in the future), with the delivery time added when more than 5
+   minutes later. Both times are stored (`client_ts`, `created_at`).
+   Reason: in offline and emergency use, *when it was written* is the
+   important fact, but a message must still land where the conversation
+   actually was when it arrived.
 
 ### Differences from LIME-69's local merge (all of them)
 
@@ -441,7 +498,7 @@ listed in the table at the end.
 | 4 | Stale-read guards (1.5 s recent-base window, "older row is stale") | None needed | A server read is never stale relative to its own log. |
 | 5 | Reaction toggle flips the stored row | `reaction.toggle` carries explicit `present` | A flip replayed twice undoes itself; `present` is idempotent. |
 | 6 | Union never drops rows; a stale tab writes missing rows back | Server never loses rows; clients resend un-acked ops from the outbox | Same goal (never lose a write), different mechanism. |
-| 7 | `created_at` = the sending tab's clock | `created_at` = `server_ts` | Server is the authority for ordering (Open points 2). |
+| 7 | `created_at` = the sending tab's clock | `created_at` = `server_ts`, and the written time is kept as `client_ts` (displayed time = the earlier of the two) | The server is the authority for ordering; the written time is still shown. |
 | 8 | Another tab's Reset sends tabs to sign-in | `410 cursor_expired` forces a re-snapshot (dev server only) | There is no reset in production. |
 | 9 | Sessions per tab (`sessionStorage`) | Tokens per device; the web client keeps them in `sessionStorage` (so still per tab) | Matches LIME-69 on web; native uses secure storage. |
 | 10 | Scroll/draft/menu handling | Not a data rule; client concern | |
@@ -498,6 +555,12 @@ same state LIME-69's merge reaches for any case the local merge handles.
   a new tab is signed out until the person signs in; the refresh token is
   not kept longer than the tab). **iOS:** the Keychain. **Android:** the
   Keystore (with encrypted preferences). This is a note, not a mobile design.
+- **Web sign-in persistence (note).** Per-tab `sessionStorage` is right for
+  the development phase (two people testing in two tabs of one window).
+  Production web will want an **optional persistent sign-in** ("keep me
+  signed in": the refresh token in a long-lived, secure, same-site cookie or
+  `localStorage`). That is a later decision, and nothing in the API prevents
+  it.
 - **Rate limits** apply to `/auth/*` per email and per address.
 
 ### Visibility (what a user receives through `/changes` and `/snapshot`)
@@ -516,18 +579,31 @@ Matches the RLS draft in `schema.sql`:
   `last_read_at`) are **not** sent to someone else: a feed entry for
   `membership.setStarred` / `setArchived` / `deleteForMe` / `markRead` goes
   only to its actor. (Today's local snapshot holds everyone's; a server must
-  not.) One consequence to note: read receipts ("Seen by Jean") would need
-  `last_read_at` of others, so the receipts feature (LIME-43) needs an
-  explicit "members can see each other's `last_read_at`" decision before it
-  can move to the server (Open points 5).
-- **Other people's profiles:** the draft's `profiles_select_authenticated`
-  lets any signed-in user read any profile. This contract sends a user the
-  profiles of **people they share a conversation with** in `/snapshot` and
-  the feed, and offers no directory endpoint yet (the new-message picker's
-  "find any teacher" needs one; it is a later addition, `GET /profiles?q=`).
-  The fields are all of `profiles` except `auth_user_id`. Whether **`email`**
-  and **`phone`** are visible to everyone is a privacy decision, flagged in
-  Open points 5.
+  not.) Read receipts ("Seen by Jean") would need `last_read_at` of others;
+  **deferred**, since the LIME-43 receipts were removed from the app. If they
+  return, they need an explicit decision that members can see each other's
+  `last_read_at`.
+- **Other people's profiles (decided by the user, 2026-10-01):**
+  - **Email** is visible only to people who **share a conversation** with
+    you (and to you). A user receives the profiles of **people they share a
+    conversation with** in `/snapshot` and the feed, with `email`.
+  - **Phone is never displayed to others**: the server never sends a user's
+    `phone` to anyone but that user (not in the snapshot, the feed, a
+    backfill, or the directory). A later opt-in "show my phone" setting would
+    change this; there is none now.
+  - **Finding people** goes through `GET /profiles?q=` (section 4,
+    Directory): partial match on name and school, **exact** match only on
+    email or phone, and results never contain the email or phone.
+  - Everyone else (no shared conversation) is visible only as a directory
+    result, with the public fields. This replaces the RLS draft's
+    `profiles_select_authenticated` (`using (true)`), which exposes every
+    column of every profile to any signed-in user; tighten it to match when it
+    is enabled.
+  - The feed carries a `profile.update` to the person themselves and to
+    people they share a conversation with **at that moment**, with `phone`
+    removed from the patch for everyone but the owner (a patch that changes
+    only `phone` is not delivered to others). `profile.setEmail` goes to the
+    same audience.
 
 ### Files
 
@@ -638,40 +714,38 @@ alone cannot do background Bluetooth relay on iOS or Android.
   web app; Bluetooth through a native plugin, and background relaying is
   the part most limited by the web view.
 
-## Open points (for plot's review)
+## Open points
 
-These are choices this document made, or things the brief's text and the
-codebase left open. None is built.
+### Decided (plot's review of this document, 2026-10-01, and the user)
 
-1. **Attachments are inside `message.send`, with no separate
-   `attachment.attach` op.** The brief's catalogue listed `attachment.attach`,
-   but `LimeStore.sendMessage` already records the message and its attachment
-   rows in one call, and a separate op could let a message appear without its
-   album. If a message-editing feature later adds files to an existing
-   message, `attachment.attach` can be added then.
-2. **Message time.** `created_at` is `server_ts`, and the thread order is
-   `seq`, because the brief says the server is the authority for ordering.
-   The cost: a message written offline shows the time it was **delivered**,
-   not the time it was **written**. The alternative (keep `client_ts` as the
-   displayed time, with `seq` only breaking ties) feels more natural for
-   offline use but lets a wrong device clock put a message in the past.
-   This is a product decision.
-3. **Appearance stays device-local** (as the brief asked). If it should follow
-   a person across devices, add the `appearance.set` op (per-user) and sync
-   `user_settings`.
-4. **`POST /events/ticket`** is an endpoint beyond the brief's list, needed
-   because a browser `EventSource` cannot send a bearer token. Alternatives:
-   read the stream with `fetch` instead of `EventSource`, or put the token in
-   the URL (rejected: it ends up in logs).
-5. **Privacy:** (a) other people's `email` and `phone` are visible to everyone
-   under the current RLS draft; should they be? (b) read receipts need
-   members' `last_read_at` to be visible to each other, which this contract
-   does **not** send today. Both need a decision before the server enforces
-   visibility.
-6. **A directory endpoint** (`GET /profiles?q=`) is not defined, but the
-   new-message picker finds any teacher, including ones the user shares no
-   conversation with. It is needed before the picker works against a server.
-7. **Brief's line numbers for `store.js`** have drifted since LIME-69 (for
-   example `sendMessage` is now at line 539, not ~521); every write function
-   the brief names exists and is mapped above. Not a contradiction, only a
-   note for the next reader.
+1. **Attachments inside `message.send`** (no separate `attachment.attach`): agreed.
+2. **Message time:** the user chose to show the **written** time. Both
+   `client_ts` and `created_at` are stored; displayed time is the earlier of
+   the two, with the delivery time added past 5 minutes; thread order stays
+   `seq` (section 3 `message.send`, section 6 rule 8).
+3. **Appearance stays device-local:** agreed (revisit if the user asks).
+4. **`POST /events/ticket`:** agreed.
+5. **Privacy:** decided by the user (section 8, Visibility). Read receipts are
+   deferred.
+6. **The directory endpoint** `GET /profiles?q=` is part of the contract now
+   (section 4).
+7. Line-number drift in the brief: noted, no action.
+8. **Added by the review:** presence (section 4, Presence), link previews
+   (section 4), and the web sign-in persistence note (section 8).
+
+### Still open
+
+9. **Changing a password.** The app has `LimeAuth.changePassword`
+   (verify the current password, store a new one), but this contract has no
+   endpoint for it. It needs one before the web app can move to the server
+   (for example `POST /auth/password` with `{ current_password,
+   new_password }`, which also revokes the user's other devices' refresh
+   tokens). **Not built by LIME-73**; the dev server returns `404` for it.
+10. **Error code for an unknown op `type`.** Section 5 lists `invalid_op` for
+    a bad op and `unsupported_op` for an op type from a newer client. The dev
+    server returns `unsupported_op` for any `type` it does not know, and
+    `invalid_op` for a known type with a bad payload.
+11. **Snapshot paging.** Section 4 allows a paged snapshot. The dev server
+    returns the whole snapshot in one response (no `cursor`), which is fine at
+    demo size and not at production size.
+12. **Setting `busy`.** Presence reserves it but nothing sets it yet.

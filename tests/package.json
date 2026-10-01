@@ -9,7 +9,8 @@
     "test:css": "node run.mjs css",
     "test:auth": "node run.mjs auth",
     "test:sync": "node run.mjs sync",
-    "test:toasts": "node run.mjs toasts"
+    "test:toasts": "node run.mjs toasts",
+    "test:api": "node run.mjs api"
   },
   "devDependencies": {
     "jsdom": "^27.0.1",

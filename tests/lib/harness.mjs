@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
+import os from 'node:os';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -27,13 +28,22 @@ function freePort() {
 // preview URL in the README. Own process, own port, stopped afterwards.
 export async function startServer() {
   const port = await freePort();
-  const proc = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], { cwd: REPO_ROOT, stdio: 'ignore' });
+  // LIME_TEST_SERVER=dev runs the same suites against server/dev-server.mjs (LIME-73) instead of the Python static server.
+  const dev = process.env.LIME_TEST_SERVER === 'dev';
+  const dataDir = dev ? fs.mkdtempSync(path.join(os.tmpdir(), 'lime-dev-')) : null;
+  const proc = dev
+    ? spawn(process.execPath, [path.join(REPO_ROOT, 'server', 'dev-server.mjs'), '--port', String(port), '--data', dataDir], { stdio: 'ignore' })
+    : spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], { cwd: REPO_ROOT, stdio: 'ignore' });
   const base = `http://127.0.0.1:${port}/public/`;
   for (let i = 0; i < 50; i++) {
     try { const r = await fetch(base + 'index.html'); if (r.ok) break; } catch (e) { /* not up yet */ }
     await sleep(100);
   }
-  return { base, port, stop: () => proc.kill() };
+  const stop = () => new Promise((resolve) => {
+    proc.once('exit', () => { if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); resolve(); });
+    proc.kill('SIGKILL');
+  });
+  return { base, port, stop };
 }
 
 // puppeteer-core drives the user's *installed* browsers: Chrome over CDP,

@@ -3154,3 +3154,39 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 - The CSS detector has a self-test (a comment closed early is flagged).
 - No real app bug was exposed.
 
+## LIME-73
+
+**Goal:** a dev server that serves the app as before and implements the amended `docs/api.md` (`/api/v1`), so phones and other browsers can later share one Lime. The web app is **unchanged** (still `LocalAdapter`); LIME-74 connects it.
+
+**What landed**
+- **Phase 0, `docs/api.md` amended** (plot's review): message time (both `client_ts` and `created_at` stored; displayed = `min`; delivery time shown past 5 minutes; thread order `seq`; rule 8 and differences row 7 rewritten); privacy as decided by the user (email visible only to people who share a conversation, phone never sent to anyone but its owner, directory by partial name/school and exact email/phone, results reveal neither; read receipts deferred); `GET /profiles?q=`; `GET /link-preview?url=`; a presence section (ephemeral, realtime only, `away` inferred); the web sign-in persistence note; Open points split into Decided and Still open.
+- **`server/dev-server.mjs`** + `server/lib/{engine,auth,files,seed,util}.mjs`, Node built-ins only, no npm dependencies. Binds `0.0.0.0:8000` and prints localhost and LAN URLs; a busy port is reported plainly and exits.
+  - **Static:** only `/public` and `/vendor` are served (never `server/`, `data/`, `tests/`, dotfiles, or `..` paths), no-cache for html/js/css, correct MIME types, `Range` for media.
+  - **API:** signup, signin, refresh (rotating; reuse of an old refresh token ends that device's session), signout; `POST /ops` (12 ops, validation and permissions, idempotency by `op_id`, `dm_key` dedup with alias entries, backfill on `membership.add`); `GET /changes`; `GET /snapshot`; `POST /files` and `GET /files/:id`; `POST /events/ticket` and `GET /events` (SSE); `GET /profiles?q=`; `GET /link-preview` (LIME-44 fixtures, no outbound requests); `GET /health`; `POST /dev/reset` (needs the header `X-Lime-Dev: 1`).
+  - **Persistence under gitignored `data/`:** `oplog.jsonl` (append-only, the source of truth), `state.json` (a cache of the derived state, atomic writes, rebuilt from the log if missing), `auth.json` and `secret.key` (accounts and sessions; not derivable from the log), `files/` + `files.json`. First run seeds by running the app's own `seed-data.js` and `local-adapter.js` in a sandbox, so the server and browser cannot disagree about the seed.
+  - **Passwords:** PBKDF2-SHA256, 600,000 iterations, per-user salt. Seed teachers share one salted demo hash built from `public/js/demo-config.local.js` if it exists (like the browser demo); without it they cannot sign in to the API until it exists and the data is reset.
+  - **Presence: implemented, minimal:** connected is `active`, disconnected is `away`, sent as `{type:'presence'}` over SSE only to people who share a conversation (and, on connecting, who is already active). `busy` is reserved, not settable.
+- **`tests/suites/api.mjs`** (86 checks) and `LIME_TEST_SERVER=dev` to run the browser suites against this server. `tests/README.md` and `README.md` updated.
+
+**Choices I made where the contract was silent (please look)**
+1. Unknown op `type` returns `unsupported_op`; a known type with a bad payload returns `invalid_op` (listed in Open points 10).
+2. In the feed, `membership.add` is sent to the members **before** the add, with `user_ids` reduced to the people actually added; the new people get the backfill instead. Per-user ops (star/archive/read/deleteForMe) go only to the actor.
+3. A logged op always names the canonical conversation (aliases are resolved before logging); the second DM creator also gets an `alias` entry addressed only to them.
+4. `POST /dev/reset` keeps `seq` counting up and moves a `log_start` past the old head, so old cursors get `410 cursor_expired`, and rotates the token secret so old tokens stop working.
+5. Files: unattached uploads are swept after 24 hours; non-image/audio/video/PDF types download as attachments with `Content-Security-Policy: sandbox`; SVG is treated as a download.
+6. `GET /snapshot` is one page (no `cursor`); there is no password-change endpoint (the app's `changePassword` has no API yet). Both are listed in Open points 9 and 11, not built.
+7. A sent `message.send` into a conversation the sender cleared ("delete for me") needs no special handling: the clear is a read-time rule.
+
+**Verification**
+- `cd tests && npm test`: all six suites pass (smoke 6, css 8, auth 11, sync 24, toasts 8, api 86), about 55 seconds in all (the api suite takes 2.5s). `LIME_TEST_SERVER=dev npm test` runs the browser suites against `server/dev-server.mjs` (not Python): same results, so the app is served unchanged. The API suite also fetches `index.html` over the LAN address (`192.168.0.127` here) to prove the `0.0.0.0` bind.
+- The api suite covers: every endpoint; permissions (403/404 and `actor_id` mismatch); replays (duplicate, same `seq`, also after a restart); DM dedup and alias (one DM for the pair, the loser's ops land in the canonical one); backfill (and no replay of older ops to the new member); feed visibility (star/archive/read/deleteForMe never leave their actor; other members' rows carry none of those fields; phone stripped from co-members' feeds and snapshots; a phone-only patch not delivered; email only to co-members; directory exact-only matches that reveal nothing); files authorisation (uploader, then members, not strangers; avatars to anyone signed in; 10 MB limit; `.html` forced to download); SSE and presence, and that a stranger is told nothing; graceful restart; **a hard `SIGKILL` with `state.json` deleted** rebuilds everything from the log; dev reset. A mutation check (breaking the phone rule on purpose) made the suite fail in 2 places, then was restored.
+- **curl walk-through** (temp port and data folder; seed teacher via the demo password): signin returned `{user, access_token, expires_in: 900, refresh_token, seq: 1}`; wrong password gave `401 invalid_credentials`; no token gave `401 unauthenticated`; the snapshot had 14 other profiles, none with a phone, and 0 other members with per-user fields; `POST /ops` of a `message.send` gave `{status:'applied', seq:2}`, the same `op_id` again gave `{status:'duplicate', seq:2}` with the identical `server_ts`; renaming a DM gave `rejected forbidden "Only groups can do that."`; an op with another person's `actor_id` gave `rejected forbidden`; `GET /changes?since=1` returned exactly that op with `next: 2, has_more: false`; the directory returned 2 results for `jean`, 1 for the exact email, 0 for a partial email, none with an `email` or `phone` key; the link preview returned the LIME-44 fixture; `POST /auth/password` gave `404 not_found`. Static: `/public/index.html` 200 with `Cache-Control: no-cache`, a `Range` request on the hero video gave 206 `bytes 0-9/5680766`, and `/server/…`, `/data/…`, `/public/%2e%2e/TEND.md` gave 404.
+- **Port busy:** a second instance on 8000 printed "Port 8000 is already in use. Is the Python server (or another Lime server) still running?" and exited 1.
+- No file under `public/` changed, so the "run `tests/` before every commit that touches `public/`" rule did not apply; the suite was run anyway.
+
+**Things to know (not blockers)**
+- `public/js/demo-config.local.js` (the demo password) is served like any file under `public/`, so with the `0.0.0.0` bind anyone on the same Wi-Fi can read it, exactly as with the old Python server on a LAN. It goes away when LIME-74 moves sign-in to the server.
+- The server is for development only: no TLS, in-memory rate limiting on sign-in only, CORS not enabled (same origin).
+
+**Gate:** start it with `node server/dev-server.mjs` instead of the Python server. Lime opens and works exactly as before at the printed link (and the LAN link on a phone). It does not share data yet; that is LIME-74.
+
