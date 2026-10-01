@@ -2743,3 +2743,30 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Gate:** in both chat boxes, the mic and ⌄ sit inside one thin rounded outline, matching the user's own reference, and hovering either one fills just that half.
 
 **Record:** this entry.
+
+## LIME-60-fix2
+
+**Goal:** per the user's check on LIME-60-fix `55baa1b` — "only show the outline on hover" (the container border from fix1 showed unconditionally; it should appear only on hover, keyboard focus, or while the mic menu is open).
+
+**Survey found a real gap, worth flagging rather than silently working around:** the brief's own preferred mechanism — `aria-expanded="true"` on the ⌄ half while its menu is open — doesn't actually fire. `wireDropdownToggle` (the one shared function every dropdown in the app uses, including Add, notifications, the user menu, and this one) only ever toggles the dropdown *menu's* own `is-open` class; it never writes `aria-expanded` back onto the *toggle* button, for any dropdown, not just this one. Fixing that properly means editing the shared function, which would change behavior for every dropdown in the app — outside this brief's own stated scope (`.lime-voice-split` rules in `lime.css`, "a one-line class toggle... only if `:has()` isn't usable"). Since `:has()` *is* usable (confirmed, same as LIME-57's own use of it), used the brief's own sanctioned fallback instead — pointed at the dropdown menu's existing, already-reliable `is-open` class rather than the never-wired `aria-expanded`.
+
+**The change, in `public/css/lime.css`, `.lime-voice-split` only:**
+- Border changed from always-on `1px solid var(--calm-border-normal-default)` to always-present `1px solid transparent` — kept at 1px specifically so nothing shifts between states (confirmed: `.lime-voice-split`'s own `getBoundingClientRect()` is pixel-identical at rest, hovered, focused, and menu-open — `x`, `y`, `width`, `height` all unchanged across all four).
+- `border-color` becomes `var(--calm-border-normal-default)` under three conditions, matching the brief's three triggers exactly: `:hover` (pointer over either half, since hovering a child bubbles to the parent's own `:hover`), `:focus-within` (keyboard focus lands on either half), and `:has(~ .lime-menu.is-open)` (a sibling-combinator `:has()` reading the dropdown menu's own existing open state — no new class, no JS, nothing added to `wireDropdownToggle`).
+- `transition: border-color 80ms ease` — a short fade, matching the halves' own hover transition speed, per the brief's own ask.
+
+**A real tooling pitfall found during verification, recorded so it isn't rechased:** `puppeteer-core`'s `page.hover()` convenience method does not reliably trigger a real `:hover` match in Firefox/Chrome over WebDriver BiDi — it moves the pointer in a single jump with no intermediate steps, which these two engines don't register as a genuine hover in this mode (confirmed: `element.matches(':hover')` read `false` immediately after `page.hover()`, `true` after the identical click target using `page.mouse.move(x, y, { steps: 10 })` instead). Playwright's own `.hover()` (used for the bulk of this brief's screenshots) does not have this problem. Every real-browser hover check in this brief's own verification script was redone with the stepped `mouse.move` before being trusted.
+
+**Scope check:** `public/css/lime.css` (`.lime-voice-split`'s own rules only — no change to `__mic`/`__caret`, matching the brief's explicit boundary), `TEND.md`. No JS change (see Survey — `:has()` made the brief's own fallback unnecessary).
+
+**Verification:**
+- `lime.css` braces balanced (791/791).
+- **No layout shift**, measured directly: `.lime-voice-split`'s `getBoundingClientRect()` identical across rest/hover/focus/menu-open (both composers, both real browsers).
+- Screenshots: both composers at rest (no outline), mic hovered, ⌄ hovered, keyboard focus (a visible outline on the whole container, confirming `:focus-within`), and the menu open with the pointer moved away (confirming the `:has()` trigger works independent of hover) — in light (Warm) and dark. All padded, nothing clipped.
+- Confirmed the border correctly reverts to transparent only once ALL three conditions clear (hover ends, focus moves elsewhere via explicit `blur()`, and the menu is closed) — tested as a single combined check, not assumed from the three independent ones.
+- **Real installed Firefox 157.0 and Chrome 154.0.8037.92** (`puppeteer-core`/WebDriver BiDi, with the stepped-`mouse.move` fix above): `:has()` support confirmed, border transparent at rest, colored on hover, colored while the menu is open (pointer away), zero console/page errors in either.
+- Browser-parsed CSS rule count: `lime.css` **715** (up from fix1's 714 — one new selector, the `:hover`/`:focus-within`/`:has()` group).
+
+**Gate:** the mic and ⌄ look plain at rest in both chat boxes, and the outline appears on hovering either half, on keyboard focus, or while the microphone list is open — with no shift in the button's own position between any of those states.
+
+**Record:** this entry.

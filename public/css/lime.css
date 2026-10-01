@@ -5864,15 +5864,42 @@ html[data-pattern-treatment="photo"] body::before {
    so the halves' own inset hover still has comfortable room once the
    inset grew from LIME-60's 2px to this brief's 3px (measured: the
    container is still vertically centered against the + button and the
-   privacy text, both unaffected by this change). */
+   privacy text, both unaffected by this change).
+   LIME-60-fix2: the outline from fix1 showed unconditionally; the user
+   wants it on hover/focus/open only. The border stays 1px always (kept
+   transparent at rest, not removed) specifically so nothing shifts
+   between states — border-color is the only thing that changes, same
+   technique as the halves' own hover-only background. "While its
+   microphone menu is open" reads naturally as aria-expanded="true" on
+   the ⌄ half, but survey found that attribute is never actually updated
+   — wireDropdownToggle (this file, search it) only toggles the dropdown
+   menu's own `is-open` class, never the toggle button's aria-expanded,
+   for ANY dropdown in the app, not just this one. Wiring aria-expanded
+   properly is a real, separate gap, worth a future brief, but fixing it
+   here would mean editing the shared wireDropdownToggle function, which
+   affects every dropdown in the app (Add, notifications, user menu, the
+   toolbar overflow…) — well outside this brief's own scope ("a one-line
+   class toggle... only if :has() isn't usable"). Used the EXISTING,
+   already-reliable `is-open` class on the dropdown menu instead, via
+   :has() with a sibling combinator (verified in both real browsers,
+   same as LIME-57's own :has() use) — the brief's own sanctioned
+   fallback, just pointing at a class that already exists rather than
+   adding a new one. */
 .lime-voice-split {
   display: flex;
   align-items: stretch;
   height: 32px;
-  border: 1px solid var(--calm-border-normal-default);
+  border: 1px solid transparent;
   border-radius: var(--seed-radius-md);
   background: transparent;
   box-sizing: border-box;
+  transition: border-color 80ms ease;
+}
+
+.lime-voice-split:hover,
+.lime-voice-split:focus-within,
+.lime-voice-split:has(~ .lime-menu.is-open) {
+  border-color: var(--calm-border-normal-default);
 }
 
 .lime-voice-split__mic,
