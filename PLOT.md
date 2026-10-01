@@ -226,6 +226,8 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - `public/signup.html` + `public/js/supabase.js` (commit `8066506`) already use Supabase auth via CDN, with **placeholder** URL and key constants in the file.
   - When the switch happens, consolidate: one Supabase client and config (from a gitignored `*.local.js`, per the switch checklist), shared by signup, login and the future `SupabaseAdapter`. Don't leave placeholder constants in committed code.
   - LIME-24b left `supabase.js` untouched.
+- **LIME-66 landed as `0e7b014`** (2026-10-01): Seed bumped to `2c911c2`; the paint brush, link-simple and code icons are in. Share keeps LIME-59's hand-drawn SVG (`dew-share` is the same icon whose sizing didn't match). **The user's checks of 62–66 are pending.**
+- **2026-10-01 update:** dew and Seed were pushed (Seed `2c911c2`, a clean diff: `icons/dew` plus Seed's `TEND.md`). LIME-65 landed as `bd5ee3e`. **LIME-66's submodule checkout was blocked by tend's sandbox**, so plot gave the user the commands to run. **Careful:** a `git submodule update --init --recursive` from Lime's **root** would reset `vendor/seed` back to the recorded `2bc0868`. Run it **inside** `vendor/seed` (`git -C vendor/seed submodule update --init --recursive`).
 - **Cross-project, open 2026-10-01: the new dew icons** (code, link-simple, paint-brush-broad, palette) are built in `~/Sites/dew` but uncommitted and unpushed (DEW-01, dew's own `PLOT.md`). LIME-66 is blocked until dew commits and pushes, then Seed bumps `icons/dew` and pushes. The user must run those in the dew and Seed sessions; pushing is their call.
 - **Upstream to Seed, added 2026-09-30:** the light theme's `seed-button--primary` should use ink text on lime-500, with lighter hover and press (LIME-58).
 - **Upstream to Seed (Seed's owner is FAM, the same person as the user):** `.seed-dropdown__item` is `width: 100%` plus padding with no `box-sizing: border-box`, so it overflows its menu. Lime works around it in LIME-21. Also candidates: the lime `selected` scale (LIME-14), and whether Seed should ship a global border-box reset.
@@ -276,6 +278,112 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-67 → `tend` (next): toasts redesigned for Lime: title, body, an action, and cross-page messages
+
+**The user (2026-10-01, a Claude toast as reference):** "our toast notifications like this one. We have some toasts in Seed, but they will need to be refined to fit Lime's aesthetic. Then we can apply toasts to changes we make: when you sign in, sign out, make a change, etc., areas where communication will help with recognition of system status."
+
+**The reference:** a white card with a soft shadow, a thin outline and large rounded corners. It has an **info icon** at the left, a **bold title** ("Your Max plan is active"), a **body line**, and an **outlined action button** ("View billing") under the text. A **×** sits at the top right. Neutral colours throughout.
+
+**Survey:**
+- LIME-27's `showToast(message, { tone, duration })` (`app.js` ~281–303) renders Seed's `seed-toast` markup (title only) into `#toast-container` (`index.html` ~903, `bottom-center`, the container itself `role="status"`).
+- Hover pauses it, but mouseleave restarts the timer at only **1s**.
+- `auth.html` has **no** toast container.
+- There are 4 call sites (2× "Link copied", "That chat isn't available to you.", and one other).
+- Seed's `toast.css` provides the container positions and base styles.
+
+**Plot's design decisions (the user can overrule at the gate):**
+- **Position:** **bottom-right** on desktop (24px from the edges, so it never covers the composer or Send, which bottom-centre risks). On ≤ 767px, **top-centre** under the header.
+- **Look, matching the menus (LIME-21b/63):**
+  - `--soil-bg-elevated`, `1px solid --soil-border-subtle`, `--seed-radius-lg`, `--seed-shadow-md`;
+  - width `min(380px, 100vw − 32px)`, padding ~16px 20px;
+  - a 20px leading icon. **Only the icon carries the tone colour** (info is muted ink; success, warning and error use the good/warn/bad icon tokens). The card stays neutral, per the lime rule;
+  - **title:** semibold, ink, ~15px. **Body:** regular, ink (or muted if contrast allows ≥ 4.5:1), ~14px, wrapping;
+  - **an optional action:** Seed's **secondary outline small** button under the body (not pale lime: toasts are never the primary action);
+  - **×:** a neutral icon button at the top right.
+- **Behaviour:**
+  - default **5s**; **8s** with an action; **error toasts stay until dismissed**;
+  - **hover or keyboard focus inside pauses**, and leaving **resumes the remaining time** (not 1s);
+  - at most **3** visible, with the newest nearest the corner; older ones leave first;
+  - entry and exit: a short slide and fade (~150ms), **fade only under reduced motion**.
+- **Accessibility:**
+  - the container is `role="region"` `aria-label="Notifications"`;
+  - each toast is `role="status"` (polite), or `role="alert"` for errors;
+  - toasts never steal focus. With focus inside one, Escape dismisses it. The action and × are keyboard-reachable.
+
+**The change:**
+1. Move the toast system into **`public/js/toast.js`** (loaded by `index.html` **and** `auth.html`, each with its own container), exposing:
+   - `LimeToast.show({ title, body, tone: 'info'|'success'|'warning'|'error', action: { label, onClick }, duration })`;
+   - **keep `showToast(message, options)` working** as a thin wrapper, so existing calls don't break.
+2. **Cross-page messages:** `LimeToast.queue({...})` stores a toast in `sessionStorage` (`lime-flash-toasts`) **before a navigation**. Every page shows and clears queued toasts on load. (This lets "Signed out" appear on the auth page and "Welcome back" on the app.)
+3. Restyle in **`public/css/lime.css`** (auth loads it; confirm), building on Seed's `toast.css`. Don't edit `vendor/`.
+4. Migrate the 4 existing calls: "Link copied" becomes a success with a title only; "That chat isn't available to you" becomes a warning with the title "Chat not available" and the body "You're not a member of that chat."
+5. Write a short **usage note** in `docs/` (or the top of `toast.js`): when to toast and when not to (the rules in LIME-68).
+
+**Scope:** `public/js/toast.js` (new), `public/js/app.js` (wrapper and migration), `public/index.html` and `public/auth.html` (container and script tag), `public/css/lime.css`, `docs/` (the note), and `TEND.md`.
+
+**Verification:**
+- A **demo sheet** (in the scratchpad, using the real CSS and JS) of: info, success, warning and error; title only; title + body; with an action; a long body wrapping; 3 stacked. In light and dark, at desktop and mobile.
+- Timing: pause on hover and focus, resume with the remaining time, errors persist, max 3.
+- A queued toast survives a navigation (index → auth and auth → index).
+- Screen-reader roles in the DOM. Reduced motion.
+- In the real Firefox and Chrome. The real app and `auth.html` load in jsdom with zero errors. Report the CSS rule counts.
+
+**Gate:** copy a chat link: a clean white card at the bottom-right says "Link copied", with a check icon and a ×, and it fades after a few seconds (it stays while you hover over it).
+
+**Record:** add a `## LIME-67` entry to `TEND.md`. Commit: `feat: Lime toasts (title, body, action, cross-page)`, trailer `Brief: LIME-67`, plus the attribution trailer.
+
+---
+
+### LIME-68 → `tend` (after LIME-67): toasts for system status across the app
+
+**The user (2026-10-01):** apply toasts "when you sign in, sign out, make a change, etc., areas where communication will help with recognition of system status."
+
+**The rules (also go in LIME-67's usage note):**
+- **Toast** when an outcome **happened somewhere you're not looking**, **can't otherwise be seen**, is **irreversible**, **can be undone**, or **failed**.
+- **Don't toast** what the screen already shows clearly: sending a message, reactions, opening panels, live appearance changes, typing, selecting chats.
+- **Form validation errors stay inline**, not as toasts.
+- Keep copy short. Plain words. No exclamation marks.
+
+**Where (find each call site; `app.js` lines are from plot's survey):**
+
+| Event | Toast |
+|---|---|
+| **Sign up** → app | success, "Welcome to Lime, {first name}", body "Your account is ready." Action: **"Edit profile"** (opens Settings → Profile). Queued across the redirect. |
+| **Sign in** → app | info, "Signed in as {display name}". Queued. |
+| **Sign out** → auth | info, "You've signed out". Queued. |
+| **Reset demo data** → auth | info, "Demo data reset", body "All accounts and changes were cleared." Queued. |
+| **Profile saved** (~5439) | success, "Profile updated" |
+| **Email changed** (~5499) | success, "Email updated" |
+| **Password changed** (~5523) | success, "Password changed" |
+| **Star / unstar** (~3464) | success, "Starred" / "Removed from Starred" (3s) |
+| **Rename** (~2481) | success, "Renamed to “{name}”" |
+| **Archive** | success, "Chat archived". Action: **"Undo"** (restores it through the existing unarchive path, then shows "Chat restored"). |
+| **Unarchive / restore** | success, "Chat restored" |
+| **Delete** (~3523) | success, "Chat deleted" |
+| **Delete for me (DM)** (~3511) | success, "Chat removed for you" |
+| **Add members** (Share, ~3378) | success, "Added {name} to {group}" |
+| **New group created** (New message) | success, "Group created" (only for groups; a DM opening is visible on its own) |
+| **Attachment upload fails** | error, "Couldn't attach {file name}", with the existing reason as the body |
+| **Saving fails / session-only storage** (any `LimeStore` write rejecting, or the private-browsing fallback) | warning, "Changes may not be saved", body "Lime couldn't save to this browser." **Once per session.** |
+| **Link copied / chat not available** | from LIME-67 |
+
+If an event above doesn't exist in the app (e.g. there's no unarchive path or no leave-group), **skip it and list it.** **Don't add features.** If the survey finds other clearly status-worthy outcomes, **list them in `TEND.md` without implementing them**, for the user to choose.
+
+**Scope:** call sites in `public/js/app.js`, `public/auth.html`'s inline script (queueing on sign-out and showing queued toasts), `public/js/auth.js` only if the queueing belongs there, and `TEND.md`.
+
+**Verification:**
+- Trigger each event in the real app (jsdom for the logic; Playwright for screenshots of a representative half). Report a table of event → toast seen (yes/no), with title and tone.
+- **Archive → Undo** restores the chat to its previous section.
+- The cross-page toasts appear after the navigations.
+- No toast fires for the "don't toast" list (spot-check sending, reacting, and an appearance change).
+- In the real Firefox and Chrome. Zero console errors.
+
+**Gate:** sign out and back in, change your profile, star, rename, archive (try Undo) and delete a chat: each gives a short, calm confirmation at the bottom-right. Sending messages doesn't.
+
+**Record:** add a `## LIME-68` entry to `TEND.md`, including the event table. Commit: `feat: toasts for system status (auth, settings, chat actions, failures)`, trailer `Brief: LIME-68`, plus the attribution trailer. **Stop for the user's check.**
+
+---
 
 ### LIME-65 → `tend` (next): the slideshow's "all photos" grid button sits next to the counter
 
