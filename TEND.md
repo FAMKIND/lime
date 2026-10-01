@@ -2719,3 +2719,27 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Gate:** the ↵ buttons are back to their smaller size in both chat boxes. The mic and its ⌄ form one button with two halves: hovering the mic highlights just the mic ("Record a voice message"), hovering ⌄ highlights just the arrow ("Choose microphone"), and nothing is cut off — though the literal clipping bug could not be reproduced before the fix, so if the user still sees it, it isn't the failure mode investigated here.
 
 **Record:** this entry.
+
+## LIME-60-fix
+
+**Goal:** per the user's check on LIME-60 `9d09dd4` plus a reference crop — the mic/⌄ split button needs the visible container outline holding the two halves together, which LIME-60 shipped without.
+
+**Survey confirmed exactly as the brief described:** `.lime-voice-split` was a 28px-tall flex row with no border; both halves were full pills (`--seed-radius-full`) with a 2px inset and `--calm-bg-subtle-hover`; the composer box's own outline already uses `--calm-border-normal-default`.
+
+**The change, in `public/css/lime.css` only:**
+1. **`.lime-voice-split`** gains a visible outline: `border: 1px solid var(--calm-border-normal-default)` (the same token the composer box's own border uses, so the two read as a family), `border-radius: var(--seed-radius-md)` (8px — not a full pill), `background: transparent`, `box-sizing: border-box`. Height raised 28px → **32px** so the halves' own inset hover still has comfortable room once the inset itself grew (next).
+2. **The halves** (`.lime-voice-split__mic`/`__caret`) inset **3px** from the container (was 2px) — but only on their three *outer* sides; the shared inner edge between the two keeps 0 margin, same asymmetric pattern as LIME-60 and `.lime-nav-add` itself, so the halves sit flush with "no divider line between them," the brief's own words. Radius changed from the full-pill token to `calc(var(--seed-radius-md) - 3px)` = **5px**, written as that literal formula rather than a magic number, matching the brief's own "radius = container radius − inset" exactly. The mic half's width is now explicit (**26px**, ≈ its own inset height of 24px — "roughly square"); the caret stays **20px** (unchanged, already narrower).
+3. **Unchanged, per the brief:** glyph sizes (mic 14px, caret 12px — both already correct from LIME-59-fix), hover/pressed/focus-visible color tokens, the dropdown wiring (no JS or markup touched).
+
+**Scope check:** `public/css/lime.css` (`.lime-voice-split*` rules only — reviewed via `git diff`, no other selector touched), `TEND.md`. Nothing else, per the brief's own explicit boundary.
+
+**Verification:**
+- `lime.css` braces balanced (790/790) — no rule added or removed, only property values changed, so the count is unchanged.
+- **Measured geometry** (computed style, real browsers): container height **32px**, border **1px solid**, radius **8px**; each half's own margin **3px**, radius **5px** (`8 − 3`, confirmed exactly); mic box **26 × 24px** (bordered + inset), confirming "roughly square."
+- Screenshots: both composers at rest (the outline is visible, no fill inside), mic hovered (inset fill, just that half), ⌄ hovered (same, just that half), focus-visible (a clear ring on the focused half) — in light (Warm), Sage, and dark. All padded, nothing clipped, in both Firefox and Chrome.
+- **Real installed Firefox 157.0 and Chrome 154.0.8037.92** (`puppeteer-core`/WebDriver BiDi): container height/border/radius confirmed via computed style in both, the ⌄ half still opens the device menu (LIME-60's own wiring, untouched, still works), zero console/page errors in either.
+- Browser-parsed CSS rule count: `lime.css` **714** — unchanged from LIME-60 (this brief only edited existing declarations, added/removed none).
+
+**Gate:** in both chat boxes, the mic and ⌄ sit inside one thin rounded outline, matching the user's own reference, and hovering either one fills just that half.
+
+**Record:** this entry.

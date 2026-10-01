@@ -5844,22 +5844,35 @@ html[data-pattern-treatment="photo"] body::before {
 /* ── LIME-60: the voice button, split into a mic half and a ⌄ half ──
    The user's own ask: "more like the Add button" (lime-nav-add, just
    above in this file) but NEUTRAL — the mic isn't a primary action, so
-   there's no shared lime fill or divider at rest, same as this button
-   had none before this brief (LIME-50-fix). Each half gets its OWN
-   inset rounded hover instead of one shared pill (a 2px margin on every
-   side, including the shared inner edge, so hovering one half never
-   touches the other) — Add's exact technique, scaled to this control's
-   28px height (Add's own is 36px; proportionally, 2px here ≈ Add's 3px).
-   The mic half stays a placeholder — recording isn't built (LIME-10),
-   unchanged behavior from the single combined button this replaces.
-   The ⌄ half is the real dropdown trigger: it keeps the
-   "voice-mode-toggle"/"replies-voice-mode-toggle" ids app.js's existing
-   wireDropdownToggle calls already target, so no JS change was needed —
-   the id just now lives on a smaller, caret-only element. */
+   there's no shared lime fill at rest, same as this button had none
+   before this brief (LIME-50-fix). Each half gets its OWN inset rounded
+   hover (no margin on the shared inner edge between the two halves, so
+   that edge stays flush — "no divider line between the halves," the
+   LIME-60-fix brief's own words — only the three OUTER sides of each
+   half are inset from the container). The mic half stays a placeholder
+   — recording isn't built (LIME-10), unchanged behavior from the single
+   combined button LIME-60 replaced. The ⌄ half is the real dropdown
+   trigger: it keeps the "voice-mode-toggle"/"replies-voice-mode-toggle"
+   ids app.js's existing wireDropdownToggle calls already target, so no
+   JS change was needed — the id just lives on a smaller, caret-only
+   element.
+   LIME-60-fix: the user's own reference crop showed a visible container
+   outline holding the two halves together (LIME-60 shipped with none),
+   radius ≈20–25% of the container's height — not a full pill. Border
+   uses --calm-border-normal-default, the same token the composer box's
+   own outline uses, so the two read as a family. Height raised 28→32px
+   so the halves' own inset hover still has comfortable room once the
+   inset grew from LIME-60's 2px to this brief's 3px (measured: the
+   container is still vertically centered against the + button and the
+   privacy text, both unaffected by this change). */
 .lime-voice-split {
   display: flex;
   align-items: stretch;
-  height: 28px;
+  height: 32px;
+  border: 1px solid var(--calm-border-normal-default);
+  border-radius: var(--seed-radius-md);
+  background: transparent;
+  box-sizing: border-box;
 }
 
 .lime-voice-split__mic,
@@ -5871,18 +5884,24 @@ html[data-pattern-treatment="photo"] body::before {
   background: transparent;
   color: var(--soil-text-muted);
   cursor: pointer;
-  border-radius: var(--seed-radius-full);
+  /* Container radius (--seed-radius-md, 8px) minus the 3px inset — not a
+     pill any more now that the container itself has a visible corner
+     radius to nest inside of (brief's own "radius = container radius -
+     inset ≈ 5-6px"). */
+  border-radius: calc(var(--seed-radius-md) - 3px);
   transition: background 80ms ease;
 }
 
 .lime-voice-split__mic {
-  padding: 0 8px 0 6px;
-  margin: 2px 0 2px 2px;
+  /* Roughly square — width ≈ height once inset (32 - 3 - 3 = 26px) —
+     the brief's own "wider, square-ish" (wider than the ⌄ half, next). */
+  width: 26px;
+  margin: 3px 0 3px 3px;
 }
 
 .lime-voice-split__caret {
   width: 20px;
-  margin: 2px 2px 2px 0;
+  margin: 3px 3px 3px 0;
 }
 
 .lime-voice-split__mic:hover,
