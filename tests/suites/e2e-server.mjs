@@ -5,11 +5,14 @@
 // restarted: delivered in order, with "delivered" shown past 5 minutes), 20 + 20 writes with none lost, and a reset.
 // Skipped (with a note) when Firefox or Chrome is not installed. Always starts its own dev server on a throwaway folder.
 import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
 import crypto from 'node:crypto';
-import { launch, browserAvailable, sleep } from '../lib/harness.mjs';
+import { launch, browserAvailable, sleep, checkOrigin, insecureOrigin } from '../lib/harness.mjs';
 import { DevServer, openAs } from '../lib/dev.mjs';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const dev = (name) => { const h = crypto.createHash('sha1').update('lime-test-device:' + name).digest('hex'); return h.slice(0, 8) + '-' + h.slice(8, 12) + '-4' + h.slice(13, 16) + '-a' + h.slice(17, 20) + '-' + h.slice(20, 32); }; // a stable UUID per name
 const wait = (page, fn, arg, ms = 8000) => page.waitForFunction(fn, { polling: 20, timeout: ms }, arg);
 const row = (id) => '[data-conversation-id="' + id + '"]';
 // Browser messages that are expected only while the server is deliberately stopped, or after a reset ends every session.
@@ -36,6 +39,7 @@ export async function run({ check }) {
     const A = await openAs(ffNormal, server, ada, 'Ada/firefox', errors);
     const B = await openAs(ffPrivate, server, bo, 'Bo/firefox-private', errors);
     const C = await openAs(chrome, server, cy, 'Cy/chrome', errors);
+    for (const [pg, nm] of [[A, 'Ada/Firefox'], [B, 'Bo/Firefox'], [C, 'Cy/Chrome']]) await checkOrigin(pg, check, nm);
     const priv = await B.evaluate(() => ({ sw: typeof navigator.serviceWorker }));
     check('three different people are signed in, each on the dev server backend', (await Promise.all([A, B, C].map((p) => p.evaluate(() => LimeStore.getCurrentUser().display_name)))).join() === 'Ada Lovelace,Bo Peep,Cy Young');
     check('Bo\'s Firefox started in private mode (the usual marker: navigator.serviceWorker is undefined there)', true, 'serviceWorker=' + priv.sw + (priv.sw === 'undefined' ? ' (private window)' : ' (a separate fresh profile; BiDi did not give a true private window)'));
@@ -158,7 +162,8 @@ export async function run({ check }) {
       return (await A.evaluate((id) => LimeStore.getProfile(id).status, cy.userId)) === 'online';
     })());
     const dee = await server.signUp('Dee Stranger');
-    const D = await openAs(chrome, server, dee, 'Dee/chrome', errors);
+    const deeContext = await chrome.createBrowserContext(); // its own storage, like a different browser
+    const D = await openAs(deeContext, server, dee, 'Dee/chrome', errors, { seedDevice: false }); // Dee's browser makes its own device id
     await A.click('[data-open-picker]');
     await wait(A, () => document.querySelectorAll('#picker-results .lime-picker__result').length >= 2);
     const emptyList = await A.evaluate(() => [...document.querySelectorAll('#picker-results .lime-picker__result')].map((r) => r.textContent));
@@ -179,7 +184,16 @@ export async function run({ check }) {
     A.on('request', (r) => { if (r.url().includes('/api/v1/link-preview')) lpRequests.push(r.url()); });
     const preview = await A.evaluate(() => LimeStore.getLinkPreview('https://www.edutopia.org/article/differentiated-instruction-strategies'));
     check('link previews come from GET /link-preview', preview.site_name === 'Edutopia' && lpRequests.length === 1, lpRequests.length + ' request(s)');
+    // Dee's browser generated its own device id; message.send ops carry distinct ids per device.
+    const deeDm = await D.evaluate((id) => LimeStore.createConversation({ type: 'direct', memberIds: [id] }).then((c) => c.id), ada.userId);
+    await D.evaluate((id) => LimeStore.sendMessage(id, { content: 'from a browser that made its own device id' }), deeDm);
+    await wait(A, (id) => LimeStore.listMessages(id).some((m) => (m.content || '').includes('made its own device id')), deeDm);
+    const sends = fs.readFileSync(path.join(server.dataDir, 'oplog.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.op && e.op.type === 'message.send');
+    const deeSend = sends.find((e) => e.op.actor_id === dee.userId);
+    check('the server log shows message.send ops from distinct device ids (never the old shared "web-volatile")', sends.length >= 5 && new Set(sends.map((e) => e.op.device_id)).size >= 4 && !sends.some((e) => /volatile/.test(e.op.device_id)), new Set(sends.map((e) => e.op.device_id)).size + ' device ids over ' + sends.length + ' sends');
+    check('a browser with no stored id makes its own web-<uuid> device id (here the message was sent on a ' + (insecureOrigin() ? 'plain-http LAN address' : 'localhost') + ')', !!deeSend && /^web-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(deeSend.op.device_id), deeSend && deeSend.op.device_id.slice(0, 12) + '...');
     await D.close();
+    await deeContext.close();
 
     // ── tokens refresh silently; password and email changes through the real client code ──
     const refreshBefore = await A.evaluate(() => { const s = JSON.parse(sessionStorage.getItem('lime-api-session')); s.expires_at = 1; sessionStorage.setItem('lime-api-session', JSON.stringify(s)); return s.refresh_token; });
@@ -188,13 +202,13 @@ export async function run({ check }) {
     check('an expired access token is refreshed silently (the request just works, and the refresh token rotates)', stillWorks && refreshAfter.refresh !== refreshBefore && refreshAfter.fresh);
     const pwOk = await C.evaluate(() => LimeAuth.changePassword({ current: 'password123', next: 'a-new-password-1', confirm: 'a-new-password-1' }).then((r) => r.message, (e) => 'ERR ' + e.message));
     const pwBad = await C.evaluate(() => LimeAuth.changePassword({ current: 'wrong-wrong-1', next: 'another-password-2', confirm: 'another-password-2' }).then((r) => r.message, (e) => e.message));
-    const signInNew = await server.api('POST', '/auth/signin', { body: { email: cy.email, password: 'a-new-password-1', device_id: 'check-new-pw' } });
+    const signInNew = await server.api('POST', '/auth/signin', { body: { email: cy.email, password: 'a-new-password-1', device_id: dev('check-new-pw') } });
     check('changing the password works through the app, a wrong current password shows the server\'s message, and the new password signs in', /changed/.test(pwOk) && /incorrect/i.test(pwBad) && signInNew.status === 200, pwOk + ' / ' + pwBad);
     const emailTaken = await C.evaluate((e) => LimeAuth.changeEmail(e).then(() => 'changed', (err) => err.message), ada.email);
     const emailNew = 'cy.moved.' + Math.random().toString(36).slice(2, 6) + '@example.com';
     const emailOk = await C.evaluate((e) => LimeAuth.changeEmail(e).then(() => 'changed', (err) => err.message), emailNew);
     const emailState = await C.evaluate(() => ({ profile: LimeStore.getCurrentUser().email, session: JSON.parse(sessionStorage.getItem('lime-demo-session')).email }));
-    const signInEmail = await server.api('POST', '/auth/signin', { body: { email: emailNew, password: 'a-new-password-1', device_id: 'check-new-email' } });
+    const signInEmail = await server.api('POST', '/auth/signin', { body: { email: emailNew, password: 'a-new-password-1', device_id: dev('check-new-email') } });
     check('changing an email: someone else\'s address is refused inline ("already in use"), a free one is applied and signs in', /already in use/i.test(emailTaken) && emailOk === 'changed' && emailState.profile === emailNew && emailState.session === emailNew && signInEmail.status === 200, emailTaken + ' / ' + emailOk);
 
     // ── 20 + 20 with nothing lost, across Firefox and Chrome ──

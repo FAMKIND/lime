@@ -16,6 +16,28 @@ const BROWSERS = {
 };
 export const browserAvailable = (name) => fs.existsSync(BROWSERS[name]);
 
+// LIME_TEST_ORIGIN=lan runs the browser suites against this computer's LAN address (an insecure context, like a phone opening
+// http://192.168.x.x:8000), where crypto.randomUUID and crypto.subtle do not exist. An explicit http://host[:port] works too.
+// Unset: 127.0.0.1 (a secure context, like http://localhost).
+export function lanAddress() {
+  const i = Object.values(os.networkInterfaces()).flat().find((n) => n && n.family === 'IPv4' && !n.internal);
+  return i ? i.address : null;
+}
+export function testHost() {
+  const v = process.env.LIME_TEST_ORIGIN;
+  if (!v) return '127.0.0.1';
+  if (v === 'lan') { const ip = lanAddress(); if (!ip) throw new Error('LIME_TEST_ORIGIN=lan needs a LAN network interface'); return ip; }
+  return new URL(v).hostname;
+}
+export const insecureOrigin = () => !!process.env.LIME_TEST_ORIGIN;
+
+// In an insecure-origin run, proves the page really is not a secure context (otherwise the run proves nothing).
+export async function checkOrigin(page, check, label) {
+  const secure = await page.evaluate(() => window.isSecureContext);
+  const want = !insecureOrigin();
+  check((label || 'page') + ': ' + (want ? 'served from a secure context (localhost)' : 'is NOT a secure context (window.isSecureContext === false), like a phone on the LAN'), secure === want, 'isSecureContext=' + secure);
+}
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -33,8 +55,8 @@ export async function startServer() {
   const dataDir = dev ? fs.mkdtempSync(path.join(os.tmpdir(), 'lime-dev-')) : null;
   const proc = dev
     ? spawn(process.execPath, [path.join(REPO_ROOT, 'server', 'dev-server.mjs'), '--port', String(port), '--data', dataDir], { stdio: 'ignore' })
-    : spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], { cwd: REPO_ROOT, stdio: 'ignore' });
-  const base = `http://127.0.0.1:${port}/public/`;
+    : spawn('python3', ['-m', 'http.server', String(port), '--bind', insecureOrigin() ? '0.0.0.0' : '127.0.0.1'], { cwd: REPO_ROOT, stdio: 'ignore' });
+  const base = `http://${testHost()}:${port}/public/`;
   for (let i = 0; i < 50; i++) {
     try { const r = await fetch(base + 'index.html'); if (r.ok) break; } catch (e) { /* not up yet */ }
     await sleep(100);

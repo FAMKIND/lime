@@ -81,7 +81,7 @@ Every op, in a request or in the feed, has this shape:
 | `op_id` | client | A UUIDv7 (time-ordered UUID). The **idempotency key**: the server remembers every `op_id` it has accepted, and replaying one is a no-op that returns the original result. |
 | `type` | client | One of the catalogue in section 3. |
 | `actor_id` | client | The profile id acting. The server **checks it equals the token's user**; a mismatch is rejected `forbidden`. It is in the envelope (not only the token) so a relayed op stays self-describing. |
-| `device_id` | client | The device that made it. |
+| `device_id` | client | The device that made it: a **UUID, optionally with a short prefix** (`web-<uuid>`). The server refuses anything else with `bad_request` (and an op with a bad one `invalid_op`), because two devices sharing an id would share one session and the refresh-token reuse check would sign one out. A client makes one per install and must never fall back to a constant. Ids that need randomness (`device_id`, message and conversation ids) must not depend on `crypto.randomUUID`, which does not exist on plain `http://192.168.x.x` addresses. |
 | `client_ts` | client | When the client made it. **Informational only** (shown as "sent from a device clock", used for debugging). Never used for ordering or conflicts. |
 | `payload` | client | The type's own fields (section 3). |
 | `seq` | **server** | The op's place in the log. Present in the feed and in `/ops` results. |

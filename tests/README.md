@@ -3,11 +3,15 @@
 ```
 npm install        # once
 npm test           # everything (about a minute)
-node run.mjs sync  # one or more suites by name: smoke css auth sync toasts api e2e-server
+node run.mjs sync  # one or more suites by name: smoke css auth sync toasts api e2e-server safari
 LIME_TEST_SERVER=dev npm test   # browser suites against server/dev-server.mjs instead of Python
 ```
 
 Exit code is 1 if anything fails. Each run starts its own `python3 -m http.server` from the repo root on a free port and stops it afterwards, so nothing needs to be running first.
+
+**Insecure origins (LIME-76).** `LIME_TEST_ORIGIN=lan npm test` runs the browser suites against this computer's LAN address (`http://192.168.x.x:<port>`), which is not a secure context, like a phone opening the dev server: there `crypto.randomUUID` and `crypto.subtle` do not exist. Use it together with the dev server: `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev npm test`. The suites check `window.isSecureContext === false` there. (With the Python server on an insecure address the local-only backend cannot hash passwords, so the auth suite instead checks that sign-up explains this clearly.)
+
+**Safari.** `npm run test:safari` drives Safari on this Mac with `safaridriver` (the same WebKit as iOS Safari): sign in through the real page, send a DM, receive a DM live, see a profile change arrive. Safari must allow remote automation first: run `safaridriver --enable` once (it asks for your Mac password) or tick Safari > Settings > Developer > Allow Remote Automation. Until then the suite reports a skip with that instruction.
 
 **Browsers.** `puppeteer-core` drives your *installed* browsers: Chrome over CDP and Firefox (`/Applications/Firefox.app`) over WebDriver BiDi, each on a throwaway profile. Playwright is not used: its Firefox is a patched build that is not the one you use, and it cannot drive the stock one. Suites that care about browser differences (`sync`, `css`) use Firefox; `sync` runs in both.
 

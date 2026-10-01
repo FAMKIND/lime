@@ -629,12 +629,12 @@ const LimeStore = (function () {
   function sendMessage(conversationId, options) {
     const opts = options || {};
     if (api) {
-      const messageId = crypto.randomUUID();
+      const messageId = LimeIds.newId();
       ApiAdapter.write('message.send', {
         message_id: messageId, conversation_id: conversationId, content: opts.content != null ? opts.content : null, type: 'text',
         metadata: opts.metadata || null, reply_to: opts.replyTo || null,
         attachments: (opts.attachments || []).map((att, index) => ({
-          attachment_id: crypto.randomUUID(), file_id: att.path, name: att.name != null ? att.name : null, size: att.size != null ? att.size : null,
+          attachment_id: LimeIds.newId(), file_id: att.path, name: att.name != null ? att.name : null, size: att.size != null ? att.size : null,
           mime: att.mime != null ? att.mime : null, width: att.width != null ? att.width : null, height: att.height != null ? att.height : null,
           duration_seconds: att.duration_seconds != null ? att.duration_seconds : null, position: index,
         })),
@@ -644,7 +644,7 @@ const LimeStore = (function () {
       return Promise.resolve(getMessage(messageId));
     }
     const message = {
-      id: crypto.randomUUID(),
+      id: LimeIds.newId(),
       conversation_id: conversationId,
       sender_id: currentUserId,
       content: opts.content != null ? opts.content : null,
@@ -657,7 +657,7 @@ const LimeStore = (function () {
     messages.push(message);
     (opts.attachments || []).forEach((att, index) => {
       messageAttachments.push({
-        id: crypto.randomUUID(),
+        id: LimeIds.newId(),
         message_id: message.id,
         path: att.path,
         name: att.name != null ? att.name : null,
@@ -746,7 +746,7 @@ const LimeStore = (function () {
       if (existing) return Promise.resolve(existing);
     }
     if (api) {
-      const conversationId = crypto.randomUUID();
+      const conversationId = LimeIds.newId();
       ApiAdapter.write('conversation.create', {
         conversation_id: conversationId, type: opts.type, name: opts.name || null, description: opts.description || null,
         member_ids: memberIds.filter((u) => u !== currentUserId),
@@ -757,7 +757,7 @@ const LimeStore = (function () {
     }
     const now = new Date().toISOString();
     const conversation = {
-      id: crypto.randomUUID(),
+      id: LimeIds.newId(),
       type: opts.type,
       name: opts.name || null,
       description: opts.description || null,
@@ -1124,6 +1124,21 @@ const LimeStore = (function () {
   }
   const isApi = () => api;
 
+  // LIME-76: a write that throws (anything unexpected while making or queueing it) must never leave the screen looking "sent" with
+  // nothing queued. It is logged, shown as an error toast, and returned as a rejected promise like any other failed write.
+  // (Validation failures already come back as rejected promises and are handled by their callers, so they do not toast here.)
+  function guarded(name, fn) {
+    return function () {
+      try {
+        return fn.apply(this, arguments);
+      } catch (err) {
+        console.error('[LimeStore] ' + name + ' failed', err);
+        if (window.LimeToast) LimeToast.show({ title: 'Couldn\u2019t save that', body: err && err.message ? err.message : 'Something went wrong. Try again.', tone: 'error' });
+        return Promise.reject(err);
+      }
+    };
+  }
+
   return {
     init,
     reset,
@@ -1148,17 +1163,17 @@ const LimeStore = (function () {
     getLatestActivity,
     can,
     canReason,
-    sendMessage,
-    toggleReaction,
-    createConversation,
-    addMembers,
-    renameConversation,
-    setStarred,
-    setArchived,
-    setAppearance,
-    deleteConversation,
-    deleteForMe,
-    markRead,
+    sendMessage: guarded('sendMessage', sendMessage),
+    toggleReaction: guarded('toggleReaction', toggleReaction),
+    createConversation: guarded('createConversation', createConversation),
+    addMembers: guarded('addMembers', addMembers),
+    renameConversation: guarded('renameConversation', renameConversation),
+    setStarred: guarded('setStarred', setStarred),
+    setArchived: guarded('setArchived', setArchived),
+    setAppearance: guarded('setAppearance', setAppearance),
+    deleteConversation: guarded('deleteConversation', deleteConversation),
+    deleteForMe: guarded('deleteForMe', deleteForMe),
+    markRead: guarded('markRead', markRead),
     uploadAttachment,
     getAttachmentUrl,
     deleteAttachment,
@@ -1167,7 +1182,7 @@ const LimeStore = (function () {
     searchProfiles,
     lookupProfileByEmail,
     isApi,
-    updateProfile,
+    updateProfile: guarded('updateProfile', updateProfile),
     setProfileEmail,
     createProfile,
   };

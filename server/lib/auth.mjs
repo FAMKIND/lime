@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
-import { E, ApiError, ensureDir, writeJsonAtomic, readJson, sha256, b64url, isEmail, isId, uuid, nowIso } from './util.mjs';
+import { E, ApiError, ensureDir, writeJsonAtomic, readJson, sha256, b64url, isEmail, isId, isDeviceId, uuid, nowIso } from './util.mjs';
 
 export const PBKDF2_ITERATIONS = 600000;
 const ACCESS_TTL_SECS = 15 * 60;
@@ -199,6 +199,6 @@ export const checkSignup = ({ email, password, display_name, device_id }) => {
   if (!isEmail(email)) throw E.badRequest('Enter a valid email address.');
   if (typeof password !== 'string' || password.length < 8 || password.length > 200) throw E.badRequest('Password must be at least 8 characters.');
   if (typeof display_name !== 'string' || !display_name.trim() || display_name.length > 200) throw E.badRequest('Display name is required.');
-  if (!isId(device_id)) throw E.badRequest('device_id is required.');
+  if (!isDeviceId(device_id)) throw E.badRequest('device_id must be a UUID (optionally with a prefix like web-).');
 };
 export { uuid };

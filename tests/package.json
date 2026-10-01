@@ -11,7 +11,8 @@
     "test:sync": "node run.mjs sync",
     "test:toasts": "node run.mjs toasts",
     "test:api": "node run.mjs api",
-    "test:e2e": "node run.mjs e2e-server"
+    "test:e2e": "node run.mjs e2e-server",
+    "test:safari": "node run.mjs safari"
   },
   "devDependencies": {
     "jsdom": "^27.0.1",

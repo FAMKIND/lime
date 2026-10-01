@@ -1,5 +1,5 @@
 // Sign up, sign in, wrong password, the seed-teacher hint, sign out, through the real auth.html in the real browser.
-import { launch, browserAvailable, watchErrors, sleep, wipeStorage } from '../lib/harness.mjs';
+import { launch, browserAvailable, watchErrors, sleep, wipeStorage, checkOrigin, insecureOrigin } from '../lib/harness.mjs';
 
 async function enterEmail(page, base, email) {
   await page.goto(base + 'auth.html', { waitUntil: 'load' });
@@ -23,11 +23,24 @@ export async function run({ base, check }) {
     await page.type('#auth-create-password', 'password123');
     const terms = await page.$('#auth-terms');
     if (terms) await terms.click();
+    const mode = await page.evaluate(() => LimeBackend.ready.then((m) => m));
+    if (mode === 'local' && insecureOrigin()) {
+      // The local-only backend hashes passwords in the browser with crypto.subtle, which does not exist at a plain http://<lan ip>
+      // address. It must say so plainly instead of crashing or doing nothing.
+      await checkOrigin(page, check, 'auth');
+      await page.click('#auth-create-form button[type=submit]');
+      await page.waitForFunction(() => document.getElementById('auth-error').textContent.trim().length > 0, { polling: 20, timeout: 8000 });
+      const msg = await page.evaluate(() => document.getElementById('auth-error').textContent);
+      check('local-only backend on an insecure address: sign-up explains the problem and how to fix it (no crash)', /isn.t secure enough/.test(msg) && /localhost|dev server/.test(msg), msg);
+      check('zero console or page errors', errors.length === 0, errors.join(' | '));
+      return;
+    }
     const nav = page.waitForNavigation({ waitUntil: 'load' });
     await page.click('#auth-create-form button[type=submit]');
     await nav;
     await page.waitForFunction(() => window.LimeStore && LimeStore.getCurrentUser(), { polling: 10, timeout: 10000 });
     check('sign up lands in the app as the new person', (await page.evaluate(() => LimeStore.getCurrentUser().display_name)) === 'Ada Lovelace');
+    await checkOrigin(page, check, 'auth');
     const api = await page.evaluate(() => LimeStore.isApi());
     check(api ? 'sign up gave this tab tokens, and the plain password is stored nowhere in the browser' : 'sign up stored a credential, never the plain password', await page.evaluate((isApi) => {
       const all = JSON.stringify(Object.assign({}, localStorage)) + JSON.stringify(Object.assign({}, sessionStorage));

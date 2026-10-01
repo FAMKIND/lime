@@ -55,7 +55,7 @@ const LocalAdapter = (function () {
   // since `path` is opaque to every caller either way (data-model.md).
   function uploadAttachment(file, options) {
     const conversationId = (options && options.conversationId) || 'unfiled';
-    const path = conversationId + '/' + crypto.randomUUID() + '-' + file.name;
+    const path = conversationId + '/' + LimeIds.newId() + '-' + file.name;
     return withTimeout(openFilesDb().then((db) => new Promise((resolve, reject) => {
       const tx = db.transaction(FILES_STORE_NAME, 'readwrite');
       tx.objectStore(FILES_STORE_NAME).put({ path, blob: file, name: file.name, mime: file.type, size: file.size });

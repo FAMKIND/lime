@@ -73,6 +73,12 @@ const LimeAuth = (function () {
   // stored credential goes through this, never a plain or reversibly-
   // encoded password.
   function derivePasswordHash(password, saltBytes) {
+    // LIME-76: crypto.subtle exists only on https and http://localhost. Opened at a plain http://192.168.x.x address without the
+    // dev server (the local-only backend), there is no way to hash a password in the browser: say so instead of crashing.
+    // (With the dev server the server verifies passwords and this function is never called.)
+    if (!window.crypto || !crypto.subtle) {
+      return Promise.reject(new Error('This address isn\u2019t secure enough for Lime to sign you in on its own. Open Lime at http://localhost, or start the dev server (node server/dev-server.mjs) and use its link.'));
+    }
     return crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
       .then((keyMaterial) => crypto.subtle.deriveBits(
         { name: 'PBKDF2', salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
@@ -140,7 +146,7 @@ const LimeAuth = (function () {
       return Promise.reject(new Error('That email is already in use.'));
     }
 
-    const userId = crypto.randomUUID();
+    const userId = LimeIds.newId();
     return hashNewPassword(password).then(({ salt, hash }) => {
       credentials[email] = { userId, salt, hash };
       saveCredentials(credentials);

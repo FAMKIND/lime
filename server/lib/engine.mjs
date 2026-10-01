@@ -2,7 +2,7 @@
 // processOp(); the append-only log is the source of truth and state.json is only a cache of replaying it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { E, ApiError, isStr, isId, isObj, isEmail, nowIso, ensureDir, writeJsonAtomic, readJson } from './util.mjs';
+import { E, ApiError, isStr, isId, isDeviceId, isObj, isEmail, nowIso, ensureDir, writeJsonAtomic, readJson } from './util.mjs';
 
 const PROFILE_PATCH_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone', 'avatar_url'];
 const PUBLIC_PROFILE_FIELDS = ['id', 'display_name', 'school', 'role', 'pronouns', 'grade_levels', 'subjects', 'bio', 'timezone', 'avatar_url'];
@@ -185,7 +185,7 @@ export class Engine {
     if (done) return { status: 'duplicate', seq: done.seq, server_ts: done.server_ts };
     if (op.actor_id !== actorId) throw E.forbidden('actor_id does not match the signed-in user.');
     if (!isObj(op.payload)) throw E.invalidOp('payload must be an object.');
-    if (!isId(op.device_id)) throw E.invalidOp('device_id is required.');
+    if (!isDeviceId(op.device_id)) throw E.invalidOp('device_id must be a UUID (optionally with a prefix like web-).');
     const ts = nowIso();
     const res = this.runHandler(op, actorId, ts, false);
     const entry = this.append({ kind: 'op', server_ts: ts, op: res.op || op, audience: res.audience });

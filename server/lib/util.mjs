@@ -40,6 +40,9 @@ export const nowIso = () => new Date().toISOString();
 
 export const isStr = (v, max = 100000) => typeof v === 'string' && v.length <= max;
 export const isId = (v) => typeof v === 'string' && /^[A-Za-z0-9._:-]{1,80}$/.test(v);
+// A device id is a UUID, optionally with a short lowercase prefix ("web-<uuid>"). Anything else (a shared constant such as
+// "web-volatile", an empty string) is refused, because two devices sharing an id would share one session.
+export const isDeviceId = (v) => typeof v === 'string' && /^([a-z]{1,12}-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 export const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 export const isEmail = (v) => typeof v === 'string' && v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 

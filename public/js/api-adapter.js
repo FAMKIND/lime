@@ -64,24 +64,22 @@ const ApiAdapter = (function () {
     constructor(status, code, message) { super(message); this.status = status; this.code = code; }
   }
 
-  // ── ids ──
-  function uuidv7() {
-    const b = crypto.getRandomValues(new Uint8Array(16));
-    let ts = Date.now();
-    for (let i = 5; i >= 0; i--) { b[i] = ts % 256; ts = Math.floor(ts / 256); }
-    b[6] = (b[6] & 0x0f) | 0x70;
-    b[8] = (b[8] & 0x3f) | 0x80;
-    const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
-    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
-  }
+  // ── ids ── (LimeIds, ids.js: works on insecure origins such as http://192.168.x.x, unlike the browser's randomUUID)
+  const uuidv7 = () => LimeIds.newOpId();
 
   // ── session (tokens per tab in sessionStorage; the device id per browser in localStorage) ──
+  // One id per browser, kept in localStorage. Never a shared constant: if storage is unavailable, each page load makes its own
+  // (two phones sharing one device id would share one session, and the server's refresh-token reuse check would sign one out).
+  let volatileDeviceId = null;
   function deviceId() {
     try {
       let id = localStorage.getItem(DEVICE_KEY);
-      if (!id) { id = 'web-' + crypto.randomUUID(); localStorage.setItem(DEVICE_KEY, id); }
+      if (!id) { id = LimeIds.newDeviceId(); localStorage.setItem(DEVICE_KEY, id); }
       return id;
-    } catch (e) { return 'web-volatile'; }
+    } catch (e) {
+      if (!volatileDeviceId) volatileDeviceId = LimeIds.newDeviceId();
+      return volatileDeviceId;
+    }
   }
   function readSession() {
     try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { return null; }

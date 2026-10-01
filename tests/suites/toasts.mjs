@@ -1,5 +1,5 @@
 // Toasts (LIME-67/68): queue across navigation, at most 3 visible, an error stays, an action works.
-import { launch, browserAvailable, watchErrors, sleep, wipeStorage, isDevServer } from '../lib/harness.mjs';
+import { launch, browserAvailable, watchErrors, sleep, wipeStorage, isDevServer, checkOrigin } from '../lib/harness.mjs';
 import { Remote, openAs } from '../lib/dev.mjs';
 
 const visible = (page) => page.evaluate(() => [...document.querySelectorAll('.lime-toast:not(.seed-toast--exiting)')].map((t) => t.querySelector('.seed-toast__title').textContent));
@@ -24,6 +24,8 @@ export async function run({ base, check }) {
       await page.goto(base + 'index.html', { waitUntil: 'load' });
       await page.waitForFunction(() => window.LimeToast && window.LimeStore && LimeStore.getCurrentUserId(), { polling: 10, timeout: 10000 });
     }
+
+    await checkOrigin(page, check, 'toasts');
 
     // Queue across navigation: queued here, shown after the next page load, shown once.
     await page.evaluate(() => LimeToast.queue({ title: 'Queued across pages', tone: 'info' }));

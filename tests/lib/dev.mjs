@@ -1,11 +1,12 @@
 // Starts server/dev-server.mjs on its own port and data folder, can stop and restart it (same port, same data), and signs
 // people up through the API so a browser page can start already signed in.
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
-import { REPO_ROOT, sleep } from './harness.mjs';
+import { REPO_ROOT, sleep, testHost } from './harness.mjs';
 
 export function freePort() {
   return new Promise((resolve) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
@@ -23,7 +24,7 @@ export class Remote {
   // A new account made through the API; returns what a page needs to start signed in.
   async signUp(name, password = 'password123') {
     const email = name.toLowerCase().replace(/[^a-z]+/g, '.') + '.' + Math.random().toString(36).slice(2, 7) + '@example.com';
-    const device = 'e2e-' + Math.random().toString(36).slice(2, 8);
+    const device = crypto.randomUUID();
     const r = await this.api('POST', '/auth/signup', { body: { email, password, display_name: name, device_id: device } });
     if (r.status !== 201) throw new Error('signup failed: ' + JSON.stringify(r.body));
     return { name, email, password, userId: r.body.user.id, token: r.body.access_token, refresh: r.body.refresh_token, device };
@@ -32,9 +33,9 @@ export class Remote {
 
 export class DevServer extends Remote {
   constructor() { super('http://127.0.0.1:1/public/'); this.dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lime-e2e-')); this.proc = null; this.port = 0; }
-  get base() { return `http://127.0.0.1:${this.port}/public/`; }
+  get base() { return `http://${testHost()}:${this.port}/public/`; }
   set base(v) { /* derived from the port */ }
-  get origin() { return `http://127.0.0.1:${this.port}`; }
+  get origin() { return `http://${testHost()}:${this.port}`; }
   set origin(v) { /* derived from the port */ }
   async start() {
     if (!this.port) this.port = await freePort();
@@ -55,18 +56,18 @@ export class DevServer extends Remote {
 }
 
 // Opens a page already signed in as `person` (tokens in this tab's sessionStorage, exactly where the app keeps them).
-export async function openAs(browser, server, person, label, errors, { hash = '' } = {}) {
+export async function openAs(browser, server, person, label, errors, { hash = '', seedDevice = true } = {}) {
   const { watchErrors } = await import('./harness.mjs');
   const page = await browser.newPage();
   watchErrors(page, label, errors);
-  await page.evaluateOnNewDocument((p, deviceId) => {
+  await page.evaluateOnNewDocument((p, deviceId, seedDeviceId) => {
     if (!sessionStorage.getItem('e2e-seeded')) { // once per tab, not on every navigation (a signed-out tab must stay signed out)
       sessionStorage.setItem('e2e-seeded', '1');
       sessionStorage.setItem('lime-api-session', JSON.stringify({ userId: p.userId, email: p.email, access_token: p.token, refresh_token: p.refresh, expires_at: Date.now() + 14 * 60 * 1000 }));
       sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: p.userId, email: p.email }));
     }
-    try { localStorage.setItem('lime-device-id', deviceId); } catch (e) { /* none */ }
-  }, person, person.device);
+    if (seedDeviceId) { try { localStorage.setItem('lime-device-id', deviceId); } catch (e) { /* none */ } }
+  }, person, person.device, seedDevice);
   await page.goto(server.base + 'index.html' + hash, { waitUntil: 'load' });
   await page.waitForFunction(() => window.LimeStore && LimeStore.isApi() && LimeStore.getCurrentUserId(), { polling: 20, timeout: 15000 });
   page.person = person;

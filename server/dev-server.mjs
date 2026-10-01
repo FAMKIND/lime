@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ApiError, E, mimeFor, isId, uuid } from './lib/util.mjs';
+import { ApiError, E, mimeFor, isId, isDeviceId, uuid } from './lib/util.mjs';
 import { Engine } from './lib/engine.mjs';
 import { Auth, checkSignup } from './lib/auth.mjs';
 import { Files, MAX_FILE_BYTES, readBody, parseMultipartFile } from './lib/files.mjs';
@@ -134,7 +134,7 @@ async function api(req, res, url) {
     }
     case 'POST /auth/signin': {
       const body = await jsonBody(req);
-      if (typeof body.email !== 'string' || typeof body.password !== 'string' || !isId(body.device_id)) throw E.badRequest('email, password and device_id are required.');
+      if (typeof body.email !== 'string' || typeof body.password !== 'string' || !isDeviceId(body.device_id)) throw E.badRequest('email, password and a valid device_id (a UUID) are required.');
       const userId = await auth.verify(body.email.trim().toLowerCase(), body.password);
       const profile = engine.profiles.get(userId);
       if (!profile) throw E.invalidCredentials();
@@ -142,7 +142,7 @@ async function api(req, res, url) {
     }
     case 'POST /auth/refresh': {
       const body = await jsonBody(req);
-      if (typeof body.refresh_token !== 'string' || !isId(body.device_id)) throw E.badRequest('refresh_token and device_id are required.');
+      if (typeof body.refresh_token !== 'string' || !isDeviceId(body.device_id)) throw E.badRequest('refresh_token and a valid device_id (a UUID) are required.');
       return sendJson(res, 200, auth.refresh(body.refresh_token, body.device_id).tokens);
     }
     case 'POST /auth/signout': {
@@ -155,6 +155,7 @@ async function api(req, res, url) {
       const { userId } = requireAuth(req);
       const body = await jsonBody(req);
       if (!Array.isArray(body.ops) || body.ops.length === 0 || body.ops.length > 100) throw E.badRequest('ops must be a list of 1 to 100 ops.');
+      if (body.device_id !== undefined && !isDeviceId(body.device_id)) throw E.badRequest('device_id must be a UUID (optionally with a prefix like web-).');
       const results = body.ops.map((op) => {
         const op_id = op && typeof op === 'object' ? op.op_id : undefined;
         try { return Object.assign({ op_id }, engine.processOp(op, userId)); } catch (e) {

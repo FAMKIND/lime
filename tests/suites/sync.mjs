@@ -1,5 +1,5 @@
 // Two tabs of one browser window, two people (LIME-69): a live message, then no lost writes (20 + 20).
-import { launch, browserAvailable, openSignedIn, wipeStorage, sleep, isDevServer } from '../lib/harness.mjs';
+import { launch, browserAvailable, openSignedIn, wipeStorage, sleep, isDevServer, checkOrigin } from '../lib/harness.mjs';
 import { Remote, openAs } from '../lib/dev.mjs';
 
 async function suiteFor(name, { base, check }) {
@@ -27,6 +27,7 @@ async function suiteFor(name, { base, check }) {
       await sleep(500);
     }
 
+    await checkOrigin(A, (n, c, d) => check(tag(n), c, d), 'tab A');
     await A.bringToFront();
     const gid = await A.evaluate(async (other) => (await LimeStore.createConversation({ type: 'group', name: 'Sync test', memberIds: [other] })).id, dev ? personB.userId : 'teacher-001');
     await B.waitForFunction((id) => !!document.querySelector('[data-conversation-id="' + id + '"]'), { polling: 10, timeout: 5000 }, gid);

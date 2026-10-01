@@ -3267,3 +3267,34 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app â€
 
 **Gate:** restart the server (re-seeded). Sign in as `shem@famkind.com` and `jean@famkind.com` (their own password): you're the familiar Shem and Jean, with the existing chats, and every teacher's email ends in `@famkind.com`.
 
+## LIME-76
+
+**Goal:** phones can send. Messages typed on a phone opening the dev server at `http://192.168.x.x:8000` never left the phone.
+
+**Root cause (confirmed):** `crypto.randomUUID()` (and `crypto.subtle`) exist only in *secure contexts*: https and `http://localhost`. A LAN address is not one. On a phone, `sendMessage` threw at its first line (`LimeStore.newId` was `crypto.randomUUID()` for the message id), so **no `message.send` op was ever made**; attachment ids and new conversations/groups had the same call. Because the exception happened inside a click handler, the UI looked as if nothing had happened. The real `data/oplog.jsonl` shows it: 13 ops, only `markRead`, one `profile.update` and one `reaction.toggle`, and **every op carries `device_id: web-volatile`**, the old fallback in `api-adapter.js` taken because `'web-' + crypto.randomUUID()` threw. All my earlier suites ran on `localhost` (a secure context), so none of them could see it.
+
+**About the shared `device_id` (what I checked, and one thing I could not prove):** sessions on the server are keyed by *person and device*, so two **different** people sharing `web-volatile` did **not** sign each other out (both sessions in the real `auth.json` are unrevoked). But **one person on two devices** that share an id would share a session, and the refresh-token reuse check then signs the first one out; the API suite now proves this. I could not prove why the other phone showed no profile change: `teacher-002` had *already* been renamed "Shem Rajoon" in the seed by LIME-75, so that `profile.update` changed no visible text, and with no message ever sent there was nothing else to show. I am not claiming the shared id was the cause of that.
+
+**What changed**
+- **`public/js/ids.js` (new, loaded first):** `LimeIds.newId()` (UUIDv4), `newOpId()` (UUIDv7, same as the adapter made before, now from one place), `newDeviceId()` (`web-<uuid>`), all from `crypto.getRandomValues`, which exists in insecure contexts (falls back to `Math.random` if there is no Web Crypto at all, and never throws). Every `crypto.randomUUID()` in `public/js/` (`auth.js`, `api-adapter.js`, `store.js` x6, `local-adapter.js`) now uses it; **`grep crypto.randomUUID public/js` finds 0.**
+- **`device_id`:** one per browser in `localStorage`; if storage is unavailable, one per page load; **never a shared constant**; `web-volatile` is gone.
+- **`crypto.subtle`:** only the local-only backend uses it (the server verifies passwords on the API backend, so it is never reached there). On an insecure address without the dev server, sign-up and sign-in now say "This address isn't secure enough ... Open Lime at http://localhost, or start the dev server" instead of failing silently.
+- **No silent failures:** every `LimeStore` write is wrapped; any exception while making or queueing one is logged, shown as an error toast ("Couldn't save that"), and returned as a rejected promise.
+- **Server:** `device_id` must be a UUID, optionally with a short prefix (`web-<uuid>`): refused with `bad_request` on signup, signin, refresh and `POST /ops` (an op with a bad one gets `invalid_op`). Documented in `docs/api.md`.
+- **Tests:** `LIME_TEST_ORIGIN=lan` runs the browser suites and `e2e-server` against this Mac's LAN IP; the suites assert `window.isSecureContext === false` there. New `safari` suite and a tiny `safaridriver` client (`tests/lib/safari.mjs`). The API suite grew to 105 checks (device id validation, the two sharing cases above), `e2e-server` to 51 (it now also reads the server's log: `message.send` ops come from distinct device ids, and a browser with its own empty storage makes its own `web-<uuid>`).
+
+**Verification**
+- `grep crypto.randomUUID public/js` (excluding the generated seed): **0 matches**.
+- **Mutation check:** I put `crypto.randomUUID()` back into `newId()` and ran `e2e-server` on the LAN origin: it failed at once with `crypto.randomUUID is not a function`. Restored.
+- Full suites pass on **localhost** (`npm test`, Python server) and on the **insecure LAN address with the dev server** (`LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev npm test`), and on localhost with the dev server: smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51 (about 55 seconds each, sync 36 of it). On the LAN run, Firefox, Chrome, the second Firefox and Chrome-as-Dee all report `isSecureContext === false`. The Python server with the LAN address instead checks that sign-up explains the problem (3 checks).
+- **A fresh `data/` log after the e2e run** shows `message.send` ops from 4 distinct device ids over 7 sends, none `web-volatile`, and Dee's isolated browser made `web-<uuid>` itself.
+- **Safari was NOT run.** `safaridriver` refuses to start a session here: Safari's "Allow Remote Automation" is off. **The one command (it asks for your Mac password once):** `safaridriver --enable`. Then: `cd tests && LIME_TEST_ORIGIN=lan node run.mjs safari`. Until then the suite reports a skip with that instruction. **The Safari suite itself has never executed against a real Safari, so expect it may need a small fix on its first run.** It signs in through the real sign-in page, sends a DM, receives a DM live, and checks a profile change arrives.
+
+**Manual phone steps (for you)**
+1. On the Mac: stop the server, `rm -rf data` (so the demo accounts are fresh), `node server/dev-server.mjs`.
+2. Note the "On your network" link (like `http://192.168.0.127:8000/public/index.html`). Both phones must be on the same Wi-Fi. If a phone browser is still showing an old copy, reload it.
+3. Phone 1: sign in as `shem@famkind.com`. Phone 2: sign in as `jean@famkind.com` (their own password).
+4. On each, open the other's chat (the existing DM) and send a message: it should appear on the other phone within about a second, and show as sent on yours.
+5. Then try a reply, a reaction, renaming the PS 113 Staff Room, changing your name or photo in Settings: all should appear live on the other phone.
+6. If a message does not send, you will now see a red "Couldn't save that" message instead of nothing, and the console has the reason.
+

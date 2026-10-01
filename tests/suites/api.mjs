@@ -12,6 +12,7 @@ import { REPO_ROOT, sleep } from '../lib/harness.mjs';
 
 const freePort = () => new Promise((resolve) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
 const uuid = () => crypto.randomUUID();
+const dev = (name) => { const h = crypto.createHash('sha1').update('lime-test-device:' + name).digest('hex'); return h.slice(0, 8) + '-' + h.slice(8, 12) + '-4' + h.slice(13, 16) + '-a' + h.slice(17, 20) + '-' + h.slice(20, 32); }; // a stable UUID per name
 
 async function startServer(dataDir, port) {
   const proc = spawn(process.execPath, [path.join(REPO_ROOT, 'server', 'dev-server.mjs'), '--port', String(port), '--data', dataDir], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -29,7 +30,7 @@ async function startServer(dataDir, port) {
 const stopServer = (s, signal = 'SIGTERM') => new Promise((resolve) => { s.proc.once('exit', resolve); s.proc.kill(signal); });
 
 class Client {
-  constructor(base, email, name) { this.base = base + '/api/v1'; this.email = email; this.name = name; this.device = 'dev-' + uuid().slice(0, 8); }
+  constructor(base, email, name) { this.base = base + '/api/v1'; this.email = email; this.name = name; this.device = uuid(); }
   async raw(method, p, { body, headers, token = this.token } = {}) {
     const h = Object.assign({}, headers);
     if (token) h.authorization = 'Bearer ' + token;
@@ -93,21 +94,47 @@ export async function run({ check }) {
       && (await new Client(base, 'new@example.com', 'x').signup('short')).status === 400 && (await new Client(base, 'not-an-email', 'x').signup()).status === 400);
     const credFile = JSON.parse(fs.readFileSync(path.join(dataDir, 'auth.json'), 'utf8'));
     check('passwords are stored as salted PBKDF2 (>= 600,000 iterations), never plain', credFile.credentials['ada@example.com'].iterations >= 600000 && credFile.credentials['ada@example.com'].hash && !JSON.stringify(credFile).includes('password123'));
-    const bad = await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'wrong-password', device_id: 'd1' }, token: null });
-    const missing = await new Client(base).json('POST', '/auth/signin', { body: { email: 'nobody@example.com', password: 'wrong-password', device_id: 'd1' }, token: null });
+    const bad = await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'wrong-password', device_id: dev('d1') }, token: null });
+    const missing = await new Client(base).json('POST', '/auth/signin', { body: { email: 'nobody@example.com', password: 'wrong-password', device_id: dev('d1') }, token: null });
     check('wrong password and unknown email give the same 401 invalid_credentials', bad.status === 401 && missing.status === 401 && bad.body.error.code === 'invalid_credentials' && bad.body.error.message === missing.body.error.message);
-    const si = await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: 'phone-1' }, token: null });
+    const si = await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: dev('phone-1') }, token: null });
     check('signin works and returns tokens', si.status === 200 && si.body.access_token && si.body.user.id === A.id);
-    const r1 = await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: si.body.refresh_token, device_id: 'phone-1' }, token: null });
+    const r1 = await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: si.body.refresh_token, device_id: dev('phone-1') }, token: null });
     check('refresh returns a new access token and a NEW refresh token (rotation)', r1.status === 200 && r1.body.access_token && r1.body.refresh_token && r1.body.refresh_token !== si.body.refresh_token);
-    const reuse = await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: si.body.refresh_token, device_id: 'phone-1' }, token: null });
+    const reuse = await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: si.body.refresh_token, device_id: dev('phone-1') }, token: null });
     check('reusing an old refresh token is refused and ends that device\'s session', reuse.status === 401
-      && (await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: r1.body.refresh_token, device_id: 'phone-1' }, token: null })).status === 401
+      && (await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: r1.body.refresh_token, device_id: dev('phone-1') }, token: null })).status === 401
       && (await new Client(base).json('GET', '/snapshot', { token: r1.body.access_token })).status === 401);
-    const so = await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'password123', device_id: 'tablet' }, token: null });
+    const so = await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'password123', device_id: dev('tablet') }, token: null });
     check('sign out revokes only that device', (await new Client(base).json('POST', '/auth/signout', { token: so.body.access_token })).status === 204
       && (await new Client(base).json('GET', '/snapshot', { token: so.body.access_token })).status === 401 && (await B.snapshot()).profile.id === B.id);
     check('the access token of a tampered signature is refused', (await new Client(base).json('GET', '/snapshot', { token: A.token.slice(0, -3) + 'xxx' })).status === 401);
+
+    // ── device ids (LIME-76) ──
+    const badDevices = ['web-volatile', 'x', '', 'a'.repeat(80), 'not a uuid at all'];
+    const rejectedEverywhere = (await Promise.all(badDevices.flatMap((d) => [
+      new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: d }, token: null }),
+      new Client(base).json('POST', '/auth/signup', { body: { email: 'dev-check@example.com', password: 'password123', display_name: 'Dev Check', device_id: d }, token: null }),
+      new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: 'x', device_id: d }, token: null }),
+    ]))).every((r) => r.status === 400 && r.body.error.code === 'bad_request');
+    check('a device_id that is not a UUID (such as the old shared "web-volatile") is refused with bad_request on signup, signin and refresh', rejectedEverywhere);
+    check('a device_id of the form web-<uuid> (what the web app makes) and a bare UUID are both accepted', (await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: 'web-' + uuid() }, token: null })).status === 200
+      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: uuid() }, token: null })).status === 200);
+    check('POST /ops refuses an invalid device_id, in the request and in an op', (await A.json('POST', '/ops', { body: { device_id: 'web-volatile', ops: [A.op('message.send', { message_id: uuid(), conversation_id: 'x', content: 'x' })] } })).status === 400
+      && (await A.send(Object.assign(A.op('message.send', { message_id: uuid(), conversation_id: 'x', content: 'x' }), { device_id: 'web-volatile' })))[0].error.code === 'invalid_op');
+    check('two people signing in on devices with the same id do not sign each other out (sessions are per person and device)', await (async () => {
+      const shared = uuid();
+      const one = await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: shared }, token: null });
+      const two = await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'password123', device_id: shared }, token: null });
+      return (await new Client(base).json('GET', '/snapshot', { token: one.body.access_token })).status === 200 && (await new Client(base).json('GET', '/snapshot', { token: two.body.access_token })).status === 200;
+    })());
+    check('but one person on two devices that SHARE an id share a session, so the second sign-in\'s rotation signs the first out (why shared ids are refused)', await (async () => {
+      const shared = uuid();
+      const one = await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: shared }, token: null });
+      const two = await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: shared }, token: null });
+      const refreshOne = await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: one.body.refresh_token, device_id: shared }, token: null });
+      return two.status === 200 && refreshOne.status === 401; // the first phone's refresh token was replaced by the second's sign-in
+    })());
 
     // ── DMs: dedup and alias; idempotency ──
     const dmA = uuid(); const dmB = uuid();
@@ -208,8 +235,8 @@ export async function run({ check }) {
     check('directory: needs 2+ characters, excludes you, and is capped at 50', (await C.json('GET', '/profiles?q=a')).status === 400 && !(await dir(A, 'ada')).profiles.some((p) => p.id === A.id) && (await dir(C, 'teacher')).profiles.length <= 50);
     const em = await A.one('profile.setEmail', { email: 'ada.new@example.com' });
     check('profile.setEmail: taken is a conflict; a change moves the sign-in too', (await B.one('profile.setEmail', { email: 'ada.new@example.com' })).error.code === 'conflict' && em.status === 'applied'
-      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: 'x1' }, token: null })).status === 200
-      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: 'x2' }, token: null })).status === 401);
+      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: dev('x1') }, token: null })).status === 200
+      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: dev('x2') }, token: null })).status === 401);
 
     // ── files ──
     const bytes = crypto.randomBytes(2048);
@@ -274,16 +301,16 @@ export async function run({ check }) {
     // ── password change, lookup, backfill on create/add (LIME-74 Phase 0) ──
     const lookup = (email) => new Client(base).json('POST', '/auth/lookup', { body: { email }, token: null }).then((r) => r.body && r.body.exists);
     check('POST /auth/lookup says whether an email has an account (dev phase)', (await lookup('bo@example.com')) === true && (await lookup('nobody-here@example.com')) === false);
-    const dev2 = new Client(base, 'x', 'x'); dev2.device = 'second-device';
-    const bSecond = await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'password123', device_id: 'second-device' }, token: null });
+    const dev2 = new Client(base, 'x', 'x'); dev2.device = dev('second-device');
+    const bSecond = await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'password123', device_id: dev('second-device') }, token: null });
     check('change password: a wrong current password is 403, a short or unchanged one 400', (await B.json('POST', '/auth/password', { body: { current_password: 'nope-nope-1', new_password: 'newpassword1' } })).status === 403
       && (await B.json('POST', '/auth/password', { body: { current_password: 'password123', new_password: 'short' } })).status === 400 && (await B.json('POST', '/auth/password', { body: { current_password: 'password123', new_password: 'password123' } })).status === 400);
     const pw = await B.json('POST', '/auth/password', { body: { current_password: 'password123', new_password: 'newpassword1' } });
     check('change password: this device stays signed in, every OTHER device is signed out, the new password works and the old does not', pw.status === 200
       && (await B.json('GET', '/snapshot')).status === 200 && (await new Client(base).json('GET', '/snapshot', { token: bSecond.body.access_token })).status === 401
-      && (await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: bSecond.body.refresh_token, device_id: 'second-device' }, token: null })).status === 401
-      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'newpassword1', device_id: 'third' }, token: null })).status === 200
-      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'password123', device_id: 'fourth' }, token: null })).status === 401);
+      && (await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: bSecond.body.refresh_token, device_id: dev('second-device') }, token: null })).status === 401
+      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'newpassword1', device_id: dev('third') }, token: null })).status === 200
+      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'password123', device_id: dev('fourth') }, token: null })).status === 401);
     check('change password needs a signed-in person', (await new Client(base).json('POST', '/auth/password', { body: {}, token: null })).status === 401);
     const E1 = new Client(base, 'eve@example.com', 'Eve First'); await E1.signup();
     const gNew = uuid();
@@ -305,17 +332,17 @@ export async function run({ check }) {
     try { testFile = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'seed-data', 'test-accounts.local.json'), 'utf8')); } catch (e) { /* none */ }
     if (testFile) {
       const [t1, t2] = testFile.accounts;
-      const T1 = new Client(base, t1.email, 'x'); T1.device = 'tdev1';
-      const si1 = await T1.json('POST', '/auth/signin', { body: { email: t1.email, password: testFile.password, device_id: 'tdev1' }, token: null });
+      const T1 = new Client(base, t1.email, 'x'); T1.device = dev('tdev1');
+      const si1 = await T1.json('POST', '/auth/signin', { body: { email: t1.email, password: testFile.password, device_id: dev('tdev1') }, token: null });
       Object.assign(T1, { token: si1.body.access_token, id: si1.body.user && si1.body.user.id });
       const ts = await T1.snapshot();
       const demoPw = (() => { try { const m = /password:\s*'([^']*)'/.exec(fs.readFileSync(path.join(REPO_ROOT, 'public', 'js', 'demo-config.local.js'), 'utf8')); return m && m[1]; } catch (e) { return null; } })();
-      check('own-password accounts: they ARE the seed teachers (teacher-001 and teacher-002), signing in with the local file\'s password', si1.status === 200 && /^teacher-00[12]$/.test(si1.body.user.id) && si1.body.user.email === t1.email && (await new Client(base).json('POST', '/auth/signin', { body: { email: t2.email, password: testFile.password, device_id: 'tdev2' }, token: null })).body.user.id.startsWith('teacher-00'));
+      check('own-password accounts: they ARE the seed teachers (teacher-001 and teacher-002), signing in with the local file\'s password', si1.status === 200 && /^teacher-00[12]$/.test(si1.body.user.id) && si1.body.user.email === t1.email && (await new Client(base).json('POST', '/auth/signin', { body: { email: t2.email, password: testFile.password, device_id: dev('tdev2') }, token: null })).body.user.id.startsWith('teacher-00'));
       check('own-password accounts: no second profile exists for either email (merged, not duplicated)', (await dir(C, t1.email.split('@')[0])).profiles.filter((p) => /Shem|Jean/.test(p.display_name)).length <= 2 && ts.conversations.filter((c) => c.type === 'direct').length >= 1 && ts.messages.length > 0);
       check('own-password accounts: they keep the seed\'s history (their DM and the PS 113 Staff Room, with messages)', ts.conversations.some((c) => c.name === 'PS 113 Staff Room') && ts.conversations.some((c) => c.type === 'direct') && ts.messages.some((m) => m.conversation_id === 'conv-001'));
       check('own-password accounts: the demo name is Shem Rajoon / Jean Chung, with the seed\'s details filled in', ['Shem Rajoon', 'Jean Chung'].includes(ts.profile.display_name) && ts.profile.role && ts.profile.school && ts.profile.timezone && ts.profile.bio);
       check('own-password accounts: the phone is stored and found only by exact match, never shown to anyone else', ts.profile.phone === t1.phone && !ts.profiles.some((p) => 'phone' in p) && (await dir(C, t1.phone.replace(/\D/g, ''))).profiles.some((p) => p.id === ts.profile.id) && (await dir(C, t1.phone.replace(/\D/g, ''))).profiles.every((p) => !('phone' in p)));
-      if (demoPw) check('own-password accounts: the shared demo password no longer signs them in (their own replaces it)', (await new Client(base).json('POST', '/auth/signin', { body: { email: t1.email, password: demoPw, device_id: 'tdev3' }, token: null })).status === 401);
+      if (demoPw) check('own-password accounts: the shared demo password no longer signs them in (their own replaces it)', (await new Client(base).json('POST', '/auth/signin', { body: { email: t1.email, password: demoPw, device_id: dev('tdev3') }, token: null })).status === 401);
     } else {
       check('own-password accounts (skipped: no seed-data/test-accounts.local.json here)', true, 'skipped');
     }
@@ -333,8 +360,8 @@ export async function run({ check }) {
     const snapBefore = await A.snapshot();
     await stopServer(server);
     server = await startServer(dataDir, port);
-    const aAfter = new Client(server.base, 'ada.new@example.com', 'Ada Lovelace'); aAfter.device = 'dev-after';
-    const siAfter = await aAfter.json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: 'dev-after' }, token: null });
+    const aAfter = new Client(server.base, 'ada.new@example.com', 'Ada Lovelace'); aAfter.device = dev('dev-after');
+    const siAfter = await aAfter.json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: dev('dev-after') }, token: null });
     Object.assign(aAfter, { token: siAfter.body.access_token, id: A.id });
     const snapAfter = await aAfter.snapshot();
     check('graceful restart: the log head, accounts and every message survive', siAfter.status === 200 && snapAfter.seq === headBefore && snapAfter.messages.length === snapBefore.messages.length);
@@ -345,10 +372,10 @@ export async function run({ check }) {
     await stopServer(server, 'SIGKILL'); // no chance to flush state.json: the server must rebuild from the log alone
     fs.rmSync(path.join(dataDir, 'state.json'), { force: true });
     server = await startServer(dataDir, port);
-    const snapCrash = await (async () => { const c = new Client(server.base); const s = await c.json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: 'dev-after-2' }, token: null }); c.token = s.body.access_token; return c.snapshot(); })();
+    const snapCrash = await (async () => { const c = new Client(server.base); const s = await c.json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: dev('dev-after-2') }, token: null }); c.token = s.body.access_token; return c.snapshot(); })();
     check('after a hard kill with no state file, the state is rebuilt from the log (nothing lost)', last.status === 'applied' && snapCrash.messages.some((m) => m.id === 'msg-after-restart') && snapCrash.messages.length === snapBefore.messages.length + 1);
-    const afterCrashClient = new Client(server.base); afterCrashClient.device = 'dev-after-2'; afterCrashClient.id = A.id;
-    afterCrashClient.token = (await new Client(server.base).json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: 'dev-after-2' }, token: null })).body.access_token;
+    const afterCrashClient = new Client(server.base); afterCrashClient.device = dev('dev-after-2'); afterCrashClient.id = A.id;
+    afterCrashClient.token = (await new Client(server.base).json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: dev('dev-after-2') }, token: null })).body.access_token;
     const [replayed] = await afterCrashClient.send(lastOp);
     check('and the same op_id sent again after the crash is still a duplicate with the same seq', replayed.status === 'duplicate' && replayed.seq === last.seq);
 
@@ -366,7 +393,7 @@ export async function run({ check }) {
     let demoPassword = null;
     try { const src = fs.readFileSync(path.join(REPO_ROOT, 'public', 'js', 'demo-config.local.js'), 'utf8'); const m = /password:\s*'([^']*)'/.exec(src); demoPassword = m && m[1]; } catch (e) { /* none */ }
     if (demoPassword) {
-      const jean = await new Client(server.base).json('POST', '/auth/signin', { body: { email: 'grace@famkind.com', password: demoPassword, device_id: 'seed-1' }, token: null });
+      const jean = await new Client(server.base).json('POST', '/auth/signin', { body: { email: 'grace@famkind.com', password: demoPassword, device_id: dev('seed-1') }, token: null });
       check('a seed teacher (grace@famkind.com) signs in with the shared demo password', jean.status === 200 && jean.body.user.id === 'teacher-024');
       const jc = new Client(server.base); jc.token = jean.body.access_token; jc.id = 'teacher-024';
       const js = await jc.snapshot();
