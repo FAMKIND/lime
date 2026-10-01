@@ -663,7 +663,9 @@ html[data-pattern-treatment="photo"] body::before {
    LIME-57-fixc amendment) for a decision rather than a third attempt.
 
    Decision: no mask-composite anywhere. The notch is a fixed ratio of
-   the avatar (centre 90%/86%, radius 24% of the width), so it's baked
+   the avatar (centre 90%/86%, radius 24% of the width at first — see
+   the LIME-57-fixd comment below for why this tightened to 19.5%), so
+   it's baked
    directly into a plain SVG's own internal <mask> (silhouette or
    circle, minus a <circle> drawn over it) — ONE shape, ONE mask-image
    layer, no cross-layer compositing for the browser to get wrong:
@@ -745,6 +747,57 @@ html[data-pattern-treatment="photo"] body::before {
     mask-size: 100% 100%;
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
+  }
+
+  /* LIME-57-fixd: the notch above is now TIGHT (radius 19.5% of the
+     avatar — 15.5% icon radius + a 4% gap, baked into the same four
+     files above, same filenames, just regenerated at the new ratio) so
+     it hugs the icon like the mockup, instead of the 24% fixc needed to
+     also clear the Z. Busy/DND's bigger "Z" (next) no longer fits in
+     that tight circle, so those two states get a SECOND cut-out baked
+     into their own "-notched-z" sibling file: the tight notch circle,
+     unioned with the Z's own painted bounding box (measured by
+     rendering the Z path alone and scanning its pixels, TEND.md)
+     dilated by the same 4% gap on every side, corners rounded by that
+     same 4% — not a wider circle (which would reopen the fixc problem
+     of a loose gap everywhere just to clear one corner). `data-presence`
+     is already set by presenceHtml (app.js, unchanged by this brief),
+     so no JS or markup change was needed for this selector — it was
+     already there to read. */
+  .lime-avatar-frame:has(.lime-presence[data-presence="busy"]) .seed-avatar--xs,
+  .lime-avatar-frame:has(.lime-presence[data-presence="busy"]) .seed-avatar--sm,
+  .lime-avatar-frame:has(.lime-presence[data-presence="dnd"]) .seed-avatar--xs,
+  .lime-avatar-frame:has(.lime-presence[data-presence="dnd"]) .seed-avatar--sm {
+    -webkit-mask-image: url('../assets/circle-notched-z.svg');
+    mask-image: url('../assets/circle-notched-z.svg');
+  }
+
+  .lime-avatar-frame:has(.lime-presence[data-presence="busy"]) .seed-avatar--md,
+  .lime-avatar-frame:has(.lime-presence[data-presence="busy"]) .seed-avatar--lg,
+  .lime-avatar-frame:has(.lime-presence[data-presence="busy"]) .seed-avatar--xl,
+  .lime-avatar-frame:has(.lime-presence[data-presence="dnd"]) .seed-avatar--md,
+  .lime-avatar-frame:has(.lime-presence[data-presence="dnd"]) .seed-avatar--lg,
+  .lime-avatar-frame:has(.lime-presence[data-presence="dnd"]) .seed-avatar--xl {
+    -webkit-mask-image: url('../assets/lime-silhouette-notched-z.svg');
+    mask-image: url('../assets/lime-silhouette-notched-z.svg');
+  }
+
+  .lime-avatar-frame--xs:has(.lime-presence[data-presence="busy"])::after,
+  .lime-avatar-frame--sm:has(.lime-presence[data-presence="busy"])::after,
+  .lime-avatar-frame--xs:has(.lime-presence[data-presence="dnd"])::after,
+  .lime-avatar-frame--sm:has(.lime-presence[data-presence="dnd"])::after {
+    -webkit-mask-image: url('../assets/circle-ring-notched-z.svg');
+    mask-image: url('../assets/circle-ring-notched-z.svg');
+  }
+
+  .lime-avatar-frame--md:has(.lime-presence[data-presence="busy"])::after,
+  .lime-avatar-frame--lg:has(.lime-presence[data-presence="busy"])::after,
+  .lime-avatar-frame--xl:has(.lime-presence[data-presence="busy"])::after,
+  .lime-avatar-frame--md:has(.lime-presence[data-presence="dnd"])::after,
+  .lime-avatar-frame--lg:has(.lime-presence[data-presence="dnd"])::after,
+  .lime-avatar-frame--xl:has(.lime-presence[data-presence="dnd"])::after {
+    -webkit-mask-image: url('../assets/lime-silhouette-ring-notched-z.svg');
+    mask-image: url('../assets/lime-silhouette-ring-notched-z.svg');
   }
 }
 

@@ -132,20 +132,20 @@ function presenceFor(status) {
 //     own "(+34%, -26%) of the icon diameter from the icon's centre";
 //   - the "Z" is a stroked 3-point polyline (a path, never a font
 //     glyph — the fixb text glyph was unreadable at ~4px), top bar →
-//     diagonal → bottom bar, with flat (square) caps. It spans the
-//     mockup's own box (left=68, top=-12, width=22, height=30) edge to
-//     edge — the first attempt (bars only 14 units long, from 72 to 86,
-//     with an 8-unit stroke) found live, by screenshot: with the stroke
-//     almost as thick as the bars were long, the three strokes' own
-//     caps/miter joins swallowed the gaps between them, so it rendered
-//     as one solid blocky corner — the exact "band/square around the
-//     icon" the brief's own user complaint described, not a masking or
-//     background bug at all (confirmed by rendering the path alone,
-//     isolated from every other layer). Fixed by using the box's full
-//     22-unit width for every bar (68 to 90) and thinning the stroke to
-//     5 — close to a 4.4:1 length:thickness ratio instead of 1.75:1 —
-//     which reads as a clean "Z" at any output size, since the SVG units
-//     scale together regardless of the icon's final pixel size.
+//     diagonal → bottom bar, with flat (square) caps. fixc's first
+//     attempt (bars only 14 units long, from 72 to 86, with an 8-unit
+//     stroke) found live, by screenshot: with the stroke almost as
+//     thick as the bars were long, the three strokes' own caps/miter
+//     joins swallowed the gaps between them, so it rendered as one
+//     solid blocky corner — the exact "band/square around the icon"
+//     fixc's own user complaint described, not a masking or background
+//     bug at all (confirmed by rendering the path alone, isolated from
+//     every other layer). fixc's fix (bars spanning the box's full
+//     22-unit width, stroke 5, a 4.4:1 length:thickness ratio) read
+//     clearly — LIME-57-fixd's own "closer, but a little bigger" just
+//     scales that same shape up by height/30% → height/38% (≈1.267×)
+//     from the same top-left anchor (icon centre + 18%, icon top − 12%),
+//     keeping the 4.4:1 ratio so it stays just as crisp, not blockier.
 //     It extends above and right of the icon's own 0–100 box, which is
 //     why the SVG's own viewBox is padded (-10 -20 130 130) and why
 //     .lime-presence needs overflow:visible (CSS) rather than clipping
@@ -159,15 +159,23 @@ function presenceFor(status) {
 const PRESENCE_ICON_VIEWBOX = '-10 -20 130 130';
 let presenceMaskUid = 0;
 function presenceZPath() {
-  // Z's own box: left=68, top=-12 (bar centred at -8), bottom=18 (bar
-  // centred at 14), right=90, stroke=5 (half-stroke 2.5) — bars run the
-  // box's full width so they stay visually separate from each other.
-  return 'M 68,-8 L 90,-8 L 68,14 L 90,14';
+  // Z's own box (LIME-57-fixd): left=68, top=-12 (anchors unchanged from
+  // fixc), height 38 (was 30 — "~25% bigger"), width scaled to the same
+  // aspect (27.87), stroke 6.333 (width/4.4, the same ratio fixc used).
+  // Bar centrelines sit stroke/2 in from the box's own top/bottom edge,
+  // so the stroke's outer edge exactly touches top=-12 and bottom=26 —
+  // a clean derivation instead of fixc's leftover 4-unit margin (a
+  // holdover from the original 8-wide stroke that no longer applied
+  // once the stroke thinned to 5). Measured by rendering this path
+  // alone and scanning its painted pixels (TEND.md): farthest point
+  // (102.8,-12), tight bounding box x:[61,102.8] y:[-12,25.9] — these
+  // numbers are what the notch SVGs' own Z-cutout rect is sized from.
+  return 'M 68,-8.833 L 95.867,-8.833 L 68,22.833 L 95.867,22.833';
 }
 function presenceIconSvg(state, showZ) {
   const uid = 'lime-presence-mask-' + (presenceMaskUid++);
   const zPath = showZ
-    ? '<path d="' + presenceZPath() + '" fill="none" stroke="CURRENT" stroke-width="5" stroke-linecap="square" stroke-linejoin="miter"/>'
+    ? '<path d="' + presenceZPath() + '" fill="none" stroke="CURRENT" stroke-width="6.333" stroke-linecap="square" stroke-linejoin="miter"/>'
     : '';
   if (state === 'active') {
     return '<svg viewBox="' + PRESENCE_ICON_VIEWBOX + '" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="var(--good-bg-bold-default)"/></svg>';
