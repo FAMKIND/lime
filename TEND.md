@@ -2813,3 +2813,30 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Gate:** "Copy link," "Save changes," the sign-in page's buttons, and New message's "Start" are all the same pale lime as Add and the ↵ send button, with dark ink text, clearly readable against every surface tested including the two tones (Lemon, Sage) that needed the new border to stay distinct.
 
 **Record:** this entry.
+
+## LIME-57-fixe
+
+**Goal:** the busy/DND status "z" is still too small to read, per the user's own check of fixd — their mockup uses a small Montserrat Bold "z," not a hand-drawn shape.
+
+**The glyph: the real Montserrat Bold (700) letterform, not SVG `<text>`, not another drawn approximation.** `index.html`'s own Google Fonts `<link>` only requests weights 400/500/600 — never 700 (confirmed: `auth.html`'s link has `:wght@400;500;600;700`, `index.html`'s has `:wght@400;500;600`, checked directly, not assumed) — and `index.html` is outside this brief's own scope, so an SVG `<text font-weight="700">` here would either render in a browser's synthetic ("faux") bold over whichever loaded weight it fell back to, or wait on a remote font request that may never resolve to true 700 at all. A pre-converted path has neither problem, same technique already used for the lime leaf silhouette. **Extracted with `fontTools`** (installed into a scratch venv for this brief, not the project) from the actual woff2 Google Fonts itself serves for Montserrat 700 (the exact file a browser would fetch) — glyph "z," a clean 12-point polygon (flat top/bottom bars, a heavy diagonal, no curves) — then transformed from font units (1000-unit em, +Y up) into this file's own icon-local coordinate system (+Y down): flip Y, scale, translate. The raw extracted path (before placement), for the record: `M35 0V94L353 470L380 418H42V538H506V444L188 68L160 120H515V0Z` (bbox 35,0 → 515,538 in 1000 units/em).
+
+**A second instance of the same mistake LIME-57-fixd already caught once, found and fixed before shipping:** icon-local units are NOT simply "percent of avatar × 100" — the icon's own 100-unit nominal core sits inside a padded 130-unit viewBox that maps to the icon's real 31%-of-avatar box, so 1 icon-local unit is actually (31/130)% of the avatar, not (31/100)%. A first pass sized the glyph to literally 50 icon-local units ("50% of the icon's own 100-unit diameter," the brief's own phrase, read too literally) and measured — via `getBoundingClientRect()` on the real rendered path, not assumed — only **4.78px** at lg(40px), well under the brief's own ~6px target. Solved backward from the brief's own worked examples instead (32→~5px, 40→~6px, 56→~8px, which are what "≈15% of the avatar width" actually computes to): icon-local height = 15 × 130/31 ≈ **62.903 units**. Confirmed live in both real browsers after the fix: **md/lg/xl measure 4.8px / 6.02px (Firefox) or 5.999px (Chrome) / 8.4px** — lg lands almost exactly on the brief's own ~6px target in both engines.
+
+**Position:** same top-left anchor fixc/fixd already established (icon centre + 18%, icon top − 12%) — unchanged logic, just a correctly-sized real letterform instead of a drawn shape. **Color:** unchanged — green for Busy, muted for DND, same as before.
+
+**The Z cut-out, regenerated to match (item 4):** the four `-notched-z.svg` files (avatar/ring × lime/circle) were rebuilt with the new, bigger glyph's own painted bounding box (a plain polygon this time, so its geometric bbox *is* its painted bbox, no stroke-width ambiguity to account for) — same dilate-by-4%-and-round-the-corners technique as fixd, same ring-vs-avatar minimax position/size compensation (all errors well under ±0.5px, same methodology). The plain tight-notch circles (active/away) are byte-for-byte unchanged, per the brief's own explicit "active and away masks are unchanged." **No CSS change was needed**: fixd's own `:has(.lime-presence[data-presence="busy"])`/`[data-presence="dnd"]` selectors already point at these same four filenames — regenerating the files in place was enough.
+
+**Scope check:** `presenceIconSvg`/`presenceZPath` in `public/js/app.js`, the four `-notched-z.svg` files in `public/assets/`, `TEND.md`. **No change to `public/css/lime.css`** (nothing needed one) or `public/index.html` (its font `<link>` is exactly why the path-conversion approach was chosen over SVG `<text>`, not edited to add 700).
+
+**Verification:**
+- `node --check` clean on `app.js`.
+- The same 4-state × 5-size synthetic grid as fixc/fixd (ring forced on busy+dnd): all 20 combinations clean, bigger and clearly bold "z" at md/lg/xl, no square/band artifact, in both Firefox and Chrome.
+- **Legibility check at lg**, the brief's own explicit requirement: an extreme zoom on the live Jean C avatar shows an unmistakable, bold lowercase "z" — a dramatic, qualitative improvement over the previous stroked polyline, visible at a glance.
+- **Mockup comparison**: the app's own busy icon scaled to 128px (matching the mockup's own stated size) shows the same bold, flat-barred "z" shape the mockup uses, reusing the brief's own worked numbers as the comparison target rather than the mockup image file itself, which wasn't available to this session directly.
+- The live Recent row (Jean C, busy, unread): clean in light, dark, and Sage, hovered, and selected.
+- **Real installed Firefox 157.0 and Chrome 154.0.8037.92**: z height measured 4.998–6.02px across md/lg/xl in both, `data-presence="busy"` confirmed, zero console/page errors in either.
+- Browser-parsed CSS rule count: `lime.css` **720** — unchanged (no CSS edited this brief). `git diff --stat public/index.html` confirmed empty.
+
+**Gate:** the little "z" on busy and do-not-disturb is clearly readable, in real Montserrat Bold, at every size and in every row condition tested.
+
+**Record:** this entry.

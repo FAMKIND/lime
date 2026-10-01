@@ -130,26 +130,52 @@ function presenceFor(status) {
 //   - the busy/DND bite is a circle of radius 30 (30% of the icon's
 //     diameter), centred at (50+34, 50-26) = (84, 24) — the mockup's
 //     own "(+34%, -26%) of the icon diameter from the icon's centre";
-//   - the "Z" is a stroked 3-point polyline (a path, never a font
-//     glyph — the fixb text glyph was unreadable at ~4px), top bar →
-//     diagonal → bottom bar, with flat (square) caps. fixc's first
-//     attempt (bars only 14 units long, from 72 to 86, with an 8-unit
-//     stroke) found live, by screenshot: with the stroke almost as
-//     thick as the bars were long, the three strokes' own caps/miter
-//     joins swallowed the gaps between them, so it rendered as one
-//     solid blocky corner — the exact "band/square around the icon"
-//     fixc's own user complaint described, not a masking or background
-//     bug at all (confirmed by rendering the path alone, isolated from
-//     every other layer). fixc's fix (bars spanning the box's full
-//     22-unit width, stroke 5, a 4.4:1 length:thickness ratio) read
-//     clearly — LIME-57-fixd's own "closer, but a little bigger" just
-//     scales that same shape up by height/30% → height/38% (≈1.267×)
-//     from the same top-left anchor (icon centre + 18%, icon top − 12%),
-//     keeping the 4.4:1 ratio so it stays just as crisp, not blockier.
+//   - the "z" (LIME-57-fixe) is the REAL lowercase Montserrat Bold (700)
+//     glyph outline, not a drawn shape — fixc's stroked polyline and
+//     fixd's bigger version of it were both still hand-drawn
+//     approximations, and the user's own mockup uses the actual
+//     typeface. Rendered as a filled SVG <path>, not SVG <text>: this
+//     file is loaded on every page that shows avatars (confirmed), but
+//     index.html's own Google Fonts <link> only requests Montserrat
+//     weights 400/500/600, never 700 (auth.html's does, index.html's
+//     doesn't) — and index.html is outside this brief's own scope
+//     (presenceIconSvg/app.js, the notched SVGs, and lime.css only), so
+//     a <text font-weight="700"> here would render in a browser's
+//     synthetic ("faux") bold over whatever weight actually loaded, not
+//     the real Montserrat Bold letterform the mockup uses, and would
+//     only resolve once that remote font request finished besides. A
+//     pre-converted path has neither problem — same technique used for
+//     the lime leaf silhouette (public/assets/lime-silhouette.svg).
+//     Extracted with fontTools (pip) from the real woff2 Google Fonts
+//     itself serves for Montserrat 700 (the exact file the browser
+//     would otherwise fetch), glyph "z", then transformed by hand from
+//     font units into this file's own icon-local coordinate system
+//     (flip Y — font em-space has +Y up, SVG has +Y down — then scale
+//     and translate): the source glyph's own bounding box is
+//     480×538 units (a 1000-unit em).
+//     Sizing found a real, second instance of the same mistake
+//     LIME-57-fixd already caught once (icon-local units are NOT simply
+//     "percent of avatar × 100" — the icon's own 100-unit core sits
+//     inside a padded 130-unit viewBox that maps to the icon's real 31%-
+//     of-avatar box, so 1 icon-local unit is really (31/130)%, not
+//     (31/100)%, of the avatar). A first pass sized this glyph to 50
+//     icon-local units ("50% of the icon's own 100-unit diameter," read
+//     too literally) and measured live at only ~4.8px at lg(40px) — well
+//     under the brief's own ~6px target — confirmed via
+//     getBoundingClientRect() on the real rendered path, not assumed.
+//     Solved backward from the brief's OWN stated target instead (≈15%
+//     of the avatar width, which is what its own worked examples —
+//     32→~5px, 40→~6px, 56→~8px — actually compute to): icon-local
+//     height = 15 × 130/31 ≈ 62.903 units lands md/lg/xl at
+//     4.8/6.0/8.4px exactly. Positioned with its own top-left corner at
+//     the same anchor fixc/fixd already used (icon centre + 18%, icon
+//     top − 12%) — unchanged position logic, just a real letterform,
+//     correctly sized, instead of a drawn one. Exact derivation and the
+//     source glyph's own raw path are in TEND.md.
 //     It extends above and right of the icon's own 0–100 box, which is
 //     why the SVG's own viewBox is padded (-10 -20 130 130) and why
 //     .lime-presence needs overflow:visible (CSS) rather than clipping
-//     it — item 5's own explicit requirement.
+//     it — item 5's own explicit requirement, unchanged since fixc.
 // Busy/DND's bite is still an SVG <mask> with a per-instance id (a
 // module-level counter, not a hardcoded/duplicated id) — unrelated to
 // the avatar's own CSS mask, and never a descendant of it, so there's
@@ -159,23 +185,15 @@ function presenceFor(status) {
 const PRESENCE_ICON_VIEWBOX = '-10 -20 130 130';
 let presenceMaskUid = 0;
 function presenceZPath() {
-  // Z's own box (LIME-57-fixd): left=68, top=-12 (anchors unchanged from
-  // fixc), height 38 (was 30 — "~25% bigger"), width scaled to the same
-  // aspect (27.87), stroke 6.333 (width/4.4, the same ratio fixc used).
-  // Bar centrelines sit stroke/2 in from the box's own top/bottom edge,
-  // so the stroke's outer edge exactly touches top=-12 and bottom=26 —
-  // a clean derivation instead of fixc's leftover 4-unit margin (a
-  // holdover from the original 8-wide stroke that no longer applied
-  // once the stroke thinned to 5). Measured by rendering this path
-  // alone and scanning its painted pixels (TEND.md): farthest point
-  // (102.8,-12), tight bounding box x:[61,102.8] y:[-12,25.9] — these
-  // numbers are what the notch SVGs' own Z-cutout rect is sized from.
-  return 'M 68,-8.833 L 95.867,-8.833 L 68,22.833 L 95.867,22.833';
+  // The real Montserrat Bold "z" glyph outline (see the comment above
+  // for the full derivation) — a filled polygon, not a stroked line;
+  // fill color is applied by the caller (presenceIconSvg, below).
+  return 'M68.000,50.903 L68.000,39.913 L105.181,-4.049 L108.338,2.030 L68.818,2.030 L68.818,-12.000 L123.070,-12.000 L123.070,-1.009 L85.889,42.953 L82.615,36.873 L124.122,36.873 L124.122,50.903 Z';
 }
 function presenceIconSvg(state, showZ) {
   const uid = 'lime-presence-mask-' + (presenceMaskUid++);
   const zPath = showZ
-    ? '<path d="' + presenceZPath() + '" fill="none" stroke="CURRENT" stroke-width="6.333" stroke-linecap="square" stroke-linejoin="miter"/>'
+    ? '<path d="' + presenceZPath() + '" fill="CURRENT"/>'
     : '';
   if (state === 'active') {
     return '<svg viewBox="' + PRESENCE_ICON_VIEWBOX + '" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="var(--good-bg-bold-default)"/></svg>';
