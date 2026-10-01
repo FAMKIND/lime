@@ -77,9 +77,31 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
     - *Pro:* works across browsers, private windows and phones on the same Wi-Fi; it rehearses a real network seam. *Con:* 2–3 briefs, and a stepping stone that the real backend later replaces.
   - **C. The real backend (Supabase, per `docs/schema.sql` and the switch checklist):** real auth, Postgres, RLS, realtime and storage.
     - *Pro:* the actual path to launch. *Con:* needs a Supabase project and keys, network, RLS testing, and **a sync-architecture decision first**, because the offline Bluetooth differentiator ([[lime-offline-differentiator]]) argues for local-first sync, so choosing it deserves its own planning pass.
+  - **LIME-71 landed as `46dffb8`; plot reviewed it and APPROVED it with amendments** (see "Plot's review of LIME-71" in Drafted briefs). The user decided: **show the written time** (with "delivered" when it's more than 5 minutes later); **email visible to chat-mates only, phone never displayed, exact-match search only.** Next: **LIME-72** (a committed test harness) → **LIME-73** (the dev server plus contract amendments) → **LIME-74** (the web `ApiAdapter`; drafted after 73).
   - **LIME-69 landed as `3bb437b`** (2026-10-01): per-tab sessions, merge-on-save, `storage`-event live sync (~130–150ms), reactions with a `removed_at` tombstone, memberships with `updated_at`, and read-on-visible. Limits: a simultaneous duplicate DM (now required in LIME-71's rules), a Reset racing an unsaved write (not hand-reachable), and a pre-existing Firefox `SecurityError` on sign-out with two tabs (cleanup candidate). **Tend's jsdom suites lived in a scratchpad and are gone** (cleanup candidate: commit a test harness). **The user's gate check is pending.**
   - **DECIDED (the user, 2026-10-01): "A, then B".** LIME-69 (A) and LIME-70 (B) are drafted. **Then the user added: plan the infrastructure for iOS and Android apps soon**, so B became **LIME-71** (the API and sync contract: an op log, token auth, a changes feed, files by id, realtime, push and mesh notes; docs only, plot reviews it) **then LIME-72** (the dev server plus web `ApiAdapter` implementing it). LIME-70 is superseded. C (the real backend plus local-first sync) stays a later planning pass.
   - **Plot's recommendation:** **A now** (test two-person messaging today), then a **planning pass for C** (backend plus local-first sync) as the next milestone, before or alongside Communities.
+
+### Open thread: environments and release stages (raised by the user 2026-10-01; plot's proposal sent)
+- **The user:** treat the current setup as "staging" while we're in alpha; Supabase would be "production" (beta); sharing with real teachers would be "early access"; "then we can try without fear of breaking things that would impact real teachers."
+- **Plot's view:** the instinct is right (protect real teachers), but it mixes two separate ideas. **Keep them separate:**
+  - **Environments (where the code runs):**
+    - **Local:** the Mac, today's setup plus the LIME-73 dev server; demo data; reset anytime; break freely.
+    - **Staging:** a hosted copy built **exactly like production** (its own Supabase project); fake or test data; every change is tried here first; trusted testers.
+    - **Production:** its own Supabase project; real teachers' data; only changes that passed staging.
+    - **Key point:** the local dev server is *not* staging. Staging must mirror production's real infrastructure, or it can't catch production problems. **When we move to Supabase, create two projects (staging and production) from day one.**
+  - **Release stages (who is using production):**
+    - **Alpha** (now): the user and close collaborators, local or staging only, no real data.
+    - **Early access / beta** (one public label is enough): invited real teachers on production.
+    - **Launch:** open sign-up.
+- **What it implies (to plan, not build yet):**
+  - an environment config (API URL and keys per environment, in gitignored `*.local.js`; the contract already allows it);
+  - a small **environment badge** in non-production builds ("Local" / "Staging") so nobody confuses them;
+  - **Reset demo data and seed data in local and staging only** (already dev-only in `docs/api.md`);
+  - **versioned database migrations and backups** from the first real teacher onward;
+  - **before early access:** a privacy policy and terms, and a review of student-data rules (FERPA, COPPA), since teachers may mention students (the app already warns them);
+  - feature flags for early-access features (later).
+- **DECIDED (the user, 2026-10-01): the framework is agreed. The environment badge is CUT.** The URL is the distinction (e.g. `localhost` for local, a `staging.` subdomain, and the production domain). Don't propose a badge again. Environment config (the API URL and keys per environment) still applies when the app talks to a hosted backend. The Supabase staging/production split belongs in the backend planning pass (option C).
 
 ### Unbriefed candidates (offer when the queue thins)
 - **A committed test harness** (2026-10-01: tend's jsdom and Playwright suites lived in session scratchpads and were lost between sessions, so LIME-69 couldn't re-run them). Add `tests/` with a `package.json` (devDependencies: jsdom, playwright), the smoke test (the real `index.html` and `auth.html` load with zero errors), and the key regression suites (auth, live sync / no lost writes, toasts), runnable with one command. Fold it into the cleanup brief, or make it its own brief before LIME-72.
@@ -308,6 +330,86 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### Plot's review of LIME-71 (`docs/api.md`, `46dffb8`), 2026-10-01: APPROVED with amendments
+
+A strong contract: an op log, idempotency, `seq` authority, per-field last-writer-wins, tombstones, `dm_key` dedup with aliases, backfill, transport-neutral realtime, and per-device tokens. Rulings on its open points:
+1. **Attachments inside `message.send`: agreed.**
+2. **Message time: DECIDED by the user: show the WRITTEN time.**
+   - Store **both** `client_ts` (written) and `server_ts` (delivered).
+   - **Displayed time = `min(client_ts, server_ts)`** (a wrong clock can never show a future time).
+   - **Thread order stays `seq`** (arrival).
+   - When written and delivered differ by **more than 5 minutes**, show "Sent 10:05 · delivered 10:35" (the exact copy is tend's call, kept short).
+   - Amend section 6 rule 8 and section 3 (`message.send`'s effect) accordingly. **Reason:** in the offline and emergency use case, *when it was written* is the important fact.
+3. **Appearance device-local: agreed** (revisit if the user asks).
+4. **`POST /events/ticket`: agreed.**
+5. **Privacy: DECIDED by the user:**
+   - **email** is visible only to people who **share a conversation** with you;
+   - **phone is never displayed** to others (unless a later "show my phone" setting is added; not now);
+   - **finding people:** the directory matches name and school by partial text, and email or phone **only by exact match**, and **doesn't reveal** the email or phone in results.
+   - Read receipts (5b): deferred, since LIME-43 receipts were removed. Note it in the doc.
+6. **The directory endpoint is required now:** add `GET /profiles?q=` (q ≥ 2 characters; partial match on display name and school; exact match on email or digits-only phone; returns the public fields under rule 5; capped at 50).
+7. Line drift: noted.
+
+**Gaps plot found:**
+- **(a) Presence/status** (active, busy, away; `profiles.status` and the presence icons) isn't covered. **Presence is ephemeral**, so it isn't an op: it goes over realtime (`{ type: 'presence', user_id, status }`), with "away" inferred from no connection. Add a short section; LIME-73 may implement a minimal version or defer it (say which).
+- **(b) Link previews:** add `GET /link-preview?url=` (a read; the server unfurls; the dev server may return LIME-44's fixtures).
+- **(c) Web sign-in persistence:** per-tab `sessionStorage` is right for the dev phase (two-person testing). Note that production web will want an optional persistent sign-in ("keep me signed in") as a later decision.
+
+These amendments go into `docs/api.md` as **Phase 0 of LIME-73**.
+
+### LIME-72 → `tend` (next): commit a test harness into the repo
+
+**Why:** tend's jsdom and Playwright suites lived in session scratchpads and were lost (LIME-69 couldn't re-run them). The coming server work (LIME-73/74) needs regression tests that persist.
+
+**The change:**
+1. A `tests/` folder with a `package.json` (devDependencies: `jsdom`, `playwright`) and a README. `node_modules/` is already gitignored. **If installing isn't possible (the network is blocked in the sandbox), use the Playwright and jsdom installs tend already has on this machine (via `NODE_PATH` or a documented path), and report it.** Don't vendor `node_modules`.
+2. Suites, each runnable by one command (`npm test` in `tests/`, or `node tests/run.mjs`):
+   - **smoke:** the real `index.html` and `auth.html` load in jsdom with zero errors;
+   - **css:** the CSS guard (fail on `*/` inside a comment, and report each stylesheet's browser-parsed rule count against a minimum; the cleanup-list item);
+   - **auth:** sign up, sign in, wrong password, the seed-teacher hint, sign out (rebuilt from LIME-33's checks);
+   - **sync:** two pages in one Playwright context: a live message, and **no lost writes (20 + 20)** (from LIME-69);
+   - **toasts:** queue across navigation, max 3, an error stays (from LIME-67).
+   Playwright suites use the **installed Firefox** where the browser matters (with the real-default prefs) and start their own `python3 -m http.server` from the repo root.
+3. `TEND.md` gets a standing rule: **run `tests/` before every commit that touches `public/`**, and report pass/fail.
+
+**Scope:** `tests/` (new), `.gitignore` if needed, `README.md` (a "Running tests" section), and `TEND.md`. **No app code changes.** If a test exposes a real bug, report it; don't fix it here.
+
+**Verification:** all suites pass on the current `HEAD`. Report the commands and the time each takes.
+
+**Gate:** none for the user (plot reviews the report).
+
+**Record:** add a `## LIME-72` entry to `TEND.md`. Commit: `test: committed regression harness (smoke, css, auth, sync, toasts)`, trailer `Brief: LIME-72`, plus the attribution trailer.
+
+---
+
+### LIME-73 → `tend` (after LIME-72): the dev server implementing `docs/api.md` (plus contract amendments)
+
+**Assumptions:** Node v23, **built-ins only** (`http`, `fs`, `crypto`, `path`, `os`, `url`); no npm runtime dependencies. A dev tool on the local network: **not for the internet.**
+
+**Phase 0: amend `docs/api.md`** per plot's review above (message time, privacy, the directory, presence, link previews, web sign-in persistence). Commit it with this brief.
+
+**Phase 1: the server**, `server/dev-server.mjs`:
+- **Static files:** serves the **repo root** (so `/public/…` and `/vendor/…` keep working), no-cache for html/js/css, correct MIME types, and `Range` for media.
+- **Binds `0.0.0.0:8000`** and prints the localhost and **LAN** URLs (`…/public/index.html`). If port 8000 is busy, say so clearly.
+- **The `/api/v1` endpoints from the amended contract:** auth (signup, signin, refresh, signout; PBKDF2 ≥ 600k; rotating refresh tokens; per-device sessions), `POST /ops` (validation and permission per op, idempotency by `op_id`, `dm_key` dedup with aliases, backfill on `membership.add`), `GET /changes`, `GET /snapshot` (paging may be simple), `POST /files` and `GET /files/:id` (10 MB; authorisation per the contract), `POST /events/ticket` and `GET /events` (SSE), `GET /profiles?q=`, `GET /link-preview` (fixtures), `GET /health`, and dev-only `POST /dev/reset`.
+- **Persistence:** under a **gitignored `data/`**: the op log (append-only JSONL), derived state (rebuildable from the log), sessions and files. Atomic writes. Survives restarts. **First run seeds** from `seed-data/` (seed teachers get credentials from the local demo password file if it exists, matching today's demo sign-in; otherwise they can't sign in until reset; document this).
+- **Presence:** a minimal version (connected → active; disconnected → away; a `presence` realtime message) **or** defer it, and say which.
+- **Server tests** added to `tests/` (an `api` suite): each endpoint, permissions (403s), idempotency (replays), DM dedup and alias, backfill, the changes-feed visibility filter (no per-user rows leaking; email and phone rules), files authorisation, and restart persistence.
+
+**Scope:** `server/` (new), `docs/api.md` (Phase 0), `tests/` (the api suite), `.gitignore` (`data/`), `README.md` (how to run the server and open it on a phone), and `TEND.md`. **The web app is unchanged in this brief** (it still uses `LocalAdapter`). LIME-74 connects it.
+
+**Verification:** the api suite passes; `curl` walk-throughs are recorded in `TEND.md`; the server serves the current app at localhost and the LAN URL unchanged; it restarts with its data intact.
+
+**Gate:** start it with `node server/dev-server.mjs` instead of the Python server. Lime opens and works exactly as before at the printed link. (It doesn't share data yet; that's LIME-74.)
+
+**Record:** add a `## LIME-73` entry to `TEND.md`. Commit: `feat: dev server implementing the v1 API (ops, feed, files, events)`, trailer `Brief: LIME-73`, plus the attribution trailer.
+
+### LIME-74 (to be drafted after LIME-73 lands): the web `ApiAdapter`
+
+A local store plus an outbox in `localStorage`/IndexedDB, write → op, feed → local store, SSE, token handling, the "sent · delivered" display, the directory-backed picker, and the `LocalAdapter` fallback when `/api/v1/health` doesn't answer. End-to-end checks: Firefox, a private window, Chrome **and the user's phone**.
+
+---
 
 ### LIME-69 → `tend` (next): two people in two tabs, live
 
