@@ -3228,3 +3228,17 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app â€
 6. A **private window**: open the same link in a Firefox private window, sign in as the same account in a different one; it should work like a separate person.
 7. Check `http://<that address>:8000/public/js/demo-config.local.js` shows "Not found".
 
+## LIME-74-redact
+
+**Goal:** remove the two test accounts' real emails and phone numbers from local history before anything is pushed. They were in `PLOT.md` (plot copied them into the LIME-74 brief) and so in the commit `34cf2a9`. Never pushed: `origin/main` is `a7a7fab`, and no remote branch contains the affected commits.
+
+**What I did (the strings were read from the gitignored `seed-data/test-accounts.local.json` inside the rewrite; none appears in this entry or in any committed file):**
+1. Checked the current working-tree `PLOT.md` (plot had already redacted it): 0 of the 4 strings present. Committed it as `chore: update PLOT.md`, so the tree was clean.
+2. `git filter-branch --tree-filter 'node redact-filter.mjs' 34cf2a9^..HEAD` (env `FILTER_BRANCH_SQUELCH_WARNING=1`). The filter script replaces each string in `PLOT.md` only with `[test account 1 email]`, `[test account 1 phone]`, `[test account 2 email]`, `[test account 2 phone]`; it lives in the session scratchpad, not the repo. It rewrote 3 commits.
+3. Verified before cleanup: `git diff <old HEAD> <new HEAD> -- . ':!PLOT.md'` is **empty (0 lines)**; commit count **202 before and 202 after**; author, committer, dates and full messages (including trailers) of the rewritten commits are **identical**; `git log main -S<string>` finds 0 for 4/4.
+4. Cleaned up: `git for-each-ref --format='delete %(refname)' refs/original | git update-ref --stdin` (removes the backup ref), `git reflog expire --expire=now --all`, `git gc --prune=now`. After that: only `refs/heads/main` remains locally, the old HEAD object no longer exists, `git fsck --unreachable --no-reflogs` finds no unreachable commits, and **`git log --all -S<string>` finds 0 matches for 4/4 strings**. I also searched `PLOT.md`'s whole history for looser forms (the email local part, the last seven phone digits): the only hit is an unrelated fake `...@example.com` from an old line, still in the current `PLOT.md`, not a leak.
+
+**Hashes changed (so plot's references are stale):** `34cf2a9` is now `7450e93`, `d6b1785` (LIME-74) is now `b3f0803`, and the PLOT.md commit made at the start of this task is `6d250cf`. Everything before `fc16919` is untouched. `PLOT.md` itself still names the old hashes in its text; I did not edit it.
+
+**Not pushed.** Nothing was pushed or fetched. Anyone who copied the repository before this (including the old objects) still has the old history; this only protects what has not left the machine.
+
