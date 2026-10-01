@@ -2730,12 +2730,29 @@ html[data-pattern-treatment="photo"] body::before {
    comfortably past 3:1 (reported in TEND.md) regardless of the
    backdrop, since that contrast never touches the backdrop color at all
    — only the border's own removal did, and the border was never what
-   made the icon itself legible. */
+   made the icon itself legible.
+   LIME-62: the × moved to sit diagonally outside the image's top-right
+   corner (its centre ~28px right, ~30px above) instead of sitting in a
+   row above it — solved algebraically from the brief's own target: for
+   a 40px button, right edge = corner + 28 + 20 = corner + 48 (so
+   `right: -48px`, since .lime-lightbox's own box always equals the
+   rendered image's box — shrink-to-fit sizing on a position:fixed
+   element with only `left` set, confirmed by LIME-41-fix's own
+   comment above) and top edge = corner - 30 - 20 = corner - 50 (so
+   `top: -50px`). This needs no resize/slide-change recompute in JS:
+   .lime-lightbox__img's own max-width/max-height (100vw-128px /
+   100vh-184px) already guarantee at least 64px of horizontal margin and
+   92px of vertical margin between the image and the viewport edge in
+   the worst case (image pinned to its max size), both comfortably over
+   the 48px/50px this needs plus the brief's own ≥12px floor (16px and
+   42px to spare) — so the "clamped inside the viewport" requirement is
+   structurally guaranteed by the existing layout, not something a
+   resize listener needs to enforce. The back button (not named in this
+   brief) keeps its original top-left position unchanged. */
 .lime-lightbox__close,
 .lime-lightbox__back {
   box-sizing: border-box;
   position: absolute;
-  bottom: calc(100% + var(--seed-space-3));
   width: 40px;
   height: 40px;
   flex-shrink: 0;
@@ -2752,10 +2769,12 @@ html[data-pattern-treatment="photo"] body::before {
 }
 
 .lime-lightbox__close {
-  right: 0;
+  top: -50px;
+  right: -48px;
 }
 
 .lime-lightbox__back {
+  bottom: calc(100% + var(--seed-space-3));
   left: 0;
 }
 
@@ -2912,10 +2931,20 @@ html[data-pattern-treatment="photo"] body::before {
   inset: 0;
 }
 
+/* LIME-62: more breathing room around the wall per the user's own QA —
+   --seed-space-12 (48px) on desktop, scaled down to --seed-space-6
+   (24px) below the 768px column breakpoint so the padding doesn't eat
+   into a narrow viewport's own usable width. */
 .lime-photo-wall__scroller {
   height: 100%;
   overflow-y: auto;
-  padding: var(--seed-space-8) var(--seed-space-6);
+  padding: var(--seed-space-12);
+}
+
+@media (max-width: 767px) {
+  .lime-photo-wall__scroller {
+    padding: var(--seed-space-6);
+  }
 }
 
 /* CSS columns, not CSS grid — a real masonry layout (natural aspect
@@ -2923,25 +2952,25 @@ html[data-pattern-treatment="photo"] body::before {
    enough value" complaint about the old grid) needs content to flow
    down one column before starting the next, which grid's own row-based
    algorithm can't do on its own without an extra JS layout pass; columns
-   does this natively. Responsive count matches the brief's own three
-   explicit checkpoints (verified live, not just assumed from the
-   breakpoints alone): 2 by default (mobile, e.g. 500px), 3 from 700px
-   (covers the brief's own 900px checkpoint), 5 from 1200px (covers the
-   brief's own 1567px checkpoint). */
+   does this natively.
+   LIME-62: 3 columns at desktop widths, 2 below 768px, 1 below 480px
+   (the user's own explicit counts — supersedes LIME-41-fix's 2/3/5),
+   with column-gap widened to --seed-space-4 (16px) for "more spacing
+   around the wall." */
 .lime-photo-wall__masonry {
-  column-count: 2;
-  column-gap: var(--seed-space-2);
+  column-count: 1;
+  column-gap: var(--seed-space-4);
 }
 
-@media (min-width: 700px) {
+@media (min-width: 480px) {
   .lime-photo-wall__masonry {
-    column-count: 3;
+    column-count: 2;
   }
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 768px) {
   .lime-photo-wall__masonry {
-    column-count: 5;
+    column-count: 3;
   }
 }
 
@@ -2949,7 +2978,7 @@ html[data-pattern-treatment="photo"] body::before {
   display: block;
   width: 100%;
   height: auto;
-  margin-bottom: var(--seed-space-2);
+  margin-bottom: var(--seed-space-4);
   border-radius: var(--seed-radius-sm);
   cursor: pointer;
   /* Columns lays out top-to-bottom then wraps to the next column — a

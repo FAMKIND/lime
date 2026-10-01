@@ -4746,6 +4746,9 @@ function closeWallVisualsOnly() {
 function backToWall() {
   lightboxHideVisualsOnly();
   lightboxOpenedFromWall = false;
+  // Re-show the wall openLightbox hid (LIME-62) — it was never emptied
+  // or scrolled, so it reappears exactly where the user left it.
+  if (wallEls.wall) wallEls.wall.classList.add('is-open');
   if (wallEls.closeBtn) wallEls.closeBtn.focus();
 }
 
@@ -4774,6 +4777,10 @@ function openLightbox(images, index, options) {
   const fromWall = !!(options && options.fromWall);
   lightboxImages = images;
   lightboxOpenedFromWall = fromWall;
+  // LIME-62: the slides fully replace the wall, not sit over it — hide
+  // the wall's own visuals (its masonry and scroll position stay intact
+  // underneath) so backToWall can bring back exactly what was there.
+  if (fromWall && wallEls.wall) wallEls.wall.classList.remove('is-open');
   if (lightboxEls.backBtn) lightboxEls.backBtn.hidden = !fromWall;
   if (!fromWall) lightboxPreviouslyFocused = document.activeElement;
   showViewerBackdrop();

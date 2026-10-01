@@ -2866,3 +2866,32 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Gate:** the "z" is a hair smaller and sits just above the green circle, with visible daylight between them, confirmed by direct pixel measurement rather than assumed from the shrink alone.
 
 **Record:** this entry.
+
+## LIME-62
+
+**Goal:** the media viewer per the user's own QA — the × sits diagonally outside the photo's top-right corner, the wall is 3 columns with more breathing room, and clicking a wall photo shows just the slides (not slides-over-wall).
+
+**Survey confirmed the brief's own pointers exactly:** `openLightbox`/`openPhotoWall` at `app.js` ~4773/4786, `.lime-lightbox__close` at `lime.css` ~2734. Also confirmed, not stated in the brief: `.lime-lightbox` is `position:fixed` with no explicit width/height — only `max-width`/`max-height` — and `left:50%` with no `right`, which per the CSS spec means **shrink-to-fit sizing**: its rendered box is always exactly the displayed image's own box. `.lime-lightbox__close`/`__back` are already positioned absolute against that box. That one fact changes the shape of item 1's fix (below). The wall-hides-while-slides-show bug was exactly as described: `openLightbox(..., {fromWall:true})` never touched `wallEls.wall`'s own `is-open` class, so the wall stayed visible underneath the centered slide.
+
+**The change:**
+1. **The ×, solved algebraically rather than left to JS:** since `.lime-lightbox`'s box already equals the image's real rendered rect (see survey), the brief's own target — centre 28px right, 30px above the corner, for a 40px round button — reduces to two constants: `right: -48px` (= 28 + half the button's own 40px width) and `top: -50px` (= 30 + half height), replacing the old `bottom: calc(100% + 12px); right: 0`. No resize/slide-change listener needed: `.lime-lightbox__img`'s own pre-existing `max-width: 100vw - 128px` / `max-height: 100vh - 184px` already guarantee at least 64px horizontal and 92px vertical margin to the viewport edge in the worst case (image pinned to its max size) — comfortably over the 48px/50px this needs, with 16px/42px to spare over the brief's own ≥12px floor. Measured live (below) at three viewport widths, a portrait and a landscape image: the offset holds at exactly (28, 30) every time, and the floor is never threatened. The "back to all photos" button (not named in this brief) keeps its original top-left spot.
+2. **The wall:** `column-count` 3 (desktop) / 2 (<768px) / 1 (<480px), replacing the old 2/3/5 tiers — `column-gap` and tile `margin-bottom` both widened to `--seed-space-4` (16px). `.lime-photo-wall__scroller`'s padding widened to `--seed-space-12` (48px) on desktop, scaled to `--seed-space-6` (24px) below 768px.
+3. **Slides replace the wall:** `openLightbox` now removes `.is-open` from `wallEls.wall` the moment it opens `fromWall:true` — the wall's own masonry and scroll position are never touched, just hidden. `backToWall` adds `.is-open` back. `closeStack` (unchanged) still tears the whole thing down to the chat regardless of which of the two was visible.
+4. **Entry points confirmed, no code change needed:** the "+N" tile and "N photos" label (both carry `data-gallery-message-id`) open the wall; any other album tile opens the slides directly, `fromWall:false`, wall never shown.
+
+**Scope check:** `public/css/lime.css` (close/back positioning, wall column/gap/padding rules) and `public/js/app.js` (`openLightbox`, `backToWall`) only — confirmed via `git diff --stat`. `public/index.html` untouched.
+
+**Verification, real Firefox 157.0 and Chrome 154.0.8037.92 (WebDriver BiDi, puppeteer-core, real installed binaries), one script driving both, seeding a real 7-image album (wall trigger) and a real 2-image album (direct-tile trigger) through `LimeStore.uploadAttachment`/`sendMessage` — not a synthetic DOM grid:**
+- `lime.css` rule count: **721** (+1 from 720 — a net-new `@media (max-width: 767px)` scroller-padding rule; parses cleanly in both engines).
+- × offset measured against the real image rect: **28.0px right, 30.0px above** the corner at 1567px (landscape), repeated for a portrait image (28, 30) and at a 420px viewport (28, 30), all within ±2px — the algebra held exactly, in both browsers.
+- × stays ≥12px from the viewport edge in every case measured (16px at the tightest, 420px wide).
+- Wall column-count: **3 at 1567px, 2 at 600px, 1 at 420px** — all three breakpoints, both browsers. `column-gap` 16px, tile `margin-bottom` 16px, scroller padding 48px at desktop.
+- Clicking a wall tile: wall's `is-open` class is removed (fully hidden, not just covered) the instant slides open; the "back to all photos" button shows. The × returns to the wall with its **scroll position preserved exactly** (37px before, 37px after, both browsers).
+- Escape order confirmed in one continuous run: slides → wall (wall's `is-open` restored) → chat (backdrop closed).
+- A direct (non-"+N") album tile opens slides immediately, `fromWall:false`, the wall never opens at all.
+- Zero console/page errors in either browser.
+- Screenshots: the wall at 1567px (3 clean columns, roomy padding, × at its own top-right corner) and the slides view opened from a wall tile (wall fully gone, just the one photo with arrows, counter, back button and ×, thread visibly blurred behind) — both browsers.
+
+**Gate:** opening an album's "+N" shows a roomy 3-column wall; clicking a photo shows just that photo with arrows and the × at its top-right corner; closing it returns to the wall, confirmed live in both real browsers.
+
+**Record:** this entry.
