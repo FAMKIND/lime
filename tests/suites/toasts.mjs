@@ -1,5 +1,6 @@
 // Toasts (LIME-67/68): queue across navigation, at most 3 visible, an error stays, an action works.
-import { launch, browserAvailable, watchErrors, sleep, wipeStorage } from '../lib/harness.mjs';
+import { launch, browserAvailable, watchErrors, sleep, wipeStorage, isDevServer } from '../lib/harness.mjs';
+import { Remote, openAs } from '../lib/dev.mjs';
 
 const visible = (page) => page.evaluate(() => [...document.querySelectorAll('.lime-toast:not(.seed-toast--exiting)')].map((t) => t.querySelector('.seed-toast__title').textContent));
 
@@ -9,11 +10,20 @@ export async function run({ base, check }) {
   const errors = [];
   try {
     await wipeStorage(browser, base);
-    const page = await browser.newPage();
-    watchErrors(page, 'toasts', errors);
-    await page.evaluateOnNewDocument(() => { if (!sessionStorage.getItem('lime-demo-session')) sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: 'teacher-002', email: 'shem.robinson@ps113.edu' })); });
-    await page.goto(base + 'index.html', { waitUntil: 'load' });
-    await page.waitForFunction(() => window.LimeToast && window.LimeStore && LimeStore.getCurrentUserId(), { polling: 10, timeout: 10000 });
+    let page;
+    if (await isDevServer(base)) {
+      // On the dev server the app runs on the API: a fresh account, with one chat to open (a DM with a seed teacher).
+      const remote = new Remote(base);
+      page = await openAs(browser, remote, await remote.signUp('Toast Tester'), 'toasts', errors);
+      await page.evaluate(() => LimeStore.createConversation({ type: 'direct', memberIds: ['teacher-001'] }));
+      await page.waitForFunction(() => LimeStore.listConversations().length > 0 && document.querySelector('[data-conversation-id]'), { polling: 20, timeout: 10000 });
+    } else {
+      page = await browser.newPage();
+      watchErrors(page, 'toasts', errors);
+      await page.evaluateOnNewDocument(() => { if (!sessionStorage.getItem('lime-demo-session')) sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: 'teacher-002', email: 'shem.robinson@ps113.edu' })); });
+      await page.goto(base + 'index.html', { waitUntil: 'load' });
+      await page.waitForFunction(() => window.LimeToast && window.LimeStore && LimeStore.getCurrentUserId(), { polling: 10, timeout: 10000 });
+    }
 
     // Queue across navigation: queued here, shown after the next page load, shown once.
     await page.evaluate(() => LimeToast.queue({ title: 'Queued across pages', tone: 'info' }));

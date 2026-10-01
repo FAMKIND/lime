@@ -1191,6 +1191,18 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+// LIME-74: the time shown beside a message is when it was WRITTEN (the earlier of the sender's clock and the server's, so a wrong
+// clock can never show a future time). If it reached the server more than 5 minutes later, say so: "Sent 10:05 · delivered 10:35".
+// Messages without a client_ts (the local-only backend) just show their time.
+function messageTimeText(message) {
+  const delivered = new Date(message.created_at).getTime();
+  const sent = message.client_ts ? new Date(message.client_ts).getTime() : NaN;
+  if (isNaN(sent) || isNaN(delivered)) return formatTime(message.created_at);
+  const written = Math.min(sent, delivered);
+  if (delivered - written > 5 * 60 * 1000) return 'Sent ' + formatTime(new Date(written).toISOString()) + ' \u00b7 delivered ' + formatTime(message.created_at);
+  return formatTime(new Date(written).toISOString());
+}
+
 function formatDay(iso) {
   return new Date(iso).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
@@ -2139,7 +2151,7 @@ function initMessagesList() {
       + '<div class="lime-message__col">'
       + '<div class="lime-message__meta">'
       + '<span class="lime-message__sender" data-profile-id="' + escapeHtml(sender.id || '') + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
-      + '<span class="lime-message__time">' + formatTime(message.created_at) + '</span>'
+      + '<span class="lime-message__time">' + messageTimeText(message) + '</span>'
       + '</div>'
       + contentHtml(message)
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
@@ -2887,8 +2899,26 @@ function initMessagesList() {
   // repainted. This repaints the open conversation without touching the
   // composer, open menus or modals: only #thread-messages is rebuilt, and
   // renderThread keeps the scroll position when the reader had scrolled up.
+  // LIME-74: two people can start the same DM at once; the server keeps one and tells the other client. If that person is
+  // looking at the one that was dropped, move them to the one that was kept (no "no longer available" message).
+  const aliasedTo = new Map();
+  document.addEventListener('lime:conversation-aliased', (e) => {
+    aliasedTo.set(e.detail.from, e.detail.to);
+  });
+  function followAlias() {
+    const to = aliasedTo.get(currentConversationId);
+    if (!to) return false;
+    const target = LimeStore.getConversation(to);
+    if (!target) return false; // not delivered yet; the next sync will bring it
+    aliasedTo.delete(currentConversationId);
+    selectConversation(target);
+    return true;
+  }
+
   document.addEventListener('lime:remote-synced', (e) => {
     if (!currentConversationId) return;
+    if (followAlias()) return;
+    if (aliasedTo.has(currentConversationId)) return; // waiting for the kept conversation to arrive
     const stillThere = LimeStore.listConversations({ includeArchived: true }).some((c) => c.id === currentConversationId);
     if (!stillThere) {
       LimeToast.show({ title: 'This chat is no longer available', tone: 'info' });
@@ -2944,6 +2974,11 @@ function initMessagesList() {
     let selectedIds = [];
     let activeIndex = -1;
     let currentResults = []; // profiles currently rendered as selectable rows (excludes the no-match/empty rows)
+    // LIME-74: with the dev server, people you do not chat with yet come from the directory (name/school partial; email and
+    // phone exact, never shown). Chat-mates are matched here as before.
+    let directoryResults = [];
+    let directoryQuery = '';
+    let directoryTimer = null;
 
     function digitsOnly(s) {
       return (s || '').replace(/\D/g, '');
@@ -2977,7 +3012,24 @@ function initMessagesList() {
     }
 
     function candidateProfiles() {
-      return LimeStore.listProfiles().filter((p) => p.id !== currentUserId);
+      const known = LimeStore.listProfiles().filter((p) => p.id !== currentUserId);
+      if (!LimeStore.isApi() || directoryQuery !== input.value.trim().toLowerCase()) return known;
+      const have = new Set(known.map((p) => p.id));
+      return known.concat(directoryResults.filter((p) => !have.has(p.id)));
+    }
+
+    function searchDirectorySoon() {
+      clearTimeout(directoryTimer);
+      const q = input.value.trim().toLowerCase();
+      if (!LimeStore.isApi()) return;
+      if (q.length < 2) { directoryResults = []; directoryQuery = ''; return; }
+      directoryTimer = setTimeout(() => {
+        LimeStore.searchProfiles(q).then((list) => {
+          if (input.value.trim().toLowerCase() !== q) return; // typed on since
+          directoryResults = list; directoryQuery = q;
+          renderResults();
+        }).catch(console.error);
+      }, 250);
     }
 
     function pickerResultRowHtml(person, index) {
@@ -2993,8 +3045,9 @@ function initMessagesList() {
       const q = rawQuery.trim().toLowerCase();
       const qDigits = digitsOnly(rawQuery);
       const all = candidateProfiles();
+      const fromDirectory = new Set(directoryQuery === q ? directoryResults.map((p) => p.id) : []);
       const matches = q
-        ? all.filter((p) => matchesQuery(p, q, qDigits))
+        ? all.filter((p) => fromDirectory.has(p.id) || matchesQuery(p, q, qDigits))
         : all.slice();
       matches.sort((a, b) => a.display_name.localeCompare(b.display_name));
       currentResults = matches;
@@ -3077,6 +3130,7 @@ function initMessagesList() {
         // silently carried into the next picker session's own group,
         // since the field's own value otherwise survives close/reopen.
         groupNameInput.value = '';
+        directoryResults = []; directoryQuery = '';
         renderChips();
         renderResults();
         input.focus();
@@ -3093,6 +3147,7 @@ function initMessagesList() {
 
     input.addEventListener('input', () => {
       activeIndex = -1;
+      searchDirectorySoon();
       renderResults();
     });
 
@@ -3425,12 +3480,15 @@ function initMessagesList() {
       const resultEl = document.getElementById('share-popover-invite-result');
       const email = emailInput.value.trim();
       if (!email) return;
-      const profile = LimeStore.findProfileByEmail(email);
-      if (!profile) {
-        resultEl.innerHTML = 'No teacher with that email · Invite <span class="lime-badge--soon">Soon</span>';
-        return;
-      }
-      LimeStore.addMembers(conversation.id, [profile.id]).then(() => {
+      LimeStore.lookupProfileByEmail(email).then((profile) => {
+        if (!profile) {
+          resultEl.innerHTML = 'No teacher with that email · Invite <span class="lime-badge--soon">Soon</span>';
+          return null;
+        }
+        return LimeStore.addMembers(conversation.id, [profile.id]).then(() => ({ profile }));
+      }).then((added) => {
+        if (!added) return;
+        const profile = added.profile;
         emailInput.value = '';
         // .textContent, not escapeHtml() — that helper is for building
         // HTML strings (innerHTML); textContent never interprets markup
@@ -4209,7 +4267,7 @@ function renderCrumbs() {
       + '<div class="lime-reply__col">'
       + '<div class="lime-reply__meta">'
       + '<span class="lime-reply__sender" data-profile-id="' + escapeHtml(sender.id) + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
-      + '<span class="lime-reply__time">' + formatTime(message.created_at) + '</span>'
+      + '<span class="lime-reply__time">' + messageTimeText(message) + '</span>'
       + '</div>'
       + (replyAttachments.length > 0 ? albumHtml(message, replyAttachments, { wrap: false }) : messageBodyHtml(message, 'lime-reply__text') + linkPreviewSlotHtml(message))
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
@@ -4571,7 +4629,9 @@ document.getElementById('reset-demo-data-btn')?.addEventListener('click', () => 
     if (!confirmed) return;
     LimeAuth.resetCredentials();
     LimeToast.queue({ title: 'Demo data reset', body: 'All accounts and changes were cleared.', tone: 'info' });
-    LimeStore.reset().then(() => { LimeAuth.signOut({ silent: true }); });
+    LimeStore.reset().then(() => { LimeAuth.signOut({ silent: true }); }).catch((err) => {
+      LimeToast.show({ title: 'Couldn’t reset the demo data', body: err.message, tone: 'error' });
+    });
   });
 });
 

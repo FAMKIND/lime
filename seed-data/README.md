@@ -134,3 +134,11 @@ Matches your Figma designs:
 ## Subjects Covered
 
 Math, Science, English, Art, Special Education, STEM/Robotics, ESL, Technology, Social Studies, Music, PE, Chemistry, Physics, Drama, Biology, Engineering, Counseling, and more.
+
+## Test accounts (LIME-74)
+
+`test-accounts.example.json` shows the shape of `seed-data/test-accounts.local.json`, a **gitignored** file (`*.local.json`) the dev
+server reads on first run and after a reset to create two dedicated test accounts (profiles, a ready DM between them, membership of the
+PS 113 Staff Room, and server-hashed credentials). The real file holds real emails, phones and a password, so it must never be committed;
+copy the example to `test-accounts.local.json` and edit it. The server prints the two emails (never the password) at startup.
+

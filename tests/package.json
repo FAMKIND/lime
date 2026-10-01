@@ -10,7 +10,8 @@
     "test:auth": "node run.mjs auth",
     "test:sync": "node run.mjs sync",
     "test:toasts": "node run.mjs toasts",
-    "test:api": "node run.mjs api"
+    "test:api": "node run.mjs api",
+    "test:e2e": "node run.mjs e2e-server"
   },
   "devDependencies": {
     "jsdom": "^27.0.1",

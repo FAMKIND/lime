@@ -2,6 +2,7 @@
 // processOp(); the append-only log is the source of truth and state.json is only a cache of replaying it.
 import fs from 'node:fs';
 import path from 'node:path';
+import { testAccountDetails } from './seed.mjs';
 import { E, ApiError, isStr, isId, isObj, isEmail, nowIso, ensureDir, writeJsonAtomic, readJson } from './util.mjs';
 
 const PROFILE_PATCH_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone', 'avatar_url'];
@@ -114,6 +115,40 @@ export class Engine {
     this.notify({ seq: this.seq, audience: null });
   }
 
+  // The dedicated test accounts: profiles, a ready DM between them (no messages) and membership of the PS 113 Staff Room.
+  // Idempotent (only adds what is missing), so it is safe on every boot and after a reset.
+  ensureTestAccounts(accounts) {
+    const ts = nowIso();
+    const merge = { profiles: [], conversations: [], conversation_members: [] };
+    for (const a of accounts) {
+      if (this.profiles.has(a.id)) continue;
+      merge.profiles.push(Object.assign({
+        id: a.id, auth_user_id: null, display_name: a.display_name, email: a.email.toLowerCase(), role: null, pronouns: null, school: null,
+        grade_levels: null, subjects: null, bio: null, timezone: 'America/New_York', phone: a.phone || null, status: 'offline', avatar_url: null,
+        created_at: ts, updated_at: ts,
+      }, testAccountDetails(a.id)));
+    }
+    const ids = accounts.map((a) => a.id);
+    const staff = [...this.conversations.values()].find((c) => c.name === 'PS 113 Staff Room' && c.type === 'group');
+    if (staff) {
+      for (const id of ids) {
+        if (!this.getMember(staff.id, id)) merge.conversation_members.push({ conversation_id: staff.id, user_id: id, role: 'member', starred: false, archived_at: null, cleared_at: null, last_read_at: null, joined_at: ts, updated_at: ts });
+      }
+    }
+    if (ids.length === 2) {
+      const dmKey = [...ids].sort().join(':');
+      if (!this.dmKeys.has(dmKey)) {
+        const convId = 'conv-test-dm';
+        merge.conversations.push({ id: convId, type: 'direct', name: null, description: null, created_by: ids[0], deleted_at: null, dm_key: dmKey, created_at: ts, updated_at: ts });
+        ids.forEach((id, i) => merge.conversation_members.push({ conversation_id: convId, user_id: id, role: i === 0 ? 'owner' : 'member', starred: false, archived_at: null, cleared_at: null, last_read_at: null, joined_at: ts, updated_at: ts }));
+      }
+    }
+    if (!merge.profiles.length && !merge.conversations.length && !merge.conversation_members.length) return false;
+    merge.seed_profile_ids = ids;
+    this.append({ kind: 'system.merge', server_ts: ts, audience: [], merge });
+    return true;
+  }
+
   // ── the log ──
   append(partial) {
     const entry = Object.assign({ seq: ++this.seq, server_ts: nowIso() }, partial);
@@ -140,6 +175,12 @@ export class Engine {
       this.attachments = new Map(t.message_attachments.map((r) => [r.id, r]));
       this.dmKeys = new Map([...this.conversations.values()].filter((c) => c.dm_key).map((c) => [c.dm_key, c.id]));
       this.seedProfileIds = t.profiles.map((p) => p.id);
+    } else if (entry.kind === 'system.merge') {
+      const t = entry.merge;
+      (t.profiles || []).forEach((r) => this.profiles.set(r.id, r));
+      (t.conversations || []).forEach((r) => { this.conversations.set(r.id, r); if (r.dm_key) this.dmKeys.set(r.dm_key, r.id); });
+      (t.conversation_members || []).forEach((r) => this.members.set(memberKey(r.conversation_id, r.user_id), r));
+      if (t.seed_profile_ids) this.seedProfileIds = [...new Set([...this.seedProfileIds, ...t.seed_profile_ids])];
     } else if (entry.kind === 'system.profile') {
       this.profiles.set(entry.profile.id, entry.profile);
     } else if (entry.kind === 'alias') {
@@ -288,7 +329,12 @@ export class Engine {
           conversation_id: conv.id, user_id: u, role: u === actorId ? 'owner' : 'member', starred: false, archived_at: null,
           cleared_at: null, last_read_at: null, joined_at: ts, updated_at: ts,
         }));
-        return { audience: [actorId, ...others] };
+        // Everyone in a new conversation learns who else is in it (their profiles; per-person fields only for themselves).
+        const everyone = [actorId, ...others];
+        return {
+          audience: everyone,
+          followups: everyone.map((u) => ({ kind: 'backfill', to: u, audience: [u], backfill: this.conversationRows(conv.id, u) })),
+        };
       }
       case 'conversation.rename': {
         const conv = this.liveConversationFor(op, actorId, p.conversation_id);
@@ -328,7 +374,9 @@ export class Engine {
         // Existing members get the op; each new member gets the whole conversation as a backfill entry.
         return {
           op: withConv({ conversation_id: conv.id, user_ids: added }), audience: before,
-          followups: added.map((u) => ({ kind: 'backfill', to: u, audience: [u], backfill: this.conversationRows(conv.id, u) })),
+          // New members get the whole conversation; existing members get just the new people (their member rows and profiles).
+          followups: added.map((u) => ({ kind: 'backfill', to: u, audience: [u], backfill: this.conversationRows(conv.id, u) }))
+            .concat(added.length ? before.map((u) => ({ kind: 'backfill', to: u, audience: [u], backfill: this.partialRows(conv.id, added, u) })) : []),
         };
       }
       case 'membership.setStarred':
@@ -441,6 +489,14 @@ export class Engine {
       message_reactions: [...this.reactions.values()].filter((r) => msgIds.has(r.message_id)),
       message_attachments: [...this.attachments.values()].filter((a) => msgIds.has(a.message_id)),
       profiles: memberRows.map((m) => this.profiles.get(m.user_id)).filter(Boolean).map((p) => this.profileFor(p, viewerId)),
+    };
+  }
+
+  // Just some people's member rows and profiles in a conversation (what existing members need when others are added).
+  partialRows(convId, userIds, viewerId) {
+    return {
+      conversation_members: userIds.map((u) => this.members.get(memberKey(convId, u))).filter(Boolean).map((m) => this.memberRowFor(m, viewerId)),
+      profiles: userIds.map((u) => this.profiles.get(u)).filter(Boolean).map((p) => this.profileFor(p, viewerId)),
     };
   }
 

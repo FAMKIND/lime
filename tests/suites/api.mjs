@@ -74,13 +74,13 @@ export async function run({ check }) {
     const base = server.base;
     // ── health, static, hygiene ──
     const health = await (await fetch(base + '/api/v1/health')).json();
-    check('GET /health answers without a token', health.ok === true && health.api === 'v1' && Number.isInteger(health.seq));
+    check('GET /health answers without a token and reports log_start', health.ok === true && health.api === 'v1' && Number.isInteger(health.seq) && Number.isInteger(health.log_start));
     check('serves the app from the repo root (index.html, no-cache)', await fetch(base + '/public/index.html').then((r) => r.status === 200 && /no-cache/.test(r.headers.get('cache-control'))));
     const lan = Object.values(os.networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal);
     check(lan ? 'also answers on the LAN address (bound to 0.0.0.0)' : 'LAN address check (skipped: no network interface)', lan ? await fetch(`http://${lan.address}:${port}/public/index.html`).then((r) => r.status === 200).catch(() => false) : true, lan ? lan.address : 'skipped');
     check('the repo root redirects to the app', await fetch(base + '/', { redirect: 'manual' }).then((r) => r.status === 302 && /public\/index\.html/.test(r.headers.get('location'))));
     check('Range works on media (206)', await fetch(base + '/public/assets/auth-hero.mp4', { headers: { range: 'bytes=0-9' } }).then(async (r) => r.status === 206 && (await r.arrayBuffer()).byteLength === 10));
-    check('server code, data and dotfiles are never served', (await Promise.all(['/server/dev-server.mjs', '/data/auth.json', '/tests/package.json', '/.git/config', '/public/%2e%2e/TEND.md'].map((u) => fetch(base + u).then((r) => r.status)))).every((s) => s === 404));
+    check('only public/ and vendor/ are served: no server code, data, tests, seed files, docs, dotfiles, or *.local.* (the demo password)', (await Promise.all(['/server/dev-server.mjs', '/data/auth.json', '/tests/package.json', '/.git/config', '/public/%2e%2e/TEND.md', '/seed-data/test-accounts.local.json', '/seed-data/test-accounts.example.json', '/public/js/demo-config.local.js', '/public/js/anything.local.js', '/docs/api.md', '/package.json', '/.gitignore'].map((u) => fetch(base + u).then((r) => r.status)))).every((s) => s === 404));
     check('no token gives 401 on every protected endpoint', (await Promise.all([['GET', '/snapshot'], ['GET', '/changes?since=0'], ['POST', '/ops'], ['GET', '/profiles?q=ab'], ['POST', '/files'], ['GET', '/link-preview?url=https://a.b'], ['POST', '/events/ticket']].map(([m, p]) => new Client(base).json(m, p, { token: null }).then((r) => r.status)))).every((s) => s === 401));
 
     // ── auth ──
@@ -251,6 +251,15 @@ export async function run({ check }) {
     check('realtime never tells a stranger about an op they may not see', privateOp.status === 'applied' && !evD.events.some((e) => e.type === 'changed' && e.seq === privateOp.seq) && !evD.events.some((e) => e.type === 'presence'));
     check('...and their feed has nothing of it either', (await D.changes(0)).changes.every((e) => e.seq !== privateOp.seq));
     evD.close();
+    const P1 = new Client(base, 'pat@example.com', 'Pat One'); await P1.signup();
+    const P2 = new Client(base, 'quin@example.com', 'Quin Two'); await P2.signup();
+    const evP1 = await openEvents(P1); const evP2 = await openEvents(P2);
+    await sleep(200);
+    check('presence: people who connected BEFORE becoming chat-mates hear about each other once they are', (!evP1.events.some((e) => e.type === 'presence')) && await (async () => {
+      await P1.one('conversation.create', { conversation_id: uuid(), type: 'direct', member_ids: [P2.id] });
+      return !!(await evP1.waitFor((e) => e.type === 'presence' && e.user_id === P2.id && e.status === 'active')) && !!(await evP2.waitFor((e) => e.type === 'presence' && e.user_id === P1.id && e.status === 'active'));
+    })());
+    evP1.close(); evP2.close();
     check('presence is never put in the log or feed', !JSON.stringify(await B.changes(0)).includes('presence'));
 
     // ── feed mechanics, link preview ──
@@ -261,7 +270,52 @@ export async function run({ check }) {
     const lp = (await A.json('GET', '/link-preview?url=' + encodeURIComponent('https://www.edutopia.org/article/differentiated-instruction-strategies'))).body;
     check('link-preview returns the fixture, and the minimal card for anything else; junk is 400', lp.minimal === false && lp.site_name === 'Edutopia'
       && (await A.json('GET', '/link-preview?url=' + encodeURIComponent('https://example.org/x'))).body.minimal === true && (await A.json('GET', '/link-preview?url=notaurl')).status === 400);
-    check('a change-password endpoint does not exist yet (documented gap)', (await A.json('POST', '/auth/password', { body: {} })).status === 404);
+
+    // ── password change, lookup, backfill on create/add (LIME-74 Phase 0) ──
+    const lookup = (email) => new Client(base).json('POST', '/auth/lookup', { body: { email }, token: null }).then((r) => r.body && r.body.exists);
+    check('POST /auth/lookup says whether an email has an account (dev phase)', (await lookup('bo@example.com')) === true && (await lookup('nobody-here@example.com')) === false);
+    const dev2 = new Client(base, 'x', 'x'); dev2.device = 'second-device';
+    const bSecond = await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'password123', device_id: 'second-device' }, token: null });
+    check('change password: a wrong current password is 403, a short or unchanged one 400', (await B.json('POST', '/auth/password', { body: { current_password: 'nope-nope-1', new_password: 'newpassword1' } })).status === 403
+      && (await B.json('POST', '/auth/password', { body: { current_password: 'password123', new_password: 'short' } })).status === 400 && (await B.json('POST', '/auth/password', { body: { current_password: 'password123', new_password: 'password123' } })).status === 400);
+    const pw = await B.json('POST', '/auth/password', { body: { current_password: 'password123', new_password: 'newpassword1' } });
+    check('change password: this device stays signed in, every OTHER device is signed out, the new password works and the old does not', pw.status === 200
+      && (await B.json('GET', '/snapshot')).status === 200 && (await new Client(base).json('GET', '/snapshot', { token: bSecond.body.access_token })).status === 401
+      && (await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: bSecond.body.refresh_token, device_id: 'second-device' }, token: null })).status === 401
+      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'newpassword1', device_id: 'third' }, token: null })).status === 200
+      && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'bo@example.com', password: 'password123', device_id: 'fourth' }, token: null })).status === 401);
+    check('change password needs a signed-in person', (await new Client(base).json('POST', '/auth/password', { body: {}, token: null })).status === 401);
+    const E1 = new Client(base, 'eve@example.com', 'Eve First'); await E1.signup();
+    const gNew = uuid();
+    await A.one('conversation.create', { conversation_id: gNew, type: 'group', name: 'Backfill test', member_ids: [E1.id] });
+    const eFeed = await E1.changes(0);
+    const createBackfill = eFeed.changes.find((e) => e.backfill && e.backfill.conversation && e.backfill.conversation.id === gNew);
+    check('a new conversation: every member learns who is in it (conversation, members and their profiles)', createBackfill && createBackfill.backfill.profiles.some((p) => p.id === A.id && p.email === 'ada.new@example.com') && createBackfill.backfill.conversation_members.length === 2 && createBackfill.backfill.messages.length === 0);
+    const F1 = new Client(base, 'fay@example.com', 'Fay Third'); await F1.signup();
+    await A.one('membership.add', { conversation_id: gNew, user_ids: [F1.id] });
+    const eFeed2 = await E1.changes(eFeed.next);
+    const partial = eFeed2.changes.find((e) => e.backfill && !e.backfill.conversation);
+    check('adding someone: existing members get a partial backfill with just the new person (member row and profile)', partial && partial.backfill.profiles.length === 1 && partial.backfill.profiles[0].id === F1.id && partial.backfill.conversation_members.length === 1 && !('phone' in partial.backfill.profiles[0]));
+    const eveAlias = (await E1.changes(0)).changes.filter((e) => e.alias).length;
+    check('and nobody outside the conversation hears of it', (await C.changes(0)).changes.every((e) => !(e.backfill && e.backfill.conversation && e.backfill.conversation.id === gNew)) && eveAlias === 0);
+
+    // ── test accounts (only when the gitignored seed-data/test-accounts.local.json exists) ──
+    let testFile = null;
+    try { testFile = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'seed-data', 'test-accounts.local.json'), 'utf8')); } catch (e) { /* none */ }
+    if (testFile) {
+      const [t1, t2] = testFile.accounts;
+      const T1 = new Client(base, t1.email, t1.display_name); T1.device = 'tdev1';
+      const si1 = await T1.json('POST', '/auth/signin', { body: { email: t1.email, password: testFile.password, device_id: 'tdev1' }, token: null });
+      Object.assign(T1, { token: si1.body.access_token, id: t1.id });
+      const ts = await T1.snapshot();
+      const dmWithOther = ts.conversations.find((c) => c.type === 'direct' && ts.conversation_members.some((m) => m.conversation_id === c.id && m.user_id === t2.id));
+      check('test accounts: both can sign in with the local file\'s password, and have each other\'s ready DM (no messages)', si1.status === 200 && dmWithOther && ts.messages.filter((m) => m.conversation_id === dmWithOther.id).length === 0);
+      check('test accounts: both are members of PS 113 Staff Room', ts.conversations.some((c) => c.name === 'PS 113 Staff Room') && ts.conversation_members.some((m) => m.user_id === t2.id && ts.conversations.find((c) => c.id === m.conversation_id && c.name === 'PS 113 Staff Room')));
+      check('test accounts: phone is stored and found by exact match, never shown', ts.profile.phone === t1.phone && !ts.profiles.some((p) => 'phone' in p) && (await dir(C, t1.phone.replace(/\D/g, ''))).profiles.some((p) => p.id === t1.id) && (await dir(C, t1.phone.replace(/\D/g, ''))).profiles.every((p) => !('phone' in p)));
+      check('test accounts: their details are filled in plausibly', ts.profile.role && ts.profile.school === 'PS 113' && ts.profile.timezone === 'America/New_York' && ts.profile.bio);
+    } else {
+      check('test accounts (skipped: no seed-data/test-accounts.local.json here)', true, 'skipped');
+    }
 
     // ── restart persistence ──
     const headBefore = (await A.json('GET', '/health')).body.seq;

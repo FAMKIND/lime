@@ -1,0 +1,7 @@
+{
+  "password": "change-me-example-only",
+  "accounts": [
+    { "id": "test-shem-rajoon", "email": "shem.example@example.com", "display_name": "Shem Rajoon", "phone": "+1 555-010-0001" },
+    { "id": "test-jean-chung", "email": "jean.example@example.com", "display_name": "Jean Chung", "phone": "+1 555-010-0002" }
+  ]
+}

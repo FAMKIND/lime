@@ -22,7 +22,13 @@ It serves the app exactly like the Python server did (`/public/â€¦`, `/vendor/â€
 - **This computer:** `http://localhost:8000/public/index.html`
 - **On your network:** `http://192.168.x.x:8000/public/index.html`: open this on a phone on the same Wi-Fi.
 
-The web app does not use the API yet (it still keeps everything in the browser; LIME-74 connects it), so the two links show the same app and **do not share data yet**.
+Served this way the web app uses the API (`LimeBackend` in `public/js/api-adapter.js` notices `/api/v1/health` and the app stops keeping its own private copy of the data): **everyone who opens the printed link, on any device, shares one Lime, live**. Served by anything else (the Python server, `file://`) it works as before, local to that browser.
+
+**Try it with two people:** sign in as the two test accounts below in two different browsers (or one normal and one private window), or on a computer and a phone. Messages, replies, reactions, renames, new chats and profile changes show up on the other side within a second.
+
+**Test accounts.** Put the two accounts in `seed-data/test-accounts.local.json` (gitignored, never committed; copy `seed-data/test-accounts.example.json` and edit it). The server prints their emails when it starts, gives them a ready DM with each other, and puts both in the PS 113 Staff Room. They are the only logins that are not the older demo teachers.
+
+**On a phone:** the phone must be on the same Wi-Fi as this computer. Open the "On your network" link the server prints (like `http://192.168.0.127:8000/public/index.html`) in the phone's browser and sign in as one of the test accounts; sign in as the other on the computer.
 
 - **Data** lives in `data/` (gitignored): the op log (`oplog.jsonl`, the source of truth), a cache of the derived state, accounts and sessions, and uploaded files. It survives restarts, and a crash loses nothing that was acknowledged. First run seeds from the same seed the app uses.
 - **Seed teachers** can sign in to the API with the shared demo password from `public/js/demo-config.local.js` (gitignored), as in the browser demo. Without that file they cannot sign in to the API until it exists and the data is reset.
@@ -39,7 +45,7 @@ cd tests && npm install     # once: installs jsdom and puppeteer-core (node_modu
 npm test                    # all suites; or: node run.mjs smoke css auth sync toasts
 ```
 
-Suites: **api** (the dev server and the v1 contract: endpoints, permissions, idempotency, DM dedup, backfill, feed visibility, files, realtime, restart persistence; starts its own server on a temp folder), **smoke** (real `index.html` and `auth.html` load in jsdom with zero errors), **css** (no stray `*/`, and each stylesheet's browser-parsed rule count), **auth** (sign up, sign in, wrong password, the seed-teacher hint, sign out), **sync** (two tabs, a live message, no lost writes 20 + 20; Firefox and Chrome), **toasts** (queue across pages, max 3, an error stays). Each run starts its own static server on a free port and drives your installed Firefox and Chrome. `LIME_TEST_SERVER=dev npm test` runs the browser suites against the dev server instead of the Python one. See `tests/README.md`.
+Suites: **e2e-server** (three people in Firefox, a second Firefox started with `-private`, and Chrome, all on the dev server: live DMs, groups, replies, reactions, rename/add/delete, name and photo changes, attachments, DM dedup, offline sending, 20 + 20 writes, reset), **api** (the dev server and the v1 contract: endpoints, permissions, idempotency, DM dedup, backfill, feed visibility, files, realtime, restart persistence; starts its own server on a temp folder), **smoke** (real `index.html` and `auth.html` load in jsdom with zero errors), **css** (no stray `*/`, and each stylesheet's browser-parsed rule count), **auth** (sign up, sign in, wrong password, the seed-teacher hint, sign out), **sync** (two tabs, a live message, no lost writes 20 + 20; Firefox and Chrome), **toasts** (queue across pages, max 3, an error stays). Each run starts its own static server on a free port and drives your installed Firefox and Chrome. `LIME_TEST_SERVER=dev npm test` runs the browser suites against the dev server instead of the Python one. See `tests/README.md`.
 
 ## Constraints
 

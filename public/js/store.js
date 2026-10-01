@@ -21,6 +21,12 @@ const LimeStore = (function () {
   let currentUserId = null;
   let loggedFallback = false;
   let saveTimer = null;
+  // LIME-74: with the dev server running, the store talks to /api/v1 through ApiAdapter (api-adapter.js) instead of
+  // LocalAdapter. Reads below are the same either way; only the writes and init differ.
+  let api = false;
+  const presence = new Map(); // userId -> 'active' (realtime) — anyone else is away
+  const directory = new Map(); // people found through the directory, kept so a chip or new chat can show them
+  let localAppearance = null; // appearance stays on this device (docs/api.md)
 
   function adapter() {
     // The only branch that exists yet — see the file header comment.
@@ -250,6 +256,7 @@ const LimeStore = (function () {
   // The `storage` event fires in the *other* tabs only, so it is exactly
   // "someone else saved". null newValue/key = the snapshot was removed.
   function onStorage(e) {
+    if (api) return; // with the API, tabs sync through the server
     if (e.storageArea && e.storageArea !== window.localStorage) return;
     if (e.key !== null && e.key !== 'lime-state-v1') return;
     if (!currentUserId) return; // not initialised yet
@@ -274,6 +281,7 @@ const LimeStore = (function () {
   // addressed for one specific write; auth.js's signOut() calls this for
   // every other write.
   function flush() {
+    if (api) { ApiAdapter.persistNow(); ApiAdapter.flush(); return; }
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
@@ -351,10 +359,87 @@ const LimeStore = (function () {
     return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1];
   }
 
+
+  // ── LIME-74: the API backend ─────────────────────────────────────────
+  // Re-reads the adapter's view (confirmed + our unconfirmed ops) into the arrays every read below uses.
+  function adoptView() {
+    const v = ApiAdapter.view();
+    profiles = v.profiles;
+    conversations = [...v.conversations.values()];
+    members = [...v.conversation_members.values()];
+    messages = [...v.messages.values()];
+    reactions = [...v.message_reactions.values()];
+    messageAttachments = [...v.message_attachments.values()];
+  }
+
+  // What the UI sees of a person: the stored profile plus things that are not stored (presence; this device's appearance).
+  function decorate(p) {
+    if (!p || !api) return p;
+    const out = Object.assign({}, p);
+    out.status = p.id === currentUserId || presence.get(p.id) === 'active' ? 'online' : 'offline';
+    if (p.id === currentUserId) out.appearance = localAppearance || undefined;
+    return out;
+  }
+
+  // Tell every view what changed (same events a local write emits), flagged as coming from outside this tab's own action.
+  function emitApiChanges(changed) {
+    remoteSyncing = true;
+    try {
+      const convs = new Set();
+      changed.messages.forEach((id) => { const m = ApiAdapter.view().messages.get(id); if (m) convs.add(m.conversation_id); });
+      convs.forEach((conversationId) => emit('lime:messages-changed', { conversationId, kind: 'remote' }));
+      new Set([...changed.message_reactions].map((k) => k.split('|')[0])).forEach((messageId) => emit('lime:reactions-changed', { messageId, kind: 'remote' }));
+      if (changed.conversations.size || changed.conversation_members.size) emit('lime:conversations-changed', { kind: 'remote' });
+      if (changed.profiles.size) emit('lime:profile-changed', { profileId: [...changed.profiles][0], profileIds: [...changed.profiles], kind: 'remote' });
+      emit('lime:remote-synced', { changed, messageConversations: [...convs] });
+    } finally {
+      remoteSyncing = false;
+    }
+  }
+
+  const REJECTED_TITLES = {
+    'message.send': 'Message not sent', 'reaction.toggle': 'Reaction not saved', 'conversation.create': 'Couldn’t start the chat',
+    'conversation.rename': 'Couldn’t rename the chat', 'conversation.delete': 'Couldn’t delete the chat', 'membership.add': 'Couldn’t add people',
+    'profile.update': 'Profile not saved', 'profile.setEmail': 'Email not changed',
+  };
+  const apiHooks = {
+    onViewChanged(changed) { adoptView(); emitApiChanges(changed); },
+    onRejected(op, error) {
+      // The adapter has already taken the change back out of the view; say so.
+      adoptView();
+      emit('lime:conversations-changed', { kind: 'rollback' });
+      emit('lime:messages-changed', { kind: 'rollback' });
+      emit('lime:profile-changed', { kind: 'rollback' });
+      if (window.LimeToast) LimeToast.show({ title: REJECTED_TITLES[op.type] || 'Change not saved', body: error.message, tone: 'error' });
+    },
+    onAlias(from, to) { adoptView(); emit('lime:conversation-aliased', { from, to }); },
+    onPresence(userId, status) {
+      if (status === 'active') presence.set(userId, 'active'); else presence.delete(userId);
+      remoteSyncing = true;
+      try { emit('lime:profile-changed', { profileId: userId, kind: 'presence' }); } finally { remoteSyncing = false; }
+    },
+    onSessionEnded(kind) {
+      ApiAdapter.forgetLocal(kind === 'reset');
+      if (window.LimeToast) {
+        if (kind === 'reset') LimeToast.queue({ title: 'Demo data was reset', body: 'All accounts and changes were cleared.', tone: 'info' });
+        else LimeToast.queue({ title: 'You’ve been signed out', body: 'Sign in again to continue.', tone: 'info' });
+      }
+      if (window.LimeAuth) LimeAuth.signOut({ silent: true });
+    },
+  };
+
+  // Writes whose outcome the person must see right away (changing an email) wait for the server, up to 10 seconds.
+  function apiWriteAndWait(type, payload) {
+    const w = ApiAdapter.write(type, payload, { wait: true });
+    adoptView();
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new ApiAdapter.ApiError(0, 'offline', 'Can’t reach Lime right now. Check your connection and try again.')), 10000));
+    return Promise.race([w.done, timeout]).catch((err) => { ApiAdapter.discard(w.op); adoptView(); throw err; });
+  }
+
   // ── reads ──────────────────────────────────────────────────
 
   function getProfile(id) {
-    return profiles.get(id) || null;
+    return decorate(profiles.get(id) || directory.get(id)) || null;
   }
 
   // Not in docs/data-model.md's original contract list — added in LIME-31
@@ -362,7 +447,7 @@ const LimeStore = (function () {
   // uniqueness check has a way to ask "does any profile already have this
   // email" without reaching into the cache directly.
   function findProfileByEmail(email) {
-    return [...profiles.values()].find((p) => p.email === email) || null;
+    return decorate([...profiles.values()].find((p) => p.email === email)) || null;
   }
 
   // Not in docs/data-model.md's original contract list — added in
@@ -371,7 +456,7 @@ const LimeStore = (function () {
   // filter client-side (name/email/school/phone) — excluding the current
   // user, and sorting, are the picker's own concern, not this read's.
   function listProfiles() {
-    return [...profiles.values()];
+    return [...profiles.values()].map(decorate);
   }
 
   function getCurrentUserId() {
@@ -389,7 +474,7 @@ const LimeStore = (function () {
   function getMembers(conversationId) {
     return members
       .filter((m) => m.conversation_id === conversationId)
-      .map((m) => profiles.get(m.user_id))
+      .map((m) => getProfile(m.user_id))
       .filter(Boolean);
   }
 
@@ -430,6 +515,11 @@ const LimeStore = (function () {
       .filter((c) => !types || types.includes(c.type));
   }
 
+  // Thread order is arrival (the server's order); a message not yet accepted by the server goes last (docs/api.md section 6).
+  function byArrival(a, b) {
+    return (a._pending ? 1 : 0) - (b._pending ? 1 : 0) || new Date(a.created_at) - new Date(b.created_at);
+  }
+
   function listMessages(conversationId, options) {
     const threadOnly = options && options.threadOnly;
     // LIME-34: cleared_at is per-membership (your own "delete for me"
@@ -441,13 +531,13 @@ const LimeStore = (function () {
       .filter((m) => m.conversation_id === conversationId)
       .filter((m) => !clearedAt || new Date(m.created_at) > new Date(clearedAt))
       .filter((m) => !threadOnly || !m.reply_to)
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      .sort(byArrival);
   }
 
   function listReplies(messageId) {
     return messages
       .filter((m) => m.reply_to === messageId)
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      .sort(byArrival);
   }
 
   // Not in docs/data-model.md's original contract list — added as a small,
@@ -538,6 +628,21 @@ const LimeStore = (function () {
   // produces any more, only ever read back (getAttachments below).
   function sendMessage(conversationId, options) {
     const opts = options || {};
+    if (api) {
+      const messageId = crypto.randomUUID();
+      ApiAdapter.write('message.send', {
+        message_id: messageId, conversation_id: conversationId, content: opts.content != null ? opts.content : null, type: 'text',
+        metadata: opts.metadata || null, reply_to: opts.replyTo || null,
+        attachments: (opts.attachments || []).map((att, index) => ({
+          attachment_id: crypto.randomUUID(), file_id: att.path, name: att.name != null ? att.name : null, size: att.size != null ? att.size : null,
+          mime: att.mime != null ? att.mime : null, width: att.width != null ? att.width : null, height: att.height != null ? att.height : null,
+          duration_seconds: att.duration_seconds != null ? att.duration_seconds : null, position: index,
+        })),
+      });
+      adoptView();
+      emit('lime:messages-changed', { conversationId, messageId, kind: opts.replyTo ? 'reply' : 'message' });
+      return Promise.resolve(getMessage(messageId));
+    }
     const message = {
       id: crypto.randomUUID(),
       conversation_id: conversationId,
@@ -607,6 +712,13 @@ const LimeStore = (function () {
   }
 
   function toggleReaction(messageId, emoji) {
+    if (api) {
+      const mine = reactions.find((r) => r.message_id === messageId && r.user_id === currentUserId && r.emoji === emoji);
+      ApiAdapter.write('reaction.toggle', { message_id: messageId, emoji, present: !(mine && !mine.removed_at) });
+      adoptView();
+      emit('lime:reactions-changed', { messageId, kind: 'reaction' });
+      return Promise.resolve(getReactions(messageId));
+    }
     // LIME-69: removing is soft (removed_at) so a merge with another tab
     // can't resurrect it; re-adding the same emoji revives the same row.
     const now = new Date().toISOString();
@@ -632,6 +744,16 @@ const LimeStore = (function () {
       const dmKey = [...memberIds].sort().join(':');
       const existing = conversations.find((c) => c.dm_key === dmKey);
       if (existing) return Promise.resolve(existing);
+    }
+    if (api) {
+      const conversationId = crypto.randomUUID();
+      ApiAdapter.write('conversation.create', {
+        conversation_id: conversationId, type: opts.type, name: opts.name || null, description: opts.description || null,
+        member_ids: memberIds.filter((u) => u !== currentUserId),
+      });
+      adoptView();
+      emit('lime:conversations-changed', { conversationId, kind: 'create' });
+      return Promise.resolve(getConversation(conversationId));
     }
     const now = new Date().toISOString();
     const conversation = {
@@ -672,6 +794,15 @@ const LimeStore = (function () {
     const conversation = getConversation(conversationId);
     if (!conversation) return Promise.reject(new Error('LimeStore: no such conversation'));
     if (!can('addMembers', conversation)) return Promise.reject(new Error('LimeStore: not allowed to add members to this conversation'));
+    if (api) {
+      const have = new Set(members.filter((m) => m.conversation_id === conversationId).map((m) => m.user_id));
+      const added = [...new Set(profileIds || [])].filter((u) => !have.has(u));
+      if (added.length === 0) return Promise.resolve(conversation);
+      ApiAdapter.write('membership.add', { conversation_id: conversationId, user_ids: added });
+      adoptView();
+      emit('lime:conversations-changed', { conversationId, kind: 'addMembers' });
+      return Promise.resolve(getConversation(conversationId));
+    }
     const now = new Date().toISOString();
     const existingIds = new Set(getMembers(conversationId).map((p) => p.id));
     const added = [];
@@ -698,6 +829,12 @@ const LimeStore = (function () {
   function renameConversation(id, name) {
     const conversation = getConversation(id);
     if (!conversation) return Promise.reject(new Error('LimeStore: no such conversation'));
+    if (api) {
+      ApiAdapter.write('conversation.rename', { conversation_id: id, name });
+      adoptView();
+      emit('lime:conversations-changed', { conversationId: id, kind: 'rename' });
+      return Promise.resolve(getConversation(id));
+    }
     conversation.name = name;
     conversation.updated_at = new Date().toISOString();
     scheduleSave();
@@ -708,6 +845,12 @@ const LimeStore = (function () {
   function setStarred(id, bool) {
     const membership = getMyMembership(id);
     if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
+    if (api) {
+      ApiAdapter.write('membership.setStarred', { conversation_id: id, starred: !!bool });
+      adoptView();
+      emit('lime:conversations-changed', { conversationId: id, kind: 'star' });
+      return Promise.resolve(getMyMembership(id));
+    }
     membership.starred = !!bool;
     membership.updated_at = new Date().toISOString(); // LIME-69: lets a merge order two edits
     scheduleSave();
@@ -718,6 +861,12 @@ const LimeStore = (function () {
   function setArchived(id, bool) {
     const membership = getMyMembership(id);
     if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
+    if (api) {
+      ApiAdapter.write('membership.setArchived', { conversation_id: id, archived: !!bool });
+      adoptView();
+      emit('lime:conversations-changed', { conversationId: id, kind: 'archive' });
+      return Promise.resolve(getMyMembership(id));
+    }
     membership.archived_at = bool ? new Date().toISOString() : null;
     membership.updated_at = new Date().toISOString(); // LIME-69: lets a merge order two edits
     scheduleSave();
@@ -728,6 +877,12 @@ const LimeStore = (function () {
   function deleteConversation(id) {
     const conversation = getConversation(id);
     if (!conversation) return Promise.reject(new Error('LimeStore: no such conversation'));
+    if (api) {
+      ApiAdapter.write('conversation.delete', { conversation_id: id });
+      adoptView();
+      emit('lime:conversations-changed', { conversationId: id, kind: 'delete' });
+      return Promise.resolve(getConversation(id));
+    }
     conversation.deleted_at = new Date().toISOString();
     scheduleSave();
     emit('lime:conversations-changed', { conversationId: id, kind: 'delete' });
@@ -741,6 +896,12 @@ const LimeStore = (function () {
   function deleteForMe(id) {
     const membership = getMyMembership(id);
     if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
+    if (api) {
+      ApiAdapter.write('conversation.deleteForMe', { conversation_id: id });
+      adoptView();
+      emit('lime:conversations-changed', { conversationId: id, kind: 'clear' });
+      return Promise.resolve(getMyMembership(id));
+    }
     membership.cleared_at = new Date().toISOString();
     membership.updated_at = new Date().toISOString(); // LIME-69: lets a merge order two edits
     scheduleSave();
@@ -751,6 +912,12 @@ const LimeStore = (function () {
   function markRead(conversationId) {
     const membership = getMyMembership(conversationId);
     if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
+    if (api) {
+      ApiAdapter.write('membership.markRead', { conversation_id: conversationId }, { replaceQueued: true });
+      adoptView();
+      emit('lime:conversations-changed', { conversationId, kind: 'read' });
+      return Promise.resolve(getMyMembership(conversationId));
+    }
     membership.last_read_at = new Date().toISOString();
     membership.updated_at = new Date().toISOString(); // LIME-69: lets a merge order two edits
     scheduleSave();
@@ -776,6 +943,12 @@ const LimeStore = (function () {
     if (keys.includes('display_name') && !patch.display_name.trim()) {
       return Promise.reject(new Error('Display name is required.'));
     }
+    if (api) {
+      ApiAdapter.write('profile.update', { patch });
+      adoptView();
+      emit('lime:profile-changed', { profileId: currentUserId });
+      return Promise.resolve(getProfile(currentUserId));
+    }
     Object.assign(profile, patch, { updated_at: new Date().toISOString() });
     scheduleSave();
     emit('lime:profile-changed', { profileId: profile.id });
@@ -791,6 +964,13 @@ const LimeStore = (function () {
   function setAppearance(patch) {
     const profile = getProfile(currentUserId);
     if (!profile) return Promise.reject(new Error('LimeStore: no current profile'));
+    if (api) {
+      // Appearance stays on this device (docs/api.md): kept per person in this browser, never sent to the server.
+      localAppearance = Object.assign({}, DEFAULT_APPEARANCE, localAppearance, patch);
+      try { localStorage.setItem('lime-appearance:' + currentUserId, JSON.stringify(localAppearance)); } catch (e) { /* session only */ }
+      emit('lime:appearance-changed', { appearance: localAppearance });
+      return Promise.resolve(localAppearance);
+    }
     profile.appearance = Object.assign({}, DEFAULT_APPEARANCE, profile.appearance, patch);
     scheduleSave();
     emit('lime:appearance-changed', { appearance: profile.appearance });
@@ -802,6 +982,9 @@ const LimeStore = (function () {
   function setProfileEmail(id, email) {
     const profile = getProfile(id);
     if (!profile) return Promise.reject(new Error('LimeStore: no such profile'));
+    if (api) {
+      return apiWriteAndWait('profile.setEmail', { email }).then(() => { emit('lime:profile-changed', { profileId: id }); return getProfile(id); });
+    }
     profile.email = email;
     profile.updated_at = new Date().toISOString();
     scheduleSave();
@@ -858,9 +1041,31 @@ const LimeStore = (function () {
   // ── lifecycle ──────────────────────────────────────────────
 
   function init() {
-    loadFromAdapter();
-    currentUserId = resolveCurrentUserId();
-    return Promise.resolve();
+    // LIME-74: wait for the backend decision (a quick /api/v1/health probe) before reading anything.
+    return LimeBackend.ready.then(() => {
+      api = LimeBackend.isApi();
+      if (!api) {
+        loadFromAdapter();
+        currentUserId = resolveCurrentUserId();
+        return undefined;
+      }
+      return initApi();
+    });
+  }
+
+  function initApi() {
+    const session = ApiAdapter.session();
+    profiles = new Map(); conversations = []; members = []; messages = []; reactions = []; messageAttachments = [];
+    if (!session) { currentUserId = null; return Promise.resolve(); } // the sign-in page: nobody yet
+    currentUserId = session.userId;
+    try { localAppearance = JSON.parse(localStorage.getItem('lime-appearance:' + session.userId) || 'null'); } catch (e) { localAppearance = null; }
+    return ApiAdapter.open(session.userId, apiHooks).then(() => {
+      adoptView();
+      ApiAdapter.start();
+    }).catch((err) => {
+      if (err && err.code === 'offline' && window.LimeToast) LimeToast.show({ title: 'Can\u2019t reach Lime', body: 'Connect to the internet or start the server, then reload.', tone: 'warning' });
+      else console.error('[LimeStore] could not load your data', err);
+    });
   }
 
   // Local adapter only, per docs/data-model.md — "reset" has no meaning
@@ -871,20 +1076,27 @@ const LimeStore = (function () {
   // localStorage) — wrapping it keeps this working if a future adapter's
   // reset() is synchronous instead.
   function reset() {
+    if (api) return ApiAdapter.devReset().then(() => init()); // everyone connected is sent to sign-in
     return Promise.resolve(adapter().reset()).then(() => init());
   }
 
   // LIME-38.
+  // Appearance backgrounds (conversationId 'appearance') stay on this device; everything else goes to the server.
+  const isDeviceLocalPath = (path) => !path || path.indexOf('blob:') === 0 || path.indexOf('appearance/') === 0;
+
   function uploadAttachment(file, options) {
+    if (api && !(options && options.conversationId === 'appearance')) return ApiAdapter.uploadFile(file);
     return adapter().uploadAttachment(file, options);
   }
 
   function getAttachmentUrl(path) {
+    if (api && !isDeviceLocalPath(path)) return ApiAdapter.fileUrl(path);
     return adapter().getAttachmentUrl(path);
   }
 
   // LIME-52-fix3.
   function deleteAttachment(path) {
+    if (api && !isDeviceLocalPath(path)) return Promise.resolve(); // the server tidies up files nothing refers to
     return adapter().deleteAttachment(path);
   }
 
@@ -894,8 +1106,23 @@ const LimeStore = (function () {
 
   // LIME-44.
   function getLinkPreview(url) {
+    if (api) return ApiAdapter.linkPreview(url).catch(() => adapter().getLinkPreview(url));
     return adapter().getLinkPreview(url);
   }
+
+  // LIME-74. Directory search (the server matches name/school partially, email and phone exactly, and never reveals them).
+  function rememberProfiles(list) { (list || []).forEach((p) => { if (!profiles.has(p.id)) directory.set(p.id, p); }); }
+  function searchProfiles(q) {
+    if (!api) return Promise.resolve([]);
+    return ApiAdapter.searchProfiles(q).then((list) => { rememberProfiles(list); return list; });
+  }
+  // Find a person by their exact email: chat-mates we already know, otherwise the directory's exact-email match.
+  function lookupProfileByEmail(email) {
+    const known = findProfileByEmail(email);
+    if (known || !api) return Promise.resolve(known);
+    return ApiAdapter.searchProfiles(email).then((list) => { rememberProfiles(list); return list[0] || null; });
+  }
+  const isApi = () => api;
 
   return {
     init,
@@ -937,6 +1164,9 @@ const LimeStore = (function () {
     deleteAttachment,
     checkStorageAvailable,
     getLinkPreview,
+    searchProfiles,
+    lookupProfileByEmail,
+    isApi,
     updateProfile,
     setProfileEmail,
     createProfile,

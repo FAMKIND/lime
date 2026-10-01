@@ -1308,6 +1308,42 @@ mapping from every `LimeStore` write to an op) is written down in
 (LIME-72 does). It is built on LIME-69's merge rules above and lists every
 place it differs from them.
 
+## The web app on the API: ApiAdapter, outbox and cache (LIME-74)
+
+When a page is served by `server/dev-server.mjs`, `LimeBackend` (in `public/js/api-adapter.js`) sees `GET /api/v1/health` answer and
+`LimeStore` uses the **ApiAdapter** instead of `LocalAdapter`. The python server and `file://` get no answer and stay on
+`LocalAdapter` exactly as before; the console says which is active (`[Lime] storage backend: ...`). The `LimeStore` contract does not
+change; only where its data lives does.
+
+- **Three states:** `confirmed` (everything the server has told us, up to a `cursor`), the **outbox** (this device's ops the
+  server has not yet confirmed through the feed) and the **view** = confirmed + outbox applied on top. Every `LimeStore` read
+  is from the view, so a write shows at once and the app works offline. The view's rows are copy-on-write, so "changed" simply
+  means "a different object".
+- **A write is an op** (the mapping table in `api.md` section 11): applied to the view, queued, sent to `POST /ops` in order,
+  retried with the same `op_id`s and backoff. A **permanent rejection** removes the op, rebuilds the view (the rollback) and shows an
+  error toast. An op leaves the outbox when its own entry comes back in the feed. Mark-as-read replaces an unsent mark-as-read
+  instead of stacking another. Changing an email is the one write that waits for the server (up to 10 s), because its outcome ("already
+  in use") has to be shown inline.
+- **Feed:** `GET /changes?since=cursor`, nudged by realtime `changed` events (a ticket from `POST /events/ticket`, then
+  `EventSource`), reconnecting with backoff, plus a 30 s poll. `backfill` entries are merged by key; `alias` entries rewrite the outbox
+  and move anyone looking at the dropped conversation to the kept one. `410` or a `log_start` past the cursor means "reset".
+- **Stored in the browser:** tokens in `sessionStorage` (`lime-api-session`, per tab, as LIME-69 decided; `lime-demo-session` still
+  holds `{userId, email}` for the session gate); `lime-device-id` in `localStorage`; the **cache** `lime-api-cache:<userId>`
+  (confirmed rows + cursor) so a reload is instant; the **outbox** one key per op `lime-outbox:<userId>:<op_id>` (so two tabs never
+  overwrite each other, and a signed-out device keeps unsent ops for that person); **appearance** `lime-appearance:<userId>`
+  (appearance stays on the device). Signing out clears the tokens and keeps the cache and outbox; a dev-server reset clears them all.
+- **Not data, but decorated on read:** presence (`profile.status` is derived from realtime: connected is `online`, everyone else
+  `offline`) and, for the current person, their device's appearance.
+- **Files:** `uploadAttachment` posts to `/files` and returns the file id as `path`; `getAttachmentUrl` fetches with the token and
+  caches a `blob:` URL. Appearance backgrounds (`conversationId: 'appearance'`, paths starting `appearance/`) stay in IndexedDB.
+- **Message order and time:** thread order is arrival (`created_at` = the server's time); a message the server has not accepted
+  yet (`_pending`) is shown last. The time beside a message is the earlier of `client_ts` and `created_at`, with "Sent 10:05 ·
+  delivered 10:35" when they differ by more than 5 minutes.
+- **Directory:** the New message picker lists the people you chat with, and from 2 typed characters asks `GET /profiles?q=`
+  (their email and phone are never in the results). `LimeStore.searchProfiles`, `lookupProfileByEmail` (share-by-email) and
+  `rememberProfiles` support it. Other people's `email` is absent unless you share a conversation, and no one else's `phone` is ever present.
+- **LIME-69's cross-tab `storage` merge is for `LocalAdapter` only.** On the API, tabs and devices sync through the server.
+
 ## Known gaps, flagged rather than silently resolved
 
 - **"Delete for me" (`cleared_at`) hides messages at the store/UI layer

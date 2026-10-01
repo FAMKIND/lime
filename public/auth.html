@@ -147,12 +147,12 @@
   <script src="js/toast.js"></script>
   <script src="js/password-toggle.js"></script>
 
-  <!-- Gitignored (*.local.js) — sets window.LIME_DEMO_CREDENTIALS locally.
-       404s silently if absent; LimeAuth.signInWithPassword handles that
-       case (only for a seed-teacher email — see its own comment). -->
-  <script src="js/demo-config.local.js"></script>
+  <!-- js/demo-config.local.js (gitignored; sets window.LIME_DEMO_CREDENTIALS) is no longer a script tag here: with the dev
+       server the server checks demo passwords and the file is never served, so api-adapter.js adds it only when this page
+       falls back to the local-only backend. LimeAuth.signInWithPassword handles it being absent. -->
   <script src="js/seed-data.js"></script>
   <script src="js/local-adapter.js"></script>
+  <script src="js/api-adapter.js"></script>
   <script src="js/store.js"></script>
   <script src="js/auth.js"></script>
   <script>
@@ -253,19 +253,22 @@
 
       function goToAccountStep(email) {
         currentEmail = email;
-        if (!forceCreate && LimeAuth.accountExists(email)) {
-          const profile = LimeStore.findProfileByEmail(email);
-          const welcomeName = profile ? firstNameOf(profile.display_name) : '';
-          document.getElementById('auth-welcome-heading').textContent = welcomeName ? ('Welcome back, ' + welcomeName) : 'Welcome back';
-          document.getElementById('auth-password-email').textContent = email;
-          document.getElementById('auth-password').value = '';
-          showStep('password');
-          document.getElementById('auth-password').focus();
-        } else {
-          document.getElementById('auth-create-email').textContent = email;
-          showStep('create');
-          document.getElementById('auth-name').focus();
-        }
+        // LIME-74: accountExists answers at once from this browser's data, or asks the server (a Promise); both work here.
+        Promise.resolve(forceCreate ? false : LimeAuth.accountExists(email)).then((exists) => {
+          if (exists) {
+            const profile = LimeStore.findProfileByEmail(email);
+            const welcomeName = profile ? firstNameOf(profile.display_name) : '';
+            document.getElementById('auth-welcome-heading').textContent = welcomeName ? ('Welcome back, ' + welcomeName) : 'Welcome back';
+            document.getElementById('auth-password-email').textContent = email;
+            document.getElementById('auth-password').value = '';
+            showStep('password');
+            document.getElementById('auth-password').focus();
+          } else {
+            document.getElementById('auth-create-email').textContent = email;
+            showStep('create');
+            document.getElementById('auth-name').focus();
+          }
+        }).catch((err) => showError(err.message));
       }
 
       if (currentEmail) goToAccountStep(currentEmail);
@@ -282,10 +285,10 @@
         e.preventDefault();
         clearError();
         const password = document.getElementById('auth-password').value;
-        LimeAuth.signInWithPassword({ email: currentEmail, password }).then(() => {
+        LimeAuth.signInWithPassword({ email: currentEmail, password }).then((session) => {
           // LIME-68: shown by index.html after the redirect below.
           const signedInProfile = LimeStore.findProfileByEmail(currentEmail);
-          LimeToast.queue({ title: 'Signed in as ' + (signedInProfile ? signedInProfile.display_name : currentEmail), tone: 'info' });
+          LimeToast.queue({ title: 'Signed in as ' + ((session && session.displayName) || (signedInProfile ? signedInProfile.display_name : currentEmail)), tone: 'info' });
           // ?from=auth — LIME-33-fix's own marker (document.referrer is
           // empty for file:// navigations in Firefox, confirmed
           // directly — see TEND.md's LIME-33-fix entry). The hash

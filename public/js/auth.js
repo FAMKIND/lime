@@ -56,6 +56,7 @@ const LimeAuth = (function () {
   // with no local credential yet both count as an existing account.
   function accountExists(email) {
     const normalized = (email || '').trim().toLowerCase();
+    if (useApi()) return viaApi(ApiAdapter.accountExists(normalized)); // a Promise here; auth.html handles both
     const credentials = loadCredentials();
     return !!(credentials[normalized] || LimeStore.findProfileByEmail(normalized));
   }
@@ -128,6 +129,7 @@ const LimeAuth = (function () {
     if (!checkStorageWorks()) {
       return Promise.reject(new Error('Your browser isn\'t letting Lime save data on this computer right now — private browsing or blocked cookies/site data are the most common causes.'));
     }
+    if (useApi()) return viaApi(ApiAdapter.signUp(email, password, displayName));
 
     const credentials = loadCredentials();
     // Unique across BOTH credentials and profiles — a seed teacher's
@@ -163,6 +165,8 @@ const LimeAuth = (function () {
       return Promise.reject(new Error('Your browser isn\'t letting Lime save data on this computer right now — private browsing or blocked cookies/site data are the most common causes.'));
     }
 
+    if (useApi()) return viaApi(ApiAdapter.signIn(email, password));
+
     const credentials = loadCredentials();
     const credential = credentials[email];
     if (credential) {
@@ -196,12 +200,20 @@ const LimeAuth = (function () {
     return Promise.resolve(readSession());
   }
 
+  // LIME-74: with the dev server, accounts live on the server; these wrap its errors as plain Errors the pages already show.
+  const useApi = () => window.LimeBackend && LimeBackend.isApi();
+  const viaApi = (promise) => promise.catch((err) => { throw new Error(err.message); });
+
   function changeEmail(newEmail) {
     const email = (newEmail || '').trim().toLowerCase();
     if (!isValidEmail(email)) {
       return Promise.reject(new Error('Enter a valid email address.'));
     }
     const currentId = LimeStore.getCurrentUserId();
+    if (useApi()) {
+      // The server decides whether the email is free (it may belong to someone we cannot see) and renames the sign-in too.
+      return viaApi(LimeStore.setProfileEmail(currentId, email).then((profile) => { ApiAdapter.setSessionEmail(email); return profile; }));
+    }
     const existing = LimeStore.findProfileByEmail(email);
     if (existing && existing.id !== currentId) {
       return Promise.reject(new Error('That email is already in use.'));
@@ -247,6 +259,7 @@ const LimeAuth = (function () {
     if (next !== confirm) {
       return Promise.reject(new Error('New password and confirmation do not match.'));
     }
+    if (useApi()) return viaApi(ApiAdapter.changePassword(current, next).then(() => ({ message: 'Your password has been changed.' })));
     const currentId = LimeStore.getCurrentUserId();
     const user = LimeStore.getCurrentUser();
     if (!user || !user.email) {
@@ -278,6 +291,10 @@ const LimeAuth = (function () {
   // is a synchronous no-op when there's nothing pending, so this is safe
   // to call unconditionally on every sign-out, not just after a write.
   function signOut(options) {
+    if (useApi()) {
+      if (window.LimeStore) LimeStore.flush(); // keeps the local copy and tries to send anything still queued
+      ApiAdapter.signOut(); // ends this device's session on the server and clears the tokens
+    }
     try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* nothing to clear */ }
     // LIME-68: shown on the auth page after the redirect. The reset-demo-
     // data flow queues its own toast and passes { silent: true }.
@@ -293,6 +310,7 @@ const LimeAuth = (function () {
   // this module's own concern, per the same reasoning email/password
   // never go through LimeStore.updateProfile either).
   function resetCredentials() {
+    if (useApi()) return; // the server's own reset clears the accounts
     localStorage.removeItem(CREDENTIALS_KEY);
   }
 

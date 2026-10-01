@@ -66,6 +66,7 @@ export async function launch(name = 'chrome') {
 // Messages that are noise, not failures (documented in TEND.md).
 const IGNORABLE = [
   /demo-config\.local/, // gitignored file; 404 when absent
+  /Failed to load resource.*status of (401|403|404|409|410)/, // the app's own expected answers (wrong password, taken email, ...)
   /Failed to load resource.*404/,
   /downloadable font/, // Google Fonts blocked offline
   /ResizeObserver loop/,
@@ -105,4 +106,9 @@ export async function wipeStorage(browser, base) {
   await page.goto(base + 'auth.html');
   await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
   await page.close();
+}
+
+// True when `base` is served by server/dev-server.mjs (the API answers), i.e. the app runs on the API backend.
+export async function isDevServer(base) {
+  try { const r = await fetch(new URL('/api/v1/health', base)); return r.ok; } catch (e) { return false; }
 }

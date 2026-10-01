@@ -263,6 +263,20 @@ endpoint except `/auth/signup`, `/auth/signin`, `/auth/refresh` and
 `POST /auth/signout`
 - Revokes the calling device's refresh token. Returns `204`.
 
+`POST /auth/password` (LIME-74)
+- Body: `{ current_password, new_password }`. Verifies the current password, stores a new salted hash, and **revokes every
+  other device's refresh token** (other devices are signed out at once); the calling device stays signed in. Returns
+  `{ ok: true }`.
+- `403 forbidden` ("Current password is incorrect."), `400 bad_request` for a new password under 8 characters or equal to
+  the current one. A seed teacher who still uses the shared demo password gets their own credential from this point.
+- Attempts count towards the same per-email rate limit as sign-in.
+
+`POST /auth/lookup` (LIME-74, **development phase only**)
+- Body: `{ email }`. Returns `{ exists: boolean }`. The email-first sign-in page uses it to choose between "sign in" and
+  "create account". It tells anyone whether an email has an account (rate limited to 60 a minute per address), which is the
+  account-enumeration trade-off the otherwise generic sign-in errors avoid. **A production deployment should remove it**
+  (for example one combined sign-in/sign-up form, or an emailed link) and the web app's flow with it.
+
 ### Ops
 
 `POST /ops`
@@ -356,7 +370,8 @@ the feed. It travels over realtime only, as `{ "type": "presence",
   today); the status field is reserved. The seed profiles' stored `status`
   values are display data only and are not presence.
 - The dev server (LIME-73) implements the minimal version: connected is
-  `active`, disconnected is `away`.
+  `active`, disconnected is `away`. People who become chat-mates **after** both connected (a new chat, someone added) are
+  sent each other's presence at that moment (LIME-74), not only at connection time.
 
 ### Directory
 
@@ -388,7 +403,7 @@ the feed. It travels over realtime only, as `{ "type": "presence",
 
 ### Health
 
-`GET /health` returns `{ ok: true, api: 'v1', seq }` with no auth.
+`GET /health` returns `{ ok: true, api: 'v1', seq, log_start }` with no auth. `log_start` is the oldest `seq` the server can still serve a feed from; a client whose cursor is below it knows the server was reset (dev server) or compacted, and must start over. The web app also uses `GET /health` on the same origin to decide whether to use the API at all.
 
 ### Dev server only (outside the contract)
 
@@ -518,6 +533,11 @@ same state LIME-69's merge reaches for any case the local merge handles.
   its outbox) just confirms it: remove it from the outbox and take its `seq`
   and `server_ts`. This is what keeps optimistic local changes from being
   applied twice.
+- **Partial backfill entries (LIME-74).** An op does not carry the profiles of the people it mentions, so the server also
+  sends **`backfill` entries with only some tables**: every member of a **new conversation** gets `conversation`,
+  `conversation_members` and `profiles` (no messages yet); when people are **added** to a conversation, each *existing* member
+  gets just the new people's `conversation_members` rows and `profiles`. A client merges whichever keys are present, by key
+  (`mergeBackfill`). Without this a member could not show who else was in the conversation.
 - **Backfill entries.** When someone is added to a conversation they have
   never seen, the ops that built it are before their cursor and are not in
   their feed. So at the moment `membership.add` takes effect the server puts
@@ -606,6 +626,11 @@ Matches the RLS draft in `schema.sql`:
     same audience.
 
 ### Files
+
+**Images cannot send a bearer header** (`<img src>`), so the web app fetches `GET /files/:id` with the token, turns the bytes
+into a `blob:` URL, and caches it for the session (`getAttachmentUrl`). **Production alternative:** short-lived signed URLs
+(`GET /files/:id/url` returning a URL valid for a few minutes), which also let the browser cache and stream media and let a
+CDN serve it; not built.
 
 `GET /files/:id` is allowed to: the **uploader**; any **member** of the
 conversation of a message whose attachment refers to the file; and, for a
@@ -733,14 +758,17 @@ alone cannot do background Bluetooth relay on iOS or Android.
 8. **Added by the review:** presence (section 4, Presence), link previews
    (section 4), and the web sign-in persistence note (section 8).
 
+### Added by LIME-74 (the web app on the API)
+
+13. **`POST /auth/lookup`** exists for the email-first sign-in page and is development-phase only (section 4). It reveals
+    whether an email has an account. The first name on the "Welcome back, Jean" heading is not returned, so that heading is
+    just "Welcome back" on the API backend.
+14. **Partial backfill entries** (section 7) deliver the profiles of the people a new or changed conversation involves.
+15. **`log_start` on `/health`** lets a client tell "the dev server was reset" from "I was signed out".
+
 ### Still open
 
-9. **Changing a password.** The app has `LimeAuth.changePassword`
-   (verify the current password, store a new one), but this contract has no
-   endpoint for it. It needs one before the web app can move to the server
-   (for example `POST /auth/password` with `{ current_password,
-   new_password }`, which also revokes the user's other devices' refresh
-   tokens). **Not built by LIME-73**; the dev server returns `404` for it.
+9. ~~Changing a password~~ **Done in LIME-74:** `POST /auth/password` (section 4).
 10. **Error code for an unknown op `type`.** Section 5 lists `invalid_op` for
     a bad op and `unsupported_op` for an op type from a newer client. The dev
     server returns `unsupported_op` for any `type` it does not know, and

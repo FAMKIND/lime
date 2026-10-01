@@ -28,10 +28,13 @@ export async function run({ base, check }) {
     await nav;
     await page.waitForFunction(() => window.LimeStore && LimeStore.getCurrentUser(), { polling: 10, timeout: 10000 });
     check('sign up lands in the app as the new person', (await page.evaluate(() => LimeStore.getCurrentUser().display_name)) === 'Ada Lovelace');
-    check('sign up stored a credential, never the plain password', await page.evaluate(() => {
+    const api = await page.evaluate(() => LimeStore.isApi());
+    check(api ? 'sign up gave this tab tokens, and the plain password is stored nowhere in the browser' : 'sign up stored a credential, never the plain password', await page.evaluate((isApi) => {
+      const all = JSON.stringify(Object.assign({}, localStorage)) + JSON.stringify(Object.assign({}, sessionStorage));
+      if (isApi) return !!JSON.parse(sessionStorage.getItem('lime-api-session') || 'null').access_token && !all.includes('password123');
       const raw = localStorage.getItem('lime-auth-v1') || '';
       return raw.includes('ada@example.com') && !raw.includes('password123');
-    }));
+    }, api));
     check('the session is per tab (sessionStorage, not localStorage)', await page.evaluate(() => !!sessionStorage.getItem('lime-demo-session') && !localStorage.getItem('lime-demo-session')));
 
     // Sign out

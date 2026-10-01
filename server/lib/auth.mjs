@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
-import { E, ensureDir, writeJsonAtomic, readJson, sha256, b64url, isEmail, isId, uuid, nowIso } from './util.mjs';
+import { E, ApiError, ensureDir, writeJsonAtomic, readJson, sha256, b64url, isEmail, isId, uuid, nowIso } from './util.mjs';
 
 export const PBKDF2_ITERATIONS = 600000;
 const ACCESS_TTL_SECS = 15 * 60;
@@ -25,6 +25,7 @@ export class Auth {
     this.secret = fs.readFileSync(this.secretFile, 'utf8').trim();
     this.tickets = new Map(); // single-use realtime tickets, in memory only
     this.failures = new Map(); // email -> [timestamps]
+    this.lookups = new Map(); // remote address -> [timestamps]
   }
   save() { writeJsonAtomic(this.file, this.data); }
 
@@ -41,6 +42,41 @@ export class Auth {
       if (email && !this.data.credentials[email]) { this.data.credentials[email] = { user_id: p.id, shared_demo: true }; changed = true; }
     }
     if (changed) this.save();
+  }
+
+  // The dedicated test accounts get a real credential (own salt and hash). Only adds what is missing.
+  async ensureAccounts(accounts, password) {
+    for (const a of accounts) {
+      const email = a.email.toLowerCase();
+      if (!this.data.credentials[email]) await this.createAccount(email, password, a.id);
+    }
+  }
+
+  hasEmailLookup(address) {
+    const now = Date.now();
+    const recent = (this.lookups.get(address) || []).filter((t) => now - t < 60000);
+    recent.push(now);
+    this.lookups.set(address, recent);
+    if (recent.length > 60) throw E.rateLimited(30);
+  }
+
+  // Change a password: verify the current one, store a new own credential, end every OTHER device's session.
+  async changePassword(userId, deviceId, current, next) {
+    if (typeof current !== 'string' || typeof next !== 'string') throw E.badRequest('current_password and new_password are required.');
+    if (next.length < 8 || next.length > 200) throw E.badRequest('New password must be at least 8 characters.');
+    if (next === current) throw E.badRequest('New password must be different from your current password.');
+    const email = Object.keys(this.data.credentials).find((e) => this.data.credentials[e].user_id === userId);
+    if (!email) throw E.notFound('No account to change the password for.');
+    this.checkRate(email);
+    const cred = this.data.credentials[email];
+    let ok;
+    if (cred.shared_demo) ok = !!this.data.demo && (await pbkdf2(current, Buffer.from(this.data.demo.salt, 'base64'), this.data.demo.iterations)) === this.data.demo.hash;
+    else ok = (await pbkdf2(current, Buffer.from(cred.salt, 'base64'), cred.iterations)) === cred.hash;
+    if (!ok) { this.recordFailure(email); throw E.forbidden('Current password is incorrect.'); }
+    const salt = crypto.randomBytes(16);
+    this.data.credentials[email] = { user_id: userId, salt: salt.toString('base64'), iterations: PBKDF2_ITERATIONS, hash: await pbkdf2(next, salt, PBKDF2_ITERATIONS) };
+    for (const s of Object.values(this.data.sessions)) if (s.user_id === userId && s.device_id !== deviceId) s.revoked = true;
+    this.save();
   }
 
   renameEmail(userId, oldEmail, newEmail) {
@@ -73,8 +109,9 @@ export class Auth {
     let ok = false;
     if (cred && cred.shared_demo) {
       const demo = this.data.demo;
-      if (!demo) { throw E.invalidCredentials(); }
+      if (!demo) throw new ApiError(401, 'invalid_credentials', 'Demo teachers can\u2019t sign in: this server has no demo password configured (public/js/demo-config.local.js).');
       ok = (await pbkdf2(password, Buffer.from(demo.salt, 'base64'), demo.iterations)) === demo.hash;
+      if (!ok) { this.recordFailure(email); throw new ApiError(401, 'invalid_credentials', 'Incorrect password. Demo teachers use the shared demo password unless you\u2019ve changed it in Settings.'); }
     } else if (cred) {
       ok = (await pbkdf2(password, Buffer.from(cred.salt, 'base64'), cred.iterations)) === cred.hash;
     } else {

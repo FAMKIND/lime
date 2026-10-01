@@ -11,7 +11,7 @@ import { ApiError, E, mimeFor, isId, uuid } from './lib/util.mjs';
 import { Engine } from './lib/engine.mjs';
 import { Auth, checkSignup } from './lib/auth.mjs';
 import { Files, MAX_FILE_BYTES, readBody, parseMultipartFile } from './lib/files.mjs';
-import { loadSeed, loadDemoPassword } from './lib/seed.mjs';
+import { loadSeed, loadDemoPassword, loadTestAccounts } from './lib/seed.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const arg = (name) => { const i = process.argv.indexOf('--' + name); return i > -1 ? process.argv[i + 1] : undefined; };
@@ -28,6 +28,13 @@ const engine = new Engine({ dataDir: DATA_DIR, seedLoader: () => seedData, files
 const auth = new Auth(DATA_DIR, demoPassword);
 await auth.ensureSeedCredentials(engine.seedProfileIds.map((id) => engine.profiles.get(id)).filter(Boolean));
 engine.emailChanged = (userId, oldEmail, newEmail) => auth.renameEmail(userId, oldEmail, newEmail);
+const testAccounts = loadTestAccounts(REPO_ROOT);
+async function ensureTestAccounts() {
+  if (!testAccounts) return;
+  engine.ensureTestAccounts(testAccounts.accounts);
+  await auth.ensureAccounts(testAccounts.accounts, testAccounts.password);
+}
+await ensureTestAccounts();
 files.sweep();
 setInterval(() => files.sweep(), 60 * 60 * 1000).unref();
 
@@ -40,7 +47,18 @@ function broadcastPresence(userId, status) {
     for (const res of connections.get(other) || []) sse(res, { type: 'presence', user_id: userId, status });
   }
 }
+// People who become chat-mates after connecting (a new chat, someone added) have not heard each other's presence yet.
+function syncPresence(userId) {
+  const mine = connections.get(userId);
+  for (const other of engine.coMemberIds(userId)) {
+    if (other === userId) continue;
+    const theirs = connections.get(other);
+    if (mine && mine.size && theirs) for (const res of theirs) sse(res, { type: 'presence', user_id: userId, status: 'active' });
+    if (theirs && theirs.size && mine) for (const res of mine) sse(res, { type: 'presence', user_id: other, status: 'active' });
+  }
+}
 engine.subscribe((entry) => {
+  if (entry.kind === 'backfill' && entry.to) syncPresence(entry.to);
   if (entry.audience === null) { for (const set of connections.values()) for (const res of set) sse(res, { type: 'changed', seq: entry.seq }, entry.seq); return; }
   for (const userId of entry.audience || []) for (const res of connections.get(userId) || []) sse(res, { type: 'changed', seq: entry.seq }, entry.seq);
 });
@@ -85,7 +103,22 @@ function requireAuth(req) {
 async function api(req, res, url) {
   const route = req.method + ' ' + url.pathname.replace(/^\/api\/v1/, '');
   switch (route) {
-    case 'GET /health': return sendJson(res, 200, { ok: true, api: 'v1', seq: engine.seq });
+    case 'GET /health': return sendJson(res, 200, { ok: true, api: 'v1', seq: engine.seq, log_start: engine.meta.log_start });
+
+    // Development phase only: lets the email-first sign-in page choose between "sign in" and "create account". It tells anyone
+    // whether an email has an account (rate limited per address); production should replace it (docs/api.md).
+    case 'POST /auth/lookup': {
+      auth.hasEmailLookup(req.socket.remoteAddress);
+      const body = await jsonBody(req);
+      if (typeof body.email !== 'string') throw E.badRequest('email is required.');
+      return sendJson(res, 200, { exists: auth.hasEmail(body.email.trim().toLowerCase()) });
+    }
+    case 'POST /auth/password': {
+      const { userId, deviceId } = requireAuth(req);
+      const body = await jsonBody(req);
+      await auth.changePassword(userId, deviceId, body.current_password, body.new_password);
+      return sendJson(res, 200, { ok: true });
+    }
 
     case 'POST /auth/signup': {
       const body = await jsonBody(req);
@@ -178,6 +211,7 @@ async function api(req, res, url) {
       if (req.headers['x-lime-dev'] !== '1') throw E.forbidden('Send the header X-Lime-Dev: 1 to confirm a dev reset.');
       engine.reset(); auth.reset(); files.reset();
       await auth.ensureSeedCredentials(engine.seedProfileIds.map((id) => engine.profiles.get(id)).filter(Boolean));
+      await ensureTestAccounts();
       for (const set of connections.values()) for (const r of set) r.end();
       connections.clear();
       return sendJson(res, 200, { ok: true, seq: engine.seq });
@@ -224,7 +258,7 @@ function serveStatic(req, res, url) {
   try { rel = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400); return res.end('Bad request'); }
   if (rel === '/') { res.writeHead(302, { Location: '/public/index.html' }); return res.end(); }
   const parts = rel.split('/').filter(Boolean);
-  if (parts.some((p) => p === '..' || p.startsWith('.') || p.includes('\0')) || !STATIC_DIRS.includes(parts[0])) { res.writeHead(404); return res.end('Not found'); }
+  if (parts.some((p) => p === '..' || p.startsWith('.') || p.includes('\0')) || !STATIC_DIRS.includes(parts[0]) || /\.local\.[a-z]+$/i.test(parts[parts.length - 1])) { res.writeHead(404); return res.end('Not found'); }
   let file = path.join(REPO_ROOT, ...parts);
   if (!file.startsWith(REPO_ROOT + path.sep)) { res.writeHead(404); return res.end('Not found'); }
   let stat;
@@ -248,6 +282,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 server.requestTimeout = 5 * 60 * 1000;
+// Node closes an idle keep-alive connection after 5 seconds by default; a browser that reuses it at that instant gets a network
+// error on its next request (and will not retry a POST). Keep idle connections open longer than any browser does.
+server.keepAliveTimeout = 120 * 1000;
+server.headersTimeout = 125 * 1000;
 
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
@@ -263,6 +301,7 @@ server.listen(PORT, '0.0.0.0', () => {
   for (const ip of lan) console.log(`  On your network: http://${ip}:${PORT}/public/index.html   (phones on the same Wi-Fi)`);
   console.log(`  API:            http://localhost:${PORT}/api/v1/health`);
   console.log(`  Data folder:    ${DATA_DIR}`);
+  if (testAccounts) console.log('  Test accounts:  ' + testAccounts.accounts.map((a) => a.email).join(', ') + '   (from seed-data/test-accounts.local.json)');
   if (!demoPassword) console.log('  Note: public/js/demo-config.local.js not found, so seed teachers cannot sign in to the API until one exists and the data is reset.');
   console.log('');
 });

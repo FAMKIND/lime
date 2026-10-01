@@ -1,5 +1,6 @@
 // Two tabs of one browser window, two people (LIME-69): a live message, then no lost writes (20 + 20).
-import { launch, browserAvailable, openSignedIn, wipeStorage, sleep } from '../lib/harness.mjs';
+import { launch, browserAvailable, openSignedIn, wipeStorage, sleep, isDevServer } from '../lib/harness.mjs';
+import { Remote, openAs } from '../lib/dev.mjs';
 
 async function suiteFor(name, { base, check }) {
   const browser = await launch(name);
@@ -7,14 +8,27 @@ async function suiteFor(name, { base, check }) {
   const tag = (s) => `${name}: ${s}`;
   try {
     await wipeStorage(browser, base);
-    const A = await openSignedIn(browser, base, 'teacher-002', 'shem.robinson@ps113.edu', 'A', errors);
-    const B = await openSignedIn(browser, base, 'teacher-001', 'jean@chungrajoon.com', 'B', errors);
-    check(tag('two tabs are two different people'), (await A.evaluate(() => LimeStore.getCurrentUserId())) === 'teacher-002' && (await B.evaluate(() => LimeStore.getCurrentUserId())) === 'teacher-001');
-    await A.bringToFront();
-    await A.evaluate(() => LimeStore.setStarred(LimeStore.listConversations()[0].id, true)); // creates the first snapshot
-    await sleep(500);
+    // Local-only backend: two tabs of one browser share localStorage (LIME-69). On the dev server the same checks run
+    // against the API instead, with two freshly signed-up people.
+    const dev = await isDevServer(base);
+    const remote = new Remote(base);
+    let A, B, personA, personB;
+    if (dev) {
+      personA = await remote.signUp('Sync Ada'); personB = await remote.signUp('Sync Bo');
+      A = await openAs(browser, remote, personA, 'A', errors);
+      B = await openAs(browser, remote, personB, 'B', errors);
+      check(tag('two tabs are two different people'), (await A.evaluate(() => LimeStore.getCurrentUserId())) === personA.userId && (await B.evaluate(() => LimeStore.getCurrentUserId())) === personB.userId);
+    } else {
+      A = await openSignedIn(browser, base, 'teacher-002', 'shem.robinson@ps113.edu', 'A', errors);
+      B = await openSignedIn(browser, base, 'teacher-001', 'jean@chungrajoon.com', 'B', errors);
+      check(tag('two tabs are two different people'), (await A.evaluate(() => LimeStore.getCurrentUserId())) === 'teacher-002' && (await B.evaluate(() => LimeStore.getCurrentUserId())) === 'teacher-001');
+      await A.bringToFront();
+      await A.evaluate(() => LimeStore.setStarred(LimeStore.listConversations()[0].id, true)); // creates the first snapshot
+      await sleep(500);
+    }
 
-    const gid = await A.evaluate(async () => (await LimeStore.createConversation({ type: 'group', name: 'Sync test', memberIds: ['teacher-001'] })).id);
+    await A.bringToFront();
+    const gid = await A.evaluate(async (other) => (await LimeStore.createConversation({ type: 'group', name: 'Sync test', memberIds: [other] })).id, dev ? personB.userId : 'teacher-001');
     await B.waitForFunction((id) => !!document.querySelector('[data-conversation-id="' + id + '"]'), { polling: 10, timeout: 5000 }, gid);
     check(tag('a new group made in A appears in B without a reload'), true);
 
@@ -39,10 +53,12 @@ async function suiteFor(name, { base, check }) {
     await sleep(2000);
     const grab = (page) => page.evaluate((id) => LimeStore.listMessages(id).filter((m) => /^[ab]-\d+$/.test(m.content)).map((m) => m.content), gid);
     const [ca, cb] = [await grab(A), await grab(B)];
-    const stored = await A.evaluate((id) => JSON.parse(localStorage.getItem('lime-state-v1')).messages.filter((m) => m.conversation_id === id && /^[ab]-\d+$/.test(m.content)).length, gid);
+    const stored = dev
+      ? (await remote.api('GET', '/snapshot', { token: personA.token })).body.messages.filter((m) => m.conversation_id === gid && /^[ab]-\d+$/.test(m.content)).length
+      : await A.evaluate((id) => JSON.parse(localStorage.getItem('lime-state-v1')).messages.filter((m) => m.conversation_id === id && /^[ab]-\d+$/.test(m.content)).length, gid);
     check(tag('no lost writes: all 40 in tab A'), ca.length === 40, ca.length);
     check(tag('no lost writes: all 40 in tab B'), cb.length === 40, cb.length);
-    check(tag('no lost writes: all 40 in storage'), stored === 40, stored);
+    check(tag(dev ? 'no lost writes: all 40 on the server' : 'no lost writes: all 40 in storage'), stored === 40, stored);
     check(tag('both tabs show the same order'), JSON.stringify(ca) === JSON.stringify(cb));
     check(tag('each person\'s messages stay in order'), ['a', 'b'].every((p) => ca.filter((x) => x[0] === p).join() === Array.from({ length: 20 }, (_, i) => p + '-' + i).join()));
     const dom = await B.evaluate((id) => ({ rows: document.querySelectorAll('#thread-messages .lime-message').length, store: LimeStore.listMessages(id, { threadOnly: true }).length }), gid);
