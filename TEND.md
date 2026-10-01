@@ -2770,3 +2770,46 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Gate:** the mic and ⌄ look plain at rest in both chat boxes, and the outline appears on hovering either half, on keyboard focus, or while the microphone list is open — with no shift in the button's own position between any of those states.
 
 **Record:** this entry.
+
+## LIME-61
+
+**Goal:** every `seed-button--primary` CTA (solid brand green today) reads the same pale lime as the Add and Send buttons, per the user's own ask on seeing the Share popover's "Copy link" and Settings' "Save changes" next to those two.
+
+**Survey confirmed exactly as the brief described:** 12 `seed-button--primary` call sites by grep — `auth.html` ×3 (Continue with email, Sign in, Create account), `index.html` ×5 (Copy link, two Link-popover "Add" buttons, the picker's Start, the confirm dialog's Confirm), `app.js` ×4 (a `classList.toggle('seed-button--primary', !danger)` that only *adds* the class for non-destructive confirmations — danger dialogs never get it, so they stay untouched automatically — plus Settings' Save changes and the email/password Save buttons). The voice/audio play buttons (`.lime-audio-attachment__play`, `.lime-voice__play`) read `--selected-bg-bold-default` directly, confirmed by reading both rules — neither uses `seed-button--primary`, so they're unaffected by construction, not by care taken not to touch them.
+
+**A real bug found and fixed before it could ship, matching a pitfall already written into this project's own lessons:** the first draft of the new CSS comment read `--selected-bg-bold-*/--selected-text-bold-default` — and `-*/` is a premature comment-closer (`*/`), exactly the PLOT.md-documented hazard from LIME-50-fix ("a `*/` inside a comment... closes it early and silently drops the rest of the stylesheet"). It did: `lime.css`'s browser-parsed rule count silently dropped from ~715 to **166**, on every page that loads it, truncating everything after that point — including Seed's own `.seed-button--primary` override, which is why the very first screenshot still showed solid brand green. Caught immediately by checking the real parsed rule count (not just a byte-level brace balance, which stayed "valid" throughout) before trusting any screenshot — reworded to `--selected-bg-bold-default and --selected-text-bold-default` (no slash adjacent to the asterisk), rule count back to 720. Recorded here in detail since this is the second time this exact mistake has hit this file; a future brief should treat "rule count dropped" as the first thing to check whenever a CSS change doesn't appear to take effect.
+
+**The change, in `public/css/lime.css` only:**
+1. **Override `.seed-button--primary`**, doubled selector (`.seed-button--primary.seed-button--primary`) for a guaranteed specificity win over Seed's own `button.css` rule (0,2,0 vs 0,1,0) regardless of `<link>` order — background/border/text now read `--lime-primary-bg/-hover/-active` and `--lime-primary-ink`, the same custom properties Add and Send already share, so all three can never drift apart. `--selected-bg-bold-*` itself is untouched (confirmed live: the play buttons still render solid green, unaffected).
+2. **Disabled primary buttons:** Seed's own look was `opacity: 0.4` on whatever fill is already there — measured live on the new pale fill, this read as a washed-out, muddy yellow-green ("Save changes" before a change was made looked half-broken, not "disabled"). Replaced with the same `--calm-bg-subtle-default` / `--soil-text-disabled` pairing used for every other calmly-disabled state in this app, `opacity: 1` (this *is* the look now, not a faded version of the active one) — confirmed on Settings' Save changes and the picker's Start, both before (disabled) and after (enabled) a change, light and dark.
+3. **Focus-visible:** Seed's own `box-shadow: var(--seed-shadow-focus)` is a solid-brand-green glow — the exact color family this brief moves away from. Replaced with Lime's own established neutral ring (`outline: 2px solid var(--calm-border-bold-default)`, the same pattern as Add's own two halves). Verified via real Tab-key navigation (not scripted `.focus()`, which Firefox doesn't always treat as `:focus-visible` — confirmed `document.activeElement.matches(':focus-visible')` directly) on Settings' Save changes: a clear, visible ring.
+4. **Elevated-surface distinctness, measured (OKLab ΔE, the same method LIME-56 used), not assumed:** `--lime-primary-bg` against every one of the 8 canvas tones' own `--soil-bg-elevated` — the real background every one of this brief's 12 call sites actually sits on (the auth card, the Share popover, Settings, the picker, and the confirm dialog all read this exact token, confirmed by reading each of their own CSS rules directly — not the lighter `--soil-bg-surface` layer input fields/chips use, which would have given a misleadingly larger, wrong number). Warm's own canvas distance (0.0797) is the brief's own stated baseline. Full table:
+
+   | Tone | ΔE(bg, canvas) | ΔE(bg, elevated) |
+   |---|---|---|
+   | Warm | 0.0797 | 0.0889 |
+   | Cool gray | 0.0842 | 0.0901 |
+   | Warm cream | 0.0772 | 0.0883 |
+   | Blue tint | 0.0848 | 0.0888 |
+   | Pure white | 0.0930 | 0.0930 |
+   | Lemon | 0.0450 | **0.0771** ← below Warm's baseline |
+   | Sage | 0.0808 | **0.0759** ← below Warm's baseline |
+   | Lilac | 0.0941 | 0.0902 |
+   | Dark | 0.0211 | 0.1641 |
+
+   Lemon and Sage's own elevated surfaces fall slightly below Warm's canvas baseline (by ~3–5%). Per the brief, added a 1px border in `--lime-primary-bg-active` (a visibly darker step, not a fill-matching invisible one) to every state (rest/hover/active all read the same active-step border color, only the fill itself steps). Applied universally rather than conditionally per tone: every one of the 12 call sites already sits on an elevated surface (no bare-canvas primary button exists in this app today), so "elevated surfaces only" covers all of them, and a thin, one-step-darker border reads fine on the six tones that didn't strictly need it too — confirmed by screenshot on Warm, Lemon, and Sage specifically.
+5. **Ink contrast**, measured (WCAG relative luminance) across all 8 tones + dark, rest/hover/active: **11.44–15.53:1 light, 11.63–15.32:1 dark** — every state on every tone clears 4.5:1 with large margin (these numbers match LIME-56's own already-documented sweep exactly, confirming the ink token itself is untouched by this brief).
+
+**Lime-rule note, updated per the brief's own instruction:** **primary buttons = pale lime (`--lime-primary-*`); solid brand green is now only for status (the presence "active" dot, the unread ring) and play accents (the voice/audio play buttons).**
+
+**Scope check:** `public/css/lime.css` only (the `.seed-button--primary` override block). No Seed file touched, no change to the play buttons, destructive buttons, secondary/outline buttons, Add, or ↵ — confirmed each is a separate, untouched selector by reading their own rules, not just by not having edited them.
+
+**Verification:**
+- `lime.css` braces balanced (796/796); browser-parsed rule count **720** (confirmed in both real browsers, after finding and fixing the comment-closer bug above).
+- Screenshots of all 12 call sites' real UI surfaces reachable in this seed data (auth's "Continue with email" and "Sign in"; Share's "Copy link"; Settings' "Save changes" disabled and enabled; the picker's "Start" disabled and enabled; the "Reset demo data?" confirm dialog) at rest, hovered, and (where applicable) pressed/focus-visible/disabled, in light (Warm), Sage, and dark. "Create account" shares the exact same `.lime-auth__submit` class and CSS path as the other two auth buttons verified, not re-screenshotted separately. The two Link-popover "Add" buttons and the two Settings email/password "Save" buttons also share the exact same class/CSS path as the sites screenshotted, confirmed via `grep`, not independently re-verified pixel-by-pixel.
+- The real app loads in both real browsers with zero console/page errors.
+- Computed-style checks in both real Firefox and Chrome: the auth submit button is pale lime (not `rgb(9, 169, 80)`); "Copy link"'s background is pixel-identical to Add's own container background; simulating the danger-confirm code path (`classList.toggle('seed-button--primary', false)`, what `app.js` does for `danger: true`) changes the button's background away from the pale lime, confirming the destructive path is genuinely a different, untouched rule, not just unobserved.
+
+**Gate:** "Copy link," "Save changes," the sign-in page's buttons, and New message's "Start" are all the same pale lime as Add and the ↵ send button, with dark ink text, clearly readable against every surface tested including the two tones (Lemon, Sage) that needed the new border to stay distinct.
+
+**Record:** this entry.

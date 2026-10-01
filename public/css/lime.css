@@ -1660,6 +1660,88 @@ html[data-pattern-treatment="photo"] body::before {
   outline-offset: 2px;
 }
 
+/* ── LIME-61: every seed-button--primary reads the pale Add/Send lime ──
+   The user's own ask: every primary CTA should look like Add and the
+   Send button (above), not Seed's own solid brand green. Seed's base
+   rule (vendor/seed/components/button/button.css) reads
+   --selected-bg-bold-default and --selected-text-bold-default directly
+   — that token family is deliberately UNTOUCHED here: the voice/audio play
+   buttons (.lime-audio-attachment__play, .lime-voice__play, further
+   down) read --selected-bg-bold-default directly too, confirmed by
+   reading both rules, and must stay solid green per the brief's own
+   explicit boundary. 12 call sites confirmed by grep across
+   auth.html (×3), index.html (×5) and app.js (×4, one of them a
+   classList.toggle that only ADDS this class for non-danger
+   confirmations — danger dialogs never get it, so they're untouched
+   automatically, not a separate case to handle).
+   The doubled selector (.seed-button--primary.seed-button--primary) is
+   a specificity bump (0,2,0 vs button.css's 0,1,0), not a typo — the
+   brief asked for an override that wins regardless of <link> order;
+   lime.css already loads after button.css on both auth.html and
+   index.html (confirmed), so plain source order would also work today,
+   but this doesn't depend on that staying true. */
+/* Border: --lime-primary-bg-active (a visibly darker step), not a plain
+   fill-matching invisible border like Add's own. Measured (OKLab
+   distance, the same method LIME-56 used) across all 8 canvas tones'
+   own --soil-bg-elevated — the real background every one of this
+   brief's 12 call sites actually sits on (the auth card, the Share
+   popover, Settings, the picker and the confirm dialog all read this
+   same token, confirmed by reading each of their own CSS rules) — not
+   the lighter --soil-bg-surface layer input fields/chips use, which
+   would have given a misleadingly larger number. Two tones fall below
+   Warm's own canvas distinctness (0.0797): Lemon (0.0771) and Sage
+   (0.0759), both on their own --soil-bg-elevated. Dark and the other
+   six light tones all clear it (0.0759-0.1641, TEND.md has the full
+   table). Since every current call site is already on an elevated
+   surface (no bare-canvas primary button exists in this app today),
+   the border is applied universally here rather than conditionally
+   per tone — simpler, and a thin one-step-darker border reads fine on
+   the tones that didn't strictly need it too. */
+.seed-button--primary.seed-button--primary {
+  background: var(--lime-primary-bg);
+  border-color: var(--lime-primary-bg-active);
+  color: var(--lime-primary-ink);
+}
+
+.seed-button--primary.seed-button--primary:hover {
+  background: var(--lime-primary-bg-hover);
+  border-color: var(--lime-primary-bg-active);
+}
+
+.seed-button--primary.seed-button--primary:active {
+  background: var(--lime-primary-bg-active);
+  border-color: var(--lime-primary-bg-active);
+}
+
+/* Seed's own disabled rule (button.css) is just opacity:0.4 on whatever
+   fill is already there — measured live on the new pale fill (TEND.md
+   has the before/after): a washed-out, slightly muddy yellow-green that
+   reads as "broken," not "disabled." A plain neutral surface instead —
+   the same --calm-bg-subtle-default/--soil-text-disabled pairing used
+   for every other disabled-but-still-legible state in this app — with
+   opacity reset to 1 (this IS the disabled look now, not a faded
+   version of the active one). pointer-events:none and cursor:not-allowed
+   already come from Seed's own base .seed-button:disabled rule
+   (button.css) and still apply; only the colors change here. */
+.seed-button--primary.seed-button--primary:disabled,
+.seed-button--primary.seed-button--primary[aria-disabled="true"] {
+  background: var(--calm-bg-subtle-default);
+  border-color: transparent;
+  color: var(--soil-text-disabled);
+  opacity: 1;
+}
+
+/* Seed's own :focus-visible (button.css, the .seed-button base rule)
+   sets box-shadow: var(--seed-shadow-focus) — a solid-brand-green glow,
+   the exact color family this brief is moving away from. Lime's own
+   neutral ring instead (the same pattern used on Add, just above, and
+   throughout this file). */
+.seed-button--primary.seed-button--primary:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--calm-border-bold-default);
+  outline-offset: 2px;
+}
+
 /* Same visual weight as .lime-menu__item-reason (a disabled item's own
    muted sub-line), but a different class — this hint sits on an ENABLED
    row (it's not saying the row is unavailable, just what surface it
