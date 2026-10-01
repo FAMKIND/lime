@@ -898,10 +898,11 @@
        state, never fail silently), not the DOM node. -->
   <input type="file" id="avatar-upload-input" accept="image/*" hidden>
 
-  <!-- LIME-27: one shared toast container, bottom-center — showToast()
-       in app.js appends/removes .seed-toast children here. -->
-  <div class="seed-toast-container seed-toast-container--bottom-center" id="toast-container" role="status" aria-live="polite"></div>
+  <!-- LIME-27/67: the toast container, bottom-right (top-centre on
+       mobile) — js/toast.js adds/removes .lime-toast children here. -->
+  <div class="seed-toast-container seed-toast-container--bottom-right" id="toast-container" role="region" aria-label="Notifications"></div>
 
+  <script src="js/toast.js"></script>
   <script src="js/seed-data.js"></script>
   <script src="js/local-adapter.js"></script>
   <script src="js/store.js"></script>

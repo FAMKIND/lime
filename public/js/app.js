@@ -269,37 +269,15 @@ function escapeHtml(str) {
   }[c]));
 }
 
-// LIME-27: Seed's own toast pattern (vendor/seed/components/toast/toast.html),
-// adapted to this app's own single-line usage — every call site here
-// ("Link copied", "That chat isn't available to you.") is one short
-// message, not Seed's own title+message two-line shape, so this uses
-// .seed-toast__title alone (the heavier-weight line) rather than adding
-// an empty/unused .seed-toast__message every time. Top-level, not
-// IIFE-private — called from the deep-link load logic (this file's very
+// LIME-27/67: toasts live in js/toast.js (LimeToast). showToast stays as
+// a thin wrapper for the one-line call sites — a title-only toast. Top-level,
+// not IIFE-private — called from the deep-link load logic (this file's very
 // first synchronous pass, same reasoning paintAvatar is top-level for)
 // and from the Share popover's own Copy link handler.
 function showToast(message, options) {
   const opts = options || {};
-  const tone = opts.tone || 'neutral';
-  const duration = opts.duration != null ? opts.duration : 3000;
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-  const icon = tone === 'good' ? 'dew-check' : tone === 'bad' ? 'dew-negative' : tone === 'warn' ? 'dew-alert-triangle' : 'dew-information-circle';
-  const toast = document.createElement('div');
-  toast.className = 'seed-toast seed-toast--' + tone;
-  toast.innerHTML = '<span class="seed-toast__icon dew ' + icon + '" aria-hidden="true"></span>'
-    + '<div class="seed-toast__content"><span class="seed-toast__title">' + escapeHtml(message) + '</span></div>'
-    + '<button type="button" class="seed-toast__dismiss dew dew-close" aria-label="Dismiss"></button>';
-  container.appendChild(toast);
-
-  function dismiss() {
-    toast.classList.add('seed-toast--exiting');
-    setTimeout(() => toast.remove(), 150);
-  }
-  toast.querySelector('.seed-toast__dismiss').addEventListener('click', dismiss);
-  let timer = setTimeout(dismiss, duration);
-  toast.addEventListener('mouseenter', () => clearTimeout(timer));
-  toast.addEventListener('mouseleave', () => { timer = setTimeout(dismiss, 1000); });
+  const toneMap = { neutral: 'info', good: 'success', warn: 'warning', bad: 'error' };
+  LimeToast.show({ title: message, tone: toneMap[opts.tone] || opts.tone || 'info', duration: opts.duration });
 }
 
 // LIME-27: the deep-link format, #c=<conversationId> on the app's own
@@ -3199,7 +3177,7 @@ function initMessagesList() {
         if (hashConversationId !== currentConversationId) selectConversation(hashConversation);
         return;
       }
-      showToast('That chat isn\'t available to you.', { tone: 'neutral' });
+      LimeToast.show({ title: 'Chat not available', body: 'You\'re not a member of that chat.', tone: 'warning' });
       // Restore the address bar instead of leaving the inaccessible id
       // sitting in it (a reload would just show the toast again on an
       // otherwise-unrelated chat): if something's already open (a
@@ -3294,7 +3272,7 @@ function initMessagesList() {
     function copyLink(link) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(link).then(() => {
-          showToast('Link copied');
+          LimeToast.show({ title: 'Link copied', tone: 'success' });
         }).catch(() => copyViaTextarea(link));
         return;
       }
@@ -3315,7 +3293,7 @@ function initMessagesList() {
         const ok = document.execCommand('copy');
         textarea.remove();
         if (ok) {
-          showToast('Link copied');
+          LimeToast.show({ title: 'Link copied', tone: 'success' });
           return;
         }
       } catch (e) { /* execCommand itself can throw — fall through */ }

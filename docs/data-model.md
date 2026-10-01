@@ -1401,11 +1401,15 @@ unconditionally on every `index.html` load) opens the right conversation
 the moment the session actually exists, rather than the link being lost
 somewhere in the four-page round trip.
 
-**Toasts:** Seed's own `toast.css`/`.seed-toast` component, one shared
-`bottom-center` container (`role="status"`, `aria-live="polite"`),
-`showToast(message, { tone, duration })` in `app.js`. The neutral tone
-uses neutral Seed tokens only — never lime, per the app's own standing
-"lime is reserved for the nav and primary actions" rule (LIME-50-fix).
+**Toasts (LIME-67):** `public/js/toast.js` (`LimeToast`), restyled in
+`lime.css` on top of Seed's `toast.css`; one `#toast-container`
+(`role="region"`, bottom-right, top-centre on mobile) on both `index.html`
+and `auth.html`. `LimeToast.show({ title, body, tone, action, duration })`;
+`LimeToast.queue(...)` carries a toast across a navigation via
+`sessionStorage` (`lime-flash-toasts`). `showToast(message)` in `app.js`
+remains as a title-only wrapper. When to toast and when not to: see the
+rules at the top of `toast.js`. Only the icon carries the tone colour,
+never lime on the card (LIME-50-fix).
 
 ## Deviations from the contract (LIME-24b)
 

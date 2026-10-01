@@ -3013,3 +3013,20 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Gate:** the Appearance button shows the paint brush, and both chat boxes' link/code tools and overflow-menu items show the new simple-link and code glyphs — confirmed live, not just class-name checks, via the attached screenshots.
 
 **Record:** this entry.
+
+## LIME-67
+
+**Goal:** toasts redesigned for Lime: icon, title, body, optional action, ×, and messages that survive a navigation.
+
+**The change:**
+1. New `public/js/toast.js` (`LimeToast`): `show({ title, body, tone: info|success|warning|error, action: { label, onClick }, duration })`, `queue(...)` (sessionStorage `lime-flash-toasts`, flushed on `DOMContentLoaded` of every page that loads the script), `registerAction(name, fn)` for actions that cross a page load. Usage rules (the LIME-68 ones) are the header comment of the file.
+2. Behaviour: 5s default, 8s with an action, errors stay until dismissed; hover or focus inside pauses and leaving resumes the **remaining** time; max 3 (oldest leaves first, newest nearest the corner); `role="status"`, `role="alert"` for errors; container `role="region"` `aria-label="Notifications"`; toasts never take focus, Escape dismisses with focus inside; ~150ms slide+fade, fade only under reduced motion.
+3. `lime.css`: Lime look on Seed's `toast.css` (neutral elevated card, 1px border, `--seed-radius-lg`, `--seed-shadow-md`, 380px, 20px icon carrying the only tone colour, secondary-outline small action, × top right). Bottom-right 24px on desktop; top-centre (56px down) at ≤767px. `auth.html` now loads `toast.css`, has its own container and loads `toast.js`; `index.html` loads `toast.js` before `auth.js`.
+4. `app.js`: `showToast()` kept as a title-only wrapper (legacy tones mapped). Migrated: "Link copied" ×2 (success, title only); deep-link failure becomes warning "Chat not available" / "You're not a member of that chat." (There were 3 call sites, not 4: the brief's count included the wrapper.)
+5. `docs/data-model.md`'s stale Toasts paragraph rewritten.
+
+**Notes:** no better error icon exists in dew (only `dew-alert-triangle`), so error keeps the existing `dew-negative` (a minus in a red-tinted stroke) — flag if you want a different glyph from dew.
+
+**Verification (real Chrome, headless, against localhost):** container role/label; roles status/alert; stack of 4 shows 3, newest first; box 380px, 24px from the right and bottom edges; hover pause then resume with remaining time (gone after the remaining ~500ms, not 1s); focus pause; Escape dismisses; queued toast shown once then cleared on the next load; mobile 390px: top-centre, 358px wide; reduced motion swaps to fade-only. Light and dark screenshots viewed. Zero errors apart from the pre-existing `demo-config.local.js` 404.
+
+**Gate:** copy a chat link: a clean white card at the bottom-right with a check icon and ×, fades after a few seconds, stays while hovered.

@@ -7119,3 +7119,87 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     display: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════
+   TOASTS (LIME-67) — Lime's look on top of Seed's toast.css:
+   a neutral elevated card (matches the menus), a 20px leading icon that
+   alone carries the tone, title + body + an optional outlined action,
+   and a × at the top right. Bottom-right on desktop, top-centre under
+   the header on mobile. Behaviour lives in js/toast.js.
+═══════════════════════════════════════════════════════ */
+#toast-container.seed-toast-container {
+  padding: 24px;
+  gap: 12px;
+  max-width: 100vw;
+}
+
+.lime-toast.seed-toast {
+  align-items: flex-start;
+  gap: 12px;
+  box-sizing: border-box;
+  width: min(380px, calc(100vw - 32px));
+  max-width: none;
+  min-width: 0;
+  padding: 16px 20px;
+  border: 1px solid var(--soil-border-subtle);
+  border-radius: var(--seed-radius-lg);
+  box-shadow: var(--seed-shadow-md);
+  font-size: 14px;
+}
+
+.lime-toast .seed-toast__icon {
+  font-size: 20px;
+  margin-top: -1px;
+  color: var(--soil-text-muted);
+}
+.lime-toast--success .seed-toast__icon { color: var(--good-icon-bold-default); }
+.lime-toast--warning .seed-toast__icon { color: var(--warn-icon-bold-default); }
+.lime-toast--error   .seed-toast__icon { color: var(--bad-icon-bold-default); }
+
+.lime-toast .seed-toast__content { gap: 4px; align-items: flex-start; }
+.lime-toast .seed-toast__title {
+  font-size: 15px;
+  font-weight: var(--seed-weight-semibold);
+  color: var(--soil-text);
+  line-height: 1.3;
+}
+.lime-toast .seed-toast__message {
+  font-size: 14px;
+  color: var(--soil-text-muted);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.lime-toast__action { margin-top: 8px; }
+
+.lime-toast .seed-toast__dismiss {
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  margin: -2px -6px 0 0;
+}
+.lime-toast .seed-toast__dismiss:focus-visible,
+.lime-toast__action:focus-visible {
+  outline: 2px solid var(--soil-text);
+  outline-offset: 2px;
+}
+
+@media (max-width: 767px) {
+  #toast-container.seed-toast-container {
+    top: 56px;
+    bottom: auto;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    align-items: center;
+    flex-direction: column;
+    padding: 8px 16px;
+  }
+  #toast-container .lime-toast.seed-toast { animation-name: seed-toast-in; }
+  #toast-container .lime-toast.seed-toast--exiting { transform: translateY(-8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #toast-container .lime-toast.seed-toast { animation-name: lime-toast-fade; }
+  #toast-container .lime-toast.seed-toast--exiting { transform: none; }
+}
+@keyframes lime-toast-fade { from { opacity: 0; } to { opacity: 1; } }
