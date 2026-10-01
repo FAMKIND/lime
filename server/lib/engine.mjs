@@ -2,7 +2,6 @@
 // processOp(); the append-only log is the source of truth and state.json is only a cache of replaying it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { testAccountDetails } from './seed.mjs';
 import { E, ApiError, isStr, isId, isObj, isEmail, nowIso, ensureDir, writeJsonAtomic, readJson } from './util.mjs';
 
 const PROFILE_PATCH_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone', 'avatar_url'];
@@ -115,38 +114,20 @@ export class Engine {
     this.notify({ seq: this.seq, audience: null });
   }
 
-  // The dedicated test accounts: profiles, a ready DM between them (no messages) and membership of the PS 113 Staff Room.
-  // Idempotent (only adds what is missing), so it is safe on every boot and after a reset.
-  ensureTestAccounts(accounts) {
+  // Private overrides for seed teachers (phone numbers), matched by email. Idempotent: only logs a change when a value differs.
+  // Returns the matched profiles (so credentials can be attached to them).
+  applyPrivateOverrides(accounts) {
     const ts = nowIso();
-    const merge = { profiles: [], conversations: [], conversation_members: [] };
+    const found = [];
+    const changed = [];
     for (const a of accounts) {
-      if (this.profiles.has(a.id)) continue;
-      merge.profiles.push(Object.assign({
-        id: a.id, auth_user_id: null, display_name: a.display_name, email: a.email.toLowerCase(), role: null, pronouns: null, school: null,
-        grade_levels: null, subjects: null, bio: null, timezone: 'America/New_York', phone: a.phone || null, status: 'offline', avatar_url: null,
-        created_at: ts, updated_at: ts,
-      }, testAccountDetails(a.id)));
+      const p = [...this.profiles.values()].find((x) => (x.email || '').toLowerCase() === a.email);
+      if (!p) continue;
+      found.push(p);
+      if (a.phone !== undefined && a.phone !== null && p.phone !== a.phone) changed.push(Object.assign({}, p, { phone: a.phone, updated_at: ts }));
     }
-    const ids = accounts.map((a) => a.id);
-    const staff = [...this.conversations.values()].find((c) => c.name === 'PS 113 Staff Room' && c.type === 'group');
-    if (staff) {
-      for (const id of ids) {
-        if (!this.getMember(staff.id, id)) merge.conversation_members.push({ conversation_id: staff.id, user_id: id, role: 'member', starred: false, archived_at: null, cleared_at: null, last_read_at: null, joined_at: ts, updated_at: ts });
-      }
-    }
-    if (ids.length === 2) {
-      const dmKey = [...ids].sort().join(':');
-      if (!this.dmKeys.has(dmKey)) {
-        const convId = 'conv-test-dm';
-        merge.conversations.push({ id: convId, type: 'direct', name: null, description: null, created_by: ids[0], deleted_at: null, dm_key: dmKey, created_at: ts, updated_at: ts });
-        ids.forEach((id, i) => merge.conversation_members.push({ conversation_id: convId, user_id: id, role: i === 0 ? 'owner' : 'member', starred: false, archived_at: null, cleared_at: null, last_read_at: null, joined_at: ts, updated_at: ts }));
-      }
-    }
-    if (!merge.profiles.length && !merge.conversations.length && !merge.conversation_members.length) return false;
-    merge.seed_profile_ids = ids;
-    this.append({ kind: 'system.merge', server_ts: ts, audience: [], merge });
-    return true;
+    if (changed.length) this.append({ kind: 'system.merge', server_ts: ts, audience: [], merge: { profiles: changed } });
+    return found;
   }
 
   // ── the log ──

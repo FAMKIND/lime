@@ -19,8 +19,8 @@ async function suiteFor(name, { base, check }) {
       B = await openAs(browser, remote, personB, 'B', errors);
       check(tag('two tabs are two different people'), (await A.evaluate(() => LimeStore.getCurrentUserId())) === personA.userId && (await B.evaluate(() => LimeStore.getCurrentUserId())) === personB.userId);
     } else {
-      A = await openSignedIn(browser, base, 'teacher-002', 'shem.robinson@ps113.edu', 'A', errors);
-      B = await openSignedIn(browser, base, 'teacher-001', 'jean@chungrajoon.com', 'B', errors);
+      A = await openSignedIn(browser, base, 'teacher-002', 'shem@famkind.com', 'A', errors);
+      B = await openSignedIn(browser, base, 'teacher-001', 'jean@famkind.com', 'B', errors);
       check(tag('two tabs are two different people'), (await A.evaluate(() => LimeStore.getCurrentUserId())) === 'teacher-002' && (await B.evaluate(() => LimeStore.getCurrentUserId())) === 'teacher-001');
       await A.bringToFront();
       await A.evaluate(() => LimeStore.setStarred(LimeStore.listConversations()[0].id, true)); // creates the first snapshot

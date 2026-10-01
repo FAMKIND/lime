@@ -40,22 +40,16 @@ export function loadDemoPassword(repoRoot) {
   }
 }
 
-// The two dedicated test accounts (gitignored seed-data/test-accounts.local.json, never committed: real emails, phones and
-// a real password). Returns null when the file is absent. Only the server reads it.
+// Private overrides for two seed teachers (gitignored seed-data/test-accounts.local.json, never committed): the one thing about the
+// demo Shem and Jean that must stay private, their phone numbers, and a password of their own instead of the shared demo password.
+// Keyed by email (the seed's emails are public @famkind.com addresses). Returns null when the file is absent. Only the server reads it.
 export function loadTestAccounts(repoRoot) {
   try {
     const j = JSON.parse(fs.readFileSync(path.join(repoRoot, 'seed-data', 'test-accounts.local.json'), 'utf8'));
     if (typeof j.password !== 'string' || j.password.length < 8 || !Array.isArray(j.accounts)) return null;
-    const accounts = j.accounts.filter((a) => a && typeof a.id === 'string' && typeof a.email === 'string' && typeof a.display_name === 'string');
+    const accounts = j.accounts.filter((a) => a && typeof a.email === 'string').map((a) => ({ email: a.email.trim().toLowerCase(), phone: typeof a.phone === 'string' ? a.phone : null }));
     return accounts.length ? { password: j.password, accounts } : null;
   } catch (e) {
     return null;
   }
 }
-
-// Plausible, teacher-like profile details for the test accounts (made up, safe to commit). Anything not listed is null.
-const TEST_DETAILS = {
-  'test-shem-rajoon': { role: 'Math Teacher', pronouns: 'he/him/his', school: 'PS 113', grade_levels: ['7', '8'], subjects: ['Algebra', 'Geometry'], bio: 'Math teacher at PS 113. I like turning word problems into puzzles.' },
-  'test-jean-chung': { role: 'Head of FAM', pronouns: 'she/her/hers', school: 'PS 113', grade_levels: ['6', '7', '8'], subjects: ['Life Skills'], bio: 'Head of FAM at PS 113. Life skills, family partnerships and a lot of coffee.' },
-};
-export function testAccountDetails(id) { return TEST_DETAILS[id] || {}; }

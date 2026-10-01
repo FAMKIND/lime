@@ -135,10 +135,16 @@ Matches your Figma designs:
 
 Math, Science, English, Art, Special Education, STEM/Robotics, ESL, Technology, Social Studies, Music, PE, Chemistry, Physics, Drama, Biology, Engineering, Counseling, and more.
 
-## Test accounts (LIME-74)
+## Demo emails and the two private logins (LIME-75)
 
-`test-accounts.example.json` shows the shape of `seed-data/test-accounts.local.json`, a **gitignored** file (`*.local.json`) the dev
-server reads on first run and after a reset to create two dedicated test accounts (profiles, a ready DM between them, membership of the
-PS 113 Staff Room, and server-hashed credentials). The real file holds real emails, phones and a password, so it must never be committed;
-copy the example to `test-accounts.local.json` and edit it. The server prints the two emails (never the password) at startup.
+Every seed teacher's email is `<first name, lowercase>@famkind.com` (`grace@famkind.com`, `jean@famkind.com`, `shem@famkind.com`, ...),
+because Lime is a FAM project. The first names are unique. These addresses **could be real mailboxes**, so see the rule in the main README:
+local and staging must never send real email or SMS.
 
+All seed teachers sign in on the dev server with the shared demo password from `public/js/demo-config.local.js` (gitignored).
+
+The demo **Shem Rajoon** (`teacher-002`) and **Jean Chung** (`teacher-001`) can have two things that must stay private: a phone number and
+a password of their own. They live in `seed-data/test-accounts.local.json`, a **gitignored** file (`*.local.json`); `test-accounts.example.json`
+shows its shape with fake values. The dev server reads it on first run and after a reset, matches each entry by email to the seed teacher, stores
+the phone (searchable by exact match, never displayed) and replaces the shared demo password with that one. Copy the example to
+`test-accounts.local.json` and edit it. The server prints the two emails (never the phones or password) at startup.

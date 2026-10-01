@@ -299,23 +299,34 @@ export async function run({ check }) {
     const eveAlias = (await E1.changes(0)).changes.filter((e) => e.alias).length;
     check('and nobody outside the conversation hears of it', (await C.changes(0)).changes.every((e) => !(e.backfill && e.backfill.conversation && e.backfill.conversation.id === gNew)) && eveAlias === 0);
 
-    // ── test accounts (only when the gitignored seed-data/test-accounts.local.json exists) ──
+    // ── the demo Shem and Jean with private phone numbers and passwords of their own (only when the gitignored
+    //    seed-data/test-accounts.local.json exists) ──
     let testFile = null;
     try { testFile = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'seed-data', 'test-accounts.local.json'), 'utf8')); } catch (e) { /* none */ }
     if (testFile) {
       const [t1, t2] = testFile.accounts;
-      const T1 = new Client(base, t1.email, t1.display_name); T1.device = 'tdev1';
+      const T1 = new Client(base, t1.email, 'x'); T1.device = 'tdev1';
       const si1 = await T1.json('POST', '/auth/signin', { body: { email: t1.email, password: testFile.password, device_id: 'tdev1' }, token: null });
-      Object.assign(T1, { token: si1.body.access_token, id: t1.id });
+      Object.assign(T1, { token: si1.body.access_token, id: si1.body.user && si1.body.user.id });
       const ts = await T1.snapshot();
-      const dmWithOther = ts.conversations.find((c) => c.type === 'direct' && ts.conversation_members.some((m) => m.conversation_id === c.id && m.user_id === t2.id));
-      check('test accounts: both can sign in with the local file\'s password, and have each other\'s ready DM (no messages)', si1.status === 200 && dmWithOther && ts.messages.filter((m) => m.conversation_id === dmWithOther.id).length === 0);
-      check('test accounts: both are members of PS 113 Staff Room', ts.conversations.some((c) => c.name === 'PS 113 Staff Room') && ts.conversation_members.some((m) => m.user_id === t2.id && ts.conversations.find((c) => c.id === m.conversation_id && c.name === 'PS 113 Staff Room')));
-      check('test accounts: phone is stored and found by exact match, never shown', ts.profile.phone === t1.phone && !ts.profiles.some((p) => 'phone' in p) && (await dir(C, t1.phone.replace(/\D/g, ''))).profiles.some((p) => p.id === t1.id) && (await dir(C, t1.phone.replace(/\D/g, ''))).profiles.every((p) => !('phone' in p)));
-      check('test accounts: their details are filled in plausibly', ts.profile.role && ts.profile.school === 'PS 113' && ts.profile.timezone === 'America/New_York' && ts.profile.bio);
+      const demoPw = (() => { try { const m = /password:\s*'([^']*)'/.exec(fs.readFileSync(path.join(REPO_ROOT, 'public', 'js', 'demo-config.local.js'), 'utf8')); return m && m[1]; } catch (e) { return null; } })();
+      check('own-password accounts: they ARE the seed teachers (teacher-001 and teacher-002), signing in with the local file\'s password', si1.status === 200 && /^teacher-00[12]$/.test(si1.body.user.id) && si1.body.user.email === t1.email && (await new Client(base).json('POST', '/auth/signin', { body: { email: t2.email, password: testFile.password, device_id: 'tdev2' }, token: null })).body.user.id.startsWith('teacher-00'));
+      check('own-password accounts: no second profile exists for either email (merged, not duplicated)', (await dir(C, t1.email.split('@')[0])).profiles.filter((p) => /Shem|Jean/.test(p.display_name)).length <= 2 && ts.conversations.filter((c) => c.type === 'direct').length >= 1 && ts.messages.length > 0);
+      check('own-password accounts: they keep the seed\'s history (their DM and the PS 113 Staff Room, with messages)', ts.conversations.some((c) => c.name === 'PS 113 Staff Room') && ts.conversations.some((c) => c.type === 'direct') && ts.messages.some((m) => m.conversation_id === 'conv-001'));
+      check('own-password accounts: the demo name is Shem Rajoon / Jean Chung, with the seed\'s details filled in', ['Shem Rajoon', 'Jean Chung'].includes(ts.profile.display_name) && ts.profile.role && ts.profile.school && ts.profile.timezone && ts.profile.bio);
+      check('own-password accounts: the phone is stored and found only by exact match, never shown to anyone else', ts.profile.phone === t1.phone && !ts.profiles.some((p) => 'phone' in p) && (await dir(C, t1.phone.replace(/\D/g, ''))).profiles.some((p) => p.id === ts.profile.id) && (await dir(C, t1.phone.replace(/\D/g, ''))).profiles.every((p) => !('phone' in p)));
+      if (demoPw) check('own-password accounts: the shared demo password no longer signs them in (their own replaces it)', (await new Client(base).json('POST', '/auth/signin', { body: { email: t1.email, password: demoPw, device_id: 'tdev3' }, token: null })).status === 401);
     } else {
-      check('test accounts (skipped: no seed-data/test-accounts.local.json here)', true, 'skipped');
+      check('own-password accounts (skipped: no seed-data/test-accounts.local.json here)', true, 'skipped');
     }
+    check('every seed teacher\'s email is <first name>@famkind.com (seed file, embedded copy and the server agree)', await (async () => {
+      const file = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'seed-data', 'teachers.json'), 'utf8'));
+      const list = Array.isArray(file) ? file : file.teachers;
+      const embedded = fs.readFileSync(path.join(REPO_ROOT, 'public', 'js', 'seed-data.js'), 'utf8');
+      const shape = list.every((t) => t.email === t.display_name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '') + '@famkind.com');
+      const lookup = await new Client(base).json('POST', '/auth/lookup', { body: { email: 'grace@famkind.com' }, token: null });
+      return list.length === 25 && shape && new Set(list.map((t) => t.email)).size === 25 && list.every((t) => embedded.includes('"' + t.email + '"')) && lookup.body.exists === true;
+    })());
 
     // ── restart persistence ──
     const headBefore = (await A.json('GET', '/health')).body.seq;
@@ -355,9 +366,9 @@ export async function run({ check }) {
     let demoPassword = null;
     try { const src = fs.readFileSync(path.join(REPO_ROOT, 'public', 'js', 'demo-config.local.js'), 'utf8'); const m = /password:\s*'([^']*)'/.exec(src); demoPassword = m && m[1]; } catch (e) { /* none */ }
     if (demoPassword) {
-      const jean = await new Client(server.base).json('POST', '/auth/signin', { body: { email: 'jean@chungrajoon.com', password: demoPassword, device_id: 'seed-1' }, token: null });
-      check('a seed teacher signs in with the shared demo password', jean.status === 200 && jean.body.user.id === 'teacher-001');
-      const jc = new Client(server.base); jc.token = jean.body.access_token; jc.id = 'teacher-001';
+      const jean = await new Client(server.base).json('POST', '/auth/signin', { body: { email: 'grace@famkind.com', password: demoPassword, device_id: 'seed-1' }, token: null });
+      check('a seed teacher (grace@famkind.com) signs in with the shared demo password', jean.status === 200 && jean.body.user.id === 'teacher-024');
+      const jc = new Client(server.base); jc.token = jean.body.access_token; jc.id = 'teacher-024';
       const js = await jc.snapshot();
       check('a seed teacher\'s snapshot has their conversations, and no other person\'s phone', js.conversations.length > 0 && js.profiles.every((p) => !('phone' in p)));
     } else {

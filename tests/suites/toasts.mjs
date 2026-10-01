@@ -20,7 +20,7 @@ export async function run({ base, check }) {
     } else {
       page = await browser.newPage();
       watchErrors(page, 'toasts', errors);
-      await page.evaluateOnNewDocument(() => { if (!sessionStorage.getItem('lime-demo-session')) sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: 'teacher-002', email: 'shem.robinson@ps113.edu' })); });
+      await page.evaluateOnNewDocument(() => { if (!sessionStorage.getItem('lime-demo-session')) sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: 'teacher-002', email: 'shem@famkind.com' })); });
       await page.goto(base + 'index.html', { waitUntil: 'load' });
       await page.waitForFunction(() => window.LimeToast && window.LimeStore && LimeStore.getCurrentUserId(), { polling: 10, timeout: 10000 });
     }

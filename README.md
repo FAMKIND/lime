@@ -24,11 +24,13 @@ It serves the app exactly like the Python server did (`/public/â€¦`, `/vendor/â€
 
 Served this way the web app uses the API (`LimeBackend` in `public/js/api-adapter.js` notices `/api/v1/health` and the app stops keeping its own private copy of the data): **everyone who opens the printed link, on any device, shares one Lime, live**. Served by anything else (the Python server, `file://`) it works as before, local to that browser.
 
-**Try it with two people:** sign in as the two test accounts below in two different browsers (or one normal and one private window), or on a computer and a phone. Messages, replies, reactions, renames, new chats and profile changes show up on the other side within a second.
+**Try it with two people:** sign in as `shem@famkind.com` and `jean@famkind.com` (the familiar demo Shem Rajoon and Jean Chung, with all their existing chats) in two different browsers (or one normal and one private window), or on a computer and a phone. Messages, replies, reactions, renames, new chats and profile changes show up on the other side within a second.
 
-**Test accounts.** Put the two accounts in `seed-data/test-accounts.local.json` (gitignored, never committed; copy `seed-data/test-accounts.example.json` and edit it). The server prints their emails when it starts, gives them a ready DM with each other, and puts both in the PS 113 Staff Room. They are the only logins that are not the older demo teachers.
+**Logins.** Every demo teacher's email is `<first name>@famkind.com` (for example `grace@famkind.com`) and signs in with the shared demo password from `public/js/demo-config.local.js` (gitignored). Shem and Jean can have a password and phone number of their own: put them in `seed-data/test-accounts.local.json` (gitignored, never committed; copy `seed-data/test-accounts.example.json` and edit it). The server prints their emails when it starts. After changing the seed or that file, **re-seed**: stop the server and delete `data/`, or `curl -X POST -H 'X-Lime-Dev: 1' http://localhost:8000/api/v1/dev/reset`.
 
-**On a phone:** the phone must be on the same Wi-Fi as this computer. Open the "On your network" link the server prints (like `http://192.168.0.127:8000/public/index.html`) in the phone's browser and sign in as one of the test accounts; sign in as the other on the computer.
+**Rule: demo emails are `@famkind.com`, which could be real mailboxes. Local and staging must never send real email or SMS.** Any future invite, notification or sign-up feature has to stub delivery everywhere except production.
+
+**On a phone:** the phone must be on the same Wi-Fi as this computer. Open the "On your network" link the server prints (like `http://192.168.0.127:8000/public/index.html`) in the phone's browser and sign in as one of the two logins above; sign in as the other on the computer.
 
 - **Data** lives in `data/` (gitignored): the op log (`oplog.jsonl`, the source of truth), a cache of the derived state, accounts and sessions, and uploaded files. It survives restarts, and a crash loses nothing that was acknowledged. First run seeds from the same seed the app uses.
 - **Seed teachers** can sign in to the API with the shared demo password from `public/js/demo-config.local.js` (gitignored), as in the browser demo. Without that file they cannot sign in to the API until it exists and the data is reset.

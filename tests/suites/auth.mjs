@@ -67,7 +67,7 @@ export async function run({ base, check }) {
     await page.waitForFunction(() => /auth\.html|login\.html/.test(location.href), { polling: 10, timeout: 8000 });
 
     // Seed teacher with a wrong password: the demo-password hint (or, with no local demo config, the explanation)
-    await enterEmail(page, base, 'jean@chungrajoon.com');
+    await enterEmail(page, base, 'grace@famkind.com');
     await page.waitForSelector('#auth-password', { visible: true });
     await page.type('#auth-password', 'definitely-wrong-1');
     await page.click('#auth-password-form button[type=submit]');
@@ -76,7 +76,7 @@ export async function run({ base, check }) {
     check('seed teacher + wrong password gives the demo-password hint', /shared demo password|Demo credentials aren.t configured/.test(hint), hint);
 
     // Duplicate email can't sign up
-    await enterEmail(page, base, 'jean@chungrajoon.com');
+    await enterEmail(page, base, 'grace@famkind.com');
     await sleep(400);
     check('an existing seed email goes to the password step, not sign-up', await page.evaluate(() => !!document.getElementById('auth-password') && document.getElementById('auth-password').offsetParent !== null));
 

@@ -29,10 +29,11 @@ const auth = new Auth(DATA_DIR, demoPassword);
 await auth.ensureSeedCredentials(engine.seedProfileIds.map((id) => engine.profiles.get(id)).filter(Boolean));
 engine.emailChanged = (userId, oldEmail, newEmail) => auth.renameEmail(userId, oldEmail, newEmail);
 const testAccounts = loadTestAccounts(REPO_ROOT);
+// The demo Shem and Jean (teacher-002, teacher-001) may have a phone and a password of their own from the gitignored local file.
 async function ensureTestAccounts() {
   if (!testAccounts) return;
-  engine.ensureTestAccounts(testAccounts.accounts);
-  await auth.ensureAccounts(testAccounts.accounts, testAccounts.password);
+  const profiles = engine.applyPrivateOverrides(testAccounts.accounts);
+  await auth.ensureOwnPasswords(profiles, testAccounts.password);
 }
 await ensureTestAccounts();
 files.sweep();
@@ -301,7 +302,10 @@ server.listen(PORT, '0.0.0.0', () => {
   for (const ip of lan) console.log(`  On your network: http://${ip}:${PORT}/public/index.html   (phones on the same Wi-Fi)`);
   console.log(`  API:            http://localhost:${PORT}/api/v1/health`);
   console.log(`  Data folder:    ${DATA_DIR}`);
-  if (testAccounts) console.log('  Test accounts:  ' + testAccounts.accounts.map((a) => a.email).join(', ') + '   (from seed-data/test-accounts.local.json)');
+  if (testAccounts) console.log('  Own-password accounts: ' + testAccounts.accounts.map((a) => a.email).join(', ') + '   (from seed-data/test-accounts.local.json)');
+  const seeded = seedData.profiles.find((p) => p.id === 'teacher-001');
+  const stored = engine.profiles.get('teacher-001');
+  if (seeded && stored && stored.email !== seeded.email) console.log('  WARNING: data/ was seeded from an older seed (emails differ). Delete the data folder, or POST /api/v1/dev/reset, to re-seed.');
   if (!demoPassword) console.log('  Note: public/js/demo-config.local.js not found, so seed teachers cannot sign in to the API until one exists and the data is reset.');
   console.log('');
 });

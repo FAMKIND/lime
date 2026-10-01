@@ -178,7 +178,7 @@ export function useMockMessages(conversationId: string): Message[] {
 }
 
 export function useMockCurrentUser(): Teacher {
-  // Default to Shem Robinson as the current user for demo
+  // Default to Shem Rajoon as the current user for demo
   return teachers.find(t => t.id === 'teacher-002')!;
 }
 

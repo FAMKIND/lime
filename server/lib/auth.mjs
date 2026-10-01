@@ -44,11 +44,13 @@ export class Auth {
     if (changed) this.save();
   }
 
-  // The dedicated test accounts get a real credential (own salt and hash). Only adds what is missing.
-  async ensureAccounts(accounts, password) {
-    for (const a of accounts) {
-      const email = a.email.toLowerCase();
-      if (!this.data.credentials[email]) await this.createAccount(email, password, a.id);
+  // Seed teachers with a private password of their own (the test accounts): their credential replaces the shared demo one.
+  // Only sets it when the person still has the shared one or none, so a password changed in the app is never overwritten.
+  async ensureOwnPasswords(profiles, password) {
+    for (const p of profiles) {
+      const email = (p.email || '').toLowerCase();
+      const cred = this.data.credentials[email];
+      if (!cred || cred.shared_demo) await this.createAccount(email, password, p.id);
     }
   }
 

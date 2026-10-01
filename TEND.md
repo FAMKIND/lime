@@ -3242,3 +3242,28 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app â€
 
 **Not pushed.** Nothing was pushed or fetched. Anyone who copied the repository before this (including the old objects) still has the old history; this only protects what has not left the machine.
 
+## LIME-75
+
+**Goal:** every demo email is `@famkind.com`, and the dev server's two test accounts *are* the demo Shem and Jean (no second Shem or Jean).
+
+**What changed**
+- **Emails:** all 25 seed teachers are now `<first name, lowercase, accents dropped>@famkind.com` (`jean@`, `shem@`, `grace@`, `tomas@`, ...). I confirmed the 25 first names are unique. There is no generator script (the embedded `public/js/seed-data.js` is a hand-kept mirror of `seed-data/teachers.json`), so I applied the same exact-string replacements to both and then checked by evaluating the embedded file that it still equals the JSON (emails, names, ids). Only those 25 emails and one display name changed in each file (52 lines each).
+- **Names:** teacher-002 is now **Shem Rajoon** in the seed (it was "Shem Robinson"; the initials SR are the same). The seed's Jean and Shem already had roles, schools, grades, subjects, bios and timezones, so there was nothing blank to fill in (the made-up details from LIME-74 were dropped along with the separate profiles). A comment in `seed-data/useMockData.ts` follows the name.
+- **Merge:** the separate test profiles, their extra DM and their extra Staff Room memberships are gone from the server (`ensureTestAccounts` and the made-up details table are removed). The seed's own Jean/Shem DM (`conv-001`) and the Staff Room (`conv-011`) serve instead, with all their history (Shem sees 10 chats and 37 messages, Jean 9 chats and 34).
+- **Private overrides:** `seed-data/test-accounts.local.json` (gitignored) now holds only the two phone numbers and the password, as `{ password, accounts: [{ email, phone }] }`. The server matches each entry **by email** to the seed teacher (`engine.applyPrivateOverrides`), stores the phone (exact-match search, never displayed), and `auth.ensureOwnPasswords` replaces the shared demo credential with that password (never overwriting a password the person changed in the app). I rewrote my local copy of the file into the new shape; the committed `test-accounts.example.json` has fake values and the new shape.
+- **Demo password:** every other seed teacher still signs in with the shared demo password (unchanged); I checked `grace@famkind.com` through the real sign-in page.
+- **Rule:** recorded in `README.md` and `docs/api.md` ("Demo emails and delivery"): the addresses could be real mailboxes, local and staging must never send real email or SMS, and any future invite or notification must stub delivery outside production. The README and `seed-data/README.md` also describe the new logins.
+- The server now prints a **warning at startup** if `data/` was seeded from an older seed (it compares teacher-001's email), telling you to delete `data/` or reset.
+
+**Tests:** the suites use the new emails; `api` grew to 100 checks (the own-password accounts are the seed teachers, no duplicate profile, their history and demo names, phone stored and never shown, the shared demo password stops working for them, and an assertion that the seed file, the embedded copy and the server all agree on `<first name>@famkind.com`). The seed-teacher hint and sign-in checks moved to `grace@famkind.com`, because Shem and Jean now have their own passwords (the shared-demo hint wording only applies to the others).
+
+**Verification**
+- `grep` over seed, tests, code and current docs (everything except `TEND.md` history and `PLOT.md`) for `@...edu`, `@...org` and `chungrajoon`: **0 matches**.
+- Both suites pass on both backends: `cd tests && npm test` and `LIME_TEST_SERVER=dev npm test`. Identical results: smoke 6, css 8, auth 11, sync 24, toasts 8, api 100, e2e-server 46 (about 55 seconds apiece, of which sync is 35).
+- Through the real sign-in page on a freshly seeded server: `shem@famkind.com` lands as **Shem Rajoon** (teacher-002) with 10 chats including the DM and PS 113 Staff Room; `jean@famkind.com` lands as **Jean Chung** (teacher-001) with 9; both see their own phone and no other person's; every email in their stores ends in `@famkind.com`; `grace@famkind.com` signs in with the demo password; the old Shem Robinson email is no longer an account.
+- **Private data check before committing:** `git diff --cached` searched for the two phone numbers (also as their last seven digits) and the password, all read from the local file: **0 matches**.
+
+**Re-seed (needed once):** an existing `data/` folder has the old emails. Either stop the server and delete `data/`, or, with the server running, `curl -X POST -H 'X-Lime-Dev: 1' http://localhost:8000/api/v1/dev/reset`. A fresh `data/` is seeded automatically. (Browser data from the local-only backend re-seeds itself when the seed changes.)
+
+**Gate:** restart the server (re-seeded). Sign in as `shem@famkind.com` and `jean@famkind.com` (their own password): you're the familiar Shem and Jean, with the existing chats, and every teacher's email ends in `@famkind.com`.
+

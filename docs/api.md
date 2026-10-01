@@ -739,6 +739,13 @@ alone cannot do background Bluetooth relay on iOS or Android.
   web app; Bluetooth through a native plugin, and background relaying is
   the part most limited by the web view.
 
+## Demo emails and delivery (LIME-75)
+
+Every demo teacher's email is `<first name, lowercase>@famkind.com`. Lime is a FAM project and these addresses **could be real
+mailboxes**. **Local and staging environments must never send real email or SMS.** Anything the API grows that delivers a message to a
+person outside the app (an invite, a notification, push, a password-reset or sign-in link, section 10) must **stub delivery everywhere
+except production**: write the message to a log or a dev inbox instead. The dev server sends nothing.
+
 ## Open points
 
 ### Decided (plot's review of this document, 2026-10-01, and the user)

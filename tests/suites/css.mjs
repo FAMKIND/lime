@@ -38,7 +38,7 @@ export async function run({ base, check }) {
   try {
     for (const pageName of ['index.html', 'auth.html']) {
       const page = await browser.newPage();
-      await page.evaluateOnNewDocument(() => sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: 'teacher-002', email: 'shem.robinson@ps113.edu' })));
+      await page.evaluateOnNewDocument(() => sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: 'teacher-002', email: 'shem@famkind.com' })));
       await page.goto(base + pageName, { waitUntil: 'load' });
       const counts = await page.evaluate(() => [...document.styleSheets].filter((s) => s.href).map((s) => {
         let n = -1; try { n = s.cssRules.length; } catch (e) { /* cross-origin (fonts) */ }

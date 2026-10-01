@@ -12,7 +12,7 @@ async function load(url, signedIn) {
   const dom = await JSDOM.fromURL(url, {
     runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(w) {
-      if (signedIn) w.sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: 'teacher-002', email: 'shem.robinson@ps113.edu' }));
+      if (signedIn) w.sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: 'teacher-002', email: 'shem@famkind.com' }));
       w.matchMedia = w.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {} }));
       w.ResizeObserver = w.ResizeObserver || class { observe() {} unobserve() {} disconnect() {} };
       w.IntersectionObserver = w.IntersectionObserver || class { observe() {} unobserve() {} disconnect() {} };
