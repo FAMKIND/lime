@@ -2840,3 +2840,29 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Gate:** the little "z" on busy and do-not-disturb is clearly readable, in real Montserrat Bold, at every size and in every row condition tested.
 
 **Record:** this entry.
+
+## LIME-57-fixf
+
+**Goal:** per the user's check of fixe `44e9db1` — the "z" needs to be a touch smaller and sit a touch higher so it doesn't touch the status circle's own bite edge.
+
+**Survey confirmed with a real pixel measurement, not eyeballed from the earlier screenshot:** built a small measurement tool (`measure-gap.js`, this session's own scratch output) that renders the circle+bite in pure red and the "z" in pure blue at a precise per-unit pixel scale, extracts each shape's own boundary pixels (a pixel whose 4-neighbor isn't the same class), and finds the true minimum distance between any red boundary pixel and any blue one — not a bounding-box comparison, not a guess from path coordinates. fixe's own shipped path measured a gap of **0.17 icon-local units** (≈1 device pixel at a 6×-per-unit render) — visually touching, confirming the user's own report exactly.
+
+**The change, both steps measured the same way, iteratively, not computed once and trusted:**
+1. **Smaller:** height shrunk 15% (icon-local 62.903 → **53.468** units — matching the brief's own "~15% smaller" instruction as a clean single ratio, rather than chasing its own slightly-uneven per-size pixel examples — 4.3/5.2/6.8px don't actually scale linearly with avatar width the way one ratio does, same kind of approximation gap as fixe's own worked examples had). Measured result at this step alone (anchor still unmoved): gap grew to 5.76 icon-local units (≈0.55px at lg) — better, but still under the brief's own ≥0.75px floor.
+2. **Higher:** the anchor's own top, unchanged since fixc (icon top − 12%), raised in trial steps (−13, −14, −15, −16, −16.5, −17), re-measuring the real gap after each one, until it cleared 0.75px at lg with a small safety margin: **icon top − 17%** measured **8.933 icon-local units**, i.e. **0.852px at lg** — about 14% of margin above the floor, not razor-thin. The anchor's own X (icon centre + 18%) needed no change — confirmed by measuring the TRUE closest pair of pixels each time, not assuming the touch point stayed in the same place as the shape moved.
+3. **The notch's own `-z` cut-out**, regenerated the same way as fixd/fixe (dilate the glyph's new, smaller/higher painted bbox by the same 4% gap, round the corners by that amount, re-run the ring-vs-avatar minimax compensation) — all errors still comfortably under ±0.5px. The plain tight-notch circles (active/away) are untouched.
+4. **DND verified by the same bite geometry, not a separate measurement:** the mask that cuts the bite is identical for busy (a filled circle) and DND (a stroked ring) — the "z"'s position relative to that one fixed bite circle doesn't change between states, confirmed by rendering DND's own ring+"z" in the same red/blue scheme: a clearly visible gap, matching busy's own.
+
+**Scope check:** `presenceIconSvg`/`presenceZPath` in `public/js/app.js`, the four `-notched-z.svg` files in `public/assets/`, `TEND.md` — same as fixe. **No change to `public/css/lime.css`** (same reason as fixe: fixd's own `:has([data-presence="busy"])`/`[data-presence="dnd"]` selectors already point at these exact filenames) or `public/index.html`.
+
+**Verification:**
+- `node --check` clean on `app.js`.
+- The pixel-measurement tool itself, run both before (0.17 units, confirming the reported bug) and after (8.933 units / 0.852px at lg) the fix — the same tool, not two different methods, so the before/after numbers are directly comparable.
+- The 4-state × 5-size synthetic grid (ring forced on busy+dnd): all 20 combinations clean, a visibly separated "z," no square/band artifact, in both Firefox and Chrome.
+- Zoomed screenshots of the live Jean C avatar (busy, lg, unread) showing a clear, visible gap between the "z" and the circle, in light (Warm), Sage, and dark, plus hovered and selected row states.
+- **Real installed Firefox 157.0 and Chrome 154.0.8037.92**: z height measured 5.10–5.12px at lg (≈12.75–12.79% of the avatar, matching the expected 85%-of-fixe's-15% target precisely in both engines), `data-presence="busy"` confirmed, zero console/page errors in either.
+- Browser-parsed CSS rule count: `lime.css` **720** — unchanged (no CSS edited).
+
+**Gate:** the "z" is a hair smaller and sits just above the green circle, with visible daylight between them, confirmed by direct pixel measurement rather than assumed from the shrink alone.
+
+**Record:** this entry.

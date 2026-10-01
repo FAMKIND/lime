@@ -166,12 +166,30 @@ function presenceFor(status) {
 //     Solved backward from the brief's OWN stated target instead (≈15%
 //     of the avatar width, which is what its own worked examples —
 //     32→~5px, 40→~6px, 56→~8px — actually compute to): icon-local
-//     height = 15 × 130/31 ≈ 62.903 units lands md/lg/xl at
-//     4.8/6.0/8.4px exactly. Positioned with its own top-left corner at
-//     the same anchor fixc/fixd already used (icon centre + 18%, icon
-//     top − 12%) — unchanged position logic, just a real letterform,
-//     correctly sized, instead of a drawn one. Exact derivation and the
-//     source glyph's own raw path are in TEND.md.
+//     height = 15 × 130/31 ≈ 62.903 units landed md/lg/xl at
+//     4.8/6.0/8.4px exactly.
+//     LIME-57-fixf: the user's own check found fixe's "z" touching the
+//     circle's own bite edge at its bottom-left corner (confirmed by a
+//     pixel-level gap measurement — a red/blue two-color render, boundary
+//     pixels only, nearest-pair search, not eyeballed or computed from
+//     path coordinates alone: the gap was 0.17 icon-local units, ~1
+//     device px at a 6x-per-unit render, i.e. visually touching). Fixed
+//     in two steps, both measured the same way: (1) height shrunk 15%
+//     (62.903 → 53.468 icon-local units, matching the brief's own "~15%
+//     smaller" instruction exactly — landing at 4.08/5.1/7.14px at
+//     md/lg/xl, close to but not identically matching the brief's own
+//     slightly-uneven 4.3/5.2/6.8px worked examples, which don't scale
+//     linearly with avatar size the way one clean ratio does); (2) the
+//     anchor's own top (originally icon-top − 12%) raised further, to
+//     icon-top − 17%, re-measuring the gap after each trial shift until
+//     it cleared the brief's own ≥0.75px-at-lg minimum with a small
+//     safety margin (measured: 0.852px at lg, converted from the
+//     measured 8.933 icon-local-unit gap). The anchor's own X (icon
+//     centre + 18%) was left unchanged — the vertical shift alone was
+//     enough, confirmed by measuring the TRUE minimum distance between
+//     every rendered pixel of each shape, not assuming where the closest
+//     point would land. Exact derivation, the measurement tool, and the
+//     full trial table are in TEND.md.
 //     It extends above and right of the icon's own 0–100 box, which is
 //     why the SVG's own viewBox is padded (-10 -20 130 130) and why
 //     .lime-presence needs overflow:visible (CSS) rather than clipping
@@ -188,7 +206,10 @@ function presenceZPath() {
   // The real Montserrat Bold "z" glyph outline (see the comment above
   // for the full derivation) — a filled polygon, not a stroked line;
   // fill color is applied by the caller (presenceIconSvg, below).
-  return 'M68.000,50.903 L68.000,39.913 L105.181,-4.049 L108.338,2.030 L68.818,2.030 L68.818,-12.000 L123.070,-12.000 L123.070,-1.009 L85.889,42.953 L82.615,36.873 L124.122,36.873 L124.122,50.903 Z';
+  // LIME-57-fixf: 15% smaller, top anchor raised from -12 to -17 (icon
+  // centre + 18% / icon top - 17%) so it clears the circle's own bite
+  // edge by a measured ≥0.75px at lg, per the brief's own requirement.
+  return 'M68.000,36.468 L68.000,27.126 L99.604,-10.242 L102.287,-5.074 L68.696,-5.074 L68.696,-17.000 L114.809,-17.000 L114.809,-7.658 L83.205,29.710 L80.423,24.542 L115.703,24.542 L115.703,36.468 Z';
 }
 function presenceIconSvg(state, showZ) {
   const uid = 'lime-presence-mask-' + (presenceMaskUid++);
