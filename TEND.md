@@ -3135,3 +3135,22 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app â€
 
 **Gate:** none from the user beyond "ok". Plot reviews `docs/api.md` before LIME-72 is drafted.
 
+## Standing rule (from LIME-72)
+
+**Run `tests/` before every commit that touches `public/`** (`cd tests && npm test`, or the relevant suites by name) and report pass or fail in the handoff. The suites persist in the repo; do not rebuild them in a scratchpad.
+
+## LIME-72
+
+**Goal:** the regression suites live in the repo, so they are not lost between sessions (LIME-69 could not re-run the old ones).
+
+**What landed:** `tests/` (new): `package.json` (+ lockfile), `run.mjs`, `lib/harness.mjs`, `suites/{smoke,css,auth,sync,toasts}.mjs`, `tests/README.md`; a "Running tests" section in `README.md`; the standing rule above. **No app code changed.**
+
+**Deviation from the brief (needs a look):** the brief asked for `playwright` in `devDependencies`. Playwright is not installed on this machine and its Firefox is a patched build that cannot drive the user's stock Firefox (already found in LIME-52-fix3). `puppeteer-core` 25 is used instead, which drives the installed Chrome (CDP) and the installed Firefox (WebDriver BiDi). `npm install` worked (network available), so nothing was vendored and `NODE_PATH` was not needed.
+
+**Verification (current HEAD, nothing failing):**
+- Command: `cd tests && npm test` (about 52s total). Per suite: smoke 6 checks 4.3s; css 8 checks 2.6s; auth 11 checks 3.1s; sync 24 checks 36.8s (Firefox then Chrome); toasts 8 checks 5.2s.
+- Firefox used for `css` and `sync` is `/Applications/Firefox.app` (BiDi); Chrome is the installed Google Chrome.
+- CSS rule counts at HEAD in Firefox: `lime.css` 737, `gradients.css` 25, `auth.css` 39 (minimums 660/22/35). The brief said lime.css was about 660; it is 737 now.
+- The CSS detector has a self-test (a comment closed early is flagged).
+- No real app bug was exposed.
+

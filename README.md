@@ -11,6 +11,17 @@ git submodule update --init --recursive
 open public/index.html
 ```
 
+## Running tests
+
+The regression suites live in `tests/` (LIME-72). One-time setup, then one command:
+
+```
+cd tests && npm install     # once: installs jsdom and puppeteer-core (node_modules is gitignored)
+npm test                    # all suites; or: node run.mjs smoke css auth sync toasts
+```
+
+Suites: **smoke** (real `index.html` and `auth.html` load in jsdom with zero errors), **css** (no stray `*/`, and each stylesheet's browser-parsed rule count), **auth** (sign up, sign in, wrong password, the seed-teacher hint, sign out), **sync** (two tabs, a live message, no lost writes 20 + 20; Firefox and Chrome), **toasts** (queue across pages, max 3, an error stays). Each run starts its own static server on a free port and drives your installed Firefox and Chrome. See `tests/README.md`.
+
 ## Constraints
 
 1. Use seed (`vendor/seed/`), `seed-*` classes, token grammar

@@ -1,0 +1,98 @@
+// Shared helpers: a throwaway static server, browser launching, a tiny
+// assertion recorder. No app code lives here.
+import { spawn } from 'node:child_process';
+import net from 'node:net';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const BROWSERS = {
+  chrome: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  firefox: '/Applications/Firefox.app/Contents/MacOS/firefox',
+};
+export const browserAvailable = (name) => fs.existsSync(BROWSERS[name]);
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, '127.0.0.1', () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
+    srv.on('error', reject);
+  });
+}
+
+// Serves the repo root (so /public/... and /vendor/... work), like the
+// preview URL in the README. Own process, own port, stopped afterwards.
+export async function startServer() {
+  const port = await freePort();
+  const proc = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], { cwd: REPO_ROOT, stdio: 'ignore' });
+  const base = `http://127.0.0.1:${port}/public/`;
+  for (let i = 0; i < 50; i++) {
+    try { const r = await fetch(base + 'index.html'); if (r.ok) break; } catch (e) { /* not up yet */ }
+    await sleep(100);
+  }
+  return { base, port, stop: () => proc.kill() };
+}
+
+// puppeteer-core drives the user's *installed* browsers: Chrome over CDP,
+// Firefox over WebDriver BiDi (Playwright's patched Firefox is not the
+// user's Firefox; see PLOT.md). Background-tab throttling is switched off
+// so two tabs in one window behave like two visible windows.
+export async function launch(name = 'chrome') {
+  const { default: puppeteer } = await import('puppeteer-core');
+  return puppeteer.launch({
+    executablePath: BROWSERS[name],
+    browser: name === 'firefox' ? 'firefox' : 'chrome',
+    headless: true,
+    protocol: name === 'firefox' ? 'webDriverBiDi' : undefined,
+    args: name === 'chrome'
+      ? ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows']
+      : [],
+  });
+}
+
+// Messages that are noise, not failures (documented in TEND.md).
+const IGNORABLE = [
+  /demo-config\.local/, // gitignored file; 404 when absent
+  /Failed to load resource.*404/,
+  /downloadable font/, // Google Fonts blocked offline
+  /ResizeObserver loop/,
+  /SecurityError: The operation is insecure/, // Firefox/BiDi on sign-out navigation; pre-existing (LIME-69)
+  /favicon/,
+];
+export const ignorable = (text) => IGNORABLE.some((re) => re.test(text));
+
+export function watchErrors(page, label, sink) {
+  page.on('pageerror', (e) => { if (!ignorable(String(e.message))) sink.push(`${label} pageerror: ${e.message}`); });
+  page.on('console', (m) => { if (m.type() === 'error' && !ignorable(m.text())) sink.push(`${label} console: ${m.text()}`); });
+}
+
+// A suite gets one of these: check(name, condition, detail) records a result.
+export function recorder() {
+  const results = [];
+  return {
+    results,
+    check(name, condition, detail) { results.push({ name, pass: !!condition, detail: detail === undefined ? '' : String(detail) }); },
+  };
+}
+
+// Opens a page already "signed in" as a seed teacher (per-tab session).
+export async function openSignedIn(browser, base, userId, email, label, errors) {
+  const page = await browser.newPage();
+  watchErrors(page, label, errors);
+  await page.evaluateOnNewDocument((u, e) => {
+    if (!sessionStorage.getItem('lime-demo-session')) sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: u, email: e }));
+  }, userId, email);
+  await page.goto(base + 'index.html', { waitUntil: 'load' });
+  await page.waitForFunction(() => window.LimeStore && LimeStore.getCurrentUserId(), { polling: 10, timeout: 10000 });
+  return page;
+}
+
+export async function wipeStorage(browser, base) {
+  const page = await browser.newPage();
+  await page.goto(base + 'auth.html');
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.close();
+}
