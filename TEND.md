@@ -2591,3 +2591,41 @@ Every rest/hover pair measured in Firefox via `getComputedStyle`, not assumed fr
 **Gate:** in the Recent row, status icons sit in a real cut-out notch — active is a solid green dot, busy is green with a tiny "z," away is a hollow ring, DND is a broken ring with a "z." Nothing is clipped, on hovered or selected rows, light or dark. The green unread ring still follows the lime shape and stops short of the icon.
 
 **Record:** this entry.
+
+## LIME-59-fix
+
+**Goal:** LIME-59 normalised every header/composer icon down to a ~15.3px standard it derived from `.lime-appearance-icon`/`dew-ellipsis-menu` — but the user's own reference for "the right size" is `#left-panel-toggle`, which LIME-59 never touched. Bring every icon LIME-59 touched back up to match it.
+
+**Survey confirmed the brief's own instruction exactly:** `#left-panel-toggle` (`dew-sidebar-left-open`, inside `.lime-icon-btn`) was never touched by LIME-59 or any prior brief — its icon still reads the base `.lime-icon-btn .dew { font-size: 18px; }` rule, untouched since before this whole sequence started. Measured directly (real pixels, not font-size): **20.5px tall** — the real target, replacing LIME-59's own 15.3px one.
+
+**The change, each measured against the 20.5px reference individually, not assumed to need the same delta:**
+- `#right-panel-toggle .dew`: LIME-59's own override (13.5px) **removed entirely** — it's the same glyph as the left toggle, mirrored, so falling back to the shared base `.lime-icon-btn .dew` 18px rule matches the reference exactly (measured: 20.5px, identical).
+- `.lime-appearance-icon` / `.lime-share-icon`: both direct-pixel SVGs, 18px → **24px** (measures 20.0px / 20.25px — these two were always meant to match each other, not dew's own convention, so one shared new size for both).
+- `.lime-composer__aux .dew` (the + attach icon): 14px → **19px** (measures 20.0px). This one was never touched by LIME-59 at all — it was already under the real reference before LIME-59 ever ran, confirming the user's complaint ("the + icon... look smaller than they were") predates LIME-59 for this specific icon.
+- `.lime-composer__voice .dew-microphone`: LIME-59's 10.5px → **14px** — simply reverting LIME-59's own change. 14px (its value immediately before LIME-59 touched it) already measures 20.0px against the real reference, so no new number was needed, just undoing the wrong one.
+- `.lime-composer__return` (Send, a text glyph): LIME-59's 23px → **32px** (measures 20.25px), still comfortably inside the unchanged 32px button — the glyph's own ink doesn't fill its full em-square.
+- **`.lime-composer__voice .dew-chevron-down` (⌄) and `dew-ellipsis-menu` ("…") are left unchanged** (12px and the base 18px respectively) — both are inherently short, wide marks (a caret, three dots), incapable of ever measuring 20.5px tall without the glyph itself growing absurdly wide to compensate. "Match the left toggle's height" has no meaningful literal answer for a shape that's never tall to begin with — flagged at the gate rather than forced to a number that would look wrong.
+
+**Verification, every value measured before and after (not assumed from the new font-size alone — the lesson every one of this brief's own predecessors already learned):**
+
+| Icon | Before (LIME-59) | After |
+|---|---|---|
+| Left toggle (reference, unchanged) | 20.5px | 20.5px |
+| Right-panel toggle | 15.3px | **20.5px** |
+| Appearance | 15.3px | **20.0px** |
+| Share | 15.3px | **20.25px** |
+| Composer + | 15.0px | **20.0px** |
+| Composer mic | 15.3px | **20.0px** |
+| Composer Send | 15.0px | **20.25px** |
+| Composer chevron (unchanged) | 7.0px | 7.0px |
+| "…" (unchanged) | 3.5px | 3.5px |
+
+- `node --check` n/a (CSS-only); braces balanced (782/782 — one whole rule, `#right-panel-toggle`'s override, removed cleanly).
+- The existing LIME-33, LIME-49-fix, LIME-48, LIME-29, LIME-55, LIME-27 jsdom suites all still pass.
+- Screenshots: the left toggle next to the lime logo (the reference, unchanged); the header row (Share/Appearance/"…") now visibly bigger and matching each other; the composer row (+/mic/⌄); the right-panel toggle alone; Send in its active (lime-filled) state — all viewed directly, no clipping or overflow in the unchanged button boxes.
+- **Real installed Firefox and Chrome** (`puppeteer-core`/WebDriver BiDi): every computed font-size/width confirmed directly (not just visually) — `right-panel-toggle` matches `left-panel-toggle`'s own font-size exactly, Appearance/Share both 24px, attach 19px, mic 14px, Send 32px. Zero console/page errors in either.
+- Browser-parsed CSS rule count: `lime.css` **710** (down from 711 — removing `#right-panel-toggle .dew`'s own rule outweighed the comment-only edits elsewhere). `gradients.css` untouched.
+
+**Gate:** the right-panel toggle, the palette, Share, and the chat box's + and mic are all back to matching the left sidebar toggle's size. The composer's ⌄ and the header's "…" are left at their own smaller, naturally-flat size — flagged in case that's not what was meant.
+
+**Record:** this entry.

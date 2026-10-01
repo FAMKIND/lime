@@ -823,36 +823,36 @@ html[data-pattern-treatment="photo"] body::before {
   font-size: 18px;
 }
 
-/* LIME-59: dew-sidebar-right-closed's own ink fills nearly the full
-   24-unit viewBox (unlike most dew glyphs, which sit inside more
-   padding) — at the same 18px font-size as every other header icon it
-   measured 20.3px tall vs. the appearance icon's 15.3px (real pixel
-   measurement, TEND.md, not font-size alone — "dew glyphs vary
-   optically"). 13.5px is the size that lands it back at 15.3px, the
-   same visible height the rest of the header group already share. */
-#right-panel-toggle .dew {
-  font-size: 13.5px;
-}
+/* LIME-59-fix: LIME-59 shrank every header/composer icon to match
+   dew-ellipsis-menu/.lime-appearance-icon's own ~15.3px height — but
+   the user's own reference for "the right size" is #left-panel-toggle
+   (dew-sidebar-left-open), never touched by LIME-59, measured at
+   20.5px (real pixels, not font-size — TEND.md). dew-sidebar-right-
+   closed is the SAME glyph mirrored, at the SAME base .lime-icon-btn
+   .dew 18px font-size left-panel-toggle already uses — removing
+   LIME-59's own override here (13.5px) restores the match exactly
+   (measured: 20.5px, identical to the reference), rather than
+   re-deriving a new number. */
 
 /* LIME-50: #appearance-toggle's icon (a palette) is a real <svg>, not a
-   .dew glyph (dew has no sun/palette icon — checked) — sized to match
-   every other .lime-icon-btn glyph at 18px, and stroke="currentColor"
+   .dew glyph (dew has no sun/palette icon — checked) — stroke="currentColor"
    (markup) picks up the same hover/muted color .dew icons already
-   inherit here. */
+   inherit here. LIME-59-fix: 18x18 measured 15.3px tall, well under
+   the left-toggle's 20.5px reference — 24x24 is the size that measures
+   20.0px (TEND.md), the closest a direct-pixel box gets without
+   overshooting past the 1px tolerance on the other side. */
 .lime-appearance-icon {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
-/* LIME-59: same pattern as .lime-appearance-icon just above — a real
-   <svg>, not a .dew glyph, sized directly (not via font-size/em) so it
-   can't inherit the 1.5em mask box .dew itself uses. Measured to match
-   .lime-appearance-icon's own rendered height exactly (15.3px real
-   pixels, both at this same 18x18 box) — see index.html's own comment
-   for why dew-share couldn't just be shrunk instead. */
+/* LIME-59-fix: same reasoning and the same new size as
+   .lime-appearance-icon just above (the two were always meant to
+   match each other, not just dew's own 18px convention) — 24x24
+   measures 20.25px, matching the 20.5px reference within tolerance. */
 .lime-share-icon {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
 /* LIME-52-fix2: the popover no longer carries .lime-menu--wide's 280px
@@ -5651,12 +5651,12 @@ html[data-pattern-treatment="photo"] body::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* LIME-59: was 18px, measuring only 11.7px tall (a text glyph, ↵,
-     not a dew/SVG icon — real pixels, not font-size). 23px lands it at
-     15.0px, matching the rest of the composer/header icon standard
-     (±1px of the 15.3px reference) while staying comfortably inside
-     the 32px button. */
-  font-size: 23px;
+  /* LIME-59-fix: LIME-59's own 23px measured only 15.0px tall — under
+     the real reference, #left-panel-toggle, at 20.5px (TEND.md). 32px
+     is the size that measures 20.25px, matching within tolerance,
+     still inside the 32px button (the glyph's own ink doesn't fill its
+     full em-square, so it doesn't visually collide with the circle). */
+  font-size: 32px;
   opacity: 0.4;
   cursor: default;
 }
@@ -5728,13 +5728,17 @@ html[data-pattern-treatment="photo"] body::before {
   background: var(--calm-bg-subtle-hover);
 }
 
-/* 16px, not the toolbar tools' 18px (LIME-10-fix5). The [class^="icon-"]
-   half is now unused here (the voice button's Lucide waveform icon was
-   reverted to dew-microphone in LIME-10-fix10) but harmless to leave —
-   kept in case a future aux button ever uses a Lucide icon again. */
+/* LIME-59-fix: was 14px (16px before LIME-10-fix5), measuring 15.0px
+   tall against the real reference (#left-panel-toggle, 20.5px,
+   TEND.md) — under it, same shrink-relative-to-the-left-toggle problem
+   LIME-59 left on every other icon this brief touches. 19px measures
+   20.0px, within tolerance. The [class^="icon-"] half is now unused
+   here (the voice button's Lucide waveform icon was reverted to
+   dew-microphone in LIME-10-fix10) but harmless to leave — kept in
+   case a future aux button ever uses a Lucide icon again. */
 .lime-composer__aux .dew,
 .lime-composer__aux [class^="icon-"] {
-  font-size: 14px; /* was 16px (LIME-10-fix5) */
+  font-size: 19px;
 }
 
 .lime-composer__voice-dropdown {
@@ -5761,16 +5765,23 @@ html[data-pattern-treatment="photo"] body::before {
 }
 
 .lime-composer__voice .dew-microphone {
-  /* was 18px (LIME-10-fix11), then 16px (LIME-10-fix12), then 14px —
-     LIME-59: at 14px it still measured 19.7px tall (real pixels, not
-     font-size), taller than the header's own 15.3px standard despite
-     matching the + button's font-size number — dew-microphone's own
-     glyph just carries more ink at the same nominal size (LIME-59's
-     own "glyphs vary optically" finding, same as dew-share). 10.5px is
-     the size that lands it at 15.3px too. */
-  font-size: 10.5px;
+  /* was 18px (LIME-10-fix11), then 16px (LIME-10-fix12), then 14px,
+     then LIME-59 shrank it to 10.5px chasing the wrong reference
+     (15.3px). Measured against the real reference (#left-panel-toggle,
+     20.5px, TEND.md): 14px — the value this had before LIME-59 ever
+     touched it — already measures 20.0px, within tolerance. Simply
+     reverting LIME-59's own change here was the fix; no new number
+     needed. */
+  font-size: 14px;
 }
 
+/* LIME-59-fix: left at 12px, unchanged — same reasoning as
+   dew-ellipsis-menu (TEND.md): a caret is inherently a short, wide
+   mark, never a tall one, so "match the left toggle's 20.5px height"
+   doesn't have a meaningful literal answer here, the same way it
+   doesn't for "…"'s three dots. LIME-59 never touched this value
+   either. Flagged for the gate in case the user wants it bigger
+   anyway, but not changed unasked. */
 .lime-composer__voice .dew-chevron-down {
   font-size: 12px;
 }
