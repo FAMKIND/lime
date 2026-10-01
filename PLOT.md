@@ -57,7 +57,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - **C.** Signature moments only (profile and details avatars, empty states, a lime-slice loading spinner); list avatars unchanged.
   - Either way, prototype at 20/24/32/40/64px in light and dark before calling it done.
 - **DECIDED (the user, 2026-09-30): palette "B", then revised to "keep all 8"**, so: **no tones dropped or replaced**, only B's refinements to existing tones (Warm's surfaces → `#f0eee6`, Sage retuned so lime stands out, and every tone verified). **Shape "A":** lime-silhouette avatars at ≥ 28px. Briefs: **LIME-56** (palette) and **LIME-57** (lime avatars, a preview stop first).
-- **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **The user confirmed 28px. Landed (2026-09-30):** LIME-57 `5a17cbb` (no 28–31px avatars exist, so in practice md/lg/xl = 32/40/56px are shaped and sm/xs stay round; `border-radius: 0` is needed, or the circle clip eats the nub; the unread ring is now a `.lime-avatar-ring` wrapper, because box-shadow on a masked element is invisible), LIME-58 `f578558`, LIME-59 `6db2847` (a hand-drawn Share SVG; bubbles = list hover through one token). **The user's gate checks on 56–59 are pending.** `Logomark-outline.svg` and `signin-teachers.mp4` are still untracked. Ask whether to commit the logomark as a brand asset. **The user's check found the Recent row's presence dots clipped** (the ring wrapper is an always-masked ancestor), so LIME-57-fix was drafted. The user then asked for Slack-style status icons in a cut-out notch, so **LIME-57-fixb (which supersedes it) runs next.** **LIME-57-fixb landed as `81a759d`** (2026-09-30): a `mask-composite` notch, SVG states, and the ring as a layer behind the avatar, verified in the real Firefox and Chrome plus the fallback. Tend's lesson: element-clipped screenshots in Firefox can hide mask effects; confirm with a full-page shot. **The user's gate check FAILED:** the icons shrank (LIME-59 normalised down; the left toggle is the right size), and the status icons have a halo and are too small. **LIME-59-fix and LIME-57-fixc are drafted and run next.** **Landed (2026-09-30):** LIME-59-fix `2db344f` (icons match the left toggle) and **LIME-57-fixc `d50d85a`** (four pre-composited notched SVG masks; `mask-composite` now appears only in comments, which plot verified; the path Z). **The user's check ("closer")** asked for a bigger Z and a tighter notch (**LIME-57-fixd**), the ↵ smaller again, a split mic button like Add, and the reply composer's clipped mic hover fixed (**LIME-60**). Both are drafted. **Landed:** LIME-57-fixd `167f3ee` and LIME-60 `9d09dd4` (2026-09-30). The user's check of 60 asked for the container outline → **LIME-60-fix drafted → landed as `55baa1b`**; then LIME-60-fix2 (outline on hover only) **landed as `fec746e`** (2026-09-30; the user's check is pending). **LIME-61 landed as `c045fca`** (all 12 primary CTAs use pale lime; on elevated surfaces in Lemon and Sage they get a thin lime-300 border; the user's check is pending). **Next: LIME-57-fixe** (the Montserrat Bold z). **LIME-57-fixe landed as `44e9db1`** (the real Montserrat Bold "z" outline, extracted from the font with fontTools; Montserrat is OFL, so artwork use is fine; lg ≈ 6.0px; the user's check is pending). Then: the Communities decision surface. Then: the Communities decision surface.
+- **Landed (2026-09-30):** LIME-48-fix2 `c88bcfc` (the new video); **LIME-56 `c7f5009`** (Warm surface `#f0eee6`, Sage greyer, Add/Send ink now a theme-aware token; a dark-mode 1.03:1 regression was caught and fixed). **LIME-57 Phase 1:** the preview is done and `lime-silhouette.svg` is extracted (untracked). Plot looked at it: the nub reads as a **speech-bubble tail** at 40px and up (a nice fit for a messaging app), and it's barely visible at 28–32px, where it's harmless. Plot's lean is to keep 28px. **The user confirmed 28px. Landed (2026-09-30):** LIME-57 `5a17cbb` (no 28–31px avatars exist, so in practice md/lg/xl = 32/40/56px are shaped and sm/xs stay round; `border-radius: 0` is needed, or the circle clip eats the nub; the unread ring is now a `.lime-avatar-ring` wrapper, because box-shadow on a masked element is invisible), LIME-58 `f578558`, LIME-59 `6db2847` (a hand-drawn Share SVG; bubbles = list hover through one token). **The user's gate checks on 56–59 are pending.** `Logomark-outline.svg` and `signin-teachers.mp4` are still untracked. Ask whether to commit the logomark as a brand asset. **The user's check found the Recent row's presence dots clipped** (the ring wrapper is an always-masked ancestor), so LIME-57-fix was drafted. The user then asked for Slack-style status icons in a cut-out notch, so **LIME-57-fixb (which supersedes it) runs next.** **LIME-57-fixb landed as `81a759d`** (2026-09-30): a `mask-composite` notch, SVG states, and the ring as a layer behind the avatar, verified in the real Firefox and Chrome plus the fallback. Tend's lesson: element-clipped screenshots in Firefox can hide mask effects; confirm with a full-page shot. **The user's gate check FAILED:** the icons shrank (LIME-59 normalised down; the left toggle is the right size), and the status icons have a halo and are too small. **LIME-59-fix and LIME-57-fixc are drafted and run next.** **Landed (2026-09-30):** LIME-59-fix `2db344f` (icons match the left toggle) and **LIME-57-fixc `d50d85a`** (four pre-composited notched SVG masks; `mask-composite` now appears only in comments, which plot verified; the path Z). **The user's check ("closer")** asked for a bigger Z and a tighter notch (**LIME-57-fixd**), the ↵ smaller again, a split mic button like Add, and the reply composer's clipped mic hover fixed (**LIME-60**). Both are drafted. **Landed:** LIME-57-fixd `167f3ee` and LIME-60 `9d09dd4` (2026-09-30). The user's check of 60 asked for the container outline → **LIME-60-fix drafted → landed as `55baa1b`**; then LIME-60-fix2 (outline on hover only) **landed as `fec746e`** (2026-09-30; the user's check is pending). **LIME-61 landed as `c045fca`** (all 12 primary CTAs use pale lime; on elevated surfaces in Lemon and Sage they get a thin lime-300 border; the user's check is pending). **Next: LIME-57-fixe** (the Montserrat Bold z). **LIME-57-fixe landed as `44e9db1`** (the real Montserrat Bold "z" outline, extracted from the font with fontTools; Montserrat is OFL, so artwork use is fine; lg ≈ 6.0px; the user's check is pending). **LIME-57-fixf landed as `f82d402`** (the z is smaller and clear of the circle). **The user's QA round (2026-09-30) → LIME-62** (the media viewer) **and LIME-63** (list radius, Share as a dropdown, composer fade, reply mic) **are drafted and run next.** Then: the Communities decision surface. Then: the Communities decision surface.
 - **New finding (tend, LIME-56): white text on the solid green `#09a950` buttons** (e.g. "Continue with email", Seed's `seed-button--primary`) is **under 4.5:1 on every tone** (white on `#09a950` ≈ 3.1:1, computed). It's a brand-level decision. Options put to the user: **A.** ink text `#131b17` on `#09a950` (≈ 5.7:1, computed; keeps the brand green); **B.** darker green `#078040` (`--seed-lime-600`) with white text (≈ 5.0:1, computed); **C.** leave it (large or bold text only needs 3:1, and a 16px semibold button label doesn't qualify). Plot's lean: **A.** Upstream candidate for Seed too. **DECIDED: A (the user, 2026-09-30) → LIME-58 drafted.** Its hover and press go lighter (lime-400/300), because ink on the darker lime-600 is only ≈ 3.5:1.
 
 ### Unbriefed candidates (offer when the queue thins)
@@ -275,6 +275,76 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-62 → `tend` (after LIME-57-fixf): the media viewer: × at the photo's corner, a 3-column wall, and slides that replace the wall
+
+**The user's QA (2026-09-30, screenshots):**
+1. "The close button on the image slideshow needs to be aligned to the top-right corner of the photo." In their reference, the round white × sits **just outside the photo's top-right corner, diagonally**: its centre is ~28px right of and ~30px above the corner. (This supersedes LIME-40-fix's "close in a bar outside the image".)
+2. "The media gallery: make it 3 columns, with more spacing around the wall."
+3. "When someone clicks an image you shouldn't see the wall any more; it should be the regular slides with the arrows on the left and right. You should only see the grid when you click the +N tile or the 'N photos' link in the chat."
+
+**Survey:**
+- The lightbox is `openLightbox(images, index, options)` (`app.js` ~4773), with `.lime-lightbox__close` (~2734–2790 in `lime.css`).
+- The wall is `openPhotoWall(messageId)` (~4786), a CSS-columns masonry (`.lime-photo-wall__masonry`: `column-count` 2 / 3 at a breakpoint / 5 wide, `column-gap: --seed-space-2`, padding `space-8 space-6`).
+- A wall tile click calls `openLightbox(..., { fromWall: true })` (~4845–4850), which currently shows the slides **over** the still-visible wall.
+
+**The change:**
+1. **The ×:** positioned **relative to the displayed image's actual rect** (recomputed on open, on slide change and on resize), with its centre at the image's top-right corner + (≈ 28px, −30px). It's **clamped inside the viewport** (≥ 12px from any edge) when the image is near an edge. It stays a round, high-contrast button, keyboard-focusable, with Escape still closing.
+2. **The wall:** **3 columns** at desktop widths (2 below 768px, 1 below 480px), with **`column-gap` and tile spacing ≈ `--seed-space-4` (16px)** and **more padding around the wall** (≈ `--seed-space-12` on desktop, scaled down on mobile). Keep the masonry (natural aspect ratios).
+3. **Slides replace the wall:** clicking a wall tile **hides the wall completely** and shows the regular slides (arrows left and right, the counter, ×) on the normal lightbox backdrop. **Closing the slides (× or Escape) returns to the wall** at the same scroll position, since that's where the user came from. Closing the wall returns to the chat.
+4. **Entry points:** the wall opens **only** from the album's "+N" tile and the "N photos" link. Clicking any other album tile opens the slides directly at that photo (it does today; confirm). Report each entry point's behaviour.
+
+**Scope:** the lightbox and photo-wall code in `public/js/app.js`, their CSS in `public/css/lime.css`, and `TEND.md`. Not attachments, uploads, or the album grid in the chat.
+
+**Verification:**
+- The × position measured against the image rect at 3 viewport sizes and for a portrait, a landscape and a small image.
+- Screenshots: the wall at 1567px (3 columns, spacing), slides opened from the wall (no wall visible), × → back to the wall at the same scroll, and each entry point.
+- Escape order: slides → wall → chat.
+- Run in the real Firefox and Chrome. The real app loads in jsdom with zero errors. Report the browser-parsed CSS rule counts.
+
+**Gate:** open an album's "+N": a roomy 3-column wall. Click a photo: just that photo, with arrows and the × at its top-right corner. Close it and you're back on the wall.
+
+**Record:** add a `## LIME-62` entry to `TEND.md`. Commit: `fix: media viewer: corner close, 3-column wall, slides replace wall`, trailer `Brief: LIME-62`, plus the attribution trailer.
+
+---
+
+### LIME-63 → `tend` (after LIME-62): QA polish: list corners, the Share popover as a dropdown, the composer fade, the reply mic clipping
+
+**The user's QA (2026-09-30, screenshots):**
+1. "The rounded corners of the message list should be consistent with the chat bubbles." Hovered and selected list rows look less rounded than the bubbles.
+2. "The Share dropdown needs to follow the same pattern as the dropdowns: outlines, no close button in the top right, etc."
+3. "The bottom fade could move up a little so that the + and mic icons are still readable." In the screenshot, a photo in the thread shows through behind the main composer's footer row (+, mic ⌄).
+4. "The icons (mic) under the reply chat box are still getting a little cut off" (the split mic's outline or hover at the reply panel's right edge, after LIME-60, 60-fix and 60-fix2).
+
+**Survey:**
+- Bubbles use `--seed-radius-lg` (16px, `.lime-message__content`, `lime.css` ~4125). Find the list row radius.
+- Menus: `.lime-menu` (~1954): `--soil-bg-elevated`, **`1px solid --soil-border-subtle`**, `--seed-radius-lg`, `--seed-shadow-md`, padding `--seed-space-2`, z 1000, closed by outside-click and Escape through `wireDropdownToggle`.
+- The Share popover (`.lime-share-popover`, ~1120) has **no border**, `--seed-shadow-xl`, padding `--seed-space-5`, and a **close ×** (`#share-popover-close`, `index.html` ~250).
+
+**The change:**
+1. **List corners:** conversation rows (hover and selected, in every section: Starred, All, Archived) and any other row-style list in the centre panel use **`--seed-radius-lg`**, the bubbles' token. Point both at one shared token so they can't drift.
+2. **The Share popover follows the menu pattern:** a `1px solid --soil-border-subtle` border, `--seed-shadow-md`, the same radius as `.lime-menu`, and padding consistent with menus (it holds a form, so use padding ≥ `--seed-space-3` where the content needs it; report the value). **Remove the close ×** (and its JS). The popover closes by **outside-click, Escape, or clicking Share again**, through the same registry as the other dropdowns (one open at a time). Its contents and Copy link stay as they are. Keep focus management: focus moves into the popover on open and returns to the Share button on close.
+3. **The composer fade moves up:** the thread's bottom fade (the mask that fades content under the composer) must reach **full transparency above the top of the composer's footer row** (+, mic ⌄, disclaimer), so nothing in the thread shows behind those icons. Measure the footer row's top and the mask's 0%-opacity point, at 1567px and in the collapsed composer state. Apply the same to the reply panel if it has a fade. **Don't** reintroduce colour-matched overlays (fades are masks since LIME-50).
+4. **Reply mic clipping, measured this time:** find what still clips the split mic in the reply composer: its outline (on hover and focus) and hover fill at the reply panel's real widths (default, narrowest and widest). Fix it so the whole outline and hover fill are visible. **Give a padded screenshot of the hover and focus states at each width as proof.** (LIME-60 claimed this was fixed. Report why it wasn't.)
+
+**Scope:** `public/css/lime.css`, the Share popover markup and JS (`index.html` ~232–260, its handlers in `app.js`), the fade rules, and `TEND.md`. Not the Share contents' behaviour, the list's data, or other menus.
+
+**Verification:**
+- Measured radii (list row vs bubble).
+- Screenshots of the Share popover beside an open "…" menu (the same pattern), plus open/close via outside-click, Escape and the Share toggle, and focus return.
+- The fade measurements and screenshots with a photo scrolled behind the composer (the icons are readable).
+- The reply mic at three widths (hover and focus, padded).
+- Run in the real Firefox and Chrome. The real app loads in jsdom with zero errors. Report the browser-parsed CSS rule counts. `git diff public/index.html` shows only intended changes.
+
+**Gate:**
+- List rows have the same rounded corners as chat bubbles.
+- Share opens like the other menus: a thin outline, and no ×; click outside or press Escape to close.
+- The + and mic under the chat box stay clear even with a photo scrolled behind them.
+- The reply box's mic is never cut off.
+
+**Record:** add a `## LIME-63` entry to `TEND.md`. Commit: `fix: QA polish: list radius, share as dropdown, composer fade, reply mic`, trailer `Brief: LIME-63`, plus the attribution trailer. **Stop for the user's check.**
+
+---
 
 ### LIME-57-fixf → `tend` (next): the z a touch smaller and higher, never touching the circle
 
