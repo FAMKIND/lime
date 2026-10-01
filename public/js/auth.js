@@ -94,16 +94,20 @@ const LimeAuth = (function () {
     return derivePasswordHash(password, base64ToBuf(storedSalt)).then((hash) => hash === storedHash);
   }
 
+  // LIME-69: the session is per tab (sessionStorage), not per browser, so
+  // two tabs of one window can be two different people. Accounts and data
+  // stay shared in localStorage. A new tab or window starts signed out; a
+  // duplicated tab inherits its source's session (the browser copies it).
   function readSession() {
     try {
-      return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+      return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null');
     } catch (e) {
       return null;
     }
   }
 
   function writeSession(userId, email) {
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ userId, email }));
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ userId, email }));
   }
 
   // LIME-33: creates a real local account — a credential (never the
@@ -274,7 +278,7 @@ const LimeAuth = (function () {
   // is a synchronous no-op when there's nothing pending, so this is safe
   // to call unconditionally on every sign-out, not just after a write.
   function signOut(options) {
-    localStorage.removeItem(SESSION_KEY);
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* nothing to clear */ }
     // LIME-68: shown on the auth page after the redirect. The reset-demo-
     // data flow queues its own toast and passes { silent: true }.
     if (!(options && options.silent) && window.LimeToast) {

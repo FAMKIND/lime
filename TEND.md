@@ -3072,3 +3072,41 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app â€
 **Verification:** real Chrome and Firefox, zero console errors in both (apart from the pre-existing `demo-config.local.js` 404). The reaction spot check is weak (the script may not have found a reaction button), though no reaction code path calls a toast.
 
 **Gate:** sign out and back in, change your profile, star, rename, archive (try Undo) and delete a chat: each gives a short, calm confirmation at the bottom-right. Sending messages doesn't.
+
+## LIME-69
+
+**Goal:** two tabs of one normal browser window can be two different people; everything one does appears in the other within about a second, with no reload, and nothing is lost when both write.
+
+**What changed (files):** `public/js/auth.js`, `public/js/app.js` (gate) and `public/js/store.js` read and write the session in `sessionStorage` (per tab). `public/js/local-adapter.js` gains `peek()` (the stored snapshot or `null`, so a removed key is detectable). `public/js/store.js` now saves by merging (rules below) and listens for `storage`. `public/js/app.js` repaints the open conversation and the reply panel on `lime:remote-synced`, keeps the scroll position, handles a chat that is no longer available, and signs the tab out on `lime:remote-reset`. `docs/data-model.md` has the merge rules (new section "Two tabs, one browser").
+
+**Merge rules (also in `docs/data-model.md`):**
+- Rows match by key (`id`; members by conversation+user; reactions by message+user+emoji) and are **unioned**: a merge never drops a row.
+- **Removals are soft.** Reactions now carry `updated_at` and `removed_at` (`toggleReaction` sets/clears `removed_at` instead of splicing); `getReactions` ignores removed rows. Nothing else was ever removed (conversations use `deleted_at`).
+- **Per-field three-way merge** (base / local / latest). Only-mine fields stay mine, only-theirs fields take theirs; both changed means the newer `updated_at` wins, ties go to the saving tab. Member rows now get `updated_at` on star/archive/clear/read.
+- **Per-user fields** (`starred`, `archived_at`, `cleared_at`, `last_read_at`) are only written by that member's own tab.
+- **Stale reads** (a browser can serve an old localStorage copy): for 1.5s after each save the base is the one from before that save, and a stored row older than the one last seen is ignored. A tab that holds rows `latest` lacks writes them back, and results compare key-order-insensitively so tabs cannot ping-pong.
+- **Reset** in another tab (snapshot key removed): pending save dropped, "Demo data was reset" queued, tab goes to sign-in.
+
+**Decisions I made where the brief was silent (please look at these):**
+1. **Sync trigger is the `storage` event only** (no BroadcastChannel); the brief said "and/or".
+2. **Reactions use `removed_at`** (brief: "tombstones or deleted_at where the model already has them"; reactions had none, so I added the field).
+3. **Marking read:** a message arriving in the *open* conversation is marked read only while that tab is visible; a `visibilitychange` handler marks it read when the tab becomes visible again. A hidden tab keeps the chat unread until looked at.
+4. Member rows now carry `updated_at` (new field, needed to order conflicting edits).
+5. Duplicate-DM race and old reactions without `removed_at`: see the doc's "Not covered".
+
+**Verification (real installed Chrome 154 and Firefox 157, two tabs in one browser context, `puppeteer-core`; Firefox via WebDriver BiDi, the user's installed `/Applications/Firefox.app`):**
+- Tab A = Shem, tab B = Jean (seed accounts). All passed in both browsers: new group appears live in B; A sends via the real composer and B's thread shows it; B's reply updates A's reply count and open reply panel; reactions both ways, and removing one is not resurrected; rename updates B's header and list; adding B to a group makes it appear; B's name change shows in A; star and archive are per-user; read state is per-user and an incoming message in another chat is unread for B.
+- **No-lost-writes:** both tabs sent 20 messages each, interleaved at random 0-15ms gaps, through the real composer: all 40 exist in A, B and in storage, in the same order, each sender in order, and B's DOM shows every message.
+- **Stale read:** with A's snapshot reads forced to return an old copy while A saved, B's star and A's message both survived (storage and both tabs).
+- **Place kept:** B scrolled up keeps its exact scrollTop and its unsent composer draft while messages arrive; B pinned at the bottom follows new messages.
+- **Deleted chat:** deleting the open chat in A gives B "This chat is no longer available" and moves B off it.
+- **Sessions/reset:** sign-out in A leaves B signed in; a new tab starts signed out; Reset demo data in A sends B to sign-in with the "Demo data was reset" toast, and B did not write the snapshot back.
+- **Latency, measured** (A's action to B's `lime:remote-synced` firing): about 130-150ms for a sent message in both browsers (this includes the store's existing 100ms save debounce). The "new group" figure measured 128ms in Chrome; Firefox's 8ms for that row is not trustworthy (it likely matched an earlier sync event).
+- Regression: the LIME-68 toast script (sign-up, sign-in, sign-out, reset, every row of its event table) gives the same results in both browsers. jsdom: the real `index.html` with `seed-data.js`, `store.js`, `auth.js`, `app.js` loaded as real scripts reports zero errors.
+- Zero console or page errors in both browsers, with one exception below.
+
+**Known, not caused by this brief:** Firefox under WebDriver BiDi logs `SecurityError: The operation is insecure.` as a page error on the tab that signs out while another tab is open. Reproduced identically on a clean copy of HEAD (before this brief), so it is pre-existing; I did not chase it.
+**Limits found:** an exact-same-instant Reset in one tab and a pending (not yet saved) write in another, in Firefox, could recreate the snapshot, because a stale read hides the removal for a few milliseconds. I did not engineer around it (a real user can't hit a 100ms window by hand).
+**The older jsdom suites (LIME-33, 29, 48, 55, 27, 49-fix) are not on disk any more**, so I could not rerun them by name; the checks above are what covers the same ground.
+
+**Gate:** open Lime in two tabs of one normal window (not private). Sign in as yourself in one and as another teacher in the other, message back and forth, and change your name or photo: each change should show in the other tab within a second. Also try: scroll up in one tab while the other sends; star a chat in one (the other must not change); Reset demo data in one (the other goes to sign-in).

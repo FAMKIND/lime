@@ -31,16 +31,236 @@ const LimeStore = (function () {
     document.dispatchEvent(new CustomEvent(name, { detail }));
   }
 
-  function persistNow() {
-    adapter().save({
+  // ── Merge-on-save (LIME-69) ───────────────────────────────
+  // The snapshot in localStorage is shared by every tab, so a save is a
+  // three-way merge rather than an overwrite: `base` is the stored state
+  // this tab last agreed with, the in-memory tables are "local", and the
+  // snapshot stored right now is "latest". Rows are matched by key and
+  // never dropped (union), so a stale read can only ever delay a row,
+  // never lose it — a tab that finds its row missing from latest writes
+  // it back. Removals are soft (reactions carry removed_at). When both
+  // sides changed the same field of a row, the newer updated_at wins
+  // (ties go to this tab). These are the rules a server would apply to
+  // concurrent writes — see docs/data-model.md.
+  const TABLE_KEYS = {
+    profiles: (r) => r.id,
+    conversations: (r) => r.id,
+    conversation_members: (r) => r.conversation_id + '|' + r.user_id,
+    messages: (r) => r.id,
+    message_reactions: (r) => r.message_id + '|' + r.user_id + '|' + r.emoji,
+    message_attachments: (r) => r.id,
+  };
+  let baseRows = {}; // table -> Map(key -> JSON of the row as last stored)
+  // A browser can hand a tab a stale read of localStorage, so another tab
+  // may save over this tab's just-written field without having seen it.
+  // For a short window after each save, changes are therefore detected
+  // against the base from *before* that save, which keeps those fields
+  // "ours" until the other tab's next merge brings them back.
+  const RECENT_WRITE_MS = 1500;
+  let recentBases = []; // { at, rows } — the base each recent save started from
+  let storedOnce = false; // a snapshot exists (loaded or written) — its later absence means a reset
+  let remoteSyncing = false;
+
+  function currentState() {
+    return {
       profiles: [...profiles.values()],
       conversations,
       conversation_members: members,
       messages,
       message_reactions: reactions,
-      message_attachments: messageAttachments, // LIME-41
+      message_attachments: messageAttachments,
+    };
+  }
+
+  // Key-order-insensitive JSON, so two tabs that built the same row with
+  // fields in a different order never look "different" (which would make
+  // them write back and forth forever).
+  function stable(value) {
+    return JSON.stringify(value, (k, v) => {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        return Object.keys(v).sort().reduce((o, key) => { o[key] = v[key]; return o; }, {});
+      }
+      return v;
     });
   }
+
+  function rowMap(rows, keyOf) {
+    const map = new Map();
+    (rows || []).forEach((row) => map.set(keyOf(row), stable(row)));
+    return map;
+  }
+
+  function rememberBase(state) {
+    baseRows = {};
+    Object.keys(TABLE_KEYS).forEach((table) => { baseRows[table] = rowMap(state[table], TABLE_KEYS[table]); });
+  }
+
+  function baseJsonFor(table, key) {
+    const cutoff = Date.now() - RECENT_WRITE_MS;
+    recentBases = recentBases.filter((entry) => entry.at >= cutoff);
+    const rows = recentBases.length ? recentBases[0].rows : baseRows;
+    return rows[table] && rows[table].get(key);
+  }
+
+  function rowTime(row) {
+    return new Date(row.updated_at || row.created_at || row.joined_at || 0).getTime() || 0;
+  }
+
+  function mergeRow(baseJson, local, latest, seenJson) {
+    if (stable(local) === stable(latest)) return local;
+    // A row older than the one this tab last saw is a stale read, not news.
+    if (seenJson && rowTime(latest) < rowTime(JSON.parse(seenJson))) return local;
+    const localWins = rowTime(local) >= rowTime(latest);
+    if (!baseJson) return localWins ? local : latest;
+    const base = JSON.parse(baseJson);
+    const out = {};
+    new Set(Object.keys(local).concat(Object.keys(latest))).forEach((field) => {
+      const same = (a, b) => stable(a) === stable(b);
+      const localChanged = !same(local[field], base[field]);
+      const latestChanged = !same(latest[field], base[field]);
+      const useLocal = localChanged && latestChanged ? localWins : localChanged;
+      const value = useLocal ? local[field] : latest[field];
+      if (value !== undefined) out[field] = value;
+    });
+    return out;
+  }
+
+  function mergeStates(local, latest) {
+    const merged = {};
+    Object.keys(TABLE_KEYS).forEach((table) => {
+      const keyOf = TABLE_KEYS[table];
+      const localByKey = new Map((local[table] || []).map((row) => [keyOf(row), row]));
+      const out = [];
+      const seen = new Set();
+      (latest[table] || []).forEach((row) => {
+        const key = keyOf(row);
+        seen.add(key);
+        const mine = localByKey.get(key);
+        out.push(mine ? mergeRow(baseJsonFor(table, key), mine, row, baseRows[table] && baseRows[table].get(key)) : row);
+      });
+      (local[table] || []).forEach((row) => { if (!seen.has(keyOf(row))) out.push(row); });
+      merged[table] = out;
+    });
+    return merged;
+  }
+
+  function adoptState(state) {
+    profiles = new Map(state.profiles.map((p) => [p.id, p]));
+    conversations = state.conversations;
+    members = state.conversation_members;
+    messages = state.messages;
+    reactions = state.message_reactions;
+    messageAttachments = state.message_attachments || [];
+  }
+
+  // Which rows differ between what this tab held and what it holds now.
+  function changedKeys(before, after) {
+    const changed = {};
+    Object.keys(TABLE_KEYS).forEach((table) => {
+      const oldMap = before[table];
+      const keys = new Set();
+      rowMap(after[table], TABLE_KEYS[table]).forEach((json, key) => {
+        if (oldMap.get(key) !== json) keys.add(key);
+      });
+      changed[table] = keys;
+    });
+    return changed;
+  }
+
+  function snapshotRows(state) {
+    const out = {};
+    Object.keys(TABLE_KEYS).forEach((table) => { out[table] = rowMap(state[table], TABLE_KEYS[table]); });
+    return out;
+  }
+
+  // Tell every view what arrived from another tab, using the same events
+  // a local write emits (app.js repaints from them), plus one summary.
+  function announceRemote(changed, before) {
+    remoteSyncing = true;
+    try {
+      const msgConversations = new Set();
+      changed.messages.forEach((key) => {
+        const message = messages.find((m) => m.id === key);
+        if (message) msgConversations.add(message.conversation_id);
+      });
+      msgConversations.forEach((conversationId) => emit('lime:messages-changed', { conversationId, kind: 'remote' }));
+      new Set([...changed.message_reactions].map((k) => k.split('|')[0])).forEach((messageId) => {
+        emit('lime:reactions-changed', { messageId, kind: 'remote' });
+      });
+      if (changed.conversations.size || changed.conversation_members.size) {
+        emit('lime:conversations-changed', { kind: 'remote' });
+      }
+      if (changed.profiles.size) {
+        emit('lime:profile-changed', { profileId: [...changed.profiles][0], profileIds: [...changed.profiles], kind: 'remote' });
+        const mine = profiles.get(currentUserId);
+        const was = before.profiles.get(currentUserId);
+        if (mine && was && stable(mine.appearance || null) !== stable(JSON.parse(was).appearance || null)) {
+          emit('lime:appearance-changed', { appearance: getAppearance(), kind: 'remote' });
+        }
+      }
+      emit('lime:remote-synced', { changed, messageConversations: [...msgConversations] });
+    } finally {
+      remoteSyncing = false;
+    }
+  }
+
+  // Merges `latest` (a stored snapshot) into this tab, announcing anything
+  // new. Returns true when this tab holds rows latest lacks, so the caller
+  // can write them back.
+  function absorb(latest) {
+    const before = snapshotRows(currentState());
+    const merged = mergeStates(currentState(), latest);
+    adoptState(merged);
+    rememberBase(latest);
+    const changed = changedKeys(before, merged);
+    if (Object.keys(changed).some((t) => changed[t].size)) announceRemote(changed, before);
+    const latestRows = snapshotRows(latest);
+    return Object.keys(TABLE_KEYS).some((table) => {
+      const mine = rowMap(merged[table], TABLE_KEYS[table]);
+      return [...mine].some(([key, json]) => latestRows[table].get(key) !== json);
+    });
+  }
+
+  // Another tab ran "Reset demo data": the shared snapshot is gone, so
+  // anything this tab still holds (or has pending) must not bring it back.
+  function handleRemoteReset() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    storedOnce = false;
+    emit('lime:remote-reset');
+  }
+
+  function persistNow() {
+    const priorBase = baseRows;
+    const latest = adapter().peek ? adapter().peek() : null;
+    if (latest === null && storedOnce) {
+      handleRemoteReset();
+      return;
+    }
+    if (latest !== null) absorb(latest);
+    const state = currentState();
+    adapter().save(state);
+    recentBases.push({ at: Date.now(), rows: priorBase });
+    rememberBase(state);
+    storedOnce = true;
+  }
+
+  // The `storage` event fires in the *other* tabs only, so it is exactly
+  // "someone else saved". null newValue/key = the snapshot was removed.
+  function onStorage(e) {
+    if (e.storageArea && e.storageArea !== window.localStorage) return;
+    if (e.key !== null && e.key !== 'lime-state-v1') return;
+    if (!currentUserId) return; // not initialised yet
+    const latest = e.key === null || e.newValue === null ? null : adapter().peek();
+    if (latest === null) {
+      if (storedOnce) handleRemoteReset();
+      return;
+    }
+    if (absorb(latest)) scheduleSave(); // we hold rows the other tab's write lacked
+  }
+  window.addEventListener('storage', onStorage);
 
   // LIME-29: flushes a pending debounced save immediately, if there is
   // one — a real bug found in verification (not assumed): signOut()
@@ -80,10 +300,12 @@ const LimeStore = (function () {
     // such key at all; without the fallback this would be `undefined`
     // and every array method below would throw the first time it's read.
     messageAttachments = state.message_attachments || [];
+    rememberBase(currentState());
+    storedOnce = !!adapter().peek && adapter().peek() !== null;
   }
 
-  // The auth seam (docs/data-model.md): reads lime-demo-session and
-  // resolves it to a profile. LIME-33: the session shape is now
+  // The auth seam (docs/data-model.md): reads the per-tab lime-demo-session
+  // (sessionStorage, LIME-69) and resolves it to a profile. LIME-33: the session shape is now
   // { userId, email } (written by LimeAuth.signUp/signInWithPassword) —
   // resolved by userId first, falling back to email for an old-shape
   // session (one written before this brief, still just { email }) so an
@@ -97,7 +319,7 @@ const LimeStore = (function () {
   function resolveCurrentUserId() {
     let session = null;
     try {
-      const raw = localStorage.getItem('lime-demo-session');
+      const raw = sessionStorage.getItem('lime-demo-session'); // LIME-69: per tab
       if (raw) session = JSON.parse(raw);
     } catch (e) {
       // Malformed session value — treat the same as "no session".
@@ -240,7 +462,7 @@ const LimeStore = (function () {
   function getReactions(messageId) {
     const byEmoji = new Map();
     reactions
-      .filter((r) => r.message_id === messageId)
+      .filter((r) => r.message_id === messageId && !r.removed_at)
       .forEach((r) => {
         if (!byEmoji.has(r.emoji)) byEmoji.set(r.emoji, { emoji: r.emoji, count: 0, mine: false });
         const entry = byEmoji.get(r.emoji);
@@ -385,11 +607,18 @@ const LimeStore = (function () {
   }
 
   function toggleReaction(messageId, emoji) {
-    const index = reactions.findIndex((r) => r.message_id === messageId && r.user_id === currentUserId && r.emoji === emoji);
-    if (index >= 0) {
-      reactions.splice(index, 1);
+    // LIME-69: removing is soft (removed_at) so a merge with another tab
+    // can't resurrect it; re-adding the same emoji revives the same row.
+    const now = new Date().toISOString();
+    const row = reactions.find((r) => r.message_id === messageId && r.user_id === currentUserId && r.emoji === emoji);
+    if (row && !row.removed_at) {
+      row.removed_at = now;
+      row.updated_at = now;
+    } else if (row) {
+      row.removed_at = null;
+      row.updated_at = now;
     } else {
-      reactions.push({ message_id: messageId, user_id: currentUserId, emoji, created_at: new Date().toISOString() });
+      reactions.push({ message_id: messageId, user_id: currentUserId, emoji, created_at: now, updated_at: now, removed_at: null });
     }
     scheduleSave();
     emit('lime:reactions-changed', { messageId, kind: 'reaction' });
@@ -480,6 +709,7 @@ const LimeStore = (function () {
     const membership = getMyMembership(id);
     if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
     membership.starred = !!bool;
+    membership.updated_at = new Date().toISOString(); // LIME-69: lets a merge order two edits
     scheduleSave();
     emit('lime:conversations-changed', { conversationId: id, kind: 'star' });
     return Promise.resolve(membership);
@@ -489,6 +719,7 @@ const LimeStore = (function () {
     const membership = getMyMembership(id);
     if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
     membership.archived_at = bool ? new Date().toISOString() : null;
+    membership.updated_at = new Date().toISOString(); // LIME-69: lets a merge order two edits
     scheduleSave();
     emit('lime:conversations-changed', { conversationId: id, kind: 'archive' });
     return Promise.resolve(membership);
@@ -511,6 +742,7 @@ const LimeStore = (function () {
     const membership = getMyMembership(id);
     if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
     membership.cleared_at = new Date().toISOString();
+    membership.updated_at = new Date().toISOString(); // LIME-69: lets a merge order two edits
     scheduleSave();
     emit('lime:conversations-changed', { conversationId: id, kind: 'clear' });
     return Promise.resolve(membership);
@@ -520,6 +752,7 @@ const LimeStore = (function () {
     const membership = getMyMembership(conversationId);
     if (!membership) return Promise.reject(new Error('LimeStore: not a member of that conversation'));
     membership.last_read_at = new Date().toISOString();
+    membership.updated_at = new Date().toISOString(); // LIME-69: lets a merge order two edits
     scheduleSave();
     emit('lime:conversations-changed', { conversationId, kind: 'read' });
     return Promise.resolve(membership);
@@ -668,6 +901,7 @@ const LimeStore = (function () {
     init,
     reset,
     flush,
+    isRemoteSyncing: () => remoteSyncing,
     getProfile,
     findProfileByEmail,
     listProfiles,

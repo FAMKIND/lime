@@ -1280,6 +1280,25 @@ revert of LIME-50 itself, which also carries the app-wide canvas work).
   — see `docs/schema.sql`'s own policy draft, mirroring the
   `attachments` bucket's existing shape.
 
+## Two tabs, one browser: sessions, merge-on-save and live sync (LIME-69)
+
+Local-only behavior, written down as **the local stand-in for what a server does with concurrent writes**. A real backend replaces it; the rules below are the ones it must keep.
+
+**Sessions are per tab.** `lime-demo-session` lives in `sessionStorage`, so two tabs of one window can be two people. Accounts (`lime-auth-v1`) and data (`lime-state-v1`) stay shared in `localStorage`. A new tab or window starts signed out; a duplicated tab inherits its source's session (the browser copies it); sign-out and sign-in affect only that tab.
+
+**Saving is a merge, never an overwrite** (`store.js`, `persistNow`). Three states are involved: *base* (the stored snapshot this tab last agreed with), *local* (this tab's in-memory tables) and *latest* (the snapshot in storage right now). Rows are matched by key: `id` for profiles, conversations, messages and attachments; `conversation_id + user_id` for members; `message_id + user_id + emoji` for reactions.
+
+1. **Union.** A row in either side survives. Nothing is dropped by a merge, so a stale read can delay a row but never lose it (a tab that finds its row missing from `latest` writes it back).
+2. **Removals are soft.** Messages, conversations and attachments are never removed (conversations use `deleted_at`). A reaction removed by its user keeps its row with `removed_at` set (`getReactions` ignores those); reacting again revives the same row. This is what stops a merge from resurrecting something another tab removed.
+3. **Per-field merge for rows both sides have.** A field only this tab changed (against base) keeps this tab's value; a field only the other tab changed takes theirs. If both changed the same field, the row with the newer `updated_at` (falling back to `created_at`, then `joined_at`) wins; a tie goes to this tab. Member rows gain `updated_at` on every star/archive/clear/read.
+4. **Per-user fields stay per user.** `starred`, `archived_at`, `cleared_at` and `last_read_at` live on the member row and are only ever written by that member's own tab, so they never conflict across people.
+5. **Stale reads are expected.** A browser can hand a tab an old copy of storage. Two guards: for 1.5s after each save, a tab detects its own changes against the base from *before* that save (so another tab's stale overwrite cannot revert them); and a stored row older than the one this tab last saw is ignored.
+6. **Reset.** The snapshot key disappearing (another tab ran Reset demo data) means "everything is gone": the tab drops any pending save, queues a "Demo data was reset" toast and goes to sign-in. It must never write its own copy back.
+
+**Live updates.** The browser's `storage` event fires in the *other* tabs only, so it means "someone else saved". The store merges the new snapshot into the cache, then emits the same events a local write would (`lime:messages-changed`, `lime:reactions-changed`, `lime:conversations-changed`, `lime:profile-changed`; each with `kind: 'remote'`), then one summary event, `lime:remote-synced` (`detail.changed`: the changed keys per table; `detail.messageConversations`). `LimeStore.isRemoteSyncing()` is true while these fire, so a view can tell a repaint caused by another tab (and keep the reader's place). `lime:remote-reset` is emitted instead when the snapshot was removed. These are additions to the event list above, not changes to it.
+
+**Not covered (known).** Two tabs creating the same direct message at the same instant can make two conversations with the same `dm_key` (the local stand-in has no uniqueness lock; a server's unique constraint fixes it). Reaction rows created before this change have no `removed_at` field and are read as active.
+
 ## Known gaps, flagged rather than silently resolved
 
 - **"Delete for me" (`cleared_at`) hides messages at the store/UI layer

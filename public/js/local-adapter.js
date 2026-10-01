@@ -370,9 +370,21 @@ const LocalAdapter = (function () {
 
   return {
     // Returns { profiles, conversations, conversation_members, messages,
-    // message_reactions } — either a persisted snapshot (if one exists and
+    // message_reactions, message_attachments } — either a persisted snapshot (if one exists and
     // still matches the current embedded seed's fingerprint) or a fresh
     // normalize of that seed.
+    // LIME-69: the raw stored snapshot, or null when the key is absent
+    // altogether (a reset in another tab, or a browser that has never
+    // saved). Anything present goes through load()'s own validation, so
+    // store.js's merge-on-save never sees a half-valid one.
+    peek() {
+      let raw = null;
+      try {
+        raw = localStorage.getItem(SNAPSHOT_KEY);
+      } catch (e) { /* storage unavailable — same as nothing stored */ }
+      return raw === null ? null : this.load();
+    },
+
     load() {
       const fingerprint = seedFingerprint();
       try {

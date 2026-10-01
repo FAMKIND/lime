@@ -19,7 +19,7 @@
 // localStorage itself, without going through login.html first).
 function hasValidSession() {
   try {
-    const raw = localStorage.getItem('lime-demo-session');
+    const raw = sessionStorage.getItem('lime-demo-session'); // LIME-69: per tab
     if (!raw) return false;
     const session = JSON.parse(raw);
     return !!(session && (session.userId || session.email));
@@ -813,6 +813,9 @@ function createStickyScroll(scrollerEl) {
     // message you just sent) — and marks `pinned` true afterward so a
     // later image load or composer growth correctly keeps following.
     pinToBottom() { pinned = true; scrollerEl.scrollTop = scrollerEl.scrollHeight; },
+    // LIME-69: lets a repaint caused by another tab keep the reader's place.
+    isPinned() { return pinned; },
+    recheck: checkPinned,
     // Conditional — only if the scroller was already at the bottom
     // (checked live, not assumed) before whatever just grew it.
     maybeStayAtBottom,
@@ -2157,6 +2160,13 @@ function initMessagesList() {
   const UNKNOWN_SENDER = { display_name: 'Unknown', status: 'offline' };
 
   function renderThread(conversationId) {
+    // LIME-69: a repaint triggered by another tab (same conversation,
+    // already open) keeps the reader's scroll position instead of jumping
+    // to the bottom — unless they were already at the bottom.
+    const sameThread = LimeStore.isRemoteSyncing() && conversationId === currentConversationId;
+    if (sameThread) threadSticky.recheck(); // live geometry, not the last scroll event (none fire in a hidden tab)
+    const keepPlace = sameThread && !threadSticky.isPinned();
+    const placeTop = thread.scrollTop;
     currentConversationId = conversationId;
     lastRenderedDay = null;
     const msgs = LimeStore.listMessages(conversationId, { threadOnly: true });
@@ -2194,7 +2204,12 @@ function initMessagesList() {
     // hasn't finished loading yet (an IndexedDB round trip — LIME-38)
     // correctly re-triggers this same scroll once it does, instead of
     // silently leaving the view short of the real bottom.
-    threadSticky.pinToBottom();
+    if (keepPlace) {
+      // Emptying the thread fired a scroll event that re-pinned it; settle that now.
+      thread.scrollTop = placeTop;
+      threadSticky.recheck();
+    }
+    else threadSticky.pinToBottom();
   }
 
   // ── Group avatar cluster (LIME-19b) ─────────────────────
@@ -2865,6 +2880,46 @@ function initMessagesList() {
     }
 
     updateProfileEverywhere();
+  });
+
+  // LIME-69: what another tab just saved has been merged into the store
+  // (store.js) and the list/reaction/profile listeners above have already
+  // repainted. This repaints the open conversation without touching the
+  // composer, open menus or modals: only #thread-messages is rebuilt, and
+  // renderThread keeps the scroll position when the reader had scrolled up.
+  document.addEventListener('lime:remote-synced', (e) => {
+    if (!currentConversationId) return;
+    const stillThere = LimeStore.listConversations({ includeArchived: true }).some((c) => c.id === currentConversationId);
+    if (!stillThere) {
+      LimeToast.show({ title: 'This chat is no longer available', tone: 'info' });
+      selectTopOrEmpty();
+      return;
+    }
+    const conversation = LimeStore.getConversation(currentConversationId);
+    const changed = (e.detail && e.detail.changed) || {};
+    const incoming = e.detail && e.detail.messageConversations.includes(currentConversationId);
+    // A profile change already rebuilt the thread (its listener above).
+    if (incoming && !changed.profiles.size) renderThread(currentConversationId);
+    if (changed.conversations.has(currentConversationId) || changed.conversation_members.size) {
+      renderCrumbs();
+      if (openProfileAvatars) {
+        openProfileAvatars.innerHTML = conversationHeaderAvatarsHtml(conversation);
+        openProfileAvatars.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+      }
+      const rightPanel = document.getElementById('right-panel');
+      if (rightPanel && rightPanel.dataset.panel !== 'replies') showConversationHeaderPanel(conversation, false);
+    }
+    // The open conversation counts as read while someone is looking at it.
+    if (incoming && document.visibilityState === 'visible') LimeStore.markRead(currentConversationId).catch(console.error);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentConversationId) {
+      const membership = LimeStore.getMyMembership(currentConversationId);
+      const latest = LimeStore.getLatestActivity(currentConversationId);
+      if (membership && latest && (!membership.last_read_at || new Date(latest.created_at) > new Date(membership.last_read_at))) {
+        LimeStore.markRead(currentConversationId).catch(console.error);
+      }
+    }
   });
 
   // ── New message picker (LIME-29) ────────────────────────
@@ -4232,6 +4287,24 @@ function renderCrumbs() {
     renderCrumbs();
   }
 
+  // LIME-69: a reply (or reaction) from another tab shows in the open panel.
+  document.addEventListener('lime:remote-synced', () => {
+    if (!currentReplyParentId || rightPanel.getAttribute('data-panel') !== 'replies') return;
+    const parent = LimeStore.getMessage(currentReplyParentId);
+    const sender = parent && LimeStore.getProfile(parent.sender_id);
+    if (!parent || !sender) return;
+    repliesSticky.recheck();
+    const wasPinned = repliesSticky.isPinned();
+    const placeTop = listEl.scrollTop;
+    renderQuote(parent, sender);
+    renderReplies(currentReplyParentId);
+    if (wasPinned) repliesSticky.pinToBottom();
+    else {
+      listEl.scrollTop = placeTop;
+      repliesSticky.recheck();
+    }
+  });
+
   document.addEventListener('click', (e) => {
     const replyBtn = e.target.closest('#thread-messages .lime-message__actions [title="Reply"]');
     if (replyBtn) {
@@ -4500,6 +4573,13 @@ document.getElementById('reset-demo-data-btn')?.addEventListener('click', () => 
     LimeToast.queue({ title: 'Demo data reset', body: 'All accounts and changes were cleared.', tone: 'info' });
     LimeStore.reset().then(() => { LimeAuth.signOut({ silent: true }); });
   });
+});
+
+// LIME-69: another tab reset the demo data — the accounts and the shared
+// snapshot are gone, so this tab goes to sign-in with a note why.
+document.addEventListener('lime:remote-reset', () => {
+  LimeToast.queue({ title: 'Demo data was reset', body: 'All accounts and changes were cleared.', tone: 'info' });
+  LimeAuth.signOut({ silent: true });
 });
 
 // ── Sign out ───────────────────────────────────────────────
