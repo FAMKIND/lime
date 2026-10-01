@@ -1117,6 +1117,13 @@ html[data-pattern-treatment="photo"] body::before {
   display: flex;
 }
 
+/* LIME-63: follows the same menu pattern as .lime-menu now — a
+   1px solid border instead of relying on shadow-xl alone, and
+   --seed-shadow-md to match. radius-lg already matched .lime-menu's own
+   (unchanged). Padding stays at --seed-space-5 (20px, well over the
+   brief's own >= --seed-space-3 floor) — this popover holds a form and a
+   member list, not a plain item list, so it keeps more room than
+   .lime-menu's own tighter --seed-space-2. */
 .lime-share-popover {
   display: none;
   position: fixed;
@@ -1124,8 +1131,9 @@ html[data-pattern-treatment="photo"] body::before {
   max-height: 70vh;
   overflow-y: auto;
   background: var(--soil-bg-elevated);
+  border: 1px solid var(--soil-border-subtle);
   border-radius: var(--seed-radius-lg);
-  box-shadow: var(--seed-shadow-xl);
+  box-shadow: var(--seed-shadow-md);
   z-index: var(--seed-z-modal);
   padding: var(--seed-space-5);
 }
@@ -4224,7 +4232,13 @@ html[data-pattern-treatment="photo"] body::before {
   align-items: center;
   gap: var(--seed-space-3);
   padding: var(--seed-space-3) calc(var(--seed-space-2) + var(--seed-space-4)) var(--seed-space-3) var(--seed-space-2);
-  border-radius: var(--seed-radius-md);
+  /* LIME-63: was --seed-radius-md (8px) — a hovered/selected row read
+     noticeably less rounded than a chat bubble's own --seed-radius-lg
+     (16px, .lime-message__content). Pointed at that exact same token
+     (not a copied 16px number) so the two can never drift apart again,
+     the same reuse-the-token pattern LIME-47 already established for
+     bubbles vs. the composer box. */
+  border-radius: var(--seed-radius-lg);
   cursor: pointer;
 }
 
@@ -6606,6 +6620,21 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
 .lime-replies-panel__list-frame {
   flex: 1;
   min-height: 0;
+  /* LIME-63: replaces .lime-replies-panel__composer's own negative
+     margin-bottom (below) as the mechanism for "composer sits lower" —
+     that negative margin reduced this frame's flex-computed size (so it
+     grew to fill the freed space) but then rendered the composer's own
+     box 16px past wherever that left it, overflowing
+     .seed-layout__right's real (fixed, height:100%) box by that same
+     16px every time, parent overflow-y:auto turning it into a scrollbar
+     nobody knew to reach rather than visibly clipping it outright — the
+     actual cause of "the mic is still getting cut off" surviving three
+     rounds (LIME-60/-fix/-fix2) that only ever touched .lime-voice-split
+     itself. A positive margin here, instead, shrinks this frame's own
+     already-internally-scrolling list by the same 16px and pushes the
+     composer down by that amount through the ordinary gap between them
+     — the identical visual result, with nothing left to overflow. */
+  margin-bottom: var(--seed-space-4);
 }
 
 .lime-replies-panel__list {
@@ -6717,14 +6746,18 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
      left padding (measured: exact match, 0px off). Right padding at
      --seed-space-4 (not fix5's --seed-space-3, no margin-right needed
      now that the panel truly has 0 padding) lands the box within 1px
-     of #right-panel-toggle's own 12px right inset. margin-bottom is
-     kept, not because it cancels any panel padding (there isn't any),
-     but because the user explicitly prefers the composer at this
-     lower position — .seed-layout__center was extended by the same
-     16px instead (see its own rule) so the main composer matches this
-     one, rather than pulling this one back up. */
+     of #right-panel-toggle's own 12px right inset.
+     LIME-63: the "sit lower" preference's own margin-bottom (fix7, -16px)
+     is gone from here — a normal flex child with a negative margin-bottom
+     inside a fixed-height (height:100%) column has nowhere for that 16px
+     to go but to overflow the column's real box, which is exactly what
+     was still clipping the voice-split's hover-fill/focus-outline at
+     every width, through three earlier rounds that never looked above
+     .lime-voice-split itself. .lime-replies-panel__list-frame's own
+     margin-bottom now produces the identical lower position by shrinking
+     the (already internally-scrolling) list instead of overflowing the
+     panel — see its own comment. */
   padding: var(--seed-space-3) var(--seed-space-4) var(--seed-space-2) var(--seed-space-4);
-  margin-bottom: calc(-1 * var(--seed-space-4));
 }
 
 /* Clickable participant identity in the center top row — opens the

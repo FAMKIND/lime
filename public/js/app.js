@@ -3225,10 +3225,13 @@ function initMessagesList() {
   // member list, a note, Copy link) — but positioned exactly the way
   // every other panel in this app already is, via wireDropdownToggle's
   // own fixed-positioning path, which doesn't care what's inside.
+  // LIME-63: closes the same way every other menu does now — outside-
+  // click, Escape, or the toggle again, all already handled by
+  // wireDropdownToggle/the shared registry below; its own dedicated ×
+  // and click handler are gone.
   (function () {
     const shareBtn = document.getElementById('share-btn');
     const popover = document.getElementById('share-popover');
-    const closeBtn = document.getElementById('share-popover-close');
     if (!shareBtn || !popover) return;
 
     // dew has no lock or globe icon (checked against the full set dew.css
@@ -3325,7 +3328,28 @@ function initMessagesList() {
       if (conversation) renderSharePopover(conversation);
     });
     wireDropdownToggle('share-btn', 'share-popover', { fixed: true });
-    if (closeBtn) closeBtn.addEventListener('click', () => popover.classList.remove('is-open'));
+
+    // LIME-63: wireDropdownToggle itself (and every .lime-menu panel that
+    // uses it) has no focus management of its own — confirmed by survey,
+    // not assumed — so this popover needs its own, scoped to just this
+    // element, per the brief's own explicit ask. A MutationObserver on
+    // its one open/close signal (the is-open class) covers all three ways
+    // it can close (outside-click, Escape, the toggle again) from a
+    // single place, rather than duplicating focus-restore logic in each.
+    // Restoring focus explicitly (not relying on the browser's own
+    // click-focuses-button behavior) matters here: Firefox and Safari
+    // don't focus a <button> on a plain mouse click the way Chrome does.
+    let shareWasOpen = false;
+    new MutationObserver(() => {
+      const isOpen = popover.classList.contains('is-open');
+      if (isOpen && !shareWasOpen) {
+        const focusable = popover.querySelector('input, button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])');
+        if (focusable) focusable.focus();
+      } else if (!isOpen && shareWasOpen) {
+        shareBtn.focus();
+      }
+      shareWasOpen = isOpen;
+    }).observe(popover, { attributes: true, attributeFilter: ['class'] });
 
     document.getElementById('share-popover-copy-btn').addEventListener('click', () => {
       if (!currentConversationId) return;

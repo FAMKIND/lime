@@ -85,8 +85,8 @@
 /* Top is the ordinary scroll indicator — no fade until there's something
    above to hide. */
 .lime-chat-body.is-scrolled-top > .lime-messages {
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 48px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 96px), transparent calc(100% - 48px));
+  mask-image: linear-gradient(to bottom, transparent, #000 32px, #000 calc(100% - 96px), transparent calc(100% - 48px));
 }
 
 /* Bottom is NOT scroll-gated, on purpose — same reasoning LIME-46 gave
@@ -96,10 +96,23 @@
    it regardless of scroll position. This is "the composer fade becomes
    a mask on the thread above the composer" (the brief) — one mask,
    applied to the thread's own content, rather than a second separate
-   gradient element sitting on the composer. */
+   gradient element sitting on the composer.
+   LIME-63: the fade's own full-transparency point used to be the implicit
+   default (100%, .lime-messages' own absolute-fill bottom edge) — the
+   SAME y-coordinate as .lime-composer's own bottom edge, not the top of
+   its visible footer row (the + button, the voice split, the privacy
+   line). Measured live at 1567px, collapsed: that footer row's own top
+   sits 40px above .lime-messages' bottom edge, constant regardless of
+   composer height (the row's own height never changes; only the text
+   box above it grows). An explicit `transparent calc(100% - 48px)` stop
+   moves full transparency to 48px above the bottom — an 8px safety
+   margin over the measured 40px — while keeping the same 48px-tall
+   gradient, just relocated 48px higher (hence `calc(100% - 96px)` for
+   where the fade now starts). A photo scrolled to the very bottom of the
+   thread no longer shows through behind those icons. */
 .lime-chat-body:not(.is-scrolled-top) > .lime-messages {
-  -webkit-mask-image: linear-gradient(to bottom, #000, #000 calc(100% - 48px), transparent);
-  mask-image: linear-gradient(to bottom, #000, #000 calc(100% - 48px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000, #000 calc(100% - 96px), transparent calc(100% - 48px));
+  mask-image: linear-gradient(to bottom, #000, #000 calc(100% - 96px), transparent calc(100% - 48px));
 }
 
 /* .lime-composer's own ::before gradient (LIME-46) is retired — the rule
