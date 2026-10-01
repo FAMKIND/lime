@@ -929,22 +929,19 @@ html[data-pattern-treatment="photo"] body::before {
    (measured: 20.5px, identical to the reference), rather than
    re-deriving a new number. */
 
-/* LIME-50: #appearance-toggle's icon (a palette) is a real <svg>, not a
-   .dew glyph (dew has no sun/palette icon — checked) — stroke="currentColor"
-   (markup) picks up the same hover/muted color .dew icons already
-   inherit here. LIME-59-fix: 18x18 measured 15.3px tall, well under
-   the left-toggle's 20.5px reference — 24x24 is the size that measures
-   20.0px (TEND.md), the closest a direct-pixel box gets without
-   overshooting past the 1px tolerance on the other side. */
-.lime-appearance-icon {
-  width: 24px;
-  height: 24px;
-}
+/* LIME-66: .lime-appearance-icon (the hand-drawn palette <svg>, its own
+   24x24 box tuned in LIME-59-fix to hit the 20.5px header-icon
+   reference) is gone — #appearance-toggle now uses a real dew glyph
+   (dew-paint-brush-broad) like every other .lime-icon-btn icon, sized by
+   the shared .lime-icon-btn .dew rule (18px font-size) instead of its
+   own hand-tuned box. Measured live: 20.6px, within tolerance of the
+   20.5px reference, so no override was needed here at all. */
 
-/* LIME-59-fix: same reasoning and the same new size as
-   .lime-appearance-icon just above (the two were always meant to
-   match each other, not just dew's own 18px convention) — 24x24
-   measures 20.25px, matching the 20.5px reference within tolerance. */
+/* LIME-59-fix: 24x24 measures 20.25px, matching the 20.5px header-icon
+   reference within tolerance — still a real <svg>, not a .dew glyph,
+   since dew ships a share icon at the wrong size for this header
+   (re-checked for LIME-66: still true, dew-share unchanged, brief's own
+   "don't swap" — see TEND.md). */
 .lime-share-icon {
   width: 24px;
   height: 24px;

@@ -2983,3 +2983,33 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Gate:** in a slideshow opened from an album, the small grid button sits right beside "3/6" (the seeded album's own count) — confirmed live in both real browsers at desktop and mobile widths.
 
 **Record:** this entry.
+
+## LIME-66
+
+**Goal:** pull the four new dew icons (`code`, `link-simple`, `paint-brush-broad`, `palette`) into Lime through the `vendor/seed` submodule, and use `paint-brush-broad` for Appearance and `link-simple`/`code` in both composers' toolbars and overflow menus.
+
+**Precondition (Phase 1, checked before touching anything):**
+1. `git -C vendor/seed fetch` showed Seed commit `2c911c2` ("chore: bump dew to 57 icons (code, link-simple, paint-brush-broad, palette)"), whose own `icons/dew` submodule (`d870912`) carries all three needed classes — confirmed directly in `vendor/seed/icons/dew/dist/dew.css`: `.dew-code` (line 116), `.dew-link-simple` (line 200), `.dew-paint-brush-broad` (line 242).
+2. `git -C vendor/seed diff --stat 2bc0868 2c911c2` touches exactly two things: `icons/dew` (the submodule pointer) and Seed's own `TEND.md` (a 10-line log entry recording the bump itself, Gate A already approved there) — the clean "only the dew bump" the brief required.
+   Both passed. The actual `vendor/seed` checkout + `git submodule update --init --recursive` needed to land this (a submodule pointer move, pulling in new third-party code) was done by the user directly, after this session's own sandbox denied it as "Untrusted Code Integration" in the prior turn — noted here since it's a real boundary this environment enforces, not a one-off.
+3. **Extra check, not in the brief's own precondition but relevant:** `.dew-share` also exists in the new `dew.css` (line 296) — not a new icon added by this bump (DEW-01's own four were code/link-simple/paint-brush-broad/palette only). It's the same `dew-share` LIME-59 already evaluated and deliberately replaced with a hand-drawn SVG back then (measured 24px tall at the header's 18px standard font-size vs. the palette icon's 15.3px — no single font-size could match both height and stroke weight). Reported per the brief's own item 4; **not swapped**, `.lime-share-icon` is untouched.
+
+**The change:**
+1. `vendor/seed` bumped to `2c911c2` (pointer-only change in Lime's own `git diff`, no files edited inside `vendor/`).
+2. **Appearance button** (`#appearance-toggle`): the hand-drawn `<svg class="lime-appearance-icon">` (LIME-50/LIME-59-fix's own 24x24-tuned box) replaced with `<span class="dew dew-paint-brush-broad">` — a real dew glyph now, so it just inherits `.lime-icon-btn .dew`'s existing 18px font-size like every other header icon, no bespoke sizing needed. `.lime-appearance-icon`'s now-unused CSS rule removed; the dangling "sized directly like `.lime-appearance-icon`" comment on the Share icon's own rule (unrelated, untouched) is left as an accurate historical note of what LIME-59 did at the time.
+3. **Both composers, toolbar and overflow menu, 8 spots total:** the link tool/menu-item's `dew-link` → `dew-link-simple`; the code tool/menu-item (previously literal `&lt;/&gt;` text, not an icon at all) → `<span class="dew dew-code">`. Both inherit the toolbar's existing `.lime-composer__tool .dew`/`.lime-menu__item .dew` sizing rules unchanged, matching the neighbouring B/I/U/S and list/quote icons automatically. Every other `dew-link` use (Share popover's own Copy link button) is untouched, per the brief's own explicit carve-out.
+
+**Scope check:** `vendor/seed` (pointer only), `public/index.html`, `public/css/lime.css`, `TEND.md` — confirmed via `git diff --stat`; nothing inside `vendor/` was hand-edited (it's a clean submodule checkout the user performed, not a file edit from this session).
+
+**Verification, real Firefox 157.0 and Chrome 154.0.8037.92 (WebDriver BiDi, puppeteer-core, real installed binaries), one script driving both:**
+- `lime.css` rule count: **722** (net −1: `.lime-appearance-icon` removed, no rules added for the icon swaps since all three reuse existing selectors).
+- Appearance icon: real dew glyph confirmed (`dew-paint-brush-broad`), measured **27px** tall in both browsers — within 1px (0px, identical) of `#left-panel-toggle`'s own icon, the established header-icon reference. `.lime-appearance-icon` confirmed absent from every parsed stylesheet.
+- Main composer: toolbar link/code icons confirmed `dew-link-simple`/`dew-code`, both **24px**, matching each other (the established "neighbouring icons" check); overflow-menu copies of both confirmed the same classes.
+- Reply composer: identical confirmation for all four spots (toolbar + menu, link + code) — same markup, same CSS rules, verified independently rather than assumed from the main composer's result.
+- Share: `.lime-share-icon` (the hand-drawn SVG) still present and untouched; the Share popover's own Copy-link button still reads plain `dew-link`, not `dew-link-simple` — confirmed it was correctly left alone.
+- Zero console/page errors in either browser.
+- Screenshots: the header (paint brush beside Share and "…"), the main composer's expanded toolbar and overflow menu (both new icons visible and correctly shaped — a simple link glyph, a `</>` code glyph), both browsers.
+
+**Gate:** the Appearance button shows the paint brush, and both chat boxes' link/code tools and overflow-menu items show the new simple-link and code glyphs — confirmed live, not just class-name checks, via the attached screenshots.
+
+**Record:** this entry.

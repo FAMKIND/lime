@@ -271,19 +271,16 @@
           </div>
 
           <!-- LIME-50: replaces LIME-45's per-chat background icon (a sun)
-               with an app-wide Appearance shortcut — a palette icon, since
-               dew has no sun/palette icon (checked against the set dew.css
-               actually ships). Drawn to match dew's own stroke style (24px
-               viewBox, stroke-width 2, rounded caps/joins, currentColor)
-               per the brief's own explicit spec. -->
+               with an app-wide Appearance shortcut.
+               LIME-66: the hand-drawn palette SVG (dew had no palette icon
+               at the time) is gone — dew-paint-brush-broad now exists
+               (DEW-01, bumped into vendor/seed here), a real dew glyph
+               like every other .lime-icon-btn icon, sized the same way
+               (.lime-icon-btn .dew, 18px font-size) rather than its own
+               hand-tuned 24x24 box. -->
           <div class="lime-appearance">
             <button type="button" class="lime-icon-btn" id="appearance-toggle" title="Appearance" aria-label="Appearance" aria-haspopup="menu" aria-expanded="false">
-              <svg class="lime-appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 3C7.03 3 3 6.58 3 11c0 2.21 1.34 4 3 4h1a2 2 0 0 1 2 2v1c0 1.66 1.34 3 3 3 4.42 0 8-4.03 8-9a8 8 0 0 0-8-8Z"></path>
-                <circle cx="7.5" cy="10.5" r="1"></circle>
-                <circle cx="12" cy="7.5" r="1"></circle>
-                <circle cx="16.5" cy="10.5" r="1"></circle>
-              </svg>
+              <span class="dew dew-paint-brush-broad" aria-hidden="true"></span>
             </button>
             <!-- Filled by renderAppearanceMenu() (app.js) — same empty-
                  container-filled-by-JS pattern as #conversation-menu/
@@ -515,19 +512,19 @@
                     <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
                     <button type="button" class="lime-composer__tool" data-cmd="strikethrough" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button>
                     <span class="lime-composer__divider lime-composer__tool--overflow"></span>
-                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="link" title="Link (Ctrl+K)"><span class="dew dew-link"></span></button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="link" title="Link (Ctrl+K)"><span class="dew dew-link-simple"></span></button>
                     <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="orderedList" title="Numbered list"><i class="icon-list-ordered"></i></button>
                     <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="unorderedList" title="Bulleted list"><i class="icon-list"></i></button>
                     <span class="lime-composer__divider lime-composer__tool--overflow"></span>
                     <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="quote" title="Quote"><i class="icon-text-quote"></i></button>
-                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="code" title="Code">&lt;/&gt;</button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="code" title="Code"><span class="dew dew-code"></span></button>
                     <button type="button" class="lime-composer__tool lime-composer__overflow" id="composer-toolbar-overflow" title="More"><span class="dew dew-ellipsis-menu"></span></button>
                     <div class="lime-menu" id="composer-toolbar-overflow-dropdown">
-                      <button type="button" class="lime-menu__item" data-cmd="link"><span class="dew dew-link"></span>Link</button>
+                      <button type="button" class="lime-menu__item" data-cmd="link"><span class="dew dew-link-simple"></span>Link</button>
                       <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
                       <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
                       <button type="button" class="lime-menu__item" data-cmd="quote"><i class="icon-text-quote"></i>Quote</button>
-                      <button type="button" class="lime-menu__item" data-cmd="code">&lt;/&gt; Code</button>
+                      <button type="button" class="lime-menu__item" data-cmd="code"><span class="dew dew-code"></span>Code</button>
                     </div>
                     <!-- LIME-37: inline URL entry, opened by the Link tool/menu item
                          or Ctrl+K — position:fixed and JS-positioned off the Link
@@ -676,19 +673,19 @@
               <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
               <button type="button" class="lime-composer__tool" data-cmd="strikethrough" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button>
               <span class="lime-composer__divider lime-composer__tool--overflow"></span>
-              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="link" title="Link (Ctrl+K)"><span class="dew dew-link"></span></button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="link" title="Link (Ctrl+K)"><span class="dew dew-link-simple"></span></button>
               <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="orderedList" title="Numbered list"><i class="icon-list-ordered"></i></button>
               <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="unorderedList" title="Bulleted list"><i class="icon-list"></i></button>
               <span class="lime-composer__divider lime-composer__tool--overflow"></span>
               <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="quote" title="Quote"><i class="icon-text-quote"></i></button>
-              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="code" title="Code">&lt;/&gt;</button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="code" title="Code"><span class="dew dew-code"></span></button>
               <button type="button" class="lime-composer__tool lime-composer__overflow" id="replies-composer-toolbar-overflow" title="More"><span class="dew dew-ellipsis-menu"></span></button>
               <div class="lime-menu" id="replies-composer-toolbar-overflow-dropdown">
-                <button type="button" class="lime-menu__item" data-cmd="link"><span class="dew dew-link"></span>Link</button>
+                <button type="button" class="lime-menu__item" data-cmd="link"><span class="dew dew-link-simple"></span>Link</button>
                 <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
                 <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
                 <button type="button" class="lime-menu__item" data-cmd="quote"><i class="icon-text-quote"></i>Quote</button>
-                <button type="button" class="lime-menu__item" data-cmd="code">&lt;/&gt; Code</button>
+                <button type="button" class="lime-menu__item" data-cmd="code"><span class="dew dew-code"></span>Code</button>
               </div>
               <div class="lime-link-popover" data-link-popover>
                 <input type="text" class="lime-link-popover__input" data-link-input placeholder="example.com" aria-label="Link URL">
