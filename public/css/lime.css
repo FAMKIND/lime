@@ -465,28 +465,29 @@ html[data-pattern-treatment="photo"] body::before {
 /* Frame: a non-clipping wrapper so the presence badge can overlap the
    avatar's edge instead of being cut off by the avatar's own
    overflow:hidden circle mask. Sized to match its avatar exactly.
-   LIME-57-fixb: also the single source of truth for the notch geometry
-   (--notch-cx/-cy/-r), shared by the avatar's own mask, the unread-
-   ring layer (::after, below) and .lime-presence's own position, so
-   all three can never drift out of alignment with each other. cx/cy
-   are the same for every size (a proportional, scale-invariant point
-   on the bottom-right edge at ~45°: 50% + 50%*cos(45°) = 85.4%, the
-   same fraction whether the avatar is 20px or 56px) — r is the one
-   value that changes per size, in px, at ~28% of the avatar's own
-   width (the reference's own target), reported in full in TEND.md. */
+   LIME-57-fixc: geometry replaced with the user's own Penpot mockup
+   numbers (plot's measurements off it — no SVG was exported). Centre
+   moves from fixb's proportional 85.4%/85.4% to the mockup's own
+   (90%, 86%) — no longer the generic "45° around a circle" point, a
+   deliberate mockup-specific placement. --notch-cx/-cy are kept as
+   custom properties purely so .lime-presence (below) can position
+   itself at the same point the notch SVGs (further down) were drawn
+   around — the notch's own geometry no longer reads these at render
+   time; it's baked into the SVG files directly (see the ── Presence
+   notch ── section below for why). */
 .lime-avatar-frame {
   position: relative;
   display: inline-flex;
   flex-shrink: 0;
-  --notch-cx: 85.4%;
-  --notch-cy: 85.4%;
+  --notch-cx: 90%;
+  --notch-cy: 86%;
 }
 
-.lime-avatar-frame--xs { width: 20px; height: 20px; --notch-r: 4.5px; }
-.lime-avatar-frame--sm { width: 24px; height: 24px; --notch-r: 5.2px; }
-.lime-avatar-frame--md { width: 32px; height: 32px; --notch-r: 6.6px; }
-.lime-avatar-frame--lg { width: 40px; height: 40px; --notch-r: 8px; }
-.lime-avatar-frame--xl { width: 56px; height: 56px; --notch-r: 10.8px; }
+.lime-avatar-frame--xs { width: 20px; height: 20px; }
+.lime-avatar-frame--sm { width: 24px; height: 24px; }
+.lime-avatar-frame--md { width: 32px; height: 32px; }
+.lime-avatar-frame--lg { width: 40px; height: 40px; }
+.lime-avatar-frame--xl { width: 56px; height: 56px; }
 
 /* ── Story ring ──
    Visual indicator only — no story viewer exists. The ring is a
@@ -536,49 +537,70 @@ html[data-pattern-treatment="photo"] body::before {
 /* ── Presence badge ──
    Four states, not a boolean. Color alone never carries the meaning —
    every instance also carries role="img" + aria-label in markup.
-   LIME-57-fixb: the actual coloured shape (including the busy/dnd
-   notch and "z") is now drawn by an inline SVG (app.js's
-   presenceIconSvg) — this element is just a sized, positioned
-   container for it. box-shadow stays as the pre-mask-composite
-   fallback only (see the @supports block below, which removes it once
-   the real transparent gap is confirmed to work) — browsers without
-   mask-composite never get the notch, so they still need SOME visual
-   separation from the avatar behind it. Positioned at the SAME
-   --notch-cx/-cy the mask uses (not the old ad-hoc bottom:-1px/
-   right:-1px), so the icon always sits exactly on the gap it's
-   carved. */
+   The coloured shape (including the busy/dnd bite and the "Z" path) is
+   drawn entirely by an inline SVG (app.js's presenceIconSvg) — this
+   element is just a sized, positioned container for it: no background,
+   border-radius or shadow of its own in the working case (LIME-57-fixc
+   — the user's own "there should be no background around the status
+   icons"). fixb kept border-radius:50% + a @supports-removed box-shadow
+   on this element, sized well under the notch's own radius — a real,
+   but minor, contributor to the reported band (a sliver of that
+   circular box could show at the gap). The dominant cause turned out to
+   be the notch-cutting technique itself; see the ── The presence notch
+   ── comment further down for the full chase. Both are gone now:
+   border-radius/box-shadow only exist in the no-mask-image fallback
+   block below, never in the normal case, and the icon's own size (next)
+   now reaches much closer to the notch's own radius, so the leftover
+   gap is the same deliberate ~5.5%-of-avatar clearance the mockup
+   itself specifies, not an accidental mismatch.
+   overflow: visible — the "Z" path extends past this element's own
+   nominal box (the mockup's own design, item 5's explicit requirement:
+   "the icon element must allow overflow"). Positioned at the SAME
+   --notch-cx/-cy the avatar's own mask uses, so the icon always sits
+   exactly on the gap it carves. */
 .lime-presence {
   position: absolute;
-  top: var(--notch-cy, 85.4%);
-  left: var(--notch-cx, 85.4%);
+  top: var(--notch-cy, 86%);
+  left: var(--notch-cx, 90%);
   transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--soil-bg-canvas);
+  overflow: visible;
 }
 
-@supports ((mask-composite: subtract) or (-webkit-mask-composite: source-out)) {
+@supports not ((mask-image: url('data:image/svg+xml,')) or (-webkit-mask-image: url('data:image/svg+xml,'))) {
+  /* Fallback only — browsers without SVG mask-image support never get
+     the avatar's own cut-away (the notched SVGs below), so .lime-presence
+     needs its own separation from the avatar behind it. Never active
+     where masks work (checked live, TEND.md): the block above has no
+     box-shadow/border-radius to begin with in that case. */
   .lime-presence {
-    box-shadow: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--soil-bg-canvas);
   }
 }
 
-.lime-avatar-frame--xs .lime-presence { width: 7px;  height: 7px;  }
-.lime-avatar-frame--sm .lime-presence { width: 8px;  height: 8px;  }
-.lime-avatar-frame--md .lime-presence { width: 10px; height: 10px; }
-.lime-avatar-frame--lg .lime-presence { width: 12px; height: 12px; }
-.lime-avatar-frame--xl .lime-presence { width: 16px; height: 16px; }
+/* Icon diameter ≈31% of the avatar's own width (the mockup's own
+   ratio) — computed per size, not copied from fixb's smaller numbers:
+   xs 6.2, sm 7.44, md 9.92 (≈10, the mockup's own worked example), lg
+   12.4 (≈12.5, ditto), xl 17.36 (≈17.5, ditto). */
+.lime-avatar-frame--xs .lime-presence { width: 6.2px;  height: 6.2px;  }
+.lime-avatar-frame--sm .lime-presence { width: 7.44px; height: 7.44px; }
+.lime-avatar-frame--md .lime-presence { width: 9.92px; height: 9.92px; }
+.lime-avatar-frame--lg .lime-presence { width: 12.4px; height: 12.4px; }
+.lime-avatar-frame--xl .lime-presence { width: 17.36px; height: 17.36px; }
 
 /* Standalone / inline presence — no frame, no notch, static position
-   (the profile panel's own contact-info row). */
+   (the profile panel's own contact-info row). Shown at a fixed, legible
+   size regardless of any avatar nearby (there usually isn't one in
+   this context), with the Z always on (inline is never xs/sm). */
 .lime-presence--inline {
   position: static;
-  box-shadow: none;
-  width: 12px;
-  height: 12px;
   transform: none;
+  overflow: visible;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
 }
 
@@ -617,92 +639,112 @@ html[data-pattern-treatment="photo"] body::before {
   }
 }
 
-/* ── LIME-57-fixb: the presence notch ──
-   A second mask layer, SUBTRACTED from the first, cut where the
-   presence icon sits — scoped to avatars actually inside a
-   .lime-avatar-frame (every .lime-avatar-frame wraps an avatar that
-   also renders a .lime-presence; confirmed by reading every call site
-   in app.js, TEND.md), so every OTHER masked avatar in the app
-   (contact lists, the picker, Settings, contact details — none of
-   which use .lime-avatar-frame at all) is untouched. xs/sm get an
-   explicit circle as their base layer here (border-radius:50% alone
-   can't participate in a two-layer mask composite the way an actual
-   mask layer can), so only these two also set border-radius:0 —
-   md/lg/xl already have border-radius:0 from the block above.
-   -webkit-mask-composite's legacy per-layer keyword (source-over for
-   the base layer, source-out for the subtracted one) is the pre-
-   standard equivalent of mask-composite: add, subtract. Where neither
-   is supported, this whole block simply never matches — the avatar
-   keeps its plain silhouette/circle from the rule above, uncut, and
-   .lime-presence's own @supports-gated box-shadow ring (above) stays
-   on as the fallback separation.
+/* ── The presence notch (LIME-57-fixc: rebuilt without mask-composite) ──
+   Tend's original approach layered a base mask (silhouette or circle)
+   with a second, SUBTRACTED radial-gradient circle via
+   `mask-composite: add, subtract`. That has a real cross-browser bug,
+   reproduced in isolation with plain `<div>`s (no app code at all, no
+   screenshot-clip artifact involved, TEND.md has the full chase):
+   whenever the subtracted circle extends past the edge of the FIRST
+   mask layer's own shape — which a corner-mounted badge notch almost
+   always does, since the notch sits right at the avatar's own curved
+   edge — the overflow paints solid instead of vanishing, exactly the
+   "green square/band" this brief was reported to fix. It reproduced
+   identically in Firefox and Chrome, and (checked against fixb's own
+   85.4%/85.4%, ~21%-radius geometry) predates fixc; fixc's mockup-
+   accurate corner position and larger radius (for the Z's reach) just
+   pushed the overflow far enough to be obvious. Switching the second
+   layer's composite keyword to `intersect`/`source-in` avoids the
+   overflow bug but instead makes the browser disregard the FIRST
+   layer's own shape entirely (confirmed by testing with an explicit
+   radius and with the real silhouette, both empty results) — a second,
+   different failure. Per tend's own rule (stop after a second
+   compensating patch fails), this went back to plot (PLOT.md's
+   LIME-57-fixc amendment) for a decision rather than a third attempt.
 
-   Verification pitfall, recorded so it isn't rediscovered the hard
-   way: a Playwright screenshot with `clip` set to EXACTLY an element's
-   own bounding box (zero margin) rendered this notch as uncut in
-   Firefox, even though getComputedStyle showed every mask-* property
-   correct — looked exactly like a real compositing bug, including
-   surviving a `!important` rewrite of every declaration (which is
-   what this block first shipped with). A full, unclipped page
-   screenshot of the same live page showed the notch rendering
-   perfectly. The clip-to-exact-bounds screenshot was the bug, not this
-   CSS — `!important` never did anything real here and was removed
-   once the actual cause was found (TEND.md has the full chase). Always
-   confirm a suspected render bug against a full-page screenshot before
-   trusting a tightly-clipped one. */
-@supports ((mask-composite: subtract) or (-webkit-mask-composite: source-out)) {
-  .lime-avatar-frame--xs .seed-avatar--xs,
-  .lime-avatar-frame--sm .seed-avatar--sm {
+   Decision: no mask-composite anywhere. The notch is a fixed ratio of
+   the avatar (centre 90%/86%, radius 24% of the width), so it's baked
+   directly into a plain SVG's own internal <mask> (silhouette or
+   circle, minus a <circle> drawn over it) — ONE shape, ONE mask-image
+   layer, no cross-layer compositing for the browser to get wrong:
+     - lime-silhouette-notched.svg   — md/lg/xl avatars
+     - circle-notched.svg            — xs/sm avatars (an explicit circle,
+       since border-radius:50% can't be unioned with an SVG mask)
+     - lime-silhouette-ring-notched.svg / circle-ring-notched.svg — the
+       unread-ring layer (::after). Its box is 4px bigger than the
+       avatar's (inset:-2px both sides), so the SAME ratio would land
+       the notch ~1.5px off; these two files instead use a minimax-fit
+       ratio solved across their size group (md/lg/xl; xs/sm) so ONE
+       file lines up with every size in its group within ±0.4px —
+       verified by computing each size's exact required ratio and the
+       resulting error (TEND.md has the numbers). No per-size CSS
+       override needed.
+   Only avatars actually showing a presence badge get the notched mask
+   — reading every call site in app.js (TEND.md) found .lime-avatar-frame
+   never appears without a sibling .lime-presence today, but this is
+   scoped with :has(.lime-presence) anyway rather than relying on that
+   staying true, verified live in Firefox and Chrome. Every OTHER masked
+   avatar in the app (contact lists, the picker, Settings, contact
+   details — none of which use .lime-avatar-frame) is untouched. Where
+   mask-image isn't supported at all, this block simply never matches —
+   the avatar keeps its plain silhouette/circle from the rule above,
+   uncut, and .lime-presence's own @supports-gated box-shadow ring
+   (above) stays on as the fallback separation.
+
+   Verification pitfall from the earlier (now-replaced) approach,
+   recorded so it isn't rediscovered the hard way: a Playwright
+   screenshot with `clip` set to EXACTLY an element's own bounding box
+   (zero margin) can render a mask as uncut in Firefox even though
+   getComputedStyle shows every mask-* property correct. Always confirm
+   a suspected render bug against a full-page (or padded) screenshot
+   before trusting a tightly-clipped one — though in this specific bug,
+   a full-page screenshot showed the same overflow, confirming it was
+   real. */
+@supports (mask-image: url('data:image/svg+xml,')) or (-webkit-mask-image: url('data:image/svg+xml,')) {
+  .lime-avatar-frame:has(.lime-presence) .seed-avatar--xs,
+  .lime-avatar-frame:has(.lime-presence) .seed-avatar--sm {
     border-radius: 0;
-    -webkit-mask-image: radial-gradient(circle closest-side at 50% 50%, #fff 0 100%, transparent 100%), radial-gradient(circle var(--notch-r) at var(--notch-cx) var(--notch-cy), #fff 0, #fff var(--notch-r), transparent var(--notch-r));
-    mask-image: radial-gradient(circle closest-side at 50% 50%, #fff 0 100%, transparent 100%), radial-gradient(circle var(--notch-r) at var(--notch-cx) var(--notch-cy), #fff 0, #fff var(--notch-r), transparent var(--notch-r));
-    -webkit-mask-size: 100% 100%, 100% 100%;
-    mask-size: 100% 100%, 100% 100%;
-    -webkit-mask-repeat: no-repeat, no-repeat;
-    mask-repeat: no-repeat, no-repeat;
-    -webkit-mask-composite: source-over, source-out;
-    mask-composite: add, subtract;
+    -webkit-mask-image: url('../assets/circle-notched.svg');
+    mask-image: url('../assets/circle-notched.svg');
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
   }
 
-  .lime-avatar-frame--md .seed-avatar--md,
-  .lime-avatar-frame--lg .seed-avatar--lg,
-  .lime-avatar-frame--xl .seed-avatar--xl {
-    -webkit-mask-image: url('../assets/lime-silhouette.svg'), radial-gradient(circle var(--notch-r) at var(--notch-cx) var(--notch-cy), #fff 0, #fff var(--notch-r), transparent var(--notch-r));
-    mask-image: url('../assets/lime-silhouette.svg'), radial-gradient(circle var(--notch-r) at var(--notch-cx) var(--notch-cy), #fff 0, #fff var(--notch-r), transparent var(--notch-r));
-    -webkit-mask-size: 100% 100%, 100% 100%;
-    mask-size: 100% 100%, 100% 100%;
-    -webkit-mask-repeat: no-repeat, no-repeat;
-    mask-repeat: no-repeat, no-repeat;
-    -webkit-mask-composite: source-over, source-out;
-    mask-composite: add, subtract;
+  .lime-avatar-frame:has(.lime-presence) .seed-avatar--md,
+  .lime-avatar-frame:has(.lime-presence) .seed-avatar--lg,
+  .lime-avatar-frame:has(.lime-presence) .seed-avatar--xl {
+    -webkit-mask-image: url('../assets/lime-silhouette-notched.svg');
+    mask-image: url('../assets/lime-silhouette-notched.svg');
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
   }
 
-  /* The unread-ring layer (.lime-avatar-frame::after, above) gets the
-     identical treatment, so its own bite lines up with the avatar's —
-     "the ring never runs into the icon," the brief's own item 1. */
-  .lime-avatar-frame--xs::after,
-  .lime-avatar-frame--sm::after {
-    -webkit-mask-image: radial-gradient(circle closest-side at 50% 50%, #fff 0 100%, transparent 100%), radial-gradient(circle var(--notch-r) at var(--notch-cx) var(--notch-cy), #fff 0, #fff var(--notch-r), transparent var(--notch-r));
-    mask-image: radial-gradient(circle closest-side at 50% 50%, #fff 0 100%, transparent 100%), radial-gradient(circle var(--notch-r) at var(--notch-cx) var(--notch-cy), #fff 0, #fff var(--notch-r), transparent var(--notch-r));
-    -webkit-mask-size: 100% 100%, 100% 100%;
-    mask-size: 100% 100%, 100% 100%;
-    -webkit-mask-repeat: no-repeat, no-repeat;
-    mask-repeat: no-repeat, no-repeat;
-    -webkit-mask-composite: source-over, source-out;
-    mask-composite: add, subtract;
+  /* The unread-ring layer gets its own pre-notched SVG (see the block
+     comment above) so its bite lines up with the avatar's — "the ring
+     never runs into the icon," the brief's own item 1. */
+  .lime-avatar-frame--xs:has(.lime-presence)::after,
+  .lime-avatar-frame--sm:has(.lime-presence)::after {
+    -webkit-mask-image: url('../assets/circle-ring-notched.svg');
+    mask-image: url('../assets/circle-ring-notched.svg');
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
   }
 
-  .lime-avatar-frame--md::after,
-  .lime-avatar-frame--lg::after,
-  .lime-avatar-frame--xl::after {
-    -webkit-mask-image: url('../assets/lime-silhouette.svg'), radial-gradient(circle var(--notch-r) at var(--notch-cx) var(--notch-cy), #fff 0, #fff var(--notch-r), transparent var(--notch-r));
-    mask-image: url('../assets/lime-silhouette.svg'), radial-gradient(circle var(--notch-r) at var(--notch-cx) var(--notch-cy), #fff 0, #fff var(--notch-r), transparent var(--notch-r));
-    -webkit-mask-size: 100% 100%, 100% 100%;
-    mask-size: 100% 100%, 100% 100%;
-    -webkit-mask-repeat: no-repeat, no-repeat;
-    mask-repeat: no-repeat, no-repeat;
-    -webkit-mask-composite: source-over, source-out;
-    mask-composite: add, subtract;
+  .lime-avatar-frame--md:has(.lime-presence)::after,
+  .lime-avatar-frame--lg:has(.lime-presence)::after,
+  .lime-avatar-frame--xl:has(.lime-presence)::after {
+    -webkit-mask-image: url('../assets/lime-silhouette-ring-notched.svg');
+    mask-image: url('../assets/lime-silhouette-ring-notched.svg');
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
   }
 }
 

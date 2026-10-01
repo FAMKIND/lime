@@ -116,45 +116,78 @@ function presenceFor(status) {
   return PRESENCE[status] || 'away';
 }
 
-// LIME-57-fixb: the four presence states, drawn as small inline SVGs
-// instead of a CSS box-shadow ring (the old ring read the wrong colour
-// wherever the avatar itself wasn't --soil-bg-canvas — hovered/selected
-// rows, non-Warm tones, dark). One 24x24 viewBox per state; the actual
-// on-screen size comes entirely from .lime-presence's own CSS
-// width/height (per .lime-avatar-frame--xs/sm/md/lg/xl), so a single
-// SVG design scales cleanly to every size without redrawing it.
-// Busy/DND's notch is an SVG <mask>, not a CSS mask — it never needs to
-// interact with the avatar's own mask at all, so there's no risk of it
-// clipping into the avatar (item 5's own requirement, satisfied
-// structurally: this whole SVG lives inside .lime-presence, which is a
-// sibling of the masked avatar, never a descendant of it).
-// showZ is dropped at xs/sm (7-8px) per the brief — the letter can't be
-// read at that size, but the notch/gap alone still shows the state.
+// LIME-57-fixc: redrawn to the user's own Penpot mockup geometry (no
+// SVG was exported, so these are plot's measurements off it, per the
+// brief's own fallback instruction). Coordinates live in one "icon-
+// local" system where the icon's own diameter is always 100 units,
+// centred at (50,50), regardless of which avatar size it ends up
+// scaled into by CSS — so this function never needs to know the real
+// pixel size, same approach as LIME-57-fixb, just with new numbers:
+//   - the main shape now fills the box (r=50, i.e. the full nominal
+//     diameter) — LIME-57-fixb's r=10 of a 24-unit box was only ~42%
+//     of its own box, let alone the avatar (the brief's own "draw
+//     shapes that fill their box" complaint);
+//   - the busy/DND bite is a circle of radius 30 (30% of the icon's
+//     diameter), centred at (50+34, 50-26) = (84, 24) — the mockup's
+//     own "(+34%, -26%) of the icon diameter from the icon's centre";
+//   - the "Z" is a stroked 3-point polyline (a path, never a font
+//     glyph — the fixb text glyph was unreadable at ~4px), top bar →
+//     diagonal → bottom bar, with flat (square) caps. It spans the
+//     mockup's own box (left=68, top=-12, width=22, height=30) edge to
+//     edge — the first attempt (bars only 14 units long, from 72 to 86,
+//     with an 8-unit stroke) found live, by screenshot: with the stroke
+//     almost as thick as the bars were long, the three strokes' own
+//     caps/miter joins swallowed the gaps between them, so it rendered
+//     as one solid blocky corner — the exact "band/square around the
+//     icon" the brief's own user complaint described, not a masking or
+//     background bug at all (confirmed by rendering the path alone,
+//     isolated from every other layer). Fixed by using the box's full
+//     22-unit width for every bar (68 to 90) and thinning the stroke to
+//     5 — close to a 4.4:1 length:thickness ratio instead of 1.75:1 —
+//     which reads as a clean "Z" at any output size, since the SVG units
+//     scale together regardless of the icon's final pixel size.
+//     It extends above and right of the icon's own 0–100 box, which is
+//     why the SVG's own viewBox is padded (-10 -20 130 130) and why
+//     .lime-presence needs overflow:visible (CSS) rather than clipping
+//     it — item 5's own explicit requirement.
+// Busy/DND's bite is still an SVG <mask> with a per-instance id (a
+// module-level counter, not a hardcoded/duplicated id) — unrelated to
+// the avatar's own CSS mask, and never a descendant of it, so there's
+// no ancestor-masking risk here at all (unchanged reasoning from fixb).
+// showZ is still dropped at xs/sm per the brief — unreadable that
+// small — the bite/gap alone keeps the state visually distinct.
+const PRESENCE_ICON_VIEWBOX = '-10 -20 130 130';
 let presenceMaskUid = 0;
+function presenceZPath() {
+  // Z's own box: left=68, top=-12 (bar centred at -8), bottom=18 (bar
+  // centred at 14), right=90, stroke=5 (half-stroke 2.5) — bars run the
+  // box's full width so they stay visually separate from each other.
+  return 'M 68,-8 L 90,-8 L 68,14 L 90,14';
+}
 function presenceIconSvg(state, showZ) {
   const uid = 'lime-presence-mask-' + (presenceMaskUid++);
-  const z = showZ
-    ? '<text x="17" y="9.5" font-size="8" font-weight="700" text-anchor="middle" font-family="var(--seed-font-ui)" fill="CURRENT">z</text>'
+  const zPath = showZ
+    ? '<path d="' + presenceZPath() + '" fill="none" stroke="CURRENT" stroke-width="5" stroke-linecap="square" stroke-linejoin="miter"/>'
     : '';
   if (state === 'active') {
-    return '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="var(--good-bg-bold-default)"/></svg>';
+    return '<svg viewBox="' + PRESENCE_ICON_VIEWBOX + '" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="var(--good-bg-bold-default)"/></svg>';
   }
   if (state === 'busy') {
-    return '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">'
-      + '<mask id="' + uid + '"><rect width="24" height="24" fill="#fff"/><circle cx="17.5" cy="6.5" r="6.5" fill="#000"/></mask>'
-      + '<circle cx="12" cy="12" r="10" fill="var(--good-bg-bold-default)" mask="url(#' + uid + ')"/>'
-      + z.replace('CURRENT', 'var(--good-bg-bold-default)')
+    return '<svg viewBox="' + PRESENCE_ICON_VIEWBOX + '" width="100%" height="100%" style="overflow:visible" aria-hidden="true">'
+      + '<mask id="' + uid + '"><rect x="-10" y="-20" width="130" height="130" fill="#fff"/><circle cx="84" cy="24" r="30" fill="#000"/></mask>'
+      + '<circle cx="50" cy="50" r="50" fill="var(--good-bg-bold-default)" mask="url(#' + uid + ')"/>'
+      + zPath.replace('CURRENT', 'var(--good-bg-bold-default)')
       + '</svg>';
   }
   if (state === 'dnd') {
-    return '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">'
-      + '<mask id="' + uid + '"><rect width="24" height="24" fill="#fff"/><circle cx="17.5" cy="6.5" r="6.5" fill="#000"/></mask>'
-      + '<circle cx="12" cy="12" r="9" fill="none" stroke="var(--soil-text-muted)" stroke-width="3" mask="url(#' + uid + ')"/>'
-      + z.replace('CURRENT', 'var(--soil-text-muted)')
+    return '<svg viewBox="' + PRESENCE_ICON_VIEWBOX + '" width="100%" height="100%" style="overflow:visible" aria-hidden="true">'
+      + '<mask id="' + uid + '"><rect x="-10" y="-20" width="130" height="130" fill="#fff"/><circle cx="84" cy="24" r="30" fill="#000"/></mask>'
+      + '<circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10" mask="url(#' + uid + ')"/>'
+      + zPath.replace('CURRENT', 'var(--soil-text-muted)')
       + '</svg>';
   }
-  // away (the default from presenceFor — a hollow ring, no notch/z)
-  return '<svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="var(--soil-text-muted)" stroke-width="3"/></svg>';
+  // away (the default from presenceFor — a hollow ring, no bite/Z)
+  return '<svg viewBox="' + PRESENCE_ICON_VIEWBOX + '" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"/></svg>';
 }
 
 // size is the avatar-frame size ('xs'|'sm'|'md'|'lg'|'xl') — only 'lg'
