@@ -6363,26 +6363,23 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
 /* LIME-35: shown only when showPersonDetails was reached from the
    Members list — clicking it re-renders that same conversation's
    Members panel rather than closing the whole right panel outright
-   (the existing .lime-panel-close button already does that job). */
+   (the existing .lime-panel-close button already does that job).
+   LIME-64: moved into the panel's header row, left-aligned with the
+   panel's own --seed-space-4 content padding and vertically centred with
+   #right-panel-toggle — same `top: --seed-space-3` positioned against
+   the same .lime-profile frame (position:relative) #right-panel-toggle's
+   own .lime-panel-close rule positions against #right-panel, and both
+   frames share the same top edge (.lime-profile-panel/.lime-profile have
+   no padding above them), so the two land at an identical y with no
+   separate measuring needed. .lime-icon-btn now supplies the 36px box,
+   radius and hover/color — was its own slightly-smaller 28px circle with
+   a duplicate hover rule (removed) now that it shares that exact class
+   with the toggle it must line up with. */
 .lime-profile__back {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: none;
-  border-radius: var(--seed-radius-full);
-  color: var(--soil-text-muted);
-  cursor: pointer;
-  margin-bottom: var(--seed-space-3);
-}
-
-.lime-profile__back:hover,
-.lime-profile__back:focus-visible {
-  background: var(--calm-bg-subtle-hover);
-  color: var(--soil-text);
-  outline: none;
+  position: absolute;
+  top: var(--seed-space-3);
+  left: var(--seed-space-4);
+  z-index: 10;
 }
 
 .lime-profile__edit-btn {

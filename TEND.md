@@ -2930,3 +2930,30 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 - The reply box's mic is no longer cut off at any of the three widths tested — root-caused (a negative margin overflowing a fixed-height flex column, not a right-edge/horizontal issue as LIME-60's own fixes assumed) and fixed at the source, not patched a fourth time on `.lime-voice-split` itself.
 
 **Record:** this entry.
+
+## LIME-64
+
+**Goal:** the person-details panel's back-to-Members chevron moves into the panel's header row, on the same line as `#right-panel-toggle`, instead of sitting on its own line below it.
+
+**Survey confirmed the brief's own pointers, plus one structural fact it didn't mention:** `.lime-profile-panel` (the profile view) has **no `<header>` at all**, unlike `.lime-members-panel__header`/`.lime-replies-panel__header` (both `height:56px; padding:0 16px; align-items:center`) — `.lime-profile__scroll` just reserves a matching `56px` of top padding instead, and the back button (when present) was the first thing `renderProfilePanel` wrote into the scrolling `.lime-profile__content`, rendering as its own line inside the scroll area. `#right-panel-toggle` (`.lime-panel-close`) is `position:absolute; top:12px; right:12px` against `#right-panel`. The key finding: `.lime-profile` (the non-scrolling frame, `position:relative`) shares the exact same top edge as `#right-panel` itself — neither `.lime-profile-panel` nor `.lime-profile` carries any padding above it — so a `.lime-profile__back` positioned `absolute; top:12px` against `.lime-profile` lands at the identical y-coordinate as the toggle without needing a real header element at all, or any new measuring/compensation.
+
+**The change:**
+1. `#profile-back-btn` is now a **static** element in `index.html`, a sibling of `.lime-profile__scroll` inside `.lime-profile` (outside the scrolling content), `hidden` by default. Carries `lime-icon-btn lime-profile__back` — `.lime-icon-btn` supplies the same 36px box, radius and hover treatment `#right-panel-toggle` itself uses, so the two buttons are visually and dimensionally identical, not just coincidentally aligned.
+2. `.lime-profile__back`'s own CSS is now just positioning: `position:absolute; top: var(--seed-space-3); left: var(--seed-space-4); z-index:10` (mirroring `.lime-panel-close`'s own `top`/`z-index`, mirrored to the left side at the panel's own content-padding value per the brief). Its old 28px-circle sizing and duplicate `:hover`/`:focus-visible` rule are gone — `.lime-icon-btn` already covers both.
+3. `renderProfilePanel` no longer builds the back button's HTML — it toggles `#profile-back-btn`'s `[hidden]` directly (`detailsReturnTo !== 'members'`), in the same place the old conditional lived. The existing delegated click listener (bound to `.lime-profile`) needed no change: the static button is still a `.lime-profile` descendant, just no longer inside the scrolling `.lime-profile__content`.
+4. Content moves up for free: with the back button out of the content flow entirely, the avatar/name now start right at `.lime-profile__scroll`'s existing 56px top padding, instead of below an extra ~40px line the old inline button + its margin used to occupy.
+
+**Scope check:** `public/index.html` (the one static button + two comment updates), `public/js/app.js` (`renderProfilePanel`'s own back-button handling, one stale comment), `public/css/lime.css` (`.lime-profile__back`), `TEND.md`. No other panel's header, and no change to the member list or profile content itself.
+
+**Verification, real Firefox 157.0 and Chrome 154.0.8037.92 (WebDriver BiDi, puppeteer-core, real installed binaries), one script driving both:**
+- `lime.css` rule count: **720** (net zero — one rule's properties changed, none added/removed).
+- From a group's Members panel → a member's details: back arrow visible, its vertical centre **exactly matches** `#right-panel-toggle`'s own (both at y=46, 0px off — well inside the brief's ±1px floor), and its left edge sits exactly 16px (`--seed-space-4`) from `.lime-profile`'s own left edge, in both browsers.
+- Back button click returns to Members (`data-panel` flips back), confirmed.
+- A DM's profile opened directly (via `#open-profile-avatars` on a direct conversation, not through Members): `#profile-back-btn.hidden === true` — no arrow, as the brief requires.
+- Mobile (390×844): the back arrow renders in the same header row as the toggle, vertical centres match exactly (both at y=28), confirmed via a real screenshot showing the back chevron, the "Jean Chung ⌄" breadcrumb and the panel toggle all on one top line.
+- Zero console/page errors in either browser.
+- Screenshots: the full panel from Members (arrow + toggle on one line, details below), the direct-open panel (no arrow), and the mobile view — all three, both browsers.
+
+**Gate:** from a group's Members panel, opening someone's details shows the back arrow at the panel's top-left, on the same line as the panel toggle, with the details content starting right below — confirmed live, not just reasoned from the CSS.
+
+**Record:** this entry.

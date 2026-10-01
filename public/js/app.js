@@ -3773,10 +3773,14 @@ function renderProfilePanel(person) {
   const localTime = localTimeFor(person.timezone);
   const presence = presenceFor(person.status);
 
+  // LIME-64: the back chevron is a static element outside the scrolling
+  // content now (index.html, #profile-back-btn) — sits in the panel's
+  // fixed header row instead of its own line inside the content, so this
+  // only toggles [hidden] rather than building its own markup each render.
+  const backBtn = document.getElementById('profile-back-btn');
+  if (backBtn) backBtn.hidden = detailsReturnTo !== 'members';
+
   let html = '';
-  if (detailsReturnTo === 'members') {
-    html += '<button type="button" class="lime-profile__back" aria-label="Back to Members" title="Back"><span class="dew dew-chevron-left"></span></button>';
-  }
   html += '<div class="lime-profile__header">'
     + '<span class="seed-avatar seed-avatar--xl lime-avatar lime-profile__avatar" ' + avatarAttrsHtml(person) + '></span>'
     + '</div>'
@@ -3902,10 +3906,12 @@ document.addEventListener('click', (e) => {
   showPersonDetails(trigger.dataset.profileId, !!trigger.closest('.lime-members-panel'));
 });
 
-// The profile panel's own content is rebuilt on every render (see
-// renderProfilePanel), so its Edit-profile/back buttons need a
-// delegated listener too, bound once to the stable .lime-profile
-// container rather than re-attached after every innerHTML replacement.
+// Edit-profile lives inside .lime-profile__content, rebuilt on every
+// render (see renderProfilePanel), so it needs a delegated listener bound
+// to the stable .lime-profile container rather than re-attached after
+// every innerHTML replacement. #profile-back-btn (LIME-64) is static —
+// never rebuilt — but stays on this same delegated listener since it's
+// still a .lime-profile descendant; no reason to split it into its own.
 (function () {
   const profileEl = document.querySelector('.lime-profile');
   if (!profileEl) return;

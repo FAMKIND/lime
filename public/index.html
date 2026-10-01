@@ -592,16 +592,27 @@
       </button>
       <div class="lime-profile-panel">
         <div class="lime-profile lime-fade-frame">
+          <!-- LIME-64: static, not rebuilt by renderProfilePanel — sits
+               outside .lime-profile__scroll so it stays in the panel's
+               fixed header row (vertically centred with #right-panel-
+               toggle, position:absolute against this same .lime-profile
+               frame) instead of scrolling away with the content or
+               taking its own line inside it. renderProfilePanel only
+               toggles its [hidden]. -->
+          <button type="button" class="lime-icon-btn lime-profile__back" id="profile-back-btn" aria-label="Back to Members" title="Back" hidden><span class="dew dew-chevron-left"></span></button>
           <div class="lime-profile__scroll">
             <!-- Rendered by app.js's renderProfilePanel (LIME-35) — the
                  avatar, name, pronouns/role/school, "About me," and
                  contact info for whichever person is currently shown.
                  No hard-coded person: a fresh render replaces this
                  entirely every time showPersonDetails(profileId) runs,
-                 including a back-to-Members chevron when reached from
-                 there, and an "Edit profile" button for your own. A
-                 dedicated wrapper (not .lime-profile__scroll itself) so
-                 .fade-top above survives every re-render untouched. -->
+                 and an "Edit profile" button for your own.
+                 LIME-64: the back-to-Members chevron moved out of here,
+                 into #profile-back-btn above (its own line inside this
+                 scrolling content, below an implicit header, was the bug
+                 this brief fixed). A dedicated wrapper (not
+                 .lime-profile__scroll itself) so .fade-top above survives
+                 every re-render untouched. -->
             <div class="lime-profile__content"></div>
           </div>
         </div>
