@@ -433,6 +433,8 @@ const LocalAdapter = (function () {
       } catch (e) {
         // Storage full or unavailable (private browsing, quota) — the
         // session keeps working in memory, it just won't survive reload.
+        // LIME-68: tell the UI (once per session, app.js decides).
+        document.dispatchEvent(new CustomEvent('lime:storage-failed'));
       }
     },
 

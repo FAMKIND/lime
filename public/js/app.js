@@ -280,6 +280,24 @@ function showToast(message, options) {
   LimeToast.show({ title: message, tone: toneMap[opts.tone] || opts.tone || 'info', duration: opts.duration });
 }
 
+// LIME-68: "Edit profile" on the sign-up toast, which crosses the
+// redirect by name (Settings opens on Profile).
+LimeToast.registerAction('edit-profile', () => {
+  document.getElementById('settings-btn')?.click();
+});
+
+// LIME-68: a LimeStore write that couldn't reach localStorage (quota,
+// private browsing) — once per session, the app keeps working in memory.
+(function () {
+  let warned = false;
+  function warnOnce() {
+    if (warned) return;
+    warned = true;
+    LimeToast.show({ title: 'Changes may not be saved', body: 'Lime couldn\u2019t save to this browser.', tone: 'warning' });
+  }
+  document.addEventListener('lime:storage-failed', warnOnce);
+})();
+
 // LIME-27: the deep-link format, #c=<conversationId> on the app's own
 // URL — built from location.href without its existing hash, so calling
 // this while already on a #c=... link replaces it rather than appending
@@ -1017,7 +1035,7 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
       // brief's own verification sends 7 in one message. Only the
       // per-file size limit remains.
       if (file.size > MAX_ATTACHMENT_BYTES) {
-        showAttachmentError('"' + file.name + '" is over the 10MB limit.');
+        LimeToast.show({ title: 'Couldn\u2019t attach ' + file.name, body: 'It\u2019s over the 10MB limit.', tone: 'error' });
         return;
       }
       pendingAttachments.push({
@@ -2456,7 +2474,10 @@ function initMessagesList() {
         // the derived name whenever conversations.name is falsy), not
         // special-cased here.
         const trimmed = crumbThread.textContent.trim();
+        const titleBefore = LimeStore.getConversationTitle(conversation);
         LimeStore.renameConversation(conversation.id, trimmed || null).then(() => {
+          const titleAfter = LimeStore.getConversationTitle(conversation);
+          if (titleAfter !== titleBefore) LimeToast.show({ title: 'Renamed to \u201c' + titleAfter + '\u201d', tone: 'success' });
           // lime:conversations-changed (emitted by renameConversation)
           // already repaints this conversation's row everywhere via
           // updateRow — but the breadcrumb isn't a row, and nothing else
@@ -2982,6 +3003,7 @@ function initMessagesList() {
         ? LimeStore.createConversation({ type: 'direct', memberIds: selectedIds })
         : LimeStore.createConversation({ type: 'group', memberIds: selectedIds, name: groupNameInput.value.trim() || null });
       promise.then((conversation) => {
+        if (conversation.type === 'group') LimeToast.show({ title: 'Group created', tone: 'success' });
         pickerModal.close();
         selectConversation(conversation);
         const composerInput = document.querySelector('#composer .lime-composer__input');
@@ -3360,6 +3382,7 @@ function initMessagesList() {
         // at all, so escaping first would double-escape (a name with an
         // apostrophe would literally show "&#39;" instead of "'").
         resultEl.textContent = profile.display_name + ' added.';
+        LimeToast.show({ title: 'Added ' + profile.display_name + ' to ' + LimeStore.getConversationTitle(conversation), tone: 'success' });
         renderSharePopover(LimeStore.getConversation(conversation.id));
       }).catch((err) => {
         resultEl.textContent = err.message;
@@ -3439,7 +3462,12 @@ const CONVERSATION_ACTIONS = [
     icon: 'dew-star',
     key: 'S',
     danger: false,
-    run: (conversation, membership) => LimeStore.setStarred(conversation.id, !(membership && membership.starred)),
+    run: (conversation, membership) => {
+      const starring = !(membership && membership.starred);
+      return LimeStore.setStarred(conversation.id, starring).then(() => {
+        LimeToast.show({ title: starring ? 'Starred' : 'Removed from Starred', tone: 'success', duration: 3000 });
+      });
+    },
   },
   {
     id: 'rename',
@@ -3460,7 +3488,28 @@ const CONVERSATION_ACTIONS = [
     icon: 'dew-archive',
     key: 'A',
     danger: false,
-    run: (conversation, membership) => LimeStore.setArchived(conversation.id, !(membership && membership.archived_at)),
+    run: (conversation, membership) => {
+      const archiving = !(membership && membership.archived_at);
+      return LimeStore.setArchived(conversation.id, archiving).then(() => {
+        if (!archiving) {
+          LimeToast.show({ title: 'Chat restored', tone: 'success' });
+          return;
+        }
+        // Undo goes back through the same setArchived path Unarchive uses.
+        LimeToast.show({
+          title: 'Chat archived',
+          tone: 'success',
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              LimeStore.setArchived(conversation.id, false).then(() => {
+                LimeToast.show({ title: 'Chat restored', tone: 'success' });
+              }).catch(console.error);
+            },
+          },
+        });
+      });
+    },
   },
   { divider: true },
   {
@@ -3487,6 +3536,7 @@ const CONVERSATION_ACTIONS = [
         }).then((confirmed) => {
           if (!confirmed) return;
           return LimeStore.deleteForMe(conversation.id).then(() => {
+            LimeToast.show({ title: 'Chat removed for you', tone: 'success' });
             if (conversationActionHooks.selectTopOrEmpty) conversationActionHooks.selectTopOrEmpty();
           });
         });
@@ -3499,6 +3549,7 @@ const CONVERSATION_ACTIONS = [
       }).then((confirmed) => {
         if (!confirmed) return;
         return LimeStore.deleteConversation(conversation.id).then(() => {
+          LimeToast.show({ title: 'Chat deleted', tone: 'success' });
           if (conversationActionHooks.selectTopOrEmpty) conversationActionHooks.selectTopOrEmpty();
         });
       });
@@ -4446,7 +4497,8 @@ document.getElementById('reset-demo-data-btn')?.addEventListener('click', () => 
   }).then((confirmed) => {
     if (!confirmed) return;
     LimeAuth.resetCredentials();
-    LimeStore.reset().then(() => { LimeAuth.signOut(); });
+    LimeToast.queue({ title: 'Demo data reset', body: 'All accounts and changes were cleared.', tone: 'info' });
+    LimeStore.reset().then(() => { LimeAuth.signOut({ silent: true }); });
   });
 });
 
@@ -5415,6 +5467,7 @@ document.addEventListener('keydown', (e) => {
         };
         saveBtn.disabled = true;
         LimeStore.updateProfile(patch).then(() => {
+          LimeToast.show({ title: 'Profile updated', tone: 'success' });
           renderProfileSection(); // fresh values, and clears the dirty state
         }).catch((err) => {
           saveBtn.disabled = false;
@@ -5475,6 +5528,7 @@ document.addEventListener('keydown', (e) => {
       errorEl.hidden = true;
       saveBtn.disabled = true;
       LimeAuth.changeEmail(input.value).then(() => {
+        LimeToast.show({ title: 'Email updated', tone: 'success' });
         renderSecuritySection(); // fresh render shows the new email; the inline form goes with it
       }).catch((err) => {
         saveBtn.disabled = false;
@@ -5500,6 +5554,7 @@ document.addEventListener('keydown', (e) => {
       saveBtn.disabled = true;
       LimeAuth.changePassword({ current, next, confirm }).then((result) => {
         saveBtn.disabled = false;
+        LimeToast.show({ title: 'Password changed', tone: 'success' });
         successEl.textContent = result.message;
         successEl.hidden = false;
         ['settings-current-password', 'settings-new-password', 'settings-confirm-password'].forEach((id) => {

@@ -273,8 +273,13 @@ const LimeAuth = (function () {
   // real Firefox and real Chrome before this fix existed: LimeStore.flush()
   // is a synchronous no-op when there's nothing pending, so this is safe
   // to call unconditionally on every sign-out, not just after a write.
-  function signOut() {
+  function signOut(options) {
     localStorage.removeItem(SESSION_KEY);
+    // LIME-68: shown on the auth page after the redirect. The reset-demo-
+    // data flow queues its own toast and passes { silent: true }.
+    if (!(options && options.silent) && window.LimeToast) {
+      LimeToast.queue({ title: 'You\u2019ve signed out', tone: 'info' });
+    }
     if (window.LimeStore) LimeStore.flush();
     window.location.href = 'login.html';
   }

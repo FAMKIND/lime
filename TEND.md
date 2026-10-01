@@ -3030,3 +3030,45 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app �
 **Verification (real Chrome, headless, against localhost):** container role/label; roles status/alert; stack of 4 shows 3, newest first; box 380px, 24px from the right and bottom edges; hover pause then resume with remaining time (gone after the remaining ~500ms, not 1s); focus pause; Escape dismisses; queued toast shown once then cleared on the next load; mobile 390px: top-centre, 358px wide; reduced motion swaps to fade-only. Light and dark screenshots viewed. Zero errors apart from the pre-existing `demo-config.local.js` 404.
 
 **Gate:** copy a chat link: a clean white card at the bottom-right with a check icon and ×, fades after a few seconds, stays while hovered.
+
+## LIME-68
+
+**Goal:** toasts for system status across the app, per the LIME-67 rules (toast what happened out of sight, can't otherwise be seen, is irreversible, undoable or failed; never what the screen already shows).
+
+**Event table (all seen in real Chrome and real Firefox, driven through the real UI):**
+
+| Event | Toast seen | Tone / title |
+|---|---|---|
+| Sign up → app | yes | success, "Welcome to Lime, Ada" / "Your account is ready." + **Edit profile** (opens Settings on Profile; carried across the redirect by name) |
+| Sign in → app | yes | info, "Signed in as Ada Lovelace" |
+| Sign out → auth | yes | info, "You've signed out" |
+| Reset demo data → auth | yes | info, "Demo data reset" / "All accounts and changes were cleared." (sign-out toast suppressed) |
+| Profile saved | yes | success, "Profile updated" |
+| Email changed | yes | success, "Email updated" |
+| Password changed | yes | success, "Password changed" |
+| Star / Unstar | yes | success, "Starred" / "Removed from Starred" (3s) |
+| Rename | yes | success, "Renamed to “…”" (only when the title actually changed) |
+| Archive | yes | success, "Chat archived" + **Undo** → "Chat restored"; `archived_at` back to null |
+| Unarchive (menu) | yes | success, "Chat restored" |
+| Delete (group) | yes | success, "Chat deleted" |
+| Delete for me (DM) | yes | success, "Chat removed for you" |
+| Add members (Share) | yes | success, "Added Jean Chung to Planningcrew" |
+| New group | yes | success, "Group created" (DMs don't toast) |
+| Attachment over 10MB | yes | error, "Couldn't attach big.bin" / "It's over the 10MB limit." (sticky) |
+| Storage can't save | yes | warning, "Changes may not be saved" / "Lime couldn't save to this browser."; once per session (2nd dispatch: none); a throwing `localStorage.setItem` through the real adapter fires it |
+| Link copied / chat not available | from LIME-67 | |
+| Send message, appearance change, reaction (spot checks) | no toast | as intended |
+
+**How:** `auth.html`'s inline script queues sign-in / sign-up toasts before its redirect; `LimeAuth.signOut(options)` queues "You've signed out" unless `{ silent: true }` (reset demo data queues its own and passes it); `app.js` registers the `edit-profile` action and calls `LimeToast.show` at each call site; Archive's Undo goes through the same `setArchived` path as Unarchive.
+
+**Scope notes (decisions to look at):**
+- **`public/js/local-adapter.js` was touched (one line)**, outside the brief's listed scope: its `save()` swallowed storage failures silently, so there was no event to hang the warning on. It now dispatches `lime:storage-failed` from the existing `catch`; `app.js` shows the toast once per session. No `LimeStore` write rejects, so this was the only hook.
+- The inline "over the 10MB limit" line under the composer was replaced by the toast (the brief lists attachment failures as a toast). `showAttachmentError` is now unused (left in place; `hideAttachmentError` still runs).
+- No events were skipped; there is no leave-group in the app.
+- The Rename check typed "Planning crew" and the space was dropped (result "Planningcrew"): looks like a pre-existing quirk of the breadcrumb being a `<button>` (space activates a button) under puppeteer's typing, not touched here. Worth a look by hand.
+
+**Other status-worthy outcomes noticed, not implemented (your call):** photo / avatar upload failure in Settings and Appearance (currently inline); Appearance pattern upload falling back to session-only (a one-time note already exists there); Mark all as read, if/where it exists; message send failure (no failure path exists in the local adapter today, but Supabase will need one).
+
+**Verification:** real Chrome and Firefox, zero console errors in both (apart from the pre-existing `demo-config.local.js` 404). The reaction spot check is weak (the script may not have found a reaction button), though no reaction code path calls a toast.
+
+**Gate:** sign out and back in, change your profile, star, rename, archive (try Undo) and delete a chat: each gives a short, calm confirmation at the bottom-right. Sending messages doesn't.

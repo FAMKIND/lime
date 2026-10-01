@@ -283,6 +283,9 @@
         clearError();
         const password = document.getElementById('auth-password').value;
         LimeAuth.signInWithPassword({ email: currentEmail, password }).then(() => {
+          // LIME-68: shown by index.html after the redirect below.
+          const signedInProfile = LimeStore.findProfileByEmail(currentEmail);
+          LimeToast.queue({ title: 'Signed in as ' + (signedInProfile ? signedInProfile.display_name : currentEmail), tone: 'info' });
           // ?from=auth — LIME-33-fix's own marker (document.referrer is
           // empty for file:// navigations in Firefox, confirmed
           // directly — see TEND.md's LIME-33-fix entry). The hash
@@ -302,6 +305,14 @@
         const displayName = document.getElementById('auth-name').value;
         const password = document.getElementById('auth-create-password').value;
         LimeAuth.signUp({ email: currentEmail, password, displayName }).then(() => {
+          // LIME-68: shown by index.html after the redirect below; the
+          // action opens Settings on Profile (registered there by name).
+          LimeToast.queue({
+            title: 'Welcome to Lime, ' + firstNameOf(displayName),
+            body: 'Your account is ready.',
+            tone: 'success',
+            action: { label: 'Edit profile', name: 'edit-profile' },
+          });
           // Same hash carry-through as the sign-in path above, for consistency.
           window.location.href = 'index.html?from=auth' + location.hash;
         }).catch((err) => {
