@@ -542,11 +542,18 @@
                 <div class="lime-composer__actions">
                   <button type="button" class="lime-composer__aux" data-attach-btn title="Attach"><span class="dew dew-plus"></span></button>
                   <div class="lime-composer__voice-dropdown">
-                    <!-- Back to a real mic icon (LIME-10-fix10 reverses the LIME-10-fix5 swap
-                         to icon-audio-waveform) — dew-microphone exists directly, no substitute
-                         needed. Sizing already comes from the existing
-                         .lime-composer__aux .dew { font-size: 16px } rule (LIME-10-fix5). -->
-                    <button type="button" class="lime-composer__aux lime-composer__voice" id="voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
+                    <!-- LIME-60: split into two buttons, like the nav Add button
+                         (lime-nav-add) but neutral — a mic half that's a pure
+                         placeholder (recording isn't built, LIME-10) and a ⌄
+                         half that's the real dropdown trigger. Keeping the
+                         "voice-mode-toggle" id on the ⌄ half (not the mic) means
+                         app.js's existing wireDropdownToggle('voice-mode-toggle', …)
+                         call needed no change — the id just now lives on a
+                         smaller, caret-only element instead of the combined one. -->
+                    <div class="lime-voice-split">
+                      <button type="button" class="lime-voice-split__mic" id="voice-mode-record" title="Record a voice message" aria-label="Record a voice message"><span class="dew dew-microphone"></span></button>
+                      <button type="button" class="lime-voice-split__caret" id="voice-mode-toggle" aria-haspopup="menu" aria-expanded="false" title="Choose microphone" aria-label="Choose microphone"><span class="dew dew-chevron-down"></span></button>
+                    </div>
                     <div class="lime-menu lime-menu--wide" id="voice-mode-dropdown">
                       <button type="button" class="lime-menu__item lime-menu__item--selected">
                         <span class="lime-menu__check"><span class="dew dew-check"></span></span>
@@ -682,7 +689,12 @@
           <div class="lime-composer__actions">
             <button type="button" class="lime-composer__aux" data-attach-btn title="Attach"><span class="dew dew-plus"></span></button>
             <div class="lime-composer__voice-dropdown">
-              <button type="button" class="lime-composer__aux lime-composer__voice" id="replies-voice-mode-toggle" title="Voice mode"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down"></span></button>
+              <!-- LIME-60: see the main composer's identical structure above
+                   for why "replies-voice-mode-toggle" now lives on the ⌄ half. -->
+              <div class="lime-voice-split">
+                <button type="button" class="lime-voice-split__mic" id="replies-voice-mode-record" title="Record a voice message" aria-label="Record a voice message"><span class="dew dew-microphone"></span></button>
+                <button type="button" class="lime-voice-split__caret" id="replies-voice-mode-toggle" aria-haspopup="menu" aria-expanded="false" title="Choose microphone" aria-label="Choose microphone"><span class="dew dew-chevron-down"></span></button>
+              </div>
               <div class="lime-menu lime-menu--wide" id="replies-voice-mode-dropdown">
                 <button type="button" class="lime-menu__item lime-menu__item--selected">
                   <span class="lime-menu__check"><span class="dew dew-check"></span></span>

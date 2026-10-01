@@ -5746,12 +5746,16 @@ html[data-pattern-treatment="photo"] body::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* LIME-59-fix: LIME-59's own 23px measured only 15.0px tall — under
-     the real reference, #left-panel-toggle, at 20.5px (TEND.md). 32px
-     is the size that measures 20.25px, matching within tolerance,
-     still inside the 32px button (the glyph's own ink doesn't fill its
-     full em-square, so it doesn't visually collide with the circle). */
-  font-size: 32px;
+  /* LIME-60: back to its pre-LIME-59 size. LIME-59 shrank this to 23px
+     (15.0px tall); LIME-59-fix then grew it to 32px (20.25px tall) to
+     match the left-toggle reference along with every other icon that
+     brief touched — but the user's own check on that result said the
+     return buttons "now look too big," and explicitly excluded ↵ from
+     the match-the-left-toggle rule for this brief. 18px is the value
+     this had before LIME-59 ever touched it (confirmed: `git show
+     6db2847^:public/css/lime.css`), identical in both composers since
+     they share this one class. */
+  font-size: 18px;
   opacity: 0.4;
   cursor: default;
 }
@@ -5800,16 +5804,14 @@ html[data-pattern-treatment="photo"] body::before {
   box-sizing: border-box;
 }
 
-/* :not(.lime-composer__voice) — LIME-10-fix11 keeps the circle for the
-   plus button only; .lime-composer__voice overrides shape/size below
-   rather than relying on source-order to win over this rule. */
-.lime-composer__aux:not(.lime-composer__voice) {
+/* LIME-10-fix11: a circle for the plus button (the only element with
+   just .lime-composer__aux now — the old voice button's own
+   .lime-composer__aux.lime-composer__voice combination is gone, split
+   into .lime-voice-split's own two halves below, LIME-60). */
+.lime-composer__aux {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-}
-
-.lime-composer__aux {
   border: none;
   background: none;
   color: var(--soil-text-muted);
@@ -5828,9 +5830,8 @@ html[data-pattern-treatment="photo"] body::before {
    TEND.md) — under it, same shrink-relative-to-the-left-toggle problem
    LIME-59 left on every other icon this brief touches. 19px measures
    20.0px, within tolerance. The [class^="icon-"] half is now unused
-   here (the voice button's Lucide waveform icon was reverted to
-   dew-microphone in LIME-10-fix10) but harmless to leave — kept in
-   case a future aux button ever uses a Lucide icon again. */
+   here (no Lucide icon lives inside .lime-composer__aux any more) but
+   harmless to leave — kept in case a future aux button ever uses one. */
 .lime-composer__aux .dew,
 .lime-composer__aux [class^="icon-"] {
   font-size: 19px;
@@ -5840,33 +5841,77 @@ html[data-pattern-treatment="photo"] body::before {
   position: relative;
 }
 
-/* Mic + chevron grouped in one rounded-rect pill, not a circle
-   (LIME-10-fix11). LIME-50-fix: no fill at rest any more, same as the +
-   button (.lime-composer__aux's own background:none, above) — the
-   brief's own explicit ask, since a permanent --calm-bg-subtle-default
-   fill here read as a separate warm-grey chip once every *other* subtle
-   fill in the app started following the tone. */
-.lime-composer__voice {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  width: auto;
-  padding: 6px 10px;
-  border-radius: var(--seed-radius-md);
+/* ── LIME-60: the voice button, split into a mic half and a ⌄ half ──
+   The user's own ask: "more like the Add button" (lime-nav-add, just
+   above in this file) but NEUTRAL — the mic isn't a primary action, so
+   there's no shared lime fill or divider at rest, same as this button
+   had none before this brief (LIME-50-fix). Each half gets its OWN
+   inset rounded hover instead of one shared pill (a 2px margin on every
+   side, including the shared inner edge, so hovering one half never
+   touches the other) — Add's exact technique, scaled to this control's
+   28px height (Add's own is 36px; proportionally, 2px here ≈ Add's 3px).
+   The mic half stays a placeholder — recording isn't built (LIME-10),
+   unchanged behavior from the single combined button this replaces.
+   The ⌄ half is the real dropdown trigger: it keeps the
+   "voice-mode-toggle"/"replies-voice-mode-toggle" ids app.js's existing
+   wireDropdownToggle calls already target, so no JS change was needed —
+   the id just now lives on a smaller, caret-only element. */
+.lime-voice-split {
+  display: flex;
+  align-items: stretch;
+  height: 28px;
 }
 
-.lime-composer__voice:hover {
+.lime-voice-split__mic,
+.lime-voice-split__caret {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--soil-text-muted);
+  cursor: pointer;
+  border-radius: var(--seed-radius-full);
+  transition: background 80ms ease;
+}
+
+.lime-voice-split__mic {
+  padding: 0 8px 0 6px;
+  margin: 2px 0 2px 2px;
+}
+
+.lime-voice-split__caret {
+  width: 20px;
+  margin: 2px 2px 2px 0;
+}
+
+.lime-voice-split__mic:hover,
+.lime-voice-split__caret:hover {
   background: var(--calm-bg-subtle-hover);
 }
 
-.lime-composer__voice .dew-microphone {
+.lime-voice-split__mic:active,
+.lime-voice-split__caret:active {
+  background: var(--calm-bg-subtle-active);
+}
+
+/* Same visible-ring treatment as .lime-nav-add's own two halves (above)
+   — a background-only hover doesn't read as a focus indicator once
+   .lime-voice-split__mic/__caret have no fill of their own at rest. */
+.lime-voice-split__mic:focus-visible,
+.lime-voice-split__caret:focus-visible {
+  outline: 2px solid var(--calm-border-bold-default);
+  outline-offset: 2px;
+}
+
+.lime-voice-split__mic .dew-microphone {
   /* was 18px (LIME-10-fix11), then 16px (LIME-10-fix12), then 14px,
      then LIME-59 shrank it to 10.5px chasing the wrong reference
      (15.3px). Measured against the real reference (#left-panel-toggle,
      20.5px, TEND.md): 14px — the value this had before LIME-59 ever
-     touched it — already measures 20.0px, within tolerance. Simply
-     reverting LIME-59's own change here was the fix; no new number
-     needed. */
+     touched it — already measures 20.0px, within tolerance. LIME-59-fix
+     already reverted this value on the old combined button; LIME-60
+     only moves it to the new mic-only half, same number. */
   font-size: 14px;
 }
 
@@ -5874,10 +5919,9 @@ html[data-pattern-treatment="photo"] body::before {
    dew-ellipsis-menu (TEND.md): a caret is inherently a short, wide
    mark, never a tall one, so "match the left toggle's 20.5px height"
    doesn't have a meaningful literal answer here, the same way it
-   doesn't for "…"'s three dots. LIME-59 never touched this value
-   either. Flagged for the gate in case the user wants it bigger
-   anyway, but not changed unasked. */
-.lime-composer__voice .dew-chevron-down {
+   doesn't for "…"'s three dots. LIME-60 only moves this value to the
+   new caret-only half, same number. */
+.lime-voice-split__caret .dew-chevron-down {
   font-size: 12px;
 }
 
