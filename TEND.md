@@ -3298,3 +3298,32 @@ All four isolated as plain CSS masks on bare `<div>`s before touching the app â€
 5. Then try a reply, a reaction, renaming the PS 113 Staff Room, changing your name or photo in Settings: all should appear live on the other phone.
 6. If a message does not send, you will now see a red "Couldn't save that" message instead of nothing, and the console has the reason.
 
+## LIME-77
+
+**Goal:** a static picture of the proposed phone shell, for a yes or no before anything is built. No app behaviour, no app files touched.
+
+**What landed:** `public/mockups/mobile-shell.html` (new; served by the dev server's allow-list, linked from nowhere). It loads Lime's real stylesheets (the same seed tokens and components, `lime.css`, `gradients.css`, Montserrat) and has one small block marked "mock-only" for the new shell pieces. Everything that already exists in the app is the app's own markup and classes: I captured the rendered rows, Recent items, avatars (with the app's own palette classes and initials), presence icons, group avatar cluster, toast and menu items from a running session, so the page itself needs no script. Five frames at **390 x 844**, side by side and labelled:
+1. **Chats:** large "Messages" title with a pale-lime **+** (New message), search, Recent, Starred, All, the **floating translucent pill dock** (Link selected, Communities, Notifications with a "3" badge, You as your avatar) clearing the home indicator, and a toast just under the top bar, clear of the title.
+2. **A chat:** back `<` at the left, the group's real avatar cluster + name + member line centred (tappable), Share and `...` at the right; no breadcrumbs, no dock. Bubbles, a long link that wraps, a photo album (the app's own album classes, gradient tiles), a location card, a reply-count line, the "Sent 10:05 Â· delivered 10:35" note, and the composer above the safe area: `+`, the input with the keyboard's return key labelled **Send** (noted on it), and mic with a down-caret.
+3. **The `...` bottom sheet:** grab handle, Star, Rename, Appearance (the app's paint-brush icon), Share, Archive and Delete (red) in Lime's menu-item style over a dimmed backdrop, plus Cancel.
+4. **The classic alternative:** the same dock as a full-width tab bar (a short frame, Chats only).
+5. **Dark mode:** frame 1 with the dark theme tokens.
+Under the frames: what will be native in the build (`navigator.share`; a native `<select>` for the microphone and timezone pickers; `inputmode`/`type` keyboards for email, phone and search; `enterkeyhint="send"`; native file and photo pickers) and what can't be native on the web (action menus become bottom sheets; no haptics on iOS).
+
+**My choices where the brief left the picture to me (say if any is wrong)**
+- Dock icons are the app's own: link for Link, `people` for Communities, `bell-on` for Notifications, your avatar for You.
+- In a chat, the back button is just `<` (the "Messages" label is hidden so the avatar and name get the room).
+- The location card is drawn from scratch (a grid "map" with a pin): the app has no location message type today, so it is purely illustrative.
+- The sheet adds a small title (the chat name) and a Cancel button, as iOS action sheets have.
+- The thread shows the latest messages (it is scrolled to the bottom, as a real thread would be, so the "Today" divider is just above the visible part).
+
+**Verification**
+- **Screenshots (real browsers):** Firefox 157 and Chrome, each a full page plus one image per frame, in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/shots/`: `firefox-full.png`, `firefox-frame1.png` ... `firefox-frame5.png`, and the same with `chrome-`. **Safari: no screenshot.** `safaridriver` still refuses to start a session (Safari's Allow Remote Automation is off; the one command is in LIME-76's entry: `safaridriver --enable`), so I could not use Safari as the iOS proxy. Please open the page in Safari yourself (Gate below).
+- **Overflow:** all five phone frames are exactly 390px wide in both browsers; **no element crosses a frame edge** and the page has no horizontal scroll. The Recent row scrolls sideways by design (its last avatar is cut at the edge, as in the app).
+- **Text contrast** (measured on rendered pixels, both browsers, light and dark; text over translucent surfaces composited): every pair clears 4.5:1 (3:1 for the 34px title). The lowest are the muted row preview/time in dark mode (5.31:1), the dock's unselected labels in dark (5.63:1) and the muted preview in light (6.90:1); the sent bubble, titles and sheet items are 15 to 17:1; the red Delete is 9.44:1.
+- **No console errors** on the page in either browser.
+- **No app regression risk:** `git diff --stat` for this commit is only the new file plus `TEND.md`. The standing rule was still followed (the page is under `public/`): `npm test` (Python server) and `LIME_TEST_SERVER=dev npm test` both pass, same numbers as before (smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51).
+- The page was generated with a small script kept in the session scratchpad (not committed); the committed file is plain static HTML.
+
+**Gate:** open `http://localhost:8000/public/mockups/mobile-shell.html` (or the "On your network" link on your phone, plus `/public/mockups/mobile-shell.html`; on a phone the frames are 390px wide so scroll sideways or zoom out), also in Safari, and tell me yes or what to change: the dock items, floating or classic, the top bar, the sheet.
+

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" class="lime-canvas-warm">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lime mobile shell mock</title>
+  <!-- LIME-77: a STATIC picture of the proposed phone shell, for a yes or no. Nothing here is wired to the app and nothing links to
+       it. It uses Lime's real tokens and CSS (the same stylesheets as index.html); only the small block marked "mock-only" below is
+       new, and it stays in this file. Avatars, presence icons, list rows, the toast, the menu items and the album come from the
+       app's own markup and classes. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../../vendor/seed/tokens/tokens.css">
+  <link rel="stylesheet" href="../../vendor/seed/components/layout/layout.css">
+  <link rel="stylesheet" href="../../vendor/seed/components/avatar/avatar.css">
+  <link rel="stylesheet" href="../../vendor/seed/components/badge/badge.css">
+  <link rel="stylesheet" href="../../vendor/seed/components/tabs/tabs.css">
+  <link rel="stylesheet" href="../../vendor/seed/components/input/input.css">
+  <link rel="stylesheet" href="../../vendor/seed/components/button/button.css">
+  <link rel="stylesheet" href="../../vendor/seed/components/nav/nav.css">
+  <link rel="stylesheet" href="../../vendor/seed/components/dropdown/dropdown.css">
+  <link rel="stylesheet" href="../../vendor/seed/components/toast/toast.css">
+  <link rel="stylesheet" href="../../vendor/seed/icons/dew/dist/dew.css">
+  <link rel="stylesheet" href="../css/lime.css">
+  <link rel="stylesheet" href="../css/gradients.css">
+  <style>
+    /* ───────── mock-only (this file only; lime.css is untouched) ───────── */
+    body { margin: 0; padding: 28px 24px 64px; background: #e9e6dc; color: #1c1b17; font-family: var(--seed-font-ui, 'Montserrat', system-ui, sans-serif); }
+    .m-page h1 { font-size: 22px; margin: 0 0 4px; }
+    .m-page > p { max-width: 70ch; margin: 0 0 24px; line-height: 1.5; }
+    .m-row { display: flex; flex-wrap: wrap; gap: 36px 32px; align-items: flex-start; }
+    .m-figure { margin: 0; }
+    figcaption { margin-top: 10px; max-width: 390px; font-size: 13px; line-height: 1.45; }
+    figcaption > b:first-child { display: block; font-size: 14px; }
+    figcaption span { color: #4d4a40; }
+    /* the phone: 390 x 844, the canvas and ink come from Lime's tokens */
+    .m-phone { position: relative; width: 390px; height: 844px; border-radius: 46px; overflow: hidden; background: var(--soil-bg-canvas); color: var(--soil-text);
+      box-shadow: 0 0 0 10px #17160f, 0 18px 40px rgba(0,0,0,.28); font-family: var(--seed-font-ui, 'Montserrat', system-ui, sans-serif); }
+    .m-phone--short { height: 300px; }
+    .m-notch { position: absolute; top: 9px; left: 50%; width: 118px; height: 32px; margin-left: -59px; border-radius: 20px; background: #000; z-index: 30; }
+    .m-screen { position: absolute; inset: 0; display: flex; flex-direction: column; }
+    .m-status { height: 50px; flex: none; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 30px 8px 34px; font-weight: 600; font-size: 15px; }
+    .m-status__icons { display: flex; gap: 5px; align-items: center; } .m-status__icons i { width: 16px; height: 10px; border-radius: 3px; background: currentColor; opacity: .85; } .m-status__icons i:nth-child(2) { width: 12px; } .m-status__icons i:nth-child(3) { width: 24px; height: 11px; border-radius: 4px; }
+    .m-home { position: absolute; left: 50%; bottom: 8px; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: var(--soil-text); opacity: .9; z-index: 40; }
+    /* screen 1: Chats */
+    .m-largebar { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 6px 20px 4px 20px; }
+    .m-largebar h1 { margin: 0; font-size: 34px; line-height: 1.15; font-weight: 700; letter-spacing: -.01em; }
+    .m-plus { width: 40px; height: 40px; border-radius: 50%; border: 0; display: grid; place-items: center; font-size: 20px; cursor: pointer; background: var(--lime-primary-bg); color: var(--lime-primary-ink); }
+    .m-search { flex: none; margin: 8px 20px 10px; height: 38px; border-radius: 12px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--lime-layer-surface); color: var(--soil-text-muted); font-size: 15px; }
+    .m-scroll { flex: 1; overflow: hidden; padding-bottom: 120px; }
+    .m-chats .lime-recent-frame { margin: 0 4px 6px; }
+    .m-section { padding: 0 8px; } .m-section__head { display: flex; align-items: center; gap: 6px; padding: 10px 12px 4px; color: var(--soil-text-muted); font-size: 13px; }
+    .m-section__head h3 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+    .m-section .lime-contact-list { margin: 0; padding: 0; list-style: none; }
+    .m-section .lime-contact { padding-top: 8px; padding-bottom: 8px; }
+    /* the dock: a floating, rounded, translucent pill that clears the home indicator */
+    .m-dock { position: absolute; z-index: 20; left: 16px; right: 16px; bottom: 26px; height: 64px; border-radius: 32px; display: flex; align-items: center; justify-content: space-around; padding: 0 8px;
+      background: color-mix(in oklab, var(--soil-bg-surface) 76%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+      border: 1px solid color-mix(in oklab, var(--soil-border) 70%, transparent); box-shadow: 0 8px 24px rgba(0,0,0,.14); }
+    .m-dock__item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 62px; height: 52px; border-radius: 26px; padding: 0 8px; font-size: 10.5px; font-weight: 600; color: var(--soil-text-muted); text-decoration: none; }
+    .m-dock__item .dew { font-size: 22px; line-height: 1; }
+    .m-dock__item.is-selected { background: var(--lime-primary-bg); color: var(--lime-primary-ink); }
+    .m-dock__iconwrap { position: relative; display: inline-flex; } .m-dock__badge { position: absolute; top: -5px; right: -10px; }
+    .m-dock__me .seed-avatar { width: 24px; height: 24px; font-size: 10px; }
+    .m-toast-pos { position: absolute; z-index: 25; left: 12px; right: 12px; top: 100px; } .m-toast-pos .seed-toast { width: 100%; max-width: none; } .m-toast-pos .seed-toast__content { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: nowrap; }
+    /* the classic alternative: a full-width tab bar */
+    .m-tabbar { position: absolute; z-index: 20; left: 0; right: 0; bottom: 0; height: 84px; padding: 8px 8px 26px; display: flex; justify-content: space-around; align-items: flex-start; background: var(--soil-bg-surface); border-top: 1px solid var(--soil-border-subtle); }
+    .m-tabbar__item { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 70px; font-size: 10.5px; font-weight: 600; color: var(--soil-text-muted); text-decoration: none; }
+    .m-tabbar__item .dew { font-size: 24px; line-height: 1; } .m-tabbar__item.is-selected { color: var(--soil-text); } .m-tabbar__item.is-selected .dew { color: var(--soil-text); }
+    .m-tabbar .m-dock__me .seed-avatar { width: 24px; height: 24px; font-size: 10px; }
+    /* screen 2: a chat, pushed on top (no breadcrumbs, no dock) */
+    .m-topbar { flex: none; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px; padding: 4px 8px 8px 4px; border-bottom: 1px solid var(--soil-border-subtle); background: var(--soil-bg-surface); }
+    .m-topbar__back { display: inline-flex; align-items: center; border: 0; background: none; color: var(--soil-text); font: inherit; font-size: 15px; padding: 6px 4px; } .m-topbar__back .dew { font-size: 22px; }
+    .m-topbar__back span:not(.dew) { max-width: 0; overflow: hidden; } /* "Messages" is dropped: the avatar and name need the room */
+    .m-topbar__who { display: flex; align-items: center; gap: 8px; min-width: 0; justify-content: center; }
+    .m-topbar__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; } .m-topbar__text strong { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .m-topbar__text small { font-size: 11.5px; color: var(--soil-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .m-topbar__actions { display: flex; } .m-iconbtn { width: 38px; height: 38px; border: 0; background: none; color: var(--soil-text); font-size: 20px; border-radius: 50%; display: grid; place-items: center; }
+    .m-thread { flex: 1; overflow: hidden; padding: 10px 12px 8px; display: flex; flex-direction: column; justify-content: flex-end; gap: 10px; }
+    .m-msg { display: flex; gap: 8px; align-items: flex-end; max-width: 100%; } .m-msg--out { justify-content: flex-end; }
+    .m-msg__col { display: flex; flex-direction: column; min-width: 0; max-width: 78%; } .m-msg--out .m-msg__col { align-items: flex-end; }
+    .m-msg__av .lime-avatar-frame { margin-bottom: 18px; }
+    .m-bubble { padding: 9px 13px; border-radius: 18px; font-size: 15px; line-height: 1.38; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; box-sizing: border-box; }
+    .m-msg--in .m-bubble { background: var(--lime-layer-surface); border-bottom-left-radius: 6px; } .m-msg--out .m-bubble { background: var(--lime-primary-bg); color: var(--lime-primary-ink); border-bottom-right-radius: 6px; }
+    .m-url { text-decoration: underline; text-underline-offset: 2px; }
+    .m-meta { margin: 3px 6px 0; font-size: 11px; color: var(--soil-text-muted); } .m-replies { margin: 3px 6px 0; font-size: 12px; font-weight: 600; color: var(--soil-text); text-decoration: underline; text-underline-offset: 2px; }
+    .m-chips { display: flex; gap: 4px; margin: 4px 4px 0; } .m-chip { font-size: 12px; padding: 2px 7px; border-radius: 12px; background: var(--lime-layer-surface); border: 1px solid var(--soil-border-subtle); } .m-chip.is-mine { background: var(--lime-primary-bg); }
+    .m-album.lime-album { width: 200px; max-width: 100%; } .m-tile { background-size: cover; min-height: 52px; border-radius: 6px; }
+    .m-tile--a { background: linear-gradient(135deg, #8fb996, #3f7d58); } .m-tile--b { background: linear-gradient(135deg, #f2d492, #d98c3d); } .m-tile--c { background: linear-gradient(135deg, #9ec5ee, #4a78b5); }
+    .m-loc { width: 230px; max-width: 100%; } .m-loc__map { position: relative; height: 64px; border-radius: 10px; overflow: hidden; background: color-mix(in oklab, var(--soil-bg-canvas) 70%, #b9d8a3 30%); background-image: linear-gradient(90deg, rgba(0,0,0,.07) 1px, transparent 1px), linear-gradient(0deg, rgba(0,0,0,.07) 1px, transparent 1px); background-size: 22px 22px; }
+    .m-loc__map i { position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--bad-bg-bold-default); box-shadow: 0 0 0 5px color-mix(in oklab, var(--bad-bg-bold-default) 25%, transparent); }
+    .m-loc__text { padding-top: 6px; display: flex; flex-direction: column; line-height: 1.3; } .m-loc__text small { font-size: 12px; opacity: .8; }
+    .m-composer { flex: none; display: flex; align-items: flex-end; gap: 8px; padding: 8px 10px 30px; background: var(--soil-bg-canvas); }
+    .m-composer__plus { flex: none; width: 38px; height: 38px; border-radius: 50%; border: 0; display: grid; place-items: center; font-size: 20px; background: var(--lime-layer-surface); color: var(--soil-text); cursor: pointer; }
+    .m-composer__box { flex: 1; min-height: 38px; border-radius: 19px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px; background: var(--soil-bg-surface); border: 1px solid var(--soil-border); font-size: 15px; color: var(--soil-text-muted); }
+    .m-composer__key { font-size: 10px; border: 1px dashed var(--soil-border); border-radius: 6px; padding: 1px 5px; white-space: nowrap; } .m-composer__key b { color: var(--soil-text); }
+    .m-composer__mic { flex: none; height: 38px; border-radius: 19px; border: 0; padding: 0 10px; display: flex; align-items: center; gap: 2px; font-size: 18px; background: var(--lime-layer-surface); color: var(--soil-text); } .m-composer__micdown { font-size: 11px !important; }
+    /* screen 3: the "..." bottom sheet over a dimmed chat */
+    .m-backdrop { position: absolute; inset: 0; z-index: 50; background: rgba(10, 10, 6, .45); }
+    .m-sheet { position: absolute; z-index: 60; left: 8px; right: 8px; bottom: 8px; padding: 8px 8px 22px; border-radius: 28px; background: var(--soil-bg-elevated, var(--soil-bg-surface)); box-shadow: 0 -4px 30px rgba(0,0,0,.25); }
+    .m-sheet__handle { width: 38px; height: 5px; border-radius: 3px; margin: 2px auto 8px; background: var(--soil-border); }
+    .m-sheet__title { text-align: center; font-size: 13px; color: var(--soil-text-muted); padding: 2px 0 8px; }
+    .m-sheet__items { display: flex; flex-direction: column; }
+    .m-sheet__item { position: static !important; display: flex !important; align-items: center; gap: 14px; width: 100%; min-height: 50px; padding: 0 16px !important; border-radius: 14px; font-size: 17px !important; text-align: left; }
+    .m-sheet__item .dew { font-size: 22px; }
+    .m-sheet .lime-menu__divider { margin: 4px 12px; }
+    .m-sheet__cancel { display: block; width: calc(100% - 16px); margin: 8px 8px 0; height: 50px; border-radius: 16px; border: 0; font: inherit; font-size: 17px; font-weight: 600; background: var(--lime-layer-surface); color: var(--soil-text); }
+    /* notes under the frames */
+    .m-notes { max-width: 86ch; margin-top: 44px; line-height: 1.55; } .m-notes h2 { font-size: 18px; margin: 28px 0 6px; } .m-notes li { margin: 3px 0; } .m-notes code { background: #fff8; padding: 1px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <main class="m-page">
+    <h1>Lime on a phone: the proposed shell (a mock, for a yes or no)</h1>
+    <p>Five pictures at the real phone size (390 &times; 844), made from Lime&rsquo;s own styles, avatars, rows and toast. Nothing here is connected to the app. Tell me what to change: the dock items, floating or classic, the top bar, the sheet.</p>
+    <div class="m-row">
+
+    <figure class="m-figure">
+      <div class="m-phone"><div class="m-notch" aria-hidden="true"></div>
+      <div class="m-screen m-chats">
+        <div class="m-status"><span>9:41</span><span class="m-status__icons"><i></i><i></i><i></i></span></div>
+        <header class="m-largebar">
+          <h1>Messages</h1>
+          <button class="m-plus" aria-label="New message"><span class="dew dew-plus"></span></button>
+        </header>
+        <div class="m-search"><span class="dew dew-search"></span><span>Search</span></div>
+        <div class="m-scroll">
+          <div class="lime-fade-frame lime-recent-frame"><div class="lime-recent"> <div class="lime-recent__item" data-search-text="me shem rajoon" data-profile-id="teacher-002"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p6" data-name="Shem Rajoon" aria-label="Shem Rajoon">SR</span><span class="lime-presence" data-presence="active" role="img" aria-label="Active"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="var(--good-bg-bold-default)"></circle></svg></span></span><span class="lime-recent__name">Me</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="jean chung" data-person-id="teacher-001"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Jean C</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="alexi daily" data-person-id="teacher-006"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p4" data-name="Alexi Daily" aria-label="Alexi Daily">AD</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Alexi D</span></div><div class="lime-recent__item" data-search-text="grace okonkwo" data-person-id="teacher-024"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p4" data-name="Grace Okonkwo" aria-label="Grace Okonkwo">GO</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Grace O</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="jimin park" data-person-id="teacher-005"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p11" data-name="Jimin Park" aria-label="Jimin Park">JP</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Jimin P</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="mary lee" data-person-id="teacher-004"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p7" data-name="Mary Lee" aria-label="Mary Lee">ML</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Mary L</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="marcus thompson" data-person-id="teacher-013"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p5" data-name="Marcus Thompson" aria-label="Marcus Thompson">MT</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Marcus T</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="priya osei" data-person-id="teacher-010"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p7" data-name="Priya Osei" aria-label="Priya Osei">PO</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Priya O</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="fatima al-hassan" data-person-id="teacher-018"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p4" data-name="Fatima Al-Hassan" aria-label="Fatima Al-Hassan">FA</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Fatima A</span></div><div class="lime-recent__item" data-search-text="aisha johnson" data-person-id="teacher-016"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p7" data-name="Aisha Johnson" aria-label="Aisha Johnson">AJ</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Aisha J</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="david chen" data-person-id="teacher-015"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p2" data-name="David Chen" aria-label="David Chen">DC</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">David C</span></div></div></div>
+          <section class="lime-section m-section"><div class="m-section__head"><span class="dew dew-chevron-down"></span><h3>Starred</h3></div>
+            <ul class="lime-contact-list">
+          <li class="lime-contact lime-contact--active" data-conversation-id="conv-011" data-search-text="ps 113 staff room shem rajoon jean chung priya osei marcus thompson sofia martinez david chen aisha johnson fatima al-hassan jasmine williams grace okonkwo"><span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="4"><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p4" data-name="Grace Okonkwo" aria-label="Grace Okonkwo">GO</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p7" data-name="Priya Osei" aria-label="Priya Osei">PO</span><span class="lime-avatar-cluster__member lime-avatar-cluster__more">+6</span></span><div class="lime-contact__body"><span class="lime-contact__name">PS 113 Staff Room</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">Jean: Can't wait — see everyone at 3:15 for the PD session too.</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">8:15 AM</span></div></li>
+          <li class="lime-contact" data-conversation-id="conv-001" data-search-text="jean chung jean chung shem rajoon"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><div class="lime-contact__body"><span class="lime-contact__name">Jean Chung</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">See you there! I'll bring some sample meal planning worksheets I've used before.</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">7:32 AM</span></div></li>
+            </ul></section>
+          <section class="lime-section m-section"><div class="m-section__head"><span class="dew dew-chevron-down"></span><h3>All</h3></div>
+            <ul class="lime-contact-list">
+          <li class="lime-contact" data-conversation-id="conv-004" data-search-text="alexi daily shem rajoon alexi daily"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p4" data-name="Alexi Daily" aria-label="Alexi Daily">AD</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><div class="lime-contact__body"><span class="lime-contact__name">Alexi Daily</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">Of course! I'm doing a word problem unit next week. Come by Tuesday 3rd period.</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">5:15 AM</span></div></li>
+          <li class="lime-contact" data-conversation-id="conv-005" data-search-text="kai nakamura shem rajoon kai nakamura"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p3" data-name="Kai Nakamura" aria-label="Kai Nakamura">KN</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><div class="lime-contact__body"><span class="lime-contact__name">Kai Nakamura</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">No messages yet</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time"></span></div></li>
+          <li class="lime-contact" data-conversation-id="conv-006" data-search-text="ps 113 7th grade team jean chung shem rajoon priya osei marcus thompson"><span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="3"><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p5" data-name="Marcus Thompson" aria-label="Marcus Thompson">MT</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p7" data-name="Priya Osei" aria-label="Priya Osei">PO</span></span><div class="lime-contact__body"><span class="lime-contact__name">PS 113 7th Grade Team</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">Jean: Absolutely. Updated agenda: 1) P-T conferences, 2) Field trip, 3) Student progress. See everyone tomorrow!</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">4:00 AM</span></div></li>
+          <li class="lime-contact" data-conversation-id="conv-007" data-search-text="math teachers nyc shem rajoon fatima al-hassan jasmine williams david chen"><span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="3"><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p4" data-name="Fatima Al-Hassan" aria-label="Fatima Al-Hassan">FA</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p2" data-name="David Chen" aria-label="David Chen">DC</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p1" data-name="Jasmine Williams" aria-label="Jasmine Williams">JW</span></span><div class="lime-contact__body"><span class="lime-contact__name">Math Teachers NYC</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">Fatima: This is turning into something great! Let's set up a Jam session to plan it out?</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">12:30 PM</span></div></li>
+            </ul></section>
+        </div>
+        <div class="m-toast-pos"><div class="seed-toast lime-toast lime-toast--success" role="status"><span class="seed-toast__icon dew dew-check" aria-hidden="true"></span><div class="seed-toast__content"><span class="seed-toast__title">Chat archived</span><button type="button" class="seed-button seed-button--secondary seed-button--sm lime-toast__action">Undo</button></div><button type="button" class="seed-toast__dismiss dew dew-close" aria-label="Dismiss notification"></button></div></div>
+        
+        <nav class="m-dock" aria-label="Main">
+          <a class="m-dock__item is-selected"><span class="dew dew-link"></span><span>Link</span></a>
+          <a class="m-dock__item"><span class="dew dew-people"></span><span>Communities</span></a>
+          <a class="m-dock__item"><span class="m-dock__iconwrap"><span class="dew dew-bell-on"></span><span class="seed-badge seed-badge--bad seed-badge--sm m-dock__badge">3</span></span><span>Notifications</span></a>
+          <a class="m-dock__item"><span class="m-dock__me"><span class="seed-avatar seed-avatar--sm lime-avatar lime-avatar--p6" aria-label="Shem Rajoon">SR</span></span><span>You</span></a>
+        </nav>
+        
+        <div class="m-home" aria-hidden="true"></div>
+      </div></div>
+      <figcaption><b>1. Chats: the list screen</b><span>Large title, a pale-lime + for New message, search, Recent, Starred and All, and the floating dock (Link selected). A toast sits just under the top bar, clear of the title.</span></figcaption>
+    </figure>
+
+    <figure class="m-figure">
+      <div class="m-phone"><div class="m-notch" aria-hidden="true"></div>
+      <div class="m-screen m-chat">
+        
+        <div class="m-status"><span>9:41</span><span class="m-status__icons"><i></i><i></i><i></i></span></div>
+        <header class="m-topbar">
+          <button class="m-topbar__back" aria-label="Back to Messages"><span class="dew dew-chevron-left"></span><span>Messages</span></button>
+          <div class="m-topbar__who" role="button" tabindex="0">
+            <span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="4"><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p4" data-name="Grace Okonkwo" aria-label="Grace Okonkwo">GO</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p7" data-name="Priya Osei" aria-label="Priya Osei">PO</span><span class="lime-avatar-cluster__member lime-avatar-cluster__more">+6</span></span>
+            <div class="m-topbar__text"><strong>PS 113 Staff Room</strong><small>10 members · Jean is online</small></div>
+          </div>
+          <div class="m-topbar__actions"><button class="m-iconbtn" aria-label="Share"><span class="dew dew-share"></span></button><button class="m-iconbtn" aria-label="More"><span class="dew dew-ellipsis-menu"></span></button></div>
+        </header>
+        <div class="m-thread">
+          <div class="lime-date-divider"><span>Today</span></div>
+          <div class="m-msg m-msg--out"><div class="m-msg__col"><div class="m-bubble">Friday works. Here&rsquo;s the article I mentioned: <span class="m-url">https://www.edutopia.org/article/differentiated-instruction-strategies-that-work-in-any-classroom</span></div><div class="m-meta">8:02 AM</div></div></div>
+          <div class="m-msg m-msg--in"><span class="m-msg__av"><span class="lime-avatar-frame lime-avatar-frame--md"><span class="seed-avatar seed-avatar--md lime-avatar lime-avatar--p9" aria-label="Jean Chung">JC</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span></span><div class="m-msg__col"><div class="m-bubble"><div class="lime-album lime-album--3 m-album"><div class="lime-album__tile m-tile m-tile--a"></div><div class="lime-album__tile m-tile m-tile--b"></div><div class="lime-album__tile m-tile m-tile--c"></div></div></div><div class="m-chips"><span class="m-chip is-mine">😍 2</span><span class="m-chip">👍 1</span></div><div class="m-meta">Jean · 8:10 AM</div></div></div>
+          <div class="m-msg m-msg--out"><div class="m-msg__col"><div class="m-bubble"><div class="m-loc"><div class="m-loc__map" aria-hidden="true"><i></i></div><div class="m-loc__text"><strong>PS 113</strong><small>1 Main St, Brooklyn · Meet here at 8:15</small></div></div></div><div class="m-meta">8:12 AM</div></div></div>
+          <div class="m-msg m-msg--out"><div class="m-msg__col"><div class="m-bubble">Running late, start without me!</div><a class="m-replies">2 replies · last reply today at 8:20 AM</a><div class="m-meta">Sent 10:05 · delivered 10:35</div></div></div>
+        </div>
+        
+        <footer class="m-composer">
+          <button class="lime-composer__aux m-composer__plus" aria-label="Attach"><span class="dew dew-plus"></span></button>
+          <div class="m-composer__box"><span class="m-composer__placeholder">Say something meaningful...</span><span class="m-composer__key" title="the keyboard's return key is labelled Send">return = <b>Send</b></span></div>
+          <button class="m-composer__mic" aria-label="Voice message"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down m-composer__micdown"></span></button>
+        </footer>
+        <div class="m-home" aria-hidden="true"></div>
+        
+      </div></div>
+      <figcaption><b>2. A chat: the pushed screen</b><span>Back at the left, avatar + name + member line centred (tap for details), Share and &ldquo;&hellip;&rdquo; at the right. No breadcrumbs and no dock inside a chat, like WhatsApp and Messages. Bubbles, a wrapping long link, a photo album, a location card, a reply-count line and the &ldquo;Sent &middot; delivered&rdquo; note all fit 390px. The composer clears the home indicator; the keyboard&rsquo;s return key is labelled <b>Send</b>.</span></figcaption>
+    </figure>
+
+    <figure class="m-figure">
+      <div class="m-phone"><div class="m-notch" aria-hidden="true"></div>
+      <div class="m-screen m-chat">
+        
+        <div class="m-status"><span>9:41</span><span class="m-status__icons"><i></i><i></i><i></i></span></div>
+        <header class="m-topbar">
+          <button class="m-topbar__back" aria-label="Back to Messages"><span class="dew dew-chevron-left"></span><span>Messages</span></button>
+          <div class="m-topbar__who" role="button" tabindex="0">
+            <span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="4"><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p4" data-name="Grace Okonkwo" aria-label="Grace Okonkwo">GO</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p7" data-name="Priya Osei" aria-label="Priya Osei">PO</span><span class="lime-avatar-cluster__member lime-avatar-cluster__more">+6</span></span>
+            <div class="m-topbar__text"><strong>PS 113 Staff Room</strong><small>10 members · Jean is online</small></div>
+          </div>
+          <div class="m-topbar__actions"><button class="m-iconbtn" aria-label="Share"><span class="dew dew-share"></span></button><button class="m-iconbtn" aria-label="More"><span class="dew dew-ellipsis-menu"></span></button></div>
+        </header>
+        <div class="m-thread">
+          <div class="lime-date-divider"><span>Today</span></div>
+          <div class="m-msg m-msg--out"><div class="m-msg__col"><div class="m-bubble">Friday works. Here&rsquo;s the article I mentioned: <span class="m-url">https://www.edutopia.org/article/differentiated-instruction-strategies-that-work-in-any-classroom</span></div><div class="m-meta">8:02 AM</div></div></div>
+          <div class="m-msg m-msg--in"><span class="m-msg__av"><span class="lime-avatar-frame lime-avatar-frame--md"><span class="seed-avatar seed-avatar--md lime-avatar lime-avatar--p9" aria-label="Jean Chung">JC</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span></span><div class="m-msg__col"><div class="m-bubble"><div class="lime-album lime-album--3 m-album"><div class="lime-album__tile m-tile m-tile--a"></div><div class="lime-album__tile m-tile m-tile--b"></div><div class="lime-album__tile m-tile m-tile--c"></div></div></div><div class="m-chips"><span class="m-chip is-mine">😍 2</span><span class="m-chip">👍 1</span></div><div class="m-meta">Jean · 8:10 AM</div></div></div>
+          <div class="m-msg m-msg--out"><div class="m-msg__col"><div class="m-bubble"><div class="m-loc"><div class="m-loc__map" aria-hidden="true"><i></i></div><div class="m-loc__text"><strong>PS 113</strong><small>1 Main St, Brooklyn · Meet here at 8:15</small></div></div></div><div class="m-meta">8:12 AM</div></div></div>
+          <div class="m-msg m-msg--out"><div class="m-msg__col"><div class="m-bubble">Running late, start without me!</div><a class="m-replies">2 replies · last reply today at 8:20 AM</a><div class="m-meta">Sent 10:05 · delivered 10:35</div></div></div>
+        </div>
+        
+        <footer class="m-composer">
+          <button class="lime-composer__aux m-composer__plus" aria-label="Attach"><span class="dew dew-plus"></span></button>
+          <div class="m-composer__box"><span class="m-composer__placeholder">Say something meaningful...</span><span class="m-composer__key" title="the keyboard's return key is labelled Send">return = <b>Send</b></span></div>
+          <button class="m-composer__mic" aria-label="Voice message"><span class="dew dew-microphone"></span><span class="dew dew-chevron-down m-composer__micdown"></span></button>
+        </footer>
+        <div class="m-home" aria-hidden="true"></div>
+        
+        <div class="m-backdrop"></div>
+        <div class="m-sheet" role="dialog" aria-label="Chat actions">
+          <div class="m-sheet__handle"></div>
+          <div class="m-sheet__title">PS 113 Staff Room</div>
+          <div class="m-sheet__items">
+            <button class="lime-menu__item m-sheet__item" role="menuitem"><span class="dew dew-star"></span><span class="lime-menu__item-label">Star</span></button>
+            <button class="lime-menu__item m-sheet__item" role="menuitem"><span class="dew dew-pencil"></span><span class="lime-menu__item-label">Rename</span></button>
+            <button class="lime-menu__item m-sheet__item" role="menuitem"><span class="dew dew-paint-brush-broad"></span><span class="lime-menu__item-label">Appearance</span></button>
+            <button class="lime-menu__item m-sheet__item" role="menuitem"><span class="dew dew-share"></span><span class="lime-menu__item-label">Share</span></button>
+            <button class="lime-menu__item m-sheet__item" role="menuitem"><span class="dew dew-archive"></span><span class="lime-menu__item-label">Archive</span></button>
+            <div class="lime-menu__divider" role="separator"></div>
+            <button class="lime-menu__item lime-menu__item--danger m-sheet__item" role="menuitem"><span class="dew dew-trash"></span><span class="lime-menu__item-label">Delete</span></button>
+          </div>
+          <button class="m-sheet__cancel">Cancel</button>
+        </div>
+      </div></div>
+      <figcaption><b>3. The &ldquo;&hellip;&rdquo; bottom sheet</b><span>Star, Rename, Appearance, Share, Archive and Delete (red), in Lime&rsquo;s menu-item style, over a dimmed chat: the look of an iOS action sheet, in Lime&rsquo;s style.</span></figcaption>
+    </figure>
+    </div>
+    <div class="m-row" style="margin-top:44px">
+
+    <figure class="m-figure">
+      <div class="m-phone m-phone--short"><div class="m-notch" aria-hidden="true"></div><div class="m-screen m-chats"><div class="m-status"><span>9:41</span><span class="m-status__icons"><i></i><i></i><i></i></span></div><header class="m-largebar"><h1>Messages</h1><button class="m-plus" aria-label="New message"><span class="dew dew-plus"></span></button></header><div class="m-scroll" style="overflow:hidden"><section class="lime-section m-section"><ul class="lime-contact-list"><li class="lime-contact" data-conversation-id="conv-001" data-search-text="jean chung jean chung shem rajoon"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><div class="lime-contact__body"><span class="lime-contact__name">Jean Chung</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">See you there! I'll bring some sample meal planning worksheets I've used before.</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">7:32 AM</span></div></li></ul></section></div><nav class="m-tabbar" aria-label="Main">
+          <a class="m-tabbar__item is-selected"><span class="dew dew-link"></span><span>Link</span></a>
+          <a class="m-tabbar__item"><span class="dew dew-people"></span><span>Communities</span></a>
+          <a class="m-tabbar__item"><span class="m-dock__iconwrap"><span class="dew dew-bell-on"></span><span class="seed-badge seed-badge--bad seed-badge--sm m-dock__badge">3</span></span><span>Notifications</span></a>
+          <a class="m-tabbar__item"><span class="m-dock__me"><span class="seed-avatar seed-avatar--sm lime-avatar lime-avatar--p6" aria-label="Shem Rajoon">SR</span></span><span>You</span></a>
+        </nav><div class="m-home" aria-hidden="true"></div></div></div>
+      <figcaption><b>4. For comparison: the dock as a classic full-width tab bar</b><span>The same four items (Chats only shown), edge to edge with a hairline. Floating (frame 1) or classic (this one)?</span></figcaption>
+    </figure>
+
+    <figure class="m-figure" data-theme="dark">
+      <div class="m-phone"><div class="m-notch" aria-hidden="true"></div>
+      <div class="m-screen m-chats">
+        <div class="m-status"><span>9:41</span><span class="m-status__icons"><i></i><i></i><i></i></span></div>
+        <header class="m-largebar">
+          <h1>Messages</h1>
+          <button class="m-plus" aria-label="New message"><span class="dew dew-plus"></span></button>
+        </header>
+        <div class="m-search"><span class="dew dew-search"></span><span>Search</span></div>
+        <div class="m-scroll">
+          <div class="lime-fade-frame lime-recent-frame"><div class="lime-recent"> <div class="lime-recent__item" data-search-text="me shem rajoon" data-profile-id="teacher-002"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p6" data-name="Shem Rajoon" aria-label="Shem Rajoon">SR</span><span class="lime-presence" data-presence="active" role="img" aria-label="Active"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="50" fill="var(--good-bg-bold-default)"></circle></svg></span></span><span class="lime-recent__name">Me</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="jean chung" data-person-id="teacher-001"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Jean C</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="alexi daily" data-person-id="teacher-006"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p4" data-name="Alexi Daily" aria-label="Alexi Daily">AD</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Alexi D</span></div><div class="lime-recent__item" data-search-text="grace okonkwo" data-person-id="teacher-024"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p4" data-name="Grace Okonkwo" aria-label="Grace Okonkwo">GO</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Grace O</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="jimin park" data-person-id="teacher-005"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p11" data-name="Jimin Park" aria-label="Jimin Park">JP</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Jimin P</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="mary lee" data-person-id="teacher-004"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p7" data-name="Mary Lee" aria-label="Mary Lee">ML</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Mary L</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="marcus thompson" data-person-id="teacher-013"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p5" data-name="Marcus Thompson" aria-label="Marcus Thompson">MT</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Marcus T</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="priya osei" data-person-id="teacher-010"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p7" data-name="Priya Osei" aria-label="Priya Osei">PO</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Priya O</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="fatima al-hassan" data-person-id="teacher-018"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p4" data-name="Fatima Al-Hassan" aria-label="Fatima Al-Hassan">FA</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Fatima A</span></div><div class="lime-recent__item" data-search-text="aisha johnson" data-person-id="teacher-016"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p7" data-name="Aisha Johnson" aria-label="Aisha Johnson">AJ</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">Aisha J</span></div><div class="lime-recent__item lime-recent__item--unread" data-search-text="david chen" data-person-id="teacher-015"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p2" data-name="David Chen" aria-label="David Chen">DC</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><span class="lime-recent__name">David C</span></div></div></div>
+          <section class="lime-section m-section"><div class="m-section__head"><span class="dew dew-chevron-down"></span><h3>Starred</h3></div>
+            <ul class="lime-contact-list">
+          <li class="lime-contact lime-contact--active" data-conversation-id="conv-011" data-search-text="ps 113 staff room shem rajoon jean chung priya osei marcus thompson sofia martinez david chen aisha johnson fatima al-hassan jasmine williams grace okonkwo"><span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="4"><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p4" data-name="Grace Okonkwo" aria-label="Grace Okonkwo">GO</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p7" data-name="Priya Osei" aria-label="Priya Osei">PO</span><span class="lime-avatar-cluster__member lime-avatar-cluster__more">+6</span></span><div class="lime-contact__body"><span class="lime-contact__name">PS 113 Staff Room</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">Jean: Can't wait — see everyone at 3:15 for the PD session too.</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">8:15 AM</span></div></li>
+          <li class="lime-contact" data-conversation-id="conv-001" data-search-text="jean chung jean chung shem rajoon"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><div class="lime-contact__body"><span class="lime-contact__name">Jean Chung</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">See you there! I'll bring some sample meal planning worksheets I've used before.</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">7:32 AM</span></div></li>
+            </ul></section>
+          <section class="lime-section m-section"><div class="m-section__head"><span class="dew dew-chevron-down"></span><h3>All</h3></div>
+            <ul class="lime-contact-list">
+          <li class="lime-contact" data-conversation-id="conv-004" data-search-text="alexi daily shem rajoon alexi daily"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p4" data-name="Alexi Daily" aria-label="Alexi Daily">AD</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><div class="lime-contact__body"><span class="lime-contact__name">Alexi Daily</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">Of course! I'm doing a word problem unit next week. Come by Tuesday 3rd period.</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">5:15 AM</span></div></li>
+          <li class="lime-contact" data-conversation-id="conv-005" data-search-text="kai nakamura shem rajoon kai nakamura"><span class="lime-avatar-frame lime-avatar-frame--lg"><span class="seed-avatar seed-avatar--lg lime-avatar lime-avatar--p3" data-name="Kai Nakamura" aria-label="Kai Nakamura">KN</span><span class="lime-presence" data-presence="away" role="img" aria-label="Away"><svg viewBox="-10 -20 130 130" width="100%" height="100%" style="overflow:visible" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="var(--soil-text-muted)" stroke-width="10"></circle></svg></span></span><div class="lime-contact__body"><span class="lime-contact__name">Kai Nakamura</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">No messages yet</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time"></span></div></li>
+          <li class="lime-contact" data-conversation-id="conv-006" data-search-text="ps 113 7th grade team jean chung shem rajoon priya osei marcus thompson"><span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="3"><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p9" data-name="Jean Chung" aria-label="Jean Chung">JC</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p5" data-name="Marcus Thompson" aria-label="Marcus Thompson">MT</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p7" data-name="Priya Osei" aria-label="Priya Osei">PO</span></span><div class="lime-contact__body"><span class="lime-contact__name">PS 113 7th Grade Team</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">Jean: Absolutely. Updated agenda: 1) P-T conferences, 2) Field trip, 3) Student progress. See everyone tomorrow!</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">4:00 AM</span></div></li>
+          <li class="lime-contact" data-conversation-id="conv-007" data-search-text="math teachers nyc shem rajoon fatima al-hassan jasmine williams david chen"><span class="lime-avatar-cluster lime-avatar-cluster--lg" data-count="3"><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p4" data-name="Fatima Al-Hassan" aria-label="Fatima Al-Hassan">FA</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p2" data-name="David Chen" aria-label="David Chen">DC</span><span class="seed-avatar lime-avatar lime-avatar-cluster__member lime-avatar--p1" data-name="Jasmine Williams" aria-label="Jasmine Williams">JW</span></span><div class="lime-contact__body"><span class="lime-contact__name">Math Teachers NYC</span><span class="lime-contact__preview"><span class="lime-contact__preview-text">Fatima: This is turning into something great! Let's set up a Jam session to plan it out?</span></span></div><div class="lime-contact__meta"><span class="lime-contact__time">12:30 PM</span></div></li>
+            </ul></section>
+        </div>
+        <div class="m-toast-pos"><div class="seed-toast lime-toast lime-toast--success" role="status"><span class="seed-toast__icon dew dew-check" aria-hidden="true"></span><div class="seed-toast__content"><span class="seed-toast__title">Chat archived</span><button type="button" class="seed-button seed-button--secondary seed-button--sm lime-toast__action">Undo</button></div><button type="button" class="seed-toast__dismiss dew dew-close" aria-label="Dismiss notification"></button></div></div>
+        
+        <nav class="m-dock" aria-label="Main">
+          <a class="m-dock__item is-selected"><span class="dew dew-link"></span><span>Link</span></a>
+          <a class="m-dock__item"><span class="dew dew-people"></span><span>Communities</span></a>
+          <a class="m-dock__item"><span class="m-dock__iconwrap"><span class="dew dew-bell-on"></span><span class="seed-badge seed-badge--bad seed-badge--sm m-dock__badge">3</span></span><span>Notifications</span></a>
+          <a class="m-dock__item"><span class="m-dock__me"><span class="seed-avatar seed-avatar--sm lime-avatar lime-avatar--p6" aria-label="Shem Rajoon">SR</span></span><span>You</span></a>
+        </nav>
+        
+        <div class="m-home" aria-hidden="true"></div>
+      </div></div>
+      <figcaption><b>5. Dark mode: screen 1</b><span>The same Chats screen in Lime&rsquo;s dark theme (the tokens switch; nothing else changes).</span></figcaption>
+    </figure>
+    </div>
+    <section class="m-notes">
+      <h2>What will be native in the build</h2>
+      <ul>
+        <li><b>Share</b> uses <code>navigator.share</code> (the phone&rsquo;s own share sheet), falling back to copying the link.</li>
+        <li>The <b>microphone</b> and <b>timezone</b> pickers become a native <code>&lt;select&gt;</code>.</li>
+        <li><b>Keyboards</b> follow the field: <code>type=email</code> / <code>inputmode</code> for email, phone and search.</li>
+        <li>The composer&rsquo;s return key is labelled <b>Send</b> with <code>enterkeyhint="send"</code>.</li>
+        <li><b>Files and photos</b> use the native file and photo pickers (<code>&lt;input type=file&gt;</code>).</li>
+      </ul>
+      <h2>What can&rsquo;t be native on the web</h2>
+      <ul>
+        <li>Action menus can&rsquo;t be real iOS or Android menus: they become <b>bottom sheets</b> like frame 3.</li>
+        <li><b>No haptics on iOS</b> (Safari doesn&rsquo;t offer them), so taps get no vibration there.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
