@@ -423,6 +423,65 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 > - **no personal data** in any committed file;
 > - commit, push, and stop at each gate.
 
+### LIME-79-fix → `tend` (next): the mobile QA round on LIME-78 and 79 (the user reviews before LIME-80)
+
+**The user's QA on an iPhone (2026-10-03, 9 screenshots):** "make these QA updates for me to review before we move on." Applies at ≤ 767px unless stated. **This brief absorbs LIME-80 item 1 (glass menus)**; LIME-80 keeps Pin, Customize, native share and pickers, and find-in-chat.
+
+1. **Avatar tints: more pastel variety, within the brand palette.** LIME-79's 4 tints (`PALETTE_SIZE = 4`, `app.js` ~1968; `lime.css` ~399) make too many people look alike.
+   - Build **8–10 soft pastel tints** derived only from Seed's brand ramps (the `--seed-lime-*` steps such as 50/75/100/150/200/300, `--seed-meadow-*`, and warm `--seed-soil-*` tints such as 0/100/200), so they're **distinct from each other**: measure OKLab ΔE ≥ ~6 between every pair and report it.
+   - Ink initials ≥ 4.5:1 on each; dark-mode variants.
+   - The deterministic pick by name is unchanged.
+2. **The Messages header is a fixed top bar** with only the **logo, "Messages" and "+"**. **Search and filter scroll with the list** and **fade under the header bar** as you scroll (a mask fade, like the bottom fade).
+3. **One menu style everywhere, the "native" look.** The user likes the "+" (attach) menu because it's **iOS's own native menu** (Photo Library / Take Photo or Video / Choose Files): frosted liquid glass, large ~17px text, icons at the left, a large radius, in context. **Every other menu on phones must look like it:** the filter, the chat "⋯", the title menu, the New message picker's result list styling where it's a menu, and any other popover.
+   - Implement it as Lime's **glass menu**: translucent with `backdrop-filter: blur(…) saturate(…)`, a solid fallback, a large radius, a hairline outline, 44px rows, icons left, opening in context from the trigger with a short scale and fade.
+   - **Screenshot it next to the native "+" menu** for comparison.
+4. **The pin icon is too small:** make it match the name's cap height (≈ the 16–18px visual size of the name text). Measure it.
+5. **The dock in liquid glass,** like the menus: translucent and blurred, so the list shows through it while scrolling.
+6. **Icon sizes, one standard on phones:**
+   - **header and dock icons:** a ~24px visible glyph in ≥ 44px tap targets;
+   - **inline action icons** (under bubbles): ~20px.
+   - **The call icon is too small; the search icon is too big.** Measure every header, composer, row and dock icon's rendered box and report a before/after table.
+7. **The chat header feels native** (an iOS-style navigation bar):
+   - **"‹" then a plain number** (the other-chats unread count as **text**, not a pill badge, e.g. "‹ 13");
+   - the title and avatar stack centred;
+   - the icons at the right (search, call, "⋯") at the standard size;
+   - a **glass bar** that the messages scroll under (a fade or blur).
+8. **Tapping the names or avatars in the header** opens the right panel **showing everyone in the chat (Members)**, for groups **and** DMs (a DM shows both people). Tapping a member then shows their details, with "‹" back to Members (the LIME-64 pattern).
+9. **Remove the inline reply button** (from LIME-79). Keep the add-reaction button under the bubble, as in the user's design.
+   - **Press and hold** (a ~400ms long-press) on a message opens a **context menu in the same glass style**, anchored to the message:
+     - a **row of quick reactions** (6 common emoji plus "more");
+     - **Reply in thread**;
+     - **Copy text**.
+   - Also add a light haptic where available (`navigator.vibrate(10)`, Android only).
+   - Long-press must not trigger text selection or the browser's own callout on the bubble (`-webkit-touch-callout: none` and `user-select` on the bubble during press). Text stays selectable via Copy.
+10. **The return (↵) icon is broken in the expanded composer:** fix the glyph and size, and check every state (disabled, enabled pale-lime, pressed).
+11. **The composer gets a scroll fade:** messages fade out **under** the composer area, like the dock area does on the Messages screen.
+12. **Remove the mic-selection caret and dropdown** (on mobile **and** desktop: the user said "remove mic selection"). The mic is a single button. Pressing it shows the toast "Voice messages are coming soon". The future feature records with a live sound-wave view (note it in the README's roadmap line).
+13. **Settings on phones** (the Account → Profile screen; screenshot: a grey pill with "‹" plus a separate "×"): use the **same native-style header** as item 7 (a "‹" back to the previous screen, the title "Profile", no "×"), with the Save and Cancel footer above the safe area.
+14. **Presence check (the user asked "are the status icons working?"):** verify live presence on the dev server with two clients. When one signs in or out, the other's status icon updates within a few seconds, in the list, the chat header area and the members list. Report what works; **fix it if it isn't live.** Note: the seed's static `status` values (e.g. Jean "busy") must be **overridden by live presence** when connected; say how they combine.
+
+**Scope:** `public/css/lime.css`, `public/js/app.js`, `public/index.html` (removing the mic caret and dropdown markup), `server/` only if presence needs a fix, `README.md` (the roadmap line), `tests/`, and `TEND.md`. **Desktop is unchanged** except item 12 (the mic caret removed) and item 1 (the tints).
+
+**Verification:**
+- Screenshots at 390 and 360: Messages (scrolled, so search fades under the header and the list shows through the dock), every menu next to the native "+" menu, a chat (scrolled under the header and composer), a long-press menu, the composer states, the Members panel from the header, and Settings Profile.
+- The icon table, the tint ΔE and contrast table, and the presence results (two clients, timings).
+- Tests pass on localhost and LAN.
+- Desktop screenshots unchanged apart from items 1 and 12.
+- Push.
+
+**Gate (on the iPhone):** the header stays put while search scrolls away under it; the dock and every menu look frosted like the "+" menu; icons are even; "‹ 13" is a plain number; tapping the names shows everyone in the chat; press and hold a message for reactions and reply; the mic is a single button; the send arrow looks right; avatars come in more soft colours.
+
+**Record:** add a `## LIME-79-fix` entry to `TEND.md`. Commit: `fix(mobile): QA round: glass header/dock/menus, icons, long-press, composer, tints`, trailer `Brief: LIME-79-fix`, plus the attribution trailer. Push. **Stop for the user's review.**
+
+### Landed (2026-10-03): LIME-78 `d57298f` and LIME-79 `1048c45`, both pushed
+- 159 mobile checks; desktop pixel-identical apart from the avatar tints; Safari not run (`safaridriver --enable` still pending); **no real-phone test yet** (the user's gate).
+- **Tend's additions beyond the briefs** (reasonable, but the user should OK them):
+  - a **reply button** next to add-reaction (phones have no hover toolbar for starting a thread);
+  - a **12-emoji popover** for the composer's emoji button;
+  - Shift+Enter still gives a newline (on keyboards that have it).
+- **Open: the leading zero in times** ("06:32 am" as in Penpot vs "7:32 am" today). Asked the user.
+- **The user's gate check on 78 and 79 is pending.** LIME-80 and 81 wait for it.
+
 ### LIME-78 → `tend` (next): the mobile shell: dock, Messages screen, pushed chat with back, header
 **The change (≤ 767px):**
 1. **The dock** as designed. It replaces the hamburger drawer on phones (remove the drawer and its toggle at this width). The link badge = total unread.
@@ -463,6 +522,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 **Record:** add a `## LIME-79` entry to `TEND.md`. Commit: `feat(mobile): chat bubbles, reactions row, composer; brand avatar tints`, trailer `Brief: LIME-79`, plus the attribution trailer. Push. **Stop for the user's check** (LIME-78 and 79 are checked together).
 
 ### LIME-80 → `tend` (after the user checks 78 and 79): in-context "liquid glass" menus, Pin, native share and pickers, find-in-chat
+**Amendment (2026-10-03):** the glass-menu styling (item 1) and the removal of the mic list (item 3's mic `<select>`) **moved into LIME-79-fix**. LIME-80 keeps items 2, 3 (share and timezone only), 4 and 5.
 1. **Menus on phones** (the chat "⋯", the filter, the title menu, the mic list, the list row's long-press if any): **an in-context popover** anchored to its trigger. Translucent (`backdrop-filter: blur(…) saturate(…)`) with a solid fallback where unsupported, a rounded large radius, a soft outline, items with icons, and Delete red. It opens from the trigger with a short scale and fade (reduced motion: fade). It stays inside the viewport. Closes on outside-tap or Escape. **No bottom sheets.**
 2. **The chat "⋯" items:** Rename · **Pin chat / Unpin chat** · **Customize** (opens Appearance) · Share · Archive · Delete. **Pin replaces Star app-wide** (labels, toasts: "Pinned" / "Unpinned", the pin icon in rows, pinned-first sorting). **Keep the stored field and op** (`starred`, `membership.setStarred`) **for compatibility**, and document "Pin = starred" in `docs/api.md`.
 3. **Native where allowed:**
