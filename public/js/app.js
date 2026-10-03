@@ -1221,6 +1221,42 @@ function formatLastReply(iso) {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
+// ── LIME-78: phone helpers ─────────────────────────────────
+// Lowercase clock time for the phone ("7:32 am").
+function lowerTime(iso) {
+  return formatTime(iso).toLowerCase();
+}
+
+// The time at the right of a Messages row on phones: today's time, "Yesterday", or a short date.
+function listTimeText(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  const now = new Date();
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((startOfDay(now) - startOfDay(date)) / 86400000);
+  if (diffDays <= 0) return lowerTime(iso);
+  if (diffDays === 1) return 'Yesterday';
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString([], sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Unread messages from other people in one conversation (after your own last_read_at).
+function unreadCountFor(conversation) {
+  const me = LimeStore.getCurrentUserId();
+  const membership = LimeStore.getMyMembership(conversation.id);
+  const lastRead = membership && membership.last_read_at ? new Date(membership.last_read_at).getTime() : 0;
+  return LimeStore.listMessages(conversation.id).filter((m) => m.sender_id !== me && new Date(m.created_at).getTime() > lastRead).length;
+}
+
+// Every unread message in every chat that shows in the main list (not archived).
+function unreadChats(exceptConversationId) {
+  return LimeStore.listConversations({ types: ['direct', 'group'] })
+    .filter((c) => c.id !== exceptConversationId)
+    .reduce((sum, c) => sum + unreadCountFor(c), 0);
+}
+
+const countText = (n) => (n > 99 ? '99+' : String(n));
+
 function formatDuration(seconds) {
   return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 }
@@ -2278,11 +2314,15 @@ function initMessagesList() {
     // and was removed from the list — it still shows in the thread header.
     return avatarHtml
       + '<div class="lime-contact__body">'
-      + '<span class="lime-contact__name">' + escapeHtml(title) + '</span>'
+      // LIME-78: the pin sits after the name on phones (hidden on desktop; .lime-contact__namerow is display:contents there)
+      + '<span class="lime-contact__namerow"><span class="lime-contact__name">' + escapeHtml(title) + '</span><span class="lime-icon-pin lime-contact__pin" role="img" aria-label="Pinned"></span></span>'
       + '<span class="lime-contact__preview">' + rowPreviewHtml(conversation, latest) + '</span>'
       + '</div>'
       + '<div class="lime-contact__meta">'
       + '<span class="lime-contact__time">' + (latest ? formatTime(latest.created_at) : '') + '</span>'
+      // LIME-78: the phone's own time and unread count (both hidden on desktop)
+      + '<span class="lime-contact__time lime-contact__time--m">' + (latest ? listTimeText(latest.created_at) : '') + '</span>'
+      + '<span class="lime-contact__badge"></span>'
       + '</div>';
   }
 
@@ -2396,7 +2436,7 @@ function initMessagesList() {
     }).observe(appearanceMenu, { attributes: true, attributeFilter: ['class'] });
   }
 
-  function selectConversation(conversation) {
+  function selectConversation(conversation, opts) {
     document.querySelectorAll('.lime-contact').forEach((el) => el.classList.remove('lime-contact--active'));
     document.querySelectorAll('[data-conversation-id="' + conversation.id + '"]').forEach((el) => el.classList.add('lime-contact--active'));
     if (openProfileAvatars) {
@@ -2410,7 +2450,8 @@ function initMessagesList() {
     // (subscribed to that event, below) already reflects the read/active
     // state correctly by the time this call returns — no separate call
     // needed here.
-    LimeStore.markRead(conversation.id).catch(console.error);
+    // LIME-78: the quiet default pick on a phone (nobody opened this chat) must not mark it read
+    if (!(opts && opts.keepView && LimeMobileNav.isMobile())) LimeStore.markRead(conversation.id).catch(console.error);
     // LIME-35: keep the profile/Members panel in sync with whichever
     // conversation is now open — the old static "Jean Chung" markup
     // never did this at all (the exact staleness this brief fixes), so
@@ -2427,7 +2468,10 @@ function initMessagesList() {
     // after conversation while browsing shouldn't fill up browser history
     // with one entry each (history.length stays the same, confirmed in
     // verification).
-    history.replaceState(null, '', conversationLink(conversation.id));
+    // LIME-78: keep the phone's navigation state; and the quiet default pick on load must not put a #c= on the Messages list's address
+    if (!(opts && opts.keepView && LimeMobileNav.isMobile())) history.replaceState(history.state, '', conversationLink(conversation.id));
+    // LIME-78: on a phone, opening a chat pushes the chat screen (unless it is just the quiet default pick on load).
+    if (!(opts && opts.keepView)) LimeMobileNav.show('thread');
   }
 
   // LIME-26: after Delete, the conversation menu always acts on
@@ -2439,10 +2483,12 @@ function initMessagesList() {
   // before this function is even called.
   function selectTopOrEmpty() {
     if (messageConversations.length > 0) {
-      selectConversation(messageConversations[0]);
+      selectConversation(messageConversations[0], { keepView: true });
+      LimeMobileNav.show('contacts'); // a deleted chat's screen goes away: back to the list on a phone
       return;
     }
     currentConversationId = null;
+    LimeMobileNav.show('contacts');
     document.querySelectorAll('.lime-contact').forEach((el) => el.classList.remove('lime-contact--active'));
     if (openProfileAvatars) openProfileAvatars.innerHTML = '';
     thread.innerHTML = '<p class="lime-messages__empty">No conversations left. Start one from the sidebar.</p>';
@@ -2601,8 +2647,14 @@ function initMessagesList() {
   // mobile view router, both further down this file) delegates its own
   // click handling for exactly this reason, rather than binding once to
   // whatever rows happen to exist at that moment.
-  function sortConversations(conversations) {
+  function sortConversations(conversations, pinnedFirst) {
     return [...conversations].sort((a, b) => {
+      // LIME-78: pinned (starred) chats first on the phone's single list
+      if (pinnedFirst) {
+        const pa = !!(LimeStore.getMyMembership(a.id) || {}).starred;
+        const pb = !!(LimeStore.getMyMembership(b.id) || {}).starred;
+        if (pa !== pb) return pa ? -1 : 1;
+      }
       const la = LimeStore.getLatestActivity(a.id);
       const lb = LimeStore.getLatestActivity(b.id);
       if (la && lb) return new Date(lb.created_at) - new Date(la.created_at);
@@ -2621,6 +2673,7 @@ function initMessagesList() {
     li.innerHTML = conversationRowHtml(conversation, latest);
     li.addEventListener('click', () => selectConversation(conversation));
     li.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+    updateRow(li, conversation); // LIME-78: the phone's unread count and pin on first paint
     return li;
   }
 
@@ -2637,6 +2690,15 @@ function initMessagesList() {
     if (nameEl) nameEl.textContent = LimeStore.getConversationTitle(conversation);
     if (previewEl) previewEl.innerHTML = rowPreviewHtml(conversation, latest);
     if (timeEl) timeEl.textContent = latest ? formatTime(latest.created_at) : '';
+    // LIME-78: the phone's time, unread count and pin
+    const mTime = li.querySelector('.lime-contact__time--m');
+    if (mTime) mTime.textContent = latest ? listTimeText(latest.created_at) : '';
+    const unread = unreadCountFor(conversation);
+    const badge = li.querySelector('.lime-contact__badge');
+    if (badge) badge.textContent = unread > 0 ? countText(unread) : '';
+    li.classList.toggle('lime-contact--unread-count', unread > 0);
+    const membership = LimeStore.getMyMembership(conversation.id);
+    li.classList.toggle('lime-contact--pinned', !!(membership && membership.starred));
   }
 
   // Shared by "All" and "Starred" (LIME-25) — same row shape, same
@@ -2647,8 +2709,8 @@ function initMessagesList() {
   // row's own name/avatar. Passing true skips the "update in place"
   // branch entirely and always rebuilds, for the one event that actually
   // needs it (lime:profile-changed, below).
-  function syncSection(container, conversations, emptyMessage, forceRebuild) {
-    const sorted = sortConversations(conversations);
+  function syncSection(container, conversations, emptyMessage, forceRebuild, pinnedFirst) {
+    const sorted = sortConversations(conversations, pinnedFirst);
     if (sorted.length === 0 && emptyMessage) {
       container.innerHTML = '<li class="lime-contact-list__empty">' + escapeHtml(emptyMessage) + '</li>';
       return sorted;
@@ -2852,12 +2914,80 @@ function initMessagesList() {
   syncArchivedSection();
   renderRecentRow();
 
+  // ── LIME-78: the phone's Messages screen — ONE list (pinned first, then by recency), search and a filter ──
+  const mList = document.getElementById('m-list');
+  const mSearch = document.getElementById('m-search-input');
+  const mFilterMenu = document.getElementById('m-filter-menu');
+  const mFilterBtn = document.getElementById('m-filter-btn');
+  const mobileState = { filter: 'all', query: '' };
+  const MOBILE_EMPTY = {
+    all: 'No chats yet. Tap + to start one.', unread: 'No unread chats.', pinned: 'No pinned chats. Pin a chat from its menu.',
+    groups: 'No group chats yet.', archived: 'No archived chats.',
+  };
+
+  function mobileConversations() {
+    const f = mobileState.filter;
+    let convs = LimeStore.listConversations({ types: ['direct', 'group'], includeArchived: f === 'archived' });
+    const mine = (c) => LimeStore.getMyMembership(c.id) || {};
+    if (f === 'archived') convs = convs.filter((c) => mine(c).archived_at);
+    else if (f === 'unread') convs = convs.filter((c) => unreadCountFor(c) > 0);
+    else if (f === 'pinned') convs = convs.filter((c) => mine(c).starred);
+    else if (f === 'groups') convs = convs.filter((c) => c.type === 'group');
+    const q = mobileState.query.trim().toLowerCase();
+    if (q) convs = convs.filter((c) => conversationSearchText(c).includes(q));
+    return convs;
+  }
+
+  function refreshMobileList(forceRebuild) {
+    if (!mList) return;
+    const q = mobileState.query.trim();
+    const empty = q ? 'No chats match \u201c' + q + '\u201d.' : MOBILE_EMPTY[mobileState.filter];
+    syncSection(mList, mobileConversations(), empty, forceRebuild, true);
+    if (mFilterBtn) mFilterBtn.classList.toggle('is-filtering', mobileState.filter !== 'all');
+    updateMobileChrome();
+  }
+
+  // The dock's unread badge and your avatar, and the chat bar's other-chats count.
+  function updateMobileChrome() {
+    const badge = document.getElementById('m-dock-badge');
+    if (badge) {
+      const total = unreadChats(null);
+      badge.textContent = total > 0 ? countText(total) : '';
+      badge.hidden = total === 0;
+    }
+    const me = LimeStore.getCurrentUser();
+    const dockMe = document.getElementById('m-dock-avatar');
+    if (dockMe && me) {
+      const path = me.avatar_url || '';
+      if (dockMe.dataset.name !== me.display_name || (dockMe.dataset.avatarPath || '') !== path) {
+        dockMe.dataset.name = me.display_name;
+        if (path) dockMe.dataset.avatarPath = path; else delete dockMe.dataset.avatarPath;
+        paintAvatar(dockMe);
+      }
+    }
+    renderMobileChatbar();
+  }
+
+  if (mSearch) mSearch.addEventListener('input', () => { mobileState.query = mSearch.value; refreshMobileList(false); });
+  if (mFilterMenu) {
+    wireDropdownToggle('m-filter-btn', 'm-filter-menu', { fixed: true });
+    mFilterMenu.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-filter]');
+      if (!item) return;
+      mobileState.filter = item.dataset.filter;
+      mFilterMenu.querySelectorAll('[data-filter]').forEach((el) => el.setAttribute('aria-checked', String(el === item)));
+      refreshMobileList(false);
+    });
+  }
+  refreshMobileList(true);
+
   document.addEventListener('lime:conversations-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
     updateMessagesListEmptyState();
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
     syncArchivedSection();
     renderRecentRow();
+    refreshMobileList(false);
   });
   document.addEventListener('lime:messages-changed', () => {
     messageConversations = syncSection(list, LimeStore.listConversations({ types: ['direct', 'group'] }));
@@ -2865,6 +2995,7 @@ function initMessagesList() {
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.');
     syncArchivedSection();
     renderRecentRow();
+    refreshMobileList(false);
   });
 
   // LIME-31: "everywhere updates" for a profile change (own's or, once a
@@ -2878,6 +3009,7 @@ function initMessagesList() {
     updateMessagesListEmptyState();
     if (starredList) syncSection(starredList, starredConversations(), 'Star a chat from its title menu.', true);
     syncArchivedSection(true);
+    refreshMobileList(true);
 
     if (currentConversationId) {
       const conversation = LimeStore.getConversation(currentConversationId);
@@ -3246,6 +3378,8 @@ function initMessagesList() {
     // order, so the menu's contents are already fresh by the time that
     // one measures offsetHeight/offsetWidth to position it.
     conversationMenuToggle.addEventListener('click', renderConversationMenu);
+    // LIME-78: the phone's "..." button asks for the same fresh menu contents before it opens the menu.
+    conversationMenuToggle.addEventListener('lime-render-menu', renderConversationMenu);
   }
   if (conversationMenu) {
     conversationMenu.addEventListener('click', (e) => {
@@ -3296,6 +3430,11 @@ function initMessagesList() {
   // shared link to a chat you're not in, while already sitting on
   // index.html in that same tab, would just update the address bar and
   // do nothing, instead of showing the "not available" toast.
+  LimeMobileNav.registerOpener((id) => {
+    const c = LimeStore.getConversation(id);
+    if (c && id !== currentConversationId) selectConversation(c, { keepView: true });
+  }, () => currentConversationId);
+
   function openFromDeepLinkOrDefault() {
     const hashMatch = location.hash.match(/^#c=(.+)$/);
     const hashConversationId = hashMatch ? decodeURIComponent(hashMatch[1]) : null;
@@ -3323,11 +3462,15 @@ function initMessagesList() {
       }
     }
     if (messageConversations.length > 0) {
-      selectConversation(messageConversations[0]);
+      selectConversation(messageConversations[0], { keepView: true }); // on a phone this stays on the Messages list
     }
   }
   openFromDeepLinkOrDefault();
-  window.addEventListener('hashchange', openFromDeepLinkOrDefault);
+  window.addEventListener('hashchange', () => {
+    // LIME-78: on a phone, going back to the list lands on an address with no #c=, which is not a request to open anything.
+    if (LimeMobileNav.isMobile() && !location.hash) return;
+    openFromDeepLinkOrDefault();
+  });
 
   // ── Share popover (LIME-27) ─────────────────────────────
   // A Claude-style popover, not a .lime-menu dropdown (richer content:
@@ -3921,6 +4064,7 @@ function renderProfilePanel(person) {
   // only toggles [hidden] rather than building its own markup each render.
   const backBtn = document.getElementById('profile-back-btn');
   if (backBtn) backBtn.hidden = detailsReturnTo !== 'members';
+  document.getElementById('right-panel')?.classList.toggle('has-inner-back', detailsReturnTo === 'members'); // LIME-78: phones show one back arrow, not two
 
   let html = '';
   html += '<div class="lime-profile__header">'
@@ -3979,7 +4123,7 @@ function showPersonDetails(profileId, cameFromMembers, openPanel) {
   renderProfilePanel(person);
   if (openPanel !== false) {
     if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
-    layout.setAttribute('data-mobile-view', 'panel');
+    LimeMobileNav.show('panel');
   }
   renderCrumbs();
 }
@@ -4018,7 +4162,7 @@ function showMembers(conversation, openPanel) {
   renderMembersPanel(conversation);
   if (openPanel !== false) {
     if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
-    layout.setAttribute('data-mobile-view', 'panel');
+    LimeMobileNav.show('panel');
   }
   renderCrumbs();
 }
@@ -4078,7 +4222,32 @@ document.addEventListener('click', (e) => {
 // panel is closed). Called on every state change that could affect any
 // of the three, rather than each of those places writing its own
 // fragment of the breadcrumb directly.
+// LIME-78: the phone chat top bar — title, the stacked avatars (copied from the desktop header's own avatar group so the two
+// can never disagree) and the count of OTHER chats' unread messages beside the back arrow.
+function renderMobileChatbar() {
+  const titleText = document.getElementById('m-chat-title-text');
+  const avatarsHost = document.getElementById('m-chat-avatars');
+  if (!titleText || !avatarsHost) return;
+  const activeRow = document.querySelector('.lime-contact--active');
+  const id = activeRow && activeRow.dataset.conversationId;
+  const conversation = id ? LimeStore.getConversation(id) : null;
+  titleText.textContent = conversation ? LimeStore.getConversationTitle(conversation) : '';
+  const source = document.getElementById('open-profile-avatars');
+  const html = source ? source.innerHTML : '';
+  if (avatarsHost.dataset.copied !== html) {
+    avatarsHost.dataset.copied = html;
+    avatarsHost.innerHTML = html.replace(/ data-profile-id="[^"]*"/g, '');
+  }
+  const countEl = document.getElementById('m-chat-back-count');
+  if (countEl) {
+    const others = unreadChats(id);
+    countEl.textContent = others > 0 ? countText(others) : '';
+    countEl.hidden = others === 0;
+  }
+}
+
 function renderCrumbs() {
+  renderMobileChatbar();
   const crumbTeachers = document.getElementById('crumb-teachers');
   const crumbThread = document.getElementById('crumb-thread');
   const crumbPanel = document.getElementById('crumb-panel');
@@ -4341,8 +4510,7 @@ function renderCrumbs() {
     renderReplies(messageId);
     if (layout.classList.contains('seed-layout--right-hidden')) setRightPanelOpen(true);
     rightPanel.setAttribute('data-panel', 'replies');
-    layout.setAttribute('data-mobile-view', 'panel');
-    renderCrumbs();
+    LimeMobileNav.show('panel');
   }
 
   // LIME-69: a reply (or reaction) from another tab shows in the open panel.
@@ -6019,25 +6187,73 @@ document.addEventListener('click', (e) => {
   });
 })();
 
-// ── Mobile view router (contacts / thread / panel) ───────
-// #layout's data-mobile-view is the single source of truth for which
-// full-width view shows below 768px (see the [data-mobile-view] rules
-// in lime.css); above that breakpoint the attribute is simply inert.
-// Triggers here layer onto elements that already have their own
-// desktop-oriented click handlers (open-profile-avatars, open-replies)
-// rather than replacing them.
+// ── Mobile navigation (LIME-78): Messages list → chat → details/thread, as a real stack ──
+// #layout's data-mobile-view is the single source of truth for which full-width view shows below 768px (see the
+// [data-mobile-view] rules in lime.css); above that breakpoint the attribute is simply inert. On a phone every step forward
+// (list → chat → details or a thread) pushes a browser history entry and every step back pops one, so the browser's back
+// button, the Android back button and iOS's edge swipe all go back exactly like the on-screen "‹". The deep link (#c=) lives
+// in the address of the chat entry, so reloading or sharing it still opens that chat.
+const LimeMobileNav = (function () {
+  const layout = document.getElementById('layout');
+  const mq = window.matchMedia('(max-width: 767px)');
+  const RANK = { contacts: 0, thread: 1, panel: 2 };
+  let openById = null;
+  let currentId = () => null;
+
+  const isMobile = () => mq.matches;
+  const current = () => (layout && layout.getAttribute('data-mobile-view')) || 'contacts';
+
+  function apply(view) {
+    if (!layout) return;
+    layout.setAttribute('data-mobile-view', view);
+    document.body.setAttribute('data-m-view', view);
+    renderCrumbs();
+  }
+
+  function show(view) {
+    if (!layout) return;
+    const from = current();
+    if (!isMobile() || view === from) { apply(view); return; }
+    if (RANK[view] < RANK[from]) {
+      // Going back: pop the entries we pushed (the popstate listener below applies the view).
+      if (history.state && history.state.lime === from) { history.go(RANK[view] - RANK[from]); return; }
+      apply(view);
+      return;
+    }
+    apply(view);
+    try { history.pushState({ lime: view, c: currentId() }, '', location.href); } catch (e) { /* the view still changes */ }
+  }
+
+  window.addEventListener('popstate', (e) => {
+    if (!isMobile()) return;
+    const st = e.state;
+    const view = (st && st.lime) || 'contacts';
+    if (view !== 'panel') setRightPanelOpen(false);
+    if (view !== 'contacts' && st && st.c && openById) openById(st.c); // forward into a chat other than the open one
+    apply(view);
+    if (view === 'contacts' && location.hash) {
+      try { history.replaceState(st || { lime: 'contacts' }, '', location.pathname + location.search); } catch (err) { /* cosmetic */ }
+    }
+  });
+
+  if (isMobile()) { try { history.replaceState({ lime: 'contacts' }, '', location.href); } catch (e) { /* no history */ } }
+  document.body.setAttribute('data-m-view', current());
+
+  return {
+    show, isMobile,
+    registerOpener(open, getId) { openById = open; currentId = getId; },
+  };
+})();
+window.LimeMobileNav = LimeMobileNav;
+
 (function () {
   const layout = document.getElementById('layout');
   if (!layout) return;
 
-  function setView(view) {
-    layout.setAttribute('data-mobile-view', view);
-    renderCrumbs();
-  }
-
-  // Delegated (LIME-24b), same reasoning as the Recent-row highlight above.
+  // Delegated (LIME-24b), same reasoning as the Recent-row highlight above. Rows go through selectConversation, which
+  // shows the chat; this stays for Recent items, which open a DM through their own handler.
   document.addEventListener('click', (e) => {
-    if (e.target.closest('.lime-contact, .lime-recent__item')) setView('thread');
+    if (e.target.closest('.lime-contact, .lime-recent__item')) LimeMobileNav.show('thread');
   });
 
   // #open-replies is stale (removed from the markup back in LIME-06 —
@@ -6045,34 +6261,59 @@ document.addEventListener('click', (e) => {
   // always quietly dropped it; left as-is, not this brief's concern.
   [document.getElementById('open-profile-avatars'), document.getElementById('open-replies')]
     .filter(Boolean)
-    .forEach((btn) => btn.addEventListener('click', () => setView('panel')));
+    .forEach((btn) => btn.addEventListener('click', () => LimeMobileNav.show('panel')));
 
   // right-panel-toggle is excluded from the "go to panel" list above —
   // LIME-03z made it close-only again (it lives inside #right-panel
   // once more), so on mobile it should only ever step back to
   // "thread", never open "panel" itself.
   const rightToggle = document.getElementById('right-panel-toggle');
-  if (rightToggle) rightToggle.addEventListener('click', () => setView('thread'));
+  if (rightToggle) rightToggle.addEventListener('click', () => LimeMobileNav.show('thread'));
 
   // LIME-35: #crumb-thread is now purely an *ancestor* crumb — clicking
   // it closes whatever panel is open and returns to the thread (mobile:
   // "thread" view; desktop: the panel just closes), the inverse of its
-  // old "opens the panel" job from LIME-03g/34. setRightPanelOpen(false)
-  // is a harmless no-op when it's already closed, same as setView
-  // re-setting an already-current view — this needs no extra guard for
-  // "nothing to close" beyond the existing isContentEditable one, which
-  // LIME-34 still needs while renaming in place.
+  // old "opens the panel" job from LIME-03g/34.
   const crumbThread = document.getElementById('crumb-thread');
   if (crumbThread) {
     crumbThread.addEventListener('click', () => {
       if (crumbThread.isContentEditable) return;
       setRightPanelOpen(false);
-      setView('thread');
+      LimeMobileNav.show('thread');
     });
   }
 
   const crumbTeachers = document.getElementById('crumb-teachers');
-  if (crumbTeachers) crumbTeachers.addEventListener('click', () => setView('contacts'));
+  if (crumbTeachers) crumbTeachers.addEventListener('click', () => LimeMobileNav.show('contacts'));
+
+  // ── the phone chat top bar ──
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+  on('m-chat-back', () => LimeMobileNav.show('contacts'));
+  const openDetails = () => { const trigger = document.getElementById('open-profile-avatars'); if (trigger) trigger.click(); };
+  on('m-chat-title', openDetails);
+  on('m-chat-avatars', openDetails);
+  on('m-chat-search', () => LimeToast.show({ title: 'Search in this chat is coming soon', tone: 'info' }));
+  on('m-chat-call', () => LimeToast.show({ title: 'Calls are coming soon', tone: 'info' }));
+  // "..." opens the same conversation menu as the desktop caret (its contents are rebuilt each time it opens). The in-context
+  // glass style comes with LIME-80; for now it is the standard menu, anchored to this button.
+  const more = document.getElementById('m-chat-more');
+  const menu = document.getElementById('conversation-menu');
+  if (more && menu) {
+    more.addEventListener('click', () => document.getElementById('conversation-menu-toggle')?.dispatchEvent(new Event('lime-render-menu')));
+    wireDropdownToggle('m-chat-more', 'conversation-menu', { fixed: true });
+    new MutationObserver(() => more.setAttribute('aria-expanded', String(menu.classList.contains('is-open')))).observe(menu, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  // ── the dock ──
+  on('m-dock-link', () => LimeMobileNav.show('contacts'));
+  on('m-dock-jam', () => LimeToast.show({ title: 'Jam is coming soon', tone: 'info' }));
+  on('m-dock-calls', () => LimeToast.show({ title: 'Calls are coming soon', tone: 'info' }));
+  on('m-dock-account', () => {
+    // Settings → Profile (full screen on phones). Sign-out lives in Settings. Opening Settings shows the section list on a phone;
+    // choosing Profile (what the nav row does) puts the Profile form full screen.
+    document.getElementById('settings-btn')?.click();
+    document.querySelector('#settings-nav [data-settings-section="profile"]')?.click();
+  });
 })();
 
 // ── Auto-collapse on shrink ────────────────────────────────

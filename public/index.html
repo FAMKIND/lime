@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <!-- LIME-51: sets data-theme before any stylesheet below even starts
        downloading, so there's no flash of light theme for a user whose
        stored preference is dark or (System) currently resolves dark.
@@ -190,6 +190,18 @@
     <main class="seed-layout__center seed-layout__panel--no-bg" id="center-panel">
       <div class="lime-center-inner">
 
+        <!-- LIME-78: the phone chat top bar (<= 767px, chat view only; hidden everywhere else). Back with the count of
+             other chats' unread messages, the title, the stacked avatars (tap: details/members), search (placeholder
+             until LIME-80), call (a gentle "coming soon"), and the chat's more menu. Filled by renderMobileChatbar(). -->
+        <header class="m-chatbar" id="m-chatbar">
+          <button type="button" class="m-chatbar__back" id="m-chat-back" aria-label="Back to Messages"><span class="dew dew-chevron-left" aria-hidden="true"></span><span class="m-chatbar__count" id="m-chat-back-count" hidden></span></button>
+          <button type="button" class="m-chatbar__title" id="m-chat-title" aria-label="Chat details"><span id="m-chat-title-text"></span></button>
+          <button type="button" class="m-chatbar__avatars" id="m-chat-avatars" aria-label="Chat members"></button>
+          <button type="button" class="m-iconbtn" id="m-chat-search" aria-label="Search in this chat" title="Search"><span class="dew dew-search" aria-hidden="true"></span></button>
+          <button type="button" class="m-iconbtn" id="m-chat-call" aria-label="Call" title="Call"><span class="m-icon m-icon--phone" aria-hidden="true"></span></button>
+          <button type="button" class="m-iconbtn" id="m-chat-more" aria-label="More" aria-haspopup="menu" aria-expanded="false" title="More"><span class="dew dew-ellipsis-menu" aria-hidden="true"></span></button>
+        </header>
+
         <!-- Top row: nav toggle + breadcrumbs left, participants + actions right -->
         <header class="lime-center-top">
           <button type="button" class="lime-icon-btn lime-mobile-nav-toggle" id="mobile-nav-toggle" title="Open navigation" aria-label="Open navigation" aria-expanded="false" aria-controls="left-panel">
@@ -304,6 +316,30 @@
           <!-- 2a: Conversation list -->
           <div class="lime-list-col lime-fade-frame" id="list-col">
             <div class="lime-contacts lime-list-col__scroll">
+              <!-- LIME-78: the phone Messages screen (<= 767px only): logo + large title + a lime-shaped "+", search with a filter,
+                   and ONE list (pinned first, then by recency). The desktop tabs, sections and Recent row below are hidden on
+                   phones, and all of this is hidden on desktop. -->
+              <div class="m-messages" id="m-messages">
+                <div class="m-messages__head">
+                  <img class="m-messages__logo" src="assets/logo-mark.svg" alt="" width="32" height="32">
+                  <h1 class="m-messages__title">Messages</h1>
+                  <button type="button" class="m-plus" data-open-picker title="New message" aria-label="New message"><span class="dew dew-plus" aria-hidden="true"></span></button>
+                </div>
+                <div class="m-messages__tools">
+                  <label class="m-search"><span class="dew dew-search" aria-hidden="true"></span><input type="search" id="m-search-input" placeholder="Search" aria-label="Search chats" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+                  <div class="m-filter">
+                    <button type="button" class="m-iconbtn m-filter__btn" id="m-filter-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Filter chats" title="Filter"><span class="dew dew-filter-horizontal" aria-hidden="true"></span></button>
+                    <div class="lime-menu" id="m-filter-menu" role="menu" aria-label="Filter chats">
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="all" aria-checked="true"><span class="lime-menu__item-label">All</span></button>
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="unread" aria-checked="false"><span class="lime-menu__item-label">Unread</span></button>
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="pinned" aria-checked="false"><span class="lime-menu__item-label">Pinned</span></button>
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="groups" aria-checked="false"><span class="lime-menu__item-label">Groups</span></button>
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="archived" aria-checked="false"><span class="lime-menu__item-label">Archived</span></button>
+                    </div>
+                  </div>
+                </div>
+                <ul class="lime-contact-list m-list" id="m-list"></ul>
+              </div>
               <div class="lime-contacts__search">
                 <div class="lime-search-field">
                   <span class="dew dew-search"></span>
@@ -586,6 +622,8 @@
     <aside class="seed-layout__right seed-layout__panel--no-bg" id="right-panel" data-panel="profile">
       <button class="lime-icon-btn lime-panel-close" id="right-panel-toggle" title="Close panel">
         <span class="dew dew-sidebar-right-closed"></span>
+        <!-- LIME-78: on phones the pushed details/thread screen closes with a "back" arrow at the left instead -->
+        <span class="dew dew-chevron-left m-back-icon" aria-hidden="true"></span>
       </button>
       <div class="lime-profile-panel">
         <div class="lime-profile lime-fade-frame">
@@ -900,6 +938,15 @@
 
   <!-- LIME-27/67: the toast container, bottom-right (top-centre on
        mobile) — js/toast.js adds/removes .lime-toast children here. -->
+  <!-- LIME-78: the phone dock (<= 767px, Messages screen only): floating, rounded and neutral. Replaces the hamburger drawer.
+       link = Messages (badge: all unread), jam = a placeholder, calls = a gentle "coming soon", account = Settings. -->
+  <nav class="m-dock" id="m-dock" aria-label="Main">
+    <button type="button" class="m-dock__item is-active" id="m-dock-link" aria-current="page"><span class="m-dock__iconwrap"><span class="dew dew-chat" aria-hidden="true"></span><span class="m-dock__badge" id="m-dock-badge" hidden></span></span><span class="m-dock__label">link</span></button>
+    <button type="button" class="m-dock__item" id="m-dock-jam"><span class="m-dock__iconwrap"><span class="dew dew-pencil" aria-hidden="true"></span></span><span class="m-dock__label">jam</span></button>
+    <button type="button" class="m-dock__item" id="m-dock-calls"><span class="m-dock__iconwrap"><span class="m-icon m-icon--phone" aria-hidden="true"></span></span><span class="m-dock__label">calls</span></button>
+    <button type="button" class="m-dock__item" id="m-dock-account" aria-label="Account"><span class="m-dock__iconwrap"><span class="seed-avatar seed-avatar--sm lime-avatar m-dock__me" id="m-dock-avatar" data-name=""></span></span><span class="m-dock__label">account</span></button>
+  </nav>
+
   <div class="seed-toast-container seed-toast-container--bottom-right" id="toast-container" role="region" aria-label="Notifications"></div>
 
   <script src="js/toast.js"></script>

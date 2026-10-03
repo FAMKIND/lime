@@ -12,6 +12,7 @@
     "test:toasts": "node run.mjs toasts",
     "test:api": "node run.mjs api",
     "test:e2e": "node run.mjs e2e-server",
+    "test:mobile": "node run.mjs mobile",
     "test:safari": "node run.mjs safari"
   },
   "devDependencies": {

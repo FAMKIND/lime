@@ -1,7 +1,7 @@
 // node run.mjs [suite ...]   (default: all). Exit code 1 if anything fails.
 import { startServer, recorder } from './lib/harness.mjs';
 
-const ALL = ['smoke', 'css', 'auth', 'sync', 'toasts', 'api', 'e2e-server', 'safari'];
+const ALL = ['smoke', 'css', 'auth', 'sync', 'toasts', 'api', 'e2e-server', 'mobile', 'safari'];
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 const unknown = wanted.filter((s) => !ALL.includes(s));
 if (unknown.length) { console.error('Unknown suite(s): ' + unknown.join(', ') + '. Available: ' + ALL.join(', ')); process.exit(2); }

@@ -7203,3 +7203,584 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   #toast-container .lime-toast.seed-toast--exiting { transform: none; }
 }
 @keyframes lime-toast-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ═══════════════════════════════════════════════════════
+   LIME-78: THE PHONE SHELL (<= 767px)
+   The user's Penpot design: a floating dock, a Messages screen with ONE list, and a chat that is pushed on top with a
+   back arrow. Everything here is phone-only; above 767px these elements stay hidden and the desktop layout is untouched.
+   Pieces: .m-messages (header, search, filter, list), .m-chatbar (the chat top bar), .m-dock (the floating dock).
+═══════════════════════════════════════════════════════ */
+
+/* Icons dew does not have (drawn as masks so they take the text colour). */
+.lime-icon-pin,
+.m-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: var(--m-icon) center / contain no-repeat;
+  mask: var(--m-icon) center / contain no-repeat;
+}
+.lime-icon-pin {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M9 3.75h6l-.75 5.25 2.75 3v1.25H7V12l2.75-3L9 3.75ZM12 13.25v7' stroke='black' stroke-width='1.6' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.m-icon--phone {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M5.5 3.75h3l1.5 4-2 1.25a11 11 0 0 0 5 5l1.25-2 4 1.5v3a1.5 1.5 0 0 1-1.5 1.5C10.9 18.75 5.25 13.1 4 5.25a1.5 1.5 0 0 1 1.5-1.5Z' stroke='black' stroke-width='1.6' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* Hidden except on phones. */
+.m-messages,
+.m-chatbar,
+.m-dock {
+  display: none;
+}
+.lime-contact__time--m,
+.lime-contact__badge,
+.lime-contact__pin {
+  display: none;
+}
+/* The row's name wrapper changes nothing on desktop. */
+.lime-contact__namerow {
+  display: contents;
+}
+
+@media (max-width: 767px) {
+  /* ── frame: the visible viewport, not the tallest one (mobile browsers' address bar) ── */
+  .seed-layout {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* ── what phones no longer show: the drawer and its button, the breadcrumb row, the tabs, the sections, the Recent row,
+        Communities, the bell, the desktop search box ── */
+  .seed-layout__left,
+  .lime-mobile-nav-toggle,
+  .lime-center-top,
+  #scope-tablist,
+  [data-scope-panel],
+  .lime-contacts__search {
+    display: none !important;
+  }
+
+  /* ── Messages screen ── */
+  .m-messages {
+    display: block;
+  }
+  .lime-contacts {
+    padding: 0;
+  }
+  .m-messages__head {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    height: 64px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    padding-top: env(safe-area-inset-top);
+    background: var(--soil-bg-canvas);
+  }
+  .m-messages__logo {
+    width: 32px;
+    height: 32px;
+    flex: none;
+  }
+  .m-messages__title {
+    flex: 1;
+    margin: 0;
+    font-size: 30px;
+    line-height: 1.1;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--soil-text);
+  }
+  /* the lime-shaped "+" (the same silhouette as the logo's lime), pale lime with ink */
+  .m-plus {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--lime-primary-ink);
+    font-size: 22px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-plus::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--lime-primary-bg);
+    -webkit-mask: url("../assets/lime-silhouette.svg") center / contain no-repeat;
+    mask: url("../assets/lime-silhouette.svg") center / contain no-repeat;
+    z-index: 0;
+  }
+  .m-plus .dew {
+    position: relative;
+    z-index: 1;
+  }
+  .m-plus:active::before {
+    background: var(--lime-primary-bg-active);
+  }
+  .m-messages__tools {
+    position: sticky;
+    top: 64px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 16px 10px;
+    background: var(--soil-bg-canvas);
+  }
+  .m-search {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-radius: 14px;
+    background: var(--lime-layer-surface);
+    color: var(--soil-text-muted);
+  }
+  .m-search .dew {
+    font-size: 18px;
+    flex: none;
+  }
+  .m-search input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    outline: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 16px; /* 16px stops iOS zooming the page when the field is focused */
+    color: var(--soil-text);
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .m-search input::placeholder {
+    color: var(--soil-text-muted);
+    opacity: 1;
+  }
+  .m-search input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+  }
+  .m-search:focus-within {
+    outline: 2px solid var(--soil-text);
+    outline-offset: 1px;
+  }
+  .m-iconbtn {
+    width: 40px;
+    height: 40px;
+    flex: none;
+    border: 0;
+    padding: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--soil-text);
+    font-size: 20px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-iconbtn:active {
+    background: var(--lime-layer-hover);
+  }
+  .m-filter__btn {
+    background: var(--lime-layer-surface);
+    border-radius: 14px;
+  }
+  .m-filter__btn.is-filtering {
+    background: var(--lime-primary-bg);
+    color: var(--lime-primary-ink);
+  }
+  .m-filter__btn:focus-visible,
+  .m-iconbtn:focus-visible,
+  .m-plus:focus-visible,
+  .m-dock__item:focus-visible,
+  .m-chatbar button:focus-visible {
+    outline: 2px solid var(--soil-text);
+    outline-offset: 2px;
+  }
+  .m-filter .lime-menu {
+    min-width: 168px;
+  }
+  .m-filter .lime-menu__item[aria-checked="true"]::after {
+    content: '\2713';
+    margin-left: auto;
+    padding-left: 12px;
+    color: var(--soil-text);
+  }
+
+  /* ── the one list ── */
+  .m-list {
+    margin: 0;
+    padding: 2px 0 calc(112px + env(safe-area-inset-bottom));
+    list-style: none;
+  }
+  .m-list .lime-contact {
+    gap: 14px;
+    min-height: 76px;
+    box-sizing: border-box;
+    padding: 12px 16px;
+    border-radius: 0;
+    align-items: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* no lasting highlight for the last opened chat on a phone; a press gets the soft neutral fill */
+  .m-list .lime-contact--active {
+    background: transparent;
+  }
+  .m-list .lime-contact:active {
+    background: var(--lime-layer-hover);
+  }
+  .m-list .lime-avatar-frame--lg {
+    width: 52px;
+    height: 52px;
+  }
+  .m-list .lime-avatar-frame--lg > .seed-avatar--lg {
+    width: 52px;
+    height: 52px;
+    font-size: 18px;
+  }
+  .m-list .lime-contact__body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .lime-contact__namerow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .m-list .lime-contact__name {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .m-list .lime-contact__pin {
+    display: none;
+    font-size: 15px;
+    color: var(--soil-text-muted);
+  }
+  .m-list .lime-contact--pinned .lime-contact__pin {
+    display: inline-block;
+  }
+  /* a 1 to 2 line preview */
+  .m-list .lime-contact__preview {
+    display: block;
+    font-size: 14px;
+    line-height: 1.35;
+  }
+  .m-list .lime-contact__preview-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  .m-list .lime-contact__meta {
+    align-self: flex-start;
+    padding-top: 3px;
+    gap: 6px;
+    min-width: 44px;
+  }
+  .m-list .lime-contact__time {
+    display: none;
+  }
+  .m-list .lime-contact__time--m {
+    display: block;
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+    color: var(--soil-text-muted);
+  }
+  /* unread: the time turns green and a pale-lime count appears */
+  .m-list .lime-contact--unread-count .lime-contact__time--m {
+    color: var(--good-text-normal-default);
+    font-weight: 600;
+  }
+  .m-list .lime-contact__badge {
+    min-width: 22px;
+    height: 22px;
+    box-sizing: border-box;
+    padding: 0 7px;
+    border-radius: 11px;
+    background: var(--lime-primary-bg);
+    border: 1px solid var(--seed-lime-300);
+    color: var(--lime-primary-ink);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+  }
+  .m-list .lime-contact__badge:not(:empty) {
+    display: block;
+  }
+  .m-list .lime-contact-list__empty {
+    padding: 32px 24px;
+    text-align: center;
+    color: var(--soil-text-muted);
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  /* ── the dock: floating, rounded, neutral; on the Messages screen only ── */
+  body[data-m-view="contacts"] .m-dock {
+    display: flex;
+  }
+  .m-dock {
+    position: fixed;
+    z-index: var(--seed-z-sticky);
+    left: 16px;
+    right: 16px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    height: 64px;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: space-around;
+    padding: 6px;
+    border-radius: 32px;
+    background: color-mix(in oklab, var(--soil-bg-surface) 82%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid color-mix(in oklab, var(--soil-border) 70%, transparent);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .m-dock {
+      background: var(--soil-bg-surface);
+    }
+  }
+  .m-dock__item {
+    flex: 1;
+    min-width: 0;
+    height: 52px;
+    border: 0;
+    padding: 0 4px;
+    border-radius: 26px;
+    background: none;
+    color: var(--soil-text-muted);
+    font: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-dock__item.is-active {
+    background: var(--lime-layer-hover);
+    color: var(--soil-text);
+  }
+  .m-dock__item:active {
+    background: var(--lime-layer-active);
+  }
+  .m-dock__iconwrap {
+    position: relative;
+    display: inline-flex;
+    height: 24px;
+    align-items: center;
+    font-size: 22px;
+  }
+  .m-dock__label {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.1;
+    text-transform: lowercase;
+  }
+  .m-dock__badge {
+    position: absolute;
+    top: -6px;
+    right: -12px;
+    min-width: 17px;
+    height: 17px;
+    box-sizing: border-box;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: var(--seed-lime-300);
+    color: var(--seed-soil-900);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 17px;
+    text-align: center;
+  }
+  .m-dock__badge[hidden] {
+    display: none;
+  }
+  .m-dock__me.seed-avatar {
+    width: 24px;
+    height: 24px;
+    font-size: 10px;
+  }
+
+  /* ── the chat screen: pushed on top, with its own top bar and no dock ── */
+  #layout[data-mobile-view="thread"] .m-chatbar {
+    display: flex;
+  }
+  .m-chatbar {
+    flex: none;
+    align-items: center;
+    gap: 2px;
+    box-sizing: border-box;
+    min-height: 56px;
+    padding: env(safe-area-inset-top) 6px 0 2px;
+    border-bottom: 1px solid var(--soil-border-subtle);
+    background: var(--soil-bg-canvas);
+  }
+  .m-chatbar button {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-chatbar__back {
+    flex: none;
+    height: 44px;
+    min-width: 44px;
+    border: 0;
+    padding: 0 6px 0 2px;
+    border-radius: 22px;
+    background: none;
+    color: var(--soil-text);
+    font-size: 26px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    cursor: pointer;
+  }
+  .m-chatbar__count {
+    min-width: 20px;
+    height: 20px;
+    box-sizing: border-box;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: var(--lime-primary-bg);
+    border: 1px solid var(--seed-lime-300);
+    color: var(--lime-primary-ink);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+  }
+  .m-chatbar__title {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    border: 0;
+    padding: 0 4px;
+    background: none;
+    color: var(--soil-text);
+    font: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+  }
+  .m-chatbar__title span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .m-chatbar__avatars {
+    flex: none;
+    height: 44px;
+    border: 0;
+    padding: 0 4px;
+    background: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+  }
+  .m-chatbar .lime-topbar__avatars {
+    pointer-events: none;
+  }
+  /* the pushed screens (details, thread) get a clear back arrow in place of the close icon */
+  #layout[data-mobile-view="panel"] #right-panel-toggle .dew {
+    transform: none;
+  }
+}
+
+/* LIME-78: the group avatar stacks, scaled up 1.3x to the phone row's 52px avatar (same arrangement, 2 / 3 / 3 + N) */
+@media (max-width: 767px) {
+  .m-list .lime-avatar-cluster--lg { width: 52px; height: 52px; }
+  .m-list .lime-avatar-cluster--lg[data-count="2"] .lime-avatar-cluster__member { width: 34px; height: 34px; font-size: 12px; }
+  .m-list .lime-avatar-cluster--lg[data-count="2"] .lime-avatar-cluster__member:nth-child(1) { top: 0; left: 0; }
+  .m-list .lime-avatar-cluster--lg[data-count="2"] .lime-avatar-cluster__member:nth-child(2) { top: 18px; left: 18px; }
+  .m-list .lime-avatar-cluster--lg[data-count="3"] .lime-avatar-cluster__member { width: 29px; height: 29px; font-size: 11px; }
+  .m-list .lime-avatar-cluster--lg[data-count="3"] .lime-avatar-cluster__member:nth-child(1) { top: 0; left: 12px; }
+  .m-list .lime-avatar-cluster--lg[data-count="3"] .lime-avatar-cluster__member:nth-child(2) { top: 23px; left: 0; }
+  .m-list .lime-avatar-cluster--lg[data-count="3"] .lime-avatar-cluster__member:nth-child(3) { top: 23px; left: 23px; }
+  .m-list .lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member { width: 26px; height: 26px; font-size: 11px; }
+  .m-list .lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member:nth-child(1) { top: 0; left: 0; }
+  .m-list .lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member:nth-child(2) { top: 0; left: 25px; }
+  .m-list .lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member:nth-child(3) { top: 25px; left: 0; }
+  .m-list .lime-avatar-cluster--lg[data-count="4"] .lime-avatar-cluster__member:nth-child(4) { top: 25px; left: 25px; }
+  .m-list .lime-avatar-cluster__more { font-size: 11px; }
+}
+
+/* LIME-78: the pushed details and thread screens on a phone close with a back arrow at the left */
+.m-back-icon {
+  display: none;
+}
+@media (max-width: 767px) {
+  #right-panel-toggle .dew-sidebar-right-closed {
+    display: none;
+  }
+  #right-panel-toggle .m-back-icon {
+    display: inline-block;
+    font-size: 24px;
+  }
+  .lime-panel-close {
+    left: 6px;
+    right: auto;
+    width: 44px;
+    height: 44px;
+    top: 4px;
+  }
+  /* the members to person back arrow replaces it while that inner step is showing */
+  #right-panel.has-inner-back #right-panel-toggle {
+    display: none;
+  }
+  .lime-profile__back[hidden] {
+    display: none;
+  }
+  .lime-profile__back {
+    left: 6px;
+    top: 4px;
+    width: 44px;
+    height: 44px;
+  }
+  /* titles and the avatar make room for the arrow */
+  .lime-replies-panel__header,
+  .lime-members-panel__header {
+    padding-left: 56px;
+  }
+  .lime-profile__scroll {
+    padding-top: 52px;
+  }
+}
+
+/* LIME-78: Settings is a true full screen on a phone (the desktop max-height was still capping it 64px short) */
+@media (max-width: 767px) {
+  .lime-settings {
+    max-height: none;
+    height: 100vh;
+    height: 100dvh;
+  }
+}

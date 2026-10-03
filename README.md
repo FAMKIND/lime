@@ -64,19 +64,22 @@ Suites: **e2e-server** (three people in Firefox, a second Firefox started with `
 
 ## Decisions (2026-09-23)
 
-- Mobile nav (<768px): push model, not overlay. Opening the drawer resizes
-  the grid (`.seed-layout__left` 0 → 240px) and shifts the center panel
-  over — no `position: fixed`, no dark backdrop, no tap-to-close scrim.
-  Confirmed explicitly (twice) after briefs repeatedly proposed reverting
-  to an overlay+backdrop; do not revert without asking first.
-- Mobile drawer shows the full sidebar (text labels, wordmark, user name),
-  never the desktop icon-only collapsed rail — that collapse state is
-  desktop-only.
-- Mobile drawer is narrower than desktop's sidebar (240px, not 280px) and
-  its logo mark aligns horizontally with the hamburger toggle it replaces
-  (`.lime-center-top`'s own icon inset) — not desktop's wider logo inset,
-  which exists there to optically center the logo over nav icons in a
-  permanent rail.
+- ~~Mobile nav (<768px): push-model drawer~~ **Superseded 2026-10-03** (see the dock decision below). The drawer, its hamburger
+  button and its push behaviour are gone on phones.
+- ~~Mobile drawer shows the full sidebar / is narrower than desktop's sidebar~~ Superseded with the drawer.
+
+## Decisions (2026-10-03)
+
+- **Phones (<768px) use a bottom dock, not a drawer** (the user's choice, from their Penpot design; supersedes the 2026-09-23
+  push-drawer decision above). A floating, rounded, neutral dock sits at the bottom of the Messages screen with four items,
+  lowercase: **link** (Messages; badge = all unread), **jam** (a "coming soon" placeholder), **calls** (a "coming soon" toast) and
+  **account** (your avatar; opens Settings → Profile, where sign-out lives). There is no Communities item and no notifications
+  bell on phones: notifications live inside link (unread badges and live previews). Communities is deferred.
+- The Messages screen is **one list** (pinned chats first, then by recency), with search and a filter (All, Unread, Pinned,
+  Groups, Archived); no Recent row, section headers or tabs on phones.
+- Navigation is a **stack**: tapping a chat pushes the chat screen (no dock inside a chat), details and threads push on top of
+  it, and "‹" goes back. The browser's back button, the Android back button and iOS's edge swipe do the same, and `#c=` deep
+  links still open that chat. Desktop (>=768px) is unchanged.
 
 ## Open
 

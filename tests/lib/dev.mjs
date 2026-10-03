@@ -39,7 +39,7 @@ export class DevServer extends Remote {
   set origin(v) { /* derived from the port */ }
   async start() {
     if (!this.port) this.port = await freePort();
-    this.proc = spawn(process.execPath, [path.join(REPO_ROOT, 'server', 'dev-server.mjs'), '--port', String(this.port), '--data', this.dataDir], { stdio: ['ignore', 'pipe', 'pipe'] });
+    this.proc = spawn(process.execPath, [path.join(process.env.LIME_TEST_ROOT || REPO_ROOT, 'server', 'dev-server.mjs'), '--port', String(this.port), '--data', this.dataDir], { stdio: ['ignore', 'pipe', 'pipe'] });
     this.log = '';
     this.proc.stdout.on('data', (d) => { this.log += d; });
     this.proc.stderr.on('data', (d) => { this.log += d; });
