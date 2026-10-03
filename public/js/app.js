@@ -1230,12 +1230,31 @@ function formatTime(iso) {
 // LIME-74: the time shown beside a message is when it was WRITTEN (the earlier of the sender's clock and the server's, so a wrong
 // clock can never show a future time). If it reached the server more than 5 minutes later, say so: "Sent 10:05 · delivered 10:35".
 // Messages without a client_ts (the local-only backend) just show their time.
+// LIME-79-fix3: sent and delivered times of a message ({ sent, delivered } as ISO strings): sent is when it was written (the earlier of
+// the sender's clock and the server's), delivered is when the server took it. Read arrives with LIME-81.
+function receiptTimes(message) {
+  const delivered = new Date(message.created_at).getTime();
+  const sent = message.client_ts ? new Date(message.client_ts).getTime() : NaN;
+  const written = isNaN(sent) || isNaN(delivered) ? delivered : Math.min(sent, delivered);
+  return { sent: new Date(written).toISOString(), delivered: message.created_at };
+}
+
+// One tick while a message is still on its way (not yet taken by the server), two once it has been delivered. (Read ticks: LIME-81.)
+const TICK_PATH = 'M3.5 8.6l3.1 3.1 6.4-7';
+const TICK_PATH_2 = 'M8.6 11.2l.9.9 5.9-6.6';
+function ticksHtml(message) {
+  const delivered = !message._pending && !!message.client_ts;
+  return '<svg class="lime-ticks" viewBox="0 0 18 16" width="18" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="' + TICK_PATH + '"/>' + (delivered ? '<path d="' + TICK_PATH_2 + '"/>' : '') + '</svg>';
+}
+
 function messageTimeText(message) {
   const delivered = new Date(message.created_at).getTime();
   const sent = message.client_ts ? new Date(message.client_ts).getTime() : NaN;
   if (isNaN(sent) || isNaN(delivered)) return clockText(message.created_at);
   const written = Math.min(sent, delivered);
-  if (delivered - written > 5 * 60 * 1000) return 'Sent ' + clockText(new Date(written).toISOString()) + ' \u00b7 delivered ' + clockText(message.created_at);
+  // LIME-79-fix3: on a phone only the time shows; "Sent ... delivered ..." opens from tapping the time (the receipt popover).
+  if (!isPhone() && delivered - written > 5 * 60 * 1000) return 'Sent ' + clockText(new Date(written).toISOString()) + ' \u00b7 delivered ' + clockText(message.created_at);
   return clockText(new Date(written).toISOString());
 }
 
@@ -2246,18 +2265,22 @@ function initMessagesList() {
       + '<span class="lime-message__sender" data-profile-id="' + escapeHtml(sender.id || '') + '">' + escapeHtml(shortName(sender.display_name)) + '</span>'
       + '<span class="lime-message__time">' + messageTimeText(message) + '</span>'
       + '</div>'
+      // LIME-79-fix3: the bubble, the row under it and the reply summary share one "stack" (display:contents on desktop), so on a phone
+      // the row under the bubble can be lined up with the bubble's own edges: chips and add-reaction at its left, time and ticks at its
+      // right, the reply summary at its left.
+      + '<div class="lime-message__stack">'
       + contentHtml(message)
-      // LIME-79: on phones the row under a bubble holds the reaction chips, the add-reaction and reply buttons, and at the right the
-      // time with a receipt slot (a plain check for now; LIME-81 makes it live). On desktop .lime-message__foot is display:contents
-      // and the other parts are hidden, so nothing changes there.
+      // LIME-79: on phones the row under a bubble holds the reaction chips and the add-reaction button, and at the right the time with
+      // ticks. On desktop .lime-message__foot is display:contents and the other parts are hidden, so nothing changes there.
       + '<div class="lime-message__foot">'
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '<button type="button" class="lime-foot-btn lime-react-add" title="Add reaction" aria-label="Add reaction"><span class="m-icon m-icon--smile-plus" aria-hidden="true"></span></button>'
-      + '<span class="lime-message__stamp"><span class="lime-message__stamp-time">' + messageTimeText(message) + '</span>'
-      + (isSent ? '<span class="lime-receipt" role="img" aria-label="Sent">\u2713</span>' : '')
-      + '</span>'
+      + '<button type="button" class="lime-message__stamp" data-receipt aria-label="Message details"><span class="lime-message__stamp-time">' + clockText(receiptTimes(message).sent) + '</span>'
+      + (isSent ? '<span class="lime-receipt" role="img" aria-label="' + (message._pending ? 'Sent' : 'Delivered') + '">' + ticksHtml(message) + '</span>' : '')
+      + '</button>'
       + '</div>'
       + replyIndicatorHtml(message.id)
+      + '</div>'
       + '</div>'
       + '<div class="lime-message__actions">'
       + '<button title="React"><span>🙂</span></button>'
@@ -2267,6 +2290,9 @@ function initMessagesList() {
       + REACTION_PICKER_HTML
       + '</div>';
   }
+
+  window.LimeUi = window.LimeUi || {};
+  LimeUi.messageHtml = messageHtml;
 
   // Placeholder for a sender id that doesn't resolve to a real profile —
   // shouldn't happen with today's seed data, but LimeStore.getProfile can
@@ -4340,7 +4366,22 @@ function renderMobileChatbar() {
   const html = source ? source.innerHTML : '';
   if (avatarsHost.dataset.copied !== html) {
     avatarsHost.dataset.copied = html;
-    avatarsHost.innerHTML = html.replace(/ data-profile-id="[^"]*"/g, '');
+    // LIME-79-fix3: the phone bar shows at most TWO avatars plus a "+N" count ("+11"), however big the group, so the stack, the name
+    // and the icons always fit on one line. The desktop header's own avatars are copied, then trimmed.
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html.replace(/ data-profile-id="[^"]*"/g, '');
+    const faces = [...tmp.querySelectorAll('.lime-topbar__avatars > .lime-avatar')];
+    const total = conversation && conversation.type === 'group' ? Math.max(0, LimeStore.getMembers(conversation.id).length - 1) : 0;
+    if (conversation && conversation.type === 'group' && faces.length) {
+      const visual = faces.slice().reverse(); // the desktop group is row-reverse: the DOM runs right to left
+      const keep = visual.slice(0, 2);
+      const extra = total - keep.length;
+      avatarsHost.innerHTML = '<span class="seed-avatar-group lime-topbar__avatars">'
+        + (extra > 0 ? '<span class="seed-avatar seed-avatar--sm lime-avatar-cluster__more" aria-hidden="true">+' + extra + '</span>' : '')
+        + keep.slice().reverse().map((n) => n.outerHTML).join('') + '</span>';
+    } else {
+      avatarsHost.innerHTML = tmp.innerHTML;
+    }
   }
   const countEl = document.getElementById('m-chat-back-count');
   if (countEl) {
@@ -4552,8 +4593,36 @@ function renderCrumbs() {
       + '</div>';
   }
 
+  // LIME-79-fix3: on a phone the thread screen uses the very same bubble, reaction row and alignment as the chat (messageHtml); desktop keeps
+  // its own flat layout. Decided each time the thread is drawn.
+  const bubbleMode = () => isPhone() && window.LimeUi && LimeUi.messageHtml;
+  const isMine = (m) => m.sender_id === LimeStore.getCurrentUserId();
+  function markRunsIn(container) {
+    let previous = null;
+    [...container.children].forEach((el) => {
+      if (!el.classList.contains('lime-message')) { previous = null; return; }
+      const who = el.dataset.senderId || null;
+      const continues = who !== null && who === previous;
+      el.classList.toggle('lime-message--cont', continues);
+      el.classList.toggle('lime-message--first', !continues);
+      previous = who;
+    });
+  }
+
   function renderQuote(message, sender) {
     quoteEl.dataset.messageId = message.id;
+    if (bubbleMode()) {
+      quoteEl.dataset.senderId = sender.id;
+      quoteEl.classList.add('is-bubbles');
+      quoteEl.innerHTML = LimeUi.messageHtml(message, sender, isMine(message));
+      quoteEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+      paintAttachments(quoteEl);
+      paintLinkPreviews(quoteEl, repliesSticky);
+      const msgEl = quoteEl.querySelector('.lime-message');
+      if (msgEl) msgEl.classList.add('lime-message--first');
+      return;
+    }
+    quoteEl.classList.remove('is-bubbles');
     // data-sender-id (LIME-35): renderCrumbs reads this for the mobile
     // "Thread · <parent sender's short name>" panel-crumb format.
     quoteEl.dataset.senderId = sender.id;
@@ -4594,11 +4663,14 @@ function renderCrumbs() {
       listEl.innerHTML = '<p class="lime-replies-panel__empty">No replies yet.</p>';
       return;
     }
+    const bubbles = bubbleMode();
+    listEl.classList.toggle('is-bubbles', !!bubbles);
     replies.forEach((reply) => {
       const sender = LimeStore.getProfile(reply.sender_id);
       if (!sender) return;
-      listEl.insertAdjacentHTML('beforeend', replyHtml(reply, sender));
+      listEl.insertAdjacentHTML('beforeend', bubbles ? LimeUi.messageHtml(reply, sender, isMine(reply)) : replyHtml(reply, sender));
     });
+    if (bubbles) markRunsIn(listEl);
     listEl.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
     paintAttachments(listEl); // LIME-38
     paintLinkPreviews(listEl, repliesSticky); // LIME-44
@@ -6486,14 +6558,17 @@ window.LimeMobileNav = LimeMobileNav;
 })();
 
 // ── LIME-79-fix: press and hold a message (phones) ─────────
-// A ~400ms press on a bubble opens a glass menu anchored to the message: six quick reactions and "more", Reply in thread, Copy text.
+// A ~400ms press on a bubble opens a glass menu anchored to the message: six quick reactions and "+" (more), Reply in thread, Copy text.
 // There is no hover on a phone, so this is the way to reach what the desktop's hover toolbar does. The bubble itself does not start
 // text selection or the browser's own callout (CSS: -webkit-touch-callout / user-select on phone bubbles); Copy text covers the text.
+// LIME-79-fix3: the same menu opens from the add-reaction button under a bubble (anchored to that button), and the receipt popover (tap
+// the time and ticks) lives here too. Both also work on the thread screen's bubbles.
 (function () {
   const HOLD_MS = 400;
   const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
-  const thread = document.getElementById('thread-messages');
-  if (!thread) return;
+  const MORE = ['🙏', '🔥', '👏', '😍', '🤔', '🙌', '😊', '😭', '💯', '👀', '✅', '😎'];
+  const containers = ['thread-messages', 'replies-quote', 'replies-list'].map((id) => document.getElementById(id)).filter(Boolean);
+  if (!containers.length) return;
   let timer = null, startX = 0, startY = 0, held = null, menu = null, scrim = null, swallowUntil = 0;
 
   function textOf(msg) {
@@ -6521,46 +6596,57 @@ window.LimeMobileNav = LimeMobileNav;
     if (scrim) { scrim.remove(); scrim = null; }
   }
 
+  // Puts a glass panel next to an anchor: above it when there is room (below otherwise), lined up with its own side, inside the screen.
+  function place(panel, anchor, alignRight) {
+    panel.classList.add('is-open'); // shown first, so it can be measured
+    const r = anchor.getBoundingClientRect();
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const bar = document.getElementById('m-chatbar');
+    const top0 = (bar && bar.offsetParent !== null ? bar.getBoundingClientRect().bottom : 0) + 6;
+    const above = r.top - h - 8 >= top0;
+    const below = r.bottom + 8 + h <= vh - 8;
+    const openAbove = above || !below;
+    let top = openAbove ? r.top - h - 8 : r.bottom + 8;
+    top = Math.max(top0, Math.min(top, vh - h - 8));
+    let left = alignRight ? r.right - w : r.left;
+    left = Math.max(12, Math.min(left, vw - w - 12));
+    panel.style.top = top + 'px';
+    panel.style.left = left + 'px';
+    panel.style.transformOrigin = Math.max(0, Math.min(w, r.left + r.width / 2 - left)) + 'px ' + (openAbove ? '100%' : '0');
+  }
+
+  function openScrim() {
+    scrim = document.createElement('div');
+    scrim.className = 'm-menu-scrim';
+    document.body.appendChild(scrim);
+    // The finger that is still down from the hold lifts over the scrim or the menu: that click is the end of the hold, not a tap.
+    scrim.addEventListener('click', (e) => { if (!fromHold(e)) close(); });
+  }
+  function fromHold(e) { if (e.isTrusted && Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); return true; } return false; }
+
+  // The message menu: from a press and hold (anchored to the bubble) or from the add-reaction button (anchored to the button).
   function open(msg, anchor) {
     close();
     held = msg;
     msg.classList.add('lime-message--held');
     const messageId = msg.dataset.messageId;
     const text = textOf(msg);
-    scrim = document.createElement('div');
-    scrim.className = 'm-menu-scrim';
+    const inThread = !!msg.closest('#right-panel'); // already in a thread: no "Reply in thread"
+    openScrim();
     menu = document.createElement('div');
     menu.className = 'm-glass-menu m-msg-menu';
     menu.setAttribute('role', 'menu');
     menu.innerHTML = '<div class="m-msg-menu__react" role="group" aria-label="Quick reactions">'
       + QUICK.map((e) => '<button type="button" class="m-msg-menu__emoji" data-emoji="' + e + '" aria-label="React ' + e + '">' + e + '</button>').join('')
-      + '<button type="button" class="m-msg-menu__emoji m-msg-menu__more" data-act="more" aria-label="More reactions"><span class="dew dew-plus" aria-hidden="true"></span></button>'
+      + '<button type="button" class="m-msg-menu__emoji m-msg-menu__more" data-act="more" aria-label="More reactions" aria-expanded="false"><span class="dew dew-plus" aria-hidden="true"></span></button>'
       + '</div>'
-      + '<button type="button" class="m-glass-menu__item" role="menuitem" data-act="reply"><span class="dew dew-chat" aria-hidden="true"></span><span>Reply in thread</span></button>'
+      + '<div class="m-msg-menu__grid" hidden>' + MORE.map((e) => '<button type="button" class="m-msg-menu__emoji" data-emoji="' + e + '" aria-label="React ' + e + '">' + e + '</button>').join('') + '</div>'
+      + (inThread ? '' : '<button type="button" class="m-glass-menu__item" role="menuitem" data-act="reply"><span class="dew dew-chat" aria-hidden="true"></span><span>Reply in thread</span></button>')
       + (text ? '<button type="button" class="m-glass-menu__item" role="menuitem" data-act="copy"><span class="m-icon m-icon--copy" aria-hidden="true"></span><span>Copy text</span></button>' : '');
-    document.body.appendChild(scrim);
     document.body.appendChild(menu);
-    menu.classList.add('is-open'); // shown first, so it can be measured
+    place(menu, anchor, msg.classList.contains('lime-message--sent'));
 
-    // Anchored to the message: above it when there is room (below it otherwise), lined up with the bubble's own side.
-    const r = anchor.getBoundingClientRect();
-    const w = menu.offsetWidth, h = menu.offsetHeight;
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const top0 = (document.getElementById('m-chatbar') ? document.getElementById('m-chatbar').getBoundingClientRect().bottom : 0) + 6;
-    const above = r.top - h - 8 >= top0;
-    const below = r.bottom + 8 + h <= vh - 8;
-    const openAbove = above || !below;
-    let top = openAbove ? r.top - h - 8 : r.bottom + 8;
-    top = Math.max(top0, Math.min(top, vh - h - 8));
-    let left = msg.classList.contains('lime-message--sent') ? r.right - w : r.left;
-    left = Math.max(12, Math.min(left, vw - w - 12));
-    menu.style.top = top + 'px';
-    menu.style.left = left + 'px';
-    menu.style.transformOrigin = Math.max(0, Math.min(w, r.left + r.width / 2 - left)) + 'px ' + (openAbove ? '100%' : '0');
-
-    // The finger that is still down from the hold lifts over the scrim or the menu: that click is the end of the hold, not a tap.
-    const fromHold = (e) => { if (e.isTrusted && Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); return true; } return false; };
-    scrim.addEventListener('click', (e) => { if (!fromHold(e)) close(); });
     menu.addEventListener('click', (e) => {
       if (fromHold(e)) return;
       const emoji = e.target.closest('[data-emoji]');
@@ -6570,39 +6656,81 @@ window.LimeMobileNav = LimeMobileNav;
         close();
       } else if (act) {
         const kind = act.dataset.act;
+        if (kind === 'more') {
+          // The extra emoji open inside this same menu (it grows; it is re-placed so it stays inside the screen).
+          const grid = menu.querySelector('.m-msg-menu__grid');
+          grid.hidden = !grid.hidden;
+          act.setAttribute('aria-expanded', String(!grid.hidden));
+          place(menu, anchor, msg.classList.contains('lime-message--sent'));
+          return;
+        }
         close();
         if (kind === 'reply') { const b = msg.querySelector('.lime-message__actions [title="Reply"]'); if (b) b.click(); }
         else if (kind === 'copy') copyText(text);
-        else if (kind === 'more') { const b = msg.querySelector('.lime-react-add'); if (b) b.click(); }
       }
     });
   }
 
+  // The receipt popover: tap the time and ticks under a bubble. Sent and delivered for now; Read arrives with LIME-81.
+  function openReceipt(msg, anchor) {
+    close();
+    const message = LimeStore.getMessage(msg.dataset.messageId);
+    if (!message) return;
+    const t = receiptTimes(message);
+    const delivered = !message._pending;
+    openScrim();
+    menu = document.createElement('div');
+    menu.className = 'm-glass-menu m-receipt-pop';
+    menu.setAttribute('role', 'dialog');
+    menu.setAttribute('aria-label', 'Message details');
+    menu.innerHTML = '<p><span>Sent</span><b>' + escapeHtml(clockText(t.sent)) + '</b></p>'
+      + '<p><span>Delivered</span><b>' + (delivered ? escapeHtml(clockText(t.delivered)) : 'Not yet') + '</b></p>';
+    document.body.appendChild(menu);
+    place(menu, anchor, msg.classList.contains('lime-message--sent'));
+  }
+
   function cancel() { clearTimeout(timer); timer = null; }
 
-  thread.addEventListener('pointerdown', (e) => {
-    if (!isPhone() || e.button > 0) return;
-    const msg = e.target.closest('.lime-message');
-    if (!msg || e.target.closest('.lime-message__foot, .lime-message__actions, .lime-reaction-picker, .lime-message__footer, .lime-message__replies, .lime-avatar-frame, .lime-message__meta, button, input, textarea, audio, video')) return;
-    const anchor = e.target.closest('.lime-message__content, .lime-album, .lime-message__image') || msg.querySelector('.lime-message__col');
-    startX = e.clientX; startY = e.clientY;
-    cancel();
-    timer = setTimeout(() => {
-      timer = null;
-      if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) { /* none */ } }
-      swallowUntil = Date.now() + 700; // the finger lifting after the hold must not also "click" a link or image under it
-      open(msg, anchor);
-    }, HOLD_MS);
+  containers.forEach((thread) => {
+    thread.addEventListener('pointerdown', (e) => {
+      if (!isPhone() || e.button > 0) return;
+      const msg = e.target.closest('.lime-message');
+      if (!msg || e.target.closest('.lime-message__foot, .lime-message__actions, .lime-reaction-picker, .lime-message__footer, .lime-message__replies, .lime-avatar-frame, .lime-message__meta, button, input, textarea, audio, video')) return;
+      const anchor = e.target.closest('.lime-message__content, .lime-album, .lime-message__image') || msg.querySelector('.lime-message__col');
+      startX = e.clientX; startY = e.clientY;
+      cancel();
+      timer = setTimeout(() => {
+        timer = null;
+        if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) { /* none */ } }
+        swallowUntil = Date.now() + 700; // the finger lifting after the hold must not also "click" a link or image under it
+        open(msg, anchor);
+      }, HOLD_MS);
+    });
+    thread.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - startX, e.clientY - startY) > 10) cancel(); });
+    ['pointerup', 'pointercancel', 'pointerleave', 'scroll'].forEach((t) => thread.addEventListener(t, cancel, t === 'scroll'));
+    // Android fires its own context menu on a long press; iOS may select a word. Neither belongs on a bubble here.
+    thread.addEventListener('contextmenu', (e) => { if (isPhone() && e.target.closest('.lime-message__col')) e.preventDefault(); });
+    thread.addEventListener('click', (e) => { if (e.isTrusted && Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); } }, true);
+    thread.addEventListener('scroll', close, { passive: true });
   });
-  thread.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - startX, e.clientY - startY) > 10) cancel(); });
-  ['pointerup', 'pointercancel', 'pointerleave', 'scroll'].forEach((t) => thread.addEventListener(t, cancel, t === 'scroll'));
-  // Android fires its own context menu on a long press; iOS may select a word. Neither belongs on a bubble here.
-  thread.addEventListener('contextmenu', (e) => { if (isPhone() && e.target.closest('.lime-message__col')) e.preventDefault(); });
-  thread.addEventListener('click', (e) => { if (e.isTrusted && Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); } }, true);
+
+  // The add-reaction button and the time/ticks under a bubble (capture phase, so they win over the older desktop handlers).
+  document.addEventListener('click', (e) => {
+    if (!isPhone()) return;
+    const add = e.target.closest('.lime-react-add');
+    const stamp = e.target.closest('[data-receipt]');
+    const target = add || stamp;
+    if (!target) return;
+    const msg = target.closest('.lime-message');
+    if (!msg || !containers.some((c) => c.contains(msg))) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    if (add) open(msg, add); else openReceipt(msg, stamp);
+  }, true);
+
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
   window.addEventListener('popstate', close);
   window.addEventListener('resize', close);
-  thread.addEventListener('scroll', close, { passive: true });
   // exposed for the tests
   window.LimeHoldMenu = { open: (msgEl) => open(msgEl, msgEl.querySelector('.lime-message__content') || msgEl), close };
 })();

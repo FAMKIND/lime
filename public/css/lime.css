@@ -8952,3 +8952,207 @@ html {
     }
   }
 }
+
+/* ═══════════════════════════════════════════════════════
+   LIME-79-fix3: THE CHAT VIEW: header, reactions, receipts, alignment (phones)
+═══════════════════════════════════════════════════════ */
+
+/* One icon set for the three chat-header actions: the same 24 viewBox, the same 1.7 stroke, round caps, drawn to the same size, so
+   search, phone and "..." have the same weight, height and width (the "..." is dots inside a circle, like the other two it is 24 square). */
+.m-icon--h-search {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.6' cy='10.6' r='7.4'/%3E%3Cpath d='M16.2 16.2L21.2 21.2'/%3E%3C/svg%3E");
+}
+.m-icon--h-phone {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.2 3.2h3.4l1.7 4.4-2.3 1.4a12.4 12.4 0 0 0 5.6 5.6l1.4-2.3 4.4 1.7v3.4a1.7 1.7 0 0 1-1.7 1.7C10.4 19.1 4.9 13.6 3.5 4.9a1.7 1.7 0 0 1 1.7-1.7Z'/%3E%3C/svg%3E");
+}
+.m-icon--h-more {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9.3'/%3E%3Cpath d='M7.8 12h.01M12 12h.01M16.2 12h.01' stroke-width='2.4'/%3E%3C/svg%3E");
+}
+
+/* The row under a bubble and the receipt popover only exist on phones. */
+.lime-message__stack {
+  display: contents;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .m-icon--h-search { --ink: 0.822; }
+  .m-icon--h-phone { --ink: 0.733; }
+  .m-icon--h-more { --ink: 0.846; }
+
+  /* ── the header fades like the Messages screen: no hard line, no hard blur edge. A soft canvas gradient (with a blur that fades
+        out the same way) over the content, which slides away under it ── */
+  #layout[data-mobile-view="thread"] .m-chatbar {
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-bottom: 0;
+  }
+  #layout[data-mobile-view="thread"] .m-chatbar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: calc(100% + 22px);
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to bottom, var(--soil-bg-canvas) 0, color-mix(in oklab, var(--soil-bg-canvas) 92%, transparent) 55%, transparent 100%);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 52%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 52%, transparent 100%);
+  }
+  /* the thread and details screens: the same, with no rule under their headers; their lists already fade under it (gradients.css) */
+  .lime-replies-panel__header,
+  .lime-members-panel__header,
+  .lime-settings__navbar,
+  .lime-settings__pane-header {
+    border-bottom: 0;
+  }
+  /* phones scroll without a scrollbar track (iOS and Android overlay theirs); a classic one (desktop Firefox at phone width) took 11px */
+  .lime-messages,
+  .lime-replies-panel__list {
+    scrollbar-width: none;
+  }
+  .lime-messages::-webkit-scrollbar,
+  .lime-replies-panel__list::-webkit-scrollbar {
+    display: none;
+  }
+  .lime-messages {
+    /* messages start a little lower so the first one is not under the fade */
+    padding-top: calc(60px + env(safe-area-inset-top) + 14px);
+  }
+
+  /* ── under every bubble: the row and the reply summary are exactly as wide as the bubble, so the chips and the add-reaction button sit
+        at the bubble's left edge, the time and ticks at its right edge, and the reply summary at its left edge (for your own bubbles
+        and for others') ── */
+  .lime-message__stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .lime-message--received .lime-message__stack { align-items: flex-start; }
+  .lime-message--sent .lime-message__stack { align-items: flex-end; }
+  .lime-message__stack > .lime-message__foot,
+  .lime-message__stack > .lime-message__footer {
+    align-self: stretch;
+    width: 0;
+    min-width: 100%;
+    box-sizing: border-box;
+  }
+  .lime-message__foot {
+    justify-content: flex-start;
+    padding: 0;
+    margin-top: 0;
+  }
+  .lime-message__footer,
+  .lime-message--sent .lime-message__footer {
+    align-self: stretch;
+    margin: 0;
+  }
+  .lime-message__footer .lime-message__replies {
+    max-width: 100%;
+    text-align: left;
+  }
+  .lime-message__stamp {
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lime-message__stamp:active {
+    opacity: 0.6;
+  }
+
+  /* ── add-reaction: a lighter, muted icon (secondary text colour), 20px ── */
+  .lime-foot-btn,
+  .lime-foot-btn .m-icon {
+    color: var(--soil-text-muted);
+    opacity: 0.85;
+  }
+
+  /* ── reaction chips: a faint fill and a hairline so the emoji stands out; your own is marked a little deeper ── */
+  .lime-message__foot .lime-reaction {
+    background: color-mix(in oklab, var(--soil-text) 4%, transparent);
+    border: 0.5px solid color-mix(in oklab, var(--soil-text) 14%, transparent);
+    box-shadow: none;
+    padding: 1px 8px;
+  }
+  .lime-message__foot .lime-reaction--active {
+    background: color-mix(in oklab, var(--soil-text) 9%, transparent);
+    border-color: color-mix(in oklab, var(--soil-text) 26%, transparent);
+  }
+  .lime-message__foot .lime-reaction__count {
+    color: var(--soil-text-muted);
+  }
+
+  /* ── the floating emoji strip is gone on phones: the add-reaction button opens the glass menu beside it ── */
+  .lime-reaction-picker,
+  .lime-reaction-picker.is-open {
+    display: none !important;
+  }
+
+  /* ── receipts: only the time and ticks, the ticks a drawn pair ── */
+  .lime-receipt {
+    display: inline-flex;
+    align-items: center;
+    color: var(--soil-text-muted);
+  }
+  .lime-ticks {
+    width: 17px;
+    height: 15px;
+  }
+  .m-receipt-pop {
+    width: auto;
+    min-width: 200px;
+    padding: 10px 14px;
+  }
+  .m-receipt-pop p {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    margin: 0;
+    padding: 6px 0;
+    font-size: 15px;
+    color: var(--soil-text);
+  }
+  .m-receipt-pop span {
+    color: var(--soil-text-muted);
+  }
+  .m-glass-menu .m-msg-menu__grid {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 2px 0 6px;
+    margin-bottom: 4px;
+    border-bottom: 0.5px solid var(--m-glass-line);
+  }
+  .m-msg-menu__grid[hidden] {
+    display: none;
+  }
+  .m-msg-menu__grid .m-msg-menu__emoji {
+    flex: 0 0 calc(100% / 6);
+  }
+
+  /* ── the thread screen: the same bubbles as the chat ── */
+  .lime-replies-panel__quote.is-bubbles,
+  .lime-replies-panel__list.is-bubbles {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border: 0;
+    background: none;
+  }
+  .lime-replies-panel__quote.is-bubbles .lime-message__footer {
+    display: none; /* the "N replies" line below the parent already says it */
+  }
+  .lime-replies-panel__list.is-bubbles {
+    gap: 2px;
+  }
+}

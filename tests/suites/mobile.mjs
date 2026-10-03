@@ -233,9 +233,9 @@ async function runOne(check, browser, name, server, S, size) {
   const barOver = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, w: window.innerWidth, bar: [...document.querySelectorAll('#m-chatbar > *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 0.5 || e.getBoundingClientRect().left < -0.5).length }));
   check(tag('the chat top bar fits the screen'), barOver.doc <= barOver.w && barOver.bar === 0, JSON.stringify(barOver));
 
-  const centre = await page.evaluate(() => { const c = document.getElementById('m-chat-center').getBoundingClientRect(); const av = document.getElementById('m-chat-avatars').getBoundingClientRect(); const t = document.getElementById('m-chat-title-text').getBoundingClientRect(); const cnt = document.getElementById('m-chat-back-count'); const cs = getComputedStyle(cnt); const bar = document.getElementById('m-chatbar'); const bcs = getComputedStyle(bar); const th = document.getElementById('thread-messages').getBoundingClientRect(); return { mid: (c.left + c.right) / 2, avMid: (av.left + av.right) / 2, titleMid: (t.left + t.right) / 2, vw: innerWidth, countBg: cs.backgroundColor, countBorder: cs.borderTopWidth, countText: cnt.textContent, blur: /blur/.test(bcs.backdropFilter || bcs.webkitBackdropFilter || ''), pos: bcs.position, barTop: bar.getBoundingClientRect().top, threadTop: th.top, barBottom: bar.getBoundingClientRect().bottom }; });
-  check(tag('the chat header is an iOS-style bar: the avatars and the title centred, the count a plain number (no pill), the bar glass and the messages scrolling under it'), Math.abs(centre.avMid - centre.vw / 2) <= 3 && Math.abs(centre.titleMid - centre.vw / 2) <= 3 && /^\d+$/.test(centre.countText) && centre.countBg === 'rgba(0, 0, 0, 0)' && centre.countBorder === '0px' && centre.blur && centre.pos === 'absolute' && centre.threadTop <= centre.barTop + 1 && centre.barBottom > centre.threadTop, JSON.stringify(centre));
-  const chatIcons = await measureIcons(page, [['back', '#m-chat-back .dew'], ['search', '#m-chat-search .dew'], ['call', '#m-chat-call .m-icon'], ['more', '#m-chat-more .dew']]);
+  const centre = await page.evaluate(() => { const c = document.getElementById('m-chat-center').getBoundingClientRect(); const av = document.getElementById('m-chat-avatars').getBoundingClientRect(); const t = document.getElementById('m-chat-title-text').getBoundingClientRect(); const cnt = document.getElementById('m-chat-back-count'); const cs = getComputedStyle(cnt); const bar = document.getElementById('m-chatbar'); const bcs = getComputedStyle(bar); const th = document.getElementById('thread-messages').getBoundingClientRect(); return { mid: (c.left + c.right) / 2, avMid: (av.left + av.right) / 2, titleMid: (t.left + t.right) / 2, vw: innerWidth, countBg: cs.backgroundColor, countBorder: cs.borderTopWidth, countText: cnt.textContent, blur: (() => { const b = getComputedStyle(bar, '::before'); return /blur/.test(b.backdropFilter || b.webkitBackdropFilter || '') && /gradient/.test(b.backgroundImage) && /gradient/.test(b.webkitMaskImage || b.maskImage || '') && bcs.borderBottomWidth === '0px'; })(), pos: bcs.position, barTop: bar.getBoundingClientRect().top, threadTop: th.top, barBottom: bar.getBoundingClientRect().bottom }; });
+  check(tag('the chat header is an iOS-style bar: the avatars and the title centred, the count a plain number (no pill), the bar a soft fade (a blurred gradient, no hard line) with the messages scrolling under it'), Math.abs(centre.avMid - centre.vw / 2) <= 3 && Math.abs(centre.titleMid - centre.vw / 2) <= 3 && /^\d+$/.test(centre.countText) && centre.countBg === 'rgba(0, 0, 0, 0)' && centre.countBorder === '0px' && centre.blur && centre.pos === 'absolute' && centre.threadTop <= centre.barTop + 1 && centre.barBottom > centre.threadTop, JSON.stringify(centre));
+  const chatIcons = await measureIcons(page, [['back', '#m-chat-back .dew'], ['search', '#m-chat-search .m-icon'], ['call', '#m-chat-call .m-icon'], ['more', '#m-chat-more .m-icon']]);
   check(tag('chat header icons are one size: ~24px visible glyphs in 44px targets (' + chatIcons.map((i) => i.label + ' ' + Math.max(...i.ink)).join(', ') + ')'), chatIcons.every((i) => Math.abs(Math.max(...i.ink) - 24) <= 1.5 && i.tap[1] >= 44 && i.tap[0] >= (i.label === 'back' ? 44 : 44)), JSON.stringify(chatIcons));
   await page.click('#m-chat-center');
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'panel');
@@ -269,9 +269,44 @@ async function runOne(check, browser, name, server, S, size) {
   const parentId = await page.evaluate((id) => LimeStore.listMessages(id, { threadOnly: true }).slice(-1)[0].id, S.planning);
   await page.evaluate((pid, id) => LimeStore.sendMessage(id, { content: 'a reply', replyTo: pid }), parentId, S.planning);
   await sleep(300);
+  // ── LIME-79-fix3: under each bubble, the chips and add-reaction at the bubble's left edge, the time and ticks at its right edge, the
+  //    reply summary at its left edge (your own bubble here: the parent was sent by Mia) ──
+  const align = (pid) => page.evaluate((id) => {
+    const m = document.querySelector('#thread-messages [data-message-id="' + id + '"]');
+    const L = (e) => e.getBoundingClientRect(); const bub = L(m.querySelector('.lime-message__content'));
+    const add = L(m.querySelector('.lime-react-add')); const stamp = L(m.querySelector('.lime-message__stamp')); const sum = m.querySelector('.lime-message__replies');
+    return { bubL: bub.left, bubR: bub.right, addL: add.left, stampR: stamp.right, sumL: sum ? L(sum).left : null, sumR: sum ? L(sum).right : null };
+  }, pid);
+  const al = await align(parentId);
+  const near = (a, b) => Math.abs(a - b) <= 6;
+  check(tag('under your bubble: add-reaction starts at the bubble\'s left edge (' + Math.round(al.addL - al.bubL) + 'px in), the time and ticks end at its right edge (' + Math.round(al.bubR - al.stampR) + 'px in), the reply summary starts at its left edge (' + Math.round(al.sumL - al.bubL) + 'px in)'), near(al.addL, al.bubL) && near(al.stampR, al.bubR) && al.sumL !== null && near(al.sumL, al.bubL) && al.sumR <= al.bubR + 1, JSON.stringify(al));
+  const alR = await page.evaluate(() => { const ms = [...document.querySelectorAll('#thread-messages .lime-message--received')]; const m = ms[ms.length - 1]; const L = (e) => e.getBoundingClientRect(); return { bubL: L(m.querySelector('.lime-message__content')).left, bubR: L(m.querySelector('.lime-message__content')).right, addL: L(m.querySelector('.lime-react-add')).left, stampR: L(m.querySelector('.lime-message__stamp')).right }; });
+  check(tag('and the same for others\' bubbles'), near(alR.addL, alR.bubL) && near(alR.stampR, alR.bubR), JSON.stringify(alR));
+  const rcpt = await page.evaluate((id) => { const m = document.querySelector('#thread-messages [data-message-id="' + id + '"]'); const t = [...document.querySelectorAll('#thread-messages .lime-message__stamp-time')].map((e) => e.textContent); return { times: t, words: t.some((x) => /sent|delivered/i.test(x)), ticks: m.querySelectorAll('.lime-ticks path').length, label: m.querySelector('.lime-receipt').getAttribute('aria-label') }; }, parentId);
+  check(tag('receipts are only the time plus ticks (no "Sent ... delivered" words; two ticks once delivered)'), !rcpt.words && rcpt.ticks === 2 && /^Delivered$/.test(rcpt.label), JSON.stringify(rcpt));
+  await page.evaluate((id) => document.querySelector('#thread-messages [data-message-id="' + id + '"] [data-receipt]').click(), parentId);
+  await wait(page, () => !!document.querySelector('.m-receipt-pop.is-open'));
+  await sleep(250);
+  const pop = await page.evaluate(() => { const p = document.querySelector('.m-receipt-pop'); const cs = getComputedStyle(p); const r = p.getBoundingClientRect(); return { text: p.textContent.replace(/\s+/g, ' ').trim(), blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight }; });
+  check(tag('tapping the time and ticks opens a glass popover with Sent and Delivered: "' + pop.text + '"'), /Sent\s*\d{1,2}:\d{2} (am|pm)/.test(pop.text) && /Delivered\s*\d{1,2}:\d{2} (am|pm)/.test(pop.text) && pop.blur && pop.inside, JSON.stringify(pop));
+  await page.keyboard.press('Escape');
+  check(tag('Escape closes the receipt popover'), !(await page.evaluate(() => !!document.querySelector('.m-receipt-pop'))));
   await page.evaluate((pid) => document.querySelector('#thread-messages [data-message-id="' + pid + '"] .lime-message__replies').click(), parentId);
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'panel');
   check(tag('a thread opens as its own pushed screen with the back arrow'), (await visible(page, '#right-panel-toggle .m-back-icon')) && !(await visible(page, '#right-panel-toggle .dew-sidebar-right-closed')));
+  const th = await page.evaluate(() => {
+    const L = (e) => e.getBoundingClientRect(); const q = document.querySelector('#replies-quote .lime-message'); const r = document.querySelector('#replies-list .lime-message');
+    const edges = (m) => ({ bubL: L(m.querySelector('.lime-message__content')).left, bubR: L(m.querySelector('.lime-message__content')).right, addL: L(m.querySelector('.lime-react-add')).left, stampR: L(m.querySelector('.lime-message__stamp')).right });
+    const bg = (m) => getComputedStyle(m.querySelector('.lime-message__content')).backgroundColor;
+    return { quote: edges(q), reply: edges(r), quoteSent: q.classList.contains('lime-message--sent'), quoteBg: bg(q), replyBg: bg(r), flat: !!document.querySelector('#replies-list .lime-reply'), foot: getComputedStyle(r.querySelector('.lime-message__foot')).display };
+  });
+  const nr = (a, b) => Math.abs(a - b) <= 6;
+  check(tag('the thread screen uses the same bubbles: your parent message and your reply are green bubbles, no flat rows'), th.quoteSent && th.quoteBg === 'rgb(163, 225, 138)' && th.replyBg === 'rgb(163, 225, 138)' && !th.flat && th.foot === 'flex', JSON.stringify(th));
+  check(tag('and the same alignment rules under its bubbles'), nr(th.quote.addL, th.quote.bubL) && nr(th.quote.stampR, th.quote.bubR) && nr(th.reply.addL, th.reply.bubL) && nr(th.reply.stampR, th.reply.bubR), JSON.stringify(th));
+  await page.evaluate(() => window.LimeHoldMenu.open(document.querySelector('#replies-list .lime-message'))); await sleep(250);
+  const inThreadMenu = await page.evaluate(() => [...document.querySelectorAll('.m-msg-menu .m-glass-menu__item')].map((e) => e.textContent.trim()).join());
+  check(tag('the hold menu in a thread has no "Reply in thread" (you are in it): ' + inThreadMenu), inThreadMenu === 'Copy text', inThreadMenu);
+  await page.keyboard.press('Escape');
   await page.click('#right-panel-toggle');
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
   check(tag('its back arrow returns to the chat'), (await view(page)) === 'thread');
@@ -348,11 +383,24 @@ async function runOne(check, browser, name, server, S, size) {
   check(tag('your messages carry a receipt slot (a check); others\' do not'), mine.every((m) => m.receipt === true) && oli.every((m) => m.receipt === null));
   // reactions: Oli's thumbs-up on Mia's "Thanks!" shows as a chip; the add-reaction button opens the picker and adds one
   check(tag('Oli\'s reaction shows as a chip under Mia\'s message'), await page.evaluate(() => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')][0]; return /1/.test(m.querySelector('.lime-message__reactions').textContent) && m.querySelector('.lime-message__reactions').textContent.includes('\u{1F44D}'); }));
+  // the add-reaction button opens the same glass menu as press-and-hold, right beside the button (and never the old floating strip)
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
   await page.evaluate(() => [...document.querySelectorAll('#thread-messages .lime-message--received .lime-react-add')][0].click());
-  await wait(page, () => !!document.querySelector('.lime-reaction-picker.is-open'));
-  await page.evaluate(() => document.querySelector('.lime-reaction-picker.is-open [data-emoji="\u2764\ufe0f"]').click());
-  await wait(page, () => { const m = document.querySelector('#thread-messages .lime-message--received'); return m.querySelector('.lime-message__reactions').textContent.includes('\u2764'); });
-  check(tag('the add-reaction button opens the picker and the chosen emoji appears as a chip'), true);
+  await wait(page, () => !!document.querySelector('.m-msg-menu.is-open'));
+  await sleep(250);
+  const anchored = await page.evaluate(() => { const b = [...document.querySelectorAll('#thread-messages .lime-message--received .lime-react-add')][0].getBoundingClientRect(); const m = document.querySelector('.m-msg-menu').getBoundingClientRect(); const strip = document.querySelector('.lime-reaction-picker.is-open'); const gap = m.top >= b.bottom ? m.top - b.bottom : b.top - m.bottom; return { gap, overlapX: m.left <= b.right && m.right >= b.left, strip: strip ? getComputedStyle(strip).display : 'none', items: [...document.querySelectorAll('.m-msg-menu .m-glass-menu__item')].map((e) => e.textContent.trim()).join() }; });
+  check(tag('the add-reaction button opens the glass reactions menu right beside it (gap ' + Math.round(anchored.gap) + 'px), with Reply and Copy, and no floating emoji strip'), anchored.gap >= 0 && anchored.gap <= 14 && anchored.overlapX && anchored.strip === 'none' && anchored.items === 'Reply in thread,Copy text', JSON.stringify(anchored));
+  await page.evaluate(() => document.querySelector('.m-msg-menu [data-emoji="❤️"]').click());
+  await wait(page, () => { const m = document.querySelector('#thread-messages .lime-message--received'); return m.querySelector('.lime-message__reactions').textContent.includes('❤'); });
+  check(tag('the chosen emoji from that menu appears as a chip'), !(await page.evaluate(() => !!document.querySelector('.m-msg-menu.is-open'))));
+  // "+" grows the menu with more emoji
+  await page.evaluate(() => [...document.querySelectorAll('#thread-messages .lime-message--received .lime-react-add')][0].click());
+  await wait(page, () => !!document.querySelector('.m-msg-menu.is-open'));
+  await page.evaluate(() => document.querySelector('.m-msg-menu .m-msg-menu__more').click());
+  await sleep(150);
+  const more = await page.evaluate(() => { const g = document.querySelector('.m-msg-menu__grid'); const r = document.querySelector('.m-msg-menu').getBoundingClientRect(); return { shown: !g.hidden && g.getBoundingClientRect().height > 40, n: g.querySelectorAll('[data-emoji]').length, inside: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth }; });
+  check(tag('"+" opens twelve more emoji inside the same menu, which stays inside the screen'), more.shown && more.n === 12 && more.inside, JSON.stringify(more));
+  await page.keyboard.press('Escape');
   check(tag('no inline reply button under bubbles any more (only add-reaction)'), (await page.evaluate(() => document.querySelectorAll('#thread-messages .lime-reply-add').length)) === 0 && (await page.evaluate(() => document.querySelectorAll('#thread-messages .lime-foot-btn').length)) === (await page.evaluate(() => document.querySelectorAll('#thread-messages .lime-message').length)));
 
   // ── press and hold a message: a glass menu with six quick reactions, Reply in thread, Copy text ──
@@ -370,7 +418,7 @@ async function runOne(check, browser, name, server, S, size) {
   const hold = await page.evaluate(() => {
     const m = document.querySelector('.m-msg-menu'); const r = m.getBoundingClientRect(); const cs = getComputedStyle(m);
     const bubble = document.querySelector('#thread-messages .lime-message--held .lime-message__content');
-    return { emoji: [...m.querySelectorAll('.m-msg-menu__emoji:not(.m-msg-menu__more)')].map((b) => b.dataset.emoji).length, more: !!m.querySelector('.m-msg-menu__more'), items: [...m.querySelectorAll('.m-glass-menu__item')].map((b) => b.textContent.trim()), blur: cs.backdropFilter || cs.webkitBackdropFilter, bg: cs.backgroundColor, radius: parseFloat(cs.borderTopLeftRadius), left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight, rowH: m.querySelector('.m-glass-menu__item').getBoundingClientRect().height, rowFs: parseFloat(getComputedStyle(m.querySelector('.m-glass-menu__item')).fontSize), sel: getComputedStyle(bubble).userSelect || getComputedStyle(bubble).webkitUserSelect, callout: getComputedStyle(bubble).webkitTouchCallout, selection: String(getSelection()).length };
+    return { emoji: [...m.querySelectorAll('.m-msg-menu__react .m-msg-menu__emoji:not(.m-msg-menu__more)')].map((b) => b.dataset.emoji).length, more: !!m.querySelector('.m-msg-menu__more'), items: [...m.querySelectorAll('.m-glass-menu__item')].map((b) => b.textContent.trim()), blur: cs.backdropFilter || cs.webkitBackdropFilter, bg: cs.backgroundColor, radius: parseFloat(cs.borderTopLeftRadius), left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight, rowH: m.querySelector('.m-glass-menu__item').getBoundingClientRect().height, rowFs: parseFloat(getComputedStyle(m.querySelector('.m-glass-menu__item')).fontSize), sel: getComputedStyle(bubble).userSelect || getComputedStyle(bubble).webkitUserSelect, callout: getComputedStyle(bubble).webkitTouchCallout, selection: String(getSelection()).length };
   });
   check(tag('the hold menu has six quick reactions and "more", Reply in thread and Copy text'), hold.emoji === 6 && hold.more && hold.items.join() === 'Reply in thread,Copy text', JSON.stringify(hold));
   check(tag('it is glass: translucent, blurred, a large radius, 44px rows of 17px text, inside the screen'), /blur/.test(hold.blur || '') && hold.bg.includes('rgba') || /blur/.test(hold.blur || ''), hold.blur + ' ' + hold.bg);
@@ -501,6 +549,30 @@ async function runOne(check, browser, name, server, S, size) {
   check(tag('the chat menu is the glass menu: blurred, a large radius, 44px rows of 17px text, icons at the left, no key hints'), /blur/.test(menu.blur || '') && menu.radius >= 20 && menu.rowH >= 44 && menu.rowFs === 17 && menu.iconLeft && menu.kbd === 'none', JSON.stringify(menu));
   await page.keyboard.press('Escape');
   check(tag('zero console or page errors'), errors.length === 0, errors.slice(0, 3).join(' | '));
+
+  // ── LIME-79-fix3: a big group's header: at most two avatars plus "+N", the name cut short, all on one line ──
+  if (name === 'Chrome' && size.width === 390) {
+    const extra = []; for (const n of ['Pia Park', 'Quin Quade', 'Rae Ross', 'Sol Soto', 'Tam Tran', 'Uma Ueda', 'Val Vega', 'Wes Wu']) extra.push(await server.signUp(n));
+    const cid = crypto.randomUUID();
+    await server.api('POST', '/ops', { token: S.oli.token, body: { device_id: S.oli.device, ops: [['conversation.create', { conversation_id: cid, type: 'group', name: 'Whole school staff and the extended planning committee', member_ids: [S.mia.userId, S.ned.userId, ...extra.map((u) => u.userId)] }], ['message.send', { message_id: crypto.randomUUID(), conversation_id: cid, content: 'Welcome all' }]].map(([type, payload]) => ({ op_id: crypto.randomUUID(), type, actor_id: S.oli.userId, device_id: S.oli.device, client_ts: new Date().toISOString(), payload })) } });
+    const big = await openPhone(browser, server, S.mia, tag('big group'), errors, size);
+    await wait(big, (id) => !!document.querySelector('#m-list [data-conversation-id="' + id + '"]'), cid);
+    await big.evaluate((id) => document.querySelector('#m-list [data-conversation-id="' + id + '"]').click(), cid);
+    await wait(big, () => document.getElementById('layout').dataset.mobileView === 'thread' && document.getElementById('m-chat-title-text').textContent.length > 5);
+    await sleep(300);
+    const hdr = await big.evaluate(() => {
+      const R = (e) => e.getBoundingClientRect(); const bar = R(document.getElementById('m-chatbar'));
+      const faces = [...document.querySelectorAll('#m-chat-avatars .lime-avatar:not(.lime-avatar-cluster__more)')].length; const more = document.querySelector('#m-chat-avatars .lime-avatar-cluster__more');
+      const t = document.getElementById('m-chat-title-text'); const name = t.querySelector('.m-chatbar__name'); const tools = R(document.querySelector('.m-chatbar__tools')); const center = R(document.getElementById('m-chat-center'));
+      return { faces, more: more && more.textContent, members: LimeStore.getMembers(document.querySelector('.lime-contact--active').dataset.conversationId).length, oneLine: R(name).height < 24, truncated: name.scrollWidth > name.clientWidth, within: center.bottom <= bar.bottom && tools.bottom <= bar.bottom && center.right <= tools.left + 1, doc: document.documentElement.scrollWidth, vw: innerWidth };
+    });
+    check(tag('a big group\'s header: two avatars plus "' + hdr.more + '" (' + hdr.members + ' members), the long name cut with an ellipsis, all on one line with the icons, nothing overflowing'), hdr.faces === 2 && hdr.more === '+' + (hdr.members - 1 - 2) && hdr.oneLine && hdr.truncated && hdr.within && hdr.doc <= hdr.vw, JSON.stringify(hdr));
+    const stroke = await big.evaluate(() => ['#m-chat-search', '#m-chat-call', '#m-chat-more'].map((id) => { const m = getComputedStyle(document.querySelector(id + ' .m-icon')); const u = decodeURIComponent((m.webkitMaskImage || m.maskImage)); return /stroke-width='1\.7'/.test(u); }));
+    check(tag('the three header icons are drawn in one set with the same 1.7 stroke'), stroke.every(Boolean), JSON.stringify(stroke));
+    const addColor = await big.evaluate(() => { const b = document.querySelector('.lime-react-add'); const t = document.createElement('i'); t.style.color = 'var(--soil-text-muted)'; document.body.appendChild(t); const c = getComputedStyle(t).color; t.remove(); return { btn: getComputedStyle(b).color, token: c, op: parseFloat(getComputedStyle(b).opacity) }; });
+    check(tag('the add-reaction icon is the muted secondary text colour'), addColor.btn === addColor.token && addColor.op < 1, JSON.stringify(addColor));
+    await big.close();
+  }
 
   // ── LIME-79-fix: live presence with two clients (Chrome 390 only): Ned signs in and out; Mia's list, chat header and Members follow ──
   if (name === 'Chrome' && size.width === 390) {

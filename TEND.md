@@ -3476,3 +3476,30 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - `mobile` suite 302 checks (was 262): theme-color and `html` background (tone, dark, back), search outline, filter hover and press (forced pseudo-classes, Chrome), palette (hue, chroma, distance, contrast), dock avatar, rounded rows, ring style, badge style, dock press (down, drag, release; chosen item; pill fades), landscape and tablet.
 - Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa2/`: list (light, dark), a pressed row, group stacks of 2, 3 and 4 (+N), search focus, dock press, landscape list and chat.
 - All suites pass on `LIME_TEST_SERVER=dev` and `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev`: smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51, mobile 302, safari skipped.
+
+## LIME-79-fix3
+
+**Goal:** the chat view on phones: header, reactions, receipts and alignment (the thread screen included).
+
+**What landed**
+1. **Header for large groups:** at most **two avatars plus a "+N" count** ("+10" for 11 members), the name cut with an ellipsis, all on one line with the icons. Built from the desktop header's own avatars, trimmed (`renderMobileChatbar`). Suite: 11-member group, long name, nothing overflows.
+2. **Header icons, one set:** search, phone and "..." are redrawn as one icon set: the same 24 viewBox, the **same 1.7 stroke**, round caps, and each sized from its measured ink so they paint **24 x 24** (measured 23.2 / 20.7 / 23.9 before sizing them; now all 24 within 1.5). The "..." is dots inside a circle, like the other two it is square, so it has the same height and width.
+3. **Header fade:** the chat header no longer has a hairline or a hard blur edge: it is a soft canvas gradient with a blur that fades out the same way (a masked `::before` that runs 22px past the bar), and the messages slide away under it. The thread and details headers lose their rule too; their lists already fade at the top (`gradients.css`), as on the Messages screen.
+4. **Under each bubble:** the bubble, the row and the reply summary now share a `.lime-message__stack` (display: contents on desktop), and the row and the summary are exactly as wide as the stack, so on a phone **the reaction chips and add-reaction button start at the bubble's left edge, the time and ticks end at its right edge, and the reply summary starts at its left edge**, for your own bubbles and for others'. Measured in the suite: add-reaction within 6px of the bubble's left edge, the time within 6px of its right edge, the summary at its left edge and no wider than the bubble. **If the row does not fit in a short bubble, the time wraps to a second line at the right edge** (it never leaves the bubble's edges): "Short" shows the smiley, then the time under it.
+5. **Add-reaction is subtler:** the muted secondary text colour at 85% opacity, 20px (the suite asserts the colour).
+6. **Reaction chips:** a 4% fill and a 0.5px hairline (no shadow), a muted count; your own reaction is the 9% fill with a stronger hairline.
+7. **Add-reaction opens the same glass menu as press-and-hold, anchored to the button** (it opens above the button, or below if there is no room, lined up with it; the suite measures a gap under 14px). It has the six quick reactions, **"+" (the menu grows by twelve more emoji inside itself)**, Reply in thread and Copy text. The detached floating emoji strip is hidden on phones.
+8. **Receipts:** the words "Sent ... delivered ..." are gone on phones (desktop keeps them). Only the **time and ticks**: one drawn tick while a message is still being sent (`_pending`), two once the server has it (read ticks arrive with LIME-81). **Tapping the time or ticks opens a small glass popover: Sent 5:03 pm / Delivered 5:03 pm** (Delivered shows "Not yet" while pending). Read is not shown until LIME-81.
+9. **The thread screen uses the same bubbles on phones:** the parent and the replies are drawn with the chat's own `messageHtml` (own = green and right, others left, runs, the row and the alignment rules above, the glass menu and the receipt popover); desktop keeps its flat thread. The "N replies" line under the parent stays; the parent's own reply summary is hidden on that screen. The hold menu in a thread has no "Reply in thread".
+
+**Choices and notes (please look)**
+- **I could not look at your Penpot screens** (no access from here), so "as designed" is the written rules above; the alignments are the measured numbers in the suite. If the Penpot row differs (for example the time sitting on the same line even in a very short bubble), tell me which.
+- A deep link (`#c=`) to a chat that arrived after the page's cached copy was made does not open that chat (it lands on the list). Found while testing; not in scope here, so the test opens such a chat from the list. Say if you want it fixed.
+- Phones scroll the thread and the replies without a scrollbar track (a classic desktop-Firefox one took 11px).
+- Desktop pixel comparison against the committed tree (1280x800, 1024x768, 800x900, a chat with a reaction, a link and a reply): **0 differing pixels**.
+- Safari not run; no real-phone test.
+
+**Verification**
+- `mobile` suite 335 checks (was 302): alignment (yours, others', the thread's), receipts (no words, two ticks, the popover), the add-reaction menu (anchored, no strip, "+" grid), the big group's header, the icon set, the muted icon, the thread screen (bubbles, alignment, no "Reply in thread"), plus all the earlier ones.
+- Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa3/`: chat (light, dark), the header, the add-reaction menu, the receipt popover, the thread screen, Members.
+- All suites pass on `LIME_TEST_SERVER=dev` and `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev`: smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51, mobile 335, safari skipped.
