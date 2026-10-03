@@ -105,6 +105,18 @@ const LimeAppearance = (function () {
   // own 11-value array (index order: 0,100,200,...,900,950).
   const SOIL_RAMP_INDEXES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10];
 
+  // LIME-79-fix2: the browser's own bars (iOS Safari's status area and toolbar) take their colour from <meta name="theme-color">.
+  // Keep it equal to the canvas the page actually shows (tone and light/dark both move it), so no white band appears at the top.
+  function syncThemeColor() {
+    try {
+      let meta = document.querySelector('meta[name="theme-color"]');
+      if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+      const c = getComputedStyle(document.body || document.documentElement).backgroundColor;
+      const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(c);
+      if (m) meta.content = '#' + [m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('');
+    } catch (e) { /* the colour of the browser bars is cosmetic */ }
+  }
+
   function applyCanvas(name) {
     const ramp = CANVAS_P[name] || CANVAS_P.warm;
     const root = document.documentElement.style;
@@ -116,6 +128,7 @@ const LimeAppearance = (function () {
     // under [data-theme="dark"] (a plain :root inline style would win
     // over the dark block too, leaking Warm's light surface into dark).
     document.documentElement.classList.toggle('lime-canvas-warm', (name || 'warm') === 'warm');
+    syncThemeColor();
   }
 
   // LIME-51 — mode: 'light' | 'dark' | 'system'.
@@ -139,6 +152,7 @@ const LimeAppearance = (function () {
   function applyTheme(mode) {
     document.documentElement.setAttribute('data-theme', resolveTheme(mode));
     try { localStorage.setItem(THEME_STORAGE_KEY, mode); } catch (e) { /* private mode, etc. — visual apply above still worked */ }
+    syncThemeColor();
     // An uploaded pattern's own blend mode depends on the resolved theme
     // (multiply in light, screen in dark, per the brief) — reapply
     // whatever pattern is currently stored so a theme switch (including

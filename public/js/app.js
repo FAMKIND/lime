@@ -1264,7 +1264,10 @@ function lowerTime(iso) {
 }
 
 // LIME-79: on a phone every written clock time is lowercase ("7:32 am"); desktop keeps "7:32 AM". Decided when the text is written.
-const isPhone = () => window.matchMedia('(max-width: 767px)').matches;
+// LIME-79-fix2: the phone layout is a narrow screen OR a touch screen turned sideways (a phone in landscape is wider than 767px but only
+// ~390px tall); tablets and desktops are unchanged. Keep in step with the @media queries in lime.css.
+const PHONE_QUERY = '(max-width: 767px), (pointer: coarse) and (max-height: 500px)';
+const isPhone = () => window.matchMedia(PHONE_QUERY).matches;
 function clockText(iso) {
   return isPhone() ? lowerTime(iso) : formatTime(iso);
 }
@@ -4393,7 +4396,7 @@ function renderCrumbs() {
       // answers "is this mobile right now." text-overflow: ellipsis on
       // the breadcrumb (already in place) is what handles "if it fits,"
       // rather than measuring pixel widths here.
-      if (window.innerWidth <= 767) {
+      if (isPhone()) {
         const quoteEl = document.getElementById('replies-quote');
         const senderId = quoteEl && quoteEl.dataset.senderId;
         const sender = senderId && LimeStore.getProfile(senderId);
@@ -6289,7 +6292,7 @@ document.addEventListener('click', (e) => {
     }
   });
 
-  const mobileQuery = window.matchMedia('(max-width: 767px)');
+  const mobileQuery = window.matchMedia(PHONE_QUERY);
   mobileQuery.addEventListener('change', (e) => {
     if (!e.matches) nav.set(false);
   });
@@ -6303,7 +6306,7 @@ document.addEventListener('click', (e) => {
 // in the address of the chat entry, so reloading or sharing it still opens that chat.
 const LimeMobileNav = (function () {
   const layout = document.getElementById('layout');
-  const mq = window.matchMedia('(max-width: 767px)');
+  const mq = window.matchMedia(PHONE_QUERY);
   const RANK = { contacts: 0, thread: 1, panel: 2 };
   let openById = null;
   let currentId = () => null;
@@ -6422,6 +6425,64 @@ window.LimeMobileNav = LimeMobileNav;
     document.getElementById('settings-btn')?.click();
     document.querySelector('#settings-nav [data-settings-section="profile"]')?.click();
   });
+})();
+
+// ── LIME-79-fix2: the dock's press effect (phones) ─────────
+// Pressing and holding on the dock shows a liquid-glass pill (translucent, slightly magnified) under the finger. It follows the finger
+// sideways while held, and on release it snaps to the item under it, which is then chosen (like the iOS tab bar). The dock is captured
+// by pointer, so this handler also does what the tap would have done. Reduced motion: a plain highlight under the item, no sliding.
+(function () {
+  const dock = document.getElementById('m-dock');
+  const lens = document.getElementById('m-dock-lens');
+  if (!dock || !lens) return;
+  const items = () => [...dock.querySelectorAll('.m-dock__item')];
+  const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let pressing = false, pointerId = null, startedOn = null;
+
+  function geometry() {
+    const d = dock.getBoundingClientRect();
+    const first = items()[0].getBoundingClientRect();
+    return { d, w: first.width + 6 };
+  }
+  function itemAt(x) {
+    const all = items();
+    return all.find((el) => { const r = el.getBoundingClientRect(); return x >= r.left && x < r.right; })
+      || (x < all[0].getBoundingClientRect().left ? all[0] : all[all.length - 1]);
+  }
+  function placeAt(x, snap) {
+    const { d, w } = geometry();
+    const target = snap ? (() => { const r = snap.getBoundingClientRect(); return r.left + r.width / 2; })() : x;
+    const left = Math.max(2, Math.min(d.width - w - 2, target - d.left - w / 2));
+    lens.style.width = w + 'px';
+    lens.style.transform = 'translateX(' + left + 'px)' + (pressing && !reduced() ? ' scale(1.12)' : '');
+  }
+  function end(x, commit) {
+    if (!pressing) return;
+    const chosen = itemAt(x);
+    pressing = false;
+    lens.classList.add('is-snapping');
+    placeAt(x, chosen); // snaps to the item under the finger
+    dock.classList.remove('is-pressing');
+    setTimeout(() => lens.classList.remove('is-snapping'), 220);
+    if (commit && chosen) chosen.click();
+  }
+
+  dock.addEventListener('pointerdown', (e) => {
+    if (e.button > 0 || !e.target.closest('.m-dock__item')) return;
+    pressing = true; pointerId = e.pointerId; startedOn = itemAt(e.clientX);
+    lens.classList.remove('is-snapping');
+    lens.style.transition = 'none';
+    placeAt(e.clientX, startedOn);
+    void lens.offsetWidth;
+    lens.style.transition = '';
+    dock.classList.add('is-pressing');
+    try { dock.setPointerCapture(e.pointerId); } catch (err) { /* not capturable: the tap still lands on the item */ }
+  });
+  dock.addEventListener('pointermove', (e) => { if (pressing && e.pointerId === pointerId) placeAt(e.clientX, reduced() ? itemAt(e.clientX) : undefined); });
+  dock.addEventListener('pointerup', (e) => { if (pressing && e.pointerId === pointerId) { e.preventDefault(); end(e.clientX, true); } });
+  dock.addEventListener('pointercancel', (e) => { if (pressing) end(e.clientX, false); });
+  // with the pointer captured, the browser's own click lands on the dock itself, never on an item; keyboard clicks (Enter, Space) still reach items
+  dock.addEventListener('click', (e) => { if (e.detail > 0 && e.target === dock) e.stopPropagation(); }, true);
 })();
 
 // ── LIME-79-fix: press and hold a message (phones) ─────────

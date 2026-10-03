@@ -105,6 +105,74 @@ async function runOne(check, browser, name, server, S, size) {
   await page.evaluate(() => { document.getElementById('m-list').style.paddingBottom = ''; document.querySelector('.lime-list-col__scroll').scrollTop = 0; });
   const dockGlass = await isGlass(page, '#m-dock');
   check(tag('the dock is liquid glass: translucent and blurred, and nothing fades out under it'), dockGlass.blur && dockGlass.alpha < 0.8, JSON.stringify(dockGlass));
+  // ── LIME-79-fix2 ──
+  const shell = await page.evaluate(() => { const meta = document.querySelector('meta[name="theme-color"]'); const rgb = (c) => '#' + (c.match(/\d+/g) || []).slice(0, 3).map((v) => Number(v).toString(16).padStart(2, '0')).join(''); return { meta: meta && meta.content, body: rgb(getComputedStyle(document.body).backgroundColor), html: rgb(getComputedStyle(document.documentElement).backgroundColor), cover: /viewport-fit=cover/.test(document.querySelector('meta[name="viewport"]').content) }; });
+  check(tag('status-bar canvas: viewport-fit=cover, the canvas on html and body, and theme-color equal to it (' + shell.meta + ')'), shell.cover && shell.meta === shell.body && shell.html === shell.body, JSON.stringify(shell));
+  await page.evaluate(() => LimeAppearance.applyCanvas('sage')); await sleep(150);
+  const shellSage = await page.evaluate(() => document.querySelector('meta[name="theme-color"]').content);
+  await page.evaluate(() => LimeAppearance.applyTheme('dark')); await sleep(150);
+  const shellDark = await page.evaluate(() => ({ meta: document.querySelector('meta[name="theme-color"]').content, body: getComputedStyle(document.body).backgroundColor }));
+  await page.evaluate(() => { LimeAppearance.applyCanvas('warm'); LimeAppearance.applyTheme('light'); }); await sleep(150);
+  const shellBack = await page.evaluate(() => document.querySelector('meta[name="theme-color"]').content);
+  check(tag('theme-color follows a canvas tone change (sage ' + shellSage + '), dark mode (' + shellDark.meta + ') and returns (' + shellBack + ')'), shellSage !== shell.meta && shellDark.meta !== shellSage && shellDark.meta === '#' + (shellDark.body.match(/\d+/g) || []).map((v) => Number(v).toString(16).padStart(2, '0')).join('') && shellBack === shell.meta, JSON.stringify([shell.meta, shellDark, shellSage, shellBack]));
+  await page.click('#m-search-input');
+  const searchStyle = await page.evaluate(() => { const f = document.querySelector('.m-search'); const cs = getComputedStyle(f); return { outline: cs.outlineStyle, border: cs.borderTopWidth + ' ' + cs.borderTopColor, shadow: cs.boxShadow }; });
+  check(tag('the search field has a soft outline: a 1px subtle border at rest and a light ring on focus, no heavy dark outline'), searchStyle.outline === 'none' && /^1px /.test(searchStyle.border) && !/rgb\(1[0-9], /.test(searchStyle.shadow.split(' 0px')[0] || ''), JSON.stringify(searchStyle));
+  await page.evaluate(() => document.activeElement.blur());
+  // the filter button: warm neutral hover and press (needs Chrome's DevTools protocol to force :hover and :active)
+  if (size.emulate) {
+    const cdp = await page.createCDPSession(); await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument'); const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '#m-filter-btn' });
+    const bg = () => page.evaluate(() => getComputedStyle(document.getElementById('m-filter-btn')).backgroundColor);
+    const tok = (name) => page.evaluate((n) => { const t = document.createElement('i'); t.style.background = 'var(' + n + ')'; document.body.appendChild(t); const c = getComputedStyle(t).backgroundColor; t.remove(); return c; }, name);
+    const rest = await bg();
+    await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['hover'] }); const hov = await bg();
+    await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['active'] }); const act = await bg();
+    await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
+    check(tag('the filter button hovers and presses in warm neutrals (the menu-hover tokens), not the primary green'), hov === (await tok('--calm-bg-subtle-hover')) && act === (await tok('--calm-bg-subtle-active')) && hov !== (await tok('--lime-primary-bg')) && act !== (await tok('--lime-primary-bg')), JSON.stringify([rest, hov, act]));
+    await cdp.detach();
+  }
+  const pal = await page.evaluate(() => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
+    const px = (css) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = css; cx.fillRect(0, 0, 1, 1); return [...cx.getImageData(0, 0, 1, 1).data].slice(0, 3).map((v) => v / 255); };
+    const lin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    const lab = ([r, g, b]) => { [r, g, b] = [r, g, b].map(lin); const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s2 = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b); return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s2, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s2, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s2]; };
+    const out = {};
+    for (const theme of ['light', 'dark']) {
+      const wrap = document.createElement('div'); wrap.setAttribute('data-theme', theme); document.body.appendChild(wrap);
+      out[theme] = [0, 1, 2, 3, 4, 5, 6, 7].map((n) => { const el = document.createElement('span'); el.className = 'seed-avatar lime-avatar lime-avatar--p' + n; wrap.appendChild(el); const l = lab(px(getComputedStyle(el).backgroundColor)); const c = Math.hypot(l[1], l[2]); const h = (Math.atan2(l[2], l[1]) * 180 / Math.PI + 360) % 360; return { l: Math.round(l[0] * 100) / 100, chroma: Math.round(c * 1000) / 1000, hue: Math.round(h) }; });
+      wrap.remove();
+    }
+    return out;
+  });
+  check(tag('the new avatar palette has no greens (no OKLCH hue 105 to 195) and no neutrals (chroma >= 0.04; the warm greys are 0.01), in light and dark: hues ' + pal.light.map((t) => t.hue).join(',')), [...pal.light, ...pal.dark].every((t) => (t.hue < 105 || t.hue > 195) && t.chroma >= 0.04), JSON.stringify(pal));
+  const dockMe = await page.evaluate(() => { const e = document.getElementById('m-dock-avatar'); return { cls: [...e.classList].find((c) => /^lime-avatar--p\d$/.test(c)), bg: getComputedStyle(e).backgroundColor }; });
+  check(tag('the account (dock) avatar uses the same palette: ' + dockMe.cls), !!dockMe.cls && dockMe.bg !== 'rgba(0, 0, 0, 0)');
+  const rowsStyle = await page.evaluate(() => { const r = document.querySelector('#m-list .lime-contact'); const cs = getComputedStyle(r); const rr = r.getBoundingClientRect(); return { radius: parseFloat(cs.borderTopLeftRadius), left: rr.left, right: innerWidth - rr.right }; });
+  check(tag('list rows are rounded (20px) and inset from the screen edges: ' + JSON.stringify(rowsStyle)), rowsStyle.radius >= 16 && rowsStyle.left >= 4 && rowsStyle.right >= 4);
+  const rings = await page.evaluate(() => [...document.querySelectorAll('#m-list .lime-avatar-cluster__member')].map((e) => { const cs = getComputedStyle(e); return cs.boxShadow.replace(/^.*?\) /, '') + '|' + cs.borderTopWidth; }));
+  check(tag('group stacks: every stacked avatar has the same ring (one size, one token, no border): ' + [...new Set(rings)].length + ' distinct style(s) over ' + rings.length), rings.length >= 2 && new Set(rings).size === 1, JSON.stringify([...new Set(rings)]));
+  const badges = await page.evaluate(() => { const get = (e) => { const cs = getComputedStyle(e); const r = e.getBoundingClientRect(); return { h: Math.round(r.height * 10) / 10, minW: r.width, radius: cs.borderTopLeftRadius, bg: cs.backgroundColor, color: cs.color, fs: cs.fontSize, fw: cs.fontWeight, border: cs.borderTopWidth }; }; return { row: get([...document.querySelectorAll('#m-list .lime-contact__badge')].find((b) => b.textContent)), dock: get(document.getElementById('m-dock-badge')) }; });
+  check(tag('badges are one style: lime-300 fill, ink numbers, 20px high, 10px radius, 12px/700, no outline (row ' + badges.row.h + 'px, dock ' + badges.dock.h + 'px)'), ['h', 'radius', 'bg', 'color', 'fs', 'fw', 'border'].every((k) => badges.row[k] === badges.dock[k]) && badges.row.bg === 'rgb(163, 225, 138)' && badges.row.h === 20 && badges.row.border === '0px', JSON.stringify(badges));
+  // the dock's press: a glass pill under the finger that follows the finger sideways and snaps on release
+  {
+    const info = () => page.evaluate(() => { const l = document.getElementById('m-dock-lens').getBoundingClientRect(); const cs = getComputedStyle(document.getElementById('m-dock-lens')); return { mid: (l.left + l.right) / 2, w: l.width, opacity: parseFloat(cs.opacity), blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), pressing: document.getElementById('m-dock').classList.contains('is-pressing'), items: [...document.querySelectorAll('#m-dock .m-dock__item')].map((e) => { const r = e.getBoundingClientRect(); return (r.left + r.right) / 2; }) }; });
+    const it0 = (await info()).items;
+    await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+    const dy = await page.evaluate(() => { const r = document.getElementById('m-dock').getBoundingClientRect(); return r.top + r.height / 2; });
+    await page.mouse.move(it0[0], dy); await page.mouse.down(); await sleep(250);
+    const d0 = await info();
+    await page.mouse.move(it0[1] + 20, dy, { steps: 4 }); await sleep(120);
+    const d1 = await info();
+    await page.mouse.move(it0[2], dy, { steps: 4 }); await sleep(250);
+    const d2 = await info();
+    check(tag('dock press: holding shows a glass pill under the finger (visible, blurred, translucent)'), d0.pressing && d0.opacity > 0.9 && d0.blur && Math.abs(d0.mid - it0[0]) < 12, JSON.stringify(d0));
+    check(tag('dock press: the pill follows the finger sideways while held'), d1.mid > d0.mid + 30 && Math.abs(d1.mid - (it0[1] + 20)) < 14 && Math.abs(d2.mid - it0[2]) < 14, JSON.stringify([d0.mid, d1.mid, d2.mid]));
+    await page.mouse.move(it0[2] + 10, dy); await page.mouse.up(); await sleep(450);
+    const d3 = await info();
+    check(tag('dock press: on release it snaps to the item under the finger, the item is chosen (calls toast) and the pill fades'), /Calls are coming soon/.test(await page.evaluate(() => document.getElementById('toast-container').textContent)) && Math.abs(d3.mid - it0[2]) < 6 && !d3.pressing && d3.opacity < 0.1, JSON.stringify(d3));
+    await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+  }
   const icons1 = await measureIcons(page, [['plus', '.m-plus .dew'], ['filter', '#m-filter-btn .dew'], ['dock link', '#m-dock-link .dew'], ['dock jam', '#m-dock-jam .dew'], ['dock calls', '#m-dock-calls .m-icon'], ['search field', '.m-search .dew'], ['pin', '.lime-contact--pinned .lime-icon-pin']]);
   const big = (f) => Math.max(...f.ink);
   const byName = Object.fromEntries(icons1.map((i) => [i.label, i]));
@@ -125,7 +193,7 @@ async function runOne(check, browser, name, server, S, size) {
     }
     return out;
   });
-  check(tag('the eight avatar tints are distinct: the smallest OKLab distance between any two is ' + tintPairs.light + ' in light and ' + tintPairs.dark + ' in dark (>= 5.9)'), tintPairs.light >= 5.9 && tintPairs.dark >= 5.9, JSON.stringify(tintPairs));
+  check(tag('the eight avatar tints are distinct: the smallest OKLab distance between any two is ' + tintPairs.light + ' in light and ' + tintPairs.dark + ' in dark (>= 7)'), tintPairs.light >= 7 && tintPairs.dark >= 7, JSON.stringify(tintPairs));
 
   // ── the one list: pinned first, then by recency; unread counts; lowercase time ──
   check(tag('one list: the pinned chat first, then the others by recency (archived left out)'), (await titles(page)).join() === 'Ned Nguyen,Zed Team,Planning', (await titles(page)).join());
@@ -467,6 +535,38 @@ async function runOne(check, browser, name, server, S, size) {
   await page.close();
 }
 
+// A phone turned sideways (844x390, a touch screen) keeps the phone layout; a tablet (touch, but 1024x768) and a desktop do not.
+async function landscape(check, browser, server, S) {
+  const errors = [];
+  const page = await openPhone(browser, server, S.mia, 'landscape', errors, { width: 844, height: 390, emulate: true });
+  const tag = (t) => `Chrome landscape 844x390: ${t}`;
+  const vis = (sel) => visible(page, sel);
+  check(tag('the phone layout shows (dock, Messages header; no drawer, tabs or breadcrumb row)'), (await vis('#m-dock')) && (await vis('.m-messages__title')) && !(await vis('.seed-layout__left')) && !(await vis('#scope-tablist')) && !(await vis('.lime-center-top')));
+  const geo = await page.evaluate(() => { const l = document.getElementById('list-col').getBoundingClientRect(); const d = document.getElementById('m-dock').getBoundingClientRect(); return { listW: l.width, vw: innerWidth, dockL: d.left, dockR: d.right, dockB: d.bottom, vh: innerHeight, doc: document.documentElement.scrollWidth }; });
+  check(tag('the list is full width, the dock is inside the screen, nothing scrolls sideways'), geo.listW >= geo.vw - 1 && geo.dockL >= 8 && geo.dockR <= geo.vw - 8 && geo.dockB <= geo.vh && geo.doc <= geo.vw, JSON.stringify(geo));
+  await page.click(`#m-list [data-conversation-id="${S.dm}"]`); // the first row; lower ones sit under the dock until the list is scrolled
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
+  await sleep(400);
+  const chat = await page.evaluate(() => { const b = document.getElementById('m-chatbar').getBoundingClientRect(); const t = document.getElementById('thread-messages').getBoundingClientRect(); const c = document.getElementById('composer').getBoundingClientRect(); return { barW: b.width, vw: innerWidth, threadW: t.width, composerR: c.right, composerB: c.bottom, vh: innerHeight, doc: document.documentElement.scrollWidth }; });
+  check(tag('the chat is full width with its bar and composer inside the screen'), (await vis('#m-chatbar')) && !(await vis('#m-dock')) && chat.barW >= chat.vw - 1 && chat.threadW >= chat.vw - 1 && chat.composerR <= chat.vw && chat.composerB <= chat.vh && chat.doc <= chat.vw, JSON.stringify(chat));
+  await page.screenshot({ path: process.env.LIME_SHOTS ? process.env.LIME_SHOTS + 'landscape-chat.png' : '/dev/null' });
+  check(tag('zero console or page errors'), errors.length === 0, errors.slice(0, 2).join(' | '));
+  await page.close();
+  // a tablet (touch, but tall) is not a phone
+  const tab = await browser.newPage();
+  await tab.setViewport({ width: 1024, height: 768, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  await tab.evaluateOnNewDocument((p) => {
+    sessionStorage.setItem('lime-api-session', JSON.stringify({ userId: p.userId, email: p.email, access_token: p.token, refresh_token: p.refresh, expires_at: Date.now() + 14 * 60 * 1000 }));
+    sessionStorage.setItem('lime-demo-session', JSON.stringify({ userId: p.userId, email: p.email }));
+    try { localStorage.setItem('lime-device-id', p.device); } catch (e) { /* none */ }
+  }, S.mia);
+  await tab.goto(server.base + 'index.html', { waitUntil: 'load' });
+  await wait(tab, () => window.LimeStore && LimeStore.getCurrentUserId() && document.querySelectorAll('.lime-contact').length > 0);
+  await sleep(400);
+  check('Chrome tablet 1024x768 (touch): still the desktop layout, no dock', !(await visible(tab, '#m-dock')) && (await visible(tab, '.seed-layout__left')));
+  await tab.close();
+}
+
 export async function run({ check }) {
   if (!browserAvailable('firefox') || !browserAvailable('chrome')) { check('mobile (skipped: needs both Firefox and Chrome installed)', true, 'skipped'); return; }
   const server = await new DevServer().start();
@@ -478,6 +578,7 @@ export async function run({ check }) {
     await runOne(check, chrome, 'Chrome', server, await buildScenario(server), { width: 360, height: 780, emulate: true });
     await runOne(check, firefox, 'Firefox', server, await buildScenario(server), { width: 390, height: 844, emulate: false });
     const S = await buildScenario(server); // for the desktop checks below
+    await landscape(check, chrome, server, S);
 
     // Desktop (>= 768px) is untouched: none of the phone pieces show, and the desktop layout still does.
     const errors = [];

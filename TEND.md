@@ -3450,3 +3450,29 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - **Safari: not run** (`safaridriver --enable` is still pending). Phone behaviour is verified in Chrome mobile emulation (touch included) and Firefox; **no real-phone test yet**: that is your gate.
 
 **Gate (on the iPhone):** the Messages header stays put while search scrolls away under it; the dock and every menu look frosted like the "+" menu (compare and tell me what to nudge); the icons are even; the chat header reads "‹ 13" with a plain number; tap the names or avatars to see everyone in the chat; press and hold a message for reactions, Reply and Copy; the mic is one button; the send arrow looks right in all three states; avatars come in more soft colours; Settings > Profile has "‹" and no x. And tell me: should Profile's "‹" go straight to Messages (see the note), and should the New message picker be glass?
+
+## LIME-79-fix2
+
+**Goal:** the Messages screen and shell polish: status-bar canvas, soft search, warm filter hover, a new non-green avatar palette, rounded rows, even group rings, one badge style, the dock's glass press, and landscape on phones.
+
+**What landed**
+1. **Status bar:** `viewport-fit=cover` was already there; added `<meta name="theme-color">` (default `#F9F8F4`) that `appearance.js` keeps equal to the canvas the page shows (set on init, on a tone change and on light/dark), and the canvas on `html` as well as `body`. Safe-area padding was already on the Messages header, chat bar and dock. Not verifiable on a real iPhone from here.
+2. **Search field:** a 1px subtle border at rest; on focus a soft border and a faint 3px ring, no dark outline.
+3. **Filter button:** hover = `--calm-bg-subtle-hover`, press = `--calm-bg-subtle-active` (the desktop menu tokens). The "a filter is on" state is now the stronger neutral with a hairline ring instead of green.
+4. **New avatar palette (replaces LIME-79-fix's):** no greens, no warm neutrals. Built in OKLCH, searched for the largest minimum distance. **Smallest OKLab distance between any two: 7.10, in light and in dark.** Order (hash index): rose `#FEB2BF`, coral `#FED2CA`, apricot `#F3BF91`, butter `#EFDF91`, sky `#92D4FF`, periwinkle `#D1DEFE`, lilac `#D9BAFF`, aqua-blue `#99EEFF`; dark: `#DF8193 #EF9B8D #C59770 #C3B571 #51ABE2 #98B2F7 #B091D6 #78C2D1`. **Ink contrast measured in Chrome:** light 10.31, 12.77, 10.59, 13.06, 10.93, 13.03, 10.38, 13.39; dark 6.43, 8.14, 6.71, 8.50, 6.91, 8.39, 6.57, 8.72. Hues (OKLCH) 8, 30, 63, 98, 238, 268, 305, 212: none in the green band 105 to 195; lowest chroma 0.046 (warm greys are about 0.01), asserted by the suite. The dock avatar is the same palette class (or the photo).
+5. **Rows:** pressed and selected list rows are 20px rounded and inset 6px from the screen edges (content stays at 16px).
+6. **Group stacks:** the dark outlines were the ring colour of the *selected* row (the grey hover tint) on a row that has no background on phones. Every stacked avatar (and the +N tile) now has one ring, `0 0 0 2px var(--m-ring)`, no border, in the row's real background (the canvas; the hover tint only while pressed). The suite asserts one style across all stacks.
+7. **Badges, one style:** dock link badge and row unread badge are both `--seed-lime-300` fill, ink numbers, **20px high (min width 20), 10px radius, 12px / 700, no outline** (they were 17px with 10.5px, and 22px with a border and pale fill).
+8. **Dock press:** pressing and holding shows a translucent, blurred, slightly magnified (1.12) pill under the finger; it follows the finger sideways and on release snaps to the item under it, which is then chosen (the dock captures the pointer and does the click itself); `touch-action: none` so a sideways drag is not taken by the browser. Reduced motion: no sliding or magnifying, the highlight jumps item to item.
+9. **Landscape:** the phone layout now applies when `(max-width: 767px), (pointer: coarse) and (max-height: 500px)`: all 11 phone `@media` blocks in `lime.css`, the one in `auth.css`, and the JS (`PHONE_QUERY`, used by `isPhone`, the mobile nav and the drawer reset). Tablets (touch but 1024x768) and desktop are unchanged (asserted). 844x390 (Chrome touch emulation): the dock, full-width list and chat, the bar and composer inside the screen. Firefox cannot emulate a coarse pointer, so landscape is Chrome only.
+
+**Choices and notes**
+- The landscape chat header is cramped at 390px tall (its avatars sit close to the top edge); fix3 reworks the header.
+- Dock press and a quick tap share one path; a tap flashes the pill briefly.
+- Desktop pixel comparison was **not** re-run for this brief: desktop CSS changed only in the avatar palette and `html { background }` (same colour as the body). Please look at desktop avatars.
+- Safari not run; no real-phone test.
+
+**Verification**
+- `mobile` suite 302 checks (was 262): theme-color and `html` background (tone, dark, back), search outline, filter hover and press (forced pseudo-classes, Chrome), palette (hue, chroma, distance, contrast), dock avatar, rounded rows, ring style, badge style, dock press (down, drag, release; chosen item; pill fades), landscape and tablet.
+- Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa2/`: list (light, dark), a pressed row, group stacks of 2, 3 and 4 (+N), search focus, dock press, landscape list and chat.
+- All suites pass on `LIME_TEST_SERVER=dev` and `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev`: smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51, mobile 302, safari skipped.

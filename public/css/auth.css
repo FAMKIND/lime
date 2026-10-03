@@ -303,7 +303,7 @@
   height: 16px;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
   .lime-auth {
     grid-template-columns: 1fr;
   }

@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <!-- LIME-79-fix2: the colour of the browser bars; appearance.js keeps it equal to the canvas (tone and light/dark). The default is the warm canvas. -->
+  <meta name="theme-color" content="#F9F8F4">
   <!-- LIME-51: sets data-theme before any stylesheet below even starts
        downloading, so there's no flash of light theme for a user whose
        stored preference is dark or (System) currently resolves dark.
@@ -908,6 +910,7 @@
   <!-- LIME-78: the phone dock (<= 767px, Messages screen only): floating, rounded and neutral. Replaces the hamburger drawer.
        link = Messages (badge: all unread), jam = a placeholder, calls = a gentle "coming soon", account = Settings. -->
   <nav class="m-dock" id="m-dock" aria-label="Main">
+    <span class="m-dock__lens" id="m-dock-lens" aria-hidden="true"></span>
     <button type="button" class="m-dock__item is-active" id="m-dock-link" aria-current="page"><span class="m-dock__iconwrap"><span class="dew dew-chat" aria-hidden="true"></span><span class="m-dock__badge" id="m-dock-badge" hidden></span></span><span class="m-dock__label">link</span></button>
     <button type="button" class="m-dock__item" id="m-dock-jam"><span class="m-dock__iconwrap"><span class="dew dew-pencil" aria-hidden="true"></span></span><span class="m-dock__label">jam</span></button>
     <button type="button" class="m-dock__item" id="m-dock-calls"><span class="m-dock__iconwrap"><span class="m-icon m-icon--phone" aria-hidden="true"></span></span><span class="m-dock__label">calls</span></button>
