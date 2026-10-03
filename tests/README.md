@@ -3,7 +3,7 @@
 ```
 npm install        # once
 npm test           # everything (about a minute)
-node run.mjs sync  # one or more suites by name: smoke css auth sync toasts api e2e-server safari
+node run.mjs sync  # one or more suites by name: smoke css auth sync toasts api e2e-server mobile auth-phone safari
 LIME_TEST_SERVER=dev npm test   # browser suites against server/dev-server.mjs instead of Python
 ```
 
@@ -22,6 +22,7 @@ Exit code is 1 if anything fails. Each run starts its own `python3 -m http.serve
 - `css`: a stray `*/` outside a comment (it silently drops the rest of a stylesheet) and a minimum parsed-rule count per stylesheet in the real browser. The minimums sit just under today's counts (`lime.css` 737, `gradients.css` 25, `auth.css` 39); raise them when a stylesheet grows on purpose.
 - `auth`: sign up, no plain password stored, per-tab session, sign out, the gate, wrong password, right password, the seed-teacher hint.
 - `sync`: two tabs in one browser as two people: a live group and message, 20 + 20 messages with none lost, order preserved, sign-out stays per tab.
+- `auth-phone` (LIME-79-fix5): sign-in and sign-up on a phone with the keyboard "open" (simulated by a shorter viewport, as the page sees it on Android and, through `visualViewport`, on iOS): the action button stays above the keyboard on the email, password and create steps (390x844, 360x780, 844x390, and Firefox), the fields' `enterkeyhint` and `autocomplete`, Return on the email goes to the password, Return on the password signs in, Return on the name goes to the password, and with the terms box unticked Return on the password moves to the box with a hint.
 - `toasts`: a toast queued before navigation shows once, at most 3 visible, an error stays, an action runs, sending a message does not toast.
 
 **Known noise (ignored on purpose):** the missing gitignored `demo-config.local.js` (404), blocked Google Fonts when offline, `ResizeObserver loop`, and Firefox/BiDi's `SecurityError: The operation is insecure` when a tab navigates away on sign-out (also on a clean checkout before LIME-69).

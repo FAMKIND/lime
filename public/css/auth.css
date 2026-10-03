@@ -315,4 +315,50 @@
   .lime-auth__form {
     padding: var(--seed-space-6) var(--seed-space-4);
   }
+
+  /* LIME-79-fix5: the keyboard never hides the action. The page is the visual viewport (what is above the keyboard): sized to it and
+     pinned to its top, content from the top while the keyboard is up, the logo, headline, sub-line and legal text out of the way, and
+     room under the button (safe area included). The variables are set by the script in auth.html. */
+  .lime-auth {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--lime-vvtop, 0px);
+    height: 100vh;
+    height: var(--lime-vvh, 100dvh);
+  }
+  .lime-auth__form {
+    padding-top: calc(var(--seed-space-6) + env(safe-area-inset-top));
+    padding-bottom: calc(var(--seed-space-6) + env(safe-area-inset-bottom));
+    scroll-padding-bottom: 24px;
+  }
+  .lime-auth.is-keyboard .lime-auth__form {
+    justify-content: flex-start;
+    padding-top: calc(var(--seed-space-4) + env(safe-area-inset-top));
+  }
+  .lime-auth.is-keyboard .lime-auth__form-logo,
+  .lime-auth.is-keyboard .lime-auth__headline,
+  .lime-auth.is-keyboard .lime-auth__subline,
+  .lime-auth.is-keyboard .lime-auth__legal {
+    display: none;
+  }
+}
+
+/* The hidden username field that lets password managers pair the password with the email, and the terms hint. */
+.lime-auth__username {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+  padding: 0;
+}
+.lime-auth__terms-hint {
+  margin: 0 0 var(--seed-space-3);
+  font-size: var(--seed-text-sm);
+  color: var(--soil-text-muted);
+}
+.lime-auth__terms-hint[hidden] {
+  display: none;
 }

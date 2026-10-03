@@ -13,6 +13,7 @@
     "test:api": "node run.mjs api",
     "test:e2e": "node run.mjs e2e-server",
     "test:mobile": "node run.mjs mobile",
+    "test:auth-phone": "node run.mjs auth-phone",
     "test:safari": "node run.mjs safari"
   },
   "devDependencies": {

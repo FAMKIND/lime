@@ -3525,3 +3525,27 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - `mobile` suite 359 checks (was 335): the thread composer collapsed and expanded (same pill, order of controls, no B I U, no "...", no privacy row), the chat composer's order, brightness in six tones and dark, the Aa menu (items, glass, 44px / 17px rows, inside the screen, focus kept), Bold applied from it, the send circle and arrow size, and sending a reply from the thread composer.
 - Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa4/`: the chat composer collapsed, expanded, with the Aa menu; the thread composer collapsed, expanded, with the Aa menu, and in dark.
 - All suites pass on `LIME_TEST_SERVER=dev` and `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev`: smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51, mobile 359, safari skipped.
+
+## LIME-79-fix5
+
+**Goal:** signing in on a phone with the keyboard open: the action never hides, and the keyboard's Return says and does the next thing.
+
+**What landed (`public/auth.html`, `public/css/auth.css`)**
+1. **The keyboard never hides the action.** The page follows the **visual viewport** (what is above the keyboard): a script sets `--lime-vvh` and `--lime-vvtop` from `visualViewport` (height and offset, on its `resize` and `scroll`, on `focusin`, and 320ms after focus, once the keyboard has animated), and on phones `.lime-auth` is pinned to that box (iOS Safari scrolls the page when the keyboard opens). While the keyboard is up (the visual viewport is more than 120px shorter than the tallest it has been; the baseline resets when the width changes, so a rotation is not a keyboard) the page switches to a **compact layout**: the logo, headline, sub-line and legal text step aside and the form starts at the top. The submit button of the form being typed in is `scrollIntoView`'d. The viewport meta gained `viewport-fit=cover` and `interactive-widget=resizes-content` (Chrome on Android then resizes the page itself), the form has safe-area padding top and bottom, and the page has `theme-color` for light and dark.
+2. **Return says and does the next thing.** Email: `enterkeyhint="next"`, `autocomplete="email"`, `inputmode="email"`, no auto-capitalise or correct; Return = Continue (the form's own submit). Password (sign in): `enterkeyhint="go"`, `autocomplete="current-password"`; Return = Sign in. Create: the name has `enterkeyhint="next"`, `autocomplete="name"`, and **Return on it moves to the password** (it used to try to submit with an empty password); the new password has `enterkeyhint="go"`, `autocomplete="new-password"`, and Return on it creates the account **if the terms box is ticked; otherwise it moves to the box and shows the hint "Tick the box to agree, then press Create account."** The Create account button does the same (**this is a behaviour change: until now an unticked box did not stop sign-up**, because the form is `novalidate`; the markup already marked it `required`).
+3. **Saved passwords:** the password and create forms each carry a hidden, read-only `autocomplete="username"` field holding the email, so iOS and password managers can pair a saved password with the account.
+
+**Choices and notes (please look)**
+- The keyboard is simulated by a shorter viewport (the page sees that on Android, and through `visualViewport` on iOS); I cannot raise a real iOS keyboard here, so **on your phone is the real test** (see the gate). The `focusin` timeout (320ms) is a guess at the iOS keyboard animation.
+- The Google and Apple "Soon" buttons stay (they scroll away under the compact layout's fixed height); say if you want them hidden while the keyboard is up.
+- Desktop and tablet are unchanged (all new layout rules are inside the phone media query; the existing `auth` suite passes).
+- Safari not run.
+
+**Verification**
+- New suite **`auth-phone`, 25 checks** (`npm run test:auth-phone`, also in `npm test`), on a throwaway dev server: Chrome mobile emulation at 390x844, 360x780 and sideways 844x390, and the real Firefox. With the keyboard simulated: the compact layout is on and the logo and headline are hidden; **"Continue with email" is above the keyboard** (bottom 320 of 470px at 390 wide; 176 of 200px sideways), **"Sign in" too** (232 of 470; 106 of 200), **"Create account" too** (361 of 470); the fields' `enterkeyhint` and `autocomplete`; Return on the email moves to the password step with the password focused; Return on the password signs in; for a new email Return goes to the create step with the name focused, Return on the name goes to the password without submitting, Return on the password with the box unticked focuses the box with the hint (nothing created), and with the box ticked it creates the account and lands on the app.
+- Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa5/` (email without and with the keyboard, the password step, the terms hint).
+- All suites pass on all three configurations (`npm test`; `LIME_TEST_SERVER=dev`; `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev`): smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51, mobile 359, auth-phone 25, safari skipped.
+
+---
+
+**Stopping here for your review of LIME-79-fix2 to fix5** (commits `3935a07`, `4f8b591`, `21dfddf` and this one).

@@ -2,7 +2,11 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- LIME-79-fix5: viewport-fit=cover and interactive-widget=resizes-content so a phone's on-screen keyboard resizes the page (Chrome on Android);
+       iOS Safari only shrinks the visual viewport, which the script below follows. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#F9F8F4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#131B17" media="(prefers-color-scheme: dark)">
   <!-- LIME-51: see index.html's identical block for the full reasoning —
        sets data-theme before any stylesheet below starts downloading. -->
   <script>
@@ -56,7 +60,7 @@
             <form id="auth-email-form" novalidate>
               <div class="lime-auth__field">
                 <label class="seed-label" for="auth-email">Email</label>
-                <input class="seed-input" id="auth-email" name="email" type="email" placeholder="you@example.com" required autofocus>
+                <input class="seed-input" id="auth-email" name="email" type="email" placeholder="you@example.com" required autofocus autocomplete="email" inputmode="email" enterkeyhint="next" autocapitalize="off" autocorrect="off" spellcheck="false">
               </div>
               <button type="submit" class="seed-button seed-button--primary seed-button--md lime-auth__submit">Continue with email</button>
             </form>
@@ -68,10 +72,12 @@
             <h2 class="lime-auth__welcome" id="auth-welcome-heading">Welcome back</h2>
             <p class="lime-auth__step-email" id="auth-password-email"></p>
             <form id="auth-password-form" novalidate>
+              <!-- LIME-79-fix5: the account's email as a (hidden) username field, so iOS and password managers offer the saved password for it -->
+              <input class="lime-auth__username" type="email" name="username" id="auth-password-username" autocomplete="username" tabindex="-1" aria-hidden="true" readonly>
               <div class="lime-auth__field">
                 <label class="seed-label" for="auth-password">Password</label>
                 <div class="lime-password-field">
-                  <input class="seed-input" id="auth-password" name="password" type="password" placeholder="Your password" required>
+                  <input class="seed-input" id="auth-password" name="password" type="password" placeholder="Your password" required autocomplete="current-password" enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck="false">
                   <button type="button" class="lime-password-field__toggle" aria-label="Show password">
                     <span class="dew dew-eye-closed"></span>
                   </button>
@@ -87,14 +93,15 @@
             <h2 class="lime-auth__welcome">Create your account</h2>
             <p class="lime-auth__step-email" id="auth-create-email"></p>
             <form id="auth-create-form" novalidate>
+              <input class="lime-auth__username" type="email" name="username" id="auth-create-username" autocomplete="username" tabindex="-1" aria-hidden="true" readonly>
               <div class="lime-auth__field">
                 <label class="seed-label" for="auth-name">Display name</label>
-                <input class="seed-input" id="auth-name" name="displayName" type="text" placeholder="Jean Chung" required>
+                <input class="seed-input" id="auth-name" name="displayName" type="text" placeholder="Jean Chung" required autocomplete="name" enterkeyhint="next" autocapitalize="words" autocorrect="off" spellcheck="false">
               </div>
               <div class="lime-auth__field">
                 <label class="seed-label" for="auth-create-password">Password</label>
                 <div class="lime-password-field">
-                  <input class="seed-input" id="auth-create-password" name="password" type="password" placeholder="At least 8 characters" minlength="8" required>
+                  <input class="seed-input" id="auth-create-password" name="password" type="password" placeholder="At least 8 characters" minlength="8" required autocomplete="new-password" enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck="false">
                   <button type="button" class="lime-password-field__toggle" aria-label="Show password">
                     <span class="dew dew-eye-closed"></span>
                   </button>
@@ -104,6 +111,7 @@
                 <input class="seed-checkbox" type="checkbox" id="auth-terms" required>
                 <span>I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</span>
               </label>
+              <p class="lime-auth__terms-hint" id="auth-terms-hint" role="alert" hidden>Tick the box to agree, then press Create account.</p>
               <button type="submit" class="seed-button seed-button--primary seed-button--md lime-auth__submit">Create account</button>
             </form>
             <a href="#" class="lime-auth__alt" data-back-to-email>Use a different email</a>
@@ -208,6 +216,39 @@
       });
     })();
 
+    // ── LIME-79-fix5: the on-screen keyboard never hides the action ──
+    // The page follows the VISUAL viewport (what is left above the keyboard): the layout is sized to it, pinned to its top (iOS Safari
+    // scrolls the page when the keyboard opens), switched to a compact layout while the keyboard is up (the logo, headline, sub-line and legal
+    // text step aside), and the submit button of the form being typed in is scrolled into view. A keyboard is "up" when the visual viewport is
+    // much shorter than the tallest it has been (a resize, not a rotation: the baseline resets when the width changes).
+    (function () {
+      const root = document.querySelector('.lime-auth');
+      const vv = window.visualViewport;
+      if (!root) return;
+      let baseline = 0, baselineWidth = 0;
+      const height = () => (vv ? vv.height : window.innerHeight);
+      function ensureButtonVisible() {
+        const el = document.activeElement;
+        const form = el && el.closest ? el.closest('form') : null;
+        const submit = form && form.querySelector('[type="submit"]');
+        if (submit) submit.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+      }
+      function update() {
+        const w = window.innerWidth;
+        if (w !== baselineWidth) { baselineWidth = w; baseline = 0; }
+        baseline = Math.max(baseline, height(), window.innerHeight);
+        const keyboard = height() < baseline - 120;
+        root.style.setProperty('--lime-vvh', Math.round(height()) + 'px');
+        root.style.setProperty('--lime-vvtop', Math.round(vv ? vv.offsetTop : 0) + 'px');
+        root.classList.toggle('is-keyboard', keyboard);
+        if (keyboard) requestAnimationFrame(ensureButtonVisible);
+      }
+      update();
+      if (vv) { vv.addEventListener('resize', update); vv.addEventListener('scroll', update); }
+      window.addEventListener('resize', update);
+      document.addEventListener('focusin', () => { update(); setTimeout(() => { update(); ensureButtonVisible(); }, 320); });
+    })();
+
     // ── The email-first flow ──
     // LIME-48: replaces separate login.html/signup.html pages — one
     // email-first flow, decided by whether LimeAuth.accountExists(email)
@@ -261,11 +302,13 @@
             const welcomeName = profile ? firstNameOf(profile.display_name) : '';
             document.getElementById('auth-welcome-heading').textContent = welcomeName ? ('Welcome back, ' + welcomeName) : 'Welcome back';
             document.getElementById('auth-password-email').textContent = email;
+            document.getElementById('auth-password-username').value = email;
             document.getElementById('auth-password').value = '';
             showStep('password');
             document.getElementById('auth-password').focus();
           } else {
             document.getElementById('auth-create-email').textContent = email;
+            document.getElementById('auth-create-username').value = email;
             showStep('create');
             document.getElementById('auth-name').focus();
           }
@@ -303,9 +346,25 @@
         });
       });
 
+      // On the create step the keyboard's Return on the name field goes to the password (not a submit with an empty password); on the
+      // password it creates the account if the terms box is ticked, otherwise it moves to the box with a hint (and the Create account
+      // button does the same).
+      const termsBox = document.getElementById('auth-terms');
+      const termsHint = document.getElementById('auth-terms-hint');
+      document.getElementById('auth-name').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); document.getElementById('auth-create-password').focus(); }
+      });
+      termsBox.addEventListener('change', () => { if (termsBox.checked) termsHint.hidden = true; });
+
       document.getElementById('auth-create-form').addEventListener('submit', (e) => {
         e.preventDefault();
         clearError();
+        if (!termsBox.checked) {
+          termsHint.hidden = false;
+          termsBox.focus();
+          return;
+        }
+        termsHint.hidden = true;
         const displayName = document.getElementById('auth-name').value;
         const password = document.getElementById('auth-create-password').value;
         LimeAuth.signUp({ email: currentEmail, password, displayName }).then(() => {
