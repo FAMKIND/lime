@@ -978,7 +978,7 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   // input/submit inside this same toolbar need to receive focus normally.
   if (toolbar) {
     toolbar.addEventListener('mousedown', (e) => {
-      if (e.target.closest('[data-cmd]')) e.preventDefault();
+      if (e.target.closest('[data-cmd], .lime-composer__tool--aa')) e.preventDefault();
     });
     toolbar.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-cmd]');
@@ -1089,17 +1089,19 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     });
   }
 
+  // LIME-79-fix4: the chat's composer and the thread's reply composer are one design on a phone.
+  const isPhoneComposer = rootEl.id === 'composer' || rootEl.id === 'replies-composer';
   // LIME-79: on a phone the composer is one line until the text field itself is focused (not merely because the keyboard or another
   // button in it took focus), grows then, and folds back when it is empty (no text, no attachments) and focus leaves. Desktop keeps
   // its own rule: focus anywhere inside expands, and it folds back when empty.
   rootEl.addEventListener('focusin', (e) => {
-    if (isPhone() && rootEl.id === 'composer' && e.target !== input) return;
+    if (isPhone() && isPhoneComposer && e.target !== input) return;
     rootEl.classList.add('is-expanded');
   });
   rootEl.addEventListener('focusout', (e) => {
     if (rootEl.contains(e.relatedTarget)) return;
     if (!isEmpty()) return;
-    if (isPhone() && rootEl.id === 'composer' && pendingAttachments.length > 0) return;
+    if (isPhone() && isPhoneComposer && pendingAttachments.length > 0) return;
     rootEl.classList.remove('is-expanded');
   });
 
@@ -4886,6 +4888,9 @@ wireDropdownToggle('user-btn', 'user-dropdown', { fixed: true });
 // real formatting behavior wired regardless of width, so this dropdown
 // doesn't need to either.
 wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropdown', { fixed: true });
+// LIME-79-fix4: the phone composers' "Aa" formatting menu (glass), one per composer.
+wireDropdownToggle('composer-aa-btn', 'composer-format-menu', { fixed: true });
+wireDropdownToggle('replies-composer-aa-btn', 'replies-composer-format-menu', { fixed: true });
 // LIME-55: the split Add button's own ⌄ menu (New message, New jam —
 // Soon). "+ Add" itself needs no wiring here — it's just another
 // [data-open-picker] trigger, the same delegated listener LIME-29's own

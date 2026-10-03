@@ -3503,3 +3503,25 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - `mobile` suite 335 checks (was 302): alignment (yours, others', the thread's), receipts (no words, two ticks, the popover), the add-reaction menu (anchored, no strip, "+" grid), the big group's header, the icon set, the muted icon, the thread screen (bubbles, alignment, no "Reply in thread"), plus all the earlier ones.
 - Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa3/`: chat (light, dark), the header, the add-reaction menu, the receipt popover, the thread screen, Members.
 - All suites pass on `LIME_TEST_SERVER=dev` and `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev`: smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51, mobile 335, safari skipped.
+
+## LIME-79-fix4
+
+**Goal:** one composer for the chat and the thread reply on phones, brighter, with "Aa" formatting and a round send button.
+
+**What landed**
+1. **One composer component:** the thread's reply composer (`#replies-composer`) now has exactly the chat composer's phone design and behaviour: collapsed pill, expanded when its text field is focused, folds back when empty, send disabled until there is text, Return sends. It is done by giving every phone composer rule both ids (`:is(#composer, #replies-composer)`), by bringing the reply composer's markup to parity (the emoji button and "Aa"), and by `createComposer` treating both as phone composers. The old B I U S, the "..." menu and the "Secure & encrypted" row no longer show on a phone in either. The reply composer sits in the panel's flow, so it gets margins instead of fixed offsets.
+2. **Brighter:** the surface is `--soil-bg-elevated` (near off-white) with a 1px subtle outline. **Luminance of the pill against the canvas** (measured, light tones and dark): warm 0.98 vs 0.94, blue tint 0.97 vs 0.90, lemon 0.96 vs 0.89, lilac 0.95 vs 0.85, sage 0.91 vs 0.73, dark 0.06 vs 0.01. **Pure white canvas: 1.00 vs 1.00**: the pill cannot be brighter than white, so there it relies on its outline and shadow.
+3. **Expanded toolbar:** left: "+", emoji, **"Aa"**; right: mic, send (in that order; the suite checks the x positions in both composers).
+4. **"Aa" opens a glass formatting menu in context:** Bold, Italic, Underline, Strikethrough, Bulleted list, Numbered list, Quote, Code, Link (the shared `.lime-menu` glass look: 44px rows, 17px text, 22px radius), opening above the button. Its items are the ordinary `[data-cmd]` tools, so they use the shared formatting code (Bold on a selection works, tested); focus and the selection stay in the field, and formats that are on show a check. **The web cannot open the iOS system formatting menu, so this is Lime's own glass menu in the native style.**
+5. **Send:** a **perfect circle, 40 x 40, radius 50%**, the arrow about **20px** (the same standard inline size as the other toolbar icons; measured 19.8), with the three states from fix (disabled, pale-lime enabled, the darker lime pressed). Same in the thread composer.
+6. **Desktop:** unchanged. The only desktop-side change is markup (the new hidden "Aa" button and menu, the emoji button in the reply composer, hidden on desktop). Pixel comparison against the committed tree at 1280x800 and 1024x768, for the chat, the chat composer focused and the thread composer focused: **0 differing pixels in all six**.
+
+**Choices and notes**
+- The thread composer's placeholder is "Reply..." (the chat's is "Send message..."); everything else is identical.
+- The "+" attach button and the mic are the existing ones; the mic is the single coming-soon button from fix.
+- Safari not run; no real-phone test.
+
+**Verification**
+- `mobile` suite 359 checks (was 335): the thread composer collapsed and expanded (same pill, order of controls, no B I U, no "...", no privacy row), the chat composer's order, brightness in six tones and dark, the Aa menu (items, glass, 44px / 17px rows, inside the screen, focus kept), Bold applied from it, the send circle and arrow size, and sending a reply from the thread composer.
+- Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa4/`: the chat composer collapsed, expanded, with the Aa menu; the thread composer collapsed, expanded, with the Aa menu, and in dark.
+- All suites pass on `LIME_TEST_SERVER=dev` and `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev`: smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51, mobile 359, safari skipped.

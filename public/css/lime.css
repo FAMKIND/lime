@@ -7990,7 +7990,7 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   }
 
   /* ── the composer: one pill, grown on focus ── */
-  #composer.lime-composer {
+  :is(#composer.lime-composer, #replies-composer) {
     left: 10px;
     right: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom));
@@ -8007,26 +8007,26 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     background: var(--soil-bg-surface);
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.1);
   }
-  #composer.lime-composer.is-expanded {
+  :is(#composer.lime-composer, #replies-composer).is-expanded {
     border-radius: 22px;
     padding: 8px 8px 6px;
     row-gap: 4px;
   }
   /* the box, the row and the actions add no boxes: their children are placed on the pill's own grid */
-  #composer .lime-composer__box,
-  #composer .lime-composer__row,
-  #composer .lime-composer__actions {
+  :is(#composer, #replies-composer) .lime-composer__box,
+  :is(#composer, #replies-composer) .lime-composer__row,
+  :is(#composer, #replies-composer) .lime-composer__actions {
     display: contents;
   }
-  #composer .lime-composer__attachments {
+  :is(#composer, #replies-composer) .lime-composer__attachments {
     grid-column: 1 / -1;
     grid-row: 1;
   }
-  #composer .lime-composer__attachments-error {
+  :is(#composer, #replies-composer) .lime-composer__attachments-error {
     grid-column: 1 / -1;
     grid-row: 2;
   }
-  #composer [data-attach-btn] {
+  :is(#composer, #replies-composer) [data-attach-btn] {
     grid-column: 1;
     grid-row: 3;
     width: 36px;
@@ -8034,7 +8034,7 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     font-size: 22px;
     color: var(--soil-text);
   }
-  #composer div.lime-composer__input {
+  :is(#composer, #replies-composer) div.lime-composer__input {
     grid-column: 2;
     grid-row: 3;
     font-size: 16px; /* 16px stops iOS zooming the page when the field is focused */
@@ -8046,22 +8046,22 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     margin: 5px 0;
     box-sizing: content-box;
   }
-  #composer div.lime-composer__input:empty::before {
+  :is(#composer, #replies-composer) div.lime-composer__input:empty::before {
     content: 'Send message\2026';
   }
-  #composer .lime-composer__voice-dropdown {
+  :is(#composer, #replies-composer) .lime-composer__voice-dropdown {
     grid-column: 3;
     grid-row: 3;
   }
-  #composer .lime-composer__privacy,
-  #composer .lime-composer__toolbar {
+  :is(#composer, #replies-composer) .lime-composer__privacy,
+  :is(#composer, #replies-composer) .lime-composer__toolbar {
     display: none;
   }
-  #composer .lime-composer__return {
+  :is(#composer, #replies-composer) .lime-composer__return {
     display: none;
   }
   /* expanded: the text area on top, a toolbar row under it: +, emoji, B, I, U, ..., mic, send */
-  #composer.is-expanded div.lime-composer__input {
+  :is(#composer, #replies-composer).is-expanded div.lime-composer__input {
     grid-column: 1 / -1;
     grid-row: 3;
     height: auto;
@@ -8070,13 +8070,13 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     padding: 6px 8px;
     margin: 0;
   }
-  #composer.is-expanded [data-attach-btn] {
+  :is(#composer, #replies-composer).is-expanded [data-attach-btn] {
     grid-row: 4;
   }
-  #composer.is-expanded .lime-composer__voice-dropdown {
+  :is(#composer, #replies-composer).is-expanded .lime-composer__voice-dropdown {
     grid-row: 4;
   }
-  #composer.is-expanded .lime-composer__toolbar {
+  :is(#composer, #replies-composer).is-expanded .lime-composer__toolbar {
     display: flex;
     grid-column: 2;
     grid-row: 4;
@@ -8085,7 +8085,7 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     gap: 0;
     min-width: 0;
   }
-  #composer.is-expanded .lime-composer__return {
+  :is(#composer, #replies-composer).is-expanded .lime-composer__return {
     display: flex;
     position: static;
     grid-column: 4;
@@ -8095,31 +8095,31 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     border-radius: 18px;
     font-size: 20px;
   }
-  #composer .lime-composer__return[aria-disabled="true"] {
+  :is(#composer, #replies-composer) .lime-composer__return[aria-disabled="true"] {
     opacity: 0.4;
     pointer-events: none;
   }
   /* the phone toolbar: emoji, B, I, U, and the "..." menu that holds the rest (strikethrough included) */
-  #composer .lime-composer__toolbar .lime-composer__tool--overflow,
-  #composer .lime-composer__toolbar > [data-cmd="strikethrough"],
-  #composer .lime-composer__toolbar > .lime-composer__divider {
+  :is(#composer, #replies-composer) .lime-composer__toolbar .lime-composer__tool--overflow,
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="strikethrough"],
+  :is(#composer, #replies-composer) .lime-composer__toolbar > .lime-composer__divider {
     display: none;
   }
-  #composer .lime-composer__toolbar .lime-composer__overflow {
+  :is(#composer, #replies-composer) .lime-composer__toolbar .lime-composer__overflow {
     display: inline-flex;
   }
-  #composer .lime-composer__tool--emoji {
+  :is(#composer, #replies-composer) .lime-composer__tool--emoji {
     display: inline-flex;
     font-size: 20px;
   }
   .lime-composer__menu-s {
     display: flex;
   }
-  #composer .lime-composer__tool {
+  :is(#composer, #replies-composer) .lime-composer__tool {
     width: 36px;
     height: 36px;
   }
-  #composer .lime-composer__aux {
+  :is(#composer, #replies-composer) .lime-composer__aux {
     width: 36px;
     height: 36px;
   }
@@ -8257,9 +8257,9 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   }
   .lime-foot-btn .m-icon,
   .m-search .dew,
-  #composer [data-attach-btn] .dew,
-  #composer .lime-composer__tool--emoji .m-icon,
-  #composer .lime-voice-split__mic .dew {
+  :is(#composer, #replies-composer) [data-attach-btn] .dew,
+  :is(#composer, #replies-composer) .lime-composer__tool--emoji .m-icon,
+  :is(#composer, #replies-composer) .lime-voice-split__mic .dew {
     font-size: calc(20px / (var(--ink, 0.75) * var(--box, 1.5)));
   }
   /* the pin beside a chat's name: 17px tall (the name is 16px), where it was 11px */
@@ -8673,22 +8673,22 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   }
 
   /* ── the composer: the single mic, the return icon, a clear return button in every state ── */
-  #composer [data-attach-btn] {
+  :is(#composer, #replies-composer) [data-attach-btn] {
     width: 40px;
     height: 40px;
   }
-  #composer .lime-voice-split,
-  #composer .lime-voice-split__mic {
+  :is(#composer, #replies-composer) .lime-voice-split,
+  :is(#composer, #replies-composer) .lime-voice-split__mic {
     width: 40px;
     height: 40px;
     border-radius: 20px;
   }
-  #composer .lime-voice-split__mic:active {
+  :is(#composer, #replies-composer) .lime-voice-split__mic:active {
     background: var(--lime-layer-hover);
   }
   .lime-composer__return,
-  #composer .lime-composer__return,
-  #composer.is-expanded .lime-composer__return,
+  :is(#composer, #replies-composer) .lime-composer__return,
+  :is(#composer, #replies-composer).is-expanded .lime-composer__return,
   #replies-composer .lime-composer__return {
     font-size: 0;
     overflow: hidden;
@@ -8702,14 +8702,14 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     -webkit-mask: var(--m-return) center / contain no-repeat;
     mask: var(--m-return) center / contain no-repeat;
   }
-  #composer.is-expanded .lime-composer__return,
+  :is(#composer, #replies-composer).is-expanded .lime-composer__return,
   #replies-composer .lime-composer__return {
     width: 44px;
     height: 36px;
     border-radius: 18px;
   }
   /* disabled: soft grey, enabled: pale lime with ink, pressed: the darker lime step */
-  #composer .lime-composer__return[aria-disabled="true"],
+  :is(#composer, #replies-composer) .lime-composer__return[aria-disabled="true"],
   .lime-composer__return:not(.is-active) {
     opacity: 0.45;
     color: var(--soil-text-muted);
@@ -9154,5 +9154,136 @@ html {
   }
   .lime-replies-panel__list.is-bubbles {
     gap: 2px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   LIME-79-fix4: ONE COMPOSER for the chat and the thread, "Aa" formatting (phones)
+   The thread's reply composer takes the chat composer's design (the rules above now name both #composer and #replies-composer):
+   collapsed pill, expanded on focus, "+", emoji and "Aa" at the left, mic and send at the right. Desktop keeps its own composers.
+═══════════════════════════════════════════════════════ */
+
+/* "Aa" and its menu are phone-only. */
+.lime-composer__tool--aa {
+  display: none;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* the thread's composer sits in the panel's flow (not floating over a list), so it is placed with margins */
+  #replies-composer#replies-composer {
+    position: relative;
+    z-index: 3;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin: 4px 10px calc(10px + env(safe-area-inset-bottom));
+    flex-shrink: 0;
+  }
+
+  /* brighter: the elevated layer (near off-white), so the pill stands out from the canvas, with the soft outline */
+  :is(#composer.lime-composer, #replies-composer) {
+    background: var(--soil-bg-elevated);
+    border: 1px solid var(--soil-border-subtle);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+  }
+
+  /* the expanded toolbar: emoji and "Aa" next to "+", the old B I U and "..." gone (their jobs are in the "Aa" menu) */
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd],
+  :is(#composer, #replies-composer) .lime-composer__toolbar > .lime-composer__divider,
+  :is(#composer, #replies-composer) .lime-composer__toolbar .lime-composer__overflow,
+  :is(#composer, #replies-composer) .lime-composer__toolbar .lime-composer__tool--overflow,
+  :is(#composer, #replies-composer) .lime-composer__privacy {
+    display: none;
+  }
+  :is(#composer, #replies-composer) .lime-composer__tool--emoji {
+    display: inline-flex;
+    font-size: 20px;
+  }
+  :is(#composer, #replies-composer) .lime-composer__tool--aa {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 18px;
+    background: none;
+    color: var(--soil-text);
+    font: inherit;
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :is(#composer, #replies-composer) .lime-composer__tool--aa:active,
+  :is(#composer, #replies-composer) .lime-composer__tool--aa[aria-expanded="true"] {
+    background: var(--lime-layer-hover);
+  }
+  :is(#composer, #replies-composer) [data-emoji-btn] {
+    width: 40px;
+    height: 36px;
+  }
+  :is(#composer, #replies-composer) .lime-voice-split,
+  :is(#composer, #replies-composer) .lime-voice-split__mic {
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+  }
+  /* the reply composer's own row and input follow the chat's (placeholder "Reply...") */
+  #replies-composer div.lime-composer__input:empty::before {
+    content: 'Reply\2026';
+  }
+
+  /* ↵ send: a perfect circle, the arrow at the standard inline icon size (about 20px of arrow), in all three states */
+  :is(#composer, #replies-composer).is-expanded .lime-composer__return,
+  :is(#composer, #replies-composer) .lime-composer__return {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    border-radius: 50%;
+    padding: 0;
+  }
+  .lime-composer__return::before {
+    width: 26px;
+    height: 26px;
+  }
+
+  /* the formatting menu: glass (the shared .lime-menu look), with a check on the formats that are on */
+  .lime-format-menu {
+    min-width: 230px;
+  }
+  .lime-format-menu .lime-menu__item {
+    gap: 14px;
+  }
+  .lime-format-menu .lime-format-glyph {
+    flex: none;
+    width: 22px;
+    text-align: center;
+    font-size: 17px;
+    font-style: normal;
+    color: var(--soil-text);
+  }
+  .lime-format-menu .lime-format-glyph:is(i) {
+    font-style: italic;
+  }
+  .lime-format-menu .lime-menu__item i[class^="icon-"] {
+    width: 22px;
+    height: 22px;
+    flex: none;
+    font-size: 20px;
+    color: var(--soil-text);
+  }
+  .lime-format-menu .lime-menu__item[aria-pressed="true"]::after {
+    content: '\2713';
+    margin-left: auto;
+    color: var(--soil-text);
+  }
+  .lime-format-menu .lime-menu__item .dew {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    font-size: 14.6px;
   }
 }

@@ -89,6 +89,11 @@ async function runOne(check, browser, name, server, S, size) {
   const page = await openPhone(browser, server, S.mia, tag('page'), errors, size);
   await checkOrigin(page, (n, c, d) => check(tag(n), c, d), 'phone');
 
+  const comp = (root) => page.evaluate((sel) => {
+    const c = document.querySelector(sel); const r = c.getBoundingClientRect(); const vis = (q) => { const e = c.querySelector(q); if (!e) return false; const cs = getComputedStyle(e); const b = e.getBoundingClientRect(); return cs.display !== 'none' && cs.visibility !== 'hidden' && b.width > 0 && b.height > 0; };
+    const x = (q) => { const e = c.querySelector(q); return e ? Math.round(e.getBoundingClientRect().left) : null; };
+    return { display: getComputedStyle(c).display, h: Math.round(r.height), left: Math.round(r.left), right: Math.round(innerWidth - r.right), expanded: c.classList.contains('is-expanded'), placeholder: getComputedStyle(c.querySelector('.lime-composer__input'), '::before').content, shown: { emoji: vis('[data-emoji-btn]'), aa: vis('.lime-composer__tool--aa'), mic: vis('.lime-voice-split__mic'), send: vis('.lime-composer__return'), bold: vis('.lime-composer__toolbar > [data-cmd="bold"]'), overflow: vis('.lime-composer__overflow'), privacy: vis('.lime-composer__privacy') }, xs: { plus: x('[data-attach-btn]'), emoji: x('[data-emoji-btn]'), aa: x('.lime-composer__tool--aa'), mic: x('.lime-voice-split__mic'), send: x('.lime-composer__return') } };
+  }, root);
   // ── what a phone no longer shows, and what it does ──
   const gone = await Promise.all(['.seed-layout__left', '.lime-mobile-nav-toggle', '.lime-center-top', '#scope-tablist', '.lime-recent', '.lime-section', '#notif-btn'].map((s) => visible(page, s)));
   check(tag('no drawer, hamburger, breadcrumb row, tabs, Recent row, sections or bell'), gone.every((v) => !v), JSON.stringify(gone));
@@ -303,6 +308,45 @@ async function runOne(check, browser, name, server, S, size) {
   const nr = (a, b) => Math.abs(a - b) <= 6;
   check(tag('the thread screen uses the same bubbles: your parent message and your reply are green bubbles, no flat rows'), th.quoteSent && th.quoteBg === 'rgb(163, 225, 138)' && th.replyBg === 'rgb(163, 225, 138)' && !th.flat && th.foot === 'flex', JSON.stringify(th));
   check(tag('and the same alignment rules under its bubbles'), nr(th.quote.addL, th.quote.bubL) && nr(th.quote.stampR, th.quote.bubR) && nr(th.reply.addL, th.reply.bubL) && nr(th.reply.stampR, th.reply.bubR), JSON.stringify(th));
+  // ── LIME-79-fix4: the thread's composer is the chat's composer ──
+  const tc0 = await comp('#replies-composer');
+  check(tag('the thread composer is the same collapsed pill as the chat\'s (grid, one line, inside the screen, "Reply..." placeholder)'), tc0.display === 'grid' && !tc0.expanded && tc0.h <= 60 && tc0.left >= 8 && tc0.right >= 8 && /Reply/.test(tc0.placeholder) && !tc0.shown.privacy, JSON.stringify(tc0));
+  await page.click('#replies-composer-input');
+  await wait(page, () => document.getElementById('replies-composer').classList.contains('is-expanded'));
+  await sleep(200);
+  const tc1 = await comp('#replies-composer');
+  check(tag('expanded: "+", emoji, "Aa" at the left, mic and send at the right (in that order), no B I U, no "...", no "Secure & encrypted" row'), tc1.shown.emoji && tc1.shown.aa && tc1.shown.mic && tc1.shown.send && !tc1.shown.bold && !tc1.shown.overflow && !tc1.shown.privacy && tc1.xs.plus < tc1.xs.emoji && tc1.xs.emoji < tc1.xs.aa && tc1.xs.aa < tc1.xs.mic && tc1.xs.mic < tc1.xs.send, JSON.stringify(tc1));
+  const brighter = await page.evaluate(() => {
+    const lum = (css) => { const cv = document.createElement('canvas'); cv.width = cv.height = 1; const x = cv.getContext('2d'); x.fillStyle = css; x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(d[0]) + 0.7152 * f(d[1]) + 0.0722 * f(d[2]); };
+    const out = {};
+    for (const [label, tone, theme] of [['warm', 'warm', 'light'], ['blue tint', 'blue-tint', 'light'], ['pure white', 'pure-white', 'light'], ['lemon', 'lemon', 'light'], ['sage', 'sage', 'light'], ['lilac', 'lilac', 'light'], ['dark', 'warm', 'dark']]) {
+      LimeAppearance.applyCanvas(tone); LimeAppearance.applyTheme(theme);
+      const c = getComputedStyle(document.getElementById('replies-composer')); out[label] = { bg: lum(c.backgroundColor), canvas: lum(getComputedStyle(document.body).backgroundColor), border: c.borderTopWidth + ' ' + c.borderTopStyle };
+    }
+    LimeAppearance.applyCanvas('warm'); LimeAppearance.applyTheme('light');
+    return out;
+  });
+  check(tag('the composer is brighter than the canvas in every tone (and in dark), with a soft outline: ' + Object.entries(brighter).map(([k, v]) => k + ' ' + v.bg.toFixed(2) + ' vs ' + v.canvas.toFixed(2)).join(', ')), Object.values(brighter).every((v) => v.bg >= v.canvas && /^1px solid/.test(v.border)) && brighter.warm.bg > brighter.warm.canvas && brighter.dark.bg > brighter.dark.canvas, JSON.stringify(brighter));
+  await page.keyboard.type('thread text here');
+  await page.click('#replies-composer-aa-btn');
+  await wait(page, () => document.getElementById('replies-composer-format-menu').classList.contains('is-open'));
+  await sleep(350);
+  const fm2 = await page.evaluate(() => { const m = document.getElementById('replies-composer-format-menu'); const cs = getComputedStyle(m); const r = m.getBoundingClientRect(); const it = m.querySelector('.lime-menu__item'); return { items: [...m.querySelectorAll('.lime-menu__item')].map((e) => e.lastChild.textContent.trim()).join(), blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), radius: parseFloat(cs.borderTopLeftRadius), rowH: it.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(it).fontSize), inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, focusKept: document.activeElement === document.getElementById('replies-composer-input') }; });
+  check(tag('"Aa" opens a glass formatting menu: ' + fm2.items), fm2.items === 'Bold,Italic,Underline,Strikethrough,Bulleted list,Numbered list,Quote,Code,Link' && fm2.blur && fm2.radius >= 20 && fm2.rowH >= 44 && fm2.fs === 17 && fm2.inside && fm2.focusKept, JSON.stringify(fm2));
+  await page.evaluate(() => { const i = document.getElementById('replies-composer-input'); i.focus(); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
+  await page.click('#replies-composer-format-menu [data-cmd="bold"]');
+  await sleep(200);
+  const bolded = await page.evaluate(() => document.getElementById('replies-composer-input').innerHTML);
+  check(tag('choosing Bold in the menu formats the selected text'), /<b>|<strong>/.test(bolded), bolded);
+  const circle = await page.evaluate(() => { const b = document.getElementById('replies-composer-send'); const r = b.getBoundingClientRect(); const cs = getComputedStyle(b); const bf = getComputedStyle(b, '::before'); return { w: r.width, h: r.height, radius: cs.borderTopLeftRadius, mask: bf.webkitMaskImage || bf.maskImage, box: parseFloat(bf.width) }; });
+  const inkSend = await page.evaluate(async (c) => new Promise((resolve) => { const img = new Image(); img.onload = () => { const S = 480; const cv = document.createElement('canvas'); cv.width = S; cv.height = S; const x = cv.getContext('2d'); x.drawImage(img, 0, 0, S, S); const d = x.getImageData(0, 0, S, S).data; let x0 = S, y0 = S, x1 = -1, y1 = -1; for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) if (d[(j * S + i) * 4 + 3] > 40) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; } resolve(Math.max(x1 - x0 + 1, y1 - y0 + 1) / S * c.box); }; img.src = c.mask.replace(/^url\("?|"?\)$/g, '').replace(/currentColor/g, 'black'); }), circle);
+  check(tag('the send button is a perfect circle (' + circle.w + 'x' + circle.h + ', radius ' + circle.radius + ') and its arrow is about 20px (' + Math.round(inkSend * 10) / 10 + ')'), Math.abs(circle.w - circle.h) < 0.5 && circle.w >= 40 && circle.radius === '50%' && Math.abs(inkSend - 20) <= 1.5, JSON.stringify([circle, inkSend]));
+  const nBefore = await page.evaluate(() => document.querySelectorAll('#replies-list .lime-message').length);
+  await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click());
+  await page.click('#replies-composer-send');
+  await wait(page, (n) => document.querySelectorAll('#replies-list .lime-message').length === n + 1, nBefore);
+  check(tag('sending from the thread composer adds the reply as a bubble'), true);
+  await page.evaluate(() => document.getElementById('replies-composer-input').blur()); await sleep(250);
   await page.evaluate(() => window.LimeHoldMenu.open(document.querySelector('#replies-list .lime-message'))); await sleep(250);
   const inThreadMenu = await page.evaluate(() => [...document.querySelectorAll('.m-msg-menu .m-glass-menu__item')].map((e) => e.textContent.trim()).join());
   check(tag('the hold menu in a thread has no "Reply in thread" (you are in it): ' + inThreadMenu), inThreadMenu === 'Copy text', inThreadMenu);
@@ -464,6 +508,8 @@ async function runOne(check, browser, name, server, S, size) {
   const rd = await retState();
   check(tag('the return icon is a real icon now (a mask, no stray "↵" text) and, with no text yet, is disabled: faded, no fill'), rd.fs === '0px' && /svg/.test(rd.mask || '') && rd.opacity < 0.6 && rd.bg === 'rgba(0, 0, 0, 0)' && rd.ariaDisabled === 'true' && rd.w >= 40, JSON.stringify(rd));
   await page.keyboard.type('Hello from the phone');
+  const cc = await comp('#composer');
+  check(tag('the chat composer expanded: "+", emoji, "Aa" at the left, mic and send at the right, no B I U or "..."'), cc.shown.emoji && cc.shown.aa && cc.shown.mic && cc.shown.send && !cc.shown.bold && !cc.shown.overflow && cc.xs.plus < cc.xs.emoji && cc.xs.emoji < cc.xs.aa && cc.xs.aa < cc.xs.mic && cc.xs.mic < cc.xs.send, JSON.stringify(cc));
   const p2 = await pill();
   check(tag('typing wakes Send up (pale lime, enabled)'), p2.active && p2.disabled === 'false', JSON.stringify(p2));
   const re = await retState();

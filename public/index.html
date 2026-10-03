@@ -552,6 +552,20 @@
                   <div class="lime-composer__toolbar">
                     <!-- LIME-79: phones only (hidden on desktop): an emoji button at the left of the toolbar -->
                     <button type="button" class="lime-composer__tool lime-composer__tool--emoji" data-emoji-btn title="Add emoji" aria-label="Add emoji"><span class="m-icon m-icon--smile" aria-hidden="true"></span></button>
+                    <!-- LIME-79-fix4: phones only. "Aa" opens a glass formatting menu in context (Lime's own, in the native style: the web cannot open the iOS system
+                         formatting menu). It replaces B I U and the "..." menu on a phone. Its items are ordinary [data-cmd] tools, so the shared composer handles them. -->
+                    <button type="button" class="lime-composer__tool lime-composer__tool--aa" id="composer-aa-btn" aria-haspopup="menu" aria-expanded="false" title="Formatting" aria-label="Formatting">Aa</button>
+                    <div class="lime-menu lime-format-menu" id="composer-format-menu" role="menu" aria-label="Formatting">
+                      <button type="button" class="lime-menu__item" data-cmd="bold"><b class="lime-format-glyph">B</b>Bold</button>
+                      <button type="button" class="lime-menu__item" data-cmd="italic"><i class="lime-format-glyph">I</i>Italic</button>
+                      <button type="button" class="lime-menu__item" data-cmd="underline"><u class="lime-format-glyph">U</u>Underline</button>
+                      <button type="button" class="lime-menu__item" data-cmd="strikethrough"><s class="lime-format-glyph">S</s>Strikethrough</button>
+                      <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
+                      <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
+                      <button type="button" class="lime-menu__item" data-cmd="quote"><i class="icon-text-quote"></i>Quote</button>
+                      <button type="button" class="lime-menu__item" data-cmd="code"><span class="dew dew-code"></span>Code</button>
+                      <button type="button" class="lime-menu__item" data-cmd="link"><span class="dew dew-link-simple"></span>Link</button>
+                    </div>
                     <button type="button" class="lime-composer__tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
                     <button type="button" class="lime-composer__tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
                     <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
@@ -691,6 +705,21 @@
               <button type="button" class="lime-composer__return" id="replies-composer-send" title="Send">&#8629;</button>
             </div>
             <div class="lime-composer__toolbar">
+              <button type="button" class="lime-composer__tool lime-composer__tool--emoji" data-emoji-btn title="Add emoji" aria-label="Add emoji"><span class="m-icon m-icon--smile" aria-hidden="true"></span></button>
+              <!-- LIME-79-fix4: phones only. "Aa" opens a glass formatting menu in context (Lime's own, in the native style: the web cannot open the iOS system
+                   formatting menu). It replaces B I U and the "..." menu on a phone. Its items are ordinary [data-cmd] tools, so the shared composer handles them. -->
+              <button type="button" class="lime-composer__tool lime-composer__tool--aa" id="replies-composer-aa-btn" aria-haspopup="menu" aria-expanded="false" title="Formatting" aria-label="Formatting">Aa</button>
+              <div class="lime-menu lime-format-menu" id="replies-composer-format-menu" role="menu" aria-label="Formatting">
+                <button type="button" class="lime-menu__item" data-cmd="bold"><b class="lime-format-glyph">B</b>Bold</button>
+                <button type="button" class="lime-menu__item" data-cmd="italic"><i class="lime-format-glyph">I</i>Italic</button>
+                <button type="button" class="lime-menu__item" data-cmd="underline"><u class="lime-format-glyph">U</u>Underline</button>
+                <button type="button" class="lime-menu__item" data-cmd="strikethrough"><s class="lime-format-glyph">S</s>Strikethrough</button>
+                <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
+                <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
+                <button type="button" class="lime-menu__item" data-cmd="quote"><i class="icon-text-quote"></i>Quote</button>
+                <button type="button" class="lime-menu__item" data-cmd="code"><span class="dew dew-code"></span>Code</button>
+                <button type="button" class="lime-menu__item" data-cmd="link"><span class="dew dew-link-simple"></span>Link</button>
+              </div>
               <button type="button" class="lime-composer__tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
               <button type="button" class="lime-composer__tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
               <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
