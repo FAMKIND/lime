@@ -353,6 +353,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
     - clean up with `pkill -f -- '--headless=new'` if a run is killed. **Never `pkill -f "Google Chrome"`**, which quits the user's real Chrome windows (tend did this during LIME-31-fix).
     - The user's rule is "preview to the user in Firefox only". Headless Chrome as an internal measuring tool is allowed and isn't the cause of the hangs.
   - Never wait on a monitor for more than ~2 minutes.
+- **"Visible" means hit-testable** (LIME-79-fix): a menu that opened as a 0×0 box passed LIME-78's "inside the screen" check. UI tests must assert a non-zero rect **and** that `document.elementFromPoint` at its centre lands inside the element.
 - **Avoid multi-layer `mask-composite`** (LIME-57-fixc): it painted the notch's overflow solid in Firefox and Chrome, and the operator semantics are easy to get backwards. For a fixed-ratio cut-out, **pre-composite it inside one SVG** and use a single `mask-image`.
 - **Screenshot artefact (LIME-57-fixb):** a Playwright screenshot clipped tightly to one element can render masks as if uncut in Firefox. Confirm mask work with a full-page (or padded) screenshot before chasing a "browser bug".
 - **CSS masks clip every descendant** (LIME-57): a masked wrapper hides child badges and dots, and box-shadows on masked elements vanish. Any mask brief must verify that no indicator sits inside a masked **ancestor**, with element screenshots of each indicator.
@@ -422,6 +423,100 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 > - desktop (≥ 768px) must look **unchanged**: compare screenshots;
 > - **no personal data** in any committed file;
 > - commit, push, and stop at each gate.
+
+> **Shared context for LIME-79-fix2 to fix5 (the user's iPhone QA, 2026-10-03, 15 screenshots).** The same standing rules as LIME-78 to 81:
+> - 390×844 and 360×780;
+> - tests on localhost and LAN;
+> - the real Firefox and Chrome, plus Safari if enabled;
+> - desktop unchanged unless stated;
+> - push, then stop at the end for review.
+>
+> **The user's design references are their Penpot screens** (Messages list, chat, the "⋯" menu, the expanded composer, recorded in the shared context above LIME-78). Where this list says "as designed", follow those. **Times:** no leading zero ("7:32 am"; the user didn't object when shown it).
+
+### LIME-79-fix2 → `tend` (next): the Messages screen and shell polish, a new avatar palette, badges, landscape
+1. **Background under the iPhone status bar:** the app's canvas must extend under the time, signal and battery area and behind Safari's bars (no white band at the top). Use `viewport-fit=cover`, `<meta name="theme-color">` matching the canvas (light and dark, updated when the tone or theme changes), the canvas on `html`/`body`, and safe-area padding (`env(safe-area-inset-*)`).
+2. **Search field:** soften its outline (focus included; use the subtle neutral border, no heavy dark ring).
+3. **The filter button's hover and press use warm neutrals** (the same tokens as the desktop nav and menu hovers), **not** the primary green.
+4. **A new avatar palette, replacing LIME-79-fix's tints:**
+   - **no brand greens** (no lime or dark green, so avatars never compete with the brand or the primary actions);
+   - **no warm neutrals** (e.g. the grey "AD" avatar);
+   - **soft pastels in hues complementary to the brand greens:** rose, coral/peach, apricot, butter, sky, periwinkle, lilac, and a cool aqua-blue (not mint);
+   - 8 hues, distinct (OKLab ΔE ≥ 6 between every pair), ink initials ≥ 4.5:1, dark-mode variants;
+   - **the account (dock) avatar follows the same palette** (or the photo), never brand green.
+   - Report the table.
+5. **Pressed and selected list rows have rounded corners** and an inset from the screen edges (as in the user's original screens), not an edge-to-edge band.
+6. **Group avatar stacks: every stacked avatar gets the same ring** in the background colour (the 4-avatar stack currently shows darker outlines than the 2- and 3-avatar stacks). Use one token.
+7. **Badges, one style:** the dock's link badge and each row's unread badge match: **lime green fill (`--seed-lime-300`) with ink numbers**, the same size, radius and font, and no outline. Report the sizes.
+8. **The dock's native press effect:** pressing and holding on the dock shows a **liquid-glass highlight** (a translucent, slightly magnified pill) under the finger that **follows horizontally while held** and snaps to the item on release, like the iOS tab bar. Reduced motion: a simple highlight.
+9. **Landscape on phones = the phone layout, not desktop:** use the mobile layout when `(max-width: 767px)` **or** `(pointer: coarse) and (max-height: 500px)`, so a phone turned sideways shows a responsive version of the vertical design (the list and chat full-width, the dock, safe areas). Tablets and desktop are unchanged. Screenshot it at 844×390.
+
+**Gate:** no white band at the top; a soft search field; the filter hover is warm grey; avatars come in soft non-green colours; pressed rows have rounded corners; group stacks look even; badges match; the dock has a glassy press; turning the phone sideways keeps the phone layout.
+
+**Record:** add a `## LIME-79-fix2` entry to `TEND.md`. Commit: `fix(mobile): status-bar canvas, palette, rows, badges, dock press, landscape`, trailer `Brief: LIME-79-fix2`, plus the attribution trailer. Push.
+
+### LIME-79-fix3 → `tend` (after fix2): the chat view: header, reactions, receipts, alignment
+1. **The header for large groups:** show **at most 2 avatars plus a count** ("+11"), and **truncate the names**, so the avatar stack, names and icons fit **on one line**, as in the user's screen. **No cramming.**
+2. **Header icons:** search, phone and "⋯" use **the same stroke weight, height and width** (draw them in one icon set at one size; measure them).
+3. **Header fade:** the chat header, the **thread header** and the **details header** use the **same fade effect as the Messages screen** (content fades under a glass bar), **not** a hard horizontal line with blur.
+4. **Under each bubble, as designed:**
+   - **reaction chips plus the add-reaction button aligned to the bubble's left edge**;
+   - **the time plus ticks aligned to the bubble's right edge**;
+   - **the reply summary aligned to the bubble's left edge**;
+   - for others' messages, the same rule relative to their bubble.
+   - Compare against the Penpot screens and report the alignments.
+5. **The add-reaction button is subtler:** a lighter, muted icon (secondary text colour), the inline 20px size.
+6. **Reaction chips:** a lighter background and outline, so the emoji stands out (a faint fill, a hairline or no border). Your own reaction is marked subtly.
+7. **The add-reaction button opens the same glass reactions menu as press-and-hold** (the user loves that one), **anchored to the button**. Remove the detached floating emoji strip that can appear away from the button.
+8. **Receipts:**
+   - **remove the words** "Sent … · delivered …";
+   - show **only the time plus ticks** (✓ or ✓✓);
+   - **tapping the ticks or time opens a small glass popover:** Sent 2:07 pm · Delivered 2:22 pm · Read 2:30 pm (read details arrive with LIME-81; until then show sent and delivered).
+9. **The thread screen** uses the same bubble, reaction and alignment rules as the chat screen.
+
+**Gate:** big groups fit on one line at the top; the three header icons match; headers fade like the Messages screen; under each bubble, things sit where your design puts them; the smiley is subtle and opens the same reactions menu right beside it; tap a time to see sent and delivered.
+
+**Record:** add a `## LIME-79-fix3` entry to `TEND.md`. Commit: `fix(mobile): chat header, reactions, receipts popover, alignment`, trailer `Brief: LIME-79-fix3`, plus the attribution trailer. Push.
+
+### LIME-79-fix4 → `tend` (after fix3): one composer for the chat and thread, "Aa" formatting
+1. **One composer component** for the main chat **and** the thread reply (today the thread's is the older design, with B I U S ⋯ and the "Secure & encrypted" row). Identical look and behaviour: collapsed pill → expanded on focus; ↵ disabled until text.
+2. **Brighter:** the composer surface is **near off-white** (e.g. the elevated layer), so it stands out from the canvas, with the soft outline. Check it in every tone and in dark.
+3. **The expanded toolbar:** **left: "+", emoji, "Aa"**; **right: mic, ↵**.
+   - **"Aa" opens a glass formatting menu** in context (Bold, Italic, Underline, Strikethrough, Bulleted list, Numbered list, Quote, Code, Link). This replaces B I U and "⋯".
+   - The web can't open the iOS system formatting menu, so this is Lime's glass menu in the native style; note it.
+4. **↵ send:** a **perfect circle**, the glyph at the **standard inline icon size** (matching the other toolbar icons), and the states disabled, enabled (pale lime) and pressed. Measure it.
+5. **Desktop:** leave the desktop composer as it is, unless sharing the component forces changes. Report any.
+
+**Gate:** the chat box and the reply box are the same: brighter, with "+", emoji and "Aa" on the left and mic and send on the right. "Aa" opens the formatting options, and the send circle is round.
+
+**Record:** add a `## LIME-79-fix4` entry to `TEND.md`. Commit: `fix(mobile): unified composer, Aa formatting menu, round send`, trailer `Brief: LIME-79-fix4`, plus the attribution trailer. Push.
+
+### LIME-79-fix5 → `tend` (after fix4): signing in on a phone with the keyboard open
+1. **The keyboard never hides the action:** on the email step and the password and create steps, the **Continue / Sign in / Create account** button stays visible above the keyboard. Use the `visualViewport` resize, scroll it into view, and a layout that fits the reduced height.
+2. **The keyboard's Return says and does the next thing:**
+   - the email field gets `enterkeyhint="next"` (Return = Continue);
+   - the password field gets `enterkeyhint="go"` (Return = Sign in);
+   - on create, the name field gets `next` to the password, and the password gets `done`/`go` (Return = Create account, if the terms box is ticked; otherwise it focuses the checkbox with a hint);
+   - correct `autocomplete` (`email`, `current-password`, `new-password`, `name`) so iOS offers saved passwords.
+
+**Gate:** on your phone, type your email and press the keyboard's button: you move to the password, and the Sign in button is visible the whole time.
+
+**Record:** add a `## LIME-79-fix5` entry to `TEND.md`. Commit: `fix(mobile): auth with the keyboard open; Return goes to the next step`, trailer `Brief: LIME-79-fix5`, plus the attribution trailer. Push. **Stop for the user's review of fix2 to fix5.**
+
+---
+
+### LIME-79-fix landed as `9b69bf4` (pushed, 2026-10-03); the user's iPhone review is pending
+- **All 14 items are done;** 262 mobile checks. Tend also fixed:
+  - the chat "⋯" menu, invisible on phones since LIME-78 (it opened as a 0×0 box);
+  - a stray 16px left gap;
+  - presence updates blanking the open chat's header;
+  - the thread back arrow.
+- **Presence is live** (~0.6s), and live presence overrides the seed's static status with the API on.
+- Icons: 24px in ≥ 44px targets; inline 20px; the pin is 17px. Eight tints (ΔE ≥ 6.26 light, 5.95 dark).
+- **Not tested on a real iPhone or in Safari.** The user's iPhone check is the real test.
+- **Tend's questions, with plot's leans sent:**
+  - (1) Profile's "‹" goes to the Settings list (which keeps Login & security and Preferences reachable): **keep.**
+  - (2) The New message picker on phones: **make it a full pushed "New message" screen** (the native pattern, like WhatsApp's new chat), not a glass menu or a centred dialog. A small follow-up if the user agrees.
+- **Lesson:** LIME-78's test passed a 0×0 menu as "on screen". Visibility checks must assert a **non-zero size and `elementFromPoint` hitting the element**, not just bounds (added to Patterns learned).
 
 ### LIME-79-fix → `tend` (next): the mobile QA round on LIME-78 and 79 (the user reviews before LIME-80)
 
