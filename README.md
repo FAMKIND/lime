@@ -83,13 +83,19 @@ Suites: **e2e-server** (three people in Firefox, a second Firefox started with `
 
 - **The phone chat (LIME-79):** others' messages sit on the left (avatar and name on the first message of a run) in the neutral
   bubble; your own sit on the right in light green (`--seed-lime-300`, the user's choice) with ink text and no avatar. Under each
-  bubble: reaction chips, add-reaction and reply buttons, and the time (lowercase on phones: "7:32 am") with a receipt slot. The
+  bubble: reaction chips, an add-reaction button, and the time (lowercase on phones: "7:32 am") with a receipt slot; **press and
+  hold** a message (~400ms) for a glass menu with six quick reactions, Reply in thread and Copy text. The
   composer is one pill until its text field is focused, then grows into a text area above a toolbar; **on phones the keyboard's
   Return key sends** (`enterkeyhint="send"`, the common messaging pattern), so there is no newline from the keyboard (lists and code
   still use it, and Shift+Enter always adds one).
-- **Default avatars use four brand tints** (light green, pale lime, warm grey, a soft ink tint), picked deterministically by name,
-  at every width (replacing the 12 pastels).
+- **Default avatars use eight soft tints** (Seed lime / meadow / warm soil steps and 50/50 mixes of them, at least 6 apart in
+  OKLab in light and about 6 in dark), picked deterministically by name, at every width (replacing the 12 pastels).
+- **Glass (LIME-79-fix):** on phones the dock, the chat header and every menu are translucent with a backdrop blur (iOS-style),
+  with a solid fallback where `backdrop-filter` is missing. The Messages header is a fixed bar; search and the filter scroll with the
+  list and fade under it. The chat header is an iOS-style navigation bar ("‹ 13", the avatars and title centred); tapping it opens
+  Members (a DM shows both people). The microphone is one button (no device list): it says voice messages are coming soon.
 
 ## Open
 
+- [ ] Voice messages: the microphone button only shows "coming soon" today. The real feature records with a live sound-wave view.
 - [ ] Icon gaps in dew (send, mic, paperclip)

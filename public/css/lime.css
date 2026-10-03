@@ -396,33 +396,46 @@ html[data-pattern-treatment="photo"] body::before {
   color: var(--seed-soil-900);
 }
 
-/* LIME-79: four brand tints replace the old 12 pastels, picked by name (hashName in app.js, deterministic): light green (--seed-lime-300),
-   pale lime (--seed-lime-100), warm grey (the canvas ladder) and a soft ink tint for variety. The fixed near-black ink above clears
-   9.4:1 or better on every one of them in both themes (the table is in TEND.md, LIME-79). Dark variants follow the rule the old palette
-   used: -15 saturation (floored at 20) and -10 lightness (floored at 55) from the light tint, so the same ink keeps working. */
+/* LIME-79-fix: eight soft tints (LIME-79 had four, and too many people looked alike), picked by name (hashName in app.js,
+   deterministic). Each is a Seed step or a 50/50 mix (OKLab) of two steps, lime / meadow / warm soil only, chosen by a search for the
+   largest minimum OKLab distance: every pair is >= 6.26 apart in light and >= 5.95 in dark (the table is in TEND.md). The fixed
+   near-black ink above clears 7.5:1 or better on all of them in both themes. Dark variants: -15 saturation (floored at 20) and -10
+   lightness (floored at 55) from the light tint, the rule the old palette used. */
 :root {
   /* A raw brand-ramp step, not a canvas-tied colour, so it is not part of the per-theme split below. */
   --lime-badge-light: var(--seed-lime-100);
 }
 
 [data-theme="light"] {
-  --lime-avatar-green: #A3E18A;
-  --lime-avatar-pale:  #E4F9BE;
-  --lime-avatar-warm:  #F0EEE6;
-  --lime-avatar-ink:   #D9DCD3;
+  --lime-avatar-0: #9FD3A3; /* lime-400 + soil-150 */
+  --lime-avatar-1: #E4F9BE; /* lime-100 */
+  --lime-avatar-2: #D8D3C8; /* soil-200 */
+  --lime-avatar-3: #A4F4CF; /* lime-45 */
+  --lime-avatar-4: #C0BAB0; /* soil-300 */
+  --lime-avatar-5: #B5E992; /* lime-200 + meadow-500 */
+  --lime-avatar-6: #80D47D; /* lime-400 + meadow-500 */
+  --lime-avatar-7: #D8ECDD; /* lime-40 + soil-150 */
 }
 
 [data-theme="dark"] {
-  --lime-avatar-green: #89C870;
-  --lime-avatar-pale:  #CEEC98;
-  --lime-avatar-warm:  #DBD7C8;
-  --lime-avatar-ink:   #C2CBB1;
+  --lime-avatar-0: #8AB58E;
+  --lime-avatar-1: #CEEC98;
+  --lime-avatar-2: #C5BCA8;
+  --lime-avatar-3: #82E3B6;
+  --lime-avatar-4: #B2A38B;
+  --lime-avatar-5: #9BD375;
+  --lime-avatar-6: #6AB767;
+  --lime-avatar-7: #BED3C3;
 }
 
-.lime-avatar--p0 { background: var(--lime-avatar-green); }
-.lime-avatar--p1 { background: var(--lime-avatar-pale); }
-.lime-avatar--p2 { background: var(--lime-avatar-warm); }
-.lime-avatar--p3 { background: var(--lime-avatar-ink); }
+.lime-avatar--p0 { background: var(--lime-avatar-0); }
+.lime-avatar--p1 { background: var(--lime-avatar-1); }
+.lime-avatar--p2 { background: var(--lime-avatar-2); }
+.lime-avatar--p3 { background: var(--lime-avatar-3); }
+.lime-avatar--p4 { background: var(--lime-avatar-4); }
+.lime-avatar--p5 { background: var(--lime-avatar-5); }
+.lime-avatar--p6 { background: var(--lime-avatar-6); }
+.lime-avatar--p7 { background: var(--lime-avatar-7); }
 
 .lime-avatar img {
   border-radius: inherit;
@@ -7720,7 +7733,7 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     top: 4px;
   }
   /* the members to person back arrow replaces it while that inner step is showing */
-  #right-panel.has-inner-back #right-panel-toggle {
+  #right-panel.has-inner-back[data-panel="profile"] #right-panel-toggle {
     display: none;
   }
   .lime-profile__back[hidden] {
@@ -8137,5 +8150,672 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
   }
   .lime-emoji-pop button:active {
     background: var(--lime-layer-hover);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   LIME-79-fix: THE QA ROUND ON LIME-78 AND 79 (phones, <= 767px, unless a rule says otherwise)
+   Glass (translucent + blur) for the dock, the chat bar and every menu, in the style of iOS's own "+" menu; one icon standard;
+   a fixed Messages header; a native-style chat header; press-and-hold menu; the single mic; a fixed return icon; fades under
+   the header and composer; Settings with the same header.
+═══════════════════════════════════════════════════════ */
+
+/* Icons dew does not have (masks, so they take the text colour). */
+.m-icon--copy {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Crect x='8.75' y='8.75' width='11.25' height='11.25' rx='2.5' stroke='black' stroke-width='1.6'/%3E%3Cpath d='M15.25 8.75V6.5A2.5 2.5 0 0 0 12.75 4H6.5A2.5 2.5 0 0 0 4 6.5v6.25a2.5 2.5 0 0 0 2.5 2.5h2.25' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.m-icon--return {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M20.25 4.75v7.5a3 3 0 0 1-3 3H4.75M9.5 10.5l-4.75 4.75 4.75 4.75' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* The Messages header, the press-and-hold menu and the settings bar only exist on phones. */
+.m-messages__head,
+.lime-settings__navbar {
+  display: none;
+}
+
+/* ── the microphone is a single button now (desktop and phone): no caret, no list, no outline ring ── */
+.lime-voice-split {
+  height: 32px;
+  border: 0;
+}
+.lime-voice-split:hover,
+.lime-voice-split:focus-within {
+  border-color: transparent;
+}
+.lime-voice-split__mic {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-radius: var(--seed-radius-md);
+}
+
+/* ── glass: one look for every phone popover (the dock, the chat bar and every menu) ── */
+:root {
+  --m-glass-bg: color-mix(in oklab, var(--soil-bg-elevated) 74%, transparent);
+  --m-glass-bar: color-mix(in oklab, var(--soil-bg-canvas) 72%, transparent);
+  --m-glass-line: color-mix(in oklab, var(--soil-text) 13%, transparent);
+  --m-glass-blur: blur(28px) saturate(1.8);
+  --m-glass-shadow: 0 10px 38px rgba(0, 0, 0, 0.16), 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+}
+[data-theme="dark"] {
+  --m-glass-bg: color-mix(in oklab, var(--soil-bg-elevated) 78%, transparent);
+  --m-glass-bar: color-mix(in oklab, var(--soil-bg-canvas) 76%, transparent);
+  --m-glass-line: color-mix(in oklab, var(--soil-text) 16%, transparent);
+  --m-glass-shadow: 0 10px 38px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+/* A browser that reports backdrop-filter but does not really blur (headless Firefox, a GPU-less compositor) would show the page's
+   text sharp under a translucent menu, so the glass is kept fairly dense; and anyone who asks the system for less transparency
+   gets it solid. */
+@media (prefers-reduced-transparency: reduce) {
+  :root, [data-theme="dark"] {
+    --m-glass-bg: var(--soil-bg-elevated);
+    --m-glass-bar: var(--soil-bg-canvas);
+  }
+}
+
+@keyframes m-menu-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes m-menu-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 767px) {
+  /* ── icon standard: a ~24px visible glyph in a >= 44px target (header, dock); ~20px for inline action icons ──
+     The icons' artwork does not fill its box, so each one's measured ink fraction (--ink, the larger side over the box) sizes it:
+     font-size = glyph / (ink x box), where the box is 1.5em for dew icons and 1em for the drawn ones. Measured in TEND.md. */
+  .dew { --box: 1.5; }
+  .m-icon { --box: 1; }
+  .dew-search { --ink: 0.813; }
+  .dew-ellipsis-menu { --ink: 0.627; }
+  .dew-chevron-left { --ink: 0.687; }
+  .dew-plus { --ink: 0.688; }
+  .dew-filter-horizontal { --ink: 0.75; }
+  .dew-microphone { --ink: 0.938; }
+  .dew-chat { --ink: 0.812; }
+  .dew-pencil { --ink: 0.891; }
+  .m-icon--phone { --ink: 0.66; }
+  .m-icon--smile-plus { --ink: 0.847; }
+  .m-icon--smile { --ink: 0.795; }
+  .lime-icon-pin { --ink: 0.753; }
+  .m-icon--return { --ink: 0.76; }
+  .m-chatbar__back .dew,
+  .m-chatbar__tools .dew,
+  .m-chatbar__tools .m-icon,
+  .m-plus .dew,
+  .m-filter__btn .dew,
+  .m-dock__iconwrap .dew,
+  .m-dock__iconwrap .m-icon,
+  .lime-settings__navbar-back .dew,
+  .lime-settings__back .dew {
+    font-size: calc(24px / (var(--ink, 0.75) * var(--box, 1.5)));
+  }
+  .lime-foot-btn .m-icon,
+  .m-search .dew,
+  #composer [data-attach-btn] .dew,
+  #composer .lime-composer__tool--emoji .m-icon,
+  #composer .lime-voice-split__mic .dew {
+    font-size: calc(20px / (var(--ink, 0.75) * var(--box, 1.5)));
+  }
+  /* the pin beside a chat's name: 17px tall (the name is 16px), where it was 11px */
+  .m-list .lime-contact__pin {
+    font-size: calc(17px / var(--ink));
+  }
+
+  /* The phone grid is "0px 1fr" (the drawer column is closed for good), but Seed's 16px column gap stayed, pushing every screen 16px
+     off the left edge (so nothing was truly centred). No gap on a phone. */
+  .seed-layout {
+    column-gap: 0;
+    gap: 0;
+  }
+
+  /* ── the Messages header: a fixed bar with only the logo, "Messages" and "+"; search and filter scroll with the list ── */
+  .lime-list-col {
+    --m-head-h: calc(64px + env(safe-area-inset-top));
+  }
+  .m-messages__head {
+    display: flex;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 6;
+    height: var(--m-head-h);
+    box-sizing: border-box;
+    align-items: center;
+    gap: 10px;
+    padding: env(safe-area-inset-top) 16px 0;
+    background: none;
+  }
+  .lime-contacts {
+    padding-top: var(--m-head-h);
+  }
+  .m-messages__tools {
+    position: static;
+    background: none;
+    padding: 2px 16px 12px;
+  }
+  .m-search {
+    height: 44px;
+  }
+  .m-iconbtn,
+  .m-filter__btn {
+    width: 44px;
+    height: 44px;
+  }
+  /* The list scrolls under the header and fades out beneath it (a mask, like the fades elsewhere) once it has moved. At the very
+     bottom nothing fades: the rows pass visibly under the glass dock. */
+  #layout .lime-list-col > .lime-list-col__scroll,
+  #layout .lime-list-col.is-scrolled-bottom > .lime-list-col__scroll {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  #layout .lime-list-col.is-scrolled-top > .lime-list-col__scroll,
+  #layout .lime-list-col.is-scrolled-top.is-scrolled-bottom > .lime-list-col__scroll {
+    -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--m-head-h) - 10px), #000 calc(var(--m-head-h) + 22px));
+    mask-image: linear-gradient(to bottom, transparent calc(var(--m-head-h) - 10px), #000 calc(var(--m-head-h) + 22px));
+  }
+
+  /* ── the dock, in liquid glass: the list shows through it while it scrolls ── */
+  .m-dock {
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    border: 0.5px solid var(--m-glass-line);
+    box-shadow: var(--m-glass-shadow);
+  }
+
+  /* ── the chat header: an iOS-style navigation bar, glass, with the messages scrolling under it ── */
+  .lime-center-inner {
+    position: relative;
+  }
+  #layout[data-mobile-view="thread"] .m-chatbar {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr) 132px;
+    align-items: center;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 6;
+    height: calc(60px + env(safe-area-inset-top));
+    min-height: 0;
+    padding: env(safe-area-inset-top) 0 0;
+    gap: 0;
+    background: var(--m-glass-bar);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    border-bottom: 0.5px solid var(--m-glass-line);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #layout[data-mobile-view="thread"] .m-chatbar,
+    .m-dock {
+      background: var(--soil-bg-surface);
+    }
+  }
+  .m-chatbar__back {
+    justify-self: start;
+    min-width: 44px;
+    padding: 0 8px 0 4px;
+    gap: 0;
+    font-size: 17px;
+    font-weight: 500;
+  }
+  .m-chatbar__count {
+    min-width: 0;
+    height: auto;
+    padding: 0 0 0 1px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--soil-text);
+    font-size: 17px;
+    font-weight: 500;
+    line-height: 44px;
+    text-align: left;
+  }
+  .m-chatbar__count[hidden] {
+    display: none;
+  }
+  .m-chatbar__center {
+    min-width: 0;
+    width: 100%;
+    justify-self: stretch;
+    height: 56px;
+    border: 0;
+    padding: 0 4px;
+    background: none;
+    color: var(--soil-text);
+    font: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-chatbar__avatars {
+    display: flex;
+    height: 28px;
+    flex: none;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .m-chatbar__avatars .lime-topbar__member-count {
+    display: none;
+  }
+  .m-chatbar__avatars .seed-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 11px;
+  }
+  .m-chatbar__title {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    max-width: 100%;
+    height: auto;
+    padding: 0;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  #m-chat-title-text {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  /* the DM's live status: a filled dot when active, a ring when away (the same two looks as the status icons) */
+  .m-chatbar__dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 1.5px solid var(--soil-text-muted);
+  }
+  .m-chatbar__dot[data-presence="active"] {
+    border-color: var(--good-bg-bold-default);
+    background: var(--good-bg-bold-default);
+  }
+  .m-chatbar__dot[data-presence="busy"] {
+    border-color: var(--warning-bg-bold-default, #d98e04);
+    background: var(--warning-bg-bold-default, #d98e04);
+  }
+  .m-chatbar__name {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .m-chatbar__tools {
+    justify-self: end;
+    display: flex;
+    align-items: center;
+    padding-right: 0;
+  }
+  .m-chatbar__tools .m-iconbtn {
+    width: 44px;
+    height: 44px;
+  }
+  .m-chatbar__tools .m-iconbtn:active {
+    background: var(--lime-layer-hover);
+  }
+  .lime-messages {
+    padding-top: calc(60px + env(safe-area-inset-top) + 12px);
+  }
+  /* no fade at the top (the glass bar blurs what passes under it); at the bottom the messages fade out under the composer */
+  #layout .lime-chat-body > .lime-messages,
+  #layout .lime-chat-body.is-scrolled-top > .lime-messages,
+  #layout .lime-chat-body:not(.is-scrolled-top) > .lime-messages {
+    --m-composer-top: calc(var(--composer-clearance, 80px) - 16px + 10px + env(safe-area-inset-bottom));
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--m-composer-top) - 38px), transparent calc(100% - var(--m-composer-top) + 2px));
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--m-composer-top) - 38px), transparent calc(100% - var(--m-composer-top) + 2px));
+  }
+
+  /* ── every menu: the glass menu ── translucent and blurred (a solid fallback), a large radius and a hairline outline,
+        44px rows, large text, icons at the left, opening from its trigger with a short scale and fade ── */
+  .lime-menu,
+  .m-glass-menu {
+    box-sizing: border-box;
+    min-width: 250px;
+    max-width: calc(100vw - 24px);
+    padding: 6px;
+    border: 0.5px solid var(--m-glass-line);
+    border-radius: 22px;
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: var(--m-glass-shadow);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .lime-menu,
+    .m-glass-menu,
+    .lime-emoji-pop,
+    .lime-reaction-picker,
+    .lime-share-popover,
+    .lime-link-popover {
+      background: var(--soil-bg-elevated);
+    }
+  }
+  .lime-menu.is-open,
+  .m-glass-menu.is-open {
+    animation: m-menu-in 170ms cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lime-menu.is-open,
+    .m-glass-menu.is-open {
+      animation: m-menu-fade 120ms linear both;
+    }
+  }
+  .lime-menu .lime-menu__item,
+  .m-glass-menu__item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 14px;
+    background: none;
+    color: var(--soil-text);
+    font: inherit;
+    font-size: 17px;
+    line-height: 1.2;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lime-menu .lime-menu__item:hover {
+    background: none;
+  }
+  .lime-menu .lime-menu__item:active,
+  .lime-menu .lime-menu__item:focus-visible,
+  .m-glass-menu__item:active,
+  .m-glass-menu__item:focus-visible {
+    background: color-mix(in oklab, var(--soil-text) 9%, transparent);
+    outline: none;
+  }
+  .lime-menu .lime-menu__item .dew,
+  .lime-menu .lime-menu__item .lime-icon-pin,
+  .lime-menu .lime-menu__item .m-icon,
+  .m-glass-menu__item .dew,
+  .m-glass-menu__item .m-icon {
+    flex: none;
+    font-size: 16px;
+    color: var(--soil-text);
+  }
+  .lime-menu .lime-menu__item .lime-icon-pin,
+  .m-glass-menu__item .m-icon {
+    font-size: 22px;
+  }
+  .lime-menu .lime-menu__item--danger,
+  .lime-menu .lime-menu__item--danger .dew {
+    color: var(--danger-text-normal-default, #c0392b);
+  }
+  .lime-menu .lime-menu__kbd {
+    display: none;
+  }
+  .lime-menu .lime-menu__item-reason {
+    font-size: 13px;
+  }
+  .lime-menu .lime-menu__divider {
+    height: 0.5px;
+    margin: 5px 6px;
+    background: var(--m-glass-line);
+  }
+  .m-filter .lime-menu {
+    min-width: 230px;
+  }
+  .m-filter .lime-menu__item[aria-checked="true"]::after {
+    font-size: 17px;
+  }
+  .lime-emoji-pop,
+  .lime-reaction-picker,
+  .lime-share-popover,
+  .lime-link-popover {
+    border: 0.5px solid var(--m-glass-line);
+    border-radius: 22px;
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: var(--m-glass-shadow);
+  }
+
+  /* ── press and hold on a message: the scrim, the held bubble, and the glass menu with the quick reactions ── */
+  .lime-message__content,
+  .lime-album {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .m-menu-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 1090;
+    background: rgba(0, 0, 0, 0.12);
+  }
+  .m-glass-menu {
+    display: none;
+    position: fixed;
+    z-index: 1100;
+    width: 284px;
+    max-width: calc(100vw - 24px);
+  }
+  .m-glass-menu.is-open {
+    display: block;
+  }
+  .m-msg-menu__react {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 0 6px;
+    margin-bottom: 4px;
+    border-bottom: 0.5px solid var(--m-glass-line);
+  }
+  .m-msg-menu__emoji {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 14px;
+    background: none;
+    font-size: 25px;
+    line-height: 1;
+    color: var(--soil-text);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-msg-menu__emoji:active {
+    background: color-mix(in oklab, var(--soil-text) 9%, transparent);
+  }
+  .m-msg-menu__more .dew {
+    font-size: 15px;
+    color: var(--soil-text-muted);
+  }
+  .lime-message--held .lime-message__content {
+    transform: scale(1.025);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18);
+    transition: transform 140ms ease;
+    position: relative;
+    z-index: 1095;
+  }
+
+  /* ── under the bubble: only add-reaction and the time (the reply button is gone: Reply in thread is in the hold menu) ── */
+  .lime-message__foot {
+    min-height: 32px;
+  }
+  .lime-foot-btn {
+    position: relative;
+    width: 32px;
+    height: 32px;
+  }
+  .lime-foot-btn::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+  }
+
+  /* ── the composer: the single mic, the return icon, a clear return button in every state ── */
+  #composer [data-attach-btn] {
+    width: 40px;
+    height: 40px;
+  }
+  #composer .lime-voice-split,
+  #composer .lime-voice-split__mic {
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+  }
+  #composer .lime-voice-split__mic:active {
+    background: var(--lime-layer-hover);
+  }
+  .lime-composer__return,
+  #composer .lime-composer__return,
+  #composer.is-expanded .lime-composer__return,
+  #replies-composer .lime-composer__return {
+    font-size: 0;
+    overflow: hidden;
+  }
+  .lime-composer__return::before {
+    content: '';
+    display: block;
+    width: 28px;
+    height: 28px;
+    background: currentColor;
+    -webkit-mask: var(--m-return) center / contain no-repeat;
+    mask: var(--m-return) center / contain no-repeat;
+  }
+  #composer.is-expanded .lime-composer__return,
+  #replies-composer .lime-composer__return {
+    width: 44px;
+    height: 36px;
+    border-radius: 18px;
+  }
+  /* disabled: soft grey, enabled: pale lime with ink, pressed: the darker lime step */
+  #composer .lime-composer__return[aria-disabled="true"],
+  .lime-composer__return:not(.is-active) {
+    opacity: 0.45;
+    color: var(--soil-text-muted);
+    background: none;
+  }
+  .lime-composer__return.is-active {
+    opacity: 1;
+    color: var(--lime-primary-ink);
+    background: var(--lime-primary-bg);
+  }
+  .lime-composer__return.is-active:active {
+    background: var(--lime-primary-bg-active);
+  }
+  .lime-composer__return {
+    --m-return: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M20.25 4.75v7.5a3 3 0 0 1-3 3H4.75M9.5 10.5l-4.75 4.75 4.75 4.75' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+
+  /* ── Settings: the same native-style header (a back arrow, the title, no x) ── */
+  .lime-settings__close {
+    display: none;
+  }
+  .lime-settings__navbar,
+  .lime-settings__pane-header {
+    position: relative;
+    box-sizing: border-box;
+    flex: none;
+    min-height: calc(56px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 56px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border-bottom: 0.5px solid var(--m-glass-line);
+  }
+  .lime-settings__navbar-title,
+  .lime-settings__title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--soil-text);
+  }
+  .lime-settings__description {
+    display: none;
+  }
+  .lime-settings__navbar-back,
+  .lime-settings__back {
+    position: absolute;
+    z-index: 2;
+    left: 4px;
+    top: calc(env(safe-area-inset-top) + 6px);
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 22px;
+    background: none;
+    color: var(--soil-text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lime-settings__navbar-back:active,
+  .lime-settings__back:active {
+    background: var(--lime-layer-hover);
+  }
+  .lime-settings__navbar {
+    display: flex;
+  }
+  .lime-settings__pane {
+    position: relative;
+  }
+  .lime-settings__footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+  .lime-settings__navbar {
+    background: var(--soil-bg-canvas);
+  }
+  .lime-settings__nav-scroll {
+    top: calc(56px + env(safe-area-inset-top));
+  }
+
+  /* ── Members / details on a phone: roomier rows ── */
+  .lime-members-panel__row {
+    min-height: 56px;
+    padding: 6px 16px;
+    gap: 14px;
+    border-radius: 0;
+  }
+  .lime-members-panel__row .lime-avatar-frame--md,
+  .lime-members-panel__row .seed-avatar--md {
+    width: 40px;
+    height: 40px;
+  }
+  .lime-members-panel__row .lime-presence {
+    width: 12.4px;
+    height: 12.4px;
+  }
+  .lime-members-panel__row-name {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .lime-members-panel__row-role {
+    font-size: 13.5px;
   }
 }

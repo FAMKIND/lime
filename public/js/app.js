@@ -1965,7 +1965,7 @@ function refreshReplyIndicator(messageId) {
 // (LIME-11), since sent messages, replies, and now conversation
 // switches all need to call it themselves — the one-time sweep further
 // down only ever reached what already existed at parse time.
-const PALETTE_SIZE = 4; // LIME-79: four brand tints (light green, pale lime, warm grey, soft ink), picked by name
+const PALETTE_SIZE = 8; // LIME-79-fix: eight soft brand tints (lime / meadow / warm soil), picked by name
 
 function hashName(name) {
   let hash = 0;
@@ -2140,12 +2140,12 @@ function initMessagesList() {
     if (messageId) renderReactionsEverywhere(messageId);
   });
 
-  // LIME-79: phones have no hover toolbar, so the buttons under a bubble press the toolbar's own React / Reply buttons.
+  // LIME-79: phones have no hover toolbar, so the add-reaction button under a bubble presses the toolbar's own React button.
+  // (LIME-79-fix: the inline reply button is gone; Reply in thread is in the press-and-hold menu.)
   document.addEventListener('click', (e) => {
-    const add = e.target.closest('.lime-react-add, .lime-reply-add');
+    const add = e.target.closest('.lime-react-add');
     if (!add) return;
-    const title = add.classList.contains('lime-react-add') ? 'React' : 'Reply';
-    const real = add.closest('.lime-message').querySelector('.lime-message__actions [title="' + title + '"]');
+    const real = add.closest('.lime-message').querySelector('.lime-message__actions [title="React"]');
     // stopImmediatePropagation: this same click must not also reach the "click anywhere closes the picker" listener below,
     // or the picker the forwarded click just opened would close again at once.
     e.stopImmediatePropagation();
@@ -2250,7 +2250,6 @@ function initMessagesList() {
       + '<div class="lime-message__foot">'
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '<button type="button" class="lime-foot-btn lime-react-add" title="Add reaction" aria-label="Add reaction"><span class="m-icon m-icon--smile-plus" aria-hidden="true"></span></button>'
-      + '<button type="button" class="lime-foot-btn lime-reply-add" title="Reply in thread" aria-label="Reply in thread"><span class="dew dew-chat" aria-hidden="true"></span></button>'
       + '<span class="lime-message__stamp"><span class="lime-message__stamp-time">' + messageTimeText(message) + '</span>'
       + (isSent ? '<span class="lime-receipt" role="img" aria-label="Sent">\u2713</span>' : '')
       + '</span>'
@@ -2808,6 +2807,9 @@ function initMessagesList() {
       // appendChild on an already-attached node moves it — this both
       // places brand-new rows and re-sorts existing ones in the same pass.
       container.appendChild(li);
+      // LIME-79-fix: a forced rebuild (every profile or presence change) makes brand-new rows, which lost the open chat's highlight;
+      // the phone chat bar and the crumbs read that highlight to know which chat is open, so they went blank until the next selection.
+      if (conversation.id === currentConversationId) li.classList.add('lime-contact--active');
     });
     [...container.children].forEach((li) => {
       if (!seenIds.has(li.dataset.conversationId)) li.remove();
@@ -3098,6 +3100,15 @@ function initMessagesList() {
         if (openProfileAvatars) {
           openProfileAvatars.innerHTML = conversationHeaderAvatarsHtml(conversation);
           openProfileAvatars.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+        }
+        // LIME-79-fix: a status change (someone signing in or out) also has to reach the phone chat bar, the Members list and
+        // the open person's details, which are not rebuilt by the lines above.
+        renderMobileChatbar();
+        const panelEl = document.getElementById('right-panel');
+        if (panelEl && panelEl.dataset.panel === 'members') renderMembersPanel(conversation);
+        else if (panelEl && panelEl.dataset.panel === 'profile' && panelEl.dataset.shownProfileId && !panelEl.querySelector('[contenteditable="true"], input:focus, textarea:focus')) {
+          const shown = LimeStore.getProfile(panelEl.dataset.shownProfileId);
+          if (shown) renderProfilePanel(shown);
         }
       }
     }
@@ -4222,11 +4233,13 @@ function renderMembersPanel(conversation) {
   const members = LimeStore.getMembers(conversation.id);
   listEl.innerHTML = members.map((m) => {
     const isOwner = m.id === conversation.created_by;
+    // LIME-79-fix: the live status shows here too (an Active / Away line); the Owner / Member role only means something in a group.
+    const role = conversation.type === 'group' ? (isOwner ? 'Owner' : 'Member') + ' \u00b7 ' : '';
     return '<button type="button" class="lime-members-panel__row" data-profile-id="' + m.id + '">'
-      + '<span class="seed-avatar seed-avatar--md lime-avatar" ' + avatarAttrsHtml(m) + '></span>'
+      + '<span class="lime-avatar-frame lime-avatar-frame--md"><span class="seed-avatar seed-avatar--md lime-avatar" ' + avatarAttrsHtml(m) + '></span>' + presenceHtml(m.status, 'md') + '</span>'
       + '<div class="lime-members-panel__row-body">'
       + '<span class="lime-members-panel__row-name">' + escapeHtml(m.display_name) + '</span>'
-      + '<span class="lime-members-panel__row-role">' + (isOwner ? 'Owner' : 'Member') + '</span>'
+      + '<span class="lime-members-panel__row-role">' + role + PRESENCE_LABEL[presenceFor(m.status)] + '</span>'
       + '</div>'
       + '</button>';
   }).join('');
@@ -4252,7 +4265,8 @@ function showMembers(conversation, openPanel) {
 // opens Members instead of a single person.
 function showConversationHeaderPanel(conversation, openPanel) {
   if (!conversation) return;
-  if (conversation.type === 'group') {
+  // LIME-79-fix: on a phone the header opens Members for a DM too (both people), with "‹" back from a person to Members.
+  if (conversation.type === 'group' || isPhone()) {
     showMembers(conversation, openPanel);
     return;
   }
@@ -4310,7 +4324,15 @@ function renderMobileChatbar() {
   const activeRow = document.querySelector('.lime-contact--active');
   const id = activeRow && activeRow.dataset.conversationId;
   const conversation = id ? LimeStore.getConversation(id) : null;
-  titleText.textContent = conversation ? LimeStore.getConversationTitle(conversation) : '';
+  // A DM shows the other person's live status in front of the name (a small dot; a group has none).
+  let presence = '';
+  if (conversation && conversation.type !== 'group') {
+    const other = LimeStore.getMembers(conversation.id).find((p) => p.id !== LimeStore.getCurrentUserId());
+    if (other) { const state = presenceFor(other.status); presence = '<span class="m-chatbar__dot" data-presence="' + state + '" role="img" aria-label="' + PRESENCE_LABEL[state] + '"></span>'; }
+  }
+  const title = conversation ? LimeStore.getConversationTitle(conversation) : '';
+  const titleHtml = presence + '<span class="m-chatbar__name">' + escapeHtml(title) + '</span>';
+  if (titleText.dataset.rendered !== titleHtml) { titleText.dataset.rendered = titleHtml; titleText.innerHTML = titleHtml; }
   const source = document.getElementById('open-profile-avatars');
   const html = source ? source.innerHTML : '';
   if (avatarsHost.dataset.copied !== html) {
@@ -4675,10 +4697,6 @@ function renderCrumbs() {
     });
   }
 
-  // Decorative placeholder, not real navigator.mediaDevices (LIME-10 gate)
-  // — a second instance for the reply composer, own unique ids since the
-  // main composer's voice-mode-toggle/-dropdown ids are already taken.
-  wireDropdownToggle('replies-voice-mode-toggle', 'replies-voice-mode-dropdown', { fixed: true });
   // Same reasoning as the main composer's toolbar overflow menu (LIME-12-fix4).
   wireDropdownToggle('replies-composer-toolbar-overflow', 'replies-composer-toolbar-overflow-dropdown', { fixed: true });
 })();
@@ -4730,6 +4748,7 @@ function wireDropdownToggle(toggleId, dropdownId, { fixed = false, placement = '
       // same vertical flip-and-clamp every other fixed menu uses).
       const fitsRight = placement === 'right' && rect.right + gap + w <= window.innerWidth - 8;
       if (fitsRight) {
+        dropdown.style.transformOrigin = '0 ' + Math.max(0, rect.top + rect.height / 2 - Math.max(8, Math.min(rect.top, window.innerHeight - h - 8))) + 'px';
         dropdown.style.left = (rect.right + gap) + 'px';
         dropdown.style.top = Math.max(8, Math.min(rect.top, window.innerHeight - h - 8)) + 'px';
         dropdown.style.bottom = '';
@@ -4747,7 +4766,10 @@ function wireDropdownToggle(toggleId, dropdownId, { fixed = false, placement = '
       dropdown.style.top = openBelow ? (rect.bottom + gap) + 'px' : '';
       dropdown.style.bottom = openBelow ? '' : (window.innerHeight - rect.top + gap) + 'px';
       const maxLeft = window.innerWidth - w - 8;
-      dropdown.style.left = Math.max(8, Math.min(rect.left, maxLeft)) + 'px';
+      const left = Math.max(8, Math.min(rect.left, maxLeft));
+      dropdown.style.left = left + 'px';
+      // LIME-79-fix: phones open the menu with a short scale and fade from the trigger (the glass menu's animation reads this).
+      dropdown.style.transformOrigin = Math.max(0, Math.min(w, rect.left + rect.width / 2 - left)) + 'px ' + (openBelow ? '0' : '100%');
     }
   });
   // LIME-52-fix3: the appearance popover passes suppressClose so an
@@ -4778,10 +4800,12 @@ wireDropdownToggle('more-menu-toggle', 'more-menu', { fixed: true });
 // Jam) stay visible instead of getting covered (LIME-20-fix).
 wireDropdownToggle('notif-btn', 'notif-dropdown', { fixed: true, placement: 'right' });
 wireDropdownToggle('user-btn', 'user-dropdown', { fixed: true });
-// Decorative placeholder, not a real navigator.mediaDevices list — per
-// the LIME-10 gate, real device enumeration needs a live mic-permission
-// prompt for a feature that still can't record anything.
-wireDropdownToggle('voice-mode-toggle', 'voice-mode-dropdown', { fixed: true });
+// LIME-79-fix: the microphone is one button (no device list). Recording is not built; the future feature records with a live
+// sound-wave view.
+['voice-mode-record', 'replies-voice-mode-record'].forEach((id) => {
+  const mic = document.getElementById(id);
+  if (mic) mic.addEventListener('click', () => LimeToast.show({ title: 'Voice messages are coming soon', tone: 'info' }));
+});
 // Decorative relisting of the toolbar tools .lime-composer__tool--overflow
 // hides at narrow widths (LIME-12-fix4) — none of those tools have any
 // real formatting behavior wired regardless of width, so this dropdown
@@ -6119,6 +6143,11 @@ document.addEventListener('keydown', (e) => {
 
   if (navSearchInput) navSearchInput.addEventListener('input', filterSettings);
 
+  // LIME-79-fix: on a phone the Settings list has its own back arrow instead of the x (it closes Settings the same way, including
+  // the "Discard changes?" check); a section's arrow goes back to the list.
+  const navBackBtn = document.getElementById('settings-nav-back');
+  if (navBackBtn) navBackBtn.addEventListener('click', () => closeBtn && closeBtn.click());
+
   createModal({
     trigger, backdrop, modal, closeBtn,
     // #settings-btn (the trigger) lives inside the profile dropdown,
@@ -6368,9 +6397,9 @@ window.LimeMobileNav = LimeMobileNav;
   // ── the phone chat top bar ──
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
   on('m-chat-back', () => LimeMobileNav.show('contacts'));
+  // The names and avatars open the right panel showing everyone in the chat (Members), for a group and for a DM alike.
   const openDetails = () => { const trigger = document.getElementById('open-profile-avatars'); if (trigger) trigger.click(); };
-  on('m-chat-title', openDetails);
-  on('m-chat-avatars', openDetails);
+  on('m-chat-center', openDetails);
   on('m-chat-search', () => LimeToast.show({ title: 'Search in this chat is coming soon', tone: 'info' }));
   on('m-chat-call', () => LimeToast.show({ title: 'Calls are coming soon', tone: 'info' }));
   // "..." opens the same conversation menu as the desktop caret (its contents are rebuilt each time it opens). The in-context
@@ -6393,6 +6422,128 @@ window.LimeMobileNav = LimeMobileNav;
     document.getElementById('settings-btn')?.click();
     document.querySelector('#settings-nav [data-settings-section="profile"]')?.click();
   });
+})();
+
+// ── LIME-79-fix: press and hold a message (phones) ─────────
+// A ~400ms press on a bubble opens a glass menu anchored to the message: six quick reactions and "more", Reply in thread, Copy text.
+// There is no hover on a phone, so this is the way to reach what the desktop's hover toolbar does. The bubble itself does not start
+// text selection or the browser's own callout (CSS: -webkit-touch-callout / user-select on phone bubbles); Copy text covers the text.
+(function () {
+  const HOLD_MS = 400;
+  const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
+  const thread = document.getElementById('thread-messages');
+  if (!thread) return;
+  let timer = null, startX = 0, startY = 0, held = null, menu = null, scrim = null, swallowUntil = 0;
+
+  function textOf(msg) {
+    const el = msg.querySelector('.lime-message__text, .lime-message__caption');
+    return el ? el.innerText.trim() : '';
+  }
+  function copyText(text) {
+    const done = () => LimeToast.show({ title: 'Copied', tone: 'info' });
+    if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(done, () => fallback()); return; }
+    fallback();
+    function fallback() {
+      // An insecure origin (the LAN dev address) has no navigator.clipboard; the old way still works there.
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* none */ }
+      ta.remove();
+      if (ok) done(); else LimeToast.show({ title: 'Couldn’t copy', body: 'Select the text and copy it yourself.', tone: 'warning' });
+    }
+  }
+
+  function close() {
+    if (held) { held.classList.remove('lime-message--held'); held = null; }
+    if (menu) { menu.remove(); menu = null; }
+    if (scrim) { scrim.remove(); scrim = null; }
+  }
+
+  function open(msg, anchor) {
+    close();
+    held = msg;
+    msg.classList.add('lime-message--held');
+    const messageId = msg.dataset.messageId;
+    const text = textOf(msg);
+    scrim = document.createElement('div');
+    scrim.className = 'm-menu-scrim';
+    menu = document.createElement('div');
+    menu.className = 'm-glass-menu m-msg-menu';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = '<div class="m-msg-menu__react" role="group" aria-label="Quick reactions">'
+      + QUICK.map((e) => '<button type="button" class="m-msg-menu__emoji" data-emoji="' + e + '" aria-label="React ' + e + '">' + e + '</button>').join('')
+      + '<button type="button" class="m-msg-menu__emoji m-msg-menu__more" data-act="more" aria-label="More reactions"><span class="dew dew-plus" aria-hidden="true"></span></button>'
+      + '</div>'
+      + '<button type="button" class="m-glass-menu__item" role="menuitem" data-act="reply"><span class="dew dew-chat" aria-hidden="true"></span><span>Reply in thread</span></button>'
+      + (text ? '<button type="button" class="m-glass-menu__item" role="menuitem" data-act="copy"><span class="m-icon m-icon--copy" aria-hidden="true"></span><span>Copy text</span></button>' : '');
+    document.body.appendChild(scrim);
+    document.body.appendChild(menu);
+    menu.classList.add('is-open'); // shown first, so it can be measured
+
+    // Anchored to the message: above it when there is room (below it otherwise), lined up with the bubble's own side.
+    const r = anchor.getBoundingClientRect();
+    const w = menu.offsetWidth, h = menu.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const top0 = (document.getElementById('m-chatbar') ? document.getElementById('m-chatbar').getBoundingClientRect().bottom : 0) + 6;
+    const above = r.top - h - 8 >= top0;
+    const below = r.bottom + 8 + h <= vh - 8;
+    const openAbove = above || !below;
+    let top = openAbove ? r.top - h - 8 : r.bottom + 8;
+    top = Math.max(top0, Math.min(top, vh - h - 8));
+    let left = msg.classList.contains('lime-message--sent') ? r.right - w : r.left;
+    left = Math.max(12, Math.min(left, vw - w - 12));
+    menu.style.top = top + 'px';
+    menu.style.left = left + 'px';
+    menu.style.transformOrigin = Math.max(0, Math.min(w, r.left + r.width / 2 - left)) + 'px ' + (openAbove ? '100%' : '0');
+
+    // The finger that is still down from the hold lifts over the scrim or the menu: that click is the end of the hold, not a tap.
+    const fromHold = (e) => { if (e.isTrusted && Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); return true; } return false; };
+    scrim.addEventListener('click', (e) => { if (!fromHold(e)) close(); });
+    menu.addEventListener('click', (e) => {
+      if (fromHold(e)) return;
+      const emoji = e.target.closest('[data-emoji]');
+      const act = e.target.closest('[data-act]');
+      if (emoji) {
+        LimeStore.toggleReaction(messageId, emoji.dataset.emoji).catch(console.error);
+        close();
+      } else if (act) {
+        const kind = act.dataset.act;
+        close();
+        if (kind === 'reply') { const b = msg.querySelector('.lime-message__actions [title="Reply"]'); if (b) b.click(); }
+        else if (kind === 'copy') copyText(text);
+        else if (kind === 'more') { const b = msg.querySelector('.lime-react-add'); if (b) b.click(); }
+      }
+    });
+  }
+
+  function cancel() { clearTimeout(timer); timer = null; }
+
+  thread.addEventListener('pointerdown', (e) => {
+    if (!isPhone() || e.button > 0) return;
+    const msg = e.target.closest('.lime-message');
+    if (!msg || e.target.closest('.lime-message__foot, .lime-message__actions, .lime-reaction-picker, .lime-message__footer, .lime-message__replies, .lime-avatar-frame, .lime-message__meta, button, input, textarea, audio, video')) return;
+    const anchor = e.target.closest('.lime-message__content, .lime-album, .lime-message__image') || msg.querySelector('.lime-message__col');
+    startX = e.clientX; startY = e.clientY;
+    cancel();
+    timer = setTimeout(() => {
+      timer = null;
+      if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) { /* none */ } }
+      swallowUntil = Date.now() + 700; // the finger lifting after the hold must not also "click" a link or image under it
+      open(msg, anchor);
+    }, HOLD_MS);
+  });
+  thread.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - startX, e.clientY - startY) > 10) cancel(); });
+  ['pointerup', 'pointercancel', 'pointerleave', 'scroll'].forEach((t) => thread.addEventListener(t, cancel, t === 'scroll'));
+  // Android fires its own context menu on a long press; iOS may select a word. Neither belongs on a bubble here.
+  thread.addEventListener('contextmenu', (e) => { if (isPhone() && e.target.closest('.lime-message__col')) e.preventDefault(); });
+  thread.addEventListener('click', (e) => { if (e.isTrusted && Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); } }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  window.addEventListener('popstate', close);
+  window.addEventListener('resize', close);
+  thread.addEventListener('scroll', close, { passive: true });
+  // exposed for the tests
+  window.LimeHoldMenu = { open: (msgEl) => open(msgEl, msgEl.querySelector('.lime-message__content') || msgEl), close };
 })();
 
 // ── Auto-collapse on shrink ────────────────────────────────

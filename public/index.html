@@ -195,11 +195,15 @@
              until LIME-80), call (a gentle "coming soon"), and the chat's more menu. Filled by renderMobileChatbar(). -->
         <header class="m-chatbar" id="m-chatbar">
           <button type="button" class="m-chatbar__back" id="m-chat-back" aria-label="Back to Messages"><span class="dew dew-chevron-left" aria-hidden="true"></span><span class="m-chatbar__count" id="m-chat-back-count" hidden></span></button>
-          <button type="button" class="m-chatbar__title" id="m-chat-title" aria-label="Chat details"><span id="m-chat-title-text"></span></button>
-          <button type="button" class="m-chatbar__avatars" id="m-chat-avatars" aria-label="Chat members"></button>
-          <button type="button" class="m-iconbtn" id="m-chat-search" aria-label="Search in this chat" title="Search"><span class="dew dew-search" aria-hidden="true"></span></button>
-          <button type="button" class="m-iconbtn" id="m-chat-call" aria-label="Call" title="Call"><span class="m-icon m-icon--phone" aria-hidden="true"></span></button>
-          <button type="button" class="m-iconbtn" id="m-chat-more" aria-label="More" aria-haspopup="menu" aria-expanded="false" title="More"><span class="dew dew-ellipsis-menu" aria-hidden="true"></span></button>
+          <button type="button" class="m-chatbar__center" id="m-chat-center" aria-label="Chat members">
+            <span class="m-chatbar__avatars" id="m-chat-avatars" aria-hidden="true"></span>
+            <span class="m-chatbar__title" id="m-chat-title"><span id="m-chat-title-text"></span></span>
+          </button>
+          <div class="m-chatbar__tools">
+            <button type="button" class="m-iconbtn" id="m-chat-search" aria-label="Search in this chat" title="Search"><span class="dew dew-search" aria-hidden="true"></span></button>
+            <button type="button" class="m-iconbtn" id="m-chat-call" aria-label="Call" title="Call"><span class="m-icon m-icon--phone" aria-hidden="true"></span></button>
+            <button type="button" class="m-iconbtn" id="m-chat-more" aria-label="More" aria-haspopup="menu" aria-expanded="false" title="More"><span class="dew dew-ellipsis-menu" aria-hidden="true"></span></button>
+          </div>
         </header>
 
         <!-- Top row: nav toggle + breadcrumbs left, participants + actions right -->
@@ -221,7 +225,6 @@
               <span class="seed-breadcrumb seed-breadcrumb--active" id="crumb-panel"></span>
             </nav>
             <button type="button" class="lime-topbar__crumb-caret" id="conversation-menu-toggle" title="Conversation actions" aria-haspopup="menu" aria-expanded="false"><span class="dew dew-chevron-down"></span></button>
-            <div class="lime-menu" id="conversation-menu" role="menu"></div>
           </div>
 
           <div class="lime-center-top__spacer"></div>
@@ -315,26 +318,28 @@
 
           <!-- 2a: Conversation list -->
           <div class="lime-list-col lime-fade-frame" id="list-col">
+            <!-- LIME-79-fix: the Messages header is a fixed bar OUTSIDE the scroller (logo, title, "+" only). The search and the
+                 filter scroll with the list and fade out under this bar. -->
+            <div class="m-messages__head" id="m-messages-head">
+              <img class="m-messages__logo" src="assets/logo-mark.svg" alt="" width="32" height="32">
+              <h1 class="m-messages__title">Messages</h1>
+              <button type="button" class="m-plus" data-open-picker title="New message" aria-label="New message"><span class="dew dew-plus" aria-hidden="true"></span></button>
+            </div>
             <div class="lime-contacts lime-list-col__scroll">
               <!-- LIME-78: the phone Messages screen (<= 767px only): logo + large title + a lime-shaped "+", search with a filter,
                    and ONE list (pinned first, then by recency). The desktop tabs, sections and Recent row below are hidden on
                    phones, and all of this is hidden on desktop. -->
               <div class="m-messages" id="m-messages">
-                <div class="m-messages__head">
-                  <img class="m-messages__logo" src="assets/logo-mark.svg" alt="" width="32" height="32">
-                  <h1 class="m-messages__title">Messages</h1>
-                  <button type="button" class="m-plus" data-open-picker title="New message" aria-label="New message"><span class="dew dew-plus" aria-hidden="true"></span></button>
-                </div>
                 <div class="m-messages__tools">
                   <label class="m-search"><span class="dew dew-search" aria-hidden="true"></span><input type="search" id="m-search-input" placeholder="Search" aria-label="Search chats" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
                   <div class="m-filter">
                     <button type="button" class="m-iconbtn m-filter__btn" id="m-filter-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Filter chats" title="Filter"><span class="dew dew-filter-horizontal" aria-hidden="true"></span></button>
                     <div class="lime-menu" id="m-filter-menu" role="menu" aria-label="Filter chats">
-                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="all" aria-checked="true"><span class="lime-menu__item-label">All</span></button>
-                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="unread" aria-checked="false"><span class="lime-menu__item-label">Unread</span></button>
-                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="pinned" aria-checked="false"><span class="lime-menu__item-label">Pinned</span></button>
-                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="groups" aria-checked="false"><span class="lime-menu__item-label">Groups</span></button>
-                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="archived" aria-checked="false"><span class="lime-menu__item-label">Archived</span></button>
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="all" aria-checked="true"><span class="dew dew-chat" aria-hidden="true"></span><span class="lime-menu__item-label">All</span></button>
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="unread" aria-checked="false"><span class="dew dew-bell-on" aria-hidden="true"></span><span class="lime-menu__item-label">Unread</span></button>
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="pinned" aria-checked="false"><span class="lime-icon-pin" aria-hidden="true"></span><span class="lime-menu__item-label">Pinned</span></button>
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="groups" aria-checked="false"><span class="dew dew-people" aria-hidden="true"></span><span class="lime-menu__item-label">Groups</span></button>
+                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="archived" aria-checked="false"><span class="dew dew-archive" aria-hidden="true"></span><span class="lime-menu__item-label">Archived</span></button>
                     </div>
                   </div>
                 </div>
@@ -577,35 +582,10 @@
                 <div class="lime-composer__actions">
                   <button type="button" class="lime-composer__aux" data-attach-btn title="Attach"><span class="dew dew-plus"></span></button>
                   <div class="lime-composer__voice-dropdown">
-                    <!-- LIME-60: split into two buttons, like the nav Add button
-                         (lime-nav-add) but neutral — a mic half that's a pure
-                         placeholder (recording isn't built, LIME-10) and a ⌄
-                         half that's the real dropdown trigger. Keeping the
-                         "voice-mode-toggle" id on the ⌄ half (not the mic) means
-                         app.js's existing wireDropdownToggle('voice-mode-toggle', …)
-                         call needed no change — the id just now lives on a
-                         smaller, caret-only element instead of the combined one. -->
+                    <!-- LIME-79-fix: the microphone is a single button now (the "choose microphone" caret and its list of made-up devices are gone).
+                     Pressing it says voice messages are coming soon; the real feature will record with a live sound-wave view (README roadmap). -->
                     <div class="lime-voice-split">
                       <button type="button" class="lime-voice-split__mic" id="voice-mode-record" title="Record a voice message" aria-label="Record a voice message"><span class="dew dew-microphone"></span></button>
-                      <button type="button" class="lime-voice-split__caret" id="voice-mode-toggle" aria-haspopup="menu" aria-expanded="false" title="Choose microphone" aria-label="Choose microphone"><span class="dew dew-chevron-down"></span></button>
-                    </div>
-                    <div class="lime-menu lime-menu--wide" id="voice-mode-dropdown">
-                      <button type="button" class="lime-menu__item lime-menu__item--selected">
-                        <span class="lime-menu__check"><span class="dew dew-check"></span></span>
-                        Default - MacBook Pro Microphone
-                      </button>
-                      <button type="button" class="lime-menu__item">
-                        <span class="lime-menu__check"></span>
-                        MacBook Pro Microphone (Built-in)
-                      </button>
-                      <button type="button" class="lime-menu__item">
-                        <span class="lime-menu__check"></span>
-                        iPhone Microphone
-                      </button>
-                      <button type="button" class="lime-menu__item">
-                        <span class="lime-menu__check"></span>
-                        Microsoft Teams Audio Device (Virtual)
-                      </button>
                     </div>
                   </div>
                   <!-- dew has no lock icon (checked the full 53-icon set) — dew-shield-check
@@ -737,29 +717,8 @@
           <div class="lime-composer__actions">
             <button type="button" class="lime-composer__aux" data-attach-btn title="Attach"><span class="dew dew-plus"></span></button>
             <div class="lime-composer__voice-dropdown">
-              <!-- LIME-60: see the main composer's identical structure above
-                   for why "replies-voice-mode-toggle" now lives on the ⌄ half. -->
               <div class="lime-voice-split">
                 <button type="button" class="lime-voice-split__mic" id="replies-voice-mode-record" title="Record a voice message" aria-label="Record a voice message"><span class="dew dew-microphone"></span></button>
-                <button type="button" class="lime-voice-split__caret" id="replies-voice-mode-toggle" aria-haspopup="menu" aria-expanded="false" title="Choose microphone" aria-label="Choose microphone"><span class="dew dew-chevron-down"></span></button>
-              </div>
-              <div class="lime-menu lime-menu--wide" id="replies-voice-mode-dropdown">
-                <button type="button" class="lime-menu__item lime-menu__item--selected">
-                  <span class="lime-menu__check"><span class="dew dew-check"></span></span>
-                  Default - MacBook Pro Microphone
-                </button>
-                <button type="button" class="lime-menu__item">
-                  <span class="lime-menu__check"></span>
-                  MacBook Pro Microphone (Built-in)
-                </button>
-                <button type="button" class="lime-menu__item">
-                  <span class="lime-menu__check"></span>
-                  iPhone Microphone
-                </button>
-                <button type="button" class="lime-menu__item">
-                  <span class="lime-menu__check"></span>
-                  Microsoft Teams Audio Device (Virtual)
-                </button>
               </div>
             </div>
             <span class="lime-composer__privacy"><span class="dew dew-shield-check"></span> Your messages are always secure and encrypted, we never sell your data.</span>
@@ -817,6 +776,11 @@
   <div class="lime-settings" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-pane-title">
     <button type="button" class="lime-icon-btn lime-settings__close" id="settings-modal-close" aria-label="Close settings" title="Close"><span class="dew dew-close"></span></button>
     <div class="lime-settings__nav lime-fade-frame" id="settings-nav">
+      <!-- LIME-79-fix: phones get the same native-style header as the chat: a back arrow, the title, no x. -->
+      <div class="lime-settings__navbar">
+        <button type="button" class="lime-settings__navbar-back" id="settings-nav-back" aria-label="Back" title="Back"><span class="dew dew-chevron-left" aria-hidden="true"></span></button>
+        <h2 class="lime-settings__navbar-title">Settings</h2>
+      </div>
       <div class="lime-settings__nav-scroll">
         <div class="lime-settings__nav-search">
           <span class="dew dew-search"></span>
@@ -949,6 +913,11 @@
     <button type="button" class="m-dock__item" id="m-dock-calls"><span class="m-dock__iconwrap"><span class="m-icon m-icon--phone" aria-hidden="true"></span></span><span class="m-dock__label">calls</span></button>
     <button type="button" class="m-dock__item" id="m-dock-account" aria-label="Account"><span class="m-dock__iconwrap"><span class="seed-avatar seed-avatar--sm lime-avatar m-dock__me" id="m-dock-avatar" data-name=""></span></span><span class="m-dock__label">account</span></button>
   </nav>
+
+  <!-- The chat's actions menu (the title caret on desktop, the "..." on a phone). Fixed-positioned by wireDropdownToggle, and kept
+       here at the end of the page, not inside the desktop breadcrumb row: that row is display:none on phones, which hid the menu there
+       (LIME-79-fix found it: the menu was "open" with a 0x0 box since LIME-78). -->
+  <div class="lime-menu" id="conversation-menu" role="menu"></div>
 
   <div class="seed-toast-container seed-toast-container--bottom-right" id="toast-container" role="region" aria-label="Notifications"></div>
 
