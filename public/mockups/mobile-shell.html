@@ -26,6 +26,11 @@
   <link rel="stylesheet" href="../css/gradients.css">
   <style>
     /* ───────── mock-only (this file only; lime.css is untouched) ───────── */
+    /* LIME-79 replaced the app's 12 pastel avatar colours with four brand tints; this mock keeps the pastels it was approved with. */
+    [data-theme="light"] { --mock-p4: #D2E9F7; --mock-p5: #DBDEF7; --mock-p6: #E8DCF5; --mock-p7: #F0D9EE; --mock-p8: #F0E6D2; --mock-p9: #CFEEEA; --mock-p10: #FBE0B0; --mock-p11: #F5DCE2; }
+    [data-theme="dark"]  { --mock-p4: #AED2E8; --mock-p5: #B8BDE7; --mock-p6: #CEBCE2; --mock-p7: #DABCD7; --mock-p8: #DBCEB4; --mock-p9: #B2D8D3; --mock-p10: #EECA8A; --mock-p11: #E2BCC5; }
+    .lime-avatar--p4 { background: var(--mock-p4); } .lime-avatar--p5 { background: var(--mock-p5); } .lime-avatar--p6 { background: var(--mock-p6); } .lime-avatar--p7 { background: var(--mock-p7); }
+    .lime-avatar--p8 { background: var(--mock-p8); } .lime-avatar--p9 { background: var(--mock-p9); } .lime-avatar--p10 { background: var(--mock-p10); } .lime-avatar--p11 { background: var(--mock-p11); }
     body { margin: 0; padding: 28px 24px 64px; background: #e9e6dc; color: #1c1b17; font-family: var(--seed-font-ui, 'Montserrat', system-ui, sans-serif); }
     .m-page h1 { font-size: 22px; margin: 0 0 4px; }
     .m-page > p { max-width: 70ch; margin: 0 0 24px; line-height: 1.5; }

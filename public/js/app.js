@@ -1009,7 +1009,11 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   }
 
   function updateSendActive() {
-    if (sendBtn) sendBtn.classList.toggle('is-active', !isEmpty() || pendingAttachments.length > 0);
+    const active = !isEmpty() || pendingAttachments.length > 0;
+    if (sendBtn) {
+      sendBtn.classList.toggle('is-active', active);
+      sendBtn.setAttribute('aria-disabled', String(!active)); // LIME-79: Send is disabled until there is something to send
+    }
   }
 
   function renderAttachmentChips() {
@@ -1085,10 +1089,18 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     });
   }
 
-  rootEl.addEventListener('focusin', () => rootEl.classList.add('is-expanded'));
+  // LIME-79: on a phone the composer is one line until the text field itself is focused (not merely because the keyboard or another
+  // button in it took focus), grows then, and folds back when it is empty (no text, no attachments) and focus leaves. Desktop keeps
+  // its own rule: focus anywhere inside expands, and it folds back when empty.
+  rootEl.addEventListener('focusin', (e) => {
+    if (isPhone() && rootEl.id === 'composer' && e.target !== input) return;
+    rootEl.classList.add('is-expanded');
+  });
   rootEl.addEventListener('focusout', (e) => {
     if (rootEl.contains(e.relatedTarget)) return;
-    if (isEmpty()) rootEl.classList.remove('is-expanded');
+    if (!isEmpty()) return;
+    if (isPhone() && rootEl.id === 'composer' && pendingAttachments.length > 0) return;
+    rootEl.classList.remove('is-expanded');
   });
 
   input.addEventListener('input', () => {
@@ -1159,7 +1171,7 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     const result = onSend ? onSend({ content, metadata, attachments }) : null;
     input.innerHTML = '';
     input.style.height = '';
-    if (sendBtn) sendBtn.classList.remove('is-active');
+    if (sendBtn) { sendBtn.classList.remove('is-active'); sendBtn.setAttribute('aria-disabled', 'true'); }
     updatePressedStates();
     const finishAttachments = () => clearAttachments();
     if (result && typeof result.then === 'function') result.then(finishAttachments, finishAttachments);
@@ -1185,6 +1197,30 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   });
 
   if (sendBtn) sendBtn.addEventListener('click', send);
+  if (sendBtn) sendBtn.setAttribute('aria-disabled', 'true');
+
+  // LIME-79: the phone toolbar's emoji button — a small set of common emoji that insert at the caret.
+  const emojiBtn = rootEl.querySelector('[data-emoji-btn]');
+  if (emojiBtn) {
+    const EMOJI = ['\ud83d\ude42', '\ud83d\ude02', '\u2764\ufe0f', '\ud83d\udc4d', '\ud83d\ude4f', '\ud83c\udf89', '\ud83d\ude0d', '\ud83d\ude2e', '\ud83d\ude22', '\ud83d\udd25', '\ud83d\udc4f', '\u2705'];
+    const pop = document.createElement('div');
+    pop.className = 'lime-emoji-pop';
+    pop.setAttribute('role', 'menu');
+    pop.innerHTML = EMOJI.map((e) => '<button type="button" role="menuitem" data-emoji="' + e + '">' + e + '</button>').join('');
+    rootEl.appendChild(pop);
+    emojiBtn.addEventListener('mousedown', (e) => e.preventDefault()); // keep the caret in the text field
+    emojiBtn.addEventListener('click', (e) => { e.stopPropagation(); pop.classList.toggle('is-open'); });
+    pop.addEventListener('mousedown', (e) => e.preventDefault());
+    pop.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-emoji]');
+      if (!b) return;
+      input.focus();
+      document.execCommand('insertText', false, b.dataset.emoji);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      pop.classList.remove('is-open');
+    });
+    document.addEventListener('click', (e) => { if (!pop.contains(e.target) && !emojiBtn.contains(e.target)) pop.classList.remove('is-open'); });
+  }
 }
 
 function formatTime(iso) {
@@ -1197,10 +1233,10 @@ function formatTime(iso) {
 function messageTimeText(message) {
   const delivered = new Date(message.created_at).getTime();
   const sent = message.client_ts ? new Date(message.client_ts).getTime() : NaN;
-  if (isNaN(sent) || isNaN(delivered)) return formatTime(message.created_at);
+  if (isNaN(sent) || isNaN(delivered)) return clockText(message.created_at);
   const written = Math.min(sent, delivered);
-  if (delivered - written > 5 * 60 * 1000) return 'Sent ' + formatTime(new Date(written).toISOString()) + ' \u00b7 delivered ' + formatTime(message.created_at);
-  return formatTime(new Date(written).toISOString());
+  if (delivered - written > 5 * 60 * 1000) return 'Sent ' + clockText(new Date(written).toISOString()) + ' \u00b7 delivered ' + clockText(message.created_at);
+  return clockText(new Date(written).toISOString());
 }
 
 function formatDay(iso) {
@@ -1215,8 +1251,8 @@ function formatLastReply(iso) {
   const now = new Date();
   const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const diffDays = Math.round((startOfDay(now) - startOfDay(date)) / 86400000);
-  if (diffDays <= 0) return 'today at ' + formatTime(iso);
-  if (diffDays === 1) return 'yesterday at ' + formatTime(iso);
+  if (diffDays <= 0) return 'today at ' + clockText(iso);
+  if (diffDays === 1) return 'yesterday at ' + clockText(iso);
   if (diffDays <= 29) return diffDays + ' days ago';
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
@@ -1225,6 +1261,12 @@ function formatLastReply(iso) {
 // Lowercase clock time for the phone ("7:32 am").
 function lowerTime(iso) {
   return formatTime(iso).toLowerCase();
+}
+
+// LIME-79: on a phone every written clock time is lowercase ("7:32 am"); desktop keeps "7:32 AM". Decided when the text is written.
+const isPhone = () => window.matchMedia('(max-width: 767px)').matches;
+function clockText(iso) {
+  return isPhone() ? lowerTime(iso) : formatTime(iso);
 }
 
 // The time at the right of a Messages row on phones: today's time, "Yesterday", or a short date.
@@ -1923,7 +1965,7 @@ function refreshReplyIndicator(messageId) {
 // (LIME-11), since sent messages, replies, and now conversation
 // switches all need to call it themselves — the one-time sweep further
 // down only ever reached what already existed at parse time.
-const PALETTE_SIZE = 12;
+const PALETTE_SIZE = 4; // LIME-79: four brand tints (light green, pale lime, warm grey, soft ink), picked by name
 
 function hashName(name) {
   let hash = 0;
@@ -2098,6 +2140,18 @@ function initMessagesList() {
     if (messageId) renderReactionsEverywhere(messageId);
   });
 
+  // LIME-79: phones have no hover toolbar, so the buttons under a bubble press the toolbar's own React / Reply buttons.
+  document.addEventListener('click', (e) => {
+    const add = e.target.closest('.lime-react-add, .lime-reply-add');
+    if (!add) return;
+    const title = add.classList.contains('lime-react-add') ? 'React' : 'Reply';
+    const real = add.closest('.lime-message').querySelector('.lime-message__actions [title="' + title + '"]');
+    // stopImmediatePropagation: this same click must not also reach the "click anywhere closes the picker" listener below,
+    // or the picker the forwarded click just opened would close again at once.
+    e.stopImmediatePropagation();
+    if (real) real.click();
+  });
+
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.lime-message__actions [title="React"]');
     if (btn) {
@@ -2179,7 +2233,7 @@ function initMessagesList() {
     // opens that sender's own details, never a hard-coded person. Empty
     // for UNKNOWN_SENDER (no real profile id) — the listener just no-ops
     // on a lookup miss, same as it would for any other bad/missing id.
-    return '<div class="lime-message ' + (isSent ? 'lime-message--sent' : 'lime-message--received') + '" data-message-id="' + message.id + '">'
+    return '<div class="lime-message ' + (isSent ? 'lime-message--sent' : 'lime-message--received') + '" data-message-id="' + message.id + '" data-sender-id="' + escapeHtml(message.sender_id || '') + '">'
       + '<span class="lime-avatar-frame lime-avatar-frame--lg">'
       + '<span class="seed-avatar seed-avatar--lg lime-avatar" ' + avatarAttrsHtml(sender) + ' data-profile-id="' + escapeHtml(sender.id || '') + '"></span>'
       + presenceHtml(sender.status, 'lg')
@@ -2190,7 +2244,17 @@ function initMessagesList() {
       + '<span class="lime-message__time">' + messageTimeText(message) + '</span>'
       + '</div>'
       + contentHtml(message)
+      // LIME-79: on phones the row under a bubble holds the reaction chips, the add-reaction and reply buttons, and at the right the
+      // time with a receipt slot (a plain check for now; LIME-81 makes it live). On desktop .lime-message__foot is display:contents
+      // and the other parts are hidden, so nothing changes there.
+      + '<div class="lime-message__foot">'
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
+      + '<button type="button" class="lime-foot-btn lime-react-add" title="Add reaction" aria-label="Add reaction"><span class="m-icon m-icon--smile-plus" aria-hidden="true"></span></button>'
+      + '<button type="button" class="lime-foot-btn lime-reply-add" title="Reply in thread" aria-label="Reply in thread"><span class="dew dew-chat" aria-hidden="true"></span></button>'
+      + '<span class="lime-message__stamp"><span class="lime-message__stamp-time">' + messageTimeText(message) + '</span>'
+      + (isSent ? '<span class="lime-receipt" role="img" aria-label="Sent">\u2713</span>' : '')
+      + '</span>'
+      + '</div>'
       + replyIndicatorHtml(message.id)
       + '</div>'
       + '<div class="lime-message__actions">'
@@ -2206,6 +2270,19 @@ function initMessagesList() {
   // shouldn't happen with today's seed data, but LimeStore.getProfile can
   // return null, and messageHtml needs a display_name/status either way.
   const UNKNOWN_SENDER = { display_name: 'Unknown', status: 'offline' };
+
+  // LIME-79: consecutive messages from one sender form a "run": only the first shows the avatar and name (phones; CSS decides).
+  function markMessageRuns() {
+    let previousSender = null;
+    [...thread.children].forEach((el) => {
+      if (!el.classList.contains('lime-message')) { previousSender = null; return; } // a date divider (or anything else) ends a run
+      const sender = el.dataset.senderId || null;
+      const continues = sender !== null && sender === previousSender;
+      el.classList.toggle('lime-message--cont', continues);
+      el.classList.toggle('lime-message--first', !continues);
+      previousSender = sender;
+    });
+  }
 
   function renderThread(conversationId) {
     // LIME-69: a repaint triggered by another tab (same conversation,
@@ -2243,6 +2320,7 @@ function initMessagesList() {
     thread.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
     paintAttachments(thread); // LIME-38: same reasoning — resolves every image/file rendered by this pass
     paintLinkPreviews(thread, threadSticky); // LIME-44
+    markMessageRuns(); // LIME-79
     // LIME-11-fix3: covers both the initial page-load render (default
     // conversation) and every subsequent conversation switch, since both
     // paths call this same function — renderThread never scrolled at all
@@ -2603,6 +2681,7 @@ function initMessagesList() {
           if (newAvatar) paintAvatar(newAvatar); // real bug (LIME-11): paintAvatar only ran once at load, missing every sent message's avatar since LIME-07
           paintAttachments(thread); // LIME-38
           paintLinkPreviews(thread, threadSticky); // LIME-44
+          markMessageRuns(); // LIME-79
           threadSticky.pinToBottom(); // LIME-39: your own message always scrolls into view, and re-pins for any attachment inside it that loads afterward
         }
 

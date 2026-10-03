@@ -40,6 +40,9 @@ export class DevServer extends Remote {
   async start() {
     if (!this.port) this.port = await freePort();
     this.proc = spawn(process.execPath, [path.join(process.env.LIME_TEST_ROOT || REPO_ROOT, 'server', 'dev-server.mjs'), '--port', String(this.port), '--data', this.dataDir], { stdio: ['ignore', 'pipe', 'pipe'] });
+    // A script that crashes before destroy() must not leave a server behind: the child dies with this process.
+    const child = this.proc;
+    process.once('exit', () => { try { child.kill('SIGKILL'); } catch (e) { /* already gone */ } });
     this.log = '';
     this.proc.stdout.on('data', (d) => { this.log += d; });
     this.proc.stderr.on('data', (d) => { this.log += d; });

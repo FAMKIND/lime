@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
   <!-- LIME-51: sets data-theme before any stylesheet below even starts
        downloading, so there's no flash of light theme for a user whose
        stored preference is dark or (System) currently resolves dark.
@@ -531,7 +531,7 @@
                        (LIME-10-fix3's workaround). With Send living here instead, the toolbar
                        can just be display:none as a whole. -->
                   <div class="lime-composer__row">
-                    <div class="lime-composer__input lime-rich-text" id="composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message" data-placeholder="Say something meaningful..."></div>
+                    <div class="lime-composer__input lime-rich-text" id="composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message" data-placeholder="Say something meaningful..." enterkeyhint="send" autocapitalize="sentences"></div>
                     <button type="button" class="lime-composer__return" id="composer-send" title="Send">&#8629;</button>
                   </div>
                   <!-- Tools after Bold/Italic/Underline/Strikethrough hide under
@@ -543,6 +543,8 @@
                        delegated click handler — both copies of each command really
                        work, not just the always-visible ones. -->
                   <div class="lime-composer__toolbar">
+                    <!-- LIME-79: phones only (hidden on desktop): an emoji button at the left of the toolbar -->
+                    <button type="button" class="lime-composer__tool lime-composer__tool--emoji" data-emoji-btn title="Add emoji" aria-label="Add emoji"><span class="m-icon m-icon--smile" aria-hidden="true"></span></button>
                     <button type="button" class="lime-composer__tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
                     <button type="button" class="lime-composer__tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
                     <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
@@ -556,6 +558,7 @@
                     <button type="button" class="lime-composer__tool lime-composer__tool--overflow" data-cmd="code" title="Code"><span class="dew dew-code"></span></button>
                     <button type="button" class="lime-composer__tool lime-composer__overflow" id="composer-toolbar-overflow" title="More"><span class="dew dew-ellipsis-menu"></span></button>
                     <div class="lime-menu" id="composer-toolbar-overflow-dropdown">
+                      <button type="button" class="lime-menu__item lime-composer__menu-s" data-cmd="strikethrough"><s>S</s>Strikethrough</button>
                       <button type="button" class="lime-menu__item" data-cmd="link"><span class="dew dew-link-simple"></span>Link</button>
                       <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
                       <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
@@ -702,7 +705,7 @@
             <div class="lime-composer__attachments" data-attachments></div>
             <p class="lime-composer__attachments-error" data-attachments-error hidden></p>
             <div class="lime-composer__row">
-              <div class="lime-composer__input lime-rich-text" id="replies-composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Reply" data-placeholder="Reply..."></div>
+              <div class="lime-composer__input lime-rich-text" id="replies-composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Reply" data-placeholder="Reply..." enterkeyhint="send" autocapitalize="sentences"></div>
               <button type="button" class="lime-composer__return" id="replies-composer-send" title="Send">&#8629;</button>
             </div>
             <div class="lime-composer__toolbar">

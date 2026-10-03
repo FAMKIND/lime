@@ -81,6 +81,15 @@ Suites: **e2e-server** (three people in Firefox, a second Firefox started with `
   it, and "‹" goes back. The browser's back button, the Android back button and iOS's edge swipe do the same, and `#c=` deep
   links still open that chat. Desktop (>=768px) is unchanged.
 
+- **The phone chat (LIME-79):** others' messages sit on the left (avatar and name on the first message of a run) in the neutral
+  bubble; your own sit on the right in light green (`--seed-lime-300`, the user's choice) with ink text and no avatar. Under each
+  bubble: reaction chips, add-reaction and reply buttons, and the time (lowercase on phones: "7:32 am") with a receipt slot. The
+  composer is one pill until its text field is focused, then grows into a text area above a toolbar; **on phones the keyboard's
+  Return key sends** (`enterkeyhint="send"`, the common messaging pattern), so there is no newline from the keyboard (lists and code
+  still use it, and Shift+Enter always adds one).
+- **Default avatars use four brand tints** (light green, pale lime, warm grey, a soft ink tint), picked deterministically by name,
+  at every width (replacing the 12 pastels).
+
 ## Open
 
 - [ ] Icon gaps in dew (send, mic, paperclip)

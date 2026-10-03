@@ -396,67 +396,33 @@ html[data-pattern-treatment="photo"] body::before {
   color: var(--seed-soil-900);
 }
 
-/* 12 pastel hues, deliberately similar lightness/saturation so no single
-   avatar shouts louder than its neighbors. Exactly one (p3, mint) reads
-   as green — green is the brand's, not identity's. Values are new
-   --lime-avatar-* tokens (Seed's palette has nowhere near this range)
-   rather than hardcoding hex directly into each rule. */
+/* LIME-79: four brand tints replace the old 12 pastels, picked by name (hashName in app.js, deterministic): light green (--seed-lime-300),
+   pale lime (--seed-lime-100), warm grey (the canvas ladder) and a soft ink tint for variety. The fixed near-black ink above clears
+   9.4:1 or better on every one of them in both themes (the table is in TEND.md, LIME-79). Dark variants follow the rule the old palette
+   used: -15 saturation (floored at 20) and -10 lightness (floored at 55) from the light tint, so the same ink keeps working. */
 :root {
-  /* LIME-04b's requested #e4f9be is an exact match for Seed's own
-     --seed-lime-100 — referencing that directly instead of updating
-     this to a second hardcoded hex value. Not part of the per-theme
-     split below — a raw brand-ramp step, not a canvas-tied colour. */
+  /* A raw brand-ramp step, not a canvas-tied colour, so it is not part of the per-theme split below. */
   --lime-badge-light: var(--seed-lime-100);
 }
 
 [data-theme="light"] {
-  --lime-avatar-blush:      #F9D8DA;
-  --lime-avatar-peach:      #FCDCC5;
-  --lime-avatar-butter:     #FBEFB8;
-  --lime-avatar-mint:       #D3F0DE;
-  --lime-avatar-sky:        #D2E9F7;
-  --lime-avatar-periwinkle: #DBDEF7;
-  --lime-avatar-lavender:   #E8DCF5;
-  --lime-avatar-lilac:      #F0D9EE;
-  --lime-avatar-sand:       #F0E6D2;
-  --lime-avatar-teal:       #CFEEEA;
-  --lime-avatar-apricot:    #FBE0B0;
-  --lime-avatar-rose:       #F5DCE2;
+  --lime-avatar-green: #A3E18A;
+  --lime-avatar-pale:  #E4F9BE;
+  --lime-avatar-warm:  #F0EEE6;
+  --lime-avatar-ink:   #D9DCD3;
 }
 
-/* Each computed by taking the light hue's own HSL, then -15 saturation
-   (floored at 20) and -10 lightness (floored at 55) — deep enough to
-   read as "a dark-mode surface," never dropping below 55% lightness, so
-   the same fixed near-black ink (.lime-avatar, above) keeps clearing
-   AA on every one of them (9.58:1 to 12.97:1 measured — TEND.md's own
-   table — nowhere close to the 4.5:1 floor the brief asks for). */
 [data-theme="dark"] {
-  --lime-avatar-blush:      #EBB3B6;
-  --lime-avatar-peach:      #F1C09D;
-  --lime-avatar-butter:     #EFDE91;
-  --lime-avatar-mint:       #B5DBC3;
-  --lime-avatar-sky:        #AED2E8;
-  --lime-avatar-periwinkle: #B8BDE7;
-  --lime-avatar-lavender:   #CEBCE2;
-  --lime-avatar-lilac:      #DABCD7;
-  --lime-avatar-sand:       #DBCEB4;
-  --lime-avatar-teal:       #B2D8D3;
-  --lime-avatar-apricot:    #EECA8A;
-  --lime-avatar-rose:       #E2BCC5;
+  --lime-avatar-green: #89C870;
+  --lime-avatar-pale:  #CEEC98;
+  --lime-avatar-warm:  #DBD7C8;
+  --lime-avatar-ink:   #C2CBB1;
 }
 
-.lime-avatar--p0  { background: var(--lime-avatar-blush); }
-.lime-avatar--p1  { background: var(--lime-avatar-peach); }
-.lime-avatar--p2  { background: var(--lime-avatar-butter); }
-.lime-avatar--p3  { background: var(--lime-avatar-mint); }
-.lime-avatar--p4  { background: var(--lime-avatar-sky); }
-.lime-avatar--p5  { background: var(--lime-avatar-periwinkle); }
-.lime-avatar--p6  { background: var(--lime-avatar-lavender); }
-.lime-avatar--p7  { background: var(--lime-avatar-lilac); }
-.lime-avatar--p8  { background: var(--lime-avatar-sand); }
-.lime-avatar--p9  { background: var(--lime-avatar-teal); }
-.lime-avatar--p10 { background: var(--lime-avatar-apricot); }
-.lime-avatar--p11 { background: var(--lime-avatar-rose); }
+.lime-avatar--p0 { background: var(--lime-avatar-green); }
+.lime-avatar--p1 { background: var(--lime-avatar-pale); }
+.lime-avatar--p2 { background: var(--lime-avatar-warm); }
+.lime-avatar--p3 { background: var(--lime-avatar-ink); }
 
 .lime-avatar img {
   border-radius: inherit;
@@ -7782,5 +7748,394 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     max-height: none;
     height: 100vh;
     height: 100dvh;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   LIME-79: THE PHONE CHAT (<= 767px): bubbles, the row under each bubble, the composer
+   Others on the left with an avatar and name on the first message of a run, in a neutral bubble; your own on the right in light
+   green (--seed-lime-300) with ink text. Under each bubble: reaction chips, add-reaction and reply buttons, and at the right the
+   time with a receipt slot. The composer is one pill until its text field is focused, then grows into a text area above a toolbar.
+═══════════════════════════════════════════════════════ */
+
+/* More icons dew does not have (masks, so they take the text colour). */
+.m-icon--smile {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Ccircle cx='12' cy='12' r='8.75' stroke='black' stroke-width='1.6'/%3E%3Cpath d='M8.5 14c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2M9 9.75h.01M15 9.75h.01' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.m-icon--smile-plus {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M20.2 11.2A8.75 8.75 0 1 1 12.8 3.8' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M8.5 14c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2M9 9.75h.01M15 9.75h.01' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M19 2.5v5M16.5 5h5' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* Hidden on desktop: the parts that only the phone chat uses. */
+.lime-message__stamp,
+.lime-foot-btn,
+.lime-composer__tool--emoji,
+.lime-composer__menu-s,
+.lime-emoji-pop {
+  display: none;
+}
+/* The row under a bubble adds no box of its own on desktop. */
+.lime-message__foot {
+  display: contents;
+}
+
+@media (max-width: 767px) {
+  /* ── the thread ── */
+  .lime-messages {
+    padding: 8px 12px calc(var(--composer-clearance, 90px) + 14px + env(safe-area-inset-bottom));
+    gap: 2px;
+  }
+  .lime-message {
+    width: 100%;
+    max-width: none;
+    gap: 8px;
+    align-items: flex-start;
+    box-sizing: border-box;
+  }
+  .lime-message--first {
+    margin-top: 12px;
+  }
+  .lime-message--first:first-child {
+    margin-top: 0;
+  }
+  .lime-message--received {
+    align-self: stretch;
+    justify-content: flex-start;
+  }
+  .lime-message--sent {
+    align-self: stretch;
+    justify-content: flex-end;
+  }
+  .lime-message--sent > .lime-avatar-frame,
+  .lime-message--sent .lime-message__meta {
+    display: none;
+  }
+  .lime-message > .lime-avatar-frame--lg {
+    width: 36px;
+    height: 36px;
+    flex: none;
+  }
+  .lime-message > .lime-avatar-frame--lg .seed-avatar--lg {
+    width: 36px;
+    height: 36px;
+    font-size: 13px;
+  }
+  /* inside a run only the first message has the avatar and the name; the space stays so the bubbles line up */
+  .lime-message--cont > .lime-avatar-frame {
+    visibility: hidden;
+  }
+  .lime-message--cont .lime-message__meta {
+    display: none;
+  }
+  .lime-message__col {
+    max-width: 78%;
+    gap: 2px;
+  }
+  .lime-message--sent .lime-message__col {
+    align-items: flex-end;
+  }
+  .lime-message__meta .lime-message__time {
+    display: none;
+  }
+  .lime-message__meta {
+    padding-left: 4px;
+  }
+  .lime-message__sender {
+    font-size: 13px;
+  }
+
+  /* ── bubbles ── */
+  .lime-message__content {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 9px 13px;
+    border-radius: 18px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .lime-message__content--media,
+  .lime-message__content--bare {
+    padding: 0;
+  }
+  .lime-message--sent .lime-message__content:not(.lime-message__content--media):not(.lime-message__content--bare) {
+    background: var(--seed-lime-300);
+    color: var(--seed-soil-900);
+  }
+  .lime-message--sent .lime-message__content .lime-message__text,
+  .lime-message--sent .lime-message__content .lime-message__caption,
+  .lime-message--sent .lime-message__content .lime-message__text * {
+    color: var(--seed-soil-900);
+  }
+  .lime-message__text,
+  .lime-message__caption {
+    font-size: 15px;
+    line-height: 1.4;
+  }
+  .lime-message__text a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    overflow-wrap: anywhere;
+  }
+  /* nothing may be wider than the bubble: media, maps, files, voice notes, link previews, code */
+  .lime-message__image:not(.lime-album__img) {
+    max-width: 100%;
+    height: auto;
+  }
+  .lime-message__content img,
+  .lime-message__content video {
+    max-width: 100%;
+  }
+  .lime-album {
+    width: 100%;
+    max-width: 260px;
+  }
+  .lime-message__map,
+  .lime-message__voice,
+  .lime-message__file-card {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+  }
+  .lime-message__map {
+    aspect-ratio: 16 / 10;
+  }
+  .lime-message__content .lime-link-preview {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .lime-message__text pre,
+  .lime-message__content pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .lime-message__text code {
+    overflow-wrap: anywhere;
+  }
+
+  /* ── the row under a bubble ── */
+  .lime-message__actions {
+    display: none !important; /* no hover on a phone: the buttons below do the same jobs */
+  }
+  .lime-message__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin-top: 2px;
+    padding: 0 2px;
+    min-height: 26px;
+    box-sizing: border-box;
+  }
+  .lime-message__foot .lime-message__reactions:not(:empty) {
+    margin: 0;
+    gap: 4px;
+  }
+  .lime-message__foot .lime-reaction {
+    padding: 1px 8px;
+    box-shadow: none;
+  }
+  .lime-foot-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--soil-text-muted);
+    font-size: 17px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lime-foot-btn:active {
+    background: var(--lime-layer-hover);
+  }
+  .lime-message__stamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    font-size: 11.5px;
+    line-height: 1;
+    color: var(--soil-text-muted);
+    white-space: nowrap;
+  }
+  .lime-receipt {
+    font-size: 12px;
+    color: var(--soil-text-muted);
+  }
+  .lime-message__footer {
+    margin: 2px 0 0 2px;
+  }
+  .lime-message--sent .lime-message__footer {
+    align-self: flex-end;
+  }
+
+  /* ── the composer: one pill, grown on focus ── */
+  #composer.lime-composer {
+    left: 10px;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    width: auto;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    column-gap: 4px;
+    row-gap: 0;
+    padding: 5px 8px;
+    border: 1px solid var(--soil-border);
+    border-radius: 26px;
+    background: var(--soil-bg-surface);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.1);
+  }
+  #composer.lime-composer.is-expanded {
+    border-radius: 22px;
+    padding: 8px 8px 6px;
+    row-gap: 4px;
+  }
+  /* the box, the row and the actions add no boxes: their children are placed on the pill's own grid */
+  #composer .lime-composer__box,
+  #composer .lime-composer__row,
+  #composer .lime-composer__actions {
+    display: contents;
+  }
+  #composer .lime-composer__attachments {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  #composer .lime-composer__attachments-error {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  #composer [data-attach-btn] {
+    grid-column: 1;
+    grid-row: 3;
+    width: 36px;
+    height: 36px;
+    font-size: 22px;
+    color: var(--soil-text);
+  }
+  #composer div.lime-composer__input {
+    grid-column: 2;
+    grid-row: 3;
+    font-size: 16px; /* 16px stops iOS zooming the page when the field is focused */
+    line-height: 1.35;
+    height: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 4px 4px;
+    margin: 5px 0;
+    box-sizing: content-box;
+  }
+  #composer div.lime-composer__input:empty::before {
+    content: 'Send message\2026';
+  }
+  #composer .lime-composer__voice-dropdown {
+    grid-column: 3;
+    grid-row: 3;
+  }
+  #composer .lime-composer__privacy,
+  #composer .lime-composer__toolbar {
+    display: none;
+  }
+  #composer .lime-composer__return {
+    display: none;
+  }
+  /* expanded: the text area on top, a toolbar row under it: +, emoji, B, I, U, ..., mic, send */
+  #composer.is-expanded div.lime-composer__input {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    height: auto;
+    min-height: 24px;
+    max-height: 160px;
+    padding: 6px 8px;
+    margin: 0;
+  }
+  #composer.is-expanded [data-attach-btn] {
+    grid-row: 4;
+  }
+  #composer.is-expanded .lime-composer__voice-dropdown {
+    grid-row: 4;
+  }
+  #composer.is-expanded .lime-composer__toolbar {
+    display: flex;
+    grid-column: 2;
+    grid-row: 4;
+    padding: 0;
+    margin: 0;
+    gap: 0;
+    min-width: 0;
+  }
+  #composer.is-expanded .lime-composer__return {
+    display: flex;
+    position: static;
+    grid-column: 4;
+    grid-row: 4;
+    width: 40px;
+    height: 36px;
+    border-radius: 18px;
+    font-size: 20px;
+  }
+  #composer .lime-composer__return[aria-disabled="true"] {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+  /* the phone toolbar: emoji, B, I, U, and the "..." menu that holds the rest (strikethrough included) */
+  #composer .lime-composer__toolbar .lime-composer__tool--overflow,
+  #composer .lime-composer__toolbar > [data-cmd="strikethrough"],
+  #composer .lime-composer__toolbar > .lime-composer__divider {
+    display: none;
+  }
+  #composer .lime-composer__toolbar .lime-composer__overflow {
+    display: inline-flex;
+  }
+  #composer .lime-composer__tool--emoji {
+    display: inline-flex;
+    font-size: 20px;
+  }
+  .lime-composer__menu-s {
+    display: flex;
+  }
+  #composer .lime-composer__tool {
+    width: 36px;
+    height: 36px;
+  }
+  #composer .lime-composer__aux {
+    width: 36px;
+    height: 36px;
+  }
+  .lime-emoji-pop {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: calc(100% + 8px);
+    z-index: 30;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 8px;
+    border-radius: 18px;
+    background: var(--soil-bg-elevated);
+    border: 1px solid var(--soil-border-subtle);
+    box-shadow: var(--seed-shadow-md);
+  }
+  .lime-emoji-pop.is-open {
+    display: flex;
+  }
+  .lime-emoji-pop button {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 12px;
+    background: none;
+    font-size: 24px;
+    cursor: pointer;
+  }
+  .lime-emoji-pop button:active {
+    background: var(--lime-layer-hover);
   }
 }
