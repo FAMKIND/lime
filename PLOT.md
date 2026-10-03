@@ -20,7 +20,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 5. ~~LIME-48~~ **landed as `3ac4b6d`** (2026-09-30; `PLOT.md` committed as `d9d2fc5`): one `auth.html` (email-first), `login.html`/`signup.html` redirect with the query string kept, the video as `auth-hero.webm` plus a 360×640 `auth-hero.mp4` (2.5 MB) and a poster. The 18.9 MB original and the `.ogg` are deleted. The page is fixed at 100vh (the portrait video had stretched it to 1396px). **The user's gate check:** they refined the page in the Inspector (bigger logo, smaller bold headline with a full stop, tighter spacing) and said to use plot's judgement from their screenshot. **LIME-48-fix landed as `8890a6b`** (the user signed in on it successfully, 2026-09-30). **LIME-29 was in progress in tend** at that point (uncommitted `lime.css`, `index.html`, `app.js`, `store.js`). **Don't touch the tree until tend reports.** **LIME-29 landed as `629bcff`** (2026-09-30): the picker, plus two fixes: blank picker avatars, and a **data-loss race** (a 100ms debounced save lost to sign-out's navigation; `LimeStore.flush()` now runs before `signOut`). It only showed in the real Firefox and Chrome. **The milestone (sign up → sign in → find a teacher → message them) is built; the user's gate check is pending.** **LIME-55 landed as `0f504fb`**; the user's check led to **LIME-55-fix** (Add goes lime, nav states neutral, split-button hover). **LIME-27 was in progress in tend** at that point (uncommitted `store.js`). **LIME-27 landed as `a843683`** (Share popover, deep links, toasts; **the user's gate check is pending**). **LIME-55-fix landed as `18170d9`** (shared `--lime-primary-*` tokens for Send and Add; neutral nav). **Open:** on the Lemon tone, primary-button hover text is 4.43:1 (it predates this: Send has always had it). Plot's lean: switch the primary buttons' icon and text to full ink, as a one-line follow-up, or fold it into the cleanup brief. Asked the user. Next: the user's checks of 27 and 55-fix, then the **Communities decision surface** (plot's own work, no tend). (Old queue line: LIME-27 → LIME-55-fix → then the **Communities decision surface** (LIME-28).
 6. **LIME-29**: New message (search by name, email, phone or school; "Invite (Soon)"; the documented invites design)
 7. **LIME-27 (revised)**: the Share header button and a Claude-style popover (add people by email for groups; who has access; Copy link), deep links, toasts
-8. **LIME-28 Communities: BLOCKED on a planning pass.** Present a **decision surface** from the user's mockups (the discovery cards, the feed of posts with likes, community pages with channels) before briefing.
+8. **LIME-28 Communities: DEFERRED (the user, 2026-10-02) until direct and group messaging land on mobile.** Previously: BLOCKED on a planning pass. Present a **decision surface** from the user's mockups (the discovery cards, the feed of posts with likes, community pages with channels) before briefing.
 
 Items 4–6 complete the user's milestone: sign up → sign in → find a teacher → message them.
 
@@ -165,6 +165,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **Measure with Playwright + Firefox;** CSS changes report the browser-parsed rule counts; JS changes load the real app in jsdom.
 - **The user pastes tend's output here.** Tend only acts on text typed into *its* window. Say so plainly when the user re-pastes an old message.
 - **UPDATED AGAIN (the user, 2026-09-30, LIME-61): every primary button uses the pale lime of Add/↵ (`--lime-primary-*`, lime-100/200/300, ink text).** Solid brand green `#09a950` remains only for the presence "active" dot, the voice/audio play buttons, and the unread ring.
+- **UPDATED AGAIN (the user, 2026-10-03, the mobile design):** **the user's own chat bubbles are light green (`--seed-lime-300`).** Bubble and wallpaper customisation come later.
 - **The lime rule (UPDATED by the user, 2026-09-30, LIME-55-fix): lime is for primary actions only** (the "+ Add" button, Send, primary buttons). **Nav items are neutral now** (they match menus and the selected list row). The unread ring and the voice play button stay lime by the user's earlier choice. Everything else stays neutral, and neutral layers derive from the canvas tone (LIME-50-fix).
 
 ## Continuation note (2026-09-27)
@@ -370,6 +371,173 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+> **Shared context for LIME-78 to 81: the mobile build (the user's Penpot design, 2026-10-03).** Applies at **≤ 767px only**; desktop is refined later. Read this before each brief.
+>
+> **The design, in words:**
+> - **The Messages screen:**
+>   - the logo mark plus a large "Messages" title, with a pale-lime **lime-shaped "+"** at the top right (New message);
+>   - search plus a **filter** icon;
+>   - **one list** (no Recent row, no sections, no tabs). **Pinned chats sit at the top with a pin icon after the name.**
+>   - **Row:**
+>     - a large lime-shaped avatar;
+>     - a bold name;
+>     - a 1–2 line preview, which can be **"typing…"**;
+>     - the time at the right: **green plus a pale-lime count badge when unread**, grey when read ("Yesterday", dates);
+>     - groups show **2, 3, or 3 + "+N"** stacked avatars, with names like "Jean, Rise & Me" and previews like "Jean: …";
+>     - the selected or pressed row gets a soft neutral fill.
+> - **The dock** (floating, rounded, neutral): **link** (chat bubble, unread total badge) · **jam** (pencil) · **calls** (phone) · **account** (your avatar). Labels in **lowercase**. The active item sits in a grey pill. **No Communities, no notifications bell on mobile.**
+> - **The chat screen** (pushed; no dock):
+>   - **the top bar:** "‹" plus the **unread count of other chats** (back to Messages); the truncated title; a **stacked-avatar group with "+N"** (tap → opens the right panel's details/members as a pushed screen); **search** (find in this chat); **phone** (calls); **"⋯"**.
+>   - **Messages:**
+>     - **others on the left**, with avatar and name, in a **neutral** bubble;
+>     - **your own on the right**, in a **light-green** bubble (brand `#a3e18a`, `--seed-lime-300`, with ink text), no avatar;
+>     - under each: **reaction chips plus an "add reaction" button**, then **the time and receipts (✓ / ✓✓)** at the right;
+>     - the reply summary ("3 replies · Last reply Jul 7");
+>     - rich text (bold, lists);
+>     - media within the width.
+> - **The composer:**
+>   - **collapsed:** one pill ("+", "Send message…", mic);
+>   - **on focus it grows:** the text area above a toolbar ("+", emoji/add reaction, B, I, U, "⋯", mic, ↵). **↵ is disabled until there's text, then it uses the existing pale-lime send pattern.** The keyboard's return key says Send.
+> - **Menus:** Apple's newer pattern. **No bottom sheets.** A **"liquid glass" popover opens in context** from its trigger (translucent, `backdrop-filter` blur, rounded, a soft outline).
+>   - **The chat "⋯" menu:** Rename · **Pin chat** · Customize (paint brush = Appearance) · Share · Archive · (divider) · Delete (red).
+>
+> **The user's decisions (2026-10-02/03):**
+> - Communities is deferred.
+> - Notifications are baked into link (badges plus live previews).
+> - "typing…": yes.
+> - Avatars stay lime-shaped.
+> - Lowercase times ("06:32 am"; confirm the leading zero at the gate).
+> - **Read receipts return:** ✓ sent (accepted by the server) / ✓✓ read (groups: read by everyone).
+> - **Calls: leave the calls tab and phone icon in place, with no "Soon" badge** ("we will prioritize soon"). Tapping shows a gentle toast, "Calls are coming soon".
+> - **Pin replaces Star:** the same per-user field, relabelled "Pin chat" / "Unpin chat", and pinned chats sort first.
+> - **Default avatars use a few brand tints:** light green `#a3e18a`, pale lime `#e4f9be`, warm grey `#f0eee6`, plus a soft ink tint for variety, picked deterministically by name, with ink initials ≥ 4.5:1.
+> - **The lime rule changes:** the **user's own bubble is light green** by the user's choice; bubble and wallpaper customisation come later.
+> - **The bottom dock supersedes the README's 2026-09-23 push-drawer decision** (on phones).
+>
+> **Standing rules for all four:**
+> - measure at **390×844** (plus 360×780);
+> - run `tests/` on localhost **and** `LIME_TEST_ORIGIN=lan`;
+> - check the real Firefox and Chrome with mobile emulation, **and Safari** (if `safaridriver` is enabled; otherwise say so);
+> - desktop (≥ 768px) must look **unchanged**: compare screenshots;
+> - **no personal data** in any committed file;
+> - commit, push, and stop at each gate.
+
+### LIME-78 → `tend` (next): the mobile shell: dock, Messages screen, pushed chat with back, header
+**The change (≤ 767px):**
+1. **The dock** as designed. It replaces the hamburger drawer on phones (remove the drawer and its toggle at this width). The link badge = total unread.
+   - **jam** opens the existing Jam placeholder;
+   - **calls** shows the toast;
+   - **account** opens Settings → Profile (full screen on phones), where sign-out also lives.
+2. **The Messages screen** as designed:
+   - logo, title, "+" (New message), search (filters the list as you type), and **filter** (an in-context menu with **All · Unread · Pinned · Groups · Archived**; the in-context menu style comes in LIME-80, so here a plain menu is fine);
+   - **pinned first**, then by recency;
+   - the row design (time and badge rules, group stacks with "+N", 2-line preview);
+   - **remove on mobile:** the Recent row, the section headers, the Messages/Communities tabs, the bell, the breadcrumbs.
+3. **Stacked navigation:** tapping a row **pushes the chat screen**. "‹" with the other-chats unread count goes back to Messages. **The browser and Android back button also go back** (`history.pushState` / `popstate`), and the deep links `#c=` still work. The thread panel and details also push as full screens with "‹".
+4. **The chat top bar** as designed. Tapping the avatar stack or title opens **details/members** (the existing right-panel content) as a pushed screen. Search and the phone are placeholders here (search arrives in LIME-80; the phone shows the calls toast).
+5. **The README:** replace the 2026-09-23 mobile drawer decision with the dock decision (date it 2026-10-03, the user's choice).
+
+**Scope:** `public/index.html`, `public/js/app.js`, `public/css/lime.css` (mobile media queries), `README.md`, `tests/`, and `TEND.md`. **Not:** desktop layout, message rendering (LIME-79), menus (LIME-80), or live typing and receipts (LIME-81).
+
+**Verification:** screenshots at 390 and 360 of Messages (plain, with the filter open, empty search), a chat, details, the thread, and the back flow (including the browser back button). Desktop screenshots unchanged. Tests pass on both origins.
+
+**Gate (on your phone):** the Messages screen looks like your design, with the dock at the bottom. Tap a chat and it opens full screen; "‹" (or swiping back) returns to the list. Tap the avatars at the top for details.
+
+**Record:** add a `## LIME-78` entry to `TEND.md`. Commit: `feat(mobile): dock, Messages screen, stacked navigation`, trailer `Brief: LIME-78`, plus the attribution trailer. Push.
+
+### LIME-79 → `tend` (after LIME-78): the mobile chat view: bubbles, reactions row, time and receipts slot, the composer, brand avatars
+**The change:**
+1. **Bubbles (≤ 767px):** others left (avatar + name on the first of a run; consecutive messages from the same sender group without repeating them), neutral bubble (the current bubble token). **Own messages right, in `--seed-lime-300` with ink text**, with no avatar or name. A max width of ~78%. **Nothing overflows:** long URLs wrap, and albums, location cards, link previews and code blocks fit.
+2. **Under each bubble:** the reaction chips plus an **add-reaction** button (opens the existing picker), and at the right the **time (lowercase, e.g. "7:32 am") plus a receipt slot** (render "✓" for now; LIME-81 makes it live). Then the reply summary as designed.
+3. **The composer** as designed: collapsed pill → expanded on focus (the toolbar slides in); ↵ disabled until text, then pale-lime; it collapses again when empty and blurred; `enterkeyhint="send"`: on phones the keyboard's Return **sends** (the common messaging pattern; document it). There's no newline from the keyboard on phones, which is accepted. Mic and "+" as today. **The toolbar never expands just because the keyboard opened.**
+4. **Brand default avatars (all widths):** replace the 12-pastel `hashName` palette with the **brand tints** listed in the shared context (deterministic by name), with ink initials, contrast ≥ 4.5:1, and dark-mode variants computed and measured.
+5. **Times in lowercase** everywhere on mobile (list and chat). **Ask the user at the gate whether "06:32" keeps the leading zero.**
+
+**Scope:** message, composer and avatar rendering and CSS, `tests/`, and `TEND.md`. **Not:** receipt logic (LIME-81) or menus (LIME-80).
+
+**Verification:** 390 and 360 screenshots: a DM, a group with runs, own and others' messages, every message type, reactions, a reply summary, and the composer collapsed, expanded, typing and sending. The avatar contrast table. Desktop unchanged (apart from the avatar tints, which apply everywhere). Tests pass on both origins.
+
+**Gate:** your messages are on the right in light green and others' on the left; nothing is cut off; the message box starts as one line and grows when you tap it; the send button wakes up when you type.
+
+**Record:** add a `## LIME-79` entry to `TEND.md`. Commit: `feat(mobile): chat bubbles, reactions row, composer; brand avatar tints`, trailer `Brief: LIME-79`, plus the attribution trailer. Push. **Stop for the user's check** (LIME-78 and 79 are checked together).
+
+### LIME-80 → `tend` (after the user checks 78 and 79): in-context "liquid glass" menus, Pin, native share and pickers, find-in-chat
+1. **Menus on phones** (the chat "⋯", the filter, the title menu, the mic list, the list row's long-press if any): **an in-context popover** anchored to its trigger. Translucent (`backdrop-filter: blur(…) saturate(…)`) with a solid fallback where unsupported, a rounded large radius, a soft outline, items with icons, and Delete red. It opens from the trigger with a short scale and fade (reduced motion: fade). It stays inside the viewport. Closes on outside-tap or Escape. **No bottom sheets.**
+2. **The chat "⋯" items:** Rename · **Pin chat / Unpin chat** · **Customize** (opens Appearance) · Share · Archive · Delete. **Pin replaces Star app-wide** (labels, toasts: "Pinned" / "Unpinned", the pin icon in rows, pinned-first sorting). **Keep the stored field and op** (`starred`, `membership.setStarred`) **for compatibility**, and document "Pin = starred" in `docs/api.md`.
+3. **Native where allowed:**
+   - Share uses **`navigator.share({ title, url })`** when available (phones), falling back to the existing popover;
+   - the **mic list and timezone** become native `<select>` on phones;
+   - inputs get the right `type` / `inputmode` / `autocomplete`.
+4. **Find in chat** (the search icon): a search field in the top bar that highlights matches in the loaded messages, with up and down to step between them and a "3 of 12" count. **Local only.**
+5. **Calls** (the dock and the phone icon): the toast "Calls are coming soon".
+
+**Gate:** "⋯" opens a frosted menu right where you tapped; Pin keeps a chat at the top; Share opens your phone's share sheet; search finds words in the chat.
+
+**Record:** add a `## LIME-80` entry to `TEND.md`. Commit: `feat(mobile): in-context glass menus, pin, native share/pickers, find in chat`, trailer `Brief: LIME-80`, plus the attribution trailer. Push.
+
+### LIME-81 → `tend` (after LIME-80): live "typing…" and read receipts
+1. **Contract** (`docs/api.md`):
+   - **typing** is an ephemeral realtime message, `{ type: 'typing', conversation_id, user_id, state: 'start'|'stop' }`, sent by `POST /typing` (rate-limited, ≤ 1 per 3s per conversation) and fanned out over `/events` to the **other members only**, never logged as an op. It auto-expires after 6s without a refresh.
+   - **Receipts:** **members can now see each other's `last_read_at`** (the user's decision 2026-10-03; update the visibility section and the privacy notes). `membership.markRead` feed entries go to **all members** of that conversation, not only the actor.
+2. **The server:** implement both, with api-suite checks (fan-out, rate limit, expiry, visibility).
+3. **The client:**
+   - **typing:** send while the composer has text and focus (throttled; stop on send, blur or empty).
+   - **Show it:**
+     - in the **list preview** as "typing…" (green italic or muted; tend proposes, matching the design);
+     - in the chat as an **animated three-dot bubble** on the left, with the typer's lime avatar, just above the composer. In groups, show stacked avatars when several people type, plus "Jean is typing…" or "2 people are typing…".
+     - **Reduced motion:** static dots.
+4. **Receipts:**
+   - own messages show **a clock icon while still in the outbox**, **✓ once the server accepts them**, and **✓✓ once every other member's `last_read_at` ≥ the message's `server_ts`**;
+   - grey ticks, with the ✓✓ in brand green;
+   - tapping a group message's ticks shows who has read it (a small popover). Optional: if large, report it and skip.
+
+**Gate:** on two phones, start typing on one; the other sees "typing…" in the list and dots in the chat. Send it; the ticks go ✓ then ✓✓ when the other opens it.
+
+**Record:** add a `## LIME-81` entry to `TEND.md`. Commit: `feat: live typing indicator and read receipts`, trailer `Brief: LIME-81`, plus the attribution trailer. Push. **Stop for the user's check.**
+
+---
+
+### The user's own mobile design (Penpot), direction set 2026-10-02: supersedes the LIME-77 mock
+- **The user:** "I am using Penpot to create my own as I have the vision… It needs to be simplified greatly for people of all ages to use. Let's use this direction." They're adding **the chat screen and the reply thread** next. **Don't brief the mobile build until those arrive.** LIME-77's mock was "helpful to start" and is superseded.
+- **Screen 1, Messages (plot's reading of the user's design):**
+  - **Header:** the **lime logo mark** next to a large **"Messages"** title, and at the top right a **pale-lime "+"** button that appears **lime-shaped** (the silhouette).
+  - **A search field**, with a **filter icon** (sliders) to its right.
+  - **A row of large round avatars** with names (Recent / favourites).
+  - **One simple list, with no Starred/All sections and no Messages/Communities tabs.**
+  - **Row:**
+    - a large round avatar;
+    - a **bold name**;
+    - a preview line that can show **"typing…"** live;
+    - a **time** at the right: **green when unread**, with a **pale-lime round unread-count badge** (ink number); **grey when read**, with "Yesterday" for older days;
+    - **groups show two overlapping avatars** and "Jean, Rise & Me" style names with a "Jean: …" preview.
+  - **Dock:** a floating rounded bar with **three items only, labelled in lowercase**:
+    - **link** (chat bubble, unread badge "2"; the active item in a grey pill);
+    - **jam** (pencil);
+    - **account** (the user's avatar).
+  - **Communities and Notifications aren't in the dock.**
+- **ANSWERED (the user, 2026-10-02):**
+  1. **Communities is scoped back** until direct and group messages are landed. LIME-28 / the Communities decision surface is deferred; hide the Communities entry points on mobile. **Notifications are baked into link:** badge counts plus live, dynamic preview text. There's no separate notifications screen on mobile (the bell mockup goes away there).
+  2. **Desktop is refined after mobile** (a later pass follows the same simplification).
+  3. **"typing…": yes** (an ephemeral realtime event; add it to `docs/api.md` alongside presence).
+  4. **Avatars stay lime-shaped** (the user's round placeholders are just placeholders).
+  5. **Time format in lowercase:** "06:32 am" (the user's design shows a two-digit hour; confirm "6:32 am" vs "06:32 am" at the build gate if unclear).
+  - Still open: where Starred and Archived live (plot's assumption: the filter button).
+- **Implications to settle when briefing (ask the user then, not now):**
+  - (1) Where do Communities, Notifications, Starred and Archived live? (Likely: the **filter** for Unread, Starred, Groups and Archived; Notifications and Communities later.)
+  - (2) **"typing…"** is a new live feature: an ephemeral realtime event (a contract addition, not an op).
+  - (3) Is this simplification **mobile-only, or the direction for desktop too**?
+  - (4) The time format ("06:32 am") versus the current "6:32 AM".
+  - (5) The avatars in the user's design are **round**; confirm whether the lime silhouette stays for avatars ≥ 32px.
+
+### LIME-76 landed as `b1cd522` and LIME-77 as `3932666` (both pushed, 2026-10-01)
+- **LIME-76:** `ids.js` (`getRandomValues`), per-browser device ids, the server rejects non-UUID device ids, a "Couldn't save that" toast, and `LIME_TEST_ORIGIN=lan` suites asserting an insecure context. The mutation check proved the test catches the original bug. **Safari wasn't run:** the user must run `safaridriver --enable` (it asks for their password), then `cd tests && LIME_TEST_ORIGIN=lan node run.mjs safari`. **The user's phone gate is pending.**
+- **Plot's review of the LIME-77 mock (from tend's Chrome screenshot):**
+  - **(a) Frame 1 renders incompletely in Chrome:** the **Recent row is blank and the floating dock and toast are missing** (they do render in the dark frame 5). A mock bug to fix before judging it.
+  - **(b) Frame 2 introduces an unrequested design change:** **the user's own messages are right-aligned in pale-lime bubbles** (the WhatsApp/iMessage convention), whereas the app lays every message out left with names. That's a product decision for the user. It also conflicts with the lime rule (lime is for primary actions).
+  - **(c) The dock's Link item uses a chain-link icon,** while the app's Link nav uses the chat bubble (`dew-chat`). It should match.
+  - The rest (the top bar with "‹", centred avatar and name, Share and "⋯"; the sheet with a title and Cancel; the classic bar alternative; the native list) matches the proposal.
+  - Asked the user: their verdict, own messages left or right (and the colour), and floating vs classic.
 
 ### LIME-77 → `tend` (after LIME-76): a static mock of the phone shell, for the user to approve before building
 
