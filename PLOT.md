@@ -359,6 +359,11 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **CSS masks clip every descendant** (LIME-57): a masked wrapper hides child badges and dots, and box-shadows on masked elements vanish. Any mask brief must verify that no indicator sits inside a masked **ancestor**, with element screenshots of each indicator.
 - **Debounced saves lose data on navigation** (LIME-33, LIME-29): `scheduleSave()` waits 100ms, and a sign-out, redirect or reload inside that window drops the write. Only the real Firefox and Chrome caught it. Any brief that writes and then navigates must flush first (`LimeStore.flush()`); a `pagehide` flush is the general fix (folded into LIME-27).
 - **Plot crossed a line (2026-10-01): never write personal data into `PLOT.md`.** Plot copied the user's test-account emails and phone numbers into the LIME-74 brief while that same brief said they must never be committed. Tend committed `PLOT.md` unedited (`7450e93`), as instructed. It was caught before any push (origin was 129 commits behind) and redacted. **Rule:** real emails, phone numbers, passwords and keys go **only** into the prompt the user pastes, pointing at a gitignored file. **Updated 2026-10-01 (the user's decision, LIME-75): the two test **emails** (`shem@` and `jean@famkind.com`) are now intentionally public demo emails and may appear in `PLOT.md` and the seed. The phone numbers and password remain private, local file only.** `PLOT.md` refers to them abstractly ("test account 1"). The history rewrite is LIME-74-redact.
+- **Tiered verification (DECIDED by the user 2026-10-03: "yes"), applies to every brief from LIME-79-fix6 on:**
+  - **CSS-only or visual polish:** the `mobile` suite plus `smoke` on **one** origin (the dev server, LAN), and screenshots of the changed screens only; no desktop pixel diffs unless desktop CSS was touched.
+  - **JS, behaviour, data or server changes:** the relevant suites on the dev server (LAN), plus smoke.
+  - **The full matrix** (every suite × localhost/dev/LAN × Firefox and Chrome) runs **once at the end of a chained run**, before the last push.
+  - Measurements (ΔE, contrast, icon tables) only where the brief asks for them.
 - **The test harness lives in `tests/`** (LIME-72): it uses **puppeteer-core** driving the installed Firefox (BiDi, with real-default prefs) and Chrome. Run `cd tests && npm test` (the Python server) and `LIME_TEST_SERVER=dev npm test` (the dev server). Every brief touching `public/` must run it and report the result.
 - **Playwright's Firefox is not the user's Firefox (found 2026-09-30, LIME-52-fix3).** Uploads passed tend's whole matrix in Playwright's patched Firefox build but did nothing in the user's installed Firefox 156, while working in Chrome. **Any brief touching browser APIs with per-browser behaviour (files, IndexedDB, blobs, canvas, clipboard, `file://` origin rules) must verify in `/Applications/Firefox.app` itself** (BiDi, or Playwright with `executablePath`), and state which binary it used. Layout-only measurements can keep using Playwright's Firefox.
 - **`[hidden]` is unreliable here:** any class that sets `display` (e.g. `.lime-icon-btn { display: flex }`) beats the browser's default `[hidden]` rule (found in LIME-40). Candidate for the global-reset brief: `[hidden] { display: none !important; }` alongside the border-box reset.
@@ -504,6 +509,51 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
+### Landed (2026-10-03): LIME-79-fix2 `3935a07`, fix3 `4f8b591`, fix4 `21dfddf`, fix5 `7a029d2` (all pushed; about 58 minutes for the four)
+- The palette has 8 non-green pastels (ΔE ≥ 7.10). The 20px lime badges match. Dock press glass. Landscape on touch phones uses the phone layout. The header shows 2 avatars plus a count. One 24px header icon set. Fades. Under-bubble alignment. Receipts popover. A unified composer with "Aa". A 40px round send. Auth handles the keyboard and `enterkeyhint`. Desktop is 0 px different. **No real iPhone or Safari test yet.**
+- **Tend's notes:**
+  - (a) it **can't open the Penpot files**, so "as designed" was inferred. **Ask the user to export the Penpot screens as PNGs into `docs/design/mobile/`** so tend can compare directly;
+  - (b) **a behaviour change:** Create account now refuses an unticked terms box (it used to create the account anyway). That's correct;
+  - (c) **a bug found, not fixed:** a `#c=` deep link to a chat that arrived after the cached copy opens the list instead (unbriefed candidate);
+  - (d) plot's uncommitted `PLOT.md` lines were correctly left out.
+- **The user asked "why did this take an hour?"** Plot's answer: 4 briefs and about 35 items, each with full verification (the whole suite across localhost, dev and LAN in Firefox and Chrome; desktop pixel diffs; ΔE and contrast computation; screenshot sweeps), and re-runs after each fix. **Proposed tiered verification** (waiting for the user's choice): CSS-only polish runs the mobile suite plus smoke on one origin; JS, data or server changes run the full matrix; the full matrix runs once at the end of a chain rather than per brief.
+
+### LIME-79-fix6 → `tend` (after fix5): back always returns to where you came from; the Account screen; New message full screen
+
+**The user (2026-10-03), answering tend's LIME-79-fix questions:**
+- (1) "back should always take you back to where you started. For profile, back to settings is confusing. Also profile could be changed to account."
+- (2) "new messages should go fullscreen, agree."
+
+1. **One navigation rule on phones: "‹" (and the browser or swipe back) always returns to the screen you came from.**
+   - Keep a single navigation stack (built on the `history` work from LIME-78). Every pushed screen (chat, thread, members, person details, Account, the sub-screens, New message) pops back to **exactly** the screen and scroll position it was opened from.
+   - **No "‹" ever jumps sideways** to a parent you didn't come through.
+   - Audit every pushed screen and list each one's back target in `TEND.md`.
+2. **The Account screen, replacing "Profile" on phones:**
+   - the dock's **account** opens **Account** (title "Account"), with the profile fields **and**, below them, rows for **Login & security** and **Preferences** (each pushing its own screen, with "‹" back to Account);
+   - **Account's "‹" returns to wherever you were** (e.g. Messages or a chat);
+   - Save and Cancel as today.
+   - **Desktop's Settings modal is unchanged for now** (desktop is refined later); note the label difference.
+3. **New message on phones is a full pushed screen:**
+   - the top bar has "‹", the title "New message", and **Start** at the right (enabled when someone's picked);
+   - a search field;
+   - chips for the picked people;
+   - the results list (lime avatars, name and school);
+   - the group-name field when 2 or more are picked;
+   - the empty and no-match states as today;
+   - "‹" returns to Messages.
+   - Desktop keeps the centred dialog.
+
+**Gate:**
+- from a chat, tap account, then "‹": you're back in that chat;
+- in Account, open Login & security, then "‹" twice: you're back where you started;
+- "+" opens New message full screen.
+
+**Verification:** **tiered** (see Patterns learned): the `mobile` and `smoke` suites on the dev server (LAN), screenshots of the changed screens, and the full matrix once before the push.
+
+**Record:** add a `## LIME-79-fix6` entry to `TEND.md`. Commit: `fix(mobile): back returns to origin; Account screen; full-screen New message`, trailer `Brief: LIME-79-fix6`, plus the attribution trailer. Push. **Stop for the user's review.**
+
+---
+
 ### LIME-79-fix landed as `9b69bf4` (pushed, 2026-10-03); the user's iPhone review is pending
 - **All 14 items are done;** 262 mobile checks. Tend also fixed:
   - the chat "⋯" menu, invisible on phones since LIME-78 (it opened as a 0×0 box);
@@ -513,6 +563,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **Presence is live** (~0.6s), and live presence overrides the seed's static status with the API on.
 - Icons: 24px in ≥ 44px targets; inline 20px; the pin is 17px. Eight tints (ΔE ≥ 6.26 light, 5.95 dark).
 - **Not tested on a real iPhone or in Safari.** The user's iPhone check is the real test.
+- **ANSWERED by the user 2026-10-03:** (1) back always returns to the origin, and Profile becomes **Account**; (2) New message goes full screen. Both are in **LIME-79-fix6.**
 - **Tend's questions, with plot's leans sent:**
   - (1) Profile's "‹" goes to the Settings list (which keeps Login & security and Preferences reachable): **keep.**
   - (2) The New message picker on phones: **make it a full pushed "New message" screen** (the native pattern, like WhatsApp's new chat), not a glass menu or a centred dialog. A small follow-up if the user agrees.
