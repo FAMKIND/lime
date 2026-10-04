@@ -3549,3 +3549,41 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 ---
 
 **Stopping here for your review of LIME-79-fix2 to fix5** (commits `3935a07`, `4f8b591`, `21dfddf` and this one).
+
+## LIME-79-fix6
+
+**Goal:** on phones, "back" always returns to where you came from; Profile becomes Account; New message is a full pushed screen.
+
+**What landed**
+1. **One navigation rule.** `LimeMobileNav` (`app.js`) now keeps an **overlay stack** on top of its three base views (Messages, chat, details panel). Each overlay is its own history entry (`{ lime: baseView, c: chatId, ov: [names] }`); closing one pops exactly one entry, so whatever was underneath is simply uncovered, with its scroll position (those screens stay in the page, they are never rebuilt). The on-screen "‹", the browser's back, Android back and iOS's edge swipe all take the same path: the arrow calls `history.back()` and the `popstate` handler closes the screen. Closing a screen some other way (Escape, a finished action) drops its entry quietly and returns a promise that settles once history has, so the next push (a chat opened from New message) cannot race the pop. `createModal` gained an `overlay` option (Account and New message use it) and its `close()` now returns a promise; a browser-back on a dirty form asks "Discard changes?" first and puts the entry back if you cancel.
+2. **Account replaces Profile on phones.** The dock's account opens **Account** (title "Account", the profile fields and Save / Cancel as before) with rows for **Login & security** and **Preferences** below the fields; each pushes its own screen with "‹" back to Account. The section list is not used on phones. **Account's "‹" returns to wherever you were.** Desktop's Settings modal keeps the sidebar and the word "Profile" (that is the label difference to note).
+3. **New message is a full pushed screen on phones:** a top bar with "‹", the title "New message" and **Start** (disabled until someone is picked, pale lime after), then the search field, the chips, the results (lime avatars, name and email or school, 60px rows), the group-name field when 2 or more are picked, and the empty / no-match states as before. "‹" (and back) returns to where you were. **Start opens the chat on top of Messages, not on top of New message** (so "‹" from that chat lands on Messages). Desktop keeps the centred dialog.
+
+**Back-target audit (every screen laid over another; phones)**
+
+| Screen | Opened from | "‹" / back returns to |
+|---|---|---|
+| Chat | Messages row, New message > Start, a `#c=` link | Messages |
+| Details panel (people, Members, a thread) | the chat's header, a message's avatar or name, a thread's "N replies" | the chat |
+| Person opened from **Members** | Members list | **Members** (it used to depend on a separate in-panel arrow; now the browser's back agrees) |
+| Person opened from a **thread screen** | an avatar in the thread | **the thread screen** (it used to jump to the chat) |
+| Account | dock "account", a person's "Edit profile" | Messages / that person's details / wherever it was opened |
+| Login & security, Preferences | Account's rows | Account |
+| New message | "+" | Messages (or wherever "+" was) |
+| Photo wall and viewer (modals) | a chat's attachments | **not on the stack**: they close with their own "x" / Escape; the browser's back there leaves the chat, as before (not changed in this brief) |
+
+**Bugs found and fixed on the way**
+- Reopening Settings asked "Discard changes?" about the old hidden form (a closed Settings now clears its pane). This was on desktop too.
+- **Picking someone in New message also opened their details behind it** (a document-wide handler for `data-profile-id` caught the picker's rows; on a phone it pushed the details screen under the picker). The handler now ignores clicks that began inside the picker; **this is also a desktop fix** (picking a person no longer changes the right panel).
+- `#profile-back-btn` / the "has an inner back" arrow now work for a person opened over a thread, not only over Members.
+
+**Choices and notes (please look)**
+- **The gate says "from a chat, tap account"**, but the dock only exists on the Messages screen (LIME-78 design), so there is no account button in a chat. The same idea is tested through a person's "Edit profile": chat > Members > a person > Edit profile > Account, then "‹" three times returns to the person, to Members and to the chat. Say if you want an account button somewhere inside chats.
+- A forward (browser Forward) into a closed overlay is not reopened; it lands on the base screen. Rare.
+- **Toasts** sit over the top of the screen and can cover the first list rows (the tests had to clear them); not changed here.
+- Safari not run; no real-phone test (iOS's swipe-back uses the same history entries, but only your phone can show that).
+
+**Verification (tiered)**
+- `mobile` suite 413 checks (was 359): Account's header, rows and footer; Account as one history entry; Login & security and Preferences pushing and popping (the arrow and the browser's back); "‹" twice; New message's full screen (size, bar, hit-testable, disabled / enabled Start, no x, no backdrop), picking, "‹" and the browser's back, Start landing on Messages after "‹"; a person from Members and from a thread screen (the arrow and the browser's back); Account from a person's "Edit profile" unwinding step by step.
+- Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa6/`: Account (top, bottom with the rows), Login & security, New message (empty, with a pick, dark).
+- **Full matrix, once before the push** (`npm test`; `LIME_TEST_SERVER=dev`; `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev`): smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51, mobile 413, auth-phone 25, safari skipped, all passing.

@@ -3222,6 +3222,8 @@ function initMessagesList() {
     const groupNameInput = document.getElementById('picker-group-name');
     const resultsEl = document.getElementById('picker-results');
     const startBtn = document.getElementById('picker-start-btn');
+    const startTop = document.getElementById('picker-start-top'); // LIME-79-fix6: the phone screen's own Start, in its top bar
+    const backTop = document.getElementById('picker-back');
     if (!modal || !input || !resultsEl) return;
 
     let selectedIds = [];
@@ -3335,6 +3337,7 @@ function initMessagesList() {
         chipsEl.innerHTML = '';
         groupNameField.hidden = true;
         startBtn.disabled = true;
+        if (startTop) startTop.disabled = true;
         return;
       }
       chipsEl.hidden = false;
@@ -3348,6 +3351,7 @@ function initMessagesList() {
       // the brief's own "One chip → DM" / "2+ chips → group" rule.
       groupNameField.hidden = selectedIds.length < 2;
       startBtn.disabled = false;
+      if (startTop) startTop.disabled = false;
     }
 
     function toggleSelect(profileId) {
@@ -3365,15 +3369,18 @@ function initMessagesList() {
         : LimeStore.createConversation({ type: 'group', memberIds: selectedIds, name: groupNameInput.value.trim() || null });
       promise.then((conversation) => {
         if (conversation.type === 'group') LimeToast.show({ title: 'Group created', tone: 'success' });
-        pickerModal.close();
-        selectConversation(conversation);
-        const composerInput = document.querySelector('#composer .lime-composer__input');
-        if (composerInput) composerInput.focus();
+        // The picker's history entry goes first (on a phone), so the chat is pushed on top of Messages, not on top of New message.
+        pickerModal.close().then(() => {
+          selectConversation(conversation);
+          const composerInput = document.querySelector('#composer .lime-composer__input');
+          if (composerInput) composerInput.focus();
+        });
       }).catch(console.error);
     }
 
     const pickerModal = createModal({
       backdrop, modal, closeBtn,
+      overlay: 'new-message', // on a phone: a full pushed screen; back returns to where you were
       onOpen: () => {
         selectedIds = [];
         activeIndex = -1;
@@ -3443,6 +3450,8 @@ function initMessagesList() {
     });
 
     startBtn.addEventListener('click', start);
+    if (startTop) startTop.addEventListener('click', start);
+    if (backTop) backTop.addEventListener('click', () => { if (window.LimeMobileNav && LimeMobileNav.hasOverlay('new-message')) LimeMobileNav.popOverlay('new-message'); else pickerModal.close(); });
   })();
 
   // ── Conversation actions menu (LIME-25) ─────────────────
@@ -4184,8 +4193,8 @@ function renderProfilePanel(person) {
   // fixed header row instead of its own line inside the content, so this
   // only toggles [hidden] rather than building its own markup each render.
   const backBtn = document.getElementById('profile-back-btn');
-  if (backBtn) backBtn.hidden = detailsReturnTo !== 'members';
-  document.getElementById('right-panel')?.classList.toggle('has-inner-back', detailsReturnTo === 'members'); // LIME-78: phones show one back arrow, not two
+  if (backBtn) backBtn.hidden = detailsReturnTo !== 'members' && detailsReturnTo !== 'overlay';
+  document.getElementById('right-panel')?.classList.toggle('has-inner-back', detailsReturnTo === 'members' || detailsReturnTo === 'overlay'); // LIME-78: phones show one back arrow, not two
 
   let html = '';
   html += '<div class="lime-profile__header">'
@@ -4230,7 +4239,22 @@ function showPersonDetails(profileId, cameFromMembers, openPanel) {
   const layout = document.getElementById('layout');
   const rightPanel = document.getElementById('right-panel');
   if (!layout || !rightPanel) return;
-  detailsReturnTo = cameFromMembers ? 'members' : null;
+  // LIME-79-fix6: on a phone a person opened on top of Members or a thread is an overlay: "<" (and back) uncovers exactly that screen again.
+  const previousPanel = rightPanel.dataset.panel;
+  const overPanel = LimeMobileNav.isMobile() && openPanel !== false && layout.getAttribute('data-mobile-view') === 'panel' && previousPanel && previousPanel !== 'profile';
+  detailsReturnTo = overPanel ? 'overlay' : (cameFromMembers ? 'members' : null);
+  if (overPanel) {
+    LimeMobileNav.pushOverlay('person', () => {
+      detailsReturnTo = null;
+      if (previousPanel === 'members') {
+        const row = document.querySelector('.lime-contact--active');
+        const conversation = row && LimeStore.getConversation(row.dataset.conversationId);
+        if (conversation) { showMembers(conversation, false); return; }
+      }
+      rightPanel.dataset.panel = previousPanel;
+      renderCrumbs();
+    });
+  }
   rightPanel.dataset.panel = 'profile';
   // shownProfileId, not profileId — a real bug found live: #right-panel
   // is an ancestor of every button inside it (including its own
@@ -4313,6 +4337,9 @@ function showConversationHeaderPanel(conversation, openPanel) {
 document.addEventListener('click', (e) => {
   const trigger = e.target.closest('[data-profile-id]');
   if (!trigger || !trigger.dataset.profileId) return;
+  // LIME-79-fix6: picking someone in New message is not opening their details behind it. (The row is already re-rendered, so ask the
+  // path the click took, not the detached element.)
+  if (e.composedPath().some((n) => n.id === 'picker-modal')) return;
   showPersonDetails(trigger.dataset.profileId, !!trigger.closest('.lime-members-panel'));
 });
 
@@ -4331,6 +4358,7 @@ document.addEventListener('click', (e) => {
       return;
     }
     if (e.target.closest('.lime-profile__back')) {
+      if (window.LimeMobileNav && LimeMobileNav.hasOverlay('person')) { LimeMobileNav.popOverlay('person'); return; } // LIME-79-fix6
       const activeRow = document.querySelector('.lime-contact--active');
       const conversationId = activeRow && activeRow.dataset.conversationId;
       const conversation = conversationId && LimeStore.getConversation(conversationId);
@@ -5044,7 +5072,7 @@ document.querySelectorAll('.lime-notif').forEach((n) => {
 // through this same path). Settings uses it to ask "Discard changes?"
 // before closing over an unsaved Profile edit; the search modal doesn't
 // pass one, so its own behavior is unaffected.
-function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen, onClose, onBeforeClose }) {
+function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen, onClose, onBeforeClose, overlay }) {
   const focusTarget = returnFocusTo || trigger;
 
   function focusable() {
@@ -5071,19 +5099,35 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
     }
   }
 
+  // LIME-79-fix6: with an `overlay` name, a phone treats this modal as a screen on the navigation stack: opening it pushes a history
+  // entry, and the browser's back / swipe back closes it (asking onBeforeClose first, like the close button; if that vetoes, the entry
+  // is put back).
   function open() {
     backdrop.classList.add('is-open');
     modal.classList.add('is-open');
+    if (overlay && window.LimeMobileNav) LimeMobileNav.pushOverlay(overlay, onHistoryBack);
     if (onOpen) onOpen();
     document.addEventListener('keydown', onKeydown);
   }
 
-  function finishClose() {
+  // Back was pressed: ask first (a vetoing onBeforeClose puts the entry back), then close without touching history again.
+  function onHistoryBack() {
+    return Promise.resolve(onBeforeClose ? onBeforeClose() : true).then((proceed) => {
+      if (proceed === false) LimeMobileNav.pushOverlay(overlay, onHistoryBack);
+      else finishClose(true);
+    });
+  }
+
+  // fromHistory: the history entry is already gone (back was pressed); otherwise it is dropped here (and the returned promise
+  // resolves once that has settled).
+  function finishClose(fromHistory) {
     backdrop.classList.remove('is-open');
     modal.classList.remove('is-open');
     document.removeEventListener('keydown', onKeydown);
     if (onClose) onClose();
     if (focusTarget) focusTarget.focus();
+    if (overlay && window.LimeMobileNav && !fromHistory && LimeMobileNav.hasOverlay(overlay)) return LimeMobileNav.dropOverlay(overlay);
+    return Promise.resolve();
   }
 
   // LIME-26: onBeforeClose can now also return a Promise (e.g.
@@ -5093,21 +5137,20 @@ function createModal({ trigger, returnFocusTo, backdrop, modal, closeBtn, onOpen
   // existing sync caller (Settings' confirmDiscardIfDirty) is unaffected
   // by this extension.
   function close() {
-    if (!onBeforeClose) { finishClose(); return; }
+    if (!onBeforeClose) return finishClose();
     const result = onBeforeClose();
-    if (result === false) return;
+    if (result === false) return Promise.resolve();
     if (result && typeof result.then === 'function') {
-      result.then((proceed) => { if (proceed !== false) finishClose(); });
-      return;
+      return result.then((proceed) => (proceed !== false ? finishClose() : undefined));
     }
-    finishClose();
+    return finishClose();
   }
 
   if (trigger) trigger.addEventListener('click', open);
   backdrop.addEventListener('click', close);
   if (closeBtn) closeBtn.addEventListener('click', close);
 
-  return { open, close, focusable };
+  return { open, close, focusable, finish: finishClose };
 }
 
 // ── App confirm dialog (LIME-26) ─────────────────────────
@@ -5883,7 +5926,7 @@ document.addEventListener('keydown', (e) => {
     // LIME-31-fix layout: avatar beside Display name, then compact
     // label-left/control-right rows, Bio last, an always-visible footer
     // (Save/Cancel disabled until dirty — see updateFooterState).
-    pane.innerHTML = paneHeaderHtml('Profile', 'Your details as others see them across Lime.')
+    pane.innerHTML = paneHeaderHtml(isPhone() ? 'Account' : 'Profile', 'Your details as others see them across Lime.')
       + settingsBodyFrameOpen()
       + '<div class="lime-settings__body" id="settings-profile-form">'
       + '<div class="lime-settings__profile-top" data-row-label="Photo" data-field="photo">'
@@ -5903,6 +5946,12 @@ document.addEventListener('keydown', (e) => {
       + timezoneFieldHtml(profileOriginal.timezone)
       + compactRowHtml('phone', 'Phone', compactInputHtml('phone', profileOriginal.phone, 'type="tel"'))
       + textareaFieldHtml('bio', 'Bio', profileOriginal.bio)
+      // LIME-79-fix6: on a phone this screen is "Account": below the profile fields, rows for the other two sections (each its own screen,
+      // with "<" back to here). Desktop's Settings modal keeps its sidebar list instead.
+      + (isPhone() ? '<div class="m-account-links">'
+        + '<button type="button" class="m-account-link" data-account-go="security"><span class="dew dew-shield-check" aria-hidden="true"></span><span>Login &amp; security</span><span class="dew dew-chevron-right m-account-link__chev" aria-hidden="true"></span></button>'
+        + '<button type="button" class="m-account-link" data-account-go="preferences"><span class="dew dew-gear" aria-hidden="true"></span><span>Preferences</span><span class="dew dew-chevron-right m-account-link__chev" aria-hidden="true"></span></button>'
+        + '</div>' : '')
       + '</div>'
       + SETTINGS_BODY_FRAME_CLOSE
       + '<div class="lime-settings__footer">'
@@ -6133,9 +6182,11 @@ document.addEventListener('keydown', (e) => {
 
   // LIME-26: returns a Promise now (confirmDiscardIfDirty does) — both
   // call sites below already await it.
+  let currentSection = 'profile';
   function showSection(id) {
     return confirmDiscardIfDirty().then((proceed) => {
       if (!proceed) return false;
+      currentSection = id;
       nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
         btn.classList.toggle('is-active', btn.dataset.settingsSection === id);
       });
@@ -6168,9 +6219,22 @@ document.addEventListener('keydown', (e) => {
   // every pane.innerHTML replacement without being re-attached each time.
   pane.addEventListener('click', (e) => {
     if (e.target.closest('.lime-settings__back')) {
+      // LIME-79-fix6: on a phone "<" returns to where you came from: from Login & security or Preferences, back to Account; from Account,
+      // back to whatever was under it (Messages, a chat, a person...). Both pop exactly one history entry.
+      if (isPhone() && window.LimeMobileNav && LimeMobileNav.hasOverlay('account')) {
+        if (currentSection !== 'profile') LimeMobileNav.popOverlay('account-' + currentSection);
+        else settingsModal.close();
+        return;
+      }
       confirmDiscardIfDirty().then((proceed) => {
         if (proceed) modal.classList.remove('is-showing-section');
       });
+      return;
+    }
+    const go = e.target.closest('[data-account-go]');
+    if (go) {
+      const id = go.dataset.accountGo;
+      showSection(id).then((ok) => { if (ok) LimeMobileNav.pushOverlay('account-' + id, () => showSection('profile')); });
       return;
     }
     if (e.target.closest('#settings-sign-out-btn')) {
@@ -6228,8 +6292,9 @@ document.addEventListener('keydown', (e) => {
   const navBackBtn = document.getElementById('settings-nav-back');
   if (navBackBtn) navBackBtn.addEventListener('click', () => closeBtn && closeBtn.click());
 
-  createModal({
+  const settingsModal = createModal({
     trigger, backdrop, modal, closeBtn,
+    overlay: 'account',
     // #settings-btn (the trigger) lives inside the profile dropdown,
     // which closes itself the moment it's clicked — by the time this
     // modal closes, focusing the now-hidden trigger would silently do
@@ -6237,9 +6302,12 @@ document.addEventListener('keydown', (e) => {
     // dropdown's own trigger and stays visible regardless.
     returnFocusTo: document.getElementById('user-btn'),
     onBeforeClose: confirmDiscardIfDirty,
+    // LIME-79-fix6: a closed Settings keeps no half-edited form behind it (reopening used to ask "Discard changes?" about the old, hidden one).
+    onClose: () => { pane.innerHTML = ''; },
     onOpen: () => {
       if (navSearchInput) navSearchInput.value = '';
-      modal.classList.remove('is-showing-section');
+      // LIME-79-fix6: a phone goes straight to the Account screen (the section list is not used there).
+      if (isPhone()) modal.classList.add('is-showing-section'); else modal.classList.remove('is-showing-section');
       // LIME-26: showSection is async now (confirmDiscardIfDirty goes
       // through confirmDialog, a Promise, even when it resolves
       // immediately) — filterSettings has to wait for Profile to have
@@ -6251,7 +6319,7 @@ document.addEventListener('keydown', (e) => {
         // open) — without this, focus is left wherever it was, which
         // both reads oddly for a dialog and leaves the Tab-trap starting
         // from an element outside the modal entirely.
-        if (navSearchInput) navSearchInput.focus();
+        if (navSearchInput && !isPhone()) navSearchInput.focus();
       });
     },
   });
@@ -6398,6 +6466,38 @@ const LimeMobileNav = (function () {
     renderCrumbs();
   }
 
+  // LIME-79-fix6: ONE rule on a phone: "back" (the on-screen arrow, the browser's back, Android's back, iOS's edge swipe) returns to the screen
+  // you came from, never sideways to a parent you did not pass through. Every screen laid over another one is an "overlay" with its own
+  // history entry: Account (and its Login & security / Preferences screens), New message, and a person's details opened from Members or from a
+  // thread. The base view (Messages / chat / details panel) is the other half of the entry. Closing an overlay pops exactly one entry, so
+  // whatever was underneath (and its scroll position, which stays in place) is simply uncovered.
+  const overlays = [];       // names, bottom to top
+  const handlers = {};       // name -> () => void: closes that overlay's UI when history goes back
+  let silent = 0;            // popstates caused by our own programmatic closes: the UI is already closed
+  let waiting = [];          // promises waiting for a popstate
+
+  function pushOverlay(name, onBack) {
+    if (!isMobile() || overlays.includes(name)) return false;
+    overlays.push(name);
+    handlers[name] = onBack;
+    try { history.pushState({ lime: current(), c: currentId(), ov: overlays.slice() }, '', location.href); } catch (e) { /* the overlay still shows */ }
+    return true;
+  }
+  const hasOverlay = (name) => overlays.includes(name);
+  const topOverlay = () => overlays[overlays.length - 1] || null;
+  // The overlay's own back arrow: history goes back one, and the popstate handler closes its UI.
+  function popOverlay(name) { if (topOverlay() === name) history.back(); }
+  // The UI closed some other way (Escape, a finished action): drop its entry quietly. Resolves once history has settled, so a caller can
+  // then push the next screen (a chat opened from New message) without that push racing the pop.
+  function dropOverlay(name) {
+    const i = overlays.lastIndexOf(name);
+    if (i < 0) return Promise.resolve();
+    const n = overlays.length - i; // this overlay and any laid over it go together
+    overlays.splice(i).forEach((o) => { delete handlers[o]; });
+    silent++;
+    return new Promise((resolve) => { waiting.push(resolve); setTimeout(resolve, 400); history.go(-n); });
+  }
+
   function show(view) {
     if (!layout) return;
     const from = current();
@@ -6409,26 +6509,38 @@ const LimeMobileNav = (function () {
       return;
     }
     apply(view);
-    try { history.pushState({ lime: view, c: currentId() }, '', location.href); } catch (e) { /* the view still changes */ }
+    try { history.pushState({ lime: view, c: currentId(), ov: [] }, '', location.href); } catch (e) { /* the view still changes */ }
   }
 
   window.addEventListener('popstate', (e) => {
     if (!isMobile()) return;
     const st = e.state;
+    const target = (st && st.ov) || [];
+    const wasSilent = silent > 0;
+    if (wasSilent) silent--;
+    // close the overlays that are no longer in the entry we landed on, top first
+    while (overlays.length > target.length) {
+      const name = overlays.pop();
+      const close = handlers[name];
+      delete handlers[name];
+      if (!wasSilent && close) close();
+    }
     const view = (st && st.lime) || 'contacts';
     if (view !== 'panel') setRightPanelOpen(false);
-    if (view !== 'contacts' && st && st.c && openById) openById(st.c); // forward into a chat other than the open one
+    if (view !== 'contacts' && st && st.c && openById && st.c !== currentId()) openById(st.c); // forward into a chat other than the open one
     apply(view);
     if (view === 'contacts' && location.hash) {
       try { history.replaceState(st || { lime: 'contacts' }, '', location.pathname + location.search); } catch (err) { /* cosmetic */ }
     }
+    const done = waiting; waiting = [];
+    done.forEach((r) => r());
   });
 
   if (isMobile()) { try { history.replaceState({ lime: 'contacts' }, '', location.href); } catch (e) { /* no history */ } }
   document.body.setAttribute('data-m-view', current());
 
   return {
-    show, isMobile,
+    show, isMobile, pushOverlay, popOverlay, dropOverlay, hasOverlay, topOverlay,
     registerOpener(open, getId) { openById = open; currentId = getId; },
   };
 })();
@@ -6499,8 +6611,7 @@ window.LimeMobileNav = LimeMobileNav;
   on('m-dock-account', () => {
     // Settings → Profile (full screen on phones). Sign-out lives in Settings. Opening Settings shows the section list on a phone;
     // choosing Profile (what the nav row does) puts the Profile form full screen.
-    document.getElementById('settings-btn')?.click();
-    document.querySelector('#settings-nav [data-settings-section="profile"]')?.click();
+    document.getElementById('settings-btn')?.click(); // on a phone this opens the Account screen (see the Settings modal)
   });
 })();
 

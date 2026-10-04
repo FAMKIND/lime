@@ -371,18 +371,40 @@ async function runOne(check, browser, name, server, S, size) {
     const close = document.getElementById('settings-modal-close'); const foot = document.querySelector('.lime-settings__footer');
     return { backW: back.width, backH: back.height, backLeft: back.left, titleText: document.getElementById('settings-pane-title').textContent, titleMid: (t.left + t.right) / 2, vw: innerWidth, closeShown: getComputedStyle(close).display !== 'none', footBottom: foot ? foot.getBoundingClientRect().bottom : null, vh: innerHeight };
   });
-  check(tag('Settings > Profile has the native header: a back arrow (44px), the title "Profile" centred, no x'), sbar.backW >= 44 && sbar.backH >= 44 && sbar.backLeft < 16 && sbar.titleText === 'Profile' && Math.abs(sbar.titleMid - sbar.vw / 2) < 4 && !sbar.closeShown, JSON.stringify(sbar));
+  check(tag('Account: the native header (a back arrow, the title "Account" centred, no x), no section list, and rows for Login & security and Preferences'), sbar.backW >= 44 && sbar.backH >= 44 && sbar.backLeft < 16 && sbar.titleText === 'Account' && Math.abs(sbar.titleMid - sbar.vw / 2) < 4 && !sbar.closeShown && !(await visible(page, '#settings-nav')) && (await page.evaluate(() => [...document.querySelectorAll('.m-account-link')].map((e) => e.textContent.trim()).join())) === 'Login & security,Preferences', JSON.stringify(sbar));
   check(tag('its Save / Cancel footer is inside the screen'), sbar.footBottom !== null && sbar.footBottom <= sbar.vh + 0.5, JSON.stringify([sbar.footBottom, sbar.vh]));
-  // A fresh account's empty timezone makes the Profile form count as "edited" (the select shows a default), so Settings may ask
+  // A fresh account's empty timezone makes the Profile form count as "edited" (the select shows a default), so Account may ask
   // "Discard changes?" first. That is existing behaviour; take the Discard.
   const discard = async () => { await sleep(350); if (await visible(page, '#confirm-dialog.is-open, #confirm-dialog[open], .lime-confirm-dialog.is-open')) await page.click('#confirm-dialog-confirm'); };
+  const top = () => page.evaluate(() => LimeMobileNav.topOverlay());
+  const stateOv = () => page.evaluate(() => JSON.stringify((history.state && history.state.ov) || []));
+  check(tag('Account is one history entry on top of Messages (overlays: ' + (await stateOv()) + ')'), (await top()) === 'account' && (await stateOv()) === '["account"]');
+  await page.click('[data-account-go="security"]');
+  await discard();
+  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Login & security');
+  check(tag('Login & security opens as its own screen on top of Account'), (await top()) === 'account-security' && (await stateOv()) === '["account","account-security"]');
+  await page.click('.lime-settings__back');
+  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Account');
+  check(tag('"<" from Login & security returns to Account'), (await top()) === 'account');
+  await page.click('[data-account-go="preferences"]');
+  await discard();
+  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Preferences');
+  await page.goBack();
+  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Account');
+  check(tag('the browser\'s back from Preferences does the same: back on Account'), (await top()) === 'account' && (await visible(page, '#settings-modal')));
   await page.click('.lime-settings__back');
   await discard();
-  await wait(page, () => !document.getElementById('settings-modal').classList.contains('is-showing-section'));
-  check(tag('the section\'s back arrow returns to the Settings list, which has its own back arrow and title'), (await visible(page, '#settings-nav-back')) && (await page.evaluate(() => document.querySelector('.lime-settings__navbar-title').textContent)) === 'Settings');
-  await page.click('#settings-nav-back');
-  await discard();
   await wait(page, () => !document.getElementById('settings-modal').classList.contains('is-open'));
+  check(tag('"<" from Account returns to Messages: the dock is back, no overlay left in the history entry'), (await view(page)) === 'contacts' && (await visible(page, '#m-dock')) && (await stateOv()) === '[]' && (await top()) === null);
+  // Account → Login & security → "<" twice = back where you started
+  await page.click('#m-dock-account');
+  await wait(page, () => document.getElementById('settings-modal').classList.contains('is-open') && !!document.querySelector('[data-account-go="security"]'));
+  await page.click('[data-account-go="security"]'); await discard();
+  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Login & security');
+  await page.click('.lime-settings__back'); await sleep(300);
+  await page.click('.lime-settings__back'); await discard();
+  await wait(page, () => !document.getElementById('settings-modal').classList.contains('is-open'));
+  check(tag('Account > Login & security > "<" twice: back on Messages'), (await view(page)) === 'contacts' && (await stateOv()) === '[]');
 
   // ── a deep link opens that chat, and back goes to the list ──
   const deep = await openPhone(browser, server, S.mia, tag('deep link'), errors, Object.assign({}, size, { hash: '#c=' + S.zed }));
@@ -392,6 +414,95 @@ async function runOne(check, browser, name, server, S, size) {
   await wait(deep, () => document.getElementById('layout').dataset.mobileView === 'contacts');
   check(tag('and back from it lands on the Messages list'), (await visible(deep, '#m-dock')));
   await deep.close();
+
+  // ── LIME-79-fix6: New message is a full pushed screen; back always returns to where you came from ──
+  const topOv = () => page.evaluate(() => LimeMobileNav.topOverlay());
+  const ovState = () => page.evaluate(() => JSON.stringify((history.state && history.state.ov) || []));
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; }); // earlier toasts would sit over the list
+  await page.click('.m-plus');
+  await wait(page, () => document.getElementById('picker-modal').classList.contains('is-open'));
+  await sleep(200);
+  const nm = await page.evaluate(() => {
+    const m = document.getElementById('picker-modal'); const r = m.getBoundingClientRect(); const bar = document.querySelector('.lime-picker__bar'); const t = bar.querySelector('.lime-picker__bar-title').getBoundingClientRect();
+    const at = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2);
+    return { w: r.width, h: r.height, vw: innerWidth, vh: innerHeight, title: bar.querySelector('.lime-picker__bar-title').textContent, hit: !!(at && m.contains(at)), start: document.getElementById('picker-start-top').disabled, backShown: bar.querySelector('#picker-back').getBoundingClientRect().width >= 44, closeShown: getComputedStyle(document.getElementById('picker-close')).display !== 'none', backdrop: getComputedStyle(document.getElementById('picker-backdrop')).display, radius: getComputedStyle(m).borderTopLeftRadius };
+  });
+  check(tag('"+" opens New message as a full screen (' + nm.w + 'x' + nm.h + '), with "<", the title "New message" and a disabled Start, no x, no dimmed backdrop, and really on top'), nm.w >= nm.vw - 0.5 && nm.h >= nm.vh - 0.5 && nm.title === 'New message' && nm.hit && nm.start && nm.backShown && !nm.closeShown && nm.backdrop === 'none' && (await topOv()) === 'new-message', JSON.stringify(nm));
+  await page.type('#picker-input', 'Ned');
+  await wait(page, () => document.querySelectorAll('#picker-results .lime-picker__result').length > 0);
+  await sleep(900); // the directory answer re-draws the list once; tap after it
+  await page.click('#picker-results .lime-picker__result');
+  await sleep(150);
+  const picked = await page.evaluate(() => ({ chips: document.querySelectorAll('#picker-chips .lime-picker__chip').length, start: document.getElementById('picker-start-top').disabled, row: (() => { const r = document.querySelector('#picker-results .lime-picker__result'); const a = r.querySelector('.lime-avatar'); return { h: r.getBoundingClientRect().height, avatar: !!a }; })() }));
+  check(tag('picking someone shows a chip and enables Start; the results have avatars and roomy rows (' + Math.round(picked.row.h) + 'px)'), picked.chips === 1 && !picked.start && picked.row.avatar && picked.row.h >= 56, JSON.stringify(picked));
+  await page.click('#picker-back');
+  await wait(page, () => !document.getElementById('picker-modal').classList.contains('is-open'));
+  check(tag('"<" returns to Messages: the dock is back and no overlay is left'), (await view(page)) === 'contacts' && (await visible(page, '#m-dock')) && (await ovState()) === '[]' && (await topOv()) === null);
+  await page.click('.m-plus');
+  await wait(page, () => document.getElementById('picker-modal').classList.contains('is-open'));
+  await page.goBack();
+  await wait(page, () => !document.getElementById('picker-modal').classList.contains('is-open'));
+  check(tag('the browser\'s back closes New message too'), (await view(page)) === 'contacts' && (await topOv()) === null);
+  await page.click('.m-plus');
+  await wait(page, () => document.getElementById('picker-modal').classList.contains('is-open'));
+  await page.type('#picker-input', 'Oli');
+  await wait(page, () => document.querySelectorAll('#picker-results .lime-picker__result').length > 0);
+  await sleep(900);
+  await page.click('#picker-results .lime-picker__result');
+  await page.click('#picker-start-top');
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread' && !document.getElementById('picker-modal').classList.contains('is-open'));
+  await sleep(300);
+  check(tag('Start opens the chat on top of Messages (not on top of New message)'), (await ovState()) === '[]' && (await topOv()) === null);
+  await page.click('#m-chat-back');
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'contacts');
+  check(tag('and "<" from that chat lands on Messages, not on New message'), !(await page.evaluate(() => document.getElementById('picker-modal').classList.contains('is-open'))) && (await visible(page, '#m-dock')));
+
+  // a person opened from Members, and from a thread: "<" uncovers exactly that screen
+  await page.evaluate((id) => document.querySelector('#m-list [data-conversation-id="' + id + '"]').click(), S.planning);
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
+  await page.click('#m-chat-center');
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'members');
+  await page.click('.lime-members-panel__row:nth-child(2)');
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'profile');
+  check(tag('a person opened from Members is an overlay (back arrow shown)'), (await topOv()) === 'person' && (await visible(page, '#profile-back-btn')));
+  await page.goBack();
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'members');
+  check(tag('the browser\'s back from a person returns to Members (not to the chat)'), (await view(page)) === 'panel' && (await topOv()) === null);
+  await page.click('.lime-members-panel__row:nth-child(2)');
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'profile');
+  await page.click('#profile-back-btn');
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'members');
+  await page.click('#right-panel-toggle');
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
+  check(tag('"<" from the person returns to Members, and "<" from Members to the chat'), (await view(page)) === 'thread' && (await ovState()) === '[]');
+  // the Account screen opened from a person's "Edit profile": back unwinds each step
+  await page.click('#m-chat-center');
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'members');
+  await page.evaluate((id) => document.querySelector('.lime-members-panel__row[data-profile-id="' + id + '"]').click(), S.mia.userId);
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'profile');
+  await page.click('#profile-edit-btn');
+  await wait(page, () => document.getElementById('settings-modal').classList.contains('is-open') && !!document.querySelector('[data-account-go="security"]'));
+  check(tag('Account opened from a person\'s details stacks on top of it (overlays: ' + (await ovState()) + ')'), (await ovState()) === '["person","account"]');
+  await page.click('.lime-settings__back'); await discard();
+  await wait(page, () => !document.getElementById('settings-modal').classList.contains('is-open'));
+  check(tag('"<" from Account returns to that person\'s details'), (await page.evaluate(() => document.getElementById('right-panel').dataset.panel)) === 'profile' && (await view(page)) === 'panel' && (await ovState()) === '["person"]');
+  await page.click('#profile-back-btn');
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'members');
+  await page.click('#right-panel-toggle');
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
+  check(tag('then Members, then the chat: each "<" goes back one step to where you came from'), (await view(page)) === 'thread' && (await ovState()) === '[]');
+  // an avatar tapped inside a thread screen: "<" returns to the thread screen, not to the chat
+  await page.evaluate((pid) => document.querySelector('#thread-messages [data-message-id="' + pid + '"] .lime-message__replies').click(), parentId);
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'replies');
+  await page.evaluate(() => document.querySelector('#replies-list .lime-avatar[data-profile-id]').click());
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'profile');
+  await page.click('#profile-back-btn');
+  await wait(page, () => document.getElementById('right-panel').dataset.panel === 'replies');
+  check(tag('a person opened from the thread screen: "<" returns to the thread screen'), (await view(page)) === 'panel' && (await topOv()) === null);
+  await page.click('#right-panel-toggle');
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
+  await page.click('#m-chat-back');
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'contacts');
 
   // ── the phone chat (LIME-79) in Zed Team: Oli x3 (a run, then a long link), Mia x2 (a run), a reaction on Mia's first ──
   await page.evaluate((id) => document.querySelector('#m-list [data-conversation-id="' + id + '"]').click(), S.zed);

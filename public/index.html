@@ -785,6 +785,13 @@
        Start footer this one needs and the search modal doesn't. -->
   <div class="lime-modal-backdrop" id="picker-backdrop"></div>
   <div class="lime-search-modal lime-picker" id="picker-modal" role="dialog" aria-modal="true" aria-label="New message">
+    <!-- LIME-79-fix6: phones only. New message is a full pushed screen: "<" back, the title, and Start at the right (enabled once someone is
+         picked). Desktop keeps the centred dialog (this bar is hidden there). -->
+    <div class="lime-picker__bar">
+      <button type="button" class="lime-picker__bar-back" id="picker-back" aria-label="Back" title="Back"><span class="dew dew-chevron-left" aria-hidden="true"></span></button>
+      <h2 class="lime-picker__bar-title">New message</h2>
+      <button type="button" class="lime-picker__bar-start" id="picker-start-top" disabled>Start</button>
+    </div>
     <div class="lime-search-modal__field">
       <span class="dew dew-search"></span>
       <input type="search" class="lime-search-modal__input" id="picker-input" placeholder="Search teachers by name, email, phone or school" autocomplete="off">
