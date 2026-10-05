@@ -2295,6 +2295,8 @@ function initMessagesList() {
 
   window.LimeUi = window.LimeUi || {};
   LimeUi.messageHtml = messageHtml;
+  LimeUi.avatarClusterHtml = (conversation) => avatarClusterHtml(conversation);
+  LimeUi.directAvatarHtml = (conversation) => directAvatarHtml(conversation);
 
   // Placeholder for a sender id that doesn't resolve to a real profile —
   // shouldn't happen with today's seed data, but LimeStore.getProfile can
@@ -3055,7 +3057,14 @@ function initMessagesList() {
     const q = mobileState.query.trim();
     const empty = q ? 'No chats match \u201c' + q + '\u201d.' : MOBILE_EMPTY[mobileState.filter];
     syncSection(mList, mobileConversations(), empty, forceRebuild, true);
-    if (mFilterBtn) mFilterBtn.classList.toggle('is-filtering', mobileState.filter !== 'all');
+    // LIME-82: "All" and "Unread" are chips; Pinned, Groups and Archived live in the filter menu (its icon lights up while one is on).
+    if (mFilterBtn) mFilterBtn.classList.toggle('is-filtering', ['pinned', 'groups', 'archived'].includes(mobileState.filter));
+    document.querySelectorAll('#m-chips .m-chip').forEach((chip) => {
+      const on = chip.dataset.chip === mobileState.filter;
+      chip.classList.toggle('is-active', on);
+      chip.setAttribute('aria-pressed', String(on));
+    });
+    if (mFilterMenu) mFilterMenu.querySelectorAll('[data-filter]').forEach((el) => el.setAttribute('aria-checked', String(el.dataset.filter === mobileState.filter)));
     updateMobileChrome();
   }
 
@@ -3068,7 +3077,7 @@ function initMessagesList() {
       badge.hidden = total === 0;
     }
     const me = LimeStore.getCurrentUser();
-    const dockMe = document.getElementById('m-dock-avatar');
+    const dockMe = document.getElementById('m-account-avatar');
     if (dockMe && me) {
       const path = me.avatar_url || '';
       if (dockMe.dataset.name !== me.display_name || (dockMe.dataset.avatarPath || '') !== path) {
@@ -3086,11 +3095,39 @@ function initMessagesList() {
     mFilterMenu.addEventListener('click', (e) => {
       const item = e.target.closest('[data-filter]');
       if (!item) return;
-      mobileState.filter = item.dataset.filter;
-      mFilterMenu.querySelectorAll('[data-filter]').forEach((el) => el.setAttribute('aria-checked', String(el === item)));
+      // choosing the filter that is already on turns it off (back to All)
+      mobileState.filter = mobileState.filter === item.dataset.filter ? 'all' : item.dataset.filter;
       refreshMobileList(false);
     });
   }
+  document.querySelectorAll('#m-chips .m-chip').forEach((chip) => chip.addEventListener('click', () => {
+    mobileState.filter = chip.dataset.chip;
+    refreshMobileList(false);
+  }));
+  // LIME-82: the search icon in the top pill opens a search field over the chips; its x closes it and clears the search.
+  const mMessages = document.getElementById('m-messages');
+  const setSearching = (on) => {
+    if (!mMessages) return;
+    mMessages.classList.toggle('is-searching', on);
+    const btn = document.getElementById('m-search-btn');
+    if (btn) btn.setAttribute('aria-expanded', String(on));
+    if (on) { if (mSearch) mSearch.focus(); }
+    else if (mSearch) { mSearch.value = ''; mobileState.query = ''; refreshMobileList(false); }
+  };
+  const searchBtn = document.getElementById('m-search-btn');
+  if (searchBtn) searchBtn.addEventListener('click', () => setSearching(!(mMessages && mMessages.classList.contains('is-searching'))));
+  const searchClose = document.getElementById('m-search-close');
+  if (searchClose) searchClose.addEventListener('click', () => setSearching(false));
+  if (mSearch) mSearch.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSearching(false); });
+  // the logo scrolls the list back to the top
+  const logoBtn = document.getElementById('m-logo-btn');
+  if (logoBtn) logoBtn.addEventListener('click', () => {
+    const sc = document.querySelector('.lime-list-col__scroll');
+    if (sc) sc.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  });
+  // your avatar opens Settings (Account, on a phone)
+  const accountBtn = document.getElementById('m-account-btn');
+  if (accountBtn) accountBtn.addEventListener('click', () => document.getElementById('settings-btn')?.click());
   refreshMobileList(true);
 
   document.addEventListener('lime:conversations-changed', () => {
@@ -4379,46 +4416,33 @@ document.addEventListener('click', (e) => {
 function renderMobileChatbar() {
   const titleText = document.getElementById('m-chat-title-text');
   const avatarsHost = document.getElementById('m-chat-avatars');
+  const subEl = document.getElementById('m-chat-sub');
   if (!titleText || !avatarsHost) return;
   const activeRow = document.querySelector('.lime-contact--active');
   const id = activeRow && activeRow.dataset.conversationId;
   const conversation = id ? LimeStore.getConversation(id) : null;
-  // A DM shows the other person's live status in front of the name (a small dot; a group has none).
-  let presence = '';
-  if (conversation && conversation.type !== 'group') {
-    const other = LimeStore.getMembers(conversation.id).find((p) => p.id !== LimeStore.getCurrentUserId());
-    if (other) { const state = presenceFor(other.status); presence = '<span class="m-chatbar__dot" data-presence="' + state + '" role="img" aria-label="' + PRESENCE_LABEL[state] + '"></span>'; }
-  }
   const title = conversation ? LimeStore.getConversationTitle(conversation) : '';
-  const titleHtml = presence + '<span class="m-chatbar__name">' + escapeHtml(title) + '</span>';
-  if (titleText.dataset.rendered !== titleHtml) { titleText.dataset.rendered = titleHtml; titleText.innerHTML = titleHtml; }
-  const source = document.getElementById('open-profile-avatars');
-  const html = source ? source.innerHTML : '';
-  if (avatarsHost.dataset.copied !== html) {
-    avatarsHost.dataset.copied = html;
-    // LIME-79-fix3: the phone bar shows at most TWO avatars plus a "+N" count ("+11"), however big the group, so the stack, the name
-    // and the icons always fit on one line. The desktop header's own avatars are copied, then trimmed.
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html.replace(/ data-profile-id="[^"]*"/g, '');
-    const faces = [...tmp.querySelectorAll('.lime-topbar__avatars > .lime-avatar')];
-    const total = conversation && conversation.type === 'group' ? Math.max(0, LimeStore.getMembers(conversation.id).length - 1) : 0;
-    if (conversation && conversation.type === 'group' && faces.length) {
-      const visual = faces.slice().reverse(); // the desktop group is row-reverse: the DOM runs right to left
-      const keep = visual.slice(0, 2);
-      const extra = total - keep.length;
-      avatarsHost.innerHTML = '<span class="seed-avatar-group lime-topbar__avatars">'
-        + (extra > 0 ? '<span class="seed-avatar seed-avatar--sm lime-avatar-cluster__more" aria-hidden="true">+' + extra + '</span>' : '')
-        + keep.slice().reverse().map((n) => n.outerHTML).join('') + '</span>';
-    } else {
-      avatarsHost.innerHTML = tmp.innerHTML;
+  if (titleText.textContent !== title) titleText.textContent = title;
+  // LIME-82 (design 02): the pill shows the conversation's avatars (a group: the same stack as in the Messages list, "+N" included; a DM:
+  // the person with their live status) and, under the name, "N members" for a group or the person's status for a DM.
+  if (conversation && window.LimeUi) {
+    const group = conversation.type === 'group';
+    const html = group ? LimeUi.avatarClusterHtml(conversation) : LimeUi.directAvatarHtml(conversation);
+    let sub = '', state = '';
+    if (group) sub = LimeStore.getMembers(conversation.id).length + ' members';
+    else {
+      const other = LimeStore.getMembers(conversation.id).find((p) => p.id !== LimeStore.getCurrentUserId());
+      if (other) { state = presenceFor(other.status); sub = PRESENCE_LABEL[state]; }
     }
+    if (avatarsHost.dataset.rendered !== html) {
+      avatarsHost.dataset.rendered = html;
+      avatarsHost.innerHTML = html;
+      avatarsHost.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+    }
+    if (subEl) { subEl.textContent = sub; if (state) subEl.dataset.presence = state; else delete subEl.dataset.presence; }
   }
   const countEl = document.getElementById('m-chat-back-count');
-  if (countEl) {
-    const others = unreadChats(id);
-    countEl.textContent = others > 0 ? countText(others) : '';
-    countEl.hidden = others === 0;
-  }
+  if (countEl) { countEl.textContent = ''; countEl.hidden = true; } // design 02: only the arrow, no unread count
 }
 
 function renderCrumbs() {
@@ -5367,6 +5391,18 @@ function lightboxStepBack() {
   else closeStack();
 }
 
+// The close buttons, the backdrop and Escape. On a phone they go through history, so the arrow, the swipe and these all agree: one
+// step back each time (viewer to wall to chat). On desktop they act directly, as before.
+function viewerUiStepBack() {
+  if (LimeMobileNav.hasOverlay('viewer')) LimeMobileNav.popOverlay('viewer');
+  else lightboxStepBack();
+}
+function viewerUiClose() {
+  if (lightboxOpen) { viewerUiStepBack(); return; }
+  if (LimeMobileNav.hasOverlay('wall')) LimeMobileNav.popOverlay('wall');
+  else closeStack();
+}
+
 function openLightbox(images, index, options) {
   const fromWall = !!(options && options.fromWall);
   lightboxImages = images;
@@ -5380,6 +5416,9 @@ function openLightbox(images, index, options) {
   showViewerBackdrop();
   if (lightboxEls.modal) lightboxEls.modal.classList.add('is-open');
   lightboxOpen = true;
+  // LIME-82: on a phone the viewer (and the wall under it) are screens on the back stack: back closes the viewer, then the wall,
+  // then you are in the chat again. History going back closes the UI here; the close buttons and Escape pop the entry instead.
+  LimeMobileNav.pushOverlay('viewer', () => { if (lightboxOpenedFromWall) backToWall(); else closeStack(); });
   lightboxShow(Math.min(Math.max(index, 0), images.length - 1));
   if (lightboxEls.closeBtn) lightboxEls.closeBtn.focus();
 }
@@ -5395,6 +5434,7 @@ function openPhotoWall(messageId) {
   showViewerBackdrop();
   wallEls.wall.classList.add('is-open');
   wallOpen = true;
+  LimeMobileNav.pushOverlay('wall', () => closeStack());
   if (wallEls.closeBtn) wallEls.closeBtn.focus();
 }
 
@@ -5461,13 +5501,13 @@ document.addEventListener('click', (e) => {
   openPhotoWall(trigger.dataset.galleryMessageId);
 });
 
-if (lightboxEls.closeBtn) lightboxEls.closeBtn.addEventListener('click', lightboxStepBack);
-if (lightboxEls.backBtn) lightboxEls.backBtn.addEventListener('click', backToWall);
-if (wallEls.closeBtn) wallEls.closeBtn.addEventListener('click', closeStack);
+if (lightboxEls.closeBtn) lightboxEls.closeBtn.addEventListener('click', viewerUiStepBack);
+if (lightboxEls.backBtn) lightboxEls.backBtn.addEventListener('click', viewerUiStepBack);
+if (wallEls.closeBtn) wallEls.closeBtn.addEventListener('click', viewerUiClose);
 if (viewerBackdrop) {
   viewerBackdrop.addEventListener('click', () => {
-    if (lightboxOpen) lightboxStepBack();
-    else if (wallOpen) closeStack();
+    if (lightboxOpen) viewerUiStepBack();
+    else if (wallOpen) viewerUiClose();
   });
 }
 
@@ -5492,8 +5532,8 @@ function trapModalTab(e, containerEl) {
 // arrow buttons' own [hidden] gating already both agree on that).
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (lightboxOpen) { e.preventDefault(); lightboxStepBack(); }
-    else if (wallOpen) { e.preventDefault(); closeStack(); }
+    if (lightboxOpen) { e.preventDefault(); viewerUiStepBack(); }
+    else if (wallOpen) { e.preventDefault(); viewerUiClose(); }
     return;
   }
   if (e.key === 'Tab') {
@@ -6608,11 +6648,6 @@ window.LimeMobileNav = LimeMobileNav;
   on('m-dock-link', () => LimeMobileNav.show('contacts'));
   on('m-dock-jam', () => LimeToast.show({ title: 'Jam is coming soon', tone: 'info' }));
   on('m-dock-calls', () => LimeToast.show({ title: 'Calls are coming soon', tone: 'info' }));
-  on('m-dock-account', () => {
-    // Settings → Profile (full screen on phones). Sign-out lives in Settings. Opening Settings shows the section list on a phone;
-    // choosing Profile (what the nav row does) puts the Profile form full screen.
-    document.getElementById('settings-btn')?.click(); // on a phone this opens the Account screen (see the Settings modal)
-  });
 })();
 
 // ── LIME-79-fix2: the dock's press effect (phones) ─────────

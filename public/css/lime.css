@@ -9449,3 +9449,395 @@ html {
     padding-right: 16px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════
+   LIME-82: THE V2 MESSAGES SCREEN AND CHAT HEADER (docs/design/mobile/01-messages.png and 02-chat.png), glass toasts (phones)
+   Everything that floats is liquid glass: translucent, blurred, a hairline outline, a soft shadow, a large radius (solid when the system
+   asks for less transparency: see --m-glass-bg in the LIME-79-fix block).
+═══════════════════════════════════════════════════════ */
+
+/* An open book (jam). dew has none, so it is drawn in dew's line style. */
+.m-icon--book {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 6.2C10.4 4.9 8 4.2 3.5 4.3v13.4c4.5-.1 6.9.6 8.5 1.9 1.6-1.3 4-2 8.5-1.9V4.3c-4.5-.1-6.9.6-8.5 1.9ZM12 6.2v13.4'/%3E%3C/svg%3E");
+}
+
+.m-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* phone-only pieces are hidden everywhere else (the dock, FAB and chat bar already are) */
+.m-fab,
+.m-chips,
+.m-search__close {
+  display: none;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .m-glass-btn,
+  .m-glass-pill {
+    box-sizing: border-box;
+    border: 0.5px solid var(--m-glass-line);
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.09), 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+    color: var(--soil-text);
+  }
+  .m-glass-btn {
+    width: 52px;
+    height: 52px;
+    flex: none;
+    padding: 0;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-glass-btn:active {
+    background: color-mix(in oklab, var(--m-glass-bg), var(--soil-text) 8%);
+  }
+  .m-glass-pill {
+    height: 52px;
+    border-radius: 26px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* ── Messages: the logo button at the left, a pill with search and your avatar at the right, no title ── */
+  .m-messages__head {
+    justify-content: space-between;
+    gap: 12px;
+    padding: calc(env(safe-area-inset-top) + 10px) 16px 0;
+    align-items: flex-start;
+  }
+  .lime-list-col {
+    --m-head-h: calc(72px + env(safe-area-inset-top));
+  }
+  .m-logo-btn img {
+    width: 34px;
+    height: 34px;
+    display: block;
+  }
+  .m-head-pill {
+    gap: 2px;
+    padding: 0 6px 0 4px;
+  }
+  .m-pill-btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 22px;
+    background: none;
+    color: var(--soil-text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-pill-btn:active {
+    background: var(--lime-layer-hover);
+  }
+  .m-head-pill .dew-search {
+    font-size: calc(24px / (0.813 * 1.5));
+  }
+  .m-account-avatar.seed-avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 14px;
+  }
+
+  /* ── the chips (All, Unread) and the filter icon; the search field replaces them while searching ── */
+  .m-messages__tools {
+    gap: 10px;
+    padding: 2px 16px 12px;
+  }
+  .m-chips {
+    display: flex;
+    gap: 10px;
+  }
+  .m-chip {
+    height: 40px;
+    padding: 0 20px;
+    border: 0;
+    border-radius: 20px;
+    background: var(--lime-layer-surface);
+    color: var(--soil-text);
+    font: inherit;
+    font-size: 17px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .m-chip.is-active {
+    background: var(--calm-bg-subtle-active);
+    font-weight: 500;
+  }
+  .m-chip:not(.is-active):active {
+    background: var(--calm-bg-subtle-hover);
+  }
+  .m-filter__btn,
+  .m-filter__btn.is-filtering {
+    background: none;
+    box-shadow: none;
+  }
+  .m-filter__btn.is-filtering {
+    background: var(--calm-bg-subtle-active);
+  }
+  .m-messages .m-search {
+    display: none;
+  }
+  .m-messages.is-searching .m-chips,
+  .m-messages.is-searching .m-filter {
+    display: none;
+  }
+  .m-messages.is-searching .m-search {
+    display: flex;
+  }
+  .m-search__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border: 0;
+    border-radius: 16px;
+    background: none;
+    color: var(--soil-text-muted);
+    cursor: pointer;
+  }
+  .m-search__close .dew {
+    font-size: 14px;
+  }
+  .m-search input::-webkit-search-cancel-button {
+    display: none;
+  }
+
+  /* ── rows: the time is ink even when unread (only the badge is green) ── */
+  .m-list .lime-contact--unread-count .lime-contact__time--m {
+    color: var(--soil-text);
+    font-weight: 400;
+  }
+
+  /* ── the "+" (New message): a floating lime-shaped pale-lime button above the dock, at the right ── */
+  body[data-m-view="contacts"] .m-fab {
+    display: grid;
+  }
+  .m-fab {
+    position: fixed;
+    z-index: var(--seed-z-sticky);
+    right: 18px;
+    bottom: calc(14px + 64px + 18px + env(safe-area-inset-bottom));
+    width: 68px;
+    height: 68px;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--lime-primary-ink);
+    place-items: center;
+    font-size: 26px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.14));
+  }
+  .m-fab::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--lime-primary-bg);
+    -webkit-mask: url("../assets/lime-silhouette.svg") center / contain no-repeat;
+    mask: url("../assets/lime-silhouette.svg") center / contain no-repeat;
+  }
+  .m-fab:active::before {
+    background: var(--lime-primary-bg-active);
+  }
+  .m-fab .dew {
+    position: relative;
+    font-size: calc(30px / (0.688 * 1.5));
+  }
+  /* the list ends clear of the button and the dock */
+  .m-list {
+    padding-bottom: calc(168px + env(safe-area-inset-bottom));
+  }
+
+  /* ── the dock: three items, a narrower floating pill in the middle ── */
+  .m-dock {
+    left: 50%;
+    right: auto;
+    width: min(240px, calc(100% - 32px));
+    transform: translateX(-50%);
+  }
+  .m-dock__me {
+    display: none;
+  }
+
+  /* ── the chat header: floating glass: "<" in a round button, a pill with the avatars, the name and "N members" (it opens Members), and
+        a pill at the right with search, call and "..."; the messages scroll under them with the soft fade ── */
+  #layout[data-mobile-view="thread"] .m-chatbar {
+    display: flex;
+    grid-template-columns: none;
+    align-items: flex-start;
+    gap: 10px;
+    height: calc(72px + env(safe-area-inset-top));
+    padding: calc(env(safe-area-inset-top) + 10px) 12px 0;
+  }
+  #layout[data-mobile-view="thread"] .m-chatbar::before {
+    height: calc(100% + 14px);
+    background: linear-gradient(to bottom, color-mix(in oklab, var(--soil-bg-canvas) 86%, transparent) 0, color-mix(in oklab, var(--soil-bg-canvas) 70%, transparent) 55%, transparent 100%);
+  }
+  .m-chatbar__back {
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    padding: 0;
+    flex: none;
+    justify-content: center;
+    border-radius: 50%;
+    box-sizing: border-box;
+    border: 0.5px solid var(--m-glass-line);
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.09), 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+  }
+  .m-chatbar__count {
+    display: none;
+  }
+  .m-chatbar__center {
+    flex: 0 1 auto;
+    margin-right: auto;
+    min-width: 0;
+    width: auto;
+    height: 52px;
+    padding: 0 14px 0 10px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 8px;
+    border-radius: 26px;
+    box-sizing: border-box;
+    border: 0.5px solid var(--m-glass-line);
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.09), 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+    text-align: left;
+  }
+  .m-chatbar__avatars {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    display: block;
+    position: relative;
+  }
+  .m-chatbar__avatars .lime-avatar-frame--lg {
+    width: 40px;
+    height: 40px;
+  }
+  .m-chatbar__avatars .lime-avatar-frame--lg > .seed-avatar--lg {
+    width: 40px;
+    height: 40px;
+    font-size: 14px;
+  }
+  .m-chatbar__avatars .lime-avatar-cluster__member {
+    box-shadow: 0 0 0 1.5px var(--soil-bg-canvas);
+  }
+  .m-chatbar__text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .m-chatbar__title {
+    justify-content: flex-start;
+    max-width: 100%;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--soil-text);
+  }
+  #m-chat-title-text {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .m-chatbar__sub {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    line-height: 1.25;
+    color: var(--soil-text-muted);
+  }
+  .m-chatbar__tools {
+    flex: none;
+    height: 52px;
+    justify-self: auto;
+    padding: 0 4px;
+    gap: 0;
+    border-radius: 26px;
+    box-sizing: border-box;
+    border: 0.5px solid var(--m-glass-line);
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.09), 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+  }
+  .m-chatbar__tools .m-iconbtn {
+    width: 40px;
+    height: 44px;
+    border-radius: 20px;
+  }
+  .lime-messages {
+    padding-top: calc(72px + env(safe-area-inset-top) + 18px);
+  }
+
+  /* ── toasts: liquid glass, about 75% of the screen's width, centred, just above the dock (above the composer inside a chat); never over
+        the header or the list's top ── */
+  #toast-container.seed-toast-container {
+    top: auto;
+    bottom: calc(14px + 64px + 14px + env(safe-area-inset-bottom));
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: 75vw;
+    max-width: 75vw;
+    padding: 0;
+    align-items: stretch;
+    flex-direction: column;
+    pointer-events: none;
+  }
+  body:is([data-m-view="thread"], [data-m-view="panel"]) #toast-container.seed-toast-container {
+    bottom: calc(10px + 54px + 14px + env(safe-area-inset-bottom));
+  }
+  body:is([data-m-view="thread"], [data-m-view="panel"]):has(.lime-composer.is-expanded, #replies-composer.is-expanded) #toast-container.seed-toast-container {
+    bottom: calc(10px + 118px + 14px + env(safe-area-inset-bottom));
+  }
+  #toast-container .lime-toast.seed-toast {
+    width: 100%;
+    pointer-events: auto;
+    border: 0.5px solid var(--m-glass-line);
+    border-radius: 22px;
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: var(--m-glass-shadow);
+    padding: 12px 16px;
+  }
+  #toast-container .lime-toast.seed-toast--exiting { transform: translateY(8px); }
+}

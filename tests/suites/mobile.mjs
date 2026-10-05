@@ -97,12 +97,12 @@ async function runOne(check, browser, name, server, S, size) {
   // ── what a phone no longer shows, and what it does ──
   const gone = await Promise.all(['.seed-layout__left', '.lime-mobile-nav-toggle', '.lime-center-top', '#scope-tablist', '.lime-recent', '.lime-section', '#notif-btn'].map((s) => visible(page, s)));
   check(tag('no drawer, hamburger, breadcrumb row, tabs, Recent row, sections or bell'), gone.every((v) => !v), JSON.stringify(gone));
-  check(tag('the dock and the Messages header are showing; the chat bar is not'), (await visible(page, '#m-dock')) && (await visible(page, '.m-messages__title')) && !(await visible(page, '#m-chatbar')));
+  check(tag('the dock and the Messages header are showing; the chat bar is not'), (await visible(page, '#m-dock')) && (await visible(page, '#m-logo-btn')) && !(await visible(page, '#m-chatbar')));
   const dock = await page.evaluate(() => ({ labels: [...document.querySelectorAll('#m-dock .m-dock__label')].map((e) => e.textContent), rect: document.getElementById('m-dock').getBoundingClientRect().toJSON(), vh: window.innerHeight, vw: window.innerWidth, pos: getComputedStyle(document.getElementById('m-dock')).position }));
-  check(tag('the dock is floating, inside the screen, with the four lowercase labels link, jam, calls, account'), dock.pos === 'fixed' && dock.labels.join() === 'link,jam,calls,account' && dock.rect.left >= 8 && dock.rect.right <= dock.vw - 8 && dock.rect.bottom <= dock.vh - 8, JSON.stringify(dock.labels));
+  check(tag('the dock is floating, inside the screen, with the three lowercase labels link, jam, call (account moved to the avatar at the top)'), dock.pos === 'fixed' && dock.labels.join() === 'link,jam,call' && dock.rect.left >= 8 && dock.rect.right <= dock.vw - 8 && dock.rect.bottom <= dock.vh - 8, JSON.stringify(dock.labels));
   // ── LIME-79-fix: the fixed header, glass dock, icon standard, pin size, tints ──
   const head = await page.evaluate(() => { const h = document.getElementById('m-messages-head'); const r = h.getBoundingClientRect(); return { top: r.top, h: r.height, pos: getComputedStyle(h).position, kids: [...h.children].map((e) => e.tagName + (e.className ? '.' + String(e.className).split(' ')[0] : '')), searchInside: !!h.querySelector('.m-search, #m-filter-btn'), toolsTop: document.querySelector('.m-messages__tools').getBoundingClientRect().top }; });
-  check(tag('the Messages header is a fixed bar holding only the logo, "Messages" and "+" (search and filter are not in it)'), head.top === 0 && head.pos === 'absolute' && head.kids.join() === 'IMG.m-messages__logo,H1.m-messages__title,BUTTON.m-plus' && !head.searchInside && head.toolsTop >= head.h - 1, JSON.stringify(head));
+  check(tag('the Messages header is a fixed bar holding only the logo button and the search + avatar pill (chips and filter are not in it)'), head.top === 0 && head.pos === 'absolute' && head.kids.join() === 'BUTTON.m-glass-btn,H1.m-sr-only,DIV.m-glass-pill' && !head.searchInside && head.toolsTop >= head.h - 1, JSON.stringify(head));
   await page.evaluate(() => { document.getElementById('m-list').style.paddingBottom = '1500px'; document.querySelector('.lime-list-col__scroll').scrollTop = 220; });
   await sleep(350);
   const scrolled = await page.evaluate(() => { const h = document.getElementById('m-messages-head').getBoundingClientRect(); const t = document.querySelector('.m-messages__tools').getBoundingClientRect(); const sc = document.querySelector('.lime-list-col__scroll'); return { headTop: h.top, headBottom: h.bottom, toolsBottom: t.bottom, mask: getComputedStyle(sc).webkitMaskImage || getComputedStyle(sc).maskImage, cls: document.getElementById('list-col').className }; });
@@ -120,10 +120,11 @@ async function runOne(check, browser, name, server, S, size) {
   await page.evaluate(() => { LimeAppearance.applyCanvas('warm'); LimeAppearance.applyTheme('light'); }); await sleep(150);
   const shellBack = await page.evaluate(() => document.querySelector('meta[name="theme-color"]').content);
   check(tag('theme-color follows a canvas tone change (sage ' + shellSage + '), dark mode (' + shellDark.meta + ') and returns (' + shellBack + ')'), shellSage !== shell.meta && shellDark.meta !== shellSage && shellDark.meta === '#' + (shellDark.body.match(/\d+/g) || []).map((v) => Number(v).toString(16).padStart(2, '0')).join('') && shellBack === shell.meta, JSON.stringify([shell.meta, shellDark, shellSage, shellBack]));
-  await page.click('#m-search-input');
+  await page.click('#m-search-btn'); await sleep(200);
   const searchStyle = await page.evaluate(() => { const f = document.querySelector('.m-search'); const cs = getComputedStyle(f); return { outline: cs.outlineStyle, border: cs.borderTopWidth + ' ' + cs.borderTopColor, shadow: cs.boxShadow }; });
   check(tag('the search field has a soft outline: a 1px subtle border at rest and a light ring on focus, no heavy dark outline'), searchStyle.outline === 'none' && /^1px /.test(searchStyle.border) && !/rgb\(1[0-9], /.test(searchStyle.shadow.split(' 0px')[0] || ''), JSON.stringify(searchStyle));
   await page.evaluate(() => document.activeElement.blur());
+  await page.click('#m-search-close'); await sleep(200); // the chips and filter come back
   // the filter button: warm neutral hover and press (needs Chrome's DevTools protocol to force :hover and :active)
   if (size.emulate) {
     const cdp = await page.createCDPSession(); await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
@@ -151,7 +152,7 @@ async function runOne(check, browser, name, server, S, size) {
     return out;
   });
   check(tag('the new avatar palette has no greens (no OKLCH hue 105 to 195) and no neutrals (chroma >= 0.04; the warm greys are 0.01), in light and dark: hues ' + pal.light.map((t) => t.hue).join(',')), [...pal.light, ...pal.dark].every((t) => (t.hue < 105 || t.hue > 195) && t.chroma >= 0.04), JSON.stringify(pal));
-  const dockMe = await page.evaluate(() => { const e = document.getElementById('m-dock-avatar'); return { cls: [...e.classList].find((c) => /^lime-avatar--p\d$/.test(c)), bg: getComputedStyle(e).backgroundColor }; });
+  const dockMe = await page.evaluate(() => { const e = document.getElementById('m-account-avatar'); return { cls: [...e.classList].find((c) => /^lime-avatar--p\d$/.test(c)), bg: getComputedStyle(e).backgroundColor }; });
   check(tag('the account (dock) avatar uses the same palette: ' + dockMe.cls), !!dockMe.cls && dockMe.bg !== 'rgba(0, 0, 0, 0)');
   const rowsStyle = await page.evaluate(() => { const r = document.querySelector('#m-list .lime-contact'); const cs = getComputedStyle(r); const rr = r.getBoundingClientRect(); return { radius: parseFloat(cs.borderTopLeftRadius), left: rr.left, right: innerWidth - rr.right }; });
   check(tag('list rows are rounded (20px) and inset from the screen edges: ' + JSON.stringify(rowsStyle)), rowsStyle.radius >= 16 && rowsStyle.left >= 4 && rowsStyle.right >= 4);
@@ -178,11 +179,11 @@ async function runOne(check, browser, name, server, S, size) {
     check(tag('dock press: on release it snaps to the item under the finger, the item is chosen (calls toast) and the pill fades'), /Calls are coming soon/.test(await page.evaluate(() => document.getElementById('toast-container').textContent)) && Math.abs(d3.mid - it0[2]) < 6 && !d3.pressing && d3.opacity < 0.1, JSON.stringify(d3));
     await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
   }
-  const icons1 = await measureIcons(page, [['plus', '.m-plus .dew'], ['filter', '#m-filter-btn .dew'], ['dock link', '#m-dock-link .dew'], ['dock jam', '#m-dock-jam .dew'], ['dock calls', '#m-dock-calls .m-icon'], ['search field', '.m-search .dew'], ['pin', '.lime-contact--pinned .lime-icon-pin']]);
-  const big = (f) => Math.max(...f.ink);
+  const icons1 = await measureIcons(page, [['fab plus', '.m-fab .dew'], ['filter', '#m-filter-btn .dew'], ['dock link', '#m-dock-link .dew'], ['dock jam', '#m-dock-jam .m-icon'], ['dock calls', '#m-dock-calls .m-icon'], ['header search', '#m-search-btn .dew'], ['pin', '.lime-contact--pinned .lime-icon-pin']]);
+  const big = (f) => (f.ink ? Math.max(...f.ink) : 0);
   const byName = Object.fromEntries(icons1.map((i) => [i.label, i]));
-  check(tag('header and dock icons: a ~24px visible glyph (+/-1.5) in a >= 44px target: ' + icons1.slice(0, 5).map((i) => i.label + ' ' + big(i)).join(', ')), ['plus', 'filter', 'dock link', 'dock jam', 'dock calls'].every((n) => Math.abs(big(byName[n]) - 24) <= 1.5 && Math.min(...byName[n].tap) >= 44), JSON.stringify(icons1));
-  check(tag('the search field icon is ~20px, and the pin beside a name is 16 to 18px tall (it was 11px)'), Math.abs(big(byName['search field']) - 20) <= 1.5 && byName.pin.ink[1] >= 16 && byName.pin.ink[1] <= 18, JSON.stringify([byName['search field'].ink, byName.pin.ink]));
+  check(tag('header and dock icons: a ~24px visible glyph (+/-1.5) in a >= 44px target: ' + icons1.slice(0, 6).map((i) => i.label + ' ' + big(i)).join(', ')), ['header search', 'filter', 'dock link', 'dock jam', 'dock calls'].every((n) => Math.abs(big(byName[n]) - 24) <= 1.5 && Math.min(...byName[n].tap) >= 44) && Math.abs(big(byName['fab plus']) - 30) <= 1.5, JSON.stringify(icons1));
+  check(tag('the pin beside a name is 16 to 18px tall'), byName.pin.ink[1] >= 16 && byName.pin.ink[1] <= 18, JSON.stringify(byName.pin.ink));
   const tintPairs = await page.evaluate(() => {
     const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
     const px = (css) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = css; cx.fillRect(0, 0, 1, 1); return [...cx.getImageData(0, 0, 1, 1).data].slice(0, 3).map((v) => v / 255); };
@@ -208,6 +209,7 @@ async function runOne(check, browser, name, server, S, size) {
   check(tag('the dock badge shows the total unread (8), not counting the archived chat'), (await page.evaluate(() => document.getElementById('m-dock-badge').textContent)) === '8');
 
   // ── search and filter ──
+  await page.click('#m-search-btn'); await sleep(200);
   await page.click('#m-search-input');
   await page.keyboard.type('planning');
   await sleep(250);
@@ -215,9 +217,10 @@ async function runOne(check, browser, name, server, S, size) {
   await page.keyboard.type('zzz');
   await sleep(250);
   check(tag('a search with no matches says so'), /No chats match/.test(await page.evaluate(() => document.getElementById('m-list').textContent)));
-  await page.evaluate(() => { const i = document.getElementById('m-search-input'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); });
-  const filter = async (f) => { await page.click('#m-filter-btn'); await sleep(150); await page.click(`#m-filter-menu [data-filter="${f}"]`); await sleep(250); return (await titles(page)).join(); };
-  check(tag('filter Unread / Pinned / Groups / Archived show the right chats'), [await filter('unread'), await filter('pinned'), await filter('groups'), await filter('archived')].join(' | ') === 'Ned Nguyen,Zed Team,Planning | Ned Nguyen | Zed Team,Planning | Old news');
+  await page.click('#m-search-close'); await sleep(250);
+  check(tag('closing the search clears it and brings the chips back'), (await titles(page)).length === 3 && (await visible(page, '#m-chips')));
+  const filter = async (f) => { if (f === 'all' || f === 'unread') { await page.click(`#m-chips [data-chip="${f}"]`); await sleep(250); return (await titles(page)).join(); } await page.click('#m-filter-btn'); await sleep(150); await page.click(`#m-filter-menu [data-filter="${f}"]`); await sleep(250); return (await titles(page)).join(); };
+  check(tag('the chips (All, Unread) and the filter menu (Pinned, Groups, Archived) show the right chats'), [await filter('unread'), await filter('pinned'), await filter('groups'), await filter('archived')].join(' | ') === 'Ned Nguyen,Zed Team,Planning | Ned Nguyen | Zed Team,Planning | Old news');
   check(tag('the filter button shows when a filter is on, and All brings everything back'), (await page.evaluate(() => document.getElementById('m-filter-btn').classList.contains('is-filtering'))) && (await filter('all')) === 'Ned Nguyen,Zed Team,Planning');
   await page.click('#m-filter-btn'); await sleep(350);
   const fm = await page.evaluate(() => { const m = document.getElementById('m-filter-menu'); const cs = getComputedStyle(m); const r = m.getBoundingClientRect(); const it = m.querySelector('.lime-menu__item'); return { blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), radius: parseFloat(cs.borderTopLeftRadius), w: r.width, h: r.height, rowH: it.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(it).fontSize), icons: [...m.querySelectorAll('.lime-menu__item')].every((e) => e.querySelector('.dew, .lime-icon-pin') && e.querySelector('.dew, .lime-icon-pin').getBoundingClientRect().left < e.querySelector('.lime-menu__item-label').getBoundingClientRect().left), inside: r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight };  });
@@ -233,15 +236,20 @@ async function runOne(check, browser, name, server, S, size) {
   await page.click(`#m-list [data-conversation-id="${S.planning}"]`);
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
   check(tag('tapping a chat pushes the chat screen: the chat bar shows, the dock is gone'), (await visible(page, '#m-chatbar')) && !(await visible(page, '#m-dock')) && (await page.evaluate(() => document.getElementById('m-chat-title-text').textContent)) === 'Planning');
-  check(tag('the back arrow carries the count of OTHER chats\' unread messages (2 + 3 = 5; Planning is open and now read)'), (await page.evaluate(() => document.getElementById('m-chat-back-count').textContent)) === '5');
+  check(tag('design 02: the back button is only the arrow (no unread count)'), (await page.evaluate(() => { const c = document.getElementById('m-chat-back-count'); return c.hidden || getComputedStyle(c).display === 'none'; })));
   check(tag('the address has #c= for the open chat, and the history grew by one'), (await page.evaluate(() => location.hash)) === '#c=' + S.planning && (await page.evaluate(() => history.length)) === startHistory + 1);
   const barOver = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, w: window.innerWidth, bar: [...document.querySelectorAll('#m-chatbar > *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 0.5 || e.getBoundingClientRect().left < -0.5).length }));
   check(tag('the chat top bar fits the screen'), barOver.doc <= barOver.w && barOver.bar === 0, JSON.stringify(barOver));
 
-  const centre = await page.evaluate(() => { const c = document.getElementById('m-chat-center').getBoundingClientRect(); const av = document.getElementById('m-chat-avatars').getBoundingClientRect(); const t = document.getElementById('m-chat-title-text').getBoundingClientRect(); const cnt = document.getElementById('m-chat-back-count'); const cs = getComputedStyle(cnt); const bar = document.getElementById('m-chatbar'); const bcs = getComputedStyle(bar); const th = document.getElementById('thread-messages').getBoundingClientRect(); return { mid: (c.left + c.right) / 2, avMid: (av.left + av.right) / 2, titleMid: (t.left + t.right) / 2, vw: innerWidth, countBg: cs.backgroundColor, countBorder: cs.borderTopWidth, countText: cnt.textContent, blur: (() => { const b = getComputedStyle(bar, '::before'); return /blur/.test(b.backdropFilter || b.webkitBackdropFilter || '') && /gradient/.test(b.backgroundImage) && /gradient/.test(b.webkitMaskImage || b.maskImage || '') && bcs.borderBottomWidth === '0px'; })(), pos: bcs.position, barTop: bar.getBoundingClientRect().top, threadTop: th.top, barBottom: bar.getBoundingClientRect().bottom }; });
-  check(tag('the chat header is an iOS-style bar: the avatars and the title centred, the count a plain number (no pill), the bar a soft fade (a blurred gradient, no hard line) with the messages scrolling under it'), Math.abs(centre.avMid - centre.vw / 2) <= 3 && Math.abs(centre.titleMid - centre.vw / 2) <= 3 && /^\d+$/.test(centre.countText) && centre.countBg === 'rgba(0, 0, 0, 0)' && centre.countBorder === '0px' && centre.blur && centre.pos === 'absolute' && centre.threadTop <= centre.barTop + 1 && centre.barBottom > centre.threadTop, JSON.stringify(centre));
+  const centre = await page.evaluate(() => {
+    const R = (e) => e.getBoundingClientRect(); const glass = (e) => { const cs = getComputedStyle(e); return /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || '') && parseFloat(cs.borderTopLeftRadius) >= 20 && cs.borderTopWidth !== '0px'; };
+    const back = document.getElementById('m-chat-back'); const mid = document.getElementById('m-chat-center'); const tools = document.querySelector('.m-chatbar__tools'); const bar = document.getElementById('m-chatbar'); const th = R(document.getElementById('thread-messages'));
+    const b0 = getComputedStyle(bar, '::before');
+    return { back: R(back).width, backGlass: glass(back), midGlass: glass(mid), toolsGlass: glass(tools), order: R(back).right <= R(mid).left && R(mid).right <= R(tools).left, midH: R(mid).height, toolsH: R(tools).height, sub: document.getElementById('m-chat-sub').textContent, title: document.getElementById('m-chat-title-text').textContent, fade: /gradient/.test(b0.backgroundImage), barBorder: getComputedStyle(bar).borderBottomWidth, pos: getComputedStyle(bar).position, threadTop: th.top, barTop: R(bar).top, barBottom: R(bar).bottom, doc: document.documentElement.scrollWidth, vw: innerWidth, right: Math.round(innerWidth - R(tools).right) };
+  });
+  check(tag('design 02: the chat header is floating glass: a round "<" (' + centre.back + 'px), a pill with the avatars, the name and "' + centre.sub + '", and one pill at the right; the messages scroll under them with a soft fade'), centre.back === 52 && centre.backGlass && centre.midGlass && centre.toolsGlass && centre.order && centre.midH === 52 && centre.toolsH === 52 && /^\d+ members$/.test(centre.sub) && centre.fade && centre.barBorder === '0px' && centre.pos === 'absolute' && centre.threadTop <= centre.barTop + 1 && centre.barBottom > centre.threadTop && centre.doc <= centre.vw && centre.right >= 8, JSON.stringify(centre));
   const chatIcons = await measureIcons(page, [['back', '#m-chat-back .dew'], ['search', '#m-chat-search .m-icon'], ['call', '#m-chat-call .m-icon'], ['more', '#m-chat-more .m-icon']]);
-  check(tag('chat header icons are one size: ~24px visible glyphs in 44px targets (' + chatIcons.map((i) => i.label + ' ' + Math.max(...i.ink)).join(', ') + ')'), chatIcons.every((i) => Math.abs(Math.max(...i.ink) - 24) <= 1.5 && i.tap[1] >= 44 && i.tap[0] >= (i.label === 'back' ? 44 : 44)), JSON.stringify(chatIcons));
+  check(tag('chat header icons are one size: ~24px visible glyphs in targets at least 40 wide and 44 high (' + chatIcons.map((i) => i.label + ' ' + Math.max(...i.ink)).join(', ') + ')'), chatIcons.every((i) => Math.abs(Math.max(...i.ink) - 24) <= 1.5 && i.tap[1] >= 44 && i.tap[0] >= 40), JSON.stringify(chatIcons));
   await page.click('#m-chat-center');
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'panel');
   check(tag('the header\'s avatars and title open the details as a pushed screen'), (await view(page)) === 'panel' && (await visible(page, '#right-panel')));
@@ -363,7 +371,9 @@ async function runOne(check, browser, name, server, S, size) {
   await page.click('#m-dock-jam');
   await wait(page, () => /Jam is coming soon/.test(document.getElementById('toast-container').textContent));
   check(tag('calls and jam show a gentle "coming soon" toast'), true);
-  await page.click('#m-dock-account');
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; }); // toasts now float at the bottom, over Account's last rows
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; }); // toasts float at the bottom now, over Account's last rows
+  await page.click('#m-account-btn');
   await wait(page, () => document.getElementById('settings-modal').classList.contains('is-open') && document.getElementById('settings-modal').classList.contains('is-showing-section'));
   check(tag('account opens Settings on the Profile section, full screen'), (await page.evaluate(() => { const r = document.getElementById('settings-modal').getBoundingClientRect(); return !!document.getElementById('settings-profile-form') && r.width >= window.innerWidth - 1 && r.height >= window.innerHeight - 1; })));
   const sbar = await page.evaluate(() => {
@@ -397,7 +407,8 @@ async function runOne(check, browser, name, server, S, size) {
   await wait(page, () => !document.getElementById('settings-modal').classList.contains('is-open'));
   check(tag('"<" from Account returns to Messages: the dock is back, no overlay left in the history entry'), (await view(page)) === 'contacts' && (await visible(page, '#m-dock')) && (await stateOv()) === '[]' && (await top()) === null);
   // Account → Login & security → "<" twice = back where you started
-  await page.click('#m-dock-account');
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; }); // toasts float at the bottom now, over Account's last rows
+  await page.click('#m-account-btn');
   await wait(page, () => document.getElementById('settings-modal').classList.contains('is-open') && !!document.querySelector('[data-account-go="security"]'));
   await page.click('[data-account-go="security"]'); await discard();
   await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Login & security');
@@ -415,11 +426,84 @@ async function runOne(check, browser, name, server, S, size) {
   check(tag('and back from it lands on the Messages list'), (await visible(deep, '#m-dock')));
   await deep.close();
 
+  // ── LIME-82: Messages v2 (design 01): the logo button, the search + avatar pill, chips, the "+" floating button ──
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+  const v2 = await page.evaluate(() => {
+    const R = (e) => e.getBoundingClientRect(); const dock = R(document.getElementById('m-dock')); const fab = R(document.getElementById('m-fab')); const logo = R(document.getElementById('m-logo-btn')); const pill = R(document.querySelector('.m-head-pill'));
+    const glass = (e) => { const cs = getComputedStyle(e); return /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''); };
+    const unread = document.querySelector('#m-list .lime-contact--unread-count'); const time = unread && getComputedStyle(unread.querySelector('.lime-contact__time--m')).color; const name = unread && getComputedStyle(unread.querySelector('.lime-contact__name')).color;
+    const h1 = document.querySelector('.m-messages__head h1');
+    return { logo: [Math.round(logo.width), Math.round(logo.left)], logoGlass: glass(document.getElementById('m-logo-btn')), pillRight: Math.round(innerWidth - pill.right), pillGlass: glass(document.querySelector('.m-head-pill')), chips: [...document.querySelectorAll('#m-chips .m-chip')].map((c) => c.textContent).join(), fabRight: Math.round(innerWidth - fab.right), fabAboveDock: fab.bottom <= dock.top - 8, fabSize: Math.round(fab.width), fabHit: (() => { const at = document.elementFromPoint(fab.left + fab.width / 2, fab.top + fab.height / 2); return !!(at && document.getElementById('m-fab').contains(at)); })(), timeInk: time === name, h1: !!h1 && h1.textContent === 'Messages' && R(h1).width <= 1, title: !!document.querySelector('.m-messages__title') };
+  });
+  check(tag('Messages v2: the logo in a round glass button at the left, a glass pill with search and your avatar at the right, chips "All" and "Unread", no visible title (an accessible heading remains)'), v2.logo[0] === 52 && v2.logoGlass && v2.pillGlass && v2.pillRight <= 24 && v2.chips === 'All,Unread' && v2.h1 && !v2.title, JSON.stringify(v2));
+  check(tag('the New message "+" floats at the bottom right above the dock (lime shaped, hit-testable), and unread times are ink, not green'), v2.fabRight <= 28 && v2.fabAboveDock && v2.fabSize >= 60 && v2.fabHit && v2.timeInk, JSON.stringify(v2));
+  await page.evaluate(() => { document.getElementById('m-list').style.paddingBottom = '1500px'; document.querySelector('.lime-list-col__scroll').scrollTop = 260; });
+  await sleep(250);
+  await page.click('#m-logo-btn');
+  await wait(page, () => document.querySelector('.lime-list-col__scroll').scrollTop < 2, undefined, 4000);
+  check(tag('the logo button scrolls the list back to the top'), true);
+  await page.evaluate(() => { document.getElementById('m-list').style.paddingBottom = ''; });
+  await page.click('#m-search-btn'); await sleep(200);
+  const sr = await page.evaluate(() => ({ searching: document.getElementById('m-messages').classList.contains('is-searching'), field: getComputedStyle(document.querySelector('.m-search')).display, chips: getComputedStyle(document.getElementById('m-chips')).display, focused: document.activeElement && document.activeElement.id }));
+  check(tag('the search icon opens a search field over the chips and focuses it'), sr.searching && sr.field !== 'none' && sr.chips === 'none' && sr.focused === 'm-search-input', JSON.stringify(sr));
+  await page.click('#m-search-close'); await sleep(200);
+  const chipState = await page.evaluate(() => [...document.querySelectorAll('#m-chips .m-chip')].map((c) => c.getAttribute('aria-pressed')).join());
+  check(tag('"All" is the chip that is on to begin with'), chipState === 'true,false', chipState);
+
+  // ── LIME-82: toasts are glass, about 75% of the width, centred, just above the dock (above the composer in a chat) ──
+  const toastBox = async (inChat) => {
+    await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; LimeToast.show({ title: 'Jam is coming soon', tone: 'info', duration: 0 }); });
+    await sleep(500);
+    return page.evaluate((chat) => {
+      const t = document.querySelector('#toast-container .lime-toast'); const r = t.getBoundingClientRect(); const cs = getComputedStyle(t);
+      const ref = chat ? document.getElementById('composer').getBoundingClientRect().top : document.getElementById('m-dock').getBoundingClientRect().top;
+      const header = chat ? document.getElementById('m-chatbar').getBoundingClientRect().bottom : document.getElementById('m-messages-head').getBoundingClientRect().bottom;
+      return { pct: Math.round(r.width / innerWidth * 100), centre: Math.round(Math.abs((r.left + r.right) / 2 - innerWidth / 2)), gap: Math.round(ref - r.bottom), belowHeader: r.top > header, blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), radius: parseFloat(cs.borderTopLeftRadius) };
+    }, inChat);
+  };
+  const tm = await toastBox(false);
+  check(tag('toast on Messages: glass, ' + tm.pct + '% of the width, centred, ' + tm.gap + 'px above the dock, below the header'), tm.pct >= 73 && tm.pct <= 77 && tm.centre <= 2 && tm.gap >= 4 && tm.gap <= 40 && tm.belowHeader && tm.blur && tm.radius >= 20, JSON.stringify(tm));
+  await page.evaluate((id) => document.querySelector('#m-list [data-conversation-id="' + id + '"]').click(), S.zed);
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
+  await sleep(400);
+  const tc = await toastBox(true);
+  check(tag('toast in a chat: ' + tc.pct + '% wide, centred, ' + tc.gap + 'px above the composer, never over the header'), tc.pct >= 73 && tc.pct <= 77 && tc.centre <= 2 && tc.gap >= 4 && tc.gap <= 40 && tc.belowHeader && tc.blur, JSON.stringify(tc));
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+
+  // ── LIME-82: the photo wall and the viewer are on the back stack: back closes the viewer, then the wall, then you are in the chat ──
+  const ovNow = () => page.evaluate(() => JSON.stringify((history.state && history.state.ov) || []));
+  const flags = () => page.evaluate(() => ({ wall: document.getElementById('photo-wall').classList.contains('is-open'), viewer: document.getElementById('lightbox').classList.contains('is-open'), view: document.getElementById('layout').dataset.mobileView }));
+  await page.evaluate(() => { openPhotoWall('no-such-message'); });
+  await sleep(150);
+  await page.evaluate(() => { openLightbox([{ path: '', name: 'a.png' }, { path: '', name: 'b.png' }], 0, { fromWall: true }); });
+  await sleep(150);
+  check(tag('wall then viewer: two entries on the stack (' + (await ovNow()) + ')'), (await ovNow()) === '["wall","viewer"]' && (await flags()).viewer);
+  await page.goBack(); await sleep(250);
+  const f1 = await flags();
+  check(tag('back closes the viewer and shows the wall again'), !f1.viewer && f1.wall && (await ovNow()) === '["wall"]', JSON.stringify(f1));
+  await page.goBack(); await sleep(250);
+  const f2 = await flags();
+  check(tag('back again closes the wall and you are in the chat'), !f2.viewer && !f2.wall && f2.view === 'thread' && (await ovNow()) === '[]', JSON.stringify(f2));
+  await page.evaluate(() => { openLightbox([{ path: '', name: 'a.png' }], 0, { fromWall: false }); });
+  await sleep(150);
+  check(tag('a photo opened directly is one entry'), (await ovNow()) === '["viewer"]' && (await flags()).viewer);
+  await page.evaluate(() => document.getElementById('lightbox-close').click()); await sleep(300);
+  const f3 = await flags();
+  check(tag('its close button pops that entry (so back is not left stranded)'), !f3.viewer && f3.view === 'thread' && (await ovNow()) === '[]', JSON.stringify(f3));
+  await page.evaluate(() => { openPhotoWall('no-such-message'); }); await sleep(150);
+  await page.evaluate(() => document.getElementById('wall-close').click()); await sleep(300);
+  check(tag('the wall\'s close button does the same, and Escape too'), !(await flags()).wall && (await ovNow()) === '[]');
+  await page.evaluate(() => { openPhotoWall('no-such-message'); }); await sleep(150);
+  await page.keyboard.press('Escape'); await sleep(300);
+  check(tag('Escape closes the wall through the stack'), !(await flags()).wall && (await ovNow()) === '[]');
+  await page.click('#m-chat-back');
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'contacts');
+
   // ── LIME-79-fix6: New message is a full pushed screen; back always returns to where you came from ──
   const topOv = () => page.evaluate(() => LimeMobileNav.topOverlay());
   const ovState = () => page.evaluate(() => JSON.stringify((history.state && history.state.ov) || []));
   await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; }); // earlier toasts would sit over the list
-  await page.click('.m-plus');
+  await page.click('#m-fab');
   await wait(page, () => document.getElementById('picker-modal').classList.contains('is-open'));
   await sleep(200);
   const nm = await page.evaluate(() => {
@@ -438,12 +522,12 @@ async function runOne(check, browser, name, server, S, size) {
   await page.click('#picker-back');
   await wait(page, () => !document.getElementById('picker-modal').classList.contains('is-open'));
   check(tag('"<" returns to Messages: the dock is back and no overlay is left'), (await view(page)) === 'contacts' && (await visible(page, '#m-dock')) && (await ovState()) === '[]' && (await topOv()) === null);
-  await page.click('.m-plus');
+  await page.click('#m-fab');
   await wait(page, () => document.getElementById('picker-modal').classList.contains('is-open'));
   await page.goBack();
   await wait(page, () => !document.getElementById('picker-modal').classList.contains('is-open'));
   check(tag('the browser\'s back closes New message too'), (await view(page)) === 'contacts' && (await topOv()) === null);
-  await page.click('.m-plus');
+  await page.click('#m-fab');
   await wait(page, () => document.getElementById('picker-modal').classList.contains('is-open'));
   await page.type('#picker-input', 'Oli');
   await wait(page, () => document.querySelectorAll('#picker-results .lime-picker__result').length > 0);
@@ -719,11 +803,11 @@ async function runOne(check, browser, name, server, S, size) {
     await sleep(300);
     const hdr = await big.evaluate(() => {
       const R = (e) => e.getBoundingClientRect(); const bar = R(document.getElementById('m-chatbar'));
-      const faces = [...document.querySelectorAll('#m-chat-avatars .lime-avatar:not(.lime-avatar-cluster__more)')].length; const more = document.querySelector('#m-chat-avatars .lime-avatar-cluster__more');
-      const t = document.getElementById('m-chat-title-text'); const name = t.querySelector('.m-chatbar__name'); const tools = R(document.querySelector('.m-chatbar__tools')); const center = R(document.getElementById('m-chat-center'));
-      return { faces, more: more && more.textContent, members: LimeStore.getMembers(document.querySelector('.lime-contact--active').dataset.conversationId).length, oneLine: R(name).height < 24, truncated: name.scrollWidth > name.clientWidth, within: center.bottom <= bar.bottom && tools.bottom <= bar.bottom && center.right <= tools.left + 1, doc: document.documentElement.scrollWidth, vw: innerWidth };
+      const tiles = [...document.querySelectorAll('#m-chat-avatars .lime-avatar-cluster__member')]; const more = tiles.find((t) => t.classList.contains('lime-avatar-cluster__more'));
+      const t = document.getElementById('m-chat-title-text'); const tools = R(document.querySelector('.m-chatbar__tools')); const center = R(document.getElementById('m-chat-center')); const sub = document.getElementById('m-chat-sub');
+      return { faces: tiles.length - 1, more: more && more.textContent, members: LimeStore.getMembers(document.querySelector('.lime-contact--active').dataset.conversationId).length, sub: sub.textContent, oneLine: R(t).height < 24 && R(sub).height < 24, truncated: t.scrollWidth > t.clientWidth, within: center.bottom <= bar.bottom && tools.bottom <= bar.bottom && center.right <= tools.left + 1, doc: document.documentElement.scrollWidth, vw: innerWidth };
     });
-    check(tag('a big group\'s header: two avatars plus "' + hdr.more + '" (' + hdr.members + ' members), the long name cut with an ellipsis, all on one line with the icons, nothing overflowing'), hdr.faces === 2 && hdr.more === '+' + (hdr.members - 1 - 2) && hdr.oneLine && hdr.truncated && hdr.within && hdr.doc <= hdr.vw, JSON.stringify(hdr));
+    check(tag('a big group\'s header (design 02): the list\'s avatar stack with "' + hdr.more + '", the long name cut with an ellipsis, "' + hdr.sub + '" under it, all beside the icon pill, nothing overflowing'), hdr.faces === 3 && hdr.more === '+' + (hdr.members - 1 - 3) && hdr.sub === hdr.members + ' members' && hdr.oneLine && hdr.truncated && hdr.within && hdr.doc <= hdr.vw, JSON.stringify(hdr));
     const stroke = await big.evaluate(() => ['#m-chat-search', '#m-chat-call', '#m-chat-more'].map((id) => { const m = getComputedStyle(document.querySelector(id + ' .m-icon')); const u = decodeURIComponent((m.webkitMaskImage || m.maskImage)); return /stroke-width='1\.7'/.test(u); }));
     check(tag('the three header icons are drawn in one set with the same 1.7 stroke'), stroke.every(Boolean), JSON.stringify(stroke));
     const addColor = await big.evaluate(() => { const b = document.querySelector('.lime-react-add'); const t = document.createElement('i'); t.style.color = 'var(--soil-text-muted)'; document.body.appendChild(t); const c = getComputedStyle(t).color; t.remove(); return { btn: getComputedStyle(b).color, token: c, op: parseFloat(getComputedStyle(b).opacity) }; });
@@ -737,7 +821,7 @@ async function runOne(check, browser, name, server, S, size) {
     await wait(mia, () => document.getElementById('layout').dataset.mobileView === 'thread');
     const seen = () => mia.evaluate((id) => {
       const row = document.querySelector('#m-list [data-conversation-id="' + id + '"] .lime-presence');
-      const dot = document.querySelector('#m-chat-title .m-chatbar__dot');
+      const dot = document.getElementById('m-chat-sub');
       const msg = [...document.querySelectorAll('#thread-messages .lime-message--received .lime-presence')][0];
       const mem = [...document.querySelectorAll('.lime-members-panel__row')].find((r) => /Ned/.test(r.textContent));
       return { row: row && row.dataset.presence, header: dot && dot.dataset.presence, message: msg && msg.dataset.presence, members: mem ? mem.querySelector('.lime-members-panel__row-role').textContent : null, status: LimeStore.getMembers(id).find((p) => /Ned/.test(p.display_name)).status };
@@ -770,7 +854,7 @@ async function landscape(check, browser, server, S) {
   const page = await openPhone(browser, server, S.mia, 'landscape', errors, { width: 844, height: 390, emulate: true });
   const tag = (t) => `Chrome landscape 844x390: ${t}`;
   const vis = (sel) => visible(page, sel);
-  check(tag('the phone layout shows (dock, Messages header; no drawer, tabs or breadcrumb row)'), (await vis('#m-dock')) && (await vis('.m-messages__title')) && !(await vis('.seed-layout__left')) && !(await vis('#scope-tablist')) && !(await vis('.lime-center-top')));
+  check(tag('the phone layout shows (dock, Messages header; no drawer, tabs or breadcrumb row)'), (await vis('#m-dock')) && (await vis('#m-logo-btn')) && !(await vis('.seed-layout__left')) && !(await vis('#scope-tablist')) && !(await vis('.lime-center-top')));
   const geo = await page.evaluate(() => { const l = document.getElementById('list-col').getBoundingClientRect(); const d = document.getElementById('m-dock').getBoundingClientRect(); return { listW: l.width, vw: innerWidth, dockL: d.left, dockR: d.right, dockB: d.bottom, vh: innerHeight, doc: document.documentElement.scrollWidth }; });
   check(tag('the list is full width, the dock is inside the screen, nothing scrolls sideways'), geo.listW >= geo.vw - 1 && geo.dockL >= 8 && geo.dockR <= geo.vw - 8 && geo.dockB <= geo.vh && geo.doc <= geo.vw, JSON.stringify(geo));
   await page.click(`#m-list [data-conversation-id="${S.dm}"]`); // the first row; lower ones sit under the dock until the list is scrolled
@@ -826,7 +910,7 @@ export async function run({ check }) {
       await page.goto(server.base + 'index.html', { waitUntil: 'load' });
       await wait(page, () => window.LimeStore && LimeStore.getCurrentUserId() && document.querySelectorAll('.lime-contact').length > 0);
       await sleep(400);
-      const pieces = await Promise.all(['#m-dock', '#m-messages', '#m-chatbar', '.m-messages__title', '.lime-contact__badge:not(:empty)', '.lime-contact__pin', '.lime-contact__time--m'].map((s) => visible(page, s)));
+      const pieces = await Promise.all(['#m-dock', '#m-messages', '#m-chatbar', '#m-logo-btn', '#m-fab', '.lime-contact__badge:not(:empty)', '.lime-contact__pin', '.lime-contact__time--m'].map((s) => visible(page, s)));
       const deskPieces = await Promise.all(['.seed-layout__left', '.lime-center-top', '#scope-tablist', '.lime-recent'].map((s) => visible(page, s)));
       check(`${name} desktop 1024x768: none of the phone pieces (dock, Messages header, chat bar, row badge, pin, phone time) show`, pieces.every((v) => !v), JSON.stringify(pieces));
       check(`${name} desktop 1024x768: the sidebar, breadcrumb row, tabs and Recent row still show`, deskPieces.every(Boolean), JSON.stringify(deskPieces));

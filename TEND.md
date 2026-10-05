@@ -3587,3 +3587,25 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - `mobile` suite 413 checks (was 359): Account's header, rows and footer; Account as one history entry; Login & security and Preferences pushing and popping (the arrow and the browser's back); "‹" twice; New message's full screen (size, bar, hit-testable, disabled / enabled Start, no x, no backdrop), picking, "‹" and the browser's back, Start landing on Messages after "‹"; a person from Members and from a thread screen (the arrow and the browser's back); Account from a person's "Edit profile" unwinding step by step.
 - Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa6/`: Account (top, bottom with the rows), Login & security, New message (empty, with a pick, dark).
 - **Full matrix, once before the push** (`npm test`; `LIME_TEST_SERVER=dev`; `LIME_TEST_ORIGIN=lan LIME_TEST_SERVER=dev`): smoke 6, css 8, auth 12, sync 26, toasts 9, api 105, e2e-server 51, mobile 413, auth-phone 25, safari skipped, all passing.
+
+## LIME-82
+
+**Goal:** the v2 Messages screen and chat header (design PNGs 01 and 02, committed in `docs/design/mobile/`), glass toasts, and the photo viewer on the back stack. Phones only; desktop unchanged.
+
+**What landed**
+1. **Messages (01):** the **logo in a round glass button** (scrolls the list to the top); a **glass pill with search and your avatar** at the right (search opens a search field over the chips, with an x that clears it; **the avatar opens Settings**, which is the Account screen until LIME-84); **chips "All" and "Unread"** and the **filter icon** whose glass menu now holds **Pinned, Groups, Archived** (choosing the one that is on turns it off; the icon lights while one is on); **no visible title** (an `h1` "Messages" stays for screen readers); rows unchanged except **times are ink** (only the badge is green); a **floating lime-shaped pale-lime "+"** (68px) at the bottom right above the dock; the **dock has three items: link, jam (an open book, hand-drawn in dew's line style, since dew has none), call.** The dock is a narrower centred pill (240px). **Account left the dock** (the avatar replaces it).
+2. **Chat header (02):** floating glass: a **round "‹"** (52px, no unread count), a **pill** with the conversation's avatars (a group: the same stack as the Messages list, "+N" included; a DM: the person with their status dot), the truncated name and **"N members"** (a DM shows "Active" / "Away"); tapping it opens **Members**; and **one pill at the right with search, call and "..."**. The messages scroll **under** them with the soft fade (the gradient from fix3, lighter). I matched your PNG on the unread count: it is dropped.
+3. **Toasts on phones:** liquid glass, **75% of the screen's width**, centred, **just above the dock (Messages) or above the composer (a chat; higher while the composer is open)**, never over the header. Measured in the suite: 73 to 77% wide, centred within 2px, 4 to 40px above the dock or composer, below the header. **Please confirm the position at your gate** (you said "that position works").
+4. **The photo wall and viewer are on the back stack** (fix6's gap): opening the wall pushes `wall`, opening the viewer pushes `viewer`; back closes the viewer, then the wall, then you are in the chat; the close buttons, the backdrop and Escape all go through the stack (they pop the entry), so nothing is left stranded.
+
+**Choices and notes (please look)**
+- **Design vs brief on the avatars:** the brief says "2-avatar stack + +N"; your PNG shows the list's stack (3 faces and "+10"). I followed the PNG (the same component as the list).
+- Search in the chat header is still the placeholder (LIME-80); call shows the toast.
+- Stacked toasts can cover the "+" for a few seconds (they sit above the dock, the "+" is above that); they clear on their own.
+- Chat header icon buttons are 40px wide x 44 high (they were 44) so the right pill fits at 360px; the glyphs are still 24px.
+- The old "calls" label is now "call" (as in the PNG).
+- Safari not run; no real-phone test.
+
+**Verification (tiered: CSS and visual polish plus a little JS)**
+- `mobile` suite on the dev server over the LAN address: **458 checks** (was 413) and `smoke` and `css`, all passing. New checks: the logo button, the pill, chips, the search field open and close, the "+" (floating, above the dock, hit-testable), ink times, the floating chat header (three glass pieces, 52px, order, fade, no count), a big group's header (the list's stack and "+N", the truncated name, "N members", nothing overflowing), toast geometry on Messages and in a chat, and the wall / viewer back stack (back, back, the close buttons, Escape). Earlier checks were updated for the new controls (the dock labels, the chips and filter menu, the avatar replacing the dock's account).
+- Screenshots in `/private/tmp/claude-501/-Users-shem-Sites-lime/53337ad3-1230-4346-b6b4-127fece80f47/scratchpad/qa82/` (Messages, search open, filter menu, the chat, toasts in both places, dark), next to your PNGs.

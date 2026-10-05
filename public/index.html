@@ -199,7 +199,10 @@
           <button type="button" class="m-chatbar__back" id="m-chat-back" aria-label="Back to Messages"><span class="dew dew-chevron-left" aria-hidden="true"></span><span class="m-chatbar__count" id="m-chat-back-count" hidden></span></button>
           <button type="button" class="m-chatbar__center" id="m-chat-center" aria-label="Chat members">
             <span class="m-chatbar__avatars" id="m-chat-avatars" aria-hidden="true"></span>
-            <span class="m-chatbar__title" id="m-chat-title"><span id="m-chat-title-text"></span></span>
+            <span class="m-chatbar__text">
+              <span class="m-chatbar__title" id="m-chat-title"><span id="m-chat-title-text"></span></span>
+              <span class="m-chatbar__sub" id="m-chat-sub"></span>
+            </span>
           </button>
           <div class="m-chatbar__tools">
             <button type="button" class="m-iconbtn" id="m-chat-search" aria-label="Search in this chat" title="Search"><span class="m-icon m-icon--h-search" aria-hidden="true"></span></button>
@@ -323,9 +326,14 @@
             <!-- LIME-79-fix: the Messages header is a fixed bar OUTSIDE the scroller (logo, title, "+" only). The search and the
                  filter scroll with the list and fade out under this bar. -->
             <div class="m-messages__head" id="m-messages-head">
-              <img class="m-messages__logo" src="assets/logo-mark.svg" alt="" width="32" height="32">
-              <h1 class="m-messages__title">Messages</h1>
-              <button type="button" class="m-plus" data-open-picker title="New message" aria-label="New message"><span class="dew dew-plus" aria-hidden="true"></span></button>
+              <!-- LIME-82 (design 01): the logo in a round glass button (it scrolls the list to the top), no visible title (kept for screen readers),
+                   and a glass pill with search and your avatar (the avatar opens Settings). -->
+              <button type="button" class="m-glass-btn m-logo-btn" id="m-logo-btn" aria-label="Lime: back to the top of Messages" title="Back to the top"><img src="assets/logo-mark.svg" alt="" width="34" height="34"></button>
+              <h1 class="m-sr-only">Messages</h1>
+              <div class="m-glass-pill m-head-pill">
+                <button type="button" class="m-pill-btn" id="m-search-btn" aria-label="Search chats" title="Search" aria-expanded="false"><span class="dew dew-search" aria-hidden="true"></span></button>
+                <button type="button" class="m-pill-btn m-pill-avatar" id="m-account-btn" aria-label="Settings" title="Settings"><span class="seed-avatar seed-avatar--sm lime-avatar m-account-avatar" id="m-account-avatar" data-name=""></span></button>
+              </div>
             </div>
             <div class="lime-contacts lime-list-col__scroll">
               <!-- LIME-78: the phone Messages screen (<= 767px only): logo + large title + a lime-shaped "+", search with a filter,
@@ -333,17 +341,19 @@
                    phones, and all of this is hidden on desktop. -->
               <div class="m-messages" id="m-messages">
                 <div class="m-messages__tools">
-                  <label class="m-search"><span class="dew dew-search" aria-hidden="true"></span><input type="search" id="m-search-input" placeholder="Search" aria-label="Search chats" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+                  <div class="m-chips" id="m-chips" role="group" aria-label="Show">
+                    <button type="button" class="m-chip is-active" data-chip="all" aria-pressed="true">All</button>
+                    <button type="button" class="m-chip" data-chip="unread" aria-pressed="false">Unread</button>
+                  </div>
                   <div class="m-filter">
-                    <button type="button" class="m-iconbtn m-filter__btn" id="m-filter-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Filter chats" title="Filter"><span class="dew dew-filter-horizontal" aria-hidden="true"></span></button>
-                    <div class="lime-menu" id="m-filter-menu" role="menu" aria-label="Filter chats">
-                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="all" aria-checked="true"><span class="dew dew-chat" aria-hidden="true"></span><span class="lime-menu__item-label">All</span></button>
-                      <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="unread" aria-checked="false"><span class="dew dew-bell-on" aria-hidden="true"></span><span class="lime-menu__item-label">Unread</span></button>
+                    <button type="button" class="m-iconbtn m-filter__btn" id="m-filter-btn" aria-haspopup="menu" aria-expanded="false" aria-label="More filters" title="Filter"><span class="dew dew-filter-horizontal" aria-hidden="true"></span></button>
+                    <div class="lime-menu" id="m-filter-menu" role="menu" aria-label="More filters">
                       <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="pinned" aria-checked="false"><span class="lime-icon-pin" aria-hidden="true"></span><span class="lime-menu__item-label">Pinned</span></button>
                       <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="groups" aria-checked="false"><span class="dew dew-people" aria-hidden="true"></span><span class="lime-menu__item-label">Groups</span></button>
                       <button type="button" class="lime-menu__item" role="menuitemradio" data-filter="archived" aria-checked="false"><span class="dew dew-archive" aria-hidden="true"></span><span class="lime-menu__item-label">Archived</span></button>
                     </div>
                   </div>
+                  <label class="m-search"><span class="dew dew-search" aria-hidden="true"></span><input type="search" id="m-search-input" placeholder="Search" aria-label="Search chats" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="button" class="m-search__close" id="m-search-close" aria-label="Close search"><span class="dew dew-close" aria-hidden="true"></span></button></label>
                 </div>
                 <ul class="lime-contact-list m-list" id="m-list"></ul>
               </div>
@@ -945,12 +955,15 @@
        mobile) — js/toast.js adds/removes .lime-toast children here. -->
   <!-- LIME-78: the phone dock (<= 767px, Messages screen only): floating, rounded and neutral. Replaces the hamburger drawer.
        link = Messages (badge: all unread), jam = a placeholder, calls = a gentle "coming soon", account = Settings. -->
+  <!-- LIME-82 (design 01): the New message "+" floats at the bottom right above the dock (the lime-shaped pale-lime button). -->
+  <button type="button" class="m-fab" id="m-fab" data-open-picker title="New message" aria-label="New message"><span class="dew dew-plus" aria-hidden="true"></span></button>
+
+  <!-- LIME-82: three items, link, jam (a book) and call. Account moved to the avatar at the top right (Settings). -->
   <nav class="m-dock" id="m-dock" aria-label="Main">
     <span class="m-dock__lens" id="m-dock-lens" aria-hidden="true"></span>
     <button type="button" class="m-dock__item is-active" id="m-dock-link" aria-current="page"><span class="m-dock__iconwrap"><span class="dew dew-chat" aria-hidden="true"></span><span class="m-dock__badge" id="m-dock-badge" hidden></span></span><span class="m-dock__label">link</span></button>
-    <button type="button" class="m-dock__item" id="m-dock-jam"><span class="m-dock__iconwrap"><span class="dew dew-pencil" aria-hidden="true"></span></span><span class="m-dock__label">jam</span></button>
-    <button type="button" class="m-dock__item" id="m-dock-calls"><span class="m-dock__iconwrap"><span class="m-icon m-icon--phone" aria-hidden="true"></span></span><span class="m-dock__label">calls</span></button>
-    <button type="button" class="m-dock__item" id="m-dock-account" aria-label="Account"><span class="m-dock__iconwrap"><span class="seed-avatar seed-avatar--sm lime-avatar m-dock__me" id="m-dock-avatar" data-name=""></span></span><span class="m-dock__label">account</span></button>
+    <button type="button" class="m-dock__item" id="m-dock-jam"><span class="m-dock__iconwrap"><span class="m-icon m-icon--book" aria-hidden="true"></span></span><span class="m-dock__label">jam</span></button>
+    <button type="button" class="m-dock__item" id="m-dock-calls"><span class="m-dock__iconwrap"><span class="m-icon m-icon--phone" aria-hidden="true"></span></span><span class="m-dock__label">call</span></button>
   </nav>
 
   <!-- The chat's actions menu (the title caret on desktop, the "..." on a phone). Fixed-positioned by wireDropdownToggle, and kept
