@@ -109,7 +109,8 @@ async function runOne(check, browser, name, server, S, size) {
   await page.evaluate(() => { document.getElementById('m-list').style.paddingBottom = '1500px'; document.querySelector('.lime-list-col__scroll').scrollTop = 220; });
   await sleep(350);
   const scrolled = await page.evaluate(() => { const h = document.getElementById('m-messages-head').getBoundingClientRect(); const t = document.querySelector('.m-messages__tools').getBoundingClientRect(); const sc = document.querySelector('.lime-list-col__scroll'); return { headTop: h.top, headBottom: h.bottom, toolsBottom: t.bottom, mask: getComputedStyle(sc).webkitMaskImage || getComputedStyle(sc).maskImage, cls: document.getElementById('list-col').className }; });
-  check(tag('scrolling the list: the header stays put, search and filter scroll away under it, and the list fades under the header (a mask)'), scrolled.headTop === 0 && scrolled.toolsBottom <= scrolled.headBottom + 1 && /gradient/.test(scrolled.mask) && /is-scrolled-top/.test(scrolled.cls), JSON.stringify(scrolled));
+  const fadeNow = await page.evaluate(() => { const b = getComputedStyle(document.getElementById('m-messages-head'), '::before'); const h = document.getElementById('m-messages-head').getBoundingClientRect(); const sc = getComputedStyle(document.querySelector('.lime-list-col__scroll')); return { grad: /gradient/.test(b.backgroundImage), blur: /blur/.test(b.backdropFilter || b.webkitBackdropFilter || ''), mask: /gradient/.test(b.webkitMaskImage || b.maskImage || ''), height: parseFloat(b.height), headH: h.height, listMask: sc.webkitMaskImage || sc.maskImage }; });
+  check(tag('scrolling the list: the header stays put, search and filter scroll away under it, and the list passes under a soft canvas fade like the chat header (a gradient layer ' + Math.round(fadeNow.height) + 'px tall, no mask on the list, so no hard cut on a row)'), scrolled.headTop === 0 && scrolled.toolsBottom <= scrolled.headBottom + 1 && /is-scrolled-top/.test(scrolled.cls) && fadeNow.grad && fadeNow.blur && fadeNow.mask && fadeNow.height >= fadeNow.headH && (fadeNow.listMask === 'none' || !fadeNow.listMask), JSON.stringify([scrolled, fadeNow]));
   await page.evaluate(() => { document.getElementById('m-list').style.paddingBottom = ''; document.querySelector('.lime-list-col__scroll').scrollTop = 0; });
   const dockGlass = await isGlass(page, '#m-dock');
   check(tag('the dock is liquid glass: translucent and blurred, and nothing fades out under it'), dockGlass.blur && dockGlass.alpha < 0.8, JSON.stringify(dockGlass));
@@ -182,10 +183,10 @@ async function runOne(check, browser, name, server, S, size) {
     check(tag('dock press: on release it snaps to the item under the finger, the item is chosen (calls toast) and the pill fades'), /Calls are coming soon/.test(await page.evaluate(() => document.getElementById('toast-container').textContent)) && Math.abs(d3.mid - it0[2]) < 6 && !d3.pressing && d3.opacity < 0.1, JSON.stringify(d3));
     await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
   }
-  const icons1 = await measureIcons(page, [['fab plus', '.m-fab .dew'], ['filter', '#m-filter-btn .dew'], ['dock link', '#m-dock-link .m-icon'], ['dock jam', '#m-dock-jam .m-icon'], ['dock calls', '#m-dock-calls .m-icon'], ['header search', '#m-search-btn .dew'], ['pin', '.lime-contact--pinned .lime-icon-pin']]);
+  const icons1 = await measureIcons(page, [['fab plus', '.m-fab .dew'], ['filter', '#m-filter-btn .dew'], ['dock link', '#m-dock-link .m-icon'], ['dock jam', '#m-dock-jam .m-icon'], ['dock calls', '#m-dock-calls .m-icon'], ['header search', '#m-search-btn .m-icon'], ['pin', '.lime-contact--pinned .lime-icon-pin']]);
   const big = (f) => (f.ink ? Math.max(...f.ink) : 0);
   const byName = Object.fromEntries(icons1.map((i) => [i.label, i]));
-  check(tag('header icons: a ~24px visible glyph (+/-1.5) in a >= 44px target: ' + icons1.filter((i) => /search|filter|fab/.test(i.label)).map((i) => i.label + ' ' + big(i)).join(', ')), ['header search', 'filter'].every((n) => Math.abs(big(byName[n]) - 24) <= 1.5 && Math.min(...byName[n].tap) >= 44) && Math.abs(big(byName['fab plus']) - 30) <= 1.5, JSON.stringify(icons1));
+  check(tag('header icons: the filter 24px (+/-1.5) and the plus 30px as before; the Messages search a ~20px glyph (' + big(byName['header search']) + ') in a 44px target, same line as the chat header (' + byName['header search'].line + 'px)'), Math.abs(big(byName['filter']) - 24) <= 1.5 && Math.min(...byName['filter'].tap) >= 44 && Math.abs(big(byName['fab plus']) - 30) <= 1.5 && Math.abs(big(byName['header search']) - 20) <= 1.8 && Math.min(...byName['header search'].tap) >= 44, JSON.stringify(icons1));
   const dockIcons = ['dock link', 'dock jam', 'dock calls'].map((n) => byName[n]);
   check(tag('dock icons share ONE line weight (' + dockIcons.map((i) => i.label + ' ' + i.line + 'px').join(', ') + ') and a 20 to 25px glyph in a >= 44px target'), dockIcons.every((i) => i.line && Math.abs(i.line - dockIcons[0].line) <= 0.05 && big(i) >= 20 && big(i) <= 25 && Math.min(...i.tap) >= 44), JSON.stringify(dockIcons));
   check(tag('the pin beside a name is 16 to 18px tall'), byName.pin.ink[1] >= 16 && byName.pin.ink[1] <= 18, JSON.stringify(byName.pin.ink));
@@ -255,7 +256,9 @@ async function runOne(check, browser, name, server, S, size) {
   check(tag('design 02: the chat header is floating glass: a round "<" (' + centre.back + 'px), a pill with the avatars, the name and "' + centre.sub + '", and one pill at the right; the messages scroll under them with a soft fade'), centre.back === 52 && centre.backGlass && centre.midGlass && centre.toolsGlass && centre.order && centre.midH === 52 && centre.toolsH === 52 && /^\d+ members$/.test(centre.sub) && centre.fade && centre.barBorder === '0px' && centre.pos === 'absolute' && centre.threadTop <= centre.barTop + 1 && centre.barBottom > centre.threadTop && centre.doc <= centre.vw && centre.right >= 8, JSON.stringify(centre));
   const chatIcons = await measureIcons(page, [['back', '#m-chat-back .dew'], ['search', '#m-chat-search .m-icon'], ['call', '#m-chat-call .m-icon'], ['more', '#m-chat-more .m-icon']]);
   const ln = Object.fromEntries(chatIcons.map((i) => [i.label, i]));
-  check(tag('chat header icons: ~22px glyphs (16 to 23) in round targets at least 40 wide and high (the back button 52), with one line weight for back, search and call (' + chatIcons.map((i) => i.label + ' ' + Math.max(...i.ink) + ' @' + i.line).join(', ') + '), and "more" is plain dots with no ring (' + ln.more.ink[1] + 'px tall)'), chatIcons.every((i) => Math.max(...i.ink) >= 16 && Math.max(...i.ink) <= 23 && i.tap[1] >= 40 && i.tap[0] >= 40) && ['back', 'search', 'call'].every((n) => Math.abs(ln[n].line - ln.search.line) <= 0.4) && ln.more.ink[1] <= 4, JSON.stringify(chatIcons));
+  const innerW = await page.evaluate(() => innerWidth);
+  const hit44 = await page.evaluate(() => ['m-chat-search', 'm-chat-call', 'm-chat-more'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2; const slop = 20; return [id, [document.elementFromPoint(cx - slop, cy), document.elementFromPoint(cx + slop, cy), document.elementFromPoint(cx, cy - slop), document.elementFromPoint(cx, cy + slop)].every((e) => e && e.closest('#' + id))]; }));
+  check(tag('LIME-86-fix chat header icons: about 20px glyphs (17 to 22) with room inside the glass, one line weight for back, search and call (' + chatIcons.map((i) => i.label + ' ' + Math.max(...i.ink) + ' @' + i.line).join(', ') + '), each a 44px hit area (a tap 20px from the centre still lands on it: ' + hit44.map((h) => h[1]).join() + '), and "more" is plain dots with no ring (' + ln.more.ink[1] + 'px tall)'), chatIcons.every((i) => (i.label === 'more' ? i.ink[0] >= 14 && i.ink[0] <= 20 : Math.max(...i.ink) >= 17 && Math.max(...i.ink) <= 22) && i.tap[1] >= 40 && i.tap[0] >= 40) && ['back', 'search', 'call'].every((n) => Math.abs(ln[n].line - ln.search.line) <= 0.4) && ln.more.ink[1] <= 4 && (innerW < 375 || hit44.every((h) => h[1])), JSON.stringify([chatIcons, hit44]));
   await page.click('#m-chat-center');
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'panel');
   check(tag('the header\'s avatars and title open the details as a pushed screen'), (await view(page)) === 'panel' && (await visible(page, '#right-panel')));
@@ -378,6 +381,23 @@ async function runOne(check, browser, name, server, S, size) {
   await sleep(200);
   const bolded = await page.evaluate(() => document.getElementById('replies-composer-input').innerHTML);
   check(tag('choosing Bold in the menu formats the selected text'), /<b>|<strong>/.test(bolded), bolded);
+  // LIME-86-fix item 7: the thread with the keyboard up: the Thread header stays at the top of the visible area, the reply composer and its whole toolbar sit above the bottom, every menu stays inside and below the header
+  await page.evaluate(() => { document.getElementById('replies-composer-input').innerHTML = '<p>Thread keyboard</p>'; window.__fakeVV = (top, h) => { [['offsetTop', top], ['height', h]].forEach(([k, v]) => Object.defineProperty(window.visualViewport, k, { get: () => v, configurable: true })); window.visualViewport.dispatchEvent(new Event('resize')); }; window.__resetVV = () => { delete window.visualViewport.offsetTop; delete window.visualViewport.height; window.visualViewport.dispatchEvent(new Event('resize')); }; document.body.click(); getSelection().collapseToEnd(); window.__fakeVV(20, 420); });
+  await sleep(350);
+  const thKb = await page.evaluate(() => { const R = (e) => e.getBoundingClientRect(); return { pill: Math.round(R(document.querySelector('.lime-replies-panel__title')).top), back: Math.round(R(document.getElementById('right-panel-toggle')).top), comp: Math.round(R(document.getElementById('replies-composer')).bottom), tool: Math.round(R(document.querySelector('#replies-composer .lime-composer__toolbar')).bottom), headBottom: Math.round(R(document.querySelector('.lime-replies-panel__title')).bottom) }; });
+  check(tag('LIME-86-fix thread with the keyboard up (visible 20 to 440): the Thread header is pinned at the top (' + thKb.pill + ') and the reply composer with its whole toolbar is above the bottom (' + thKb.tool + ' / ' + thKb.comp + ')'), thKb.pill === 30 && thKb.back === 30 && thKb.comp <= 440 && thKb.tool <= 440, JSON.stringify(thKb));
+  const thMenu = async (btn, menu) => { await page.evaluate(() => document.body.click()); await sleep(100); await page.click(btn); await sleep(350); return page.evaluate((m) => { const r = document.getElementById(m).getBoundingClientRect(); const hb = document.querySelector('.lime-replies-panel__title').getBoundingClientRect().bottom; return { top: Math.round(r.top), bottom: Math.round(r.bottom), ok: r.top >= hb - 1 && r.bottom <= 440.5 && r.left >= 0 && r.right <= innerWidth && r.height > 30 }; }, menu); };
+  const thMenus = { aa: await thMenu('#replies-composer-aa-btn', 'replies-composer-format-menu'), list: await thMenu('#replies-composer-list-btn', 'replies-composer-list-menu'), align: await thMenu('#replies-composer-align-btn', 'replies-composer-align-menu') };
+  await page.evaluate(() => document.body.click());
+  await page.evaluate(() => { const i = document.getElementById('replies-composer-input'); i.focus(); const t = i.querySelector('p').firstChild; const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, 6); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }); await sleep(300);
+  await page.click('#replies-composer .lime-composer__toolbar > [data-cmd="link"]'); await sleep(350);
+  thMenus.link = await page.evaluate(() => { const r = document.querySelector('#replies-composer [data-link-popover]').getBoundingClientRect(); const hb = document.querySelector('.lime-replies-panel__title').getBoundingClientRect().bottom; return { top: Math.round(r.top), bottom: Math.round(r.bottom), ok: r.top >= hb - 1 && r.bottom <= 440.5 && r.left >= 0 && r.right <= innerWidth && r.bottom <= document.getElementById('replies-composer').getBoundingClientRect().top + 1 }; });
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { const i = document.getElementById('replies-composer-input'); i.focus(); const t = i.querySelector('p').firstChild; const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, 6); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }); await sleep(300);
+  thMenus.pill = await page.evaluate(() => { const p = [...document.querySelectorAll('.lime-sel-pill.is-open')].pop(); if (!p) return { ok: false }; const r = p.getBoundingClientRect(); const hb = document.querySelector('.lime-replies-panel__title').getBoundingClientRect().bottom; return { top: Math.round(r.top), bottom: Math.round(r.bottom), ok: r.top >= hb - 1 && r.bottom <= 440.5 && r.left >= 0 && r.right <= innerWidth }; });
+  check(tag('LIME-86-fix in the thread, with the keyboard up, every composer menu is inside the visible area and below the header: ' + Object.entries(thMenus).map(([k, v]) => k + ' ' + v.top + '-' + v.bottom).join(', ')), Object.values(thMenus).every((v) => v.ok), JSON.stringify(thMenus));
+  await page.evaluate(() => { document.body.click(); getSelection().collapseToEnd(); window.__resetVV(); const i = document.getElementById('replies-composer-input'); i.innerHTML = '<p>thread text here</p>'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  await sleep(250);
   const circle = await page.evaluate(() => { const b = document.getElementById('replies-composer-send'); const r = b.getBoundingClientRect(); const cs = getComputedStyle(b); const bf = getComputedStyle(b, '::before'); return { w: r.width, h: r.height, radius: cs.borderTopLeftRadius, mask: bf.webkitMaskImage || bf.maskImage, box: parseFloat(bf.width) }; });
   const inkSend = await page.evaluate(async (c) => new Promise((resolve) => { const img = new Image(); img.onload = () => { const S = 480; const cv = document.createElement('canvas'); cv.width = S; cv.height = S; const x = cv.getContext('2d'); x.drawImage(img, 0, 0, S, S); const d = x.getImageData(0, 0, S, S).data; let x0 = S, y0 = S, x1 = -1, y1 = -1; for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) if (d[(j * S + i) * 4 + 3] > 40) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; } resolve(Math.max(x1 - x0 + 1, y1 - y0 + 1) / S * c.box); }; img.src = c.mask.replace(/^url\("?|"?\)$/g, '').replace(/currentColor/g, 'black'); }), circle);
   check(tag('the send button is a perfect circle (' + circle.w + 'x' + circle.h + ', radius ' + circle.radius + ') and its arrow is the standard inline size, about 15px of ink in a 20px box (' + Math.round(inkSend * 10) / 10 + ')'), Math.abs(circle.w - circle.h) < 0.5 && circle.w >= 40 && circle.radius === '50%' && inkSend >= 13.5 && inkSend <= 17 && circle.box === 20, JSON.stringify([circle, inkSend]));
@@ -617,26 +637,27 @@ async function runOne(check, browser, name, server, S, size) {
   // LIME-86 items 14 and 15: Aa is only B I U S, the list and align buttons have their own menus
   await openMenu('aa', 'format'); const gAa = await menuGroups('format'); await closeMenus();
   await openMenu('list', 'list'); const gList = await menuGroups('list'); await closeMenus();
-  await openMenu('align', 'align'); const gAlign = await menuGroups('align'); await closeMenus();
-  check(tag('the menus: Aa = ' + gAa + '; list = ' + gList + '; align = ' + gAlign), gAa === 'bold,italic,underline,strikethrough' && gList === 'unorderedList,orderedList' && gAlign === 'alignLeft,alignCenter,alignRight,alignJustify | indent,outdent', JSON.stringify([gAa, gList, gAlign]));
+  await openMenu('align', 'align');
+  const alignInfo = await page.evaluate(() => { const m = document.getElementById('composer-align-menu'); const btns = [...m.querySelectorAll('[data-cmd]')]; const r = btns.map((e) => e.getBoundingClientRect()); return { cmds: btns.map((e) => e.dataset.cmd + ':' + e.getAttribute('aria-label')).join(), oneRow: r.every((x) => Math.abs(x.top - r[0].top) < 1), size: r.map((x) => Math.round(x.width) + 'x' + Math.round(x.height)).join(), icons: btns.every((e) => !!e.querySelector('.m-icon')), noText: !m.querySelector('.lime-menu__item'), pressedLeft: btns[0].getAttribute('aria-pressed') }; });
+  await closeMenus();
+  check(tag('the menus: Aa = ' + gAa + '; list = ' + gList + '; align = one row of four icon buttons (' + alignInfo.cmds + '; ' + alignInfo.size + '), no text rows, no indent'), gAa === 'bold,italic,underline,strikethrough' && gList === 'unorderedList,orderedList | indent,outdent' && alignInfo.cmds === 'alignLeft:Align left,alignCenter:Align centre,alignRight:Align right,alignJustify:Justify' && alignInfo.oneRow && alignInfo.icons && alignInfo.noText, JSON.stringify([gAa, gList, alignInfo]));
   const tbBefore = await toolbarShown();
-  await selectAll(); await sleep(250);
-  const during = await toolbarShown();
-  const selCls = await page.evaluate(() => ({ cls: document.getElementById('composer').classList.contains('is-selecting'), popups: document.querySelectorAll('#composer .lime-menu.is-open, .lime-link-popover.is-open').length }));
-  check(tag('selecting text turns the toolbar into B I U S and Done, with no popup: before "' + tbBefore + '", while selected "' + during + '"'), /emoji,aa,list,align,link,code/.test(tbBefore) && during === 'bold,italic,underline,strikethrough,done' && selCls.cls && selCls.popups === 0, JSON.stringify([tbBefore, during, selCls]));
-  await page.click('#composer .lime-composer__toolbar > [data-cmd="bold"]'); await sleep(200);
-  const boldNow = await page.evaluate(() => ({ html: document.getElementById('composer-input').innerHTML, pressed: document.querySelector('#composer .lime-composer__toolbar > [data-cmd="bold"]').getAttribute('aria-pressed'), still: document.getElementById('composer').classList.contains('is-selecting') }));
-  check(tag('Bold on the selection toolbar formats the text, shows as on, and the selection toolbar stays'), /<b>|<strong>/.test(boldNow.html) && boldNow.pressed === 'true' && boldNow.still, JSON.stringify(boldNow));
-  await page.click('#composer [data-sel-done]'); await sleep(250);
-  const afterDone = await toolbarShown();
-  check(tag('Done returns the usual toolbar: "' + afterDone + '"'), /emoji,aa,list,align,link,code/.test(afterDone) && !(await page.evaluate(() => document.getElementById('composer').classList.contains('is-selecting'))), afterDone);
+  await selectAll(); await sleep(300);
+  const pillInfo = await page.evaluate(() => { const p = document.querySelector('.lime-sel-pill.is-open'); if (!p) return null; const r = p.getBoundingClientRect(); const sel = getSelection().getRangeAt(0).getBoundingClientRect(); const head = document.getElementById('m-chatbar').getBoundingClientRect(); const vv = window.visualViewport; return { btns: [...p.querySelectorAll('[data-pill-cmd]')].map((b) => b.dataset.pillCmd).join(), aboveBy: Math.round(sel.top - r.bottom), belowBy: Math.round(r.top - sel.bottom), inside: r.left >= 0 && r.right <= innerWidth && r.top >= head.bottom - 1 && r.bottom <= vv.offsetTop + vv.height, glass: /blur/.test(getComputedStyle(p).backdropFilter || getComputedStyle(p).webkitBackdropFilter || ''), selecting: !!document.querySelector('.is-selecting, [data-sel-done]'), toolbarHidden: getComputedStyle(document.querySelector('#composer .lime-composer__toolbar')).display === 'none' }; });
+  const tbDuring = await toolbarShown();
+  check(tag('selecting text shows a floating glass B I U S pill (' + (pillInfo && pillInfo.btns) + ') ' + (pillInfo ? Math.max(pillInfo.aboveBy, pillInfo.belowBy) : '?') + 'px clear of the selection (room for the system callout), inside the visible viewport and below the header; the usual toolbar stays: "' + tbDuring + '"; no is-selecting toolbar and no Done'), pillInfo && pillInfo.btns === 'bold,italic,underline,strikethrough' && Math.max(pillInfo.aboveBy, pillInfo.belowBy) >= 44 && pillInfo.inside && pillInfo.glass && !pillInfo.selecting && !pillInfo.toolbarHidden && /emoji,aa,list,align,link,code/.test(tbBefore) && tbDuring === tbBefore, JSON.stringify([pillInfo, tbBefore, tbDuring]));
+  await page.click('.lime-sel-pill.is-open [data-pill-cmd="bold"]'); await sleep(200);
+  const boldNow = await page.evaluate(() => ({ html: document.getElementById('composer-input').innerHTML, pressed: document.querySelector('.lime-sel-pill.is-open [data-pill-cmd="bold"]').getAttribute('aria-pressed'), open: !!document.querySelector('.lime-sel-pill.is-open') }));
+  check(tag('Bold from the pill formats the selection, shows as on, and the pill stays while the text is selected'), /<b>|<strong>/.test(boldNow.html) && boldNow.pressed === 'true' && boldNow.open, JSON.stringify(boldNow));
+  await page.evaluate(() => { const s = getSelection(); s.collapseToEnd(); }); await sleep(250);
+  check(tag('the pill goes away when the selection collapses'), !(await page.evaluate(() => !!document.querySelector('.lime-sel-pill.is-open'))));
   await openMenu('align', 'align'); await page.click('#composer-align-menu [data-cmd="alignCenter"]'); await sleep(200);
-  await openMenu('align', 'align'); await page.click('#composer-align-menu [data-cmd="indent"]'); await sleep(200);
+  await openMenu('list', 'list'); await page.click('#composer-list-menu [data-cmd="indent"]'); await sleep(200);
   const comp1 = await page.evaluate(() => { const i = document.getElementById('composer-input'); return { html: i.innerHTML, center: !!i.querySelector('[data-align="center"]'), indent: !!i.querySelector('[data-indent="1"]'), bold: !!i.querySelector('b, strong'), style: /style=/.test(i.innerHTML), pressed: [...document.querySelectorAll('#composer-align-menu [aria-pressed="true"]')].map((e) => e.dataset.cmd).sort().join() }; });
-  check(tag('Bold, Align centre and Indent apply to the text in the composer (data-align, data-indent, no style), and the active ones show as on: ' + comp1.pressed), comp1.center && comp1.indent && comp1.bold && !comp1.style && /alignCenter/.test(comp1.pressed) && /indent/.test(comp1.pressed), JSON.stringify(comp1));
+  check(tag('Bold, Align centre and Indent apply to the text in the composer (data-align, data-indent, no style), and the active ones show as on: ' + comp1.pressed), comp1.center && comp1.indent && comp1.bold && !comp1.style && /alignCenter/.test(comp1.pressed), JSON.stringify(comp1));
   await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click());
   await page.evaluate(() => { document.getElementById('composer-input').focus(); });
-  await page.keyboard.press('Enter');
+  await page.click('#composer-send');
   await wait(page, () => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); return m && m.querySelector('[data-align="center"]'); });
   const sent1 = await page.evaluate(() => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); const p = m.querySelector('[data-align="center"]'); const cs = getComputedStyle(p); return { text: p.textContent, align: cs.textAlign, marginLeft: parseFloat(cs.marginLeft), bold: !!m.querySelector('b, strong'), indentAttr: p.getAttribute('data-indent') }; });
   check(tag('the sent bubble shows it: centred, indented, bold ("' + sent1.text + '")'), sent1.text === 'Hello world' && sent1.align === 'center' && sent1.marginLeft > 10 && sent1.bold && sent1.indentAttr === '1', JSON.stringify(sent1));
@@ -703,7 +724,181 @@ async function runOne(check, browser, name, server, S, size) {
   });
   const lightMin = Math.min(...tones.filter((t) => t.theme === 'light').map((t) => Math.min(t.vsCanvas, t.vsNeutral))); const darkMin = Math.min(...tones.filter((t) => t.theme === 'dark').map((t) => Math.min(t.vsCanvas, t.vsNeutral)));
   check(tag('LIME-86 your bubble is the plus button\'s green (the same token) in all 8 tones and dark; the smallest OKLab distance from the canvas or the neutral bubble is ' + lightMin + ' (light) and ' + darkMin + ' (dark: flagged, it is low); links and code stay at 4.5:1 or better'), tones.every((t) => t.same && t.link >= 4.5 && t.code >= 4.5) && lightMin >= 4 && darkMin >= 1.5, JSON.stringify(tones.filter((t) => t.vsCanvas < 6 || t.vsNeutral < 6)));
+  // ── LIME-86-fix: the chat ──
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+  await page.evaluate(() => { document.getElementById('composer-input').innerHTML = ''; });
+  // send is an up arrow on a phone
+  const sendIcon = await page.evaluate(() => { const bf = getComputedStyle(document.getElementById('composer-send'), '::before'); return decodeURIComponent(bf.webkitMaskImage || bf.maskImage); });
+  check(tag('LIME-86-fix the send button has an up arrow (not the return glyph)'), /M12 19\.5V5/.test(sendIcon) && !/M20\.25 4\.75/.test(sendIcon), sendIcon.slice(0, 160));
+  // reactions on one row, even under a short bubble; chip padding and gap
+  const rx = await page.evaluate(() => { const m = [...document.querySelectorAll('#thread-messages .lime-message')].find((x) => x.querySelector('.lime-reaction') && x.querySelector('.lime-message__content').getBoundingClientRect().width < 160); if (!m) return null; const R = (e) => e.getBoundingClientRect(); const chip = m.querySelector('.lime-reaction'); const add = m.querySelector('.lime-react-add'); const cs = getComputedStyle(chip); const bub = R(m.querySelector('.lime-message__content')); const cnt = chip.querySelector('.lime-reaction__count'); const emo = chip.firstElementChild; return { chipTop: Math.round(R(chip).top), addTop: Math.round(R(add).top), addVisible: getComputedStyle(add).display !== 'none', padL: parseFloat(cs.paddingLeft), padR: parseFloat(cs.paddingRight), gap: parseFloat(cs.columnGap) || parseFloat(cs.gap), bubW: Math.round(bub.width), rowRight: Math.round(R(add).right), bubR: Math.round(bub.right), cw: Math.round(R(m.querySelector('.lime-message__col')).width) }; });
+  check(tag('LIME-86-fix reactions: under the short bubble (' + (rx && rx.bubW) + 'px) the chip and the smiley share one row (tops ' + (rx && rx.chipTop) + ' / ' + (rx && rx.addTop) + '), chips are 5px tight with a 3px gap'), rx && rx.addVisible && Math.abs(rx.chipTop - rx.addTop) <= 6 && rx.padL === 5 && rx.padR === 5 && rx.gap === 3, JSON.stringify(rx));
+  // a long row wraps instead of leaving the column: give a message many reactions
+  // the link box: above the composer, inside the viewport; with a selection, without one, editing and removing
+  const linkBox = async () => page.evaluate(() => { const p = document.querySelector('#composer [data-link-popover]'); const r = p.getBoundingClientRect(); const c = document.getElementById('composer').getBoundingClientRect(); const head = document.getElementById('m-chatbar').getBoundingClientRect(); const vv = window.visualViewport; return { open: p.classList.contains('is-open'), aboveComposer: r.bottom <= c.top + 1, inside: r.left >= 0 && r.right <= innerWidth && r.top >= head.bottom - 1 && r.bottom <= vv.offsetTop + vv.height, text: !p.querySelector('[data-link-text]').hidden, remove: !p.querySelector('[data-link-remove]').hidden, submit: p.querySelector('[data-link-submit]').textContent }; });
+  const html = () => page.evaluate(() => document.getElementById('composer-input').innerHTML);
+  const fill = async (t) => { await page.evaluate((t) => { const i = document.getElementById('composer-input'); i.innerHTML = '<p>' + t + '</p>'; i.focus(); const r = document.createRange(); r.selectNodeContents(i.firstChild); r.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }, t); };
+  const selectRange = (a, b) => page.evaluate((a, b) => { const i = document.getElementById('composer-input'); const t = i.querySelector('p').firstChild; const r = document.createRange(); r.setStart(t, a); r.setEnd(t, b); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }, a, b);
+  await page.click('#composer-input'); await fill('Visit my site now'); await sleep(150);
+  await selectRange(6, 13); await sleep(150);
+  await page.click('#composer .lime-composer__toolbar > [data-cmd="link"]'); await sleep(350);
+  const lb1 = await linkBox();
+  await page.keyboard.type('example.com'); await page.keyboard.press('Enter'); await sleep(250);
+  const h1 = await html();
+  check(tag('LIME-86-fix link with a selection: the box opens above the composer inside the viewport (no Text field, Add), Enter in the URL field links the selection: ' + h1), lb1.open && lb1.aboveComposer && lb1.inside && !lb1.text && !lb1.remove && lb1.submit === 'Add' && /<a href="https:\/\/example\.com">my site<\/a>/.test(h1), JSON.stringify([lb1, h1]));
+  await fill('Go: '); await sleep(100);
+  await page.click('#composer .lime-composer__toolbar > [data-cmd="link"]'); await sleep(350);
+  const lb2 = await linkBox();
+  await page.type('#composer [data-link-text]', 'my page'); await page.type('#composer [data-link-input]', 'example.org/a');
+  await page.click('#composer [data-link-submit]'); await sleep(250);
+  const h2 = await html();
+  check(tag('LIME-86-fix link with no selection: a Text field is offered, and Add inserts the linked text: ' + h2), lb2.open && lb2.text && lb2.aboveComposer && lb2.inside && /<a href="https:\/\/example\.org\/a"[^>]*>my page<\/a>/.test(h2), JSON.stringify([lb2, h2]));
+  await page.evaluate(() => { const a = document.querySelector('#composer-input a'); const t = a.firstChild; const r = document.createRange(); r.setStart(t, 2); r.collapse(true); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.getElementById('composer-input').focus(); });
+  await sleep(150);
+  await page.click('#composer .lime-composer__toolbar > [data-cmd="link"]'); await sleep(350);
+  const lb3 = await linkBox();
+  await page.evaluate(() => { const f = document.querySelector('#composer [data-link-input]'); f.value = 'https://edited.example'; });
+  await page.click('#composer [data-link-submit]'); await sleep(250);
+  const h3 = await html();
+  await page.evaluate(() => { const a = document.querySelector('#composer-input a'); const t = a.firstChild; const r = document.createRange(); r.setStart(t, 2); r.collapse(true); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.getElementById('composer-input').focus(); });
+  await page.click('#composer .lime-composer__toolbar > [data-cmd="link"]'); await sleep(350);
+  await page.click('#composer [data-link-remove]'); await sleep(250);
+  const h4 = await html();
+  check(tag('LIME-86-fix link in a link: the box offers Edit and Remove link (' + lb3.submit + '); Edit changes the address, Remove link turns it back into plain text: ' + h3 + ' -> ' + h4), lb3.open && lb3.remove && lb3.submit === 'Edit' && !lb3.text && /href="https:\/\/edited\.example"/.test(h3) && !/<a /.test(h4) && /my page/.test(h4), JSON.stringify([lb3, h3, h4]));
+  // code blocks in the middle of a formatted message, round trip through send
+  await page.evaluate(() => { const i = document.getElementById('composer-input'); i.innerHTML = '<p>Intro <b>bold</b> text</p><ul><li>one</li><li>two</li></ul><p>Tail <i>italic</i></p>'; i.focus(); const t = i.querySelector('p:last-child').firstChild; const r = document.createRange(); r.setStart(t, 0); r.collapse(true); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+  await page.click('#composer .lime-composer__toolbar > [data-cmd="code"]'); await sleep(250);
+  await page.keyboard.type('x = 1'); await page.keyboard.press('Enter'); await page.keyboard.type('y = 2');
+  const mid = await html();
+  await page.keyboard.press('Enter'); await page.keyboard.press('Enter'); await page.keyboard.type('after the block');
+  const h5 = await html();
+  await page.keyboard.press('ArrowUp');
+  check(tag('LIME-86-fix the code tool puts a block at the caret (the paragraph before and after, the list and the bold stay): ' + mid), /^<p>Intro <b>bold<\/b> text<\/p><ul><li>one<\/li><li>two<\/li><\/ul><pre><code>x = 1<br>y = 2<\/code><\/pre><p>Tail <i>italic<\/i><\/p>$/.test(mid), mid);
+  check(tag('LIME-86-fix Enter in the block adds a line; Enter on an empty last line leaves it into a paragraph below: ' + h5), /<pre><code>x = 1<br>y = 2<\/code><\/pre><p>after the block/.test(h5), h5);
+  await page.evaluate(() => { const i = document.getElementById('composer-input'); i.innerHTML = '<p>Intro <b>bold</b> text</p><ul><li>one</li><li>two</li></ul><pre><code>x = 1<br>y = 2</code></pre><p>Tail <i>italic</i></p>'; });
+  const openConv = await page.evaluate(() => document.querySelector('.lime-contact--active').dataset.conversationId);
+  const n0 = await page.evaluate((id) => LimeStore.listMessages(id).length, openConv);
+  await page.evaluate(() => document.getElementById('composer-input').dispatchEvent(new Event('input', { bubbles: true })));
+  await page.click('#composer-send');
+  await wait(page, (a) => LimeStore.listMessages(a.id).length === a.n + 1, { id: openConv, n: n0 });
+  await sleep(300);
+  const rt = await page.evaluate(() => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); const b = m.querySelector('.lime-message__text') || m; const pre = b.querySelector('pre'); return { order: [...b.children].map((c) => c.tagName).join(), bold: !!b.querySelector('b, strong'), li: b.querySelectorAll('li').length, italic: !!b.querySelector('i, em'), pre: pre ? pre.textContent : null, preOverflow: pre ? getComputedStyle(pre).overflowX : null, wide: m.getBoundingClientRect().right <= innerWidth }; });
+  check(tag('LIME-86-fix a message mixing a bold paragraph, a list, a code block and an italic paragraph sends and renders as composed: ' + rt.order), rt.order === 'P,UL,PRE,P' && rt.bold && rt.li === 2 && rt.italic && /x = 1\s*y = 2/.test(rt.pre) && rt.preOverflow === 'auto' && rt.wide, JSON.stringify(rt));
+  // the keyboard: a shorter visible area (and the panned top). The whole toolbar, and every menu, stay inside it and under the header
+  await page.click('#composer-input'); await sleep(200);
+  await page.evaluate(() => { document.getElementById('composer-input').innerHTML = '<p>Menus under the keyboard</p>'; window.__fakeVV = (top, h) => { [['offsetTop', top], ['height', h]].forEach(([k, v]) => Object.defineProperty(window.visualViewport, k, { get: () => v, configurable: true })); window.visualViewport.dispatchEvent(new Event('resize')); }; window.__resetVV = () => { delete window.visualViewport.offsetTop; delete window.visualViewport.height; window.visualViewport.dispatchEvent(new Event('resize')); }; window.__fakeVV(20, 420); });
+  await sleep(350);
+  const kb = await page.evaluate(() => { const R = (e) => e.getBoundingClientRect(); const head = R(document.getElementById('m-chatbar')); const c = R(document.getElementById('composer')); const t = R(document.querySelector('#composer .lime-composer__toolbar')); return { headTop: Math.round(head.top), compBottom: Math.round(c.bottom), toolbarBottom: Math.round(t.bottom), limit: 440, headBottom: Math.round(head.bottom) }; });
+  check(tag('LIME-86-fix with the keyboard up (visible area 20px to 440px): the header is pinned at its top (' + kb.headTop + ') and the composer with its whole toolbar sits above the bottom (' + kb.toolbarBottom + ' / ' + kb.compBottom + ')'), kb.headTop === 20 && kb.compBottom <= kb.limit && kb.toolbarBottom <= kb.limit, JSON.stringify(kb));
+  const menuIn = async (btn, menu) => { await page.evaluate(() => document.body.click()); await sleep(100); await page.click(btn); await sleep(350); return page.evaluate((m) => { const e = document.getElementById(m) || document.querySelector(m); const r = e.getBoundingClientRect(); const head = document.getElementById('m-chatbar').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), ok: r.top >= head.bottom - 1 && r.bottom <= 440 + 0.5 && r.left >= 0 && r.right <= innerWidth && r.height > 30, headBottom: Math.round(head.bottom) }; }, menu); };
+  const kbMenus = { aa: await menuIn('#composer-aa-btn', 'composer-format-menu'), list: await menuIn('#composer-list-btn', 'composer-list-menu'), align: await menuIn('#composer-align-btn', 'composer-align-menu') };
+  await page.evaluate(() => document.body.click());
+  await page.click('#composer [data-emoji-btn]'); await sleep(300);
+  kbMenus.emoji = await page.evaluate(() => { const r = document.querySelector('#composer .lime-emoji-pop').getBoundingClientRect(); const head = document.getElementById('m-chatbar').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), ok: r.top >= head.bottom - 1 && r.bottom <= 440.5 && r.left >= 0 && r.right <= innerWidth }; });
+  await page.evaluate(() => document.body.click());
+  await page.evaluate(() => { const i = document.getElementById('composer-input'); i.focus(); const t = i.querySelector('p').firstChild; const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, 5); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }); await sleep(300);
+  kbMenus.link = await (async () => { await page.click('#composer .lime-composer__toolbar > [data-cmd="link"]'); await sleep(350); return page.evaluate(() => { const r = document.querySelector('#composer [data-link-popover]').getBoundingClientRect(); const head = document.getElementById('m-chatbar').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), ok: r.top >= head.bottom - 1 && r.bottom <= 440.5 && r.left >= 0 && r.right <= innerWidth }; }); })();
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { const i = document.getElementById('composer-input'); i.focus(); const t = i.querySelector('p').firstChild; const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, 5); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }); await sleep(300);
+  kbMenus.pill = await page.evaluate(() => { const p = document.querySelector('.lime-sel-pill.is-open'); if (!p) return { ok: false }; const r = p.getBoundingClientRect(); const head = document.getElementById('m-chatbar').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), ok: r.top >= head.bottom - 1 && r.bottom <= 440.5 && r.left >= 0 && r.right <= innerWidth }; });
+  check(tag('LIME-86-fix with the keyboard up every composer menu stays inside the visible area and below the header: ' + Object.entries(kbMenus).map(([k, v]) => k + ' ' + v.top + '-' + v.bottom).join(', ')), Object.values(kbMenus).every((v) => v.ok), JSON.stringify(kbMenus));
+  // a menu that has no room scrolls inside itself instead of being cut: squeeze the visible area further
+  await page.evaluate(() => { document.body.click(); getSelection().collapseToEnd(); window.__fakeVV(20, 250); }); await sleep(300);
+  const squeezed = await menuIn('#composer-align-btn', 'composer-align-menu');
+  const squeezedAa = await menuIn('#composer-aa-btn', 'composer-format-menu');
+  check(tag('LIME-86-fix with almost no room the menus still sit inside the area (align ' + squeezed.top + '-' + squeezed.bottom + ', Aa ' + squeezedAa.top + '-' + squeezedAa.bottom + ' of ' + squeezed.headBottom + '-270) and scroll inside themselves'), squeezed.top >= squeezed.headBottom - 1 && squeezed.bottom <= 270.5 && squeezedAa.top >= squeezedAa.headBottom - 1 && squeezedAa.bottom <= 270.5, JSON.stringify([squeezed, squeezedAa]));
+  await page.evaluate(() => { document.body.click(); window.__resetVV(); const i = document.getElementById('composer-input'); i.innerHTML = ''; i.dispatchEvent(new Event('input', { bubbles: true })); i.blur(); });
+  await sleep(300);
+  // shared colour helpers for the next checks (OKLab distance, WCAG contrast, composites over the canvas)
+  const colour = `(() => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
+    const px = (css) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = css; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0] / 255, d[1] / 255, d[2] / 255, d[3] / 255]; };
+    const lin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    const lab = ([r, g, b]) => { [r, g, b] = [r, g, b].map(lin); const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s2 = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b); return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s2, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s2, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s2]; };
+    const dE = (a, b) => Math.round(Math.hypot(...lab(a).map((v, i) => v - lab(b)[i])) * 1000) / 10;
+    const Lum = (c) => { const [r, g, b] = c.map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const cr = (a, b) => { const x = Lum(a), y = Lum(b); return Math.round((Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) * 100) / 100; };
+    const over = (top, under) => [0, 1, 2].map((i) => top[i] * top[3] + under[i] * (1 - top[3]));
+    return { px, dE, cr, over, Lum };
+  })()`;
+  await page.evaluate((c) => { window.__colour = eval(c); }, colour);
+  // 3. other people's bubbles: lighter than the canvas in every tone and in dark (light mode: toward white, a hairline holds the edge on the palest tones; dark: lifted by OKLab >= 6), text at 4.5:1
+  const bub = await page.evaluate(async () => {
+    const { px, dE, cr, Lum } = window.__colour; const recv = document.querySelector('#thread-messages .lime-message--received .lime-message__content'); const out = [];
+    for (const theme of ['light', 'dark']) for (const tone of ['warm', 'cool-gray', 'warm-cream', 'blue-tint', 'pure-white', 'lemon', 'sage', 'lilac']) {
+      LimeAppearance.applyCanvas(tone); LimeAppearance.applyTheme(theme); await new Promise((r) => setTimeout(r, 80));
+      const cs = getComputedStyle(recv); const bg = px(cs.backgroundColor).slice(0, 3); const canvas = px(getComputedStyle(document.body).backgroundColor).slice(0, 3);
+      const text = px(getComputedStyle(recv.querySelector('.lime-message__text')).color).slice(0, 3);
+      out.push({ theme, tone, lighter: Lum(bg) >= Lum(canvas) - 1e-6, strictly: Lum(bg) > Lum(canvas) + 1e-6, d: dE(bg, canvas), text: cr(text, bg), edge: cs.boxShadow !== 'none' && !/rgba\(0, 0, 0, 0\)/.test(cs.boxShadow) });
+    }
+    LimeAppearance.applyCanvas('warm'); LimeAppearance.applyTheme('light');
+    return out;
+  });
+  const lightB = bub.filter((b) => b.theme === 'light'), darkB = bub.filter((b) => b.theme === 'dark');
+  check(tag('LIME-86-fix other people\'s bubbles are brighter than the canvas in all 8 tones (light: toward white, distance ' + lightB.map((b) => b.d).join('/') + ', Pure white can only equal its canvas and keeps a hairline edge) and dark (lifted: ' + Math.min(...darkB.map((b) => b.d)) + ' or more), text at 4.5:1 or better everywhere (' + Math.min(...bub.map((b) => b.text)) + ')'), lightB.every((b) => b.lighter && (b.tone === 'pure-white' || b.strictly) && b.edge) && darkB.every((b) => b.strictly && b.d >= 6) && bub.every((b) => b.text >= 4.5), JSON.stringify(bub.filter((b) => !b.strictly || b.d < 6)));
+  // containing blocks: Safari makes the glass composer the containing block of fixed menus; the placement must still land inside
+  await page.click('#composer-input'); await sleep(200);
+  await page.evaluate(() => { document.getElementById('composer').style.transform = 'translateZ(0)'; });
+  const cbMenu = await (async () => { await page.click('#composer-list-btn'); await sleep(350); return page.evaluate(() => { const r = document.getElementById('composer-list-menu').getBoundingClientRect(); const head = document.getElementById('m-chatbar').getBoundingClientRect(); const c = document.getElementById('composer').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), ok: r.top >= head.bottom - 1 && r.bottom <= c.top + 1 && r.height > 30 }; }); })();
+  check(tag('LIME-86-fix a menu still lands above the composer when the composer is a containing block for fixed children (as in Safari): ' + cbMenu.top + '-' + cbMenu.bottom), cbMenu.ok, JSON.stringify(cbMenu));
+  await page.evaluate(() => { document.body.click(); document.getElementById('composer').style.transform = ''; });
   await page.evaluate(() => document.getElementById('composer-input').blur()); await sleep(300);
+  await page.click('#m-chat-back');
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'contacts');
+
+  // ── LIME-86-fix: the Messages screen ──
+  const logo = await page.evaluate(async () => { const out = []; for (const theme of ['light', 'dark']) { LimeAppearance.applyTheme(theme); await new Promise((r) => setTimeout(r, 80)); const i = document.querySelector('#m-logo-btn img').getBoundingClientRect(); out.push([theme, Math.round(i.width * 10) / 10]); } LimeAppearance.applyTheme('light'); return { sizes: out, button: Math.round(document.getElementById('m-logo-btn').getBoundingClientRect().width) }; });
+  check(tag('LIME-86-fix the logo is about 15% larger inside its (unchanged ' + logo.button + 'px) button: ' + logo.sizes.map((x) => x.join(' ')).join(', ') + 'px (was 34)'), logo.button === 52 && logo.sizes.every(([, w]) => Math.abs(w - 39) <= 0.6), JSON.stringify(logo));
+  // 6. the stack's ring in the list: the canvas, and the row's highlight while pressed
+  const ringList = await page.evaluate(async () => {
+    const { px, dE } = window.__colour; const out = [];
+    const tok = (n) => { const t = document.createElement('i'); t.style.background = 'var(' + n + ')'; document.body.appendChild(t); const c = px(getComputedStyle(t).backgroundColor); t.remove(); return c; };
+    for (const theme of ['light', 'dark']) {
+      LimeAppearance.applyTheme(theme); await new Promise((r) => setTimeout(r, 90));
+      const m = document.querySelector('#m-list .lime-avatar-cluster__member'); const ring = px(/(?:rgba?|color|oklab|lab|oklch)\([^)]*\)/.exec(getComputedStyle(m).boxShadow)[0]);
+      out.push({ theme, vsCanvas: dE(ring, tok('--soil-bg-canvas')), vsBody: dE(ring, px(getComputedStyle(document.body).backgroundColor)) });
+    }
+    LimeAppearance.applyTheme('light'); return out;
+  });
+  check(tag('LIME-86-fix the list\'s avatar ring is the canvas behind it, in light and dark (' + ringList.map((r) => r.vsBody).join(' / ') + ')'), ringList.every((r) => r.vsCanvas < 0.2 && r.vsBody < 0.2), JSON.stringify(ringList));
+  if (size.emulate) {
+    const cdp3 = await page.createCDPSession(); await cdp3.send('DOM.enable'); await cdp3.send('CSS.enable');
+    const { root: rt3 } = await cdp3.send('DOM.getDocument'); const { nodeId: row3 } = await cdp3.send('DOM.querySelector', { nodeId: rt3.nodeId, selector: '#m-list [data-conversation-id="' + S.zed + '"]' });
+    await cdp3.send('CSS.forcePseudoState', { nodeId: row3, forcedPseudoClasses: ['active'] });
+    const pr = await page.evaluate((id) => { const { px, dE } = window.__colour; const row = document.querySelector('#m-list [data-conversation-id="' + id + '"]'); const m = row.querySelector('.lime-avatar-cluster__member'); const ring = px(/(?:rgba?|color|oklab|lab|oklch)\([^)]*\)/.exec(getComputedStyle(m).boxShadow)[0]); return { vsRow: dE(ring, px(getComputedStyle(row).backgroundColor)) }; }, S.zed);
+    await cdp3.send('CSS.forcePseudoState', { nodeId: row3, forcedPseudoClasses: [] }); await cdp3.detach();
+    check(tag('LIME-86-fix a pressed row\'s avatar ring takes the row\'s highlight colour (' + pr.vsRow + ')'), pr.vsRow < 0.2, JSON.stringify(pr));
+  }
+  // 5. the grey reason lines in the "..." menu are readable (4.5:1) in every tone, light and dark (Planning: you are not its owner, so Rename and Delete say why)
+  await page.evaluate((id) => document.querySelector('#m-list [data-conversation-id="' + id + '"]').click(), S.planning);
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread'); await sleep(400);
+  // 6. the avatar stack's ring is the surface behind it: the chat header's pill (light and dark)
+  const ringHdr = await page.evaluate(async () => {
+    const { px, over, dE } = window.__colour; const out = [];
+    for (const theme of ['light', 'dark']) {
+      LimeAppearance.applyTheme(theme); await new Promise((r) => setTimeout(r, 90));
+      const m = document.querySelector('.m-chatbar__avatars .lime-avatar-cluster__member'); const ring = px(/(?:rgba?|color|oklab|lab|oklch)\([^)]*\)/.exec(getComputedStyle(m).boxShadow)[0]);
+      const pill = px(getComputedStyle(document.getElementById('m-chat-center')).backgroundColor); const canvas = px(getComputedStyle(document.body).backgroundColor);
+      out.push({ theme, d: dE(ring, over(pill, canvas)), vsCanvas: dE(ring, canvas) });
+    }
+    LimeAppearance.applyTheme('light');
+    return out;
+  });
+  check(tag('LIME-86-fix the chat header\'s avatar ring equals the glass pill it sits on, in light and dark (distance ' + ringHdr.map((r) => r.d).join(' / ') + ' OKLab x100, 1.5 or less)'), ringHdr.every((r) => r.d <= 1.5), JSON.stringify(ringHdr));
+  await page.click('#m-chat-more'); await wait(page, () => document.getElementById('conversation-menu').classList.contains('is-open')); await sleep(250);
+  const reasons = await page.evaluate(async () => {
+    const { px, cr, over } = window.__colour; const out = []; const menu = document.getElementById('conversation-menu');
+    for (const theme of ['light', 'dark']) for (const tone of ['warm', 'cool-gray', 'warm-cream', 'blue-tint', 'pure-white', 'lemon', 'sage', 'lilac']) {
+      LimeAppearance.applyCanvas(tone); LimeAppearance.applyTheme(theme); await new Promise((r) => setTimeout(r, 70));
+      const canvas = px(getComputedStyle(document.body).backgroundColor); const bg = over(px(getComputedStyle(menu).backgroundColor), canvas);
+      const rs = [...menu.querySelectorAll('.lime-menu__item-reason')]; if (!rs.length) { out.push({ theme, tone, none: true }); continue; }
+      out.push({ theme, tone, n: rs.length, worst: Math.min(...rs.map((r) => cr(px(getComputedStyle(r).color).slice(0, 3), bg))) });
+    }
+    LimeAppearance.applyCanvas('warm'); LimeAppearance.applyTheme('light');
+    return out;
+  });
+  check(tag('LIME-86-fix the grey explanation lines in the "..." menu meet 4.5:1 against the menu in all 8 tones, light and dark (lowest ' + Math.min(...reasons.map((r) => r.worst || 99)) + ')'), reasons.every((r) => !r.none && r.n >= 1 && r.worst >= 4.5), JSON.stringify(reasons.filter((r) => r.none || r.worst < 4.5)));
+  await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click()); await sleep(150);
   await page.click('#m-chat-back');
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'contacts');
 
@@ -903,7 +1098,7 @@ async function runOne(check, browser, name, server, S, size) {
   const pill = () => page.evaluate(() => { const c = document.getElementById('composer'); const r = c.getBoundingClientRect(); const cs = (sel) => { const e = c.querySelector(sel); return e ? getComputedStyle(e).display : 'none'; }; const ret = c.querySelector('.lime-composer__return'); return { expanded: c.classList.contains('is-expanded'), h: Math.round(r.height), w: Math.round(r.width), left: Math.round(r.left), bottom: Math.round(window.innerHeight - r.bottom), toolbar: cs('.lime-composer__toolbar'), send: cs('.lime-composer__return'), active: ret.classList.contains('is-active'), disabled: ret.getAttribute('aria-disabled'), placeholder: getComputedStyle(c.querySelector('.lime-composer__input'), '::before').content, hint: c.querySelector('.lime-composer__input').getAttribute('enterkeyhint') }; });
   const p0 = await pill();
   check(tag('the composer starts as one pill (one line high) with "Send message..." and no toolbar or send button'), !p0.expanded && p0.h <= 60 && p0.toolbar === 'none' && p0.send === 'none' && /Send message/.test(p0.placeholder), JSON.stringify(p0));
-  check(tag('the keyboard\'s return key is labelled Send (enterkeyhint="send")'), p0.hint === 'send');
+  check(tag('the keyboard\'s return key is labelled Return on a phone (enterkeyhint="enter": Return is a new line; LIME-86-fix)'), p0.hint === 'enter');
   await page.setViewport(Object.assign({}, size.emulate ? { width: size.width, height: Math.round(size.height * 0.55), deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { width: size.width, height: Math.round(size.height * 0.55), deviceScaleFactor: 2 }));
   await sleep(300);
   check(tag('the on-screen keyboard shrinking the page does not by itself expand the toolbar'), !(await pill()).expanded);
@@ -938,10 +1133,16 @@ async function runOne(check, browser, name, server, S, size) {
     await cdp.detach();
   }
   const before = await page.evaluate((id) => LimeStore.listMessages(id).length, S.zed);
+  // LIME-86-fix item 9: on a phone Return is a new line and never sends; Ctrl/Cmd+Enter (and the send button) still send
   await page.keyboard.press('Enter');
+  await sleep(400);
+  const afterReturn = await page.evaluate((id) => ({ n: LimeStore.listMessages(id).length, html: document.getElementById('composer-input').innerHTML, hint: document.getElementById('composer-input').getAttribute('enterkeyhint') }), S.zed);
+  check(tag('Return on a phone inserts a new line and does not send (messages ' + afterReturn.n + ' of ' + before + '; keyboard key "' + afterReturn.hint + '")'), afterReturn.n === before && /<\/p><p>|<br>|<div>/.test(afterReturn.html) && afterReturn.hint === 'enter', JSON.stringify(afterReturn));
+  await page.keyboard.press('Backspace');
+  await page.keyboard.down('Control'); await page.keyboard.press('Enter'); await page.keyboard.up('Control');
   await wait(page, (a) => LimeStore.listMessages(a.id).length === a.n + 1, { id: S.zed, n: before });
   const sentLine = await page.evaluate(() => { const ms = [...document.querySelectorAll('#thread-messages .lime-message--sent')]; const last = ms[ms.length - 1]; return { text: last.querySelector('.lime-message__text').textContent, cont: last.classList.contains('lime-message--cont') }; });
-  check(tag('the keyboard\'s Return key sends (no new line), the message appears on the right as part of your run'), sentLine.text === 'Hello from the phone' && sentLine.cont === true, JSON.stringify(sentLine));
+  check(tag('Ctrl+Enter sends, and the message appears on the right as part of your run'), sentLine.text === 'Hello from the phone' && sentLine.cont === true, JSON.stringify(sentLine));
   const p3 = await pill();
   check(tag('after sending the field is empty and Send is disabled again'), p3.disabled === 'true' && !p3.active && (await page.evaluate(() => document.getElementById('composer-input').textContent)) === '', JSON.stringify(p3));
   await page.evaluate(() => document.getElementById('composer-input').blur());
@@ -950,10 +1151,23 @@ async function runOne(check, browser, name, server, S, size) {
   // the microphone is one button: no caret, no list; pressing it says voice messages are coming soon
   const micInfo = await page.evaluate(() => ({ caret: !!document.querySelector('.lime-voice-split__caret, #voice-mode-toggle, #replies-voice-mode-toggle, #voice-mode-dropdown, #replies-voice-mode-dropdown'), mics: document.querySelectorAll('#composer .lime-voice-split__mic').length, r: document.querySelector('#composer .lime-voice-split__mic').getBoundingClientRect().toJSON() }));
   check(tag('the microphone is a single button: no caret and no device list anywhere, in a >= 40px target'), !micInfo.caret && micInfo.mics === 1 && micInfo.r.width >= 40 && micInfo.r.height >= 40, JSON.stringify(micInfo));
-  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+  // LIME-86-fix item 10: the mic is dictation. With no speech recognition: the explaining toast. With one: text at the caret, live.
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; Object.defineProperty(window, 'SpeechRecognition', { value: undefined, configurable: true }); Object.defineProperty(window, 'webkitSpeechRecognition', { value: undefined, configurable: true }); });
   await page.click('#composer .lime-voice-split__mic');
-  await wait(page, () => /Voice messages are coming soon/.test(document.getElementById('toast-container').textContent));
-  check(tag('pressing the microphone says "Voice messages are coming soon"'), true);
+  await wait(page, () => /Dictation isn't available here\. Use the mic on your keyboard\./.test(document.getElementById('toast-container').textContent));
+  check(tag('pressing the mic with no speech recognition says "Dictation isn\'t available here. Use the mic on your keyboard."'), true);
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; window.__recs = []; class Fake { constructor() { window.__recs.push(this); } start() { this.started = true; } stop() { this.stopped = true; if (this.onend) this.onend(); } } Object.defineProperty(window, 'webkitSpeechRecognition', { value: Fake, configurable: true }); });
+  await page.evaluate(() => { const i = document.getElementById('composer-input'); i.innerHTML = '<p>Say: </p>'; i.focus(); const r = document.createRange(); r.selectNodeContents(i.firstChild); r.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
+  await page.click('#composer .lime-voice-split__mic'); await sleep(200);
+  const d1 = await page.evaluate(() => { const m = document.querySelector('#composer .lime-voice-split__mic'); const rec = window.__recs[0]; rec.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: 'hello wor' }], { isFinal: false })] }); return { listening: m.classList.contains('is-listening'), pulse: getComputedStyle(m, '::after').animationName, started: rec.started, interim: document.getElementById('composer-input').textContent, focus: document.activeElement === document.getElementById('composer-input') }; });
+  const d2 = await page.evaluate(() => { const rec = window.__recs[0]; rec.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: 'hello world' }], { isFinal: true })] }); return document.getElementById('composer-input').textContent; });
+  await page.click('#composer .lime-voice-split__mic'); await sleep(150);
+  const d3 = await page.evaluate(() => ({ listening: document.querySelector('#composer .lime-voice-split__mic').classList.contains('is-listening'), stopped: window.__recs[0].stopped, text: document.getElementById('composer-input').textContent, markers: document.querySelectorAll('#composer-input .lime-dictation-interim').length }));
+  check(tag('dictation: the mic listens (a pulsing ring: ' + d1.pulse + '), interim words show live at the caret ("' + d1.interim + '"), the final text stays ("' + d2 + '"), and a second tap stops it'), d1.listening && /pulse/.test(d1.pulse) && d1.started && d1.interim === 'Say: hello wor' && d2 === 'Say: hello world' && !d3.listening && d3.stopped && d3.text === 'Say: hello world' && d3.markers === 0, JSON.stringify([d1, d2, d3]));
+  await page.click('#composer .lime-voice-split__mic'); await sleep(100);
+  await page.evaluate(() => document.getElementById('composer-input').blur()); await sleep(200);
+  check(tag('dictation stops when the field loses focus'), await page.evaluate(() => !document.querySelector('#composer .lime-voice-split__mic').classList.contains('is-listening') && window.__recs[1].stopped === true));
+  await page.evaluate(() => { document.getElementById('composer-input').innerHTML = ''; });
   await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
   // messages fade out under the composer (a mask on the thread), and not at the top (the glass bar blurs what passes under it)
   const fades = await page.evaluate(() => { const m = document.getElementById('thread-messages'); const cs = getComputedStyle(m); return { mask: cs.webkitMaskImage || cs.maskImage, top: m.getBoundingClientRect().top, padTop: parseFloat(cs.paddingTop) }; });
@@ -1159,6 +1373,17 @@ export async function run({ check }) {
       const deskPieces = await Promise.all(['.seed-layout__left', '.lime-center-top', '#scope-tablist', '.lime-recent'].map((s) => visible(page, s)));
       check(`${name} desktop 1024x768: none of the phone pieces (dock, Messages header, chat bar, row badge, pin, phone time) show`, pieces.every((v) => !v), JSON.stringify(pieces));
       check(`${name} desktop 1024x768: the sidebar, breadcrumb row, tabs and Recent row still show`, deskPieces.every(Boolean), JSON.stringify(deskPieces));
+      // LIME-86-fix item 9: on desktop Enter still sends and Shift+Enter is a new line (only phones changed)
+      await page.evaluate((id) => document.querySelector('.lime-contact[data-conversation-id="' + id + '"]').click(), S.zed);
+      await sleep(500);
+      const dn0 = await page.evaluate((id) => LimeStore.listMessages(id).length, S.zed);
+      await page.click('#composer-input'); await page.keyboard.type('desk line one');
+      await page.keyboard.down('Shift'); await page.keyboard.press('Enter'); await page.keyboard.up('Shift');
+      await page.keyboard.type('desk line two'); await sleep(250);
+      const dn1 = await page.evaluate((id) => ({ n: LimeStore.listMessages(id).length, html: document.getElementById('composer-input').innerHTML, hint: document.getElementById('composer-input').getAttribute('enterkeyhint') }), S.zed);
+      await page.keyboard.press('Enter');
+      await wait(page, (a) => LimeStore.listMessages(a.id).length === a.n + 1, { id: S.zed, n: dn0 });
+      check(`${name} desktop 1024x768: Shift+Enter is a new line (no send yet: ${dn1.n} of ${dn0}), then Enter sends; the keyboard key is "${dn1.hint}"`, dn1.n === dn0 && dn1.hint === 'send' && /desk line one[\s\S]*desk line two/.test(dn1.html), JSON.stringify(dn1));
       check(`${name} desktop 1024x768: zero console or page errors`, errors.length === 0, errors.slice(0, 2).join(' | '));
       await page.close();
     }

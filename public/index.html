@@ -331,7 +331,7 @@
               <button type="button" class="m-glass-btn m-logo-btn" id="m-logo-btn" aria-label="Lime: back to the top of Messages" title="Back to the top"><img src="assets/logo-mark.svg" alt="" width="34" height="34"></button>
               <h1 class="m-sr-only">Messages</h1>
               <div class="m-glass-pill m-head-pill">
-                <button type="button" class="m-pill-btn" id="m-search-btn" aria-label="Search chats" title="Search" aria-expanded="false"><span class="dew dew-search" aria-hidden="true"></span></button>
+                <button type="button" class="m-pill-btn" id="m-search-btn" aria-label="Search chats" title="Search" aria-expanded="false"><span class="m-icon m-icon--h-search" aria-hidden="true"></span></button>
                 <button type="button" class="m-pill-btn m-pill-avatar" id="m-account-btn" aria-label="Settings" title="Settings"><span class="seed-avatar seed-avatar--sm lime-avatar m-account-avatar" id="m-account-avatar" data-name=""></span></button>
               </div>
             </div>
@@ -576,19 +576,19 @@
                     <div class="lime-menu lime-format-menu" id="composer-list-menu" role="menu" aria-label="Lists">
                       <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
                       <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
-                    </div>
-                    <button type="button" class="lime-composer__tool lime-composer__tool--align" id="composer-align-btn" aria-haspopup="menu" aria-expanded="false" title="Alignment" aria-label="Alignment"><span class="m-icon m-icon--align-left" aria-hidden="true"></span></button>
-                    <div class="lime-menu lime-format-menu" id="composer-align-menu" role="menu" aria-label="Alignment">
-                      <button type="button" class="lime-menu__item" data-cmd="alignLeft"><span class="m-icon m-icon--align-left" aria-hidden="true"></span>Align left</button>
-                      <button type="button" class="lime-menu__item" data-cmd="alignCenter"><span class="m-icon m-icon--align-center" aria-hidden="true"></span>Align centre</button>
-                      <button type="button" class="lime-menu__item" data-cmd="alignRight"><span class="m-icon m-icon--align-right" aria-hidden="true"></span>Align right</button>
-                      <button type="button" class="lime-menu__item" data-cmd="alignJustify"><span class="m-icon m-icon--align-justify" aria-hidden="true"></span>Justify</button>
                       <div class="lime-menu__divider" role="separator"></div>
                       <button type="button" class="lime-menu__item" data-cmd="indent"><span class="m-icon m-icon--indent" aria-hidden="true"></span>Indent</button>
                       <button type="button" class="lime-menu__item" data-cmd="outdent"><span class="m-icon m-icon--outdent" aria-hidden="true"></span>Outdent</button>
                     </div>
-                    <!-- LIME-86: while text is selected the toolbar row shows B I U S and this Done button instead (no popup, so the system Cut/Copy/Paste bubble never stacks with ours). -->
-                    <button type="button" class="lime-composer__tool lime-composer__tool--done" data-sel-done title="Done" aria-label="Done">Done</button>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--align" id="composer-align-btn" aria-haspopup="menu" aria-expanded="false" title="Alignment" aria-label="Alignment"><span class="m-icon m-icon--align-left" aria-hidden="true"></span></button>
+                    <div class="lime-menu lime-format-menu lime-align-menu" id="composer-align-menu" role="menu" aria-label="Alignment">
+                      <div class="lime-align-row" role="group" aria-label="Alignment">
+                        <button type="button" class="lime-align-btn" data-cmd="alignLeft" aria-label="Align left" title="Align left"><span class="m-icon m-icon--align-left" aria-hidden="true"></span></button>
+                        <button type="button" class="lime-align-btn" data-cmd="alignCenter" aria-label="Align centre" title="Align centre"><span class="m-icon m-icon--align-center" aria-hidden="true"></span></button>
+                        <button type="button" class="lime-align-btn" data-cmd="alignRight" aria-label="Align right" title="Align right"><span class="m-icon m-icon--align-right" aria-hidden="true"></span></button>
+                        <button type="button" class="lime-align-btn" data-cmd="alignJustify" aria-label="Justify" title="Justify"><span class="m-icon m-icon--align-justify" aria-hidden="true"></span></button>
+                      </div>
+                    </div>
                     <button type="button" class="lime-composer__tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
                     <button type="button" class="lime-composer__tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
                     <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
@@ -612,9 +612,13 @@
                     <!-- LIME-37: inline URL entry, opened by the Link tool/menu item
                          or Ctrl+K — position:fixed and JS-positioned off the Link
                          button's own rect, same pattern as .lime-reaction-picker. -->
-                    <div class="lime-link-popover" data-link-popover>
-                      <input type="text" class="lime-link-popover__input" data-link-input placeholder="example.com" aria-label="Link URL">
-                      <button type="button" class="seed-button seed-button--primary seed-button--sm" data-link-submit>Add</button>
+                    <div class="lime-link-popover" data-link-popover role="dialog" aria-label="Link">
+                      <input type="text" class="lime-link-popover__input lime-link-popover__text" data-link-text placeholder="Text" aria-label="Link text" autocomplete="off">
+                      <input type="text" class="lime-link-popover__input" data-link-input placeholder="example.com" aria-label="Link URL" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+                      <div class="lime-link-popover__actions">
+                        <button type="button" class="seed-button seed-button--sm" data-link-remove hidden>Remove link</button>
+                        <button type="button" class="seed-button seed-button--primary seed-button--sm" data-link-submit>Add</button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -743,19 +747,19 @@
               <div class="lime-menu lime-format-menu" id="replies-composer-list-menu" role="menu" aria-label="Lists">
                 <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
                 <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
-              </div>
-              <button type="button" class="lime-composer__tool lime-composer__tool--align" id="replies-composer-align-btn" aria-haspopup="menu" aria-expanded="false" title="Alignment" aria-label="Alignment"><span class="m-icon m-icon--align-left" aria-hidden="true"></span></button>
-              <div class="lime-menu lime-format-menu" id="replies-composer-align-menu" role="menu" aria-label="Alignment">
-                <button type="button" class="lime-menu__item" data-cmd="alignLeft"><span class="m-icon m-icon--align-left" aria-hidden="true"></span>Align left</button>
-                <button type="button" class="lime-menu__item" data-cmd="alignCenter"><span class="m-icon m-icon--align-center" aria-hidden="true"></span>Align centre</button>
-                <button type="button" class="lime-menu__item" data-cmd="alignRight"><span class="m-icon m-icon--align-right" aria-hidden="true"></span>Align right</button>
-                <button type="button" class="lime-menu__item" data-cmd="alignJustify"><span class="m-icon m-icon--align-justify" aria-hidden="true"></span>Justify</button>
                 <div class="lime-menu__divider" role="separator"></div>
                 <button type="button" class="lime-menu__item" data-cmd="indent"><span class="m-icon m-icon--indent" aria-hidden="true"></span>Indent</button>
                 <button type="button" class="lime-menu__item" data-cmd="outdent"><span class="m-icon m-icon--outdent" aria-hidden="true"></span>Outdent</button>
               </div>
-              <!-- LIME-86: while text is selected the toolbar row shows B I U S and this Done button instead (no popup, so the system Cut/Copy/Paste bubble never stacks with ours). -->
-              <button type="button" class="lime-composer__tool lime-composer__tool--done" data-sel-done title="Done" aria-label="Done">Done</button>
+              <button type="button" class="lime-composer__tool lime-composer__tool--align" id="replies-composer-align-btn" aria-haspopup="menu" aria-expanded="false" title="Alignment" aria-label="Alignment"><span class="m-icon m-icon--align-left" aria-hidden="true"></span></button>
+              <div class="lime-menu lime-format-menu lime-align-menu" id="replies-composer-align-menu" role="menu" aria-label="Alignment">
+                <div class="lime-align-row" role="group" aria-label="Alignment">
+                  <button type="button" class="lime-align-btn" data-cmd="alignLeft" aria-label="Align left" title="Align left"><span class="m-icon m-icon--align-left" aria-hidden="true"></span></button>
+                  <button type="button" class="lime-align-btn" data-cmd="alignCenter" aria-label="Align centre" title="Align centre"><span class="m-icon m-icon--align-center" aria-hidden="true"></span></button>
+                  <button type="button" class="lime-align-btn" data-cmd="alignRight" aria-label="Align right" title="Align right"><span class="m-icon m-icon--align-right" aria-hidden="true"></span></button>
+                  <button type="button" class="lime-align-btn" data-cmd="alignJustify" aria-label="Justify" title="Justify"><span class="m-icon m-icon--align-justify" aria-hidden="true"></span></button>
+                </div>
+              </div>
               <button type="button" class="lime-composer__tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
               <button type="button" class="lime-composer__tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
               <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
@@ -775,10 +779,14 @@
                 <button type="button" class="lime-menu__item" data-cmd="quote"><i class="icon-text-quote"></i>Quote</button>
                 <button type="button" class="lime-menu__item" data-cmd="code"><span class="dew dew-code"></span>Code</button>
               </div>
-              <div class="lime-link-popover" data-link-popover>
-                <input type="text" class="lime-link-popover__input" data-link-input placeholder="example.com" aria-label="Link URL">
-                <button type="button" class="seed-button seed-button--primary seed-button--sm" data-link-submit>Add</button>
-              </div>
+              <div class="lime-link-popover" data-link-popover role="dialog" aria-label="Link">
+                      <input type="text" class="lime-link-popover__input lime-link-popover__text" data-link-text placeholder="Text" aria-label="Link text" autocomplete="off">
+                      <input type="text" class="lime-link-popover__input" data-link-input placeholder="example.com" aria-label="Link URL" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+                      <div class="lime-link-popover__actions">
+                        <button type="button" class="seed-button seed-button--sm" data-link-remove hidden>Remove link</button>
+                        <button type="button" class="seed-button seed-button--primary seed-button--sm" data-link-submit>Add</button>
+                      </div>
+                    </div>
             </div>
           </div>
           <div class="lime-composer__actions">

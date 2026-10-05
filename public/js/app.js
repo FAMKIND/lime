@@ -842,6 +842,60 @@ function createStickyScroll(scrollerEl) {
 // --composer-clearance (read by its padding-bottom in gradients.css) in
 // sync with this composer's real height, and re-pins to the bottom
 // afterward if the scroller was already there.
+// LIME-86-fix: the area a floating piece (menu, link box, selection pill) must stay inside: the visible viewport (it shrinks and pans
+// with the keyboard on a phone) and, on a phone, below the bottom edge of whichever header layer is showing. Coordinates are the layout
+// viewport's, like getBoundingClientRect() and position:fixed.
+function visibleBox() {
+  const vv = window.visualViewport;
+  const top = vv ? vv.offsetTop : 0;
+  const left = vv ? vv.offsetLeft : 0;
+  const width = vv ? vv.width : window.innerWidth;
+  const height = vv ? vv.height : window.innerHeight;
+  let headBottom = 0;
+  if (isPhone()) {
+    ['#m-chatbar', '.lime-replies-panel__header', '.lime-members-panel__header'].forEach((sel) => {
+      const e = document.querySelector(sel);
+      if (!e || e.offsetParent === null) return;
+      const t = e.querySelector('.lime-replies-panel__title, .lime-members-panel__title') || e;
+      headBottom = Math.max(headBottom, e.getBoundingClientRect().bottom, t.getBoundingClientRect().bottom);
+    });
+  }
+  return { top: Math.max(top, headBottom) + 8, bottom: top + height - 8, left: left + 8, right: left + width - 8 };
+}
+
+// Puts a position:fixed element next to an anchor rectangle, inside visibleBox(): above it when it fits (or when there is more room
+// above), otherwise below; it gets a max-height and scrolls inside itself when neither side has room. Returns 'above' or 'below'.
+function placeFloating(el, anchor, { prefer = 'above', gap = 8 } = {}) {
+  const box = visibleBox();
+  el.style.maxHeight = '';
+  el.style.bottom = '';
+  const w = el.offsetWidth;
+  const h = el.scrollHeight || el.offsetHeight;
+  const roomAbove = anchor.top - gap - box.top;
+  const roomBelow = box.bottom - (anchor.bottom + gap);
+  const fitsAbove = h <= roomAbove;
+  const fitsBelow = h <= roomBelow;
+  const above = prefer === 'above' ? (fitsAbove || (!fitsBelow && roomAbove >= roomBelow)) : !(fitsBelow || (!fitsAbove && roomBelow >= roomAbove));
+  const room = Math.max(60, above ? roomAbove : roomBelow);
+  el.style.maxHeight = Math.floor(room) + 'px';
+  el.style.overflowY = 'auto';
+  const used = Math.min(h, room);
+  const wantTop = Math.round(Math.max(box.top, Math.min(above ? anchor.top - gap - used : anchor.bottom + gap, box.bottom - used)));
+  const wantLeft = Math.round(Math.max(box.left, Math.min(anchor.left, box.right - w)));
+  el.style.top = wantTop + 'px';
+  el.style.left = wantLeft + 'px';
+  // Safari makes an ancestor with backdrop-filter (the glass composer) the containing block of position:fixed children, so top and left
+  // would count from it. Measure where the piece really landed and shift by the difference (zero everywhere else).
+  // (measured with the menu's grow-in animation switched off, so its scale does not count)
+  const animation = el.style.animation;
+  el.style.animation = 'none';
+  const got = el.getBoundingClientRect();
+  if (Math.abs(got.top - wantTop) > 0.5) el.style.top = (wantTop + (wantTop - got.top)) + 'px';
+  if (Math.abs(got.left - wantLeft) > 0.5) el.style.left = (wantLeft + (wantLeft - got.left)) + 'px';
+  el.style.animation = animation;
+  return above ? 'above' : 'below';
+}
+
 function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   const input = rootEl.querySelector('.lime-composer__input');
   const sendBtn = rootEl.querySelector('.lime-composer__return');
@@ -901,20 +955,131 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     document.execCommand('formatBlock', false, isCaretInside('blockquote') ? 'p' : 'blockquote');
   }
 
-  // "Inline code for a selection within a line, a code block otherwise"
-  // (brief). A prototype-level heuristic, not a full editor: a selection
-  // that reads as one line (no newline in its own flattened text) becomes
-  // inline <code>; anything else (a multi-line selection, or no selection
-  // at all) turns the current block into a <pre><code> block instead.
+  // LIME-86-fix: the code tool. A selection inside one line becomes inline <code>. Otherwise it makes a code BLOCK at the caret: the
+  // paragraph is split there (text before and after stays an ordinary paragraph, with its bold, italic and so on), or, for a
+  // selection over several lines or blocks, those blocks' lines become the block. Inside a list the block goes after the list.
+  const topBlock = (node) => { let n = node; while (n && n.parentNode !== input) n = n.parentNode; return n; };
+  function makeCodeBlock(text) {
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    if (text) code.textContent = text; else code.appendChild(document.createElement('br'));
+    pre.appendChild(code);
+    return pre;
+  }
+  function caretTo(el, atEnd) {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    r.collapse(!atEnd);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+  const isBlank = (el) => !el.textContent.replace(/​/g, '').trim() && !el.querySelector('img');
   function toggleCode() {
     if (isCaretInside('pre')) { document.execCommand('formatBlock', false, 'p'); return; }
     const sel = window.getSelection();
-    const text = sel && sel.rangeCount ? sel.toString() : '';
-    if (text && !text.includes('\n')) {
+    if (!sel || !sel.rangeCount || !input.contains(sel.anchorNode)) return;
+    const text = sel.toString();
+    const range = sel.getRangeAt(0);
+    let start = topBlock(range.startContainer);
+    if (start && start.nodeType === 3) { document.execCommand('formatBlock', false, 'p'); start = topBlock(window.getSelection().getRangeAt(0).startContainer); }
+    const end = topBlock(window.getSelection().getRangeAt(0).endContainer);
+    if (!start) { input.appendChild(makeCodeBlock('')); caretTo(input.lastChild.firstChild, false); input.dispatchEvent(new Event('input', { bubbles: true })); return; }
+    if (text && !text.includes('\n') && start === end) {
       document.execCommand('insertHTML', false, '<code>' + escapeHtml(text) + '</code>');
-    } else {
-      document.execCommand('formatBlock', false, 'pre');
+      return;
     }
+    let pre;
+    if (!range.collapsed && text) {
+      const blocks = [];
+      for (let n = start; n; n = n.nextSibling) { blocks.push(n); if (n === end) break; }
+      const lines = [];
+      blocks.forEach((b) => {
+        if (b.tagName === 'UL' || b.tagName === 'OL') b.querySelectorAll('li').forEach((li) => lines.push(li.textContent));
+        else lines.push(b.innerText != null ? b.innerText.replace(/\n$/, '') : b.textContent);
+      });
+      pre = makeCodeBlock(lines.join('\n'));
+      input.insertBefore(pre, start);
+      blocks.forEach((b) => b.remove());
+    } else if (isBlank(start)) {
+      pre = makeCodeBlock('');
+      input.replaceChild(pre, start);
+    } else if (start.tagName === 'P' || start.tagName === 'DIV') {
+      const before = document.createRange(); before.selectNodeContents(start); before.setEnd(range.startContainer, range.startOffset);
+      const after = document.createRange(); after.selectNodeContents(start); after.setStart(range.startContainer, range.startOffset);
+      const beforeBlank = !before.toString().replace(/​/g, '').trim();
+      const afterBlank = !after.toString().replace(/​/g, '').trim();
+      pre = makeCodeBlock('');
+      if (beforeBlank) {
+        input.insertBefore(pre, start);
+      } else if (afterBlank) {
+        start.after(pre);
+      } else {
+        const tail = start.cloneNode(false);
+        tail.appendChild(after.extractContents());
+        start.after(pre);
+        pre.after(tail);
+      }
+    } else {
+      pre = makeCodeBlock('');
+      start.after(pre);
+    }
+    caretTo(pre.firstChild, pre.textContent.length > 0);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  // Leaving a code block: Enter on an empty last line, or ArrowDown on the last line, goes to an ordinary paragraph below it.
+  function exitCodeBlock(pre, trimTrailingNewline) {
+    if (trimTrailingNewline) {
+      const code = pre.querySelector('code') || pre;
+      // drop the empty last line: the final newline (a <br> or a "\n") and the placeholder after it
+      let removed = 0;
+      while (removed < 2 && code.lastChild) {
+        const last = code.lastChild;
+        if (last.nodeName === 'BR') { last.remove(); removed++; }
+        else if (last.nodeType === 3 && /\n$/.test(last.nodeValue)) { last.nodeValue = last.nodeValue.slice(0, -1); removed++; if (!last.nodeValue) last.remove(); }
+        else break;
+      }
+      if (!code.textContent && !code.querySelector('br')) code.appendChild(document.createElement('br'));
+    }
+    let next = pre.nextElementSibling;
+    if (!next || next.tagName === 'PRE') {
+      const p = document.createElement('p');
+      p.appendChild(document.createElement('br'));
+      pre.after(p);
+      next = p;
+    }
+    caretTo(next, false);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  // Text of a code block (or of the part after the caret) with each <br> as a newline. A <br> at the very end is the browser's placeholder
+  // for an empty last line, not a newline of its own, so it is not counted.
+  function codeText(root) {
+    let out = '';
+    let lastIsBr = false;
+    const walk = (n) => {
+      n.childNodes.forEach((c) => {
+        if (c.nodeType === 3) { out += c.nodeValue; lastIsBr = false; }
+        else if (c.nodeName === 'BR') { out += '\n'; lastIsBr = true; }
+        else walk(c);
+      });
+    };
+    walk(root);
+    return lastIsBr ? out.slice(0, -1) : out;
+  }
+  function caretInPre() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === 3) node = node.parentElement;
+    const pre = node && node.closest && node.closest('pre');
+    if (!pre || !input.contains(pre)) return null;
+    const rest = document.createRange();
+    rest.selectNodeContents(pre);
+    rest.setStart(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
+    const after = codeText(rest.cloneContents());
+    const all = codeText(pre);
+    return { pre, after, all, atEnd: after === '', onLastLine: !after.includes('\n') };
   }
 
   // ── LIME-83: alignment and indentation ──
@@ -981,6 +1146,13 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     updatePressedStates();
   }
 
+  // LIME-86-fix: the link box. It opens ABOVE the composer inside the visible viewport (it used to open below the Link button, which on a
+  // phone is under the keyboard). A URL field; a Text field when nothing is selected and the caret is not in a link; Add. When the caret
+  // is in a link: Edit and Remove link.
+  const linkTextInput = linkPopover && linkPopover.querySelector('[data-link-text]');
+  const linkRemoveBtn = linkPopover && linkPopover.querySelector('[data-link-remove]');
+  let editingAnchor = null;
+
   function closeLinkPopover() {
     if (linkPopover) linkPopover.classList.remove('is-open');
   }
@@ -988,45 +1160,80 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   function openLinkPopover(anchorBtn) {
     if (!linkPopover || !linkInput) return;
     const sel = window.getSelection();
-    savedLinkRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-    let existingHref = '';
-    if (isCaretInside('a')) {
+    savedLinkRange = sel && sel.rangeCount && input.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
+    editingAnchor = null;
+    if (savedLinkRange) {
       let node = savedLinkRange.startContainer;
       if (node.nodeType === 3) node = node.parentElement;
-      const a = node.closest('a');
-      if (a) existingHref = a.getAttribute('href') || '';
+      const a = node && node.closest ? node.closest('a') : null;
+      if (a && input.contains(a)) editingAnchor = a;
     }
-    linkInput.value = existingHref;
-    const rect = anchorBtn.getBoundingClientRect();
-    linkPopover.style.left = Math.max(8, rect.left) + 'px';
-    linkPopover.style.top = (rect.bottom + 8) + 'px';
+    const hasSelection = !!savedLinkRange && !savedLinkRange.collapsed && savedLinkRange.toString().length > 0;
+    linkInput.value = editingAnchor ? (editingAnchor.getAttribute('href') || '') : '';
+    if (linkTextInput) { linkTextInput.value = ''; linkTextInput.hidden = hasSelection || !!editingAnchor; }
+    if (linkRemoveBtn) linkRemoveBtn.hidden = !editingAnchor;
+    if (linkSubmit) linkSubmit.textContent = editingAnchor ? 'Edit' : 'Add';
+    updatePressedStates();
     linkPopover.classList.add('is-open');
-    linkInput.focus();
+    placeFloating(linkPopover, rootEl.getBoundingClientRect(), { prefer: 'above' });
+    (linkTextInput && !linkTextInput.hidden ? linkInput : linkInput).focus();
     linkInput.select();
+  }
+
+  function restoreLinkRange() {
+    input.focus();
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    if (savedLinkRange) sel.addRange(savedLinkRange);
   }
 
   function applyLink() {
     const url = sanitizeHrefValue(linkInput.value);
+    const label = linkTextInput && !linkTextInput.hidden ? linkTextInput.value.trim() : '';
     closeLinkPopover();
-    input.focus();
-    if (!url) return;
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    if (savedLinkRange) sel.addRange(savedLinkRange);
-    document.execCommand('styleWithCSS', false, false);
-    if (savedLinkRange && !savedLinkRange.collapsed) {
-      document.execCommand('createLink', false, url);
+    if (!url) { input.focus(); return; }
+    if (editingAnchor && input.contains(editingAnchor)) {
+      editingAnchor.setAttribute('href', url);
+      input.focus();
     } else {
-      document.execCommand('insertHTML', false, '<a href="' + escapeHtml(url) + '">' + escapeHtml(url) + '</a>');
+      restoreLinkRange();
+      document.execCommand('styleWithCSS', false, false);
+      if (savedLinkRange && !savedLinkRange.collapsed) {
+        document.execCommand('createLink', false, url);
+      } else {
+        document.execCommand('insertHTML', false, '<a href="' + escapeHtml(url) + '">' + escapeHtml(label || url) + '</a>');
+      }
     }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    updatePressedStates();
+  }
+
+  function removeLink() {
+    const a = editingAnchor;
+    closeLinkPopover();
+    if (a && input.contains(a)) {
+      const r = document.createRange();
+      r.selectNodeContents(a);
+      input.focus();
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      document.execCommand('unlink');
+      sel.collapseToEnd();
+    } else input.focus();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     updatePressedStates();
   }
 
   if (linkPopover && linkInput && linkSubmit) {
     linkSubmit.addEventListener('click', applyLink);
-    linkInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); applyLink(); }
-      else if (e.key === 'Escape') { e.preventDefault(); closeLinkPopover(); input.focus(); }
+    if (linkRemoveBtn) linkRemoveBtn.addEventListener('click', removeLink);
+    [linkInput, linkTextInput].forEach((f) => {
+      if (!f) return;
+      f.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); applyLink(); }
+        else if (e.key === 'Escape') { e.preventDefault(); closeLinkPopover(); input.focus(); }
+      });
     });
     document.addEventListener('click', (e) => {
       if (!linkPopover.classList.contains('is-open')) return;
@@ -1044,16 +1251,9 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   // input/submit inside this same toolbar need to receive focus normally.
   if (toolbar) {
     toolbar.addEventListener('mousedown', (e) => {
-      if (e.target.closest('[data-cmd], .lime-composer__tool--aa, .lime-composer__tool--list, .lime-composer__tool--align, [data-sel-done]')) e.preventDefault();
+      if (e.target.closest('[data-cmd], .lime-composer__tool--aa, .lime-composer__tool--list, .lime-composer__tool--align')) e.preventDefault();
     });
     toolbar.addEventListener('click', (e) => {
-      if (e.target.closest('[data-sel-done]')) {
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount) sel.collapseToEnd();
-        syncSelecting();
-        input.focus();
-        return;
-      }
       const btn = e.target.closest('[data-cmd]');
       if (!btn) return;
       const cmd = btn.dataset.cmd;
@@ -1208,21 +1408,58 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     ro.observe(rootEl);
   }
 
-  // LIME-86: on a phone, while text is selected in this composer the toolbar row shows B I U S and "Done" instead of its usual tools
-  // (CSS reads .is-selecting). No popup, so the system's Cut / Copy / Paste bubble never stacks with one of ours.
-  function syncSelecting() {
-    let on = false;
-    if (isPhone() && document.activeElement === input) {
-      const sel = window.getSelection();
-      on = !!(sel && sel.rangeCount && !sel.isCollapsed && input.contains(sel.anchorNode) && input.contains(sel.focusNode));
-    }
-    rootEl.classList.toggle('is-selecting', on);
+  // LIME-86-fix: while text is selected in a phone composer a small floating glass pill with B I U S appears above the selection, clear of
+  // iOS's own Cut / Copy / Paste callout (about 52px), or below it when there is no room above; always inside the visible viewport.
+  // The usual toolbar stays as it is. (This replaces LIME-86's toolbar that turned into B I U S + Done.)
+  let selPill = null;
+  if (isPhoneComposer) {
+    selPill = document.createElement('div');
+    selPill.className = 'lime-sel-pill';
+    selPill.setAttribute('role', 'toolbar');
+    selPill.setAttribute('aria-label', 'Text style');
+    selPill.innerHTML = [['bold', '<b>B</b>', 'Bold'], ['italic', '<i>I</i>', 'Italic'], ['underline', '<u>U</u>', 'Underline'], ['strikethrough', '<s>S</s>', 'Strikethrough']]
+      .map((t) => '<button type="button" data-pill-cmd="' + t[0] + '" aria-label="' + t[2] + '" aria-pressed="false">' + t[1] + '</button>').join('');
+    document.body.appendChild(selPill);
+    selPill.addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection and the keyboard
+    selPill.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-pill-cmd]');
+      if (!b) return;
+      execCommandFor(b.dataset.pillCmd);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      syncSelPill();
+    });
+  }
+  const CALLOUT_CLEARANCE = 52;
+  function syncSelPill() {
+    if (!selPill) return;
+    const sel = window.getSelection();
+    const on = isPhone() && document.activeElement === input && !!sel && sel.rangeCount > 0 && !sel.isCollapsed && input.contains(sel.anchorNode) && input.contains(sel.focusNode);
+    if (!on) { selPill.classList.remove('is-open'); return; }
+    const range = sel.getRangeAt(0);
+    const rects = [...range.getClientRects()].filter((r) => r.width > 0 || r.height > 0);
+    const rect = rects.length ? { top: Math.min(...rects.map((r) => r.top)), bottom: Math.max(...rects.map((r) => r.bottom)), left: Math.min(...rects.map((r) => r.left)), right: Math.max(...rects.map((r) => r.right)) } : range.getBoundingClientRect();
+    selPill.classList.add('is-open');
+    selPill.querySelectorAll('[data-pill-cmd]').forEach((b) => {
+      let pressed = false;
+      try { pressed = document.queryCommandState(b.dataset.pillCmd === 'strikethrough' ? 'strikeThrough' : b.dataset.pillCmd); } catch (err) { /* unsupported */ }
+      b.setAttribute('aria-pressed', String(pressed));
+    });
+    const box = visibleBox();
+    const pw = selPill.offsetWidth, ph = selPill.offsetHeight;
+    let top = rect.top - CALLOUT_CLEARANCE - ph;
+    if (top < box.top) top = rect.bottom + CALLOUT_CLEARANCE;
+    top = Math.max(box.top, Math.min(top, box.bottom - ph));
+    const left = Math.max(box.left, Math.min((rect.left + rect.right) / 2 - pw / 2, box.right - pw));
+    selPill.style.top = Math.round(top) + 'px';
+    selPill.style.left = Math.round(left) + 'px';
   }
   document.addEventListener('selectionchange', () => {
     if (document.activeElement === input) updatePressedStates();
-    syncSelecting();
+    syncSelPill();
   });
-  input.addEventListener('blur', syncSelecting);
+  input.addEventListener('blur', () => { if (selPill) selPill.classList.remove('is-open'); });
+  window.addEventListener('resize', syncSelPill);
+  if (window.visualViewport) { window.visualViewport.addEventListener('resize', syncSelPill); window.visualViewport.addEventListener('scroll', syncSelPill); }
 
   input.addEventListener('paste', (e) => {
     e.preventDefault();
@@ -1235,6 +1472,7 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   });
 
   function send() {
+    if (typeof stopDictation === 'function' && recognition) stopDictation();
     const content = input.innerText.trim();
     // LIME-38: Send is active with text OR attachments, either alone —
     // guard matches that, not "content required" the way LIME-37 left it.
@@ -1274,8 +1512,23 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     if (mod && e.shiftKey && key === 'x') { e.preventDefault(); execCommandFor('strikethrough'); return; }
     if (mod && !e.shiftKey && key === 'k') { e.preventDefault(); if (linkToolButtons[0]) openLinkPopover(linkToolButtons[0]); return; }
 
+    // LIME-86-fix: in a code block Enter adds a line, and Enter on an empty last line (or ArrowDown on the last line) leaves the block
+    if (!mod && !e.shiftKey && (e.key === 'Enter' || e.key === 'ArrowDown')) {
+      const c = caretInPre();
+      if (c) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (c.atEnd && (c.all === '' || c.all.endsWith('\n'))) exitCodeBlock(c.pre, true);
+          else { document.execCommand('insertText', false, '\n'); input.dispatchEvent(new Event('input', { bubbles: true })); }
+          return;
+        }
+        if (c.onLastLine) { e.preventDefault(); exitCodeBlock(c.pre, false); return; }
+      }
+    }
+
     if (e.key === 'Enter') {
       if (mod) { e.preventDefault(); send(); return; } // Cmd/Ctrl+Enter always sends
+      if (isPhone() && isPhoneComposer) return; // LIME-86-fix: on a phone Return is a new line (a new item in a list); only the send button sends
       if (e.shiftKey) return; // Shift+Enter is always a newline
       if (isCaretInside('li') || isCaretInside('pre') || isCaretInside('code')) return; // adds a new item/line
       e.preventDefault();
@@ -1285,6 +1538,100 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
 
   if (sendBtn) sendBtn.addEventListener('click', send);
   if (sendBtn) sendBtn.setAttribute('aria-disabled', 'true');
+
+  // LIME-86-fix: on a phone Return is a new line, so the keyboard's key says so ("enter"), not "send"; desktop keeps "send".
+  if (isPhoneComposer) {
+    queueMicrotask(() => {
+      const mq = window.matchMedia(PHONE_QUERY);
+      const hint = () => input.setAttribute('enterkeyhint', mq.matches ? 'enter' : 'send');
+      hint();
+      mq.addEventListener('change', hint);
+    });
+  }
+
+  // LIME-86-fix: the mic is dictation on a phone: speech to text into the composer at the caret, interim words shown live. Tap again to
+  // stop; it also stops on send, when the field loses focus, and after a few seconds of silence. Where the browser has no speech
+  // recognition (Firefox, the insecure LAN address) or it is blocked, a toast says so. Voice messages are not built here.
+  const micBtn = isPhoneComposer ? rootEl.querySelector('.lime-voice-split__mic') : null;
+  let recognition = null;
+  let dictMarker = null;
+  let silenceTimer = null;
+  function dictationUnavailable() {
+    LimeToast.show({ title: "Dictation isn't available here. Use the mic on your keyboard.", tone: 'info' });
+  }
+  function setListening(on) {
+    if (!micBtn) return;
+    micBtn.classList.toggle('is-listening', on);
+    micBtn.setAttribute('aria-pressed', String(on));
+  }
+  function commitMarker() {
+    if (!dictMarker) return;
+    const text = dictMarker.textContent;
+    if (text) dictMarker.replaceWith(document.createTextNode(text)); else dictMarker.remove();
+    dictMarker = null;
+  }
+  function stopDictation() {
+    clearTimeout(silenceTimer);
+    const r = recognition;
+    recognition = null;
+    if (r) { try { r.stop(); } catch (e) { /* already stopped */ } }
+    commitMarker();
+    setListening(false);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  function startDictation() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { dictationUnavailable(); return; }
+    input.focus();
+    const sel = window.getSelection();
+    let range = sel && sel.rangeCount && input.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+    if (!range) { range = document.createRange(); range.selectNodeContents(input); range.collapse(false); }
+    if (!range.collapsed) range.collapse(false);
+    const marker = document.createElement('span');
+    marker.className = 'lime-dictation-interim';
+    range.insertNode(marker);
+    dictMarker = marker;
+    let rec;
+    try {
+      rec = new SR();
+      rec.lang = navigator.language || 'en-US';
+      rec.continuous = true;
+      rec.interimResults = true;
+    } catch (e) { commitMarker(); dictationUnavailable(); return; }
+    recognition = rec;
+    const bumpSilence = () => { clearTimeout(silenceTimer); silenceTimer = setTimeout(stopDictation, 5000); };
+    rec.onresult = (ev) => {
+      if (recognition !== rec || !dictMarker) return;
+      let finalText = '', interimText = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) finalText += t; else interimText += t;
+      }
+      if (finalText) {
+        const fresh = document.createElement('span');
+        fresh.className = 'lime-dictation-interim';
+        dictMarker.replaceWith(document.createTextNode(finalText), fresh);
+        dictMarker = fresh;
+      }
+      dictMarker.textContent = interimText;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      bumpSilence();
+    };
+    rec.onerror = (ev) => {
+      if (recognition !== rec) return;
+      if (ev && ev.error && ev.error !== 'no-speech' && ev.error !== 'aborted') dictationUnavailable();
+      stopDictation();
+    };
+    rec.onend = () => { if (recognition === rec) stopDictation(); };
+    try { rec.start(); } catch (e) { recognition = null; commitMarker(); dictationUnavailable(); return; }
+    setListening(true);
+    bumpSilence();
+  }
+  if (micBtn) {
+    micBtn.addEventListener('mousedown', (e) => e.preventDefault()); // keep the field focused (a blur would stop dictation)
+    micBtn.addEventListener('click', () => { if (!isPhone()) return; if (recognition) stopDictation(); else startDictation(); });
+    input.addEventListener('blur', () => { if (recognition) stopDictation(); });
+  }
 
   // LIME-79: the phone toolbar's emoji button — a small set of common emoji that insert at the caret.
   const emojiBtn = rootEl.querySelector('[data-emoji-btn]');
@@ -4980,6 +5327,17 @@ function wireDropdownToggle(toggleId, dropdownId, { fixed = false, placement = '
     // 0 until the dropdown is actually visible (LIME-18-fix4 already
     // established this for the horizontal clamp; the same now applies
     // to the vertical flip added here).
+    if (fixed && opening && isPhone()) {
+      // LIME-86-fix: on a phone every fixed menu stays inside the visible viewport and below the header layer (it scrolls inside itself
+      // when there is not enough room), whether the keyboard is up or not
+      const rect = toggle.getBoundingClientRect();
+      // a composer's menus open above the whole composer (aligned to their button), not over its text
+      const composer = toggle.closest('#composer, #replies-composer');
+      const cr = composer ? composer.getBoundingClientRect() : null;
+      const side = placeFloating(dropdown, cr ? { top: cr.top, bottom: cr.bottom, left: rect.left, right: rect.right } : rect, { prefer: composer ? 'above' : 'below' });
+      dropdown.style.transformOrigin = Math.max(0, Math.min(dropdown.offsetWidth, rect.left + rect.width / 2 - parseFloat(dropdown.style.left))) + 'px ' + (side === 'below' ? '0' : '100%');
+      return;
+    }
     if (fixed && opening) {
       const rect = toggle.getBoundingClientRect();
       const gap = 8;
@@ -5048,7 +5406,8 @@ wireDropdownToggle('user-btn', 'user-dropdown', { fixed: true });
 // sound-wave view.
 ['voice-mode-record', 'replies-voice-mode-record'].forEach((id) => {
   const mic = document.getElementById(id);
-  if (mic) mic.addEventListener('click', () => LimeToast.show({ title: 'Voice messages are coming soon', tone: 'info' }));
+  // (on a phone the mic is dictation, wired in createComposer; here it only says voice messages are coming on larger screens)
+  if (mic) mic.addEventListener('click', () => { if (isPhone()) return; LimeToast.show({ title: 'Voice messages are coming soon', tone: 'info' }); });
 });
 // Decorative relisting of the toolbar tools .lime-composer__tool--overflow
 // hides at narrow widths (LIME-12-fix4) — none of those tools have any
@@ -7257,13 +7616,17 @@ wireScrollFades(document.getElementById('wall-scroller'), document.getElementByI
 // here, since the element doesn't exist yet at parse time and gets
 // replaced on every section switch.
 
-// LIME-86: iOS pans the visible area while the keyboard is open, which would carry the floating headers away with it. --vv-top is how far
-// the visible area has moved; the headers translate by it (lime.css) so they stay put on screen.
-(function pinHeadersToVisibleArea() {
+// LIME-86 / LIME-86-fix: with the keyboard up, iOS shrinks and pans the visible area but not the layout viewport. --vv-top and --vv-h are
+// the visible area's offset and height; on a phone the (fixed) body takes exactly that box (lime.css), so the headers stay at the top of
+// what you can see and the composer, with its whole toolbar, sits above the keyboard.
+(function fitToVisibleArea() {
   const vv = window.visualViewport;
   if (!vv) return;
   const root = document.documentElement;
-  const sync = () => root.style.setProperty('--vv-top', Math.max(0, Math.round(vv.offsetTop)) + 'px');
+  const sync = () => {
+    root.style.setProperty('--vv-top', Math.max(0, Math.round(vv.offsetTop)) + 'px');
+    root.style.setProperty('--vv-h', Math.round(vv.height) + 'px');
+  };
   vv.addEventListener('resize', sync);
   vv.addEventListener('scroll', sync);
   sync();

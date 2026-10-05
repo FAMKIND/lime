@@ -10274,8 +10274,7 @@ html {
 
 /* Phone-only controls are hidden everywhere else. */
 .lime-composer__tool--list,
-.lime-composer__tool--align,
-.lime-composer__tool--done {
+.lime-composer__tool--align {
   display: none;
 }
 
@@ -10293,11 +10292,15 @@ html {
   }
   body {
     position: fixed;
-    inset: 0;
+    top: var(--vv-top, 0px);
+    left: 0;
+    right: 0;
     width: 100%;
+    height: var(--vv-h, 100dvh);
     overflow: hidden;
   }
   #layout.seed-layout {
+    height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
   }
@@ -10310,11 +10313,7 @@ html {
   .lime-settings__pane {
     overscroll-behavior: contain;
   }
-  /* the floating headers follow the visible area (iOS pans it while the keyboard is open); app.js keeps --vv-top current */
-  .m-chatbar,
-  .m-messages__head {
-    transform: translateY(var(--vv-top, 0px));
-  }
+  /* the body takes the visible area's box (iOS pans and shrinks it while the keyboard is open); app.js keeps --vv-top and --vv-h current */
 
   /* ── 2. no sideways scrolling in the chat: only vertical pans; code blocks keep their own horizontal scroll ── */
   .lime-messages,
@@ -10626,48 +10625,6 @@ html {
     min-width: 0;
     width: max-content;
   }
-
-  /* ── 15. text selected in the composer: the toolbar row becomes B I U S and Done (no popup, so the system's Cut / Copy / Paste bubble
-        never stacks with ours); deselect and the usual tools come back ── */
-  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > :is(.lime-composer__tool--emoji, .lime-composer__tool--aa, .lime-composer__tool--list, .lime-composer__tool--align, [data-cmd="link"], [data-cmd="code"]) {
-    display: none;
-  }
-  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > :is([data-cmd="bold"], [data-cmd="italic"], [data-cmd="underline"], [data-cmd="strikethrough"]) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--soil-text);
-    font: inherit;
-    font-size: 17px;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > [data-cmd="bold"] { order: 1; }
-  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > [data-cmd="italic"] { order: 2; }
-  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > [data-cmd="underline"] { order: 3; }
-  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > [data-cmd="strikethrough"] { order: 4; }
-  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > .lime-composer__tool--done {
-    display: inline-flex;
-    order: 5;
-    width: auto;
-    height: 32px;
-    padding: 0 14px;
-    margin-left: 6px;
-    border-radius: 16px;
-    aspect-ratio: auto;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    background: var(--lime-primary-bg);
-    color: var(--lime-primary-ink);
-    font: inherit;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-  }
 }
 
 /* the pill grows into the card in one step; the text and toolbar ease in so it reads as one movement instead of a jump */
@@ -10687,4 +10644,295 @@ html {
     padding-left: max(24px, env(safe-area-inset-left));
     padding-right: max(24px, env(safe-area-inset-right));
   }
+}
+
+/* ═══════════════════════════════════════════════════════
+   LIME-86-FIX: CLOSE-OUT OF MOBILE QA ROUND 3 (phones unless a rule says otherwise; desktop looks the same)
+   A bigger logo and a fade under the Messages header; brighter bubbles for other people; 20px header glyphs; readable menu reasons;
+   rings that match what is behind them; menus that stay inside the visible area; a link box that works on a phone; Return is a new line
+   and send is an up arrow; dictation; align as a row of icons, indent in the list menu; a B I U S pill over the selection; reactions
+   on one row; code blocks in the middle of a message.
+═══════════════════════════════════════════════════════ */
+
+/* Other people's bubbles: brighter than the canvas, derived from the tone's own canvas (light: toward white with a hairline so it holds
+   its edge on the palest tones; dark: lifted toward white). Your own bubble is untouched (--lime-primary-bg). */
+[data-theme="light"] {
+  --lime-bubble-other: color-mix(in oklab, var(--soil-bg-canvas) 8%, white 92%);
+  --lime-bubble-edge: color-mix(in oklab, var(--soil-bg-canvas) 88%, var(--seed-soil-900) 12%);
+}
+[data-theme="dark"] {
+  --lime-bubble-other: color-mix(in oklab, var(--soil-bg-canvas) 82%, white 18%);
+  --lime-bubble-edge: transparent;
+}
+
+/* a send arrow that points up (phones swap it in for the return glyph) */
+.lime-composer__return {
+  --m-send-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M12 19.5V5M5.5 11.5L12 5l6.5 6.5' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* the link box (all sizes): URL, optional Text, actions */
+.lime-link-popover {
+  flex-wrap: wrap;
+}
+.lime-link-popover__text {
+  width: 140px;
+}
+.lime-link-popover__actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.lime-link-popover [hidden] {
+  display: none !important;
+}
+
+/* the selection pill and the dictation marker */
+.lime-sel-pill {
+  display: none;
+}
+.lime-dictation-interim {
+  opacity: 0.55;
+}
+.lime-align-row {
+  display: flex;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  /* 1. the logo: about 15% larger inside its round button */
+  .m-logo-btn img {
+    width: 39px;
+    height: 39px;
+  }
+
+  /* 2. the Messages header fades like the chat header: the list passes under a soft canvas-coloured fade (no mask, no hard cut) */
+  .m-messages__head::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: calc(100% + 14px);
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to bottom, color-mix(in oklab, var(--soil-bg-canvas) 86%, transparent) 0, color-mix(in oklab, var(--soil-bg-canvas) 70%, transparent) 55%, transparent 100%);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 52%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 52%, transparent 100%);
+  }
+  #layout .lime-list-col.is-scrolled-top > .lime-list-col__scroll,
+  #layout .lime-list-col.is-scrolled-top.is-scrolled-bottom > .lime-list-col__scroll {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  /* 3. other people's bubbles */
+  .lime-message--received .lime-message__content:not(.lime-message__content--media):not(.lime-message__content--bare) {
+    background: var(--lime-bubble-other);
+    box-shadow: 0 0 0 0.5px var(--lime-bubble-edge);
+  }
+
+  /* 4. header glyphs about 20px (a 25px box), one 1.9px line, centred in their 44px hit areas; the back chevron to match */
+  .m-chatbar__tools .m-icon,
+  .m-head-pill .m-icon--h-search {
+    font-size: 25px;
+  }
+  .m-chatbar__tools .m-iconbtn {
+    position: relative;
+    width: 44px;
+    height: 44px;
+  }
+  .m-chatbar__tools {
+    padding: 0 1px;
+  }
+  /* on the narrowest phones (360) the pill gives back 12px so a title like "Zed Team" still fits: 40px circles with 44px hit areas */
+  @media (max-width: 374px) {
+    .m-chatbar__tools .m-iconbtn {
+      width: 40px;
+      height: 40px;
+    }
+    .m-chatbar__tools .m-iconbtn::after {
+      content: '';
+      position: absolute;
+      inset: -2px;
+    }
+  }
+  .lime-panel-close .dew,
+  .lime-profile__back .dew,
+  .m-chatbar__back .dew {
+    font-size: 20px; /* a dew icon's box is 1.5em and its line 1.5 of 24: this is the same 1.9px line */
+  }
+
+  /* 5. the grey explanation lines in menus are readable (4.5:1) in every tone, light and dark */
+  .lime-menu .lime-menu__item-reason,
+  .lime-menu .lime-menu__item[aria-disabled="true"] .lime-menu__item-reason {
+    color: var(--soil-text-muted);
+  }
+  /* dark: the muted grey falls short on the lifted menu in some tones, so the reason is the text colour a step toward the menu */
+  [data-theme="dark"] .lime-menu .lime-menu__item-reason,
+  [data-theme="dark"] .lime-menu .lime-menu__item[aria-disabled="true"] .lime-menu__item-reason {
+    color: color-mix(in oklab, var(--soil-text) 78%, var(--soil-bg-elevated));
+  }
+
+  /* 6. one ring variable: each context sets it to the surface behind the stack */
+  .m-list .lime-contact {
+    --lime-ring: var(--soil-bg-canvas);
+  }
+  .m-list .lime-contact:active {
+    --lime-ring: var(--lime-layer-hover);
+  }
+  .m-list .lime-avatar-cluster__member,
+  .m-list .lime-avatar-cluster__more {
+    box-shadow: 0 0 0 2px var(--lime-ring);
+  }
+  .m-chatbar__center {
+    /* the glass pill's colour as it really looks over the canvas */
+    --lime-ring: color-mix(in oklab, var(--soil-bg-elevated) 78%, var(--soil-bg-canvas));
+  }
+  .m-chatbar__avatars .lime-avatar-cluster__member {
+    box-shadow: 0 0 0 1.5px var(--lime-ring);
+  }
+
+  /* 13. reactions: the chips and the smiley stay on one row, which may be wider than a short bubble (up to the message column) and
+        wraps only when the chips truly do not fit; tighter chips */
+  .lime-message__stack > .lime-message__foot {
+    align-self: auto;
+    width: max-content;
+    min-width: 100%;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+  .lime-message--received .lime-message__stack > .lime-message__foot { align-self: flex-start; }
+  .lime-message--sent .lime-message__stack > .lime-message__foot { align-self: flex-end; }
+  .lime-message__foot .lime-reaction {
+    padding: 1px 5px;
+    gap: 3px;
+  }
+  .lime-message__foot .lime-message__reactions {
+    flex-wrap: nowrap;
+  }
+
+  /* 9. send is an up arrow on a phone (the return glyph stays on desktop) */
+  .lime-composer__return::before {
+    -webkit-mask: var(--m-send-up) center / contain no-repeat;
+    mask: var(--m-send-up) center / contain no-repeat;
+  }
+
+  /* 10. dictation: a pulsing ring while the mic listens */
+  :is(#composer, #replies-composer) .lime-voice-split__mic {
+    position: relative;
+  }
+  :is(#composer, #replies-composer) .lime-voice-split__mic.is-listening {
+    background: color-mix(in oklab, var(--bad-icon-bold-default, #d33) 14%, transparent);
+    color: var(--bad-icon-bold-default, #d33);
+  }
+  :is(#composer, #replies-composer) .lime-voice-split__mic.is-listening::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    animation: lime-dictate-pulse 1.2s ease-out infinite;
+    pointer-events: none;
+  }
+
+  /* 11. the align menu is one row of four icon buttons; the list menu holds the indent rows */
+  .lime-align-menu {
+    padding: 6px;
+    min-width: 0;
+  }
+  .lime-align-row {
+    gap: 2px;
+  }
+  .lime-align-btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--soil-text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lime-align-btn .m-icon {
+    font-size: 22px;
+  }
+  .lime-align-btn:active,
+  .lime-align-btn[aria-pressed="true"] {
+    background: var(--lime-layer-hover);
+  }
+
+  /* 12. the B I U S pill over a selection */
+  .lime-sel-pill.is-open {
+    display: flex;
+    position: fixed;
+    z-index: 1200;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 24px;
+    border: 0.5px solid var(--m-glass-line);
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: var(--m-glass-shadow);
+    animation: m-menu-in 140ms ease-out both;
+  }
+  .lime-sel-pill button {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--soil-text);
+    font: inherit;
+    font-size: 17px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lime-sel-pill button[aria-pressed="true"] {
+    background: var(--lime-layer-hover);
+  }
+
+  /* 7. the thread, Members and person screens take the visible area's box too (the keyboard shrinks it), so their composer sits above it */
+  #layout[data-mobile-view="panel"] .seed-layout__right {
+    inset: auto;
+    top: var(--vv-top, 0px);
+    left: 0;
+    right: 0;
+    height: var(--vv-h, 100dvh);
+  }
+
+  /* 7 and 8. floating pieces (menus, the link box) are glass, never wider than the screen, and scroll inside themselves when short of room */
+  .lime-link-popover.is-open {
+    flex-direction: column;
+    align-items: stretch;
+    width: min(340px, calc(100vw - 24px));
+    box-sizing: border-box;
+    padding: 12px;
+    gap: 8px;
+    z-index: 1200;
+  }
+  .lime-link-popover .lime-link-popover__input {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 16px; /* no zoom on focus */
+    min-height: 44px;
+  }
+  .lime-link-popover__actions {
+    justify-content: flex-end;
+  }
+  .lime-format-menu,
+  .lime-menu.is-open {
+    max-width: calc(100vw - 16px);
+  }
+}
+
+@keyframes lime-dictate-pulse {
+  from { transform: scale(1); opacity: 0.7; }
+  to { transform: scale(1.5); opacity: 0; }
 }
