@@ -9841,3 +9841,91 @@ html {
   }
   #toast-container .lime-toast.seed-toast--exiting { transform: translateY(8px); }
 }
+
+/* ═══════════════════════════════════════════════════════
+   LIME-83: THE V2 COMPOSER AND THE "Aa" FORMATTING MENU (docs/design/mobile/02, 03 and 04)
+   Collapsed: a glass pill ("+", Send message..., mic). Expanded: a glass card with the text area and a toolbar: left "+", emoji, Aa,
+   bulleted list, numbered list, link, code; right mic and send. "Aa" opens a glass menu: Bold, Italic, Underline, Strikethrough, then
+   Bulleted list, Numbered list, Indent, Outdent, then Align left, centre, right, justify. Same in the thread's reply composer.
+═══════════════════════════════════════════════════════ */
+
+/* Icons dew does not have (drawn in dew's line style). */
+.m-icon--align-left   { --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M4 6h16M4 10.5h10M4 15h16M4 19.5h10'/%3E%3C/svg%3E"); }
+.m-icon--align-center { --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M4 6h16M7 10.5h10M4 15h16M7 19.5h10'/%3E%3C/svg%3E"); }
+.m-icon--align-right  { --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M4 6h16M10 10.5h10M4 15h16M10 19.5h10'/%3E%3C/svg%3E"); }
+.m-icon--align-justify{ --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M4 6h16M4 10.5h16M4 15h16M4 19.5h16'/%3E%3C/svg%3E"); }
+.m-icon--indent  { --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5.5h16M11 10h9M11 14.5h9M4 19h16M4 9.5l3.2 3-3.2 3'/%3E%3C/svg%3E"); }
+.m-icon--outdent { --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5.5h16M11 10h9M11 14.5h9M4 19h16M7.2 9.5l-3.2 3 3.2 3'/%3E%3C/svg%3E"); }
+
+/* Alignment and indentation in a formatted message and in the composer (data attributes with fixed values; never style). */
+.lime-rich-text [data-align="center"] { text-align: center; }
+.lime-rich-text [data-align="right"] { text-align: right; }
+.lime-rich-text [data-align="justify"] { text-align: justify; }
+.lime-rich-text [data-indent="1"] { margin-left: 1.5em; }
+.lime-rich-text [data-indent="2"] { margin-left: 3em; }
+.lime-rich-text [data-indent="3"] { margin-left: 4.5em; }
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .m-icon--align-left, .m-icon--align-center, .m-icon--align-right, .m-icon--align-justify, .m-icon--indent, .m-icon--outdent { --ink: 0.85; }
+
+  /* the composer is glass: collapsed and expanded */
+  :is(#composer.lime-composer, #replies-composer) {
+    background: color-mix(in oklab, var(--soil-bg-elevated) 82%, transparent);
+    border: 0.5px solid var(--m-glass-line);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.1), 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    :is(#composer.lime-composer, #replies-composer) {
+      background: var(--soil-bg-elevated);
+    }
+  }
+
+  /* the expanded toolbar, left to right: emoji, Aa, bulleted list, numbered list, link, code (the "+" is the grid's first column) */
+  :is(#composer, #replies-composer).is-expanded .lime-composer__toolbar {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="unorderedList"],
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="orderedList"],
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="link"],
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="code"] {
+    display: inline-flex;
+  }
+  :is(#composer, #replies-composer) .lime-composer__tool--emoji { order: 1; }
+  :is(#composer, #replies-composer) .lime-composer__tool--aa { order: 2; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="unorderedList"] { order: 3; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="orderedList"] { order: 4; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="link"] { order: 5; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="code"] { order: 6; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > .lime-composer__tool {
+    width: 30px;
+    height: 36px;
+    flex: none;
+  }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > .lime-composer__tool--aa { width: 36px; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > .lime-composer__tool--emoji { width: 32px; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd] .dew { font-size: 14px; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd] i[class^="icon-"] { font-size: 19px; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd][aria-pressed="true"] {
+    background: var(--lime-layer-hover);
+    border-radius: 10px;
+  }
+  :is(#composer, #replies-composer).is-expanded [data-attach-btn] { width: 36px; }
+  :is(#composer, #replies-composer).is-expanded .lime-composer__return,
+  :is(#composer, #replies-composer) .lime-composer__return { width: 40px; height: 40px; min-width: 40px; }
+
+  /* the formatting menu: three groups, scrolls if the screen is short; the active formats show a check */
+  .lime-format-menu {
+    max-height: min(68dvh, 520px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .lime-format-menu .lime-menu__item .m-icon {
+    flex: none;
+    font-size: calc(22px / (var(--ink, 0.85) * var(--box, 1)));
+    color: var(--soil-text);
+  }
+}

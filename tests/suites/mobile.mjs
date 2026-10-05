@@ -340,7 +340,7 @@ async function runOne(check, browser, name, server, S, size) {
   await wait(page, () => document.getElementById('replies-composer-format-menu').classList.contains('is-open'));
   await sleep(350);
   const fm2 = await page.evaluate(() => { const m = document.getElementById('replies-composer-format-menu'); const cs = getComputedStyle(m); const r = m.getBoundingClientRect(); const it = m.querySelector('.lime-menu__item'); return { items: [...m.querySelectorAll('.lime-menu__item')].map((e) => e.lastChild.textContent.trim()).join(), blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), radius: parseFloat(cs.borderTopLeftRadius), rowH: it.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(it).fontSize), inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, focusKept: document.activeElement === document.getElementById('replies-composer-input') }; });
-  check(tag('"Aa" opens a glass formatting menu: ' + fm2.items), fm2.items === 'Bold,Italic,Underline,Strikethrough,Bulleted list,Numbered list,Quote,Code,Link' && fm2.blur && fm2.radius >= 20 && fm2.rowH >= 44 && fm2.fs === 17 && fm2.inside && fm2.focusKept, JSON.stringify(fm2));
+  check(tag('"Aa" opens a glass formatting menu: ' + fm2.items), fm2.items === 'Bold,Italic,Underline,Strikethrough,Bulleted list,Numbered list,Indent,Outdent,Align left,Align centre,Align right,Justify' && fm2.blur && fm2.radius >= 20 && fm2.rowH >= 44 && fm2.fs === 17 && fm2.inside && fm2.focusKept, JSON.stringify(fm2));
   await page.evaluate(() => { const i = document.getElementById('replies-composer-input'); i.focus(); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
   await page.click('#replies-composer-format-menu [data-cmd="bold"]');
   await sleep(200);
@@ -496,6 +496,64 @@ async function runOne(check, browser, name, server, S, size) {
   await page.evaluate(() => { openPhotoWall('no-such-message'); }); await sleep(150);
   await page.keyboard.press('Escape'); await sleep(300);
   check(tag('Escape closes the wall through the stack'), !(await flags()).wall && (await ovNow()) === '[]');
+  await page.click('#m-chat-back');
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'contacts');
+
+  // ── LIME-83: the v2 composer: toolbar, the "Aa" menu, formatting that survives into the sent bubble, and a sanitiser that stays strict ──
+  const san = await page.evaluate(() => {
+    const dirty = '<p style="color:red" onclick="a()" data-align="center">hi<script>alert(1)</script></p>'
+      + '<p data-align="evil" data-indent="9" class="x">two</p>'
+      + '<p data-indent="2">three</p>'
+      + '<ul><li data-align="right" style="x" data-indent="2">item</li></ul>'
+      + '<div data-align="center">div</div><span data-align="center">span</span>'
+      + '<a href="javascript:alert(1)" onclick="b()">link</a><a href="https://example.com/" style="x">ok</a>'
+      + '<img src="x" onerror="c()"><blockquote style="x" data-align="justify">q</blockquote>';
+    const clean = sanitizeHtml(dirty);
+    const rendered = renderRichHtml(dirty);
+    return { clean, hostile: /style=|onclick|onerror|javascript:|<script|<img|class=|<div|<span/i.test(clean + rendered), keeps: ['<p data-align="center">hi</p>', '<p>two</p>', '<p data-indent="2">three</p>', '<li data-align="right">item</li>', '<blockquote data-align="justify">q</blockquote>', '<a href="https://example.com/">ok</a>'].every((x) => clean.includes(x)) };
+  });
+  check(tag('the sanitiser keeps data-align (center, right, justify) and data-indent (1 to 3) on the right tags and still strips style, on*, javascript: links, class, scripts, images, divs and spans'), !san.hostile && san.keeps, san.clean);
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+  await page.evaluate((id) => document.querySelector('#m-list [data-conversation-id="' + id + '"]').click(), S.dm);
+  await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
+  await sleep(300);
+  await page.click('#composer-input');
+  await wait(page, () => document.getElementById('composer').classList.contains('is-expanded'));
+  await sleep(250);
+  const tb = await page.evaluate(() => {
+    const c = document.getElementById('composer'); const tbar = c.querySelector('.lime-composer__toolbar'); const R = (e) => e.getBoundingClientRect();
+    const shown = (q) => { const e = c.querySelector(q); if (!e) return false; const r = R(e); return getComputedStyle(e).display !== 'none' && r.width > 0; };
+    const left = (q) => Math.round(R(c.querySelector(q)).left);
+    const xs = { plus: left('[data-attach-btn]'), emoji: left('[data-emoji-btn]'), aa: left('.lime-composer__tool--aa'), bullets: left('.lime-composer__toolbar > [data-cmd="unorderedList"]'), numbers: left('.lime-composer__toolbar > [data-cmd="orderedList"]'), link: left('.lime-composer__toolbar > [data-cmd="link"]'), code: left('.lime-composer__toolbar > [data-cmd="code"]'), mic: left('.lime-voice-split__mic'), send: left('.lime-composer__return') };
+    const order = Object.values(xs); const cr = R(c);
+    return { xs, ordered: order.every((v, i) => i === 0 || v > order[i - 1]), hidden: !['.lime-composer__toolbar > [data-cmd="bold"]', '.lime-composer__toolbar > [data-cmd="italic"]', '.lime-composer__toolbar > [data-cmd="underline"]', '.lime-composer__toolbar > [data-cmd="strikethrough"]', '.lime-composer__toolbar > [data-cmd="quote"]', '.lime-composer__overflow'].some(shown), fits: tbar.scrollWidth <= tbar.clientWidth + 1, inside: cr.left >= 8 && cr.right <= innerWidth - 8, sendRight: Math.round(cr.right - R(c.querySelector('.lime-composer__return')).right), glass: /blur/.test(getComputedStyle(c).backdropFilter || getComputedStyle(c).webkitBackdropFilter || '') };
+  });
+  check(tag('the expanded composer (design 03): "+", emoji, Aa, bulleted list, numbered list, link, code on the left, mic and send on the right, in that order, all fitting, no B I U S or "...", glass'), tb.ordered && tb.hidden && tb.fits && tb.inside && tb.glass, JSON.stringify(tb));
+  await page.keyboard.type('Hello world');
+  await page.evaluate(() => { const i = document.getElementById('composer-input'); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
+  const fmt = async (cmd) => { await page.click('#composer-aa-btn'); await wait(page, () => document.getElementById('composer-format-menu').classList.contains('is-open')); await sleep(300); await page.click('#composer-format-menu [data-cmd="' + cmd + '"]'); await sleep(200); };
+  const aaGroups = await (async () => { await page.click('#composer-aa-btn'); await wait(page, () => document.getElementById('composer-format-menu').classList.contains('is-open')); await sleep(300); const g = await page.evaluate(() => { const m = document.getElementById('composer-format-menu'); const out = [[]]; [...m.children].forEach((e) => { if (e.classList.contains('lime-menu__divider')) out.push([]); else out[out.length - 1].push(e.dataset.cmd); }); return out.map((x) => x.join()).join(' | '); }); await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click()); await sleep(150); return g; })();
+  check(tag('the Aa menu has three groups: ' + aaGroups), aaGroups === 'bold,italic,underline,strikethrough | unorderedList,orderedList,indent,outdent | alignLeft,alignCenter,alignRight,alignJustify', aaGroups);
+  await page.evaluate(() => { const i = document.getElementById('composer-input'); i.focus(); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
+  await fmt('bold');
+  await page.evaluate(() => { const i = document.getElementById('composer-input'); i.focus(); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
+  await fmt('alignCenter');
+  await fmt('indent');
+  const comp1 = await page.evaluate(() => { const i = document.getElementById('composer-input'); return { html: i.innerHTML, center: !!i.querySelector('[data-align="center"]'), indent: !!i.querySelector('[data-indent="1"]'), bold: !!i.querySelector('b, strong'), style: /style=/.test(i.innerHTML), pressed: [...document.querySelectorAll('#composer-format-menu [aria-pressed="true"]')].map((e) => e.dataset.cmd).sort().join() }; });
+  check(tag('Bold, Align centre and Indent apply to the text in the composer (data-align, data-indent, no style), and the active ones show as on: ' + comp1.pressed), comp1.center && comp1.indent && comp1.bold && !comp1.style && /alignCenter/.test(comp1.pressed) && /indent/.test(comp1.pressed) && /bold/.test(comp1.pressed), JSON.stringify(comp1));
+  await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click());
+  await page.evaluate(() => { document.getElementById('composer-input').focus(); });
+  await page.keyboard.press('Enter');
+  await wait(page, () => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); return m && m.querySelector('[data-align="center"]'); });
+  const sent1 = await page.evaluate(() => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); const p = m.querySelector('[data-align="center"]'); const cs = getComputedStyle(p); return { text: p.textContent, align: cs.textAlign, marginLeft: parseFloat(cs.marginLeft), bold: !!m.querySelector('b, strong'), indentAttr: p.getAttribute('data-indent') }; });
+  check(tag('the sent bubble shows it: centred, indented, bold ("' + sent1.text + '")'), sent1.text === 'Hello world' && sent1.align === 'center' && sent1.marginLeft > 10 && sent1.bold && sent1.indentAttr === '1', JSON.stringify(sent1));
+  await page.click('#composer-input'); await sleep(200);
+  await page.keyboard.type('Alpha');
+  await page.click('#composer .lime-composer__toolbar > [data-cmd="unorderedList"]'); await sleep(200);
+  await page.click('#composer-send'); // Return inside a list adds an item (existing rule), so a list is sent with the arrow
+  await wait(page, () => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); return m && m.querySelector('ul li'); });
+  check(tag('the bulleted-list button in the toolbar makes a real list in the sent bubble'), (await page.evaluate(() => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); return m.querySelector('ul li').textContent; })) === 'Alpha');
+  await page.evaluate(() => document.getElementById('composer-input').blur()); await sleep(300);
   await page.click('#m-chat-back');
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'contacts');
 

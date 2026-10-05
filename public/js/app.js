@@ -652,6 +652,11 @@ const SANITIZE_ALLOWED_TAGS = new Set(['P', 'BR', 'STRONG', 'B', 'EM', 'I', 'U',
 // Tags whose *content* is never meaningful message text — removed
 // entirely, not unwrapped, unlike every other disallowed tag below.
 const SANITIZE_DROP_WITH_CONTENT = new Set(['SCRIPT', 'STYLE']);
+// LIME-83: the two whitelisted formatting attributes (see sanitizeFragment).
+const SANITIZE_ALIGN_TAGS = new Set(['P', 'LI', 'BLOCKQUOTE', 'PRE']);
+const SANITIZE_INDENT_TAGS = new Set(['P', 'BLOCKQUOTE', 'PRE']);
+const SANITIZE_ALIGN_VALUES = new Set(['center', 'right', 'justify']);
+const SANITIZE_INDENT_VALUES = new Set(['1', '2', '3']);
 
 function sanitizeHrefValue(raw) {
   const href = (raw || '').trim();
@@ -710,8 +715,15 @@ function sanitizeFragment(root) {
     // Every other allowed tag (p, br, strong, b, em, i, u, s, ul, ol, li,
     // blockquote, code, pre) takes no attributes in this allow-list —
     // strips a pasted style="…"/onerror="…" etc. regardless of which
-    // tag it rode in on.
+    // tag it rode in on. LIME-83: the only exceptions are two data
+    // attributes with fixed value lists, never free text and never style:
+    // data-align (center, right or justify) on p, li, blockquote, pre, and
+    // data-indent (1, 2 or 3) on p, blockquote, pre.
+    const keepAlign = SANITIZE_ALIGN_TAGS.has(tag) ? node.getAttribute('data-align') : null;
+    const keepIndent = SANITIZE_INDENT_TAGS.has(tag) ? node.getAttribute('data-indent') : null;
     [...node.attributes].forEach((attr) => node.removeAttribute(attr.name));
+    if (keepAlign && SANITIZE_ALIGN_VALUES.has(keepAlign)) node.setAttribute('data-align', keepAlign);
+    if (keepIndent && SANITIZE_INDENT_VALUES.has(keepIndent)) node.setAttribute('data-indent', keepIndent);
   });
 }
 
@@ -748,7 +760,7 @@ function renderRichHtml(html) {
 // alone are just contenteditable's own line structure, not a deliberate
 // format, so plain multi-line text still omits metadata.html entirely
 // (brief: "omit html when there's no formatting").
-const RICH_TEXT_FORMATTING_TAGS = /<(strong|b|em|i|u|s|a|ul|ol|li|blockquote|code|pre)[\s>]/i;
+const RICH_TEXT_FORMATTING_TAGS = /<(strong|b|em|i|u|s|a|ul|ol|li|blockquote|code|pre)[\s>]|data-(align|indent)=/i;
 
 function hasRealFormatting(sanitizedHtml) {
   return RICH_TEXT_FORMATTING_TAGS.test(sanitizedHtml);
@@ -844,6 +856,7 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   const attachmentsEl = rootEl.querySelector('[data-attachments]');
   const attachmentsErrorEl = rootEl.querySelector('[data-attachments-error]');
   if (!input) return;
+  try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) { /* new lines become <p>, which the allow-list keeps (a <div> would be unwrapped) */ }
 
   let savedLinkRange = null;
   // { file, previewUrl } — previewUrl is a client-side object URL for an
@@ -877,6 +890,8 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
         else if (cmd === 'quote') pressed = isCaretInside('blockquote');
         else if (cmd === 'code') pressed = isCaretInside('code') || isCaretInside('pre');
         else if (cmd === 'link') pressed = isCaretInside('a');
+        else if (cmd.startsWith('align')) pressed = currentAlign() === cmd.slice(5).toLowerCase() || (cmd === 'alignLeft' && currentAlign() === 'left');
+        else if (cmd === 'indent') pressed = currentIndent() > 0;
       } catch (err) { /* queryCommandState on an unsupported command — leave unpressed */ }
       btn.setAttribute('aria-pressed', String(pressed));
     });
@@ -902,8 +917,59 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     }
   }
 
+  // ── LIME-83: alignment and indentation ──
+  // Done by hand (not execCommand's justify / indent, which write style="…" and margins that the sanitiser, rightly, strips): the
+  // blocks the selection touches get a data-align (center, right, justify; left is the default and stores nothing) or a data-indent (1 to
+  // 3). Inside a list, indent and outdent nest and un-nest the list item (execCommand does that without any style). The sanitiser
+  // keeps exactly these two attributes, with these values, on p, li, blockquote and pre.
+  const BLOCK_TAGS = new Set(['P', 'LI', 'BLOCKQUOTE', 'PRE', 'DIV']);
+  function selectionBlocks() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !input.contains(sel.anchorNode)) return [];
+    // loose text straight in the field (no block yet): wrap the touched line in a <p> first
+    const first = (n) => { while (n && n.parentNode !== input) n = n.parentNode; return n; };
+    const startTop = first(sel.getRangeAt(0).startContainer);
+    if (startTop && !(startTop.nodeType === 1 && ['P', 'UL', 'OL', 'BLOCKQUOTE', 'PRE', 'DIV'].includes(startTop.tagName))) document.execCommand('formatBlock', false, 'p');
+    const range = sel.getRangeAt(0);
+    const out = [];
+    const visit = (el) => {
+      [...el.children].forEach((child) => {
+        if (!BLOCK_TAGS.has(child.tagName) && child.tagName !== 'UL' && child.tagName !== 'OL') return;
+        if (child.tagName === 'UL' || child.tagName === 'OL') { visit(child); return; }
+        if (child.tagName === 'LI') { if (range.intersectsNode(child)) out.push(child); visit(child); return; }
+        if (range.intersectsNode(child)) out.push(child);
+      });
+    };
+    visit(input);
+    // an outer list item that only holds the touched inner one is not itself the block being formatted
+    return out.filter((el) => !(el.tagName === 'LI' && out.some((o) => o !== el && o.tagName === 'LI' && el.contains(o))));
+  }
+  function currentAlign() {
+    const b = selectionBlocks()[0];
+    return b ? (b.getAttribute('data-align') || 'left') : 'left';
+  }
+  function currentIndent() {
+    const b = selectionBlocks()[0];
+    if (!b) return 0;
+    if (b.tagName === 'LI') { let d = 0; for (let n = b.parentElement; n && n !== input; n = n.parentElement) if (n.tagName === 'UL' || n.tagName === 'OL') d++; return Math.max(0, d - 1); }
+    return Number(b.getAttribute('data-indent') || 0);
+  }
+  function setAlign(value) {
+    selectionBlocks().forEach((b) => { if (value === 'left') b.removeAttribute('data-align'); else b.setAttribute('data-align', value); });
+  }
+  function changeIndent(delta) {
+    const blocks = selectionBlocks();
+    if (blocks.some((b) => b.tagName === 'LI')) { document.execCommand(delta > 0 ? 'indent' : 'outdent'); return; }
+    blocks.forEach((b) => {
+      const next = Math.max(0, Math.min(3, Number(b.getAttribute('data-indent') || 0) + delta));
+      if (next === 0) b.removeAttribute('data-indent'); else b.setAttribute('data-indent', String(next));
+    });
+  }
+
   function execCommandFor(cmd) {
     document.execCommand('styleWithCSS', false, false);
+    if (cmd === 'alignLeft' || cmd === 'alignCenter' || cmd === 'alignRight' || cmd === 'alignJustify') { setAlign(cmd.slice(5).toLowerCase()); updatePressedStates(); input.dispatchEvent(new Event('input', { bubbles: true })); return; }
+    if (cmd === 'indent' || cmd === 'outdent') { changeIndent(cmd === 'indent' ? 1 : -1); updatePressedStates(); input.dispatchEvent(new Event('input', { bubbles: true })); return; }
     if (cmd === 'bold') document.execCommand('bold');
     else if (cmd === 'italic') document.execCommand('italic');
     else if (cmd === 'underline') document.execCommand('underline');

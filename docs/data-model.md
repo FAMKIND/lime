@@ -430,8 +430,18 @@ to Supabase directly in the first place.
   pasted `<div>` or `<span>` becomes plain inline content) or, for `script`
   and `style` specifically, removed **with its content** — there's no
   reading of "what was inside a script tag" that belongs in a message.
-  Every attribute is stripped except `href` on `a`, so a pasted `style="…"`
-  or `onerror="…"` never survives regardless of which tag it rode in on.
+  Every attribute is stripped except `href` on `a` and (LIME-83) two data
+  attributes with **fixed value lists, never free text and never `style`**:
+  **`data-align`** (`center`, `right` or `justify`; left is the default and
+  is not stored) on `p`, `li`, `blockquote` and `pre`, and **`data-indent`**
+  (`1`, `2` or `3`) on `p`, `blockquote` and `pre`. Indentation inside a list
+  is a nested `ul` / `ol`. Any other value, or the attribute on any other
+  tag, is dropped, and a pasted `style="…"`, `class`, `onerror="…"` or
+  `javascript:` link never survives regardless of which tag it rode in on.
+  **Native clients must render this subset too**: `data-align` as the
+  paragraph's text alignment, `data-indent` as a left indent of 1.5, 3 or 4.5
+  em (a client may use its own indent step), and nested lists as nested
+  lists.
   **Omitted entirely** (not stored as an empty string) when nothing in the
   composer actually used formatting — a plain-text message has no
   `metadata.html` key at all.
