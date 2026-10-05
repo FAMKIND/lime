@@ -2,9 +2,178 @@
 
 Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execution record.
 
-## ▶ START HERE: session-end note (plot, 2026-09-29, written at "end")
+## ▶ START HERE: session-end note (plot, 2026-10-05, written at "end")
 
-**The next plot session (`rtb`) reads this first.** The history below it is kept for reference. Anything above the "Continuation note (2026-09-27)" heading supersedes older queue lines.
+**The next plot session (`rtb`) reads this section first.** Everything below it is history and reference. Where they conflict, this note wins.
+
+### Where things stand (2026-10-05)
+- **`origin/main` = `bfb70de`** (`PLOT.md` committed by tend at the start of LIME-86). **Tend was mid-LIME-86** at session end (uncommitted `lime.css`, `index.html`, `app.js`, `TEND.md`, `tests/suites/mobile.mjs`, plus `tests/*.tmp.mjs` scratch files tend should delete). **Check `git log` and `TEND.md` first.**
+- **Done this session (all pushed):**
+  - the sync and server stack: LIME-69 (live tabs), 71 (`docs/api.md` contract), 72 (the `tests/` harness, puppeteer-core), 73 (`server/dev-server.mjs`), 74 (`ApiAdapter`), 74-redact (history rewrite), 75 (@famkind.com demo emails; the test accounts merged into the seed's Shem and Jean), 76 (ids without `crypto.randomUUID` on the insecure LAN);
+  - **mobile v2:** LIME-78/79 + fix … fix6, 82 (Messages and chat header v2, glass toasts), 83 (composer and Aa), 84 (Settings/Profile, **usernames**, **Linked Devices**, Donate link);
+  - earlier: toasts 67/68, the auth redesign 48 (+ fixes), New message 29, Share 27, dew icons 66, lime avatars and status icons 57-*, primary buttons 58/61.
+- **Running it:** `cd ~/Sites/lime && node server/dev-server.mjs`. The phone uses the printed "On your network" URL (e.g. `http://192.168.0.127:8000/public/auth.html`). The test accounts are `shem@famkind.com` and `jean@famkind.com` (password in the gitignored `seed-data/test-accounts.local.json`); seed teachers use the demo password in `public/js/demo-config.local.js`. To reset: stop, `rm -rf data`, start.
+- **The design source of truth:** the user's Penpot exports in **`docs/design/mobile/` (01–06)**. **Desktop frames go in `docs/design/desktop/`.** The user shared one desktop frame in chat (two panes; described under "Open decision: desktop v2"), but it **isn't saved there yet**.
+
+### Update after the end note (2026-10-05): LIME-86 landed as `c9712c9` and was pushed
+- The full matrix passed (mobile 551); desktop pixel-identical. **No iOS test:** the header-with-keyboard behaviour is the one part tend couldn't test.
+- **Decisions for the user:**
+  - (a) **dark mode: the own bubble (`--lime-primary-bg`) is barely distinct from the dark canvas (ΔE 2.1).** Options: a darker-green dark variant, or a hairline border. Ask;
+  - (b) **Lemon:** ΔE 4.5 against the canvas (borderline);
+  - (c) desktop has no own-bubble styling yet (all neutral), so it goes in desktop v2.
+- The 360px header was tightened; header tool buttons are now 40px circles.
+- **The next action:** the user's iPhone review of 86 (plus answering (a)), then LIME-85.
+
+### Queue override (2026-10-05, later)
+1. **LIME-86-fix** (drafted under "Drafted briefs"): the user's 14 QA notes on 86; commits `PLOT.md` first.
+2. **Then the web phone layout goes into maintenance.** LIME-85, 80 and 81 are **paused** (plot's lean, option A; the user said "close out this round of QA, save it on git and then switch to this direction"; confirm with the user).
+3. **Plot's next work:** the E2EE / keys / devices / mesh / discovery design pass toward the native iOS app (see "Open thread: the road to the iPhone app").
+4. **Pending with the user:** the dark own bubble and the dark "+" button (screenshot 1 shows the "+" nearly invisible in dark; lean C: lift the dark `--lime-primary-bg`); Xcode and two iPhones for the Bluetooth spike; the Apple Developer account comes next month.
+
+### The authoritative queue (in order; see the override above)
+1. ~~LIME-86~~ **landed as `c9712c9`** (review pending): mobile QA round 3 (toasts at the top right, the scroll lock, the chat sliding sideways, landscape margins, thread and details headers, "⋯" with no ring and a slimmer menu, the add-reaction smiley only with reactions, a single ✓ until read receipts, lighter chips, a compact "N replies", composer fixes plus the Aa / list / align menus, **the selection → inline B/I/U/S toolbar**, true circles, dock strokes, **own bubble = the "+" FAB green**).
+2. **LIME-85:** the shared component set, **no visual change** (component CSS with container queries, shared render functions, `docs/components.md`).
+3. **LIME-80** (amended): Pin replaces Star, Customize, native share / timezone, find-in-chat, the calls toast, **instant sign-out of a revoked device**.
+4. **LIME-81:** live "typing…" (ephemeral) plus **read receipts** (✓ / ✓✓; members can see each other's `last_read_at`).
+5. **Desktop v2** (approach **A**, "same app, wider"): **brief it after the user saves their frames** to `docs/design/desktop/` and LIME-85 lands. The desktop UI for usernames and Linked Devices goes in here.
+6. **Later:** the backend planning pass (**option C**: Supabase + local-first sync; **separate staging and production projects**), Communities (deferred), swipe actions, voice messages (the mic → recording with sound waves), calls (planned "soon"), the cleanup brief (see Unbriefed).
+
+### Waiting on the user
+- The LIME-86 review on the iPhone (then LIME-85).
+- Save the desktop frame(s) to `docs/design/desktop/` (also Settings on desktop, hover / right-click, and the details/thread pane behaviour).
+- Unanswered: commit `public/assets/Logomark-outline.svg` as a brand asset? DND grey or red (assumed grey)? Leading zero in times (assumed none)?
+- The `LIME_DONATE_URL` when ready (`public/js/config.js`).
+- Optional: `safaridriver --enable` (so tend can test Safari).
+
+### Steward: the assumption to question next session
+**We're polishing a mobile *web* app to native-app fidelity** (liquid glass emulated with `backdrop-filter`, gestures, the iOS selection callout, Safari's password prompt, the status bar). The stated goal is **native iOS and Android apps** with offline Bluetooth. Much of this web-only work may be throwaway, depending on the client technology (**native / React Native / Capacitor**, `docs/api.md` §12). **Before the desktop v2 build, put a decision surface to the user on the mobile client technology,** since it decides how much of today's web UI carries over (Capacitor keeps it; native or RN rebuilds it) and how much more polish the web phone layout deserves.
+
+### Open thread: the road to the iPhone app, then Android (raised by the user 2026-10-05 during the 86 review)
+The user's view was "we're closer than I imagined". Plot's assessment (it was surveyed):
+- **What is closer than expected:** the **data layer**, which is the hardest part to retrofit. `docs/api.md` is op-based, local-first, uses client-made ids, has an outbox and idempotent ops, and §9 already names the op as the unit a phone relays over Bluetooth. The phone UI exists and follows the Penpot design (01–06).
+- **What is further than it looks:**
+  1. **No real backend.** `server/dev-server.mjs` keeps JSON files in `data/` on the user's laptop. The Supabase pass (option C, separate staging and production) has to come before TestFlight.
+  2. **On-device storage** is `localStorage`: the cache and outbox in `api-adapter.js`. iOS can evict web storage, so an app needs SQLite or another durable store.
+  3. **Push** (APNs/FCM, §10) isn't built.
+  4. **The mesh is unscoped.** On iOS, Bluetooth between two phones that both have the app in the background is very limited. This is the deciding unknown.
+  5. **Store overhead:** Apple developer account ($99/yr), Play ($25), privacy policy, review.
+- **The decision surface given to the user:**
+  - **A.** Capacitor wrap, with the mesh as a native Swift/Kotlin plugin.
+  - **B.** React Native: rebuild the UI, keep the contract.
+  - **C.** Fully native, Swift then Kotlin.
+- **Lean: A**, plus a **Bluetooth feasibility spike first**. The question for the user that unlocks it: must offline messaging work with the app **closed** (backgrounded), or only while it is **open**? Open-only favours A strongly; closed, phone-to-phone on iOS, pushes toward native for the mesh part, whatever the UI is.
+- **Update (same day): the user's gut is C, modelled on Signal.**
+  - **Signal's approach (researched):** one app per platform. iOS is Swift and Android is Kotlin, both native. Desktop is TypeScript/Electron. The hard core (the encryption protocol and crypto) is one shared Rust library, `libsignal`, wrapped for Swift, Java and TypeScript.
+  - Signal has **no offline or Bluetooth mode**; it needs the internet. "Signal Offline Messenger" is an unrelated app.
+  - The closest model for the mesh is **bitchat**: native Swift on iOS, and a protocol-compatible native Kotlin port on Android (which uses a foreground service to keep the mesh alive).
+  - **Plot's revised view:**
+    - C is defensible *if* privacy is a product promise. In that case, mirror Signal: native UIs, plus one shared core for the op protocol, signing and crypto.
+    - The current web app becomes the web/desktop client and the spec for the native screens.
+    - **The bigger decision that C surfaces is end-to-end encryption.** Signal is private because of E2EE, not because it is native. E2EE changes the backend (the server can't read, search or validate message content; `docs/api.md` §9 Q2) and so has to be decided *before* the Supabase pass.
+    - `libsignal` is AGPL-3.0; Lime is MIT. Using it would mean open-sourcing under AGPL or picking another library: a decision for the user.
+- **DECIDED (user, 2026-10-05): end-to-end encryption.** It shapes the backend pass: the server stores ciphertext and can't search, preview or validate message content. Push previews must be generated on the device. Server-side search is gone.
+- **Open: which E2EE library.** The user asked about MIT vs AGPL and about "studying theirs and making our own". Plot's answer:
+  - **Don't write our own cryptography.** Reading published specs is fine, since copyright covers code, not ideas. A home-made implementation needs a paid audit and is the classic way secure apps fail.
+  - **The candidates:**
+    - `libsignal` (AGPL-3.0: Lime would have to be open-sourced under AGPL);
+    - **vodozemac** (Matrix's Olm/Megolm, i.e. Signal's Double Ratchet plus group sessions; Rust, Apache-2.0, audited by Least Authority);
+    - **OpenMLS** (the IETF MLS standard, RFC 9420; Rust, MIT; built for large groups and multi-device, but group changes need a consistent order, which fits poorly with the offline mesh).
+  - **Plot's lean: vodozemac.** It is permissive, so Lime can stay MIT; it has been audited; it is battle-tested in Matrix/Element; it is Rust, so the Signal pattern of one shared core works; and Megolm tolerates offline and out-of-order delivery.
+  - **Chosen: vodozemac (see DECIDED below).**
+  - **Follow-up facts given to the user:**
+    - **Neither library does Bluetooth.** Encryption doesn't care how bytes travel. The Bluetooth transport is built separately either way; **bitchat** (Unlicense / public domain, Swift + Kotlin) is a free-to-borrow reference for it.
+    - **1:1 chats:** Olm ≈ Signal (both Double Ratchet).
+    - **Groups:** Signal's Sender Keys recover better after a compromised device; with Megolm, whoever holds a session can read its later messages until the session rotates (mitigation: rotate often and on membership change).
+    - **Signal's protocol is the most formally analysed** (2016 analysis; PQXDH formally verified in 2024) and has post-quantum key exchange. I found no published third-party *code* audit of libsignal itself. vodozemac has a code audit (Least Authority, 2022) and Matrix has formal analyses.
+    - **AGPL for schools:**
+      - Teachers and schools *using* Lime take on no obligations.
+      - Friction falls on (a) blanket corporate/legal bans (e.g. Google's), (b) procurement questionnaires that flag copyleft, and (c) edtech partners who'd embed Lime's code; integrating over an API is fine.
+      - A district self-hosting a modified copy would have to publish its changes.
+      - Schools' real procurement concern is student-data privacy (FERPA/COPPA, GDPR), where E2EE helps.
+    - **Matrix in education and government (researched):**
+      - Schleswig-Holstein and Hamburg (Element, 500k seats including schools), SchulchatRLP (a FluffyChat fork for about half a million pupils), ByCS-Messenger (Bavaria), LOGINEO NRW Messenger;
+      - Tchap (France), BwMessenger (the Bundeswehr), TI-Messenger (German healthcare), NATO's NI2CE experiment.
+      - vodozemac is Matrix's reference E2EE (libolm is deprecated). Which version each deployment runs was not verified.
+    - **What MIT/vodozemac gives up vs libsignal:**
+      - **post-quantum protection**, i.e. "harvest now, decrypt later" (Signal has PQXDH and a PQ ratchet; vodozemac doesn't yet);
+      - **metadata privacy tools** in libsignal (zkgroup private groups, sealed-sender certificates), which also need a Signal-style server design;
+      - **performance:** no meaningful difference.
+      - **Correction to an earlier answer:** the difference in group recovery between Megolm and Signal's Sender Keys is subtle, not a clear Signal win.
+      - Matrix's published vulnerabilities (2022 Royal Holloway; libolm timing) were in protocol/client logic or the old libolm, not vodozemac.
+    - **libsignal facts:**
+      - Signal gets no ownership of FAM's code.
+      - A released version's AGPL grant can't be revoked; future versions could change.
+      - Its README says "Use outside of Signal is unsupported" and that APIs "are subject to change without notice", so we'd pin a version and absorb breaking upgrades. A community fork exists (mollyim/libsignal).
+    - **US school messaging (ParentSquare/Remind, ClassDojo):** I found no E2EE or Signal Protocol, only encryption in transit and at rest. E2EE would set Lime apart.
+    - **NEW OPEN THREAD (important): E2EE vs school record-keeping.** US public-school communications can be public records or FERPA records, and districts may require archiving, e-discovery or safeguarding review. With E2EE, a district can't do that server-side.
+      - This needs a product answer before the backend: who Lime sells to (teachers directly vs districts), plus possible designs such as an opt-in org archive key or user-initiated export.
+      - The question was raised with the user.
+    - **The AGPL trade-offs were explained** (the licence is per repo; FAM owns its code so it can still ship to the App Store; outside contributors need a CLA; it is hard to go back to MIT later).
+- **DECIDED (user, 2026-10-05):**
+  1. **The audience is teachers** (mission: "connect all teachers"), not districts. So: **full E2EE, no organisation archive key.** Record-keeping is the teacher's responsibility, which belongs in the terms of service later.
+  2. **E2EE library: vodozemac.** **The licence (MIT vs AGPL) is still open; the user is "still deciding".**
+     - vodozemac (Apache-2.0) works under either, so the licence doesn't block anything.
+     - MIT→AGPL stays easy while FAM owns all the code.
+     - The decision is needed before outside contributors arrive or the repo goes public.
+  3. **Offline messaging must work with the app open AND closed.** So: **C (native Swift, then Kotlin) is confirmed.** Closed-app Bluetooth on iOS is the project's biggest technical risk and gets a real-device spike before anything is built on it.
+  4. (Earlier) **C: native apps, on Signal's pattern** (native UIs, one shared Rust core).
+- **Organisational context (user, 2026-10-05):** Lime plans to be a **501(c)(3)**, eventually a foundation, with **Lime Messenger LLC (a teacher cooperative)** as the core product. This mirrors Signal (Signal Technology Foundation, a 501(c)(3), owns Signal Messenger LLC).
+  - Plot's thought-exercise answer:
+    - Borrow Signal's *model* and proven crypto; be trailblazers in the mission (offline mesh, teachers, cooperative governance), not in cryptography.
+    - **The nonprofit status weakens AGPL's downsides** (no closed licences to sell), so **AGPL + vodozemac** is now a strong option.
+    - ~~Flagged for a lawyer: LLC vs co-op~~ **Clarified by the user:**
+      - **a cooperative nonprofit** (a teacher-member-governed 501(c)(3) foundation) **wholly owns a for-profit subsidiary, Lime Messenger LLC**, which runs the product. The co-op is at the foundation level, as in Signal's LLC-under-foundation shape.
+      - Still for a lawyer: how member governance and the subsidiary's profits are set up.
+- **Consequences plot is carrying:**
+  - **The web app's new role** is the web/desktop client (like Signal Desktop) and the visual spec for the native apps. More mobile-web polish has diminishing value: fix real bugs only.
+    - ~~Trim LIME-80's phone-native items~~ **Withdrawn after re-reading the brief:**
+      - The glass menus already moved into 79-fix.
+      - What remains is useful on web and desktop too (Pin, Customize, `navigator.share`, input types, find-in-chat, which is local-only search and so exactly the E2EE model, the calls toast, revoked-device sign-out).
+      - **LIME-80 stays as written.**
+    - **The Apple Developer account comes next month (user, 2026-10-05).**
+      - A free Apple ID in Xcode can likely install a test build on the user's own iPhones (it expires after 7 days), which may be enough for the Bluetooth spike. Unconfirmed.
+      - Still unknown: whether the user has Xcode and two iPhones.
+      - Meanwhile, plot's E2EE/keys/mesh design pass needs no account.
+  - **E2EE rewrites parts of `docs/api.md`:**
+    - op payloads for messages become ciphertext;
+    - the server can't validate content or search;
+    - every device needs its own keys (Linked Devices becomes key verification);
+    - push previews are decrypted on the device.
+
+    This needs a plot design pass **before** the Supabase backend.
+  - **"Connect all teachers"** means discovery at scale (usernames, directory, large groups). Megolm suits large groups. The directory and E2EE pull against each other (who can find whom); decide in the design pass.
+- **Revised order:**
+  1. The 86 review, then LIME-85.
+  2. Plot design pass: E2EE + keys + devices + mesh, written into `docs/`.
+  3. Bluetooth spike on 2 real iPhones (needs Xcode, an Apple developer account, 2 iPhones; open, backgrounded and locked).
+  4. Supabase backend with E2EE.
+  5. The shared Rust core (vodozemac + op/sync).
+  6. The iOS app, to TestFlight.
+  7. The Android app.
+
+  Desktop/web v2 runs alongside.
+- **Superseded proposed order (kept for history):**
+  1. Answer the open/closed question.
+  2. Bluetooth spike (2 iPhones, foreground and background).
+  3. Supabase backend.
+  4. Capacitor iOS shell plus durable storage and push, to TestFlight.
+  5. Android from the same shell.
+
+  Desktop v2 can run alongside.
+
+### Session lessons (2026-10-05; also in Patterns learned)
+- **Never write personal data into `PLOT.md`.** Plot did it once (test-account phones and emails), which forced a history rewrite. The emails are now intentionally public demo emails; **phones and passwords** stay in gitignored files only.
+- **Tiered verification** (the user's decision): quick checks per brief, the full matrix once per chain.
+- **"Visible" means hit-testable** in UI tests (`elementFromPoint`), not just bounds.
+- **Insecure LAN origins** lack `crypto.randomUUID` and `crypto.subtle`; test on the LAN IP (`LIME_TEST_ORIGIN=lan`).
+- **The user designs in Penpot and exports to `docs/design/`:** use these as the spec; mock-first beats the build-and-QA loop.
+- **The user pastes tend prompts here by mistake sometimes:** say so plainly and point to tend's window.
+
+---
+
+## (Previous) session-end note (plot, 2026-09-29, SUPERSEDED by the note above)
+
+**History only.** The history below it is kept for reference. Anything above the "Continuation note (2026-09-27)" heading supersedes older queue lines.
 
 ### Where things stand
 - **HEAD is `378c82c`** (LIME-52-fix2). The tree is clean apart from `PLOT.md` (plot's own) and untracked assets that are **deliberately uncommitted**: `public/assets/teacher.{mp4,ogg,webm}` (for LIME-48) and `public/assets/patterns/` (the user's 6 samples, committed by LIME-52-fix4).
@@ -426,7 +595,135 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ## Drafted briefs
 
-### LIME-86 → `tend` (next, BEFORE LIME-85): the mobile QA round on LIME-82 to 84
+### LIME-86-fix → `tend` (next): close out mobile QA round 3; the last web-phone polish before the native direction
+**What it does:** fixes the user's 14 QA notes on `c9712c9` (iPhone screenshots, 2026-10-05). Then this round is closed, saved to git, and the web phone layout goes into maintenance (real bugs only) while plot designs the native apps.
+
+**Capabilities assumed:** edit files, run the `tests/` suites (Chrome and Firefox), commit and push. No iPhone; the user checks on the phone at the gate.
+
+**Phase 0: save plot's state first.** Commit `PLOT.md` exactly as it is on disk, **without editing it**: `chore: update PLOT.md`, plus the attribution trailer. (It holds the new native/E2EE direction.) Leave `public/assets/Logomark-outline.svg` and `public/assets/signin-teachers.mp4` untracked.
+
+**Phase 1: survey (read only).** Find the code for:
+- the Messages screen header (logo, search and avatar pill) and the chat header's fade;
+- the bubble tokens in each tone, light and dark;
+- the header pill icons;
+- the "⋯" menu's reason text;
+- the avatar-stack ring;
+- the thread view's composer and keyboard handling (`--vv-top`, `visualViewport`);
+- the composer's link popover (`openLinkPopover`, `public/js/app.js` ~988: it is placed at `rect.bottom + 8`, i.e. *below* the toolbar, so on a phone it lands under the keyboard or off-screen; that is the likely cause of item 8);
+- the Enter handler (~1277: plain Enter sends);
+- the Aa / list / align menus;
+- `syncSelecting` (~1210, the LIME-86 selection toolbar);
+- the reaction row;
+- the code-block (`pre`) handling in the composer, the sanitiser and message rendering.
+
+If the survey turns up anything that contradicts this brief, or related bugs, **stop and ask the user** before going on.
+
+**Phase 2: the changes.** These apply on phones (≤ 767px and touch landscape) unless stated. **Desktop must stay pixel-identical** in the committed 1280×800 baseline (chat, composer with text, thread). The exceptions are items 8 and 14, which fix shared composer logic and may change desktop *behaviour*, never its look in those three states.
+
+1. **Logo:** the Messages header's lime logo is slightly larger inside its round button, about 15% (the glyph, not the button), in light and dark.
+2. **Messages-screen fade:** the list scrolls *under* a soft fade behind the logo, search and avatar pill, exactly like the chat header's fade (same mechanism, same height, coloured by the canvas tone). No hard cut on a row's title, which screenshot 1 shows.
+3. **Other people's bubbles are brighter, like Apple Messages, in every tone:**
+   - **light:** a surface clearly lighter than the canvas (towards white);
+   - **dark:** a lifted surface clearly lighter than the canvas.
+
+   Derive them from the tone's canvas (keep the appearance system's method; no fixed hex). Text on them meets **4.5:1**. In the suite, assert for all 8 tones plus dark that the bubble is lighter than the canvas and that the OKLab distance from the canvas is **≥ 6**. Don't touch the own bubble.
+4. **Header icons are smaller, with breathing room inside the glass pills,** following Apple's toolbar convention: about a **20px glyph** in each **44px** hit target.
+   - This covers search, call, "⋯", the Messages search, and the back chevron to match.
+   - The pills keep their height; the icons sit centred with even space around them; one stroke weight throughout.
+   - Update the LIME-86 icon-size checks to the new values.
+5. **Menu reason text contrast:** the grey explanation lines in the "⋯" menu ("Only the group owner can rename", "…can delete.") meet **WCAG AA 4.5:1** against the menu's background in every tone, light and dark. Measure it in the suite for every tone. The disabled item's *label* may stay dimmed, but the reason must be readable.
+6. **Avatar-stack ring = the surface behind it:**
+   - the canvas in the list;
+   - the row's highlight colour when a row is pressed or selected;
+   - the header pill's colour in the chat header;
+   - correct in light and dark (screenshot 1 shows black rings in dark).
+
+   Use one variable that each context sets.
+7. **The thread with the keyboard open:**
+   - The reply composer and its whole toolbar sit **fully above the keyboard** (screenshot 6: the toolbar is hidden under it), and the Thread header stays pinned.
+   - **All composer menus** (emoji, Aa, list, align, link, selection pill) open **inside the visible viewport** (`visualViewport`), above the composer and *below the header layer's bottom edge*. If there isn't room they scroll internally; they are never clipped by the header or the screen (screenshot 10: Align is cut off at both ends).
+   - The same applies in the main chat.
+8. **The link tool works on a phone.** Tapping link opens the link popover **above the composer, within the visible viewport**, with:
+   - a URL field (and a "Text" field when nothing is selected);
+   - "Add";
+   - when the caret is in a link: "Edit" and "Remove link".
+
+   Enter in the URL field adds it. It works with the keyboard open. (Fix the placement for desktop too; it must not change the desktop baseline states.)
+9. **Return makes a new line on phones.**
+   - On phones, Enter **never sends**: it inserts a line break (a new item in lists, a new line in code). Sending is the send button only, as in Apple Messages.
+   - Set `enterkeyhint="enter"` on the composers on phones.
+   - **The send button gets an up-arrow icon**, not the ↵ return glyph (screenshots 7 and 17 show ↵, which reads as "new line").
+   - **Desktop keeps Enter to send** and Shift+Enter for a new line, unchanged.
+10. **Mic = dictation.**
+    - Tapping the mic starts speech-to-text **into the composer at the caret** using the browser's speech recognition (`SpeechRecognition` / `webkitSpeechRecognition`), showing interim text live.
+    - While listening, the mic shows an active state (a pulsing ring); tap again to stop. Stop on send, on blur and after silence.
+    - Where it's unsupported or blocked (e.g. the insecure LAN origin, Firefox), show the toast **"Dictation isn't available here. Use the mic on your keyboard."**
+    - Voice *messages* are not built here; later they'll take the long-press.
+11. **Split indent from alignment:**
+    - **List menu:** Bulleted list · Numbered list · divider · **Indent** · **Outdent**.
+    - **Align menu:** **one row of four icon buttons** (left, centre, right, justify), each with an accessible name. The current option shows as pressed. No text rows, no indent.
+    - Both composers.
+12. **Revert the LIME-86 selection toolbar** (item 15: the toolbar turning into B/I/U/S + Done). Remove `is-selecting` and the Done button.
+    - **Instead,** while text is selected in a composer, show a small **floating glass pill with B, I, U and S** positioned **above iOS's own Cut / Copy / Paste callout**. Place it above the selection rectangle with enough clearance for the system callout (about 52px). If there's no room above inside the visible viewport, place it below the selection with the same clearance. Always clamp it inside `visualViewport`.
+    - The buttons show pressed state; the pill goes away when the selection collapses. The normal toolbar stays as it is throughout.
+    - Phones only. Desktop unchanged.
+13. **Reactions:**
+    - The chips and the add-reaction smiley stay on **one row** under the bubble, even under a short bubble (screenshot 14 puts the smiley on a second line). The row aligns to the bubble's edge and may be wider than the bubble, up to the message column; it wraps only when the chips genuinely don't fit the column.
+    - Chips get **less space left and right of the emoji**: about 5px horizontal padding and a 3px gap before the count.
+14. **Code blocks inside a formatted message:**
+    - The code tool inserts a code block **at the caret** (or turns the selected lines into one). The text before and after stays normal, keeping its bold, italic and lists.
+    - Inside the block, Enter adds a line. **Enter on an empty last line, or ArrowDown on the last line, leaves the block** into a normal paragraph below.
+    - A message mixing paragraphs, formatting, a list and a code block **sends and renders as composed** (the sanitiser keeps `pre`/`code` alongside the other allowed tags; the code block keeps its own horizontal scroll).
+    - Applies to both composers, on all sizes.
+
+**Out of scope:**
+- the own-bubble colour and the dark "+" button (decision pending with the user);
+- Pin/Star (LIME-80);
+- receipts (LIME-81);
+- desktop visuals;
+- any new feature not listed.
+
+**Phase 3: verification** (full matrix, since this closes the chain: `cd tests && npm test`, then `LIME_TEST_SERVER=dev npm test` and `LIME_TEST_SERVER=dev LIME_TEST_ORIGIN=lan npm test`; Chrome and Firefox; **0 failures** expected).
+- **Add mobile checks for:**
+  - the logo size;
+  - the Messages fade present (a row under the header is visibly faded, not cut);
+  - other bubbles lighter than the canvas, at ΔE ≥ 6 in 8 tones and dark, with text ≥ 4.5:1;
+  - header glyphs at about 20px in 44px targets;
+  - reason text ≥ 4.5:1 in every tone and dark;
+  - the ring colour equal to its surface (list, pressed row, header);
+  - with `--vv-top` and a reduced `visualViewport` height simulated, the thread composer's toolbar fully visible and every composer menu inside the viewport and below the header;
+  - the link popover opening above the composer and inserting a link (with and without a selection, plus Remove);
+  - Enter inserting a line break on phones (not sending) while Ctrl/Cmd+Enter still sends, and Enter still sending on desktop;
+  - the send icon being the up arrow;
+  - the dictation fallback toast when speech recognition is absent;
+  - the list menu holding indent/outdent and the align menu holding four icon buttons;
+  - no `is-selecting` toolbar, and the selection pill appearing above the selection, clamped;
+  - the add-reaction smiley on the same row as the chips under a one-word bubble, and the chip padding;
+  - a message with bold text, a list and a code block round-tripping through send and render.
+- Remove or update the LIME-86 checks this brief supersedes (the selection toolbar, the align menu contents, the icon sizes).
+- **Desktop pixel comparison:** 0 pixels differ in the three baseline states.
+- Report the new check count, and any check you couldn't make meaningful in Chrome (dictation and the real iOS callout position will be among them).
+
+**Gate (the user, on the iPhone):**
+- the logo is a bit bigger and the list fades under the header;
+- other people's bubbles are brighter in every theme;
+- the header icons have room inside their glass;
+- the menu's grey text is readable;
+- the avatar rings match what's behind them;
+- in a thread with the keyboard up, the toolbar and every menu are fully visible;
+- link opens a box you can use;
+- Return makes a new line, and the send button has an up arrow;
+- the mic dictates (or explains why not over the LAN; real dictation may need the HTTPS/TestFlight build);
+- align is a row of icons, and indent lives in the list menu;
+- selecting text shows a B/I/U/S pill above Copy/Paste;
+- the smiley sits beside small reactions;
+- a code block can sit in the middle of a formatted message.
+
+**Record:** add a `## LIME-86-fix` entry to `TEND.md`. Commit: `fix(mobile): QA round 3 close-out: fades, brighter bubbles, header icons, keyboard-safe menus, link, newline, dictation, selection pill, code blocks`, trailer `Brief: LIME-86-fix`, plus the attribution trailer. Push. **Stop for the user's review. No /loop wakeups.**
+
+---
+
+### LIME-86 → `tend` (landed as `c9712c9`): the mobile QA round on LIME-82 to 84
 
 **The user's iPhone QA (2026-10-05, 9 screenshots) plus decisions.** Tiered verification (mostly CSS and UI JS: the `mobile` and `smoke` suites on the dev LAN, and the full matrix once before the push). ≤ 767px and touch landscape. **Then LIME-85** (the refactor must start from the corrected visuals).
 
