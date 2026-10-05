@@ -135,7 +135,54 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - **(3) mock first: "sounds good"** → **LIME-77** (a static mock) is drafted.
   - The test accounts' password works.
 
+### Open decision: desktop v2 from the mobile design (raised by the user 2026-10-04; plot's brainstorm sent)
+- **The user:** "I made some significant changes on mobile that I think desktop can benefit from greatly. All the primary components could be shareable (chat bubbles, searching, reply, avatars, menu icon buttons, etc.). Let's brainstorm how we could simplify and level up the desktop based on the updates I made on mobile."
+- **Plot's brainstorm (sent):**
+  - **Approach options:**
+    - **A. "Same app, wider" (plot's lean):** desktop = the mobile screens arranged as panes (**list | chat | details/thread**), built from **one shared component set**; components respond to their **container** (container queries), not the viewport. One rendering path means fewer desktop/mobile divergence bugs (many recent bugs were exactly that).
+    - **B.** Keep today's desktop structure and only reskin it with the shared components (incremental; leaves two layouts to maintain).
+    - **C.** A minimal desktop; focus on the native apps.
+  - **Proposals under A:**
+    - (1) **The left sidebar becomes a slim vertical "dock" rail:** link · jam · call, with your avatar at the bottom (Settings) and the logo at the top. The Notifications bell, the Add split button, the Communities tab and the nav Search go away, since their jobs move into the list.
+    - (2) **The list pane = the mobile Messages screen:** search plus All/Unread chips and filter, pinned-first rows, badges, pastel avatars, and a "+" in the pane's header (or a FAB at the pane's bottom). No Recent row, sections or breadcrumbs.
+    - (3) **The chat pane = the mobile chat:**
+      - floating glass header pills (members pill; search · call · ⋯);
+      - own-right green bubbles; the under-bubble row;
+      - **a readable centred column (~720px max)**;
+      - the v2 glass composer floating at the bottom.
+    - (4) **The details and thread pane:** the same Members, Person and Thread screens, as a docked third pane (wide screens) or a glass side sheet (medium).
+    - (5) **Desktop-native interactions on the shared menus:** **hover shows a small glass action bar** (quick reactions, reply, ⋯), **right-click opens the same context menu as long-press**, plus keyboard shortcuts (⌘K search, ↑/↓ chats, Esc closes panes, ⌘Enter, …), drag-and-drop files, and hover states.
+    - (6) **Settings** = the mobile Settings and Profile (a centred glass sheet, the same rows: Account, Linked Devices, Donate, Customize, Username, About). The old modal is retired.
+    - (7) **One responsive set of breakpoints:** phone (one pane), tablet (list plus chat, details as a sheet), desktop (three panes).
+  - **The recommended sequence:**
+    - (a) **The user designs 2–3 desktop frames in Penpot** with the mobile components (the three-pane chat, Settings, hover/right-click), exported to `docs/design/desktop/`;
+    - (b) **meanwhile tend does the invisible groundwork:** a **shared-component refactor** (component CSS keyed to container queries, with shared render functions for row, bubble, composer, header pills, menu, sheet, avatar, badge and toast), with **no visual change on either size** (proved by the tests and screenshot diffs);
+    - (c) then desktop v2 build briefs against the designs.
+- **Waiting for:** the user's pick (A, B or C), whether they'll design the desktop frames, and an OK for the groundwork refactor brief.
+- **DECIDED (the user, 2026-10-04):**
+  - **A** ("same app, wider");
+  - **the user designs the desktop frames** in Penpot → `docs/design/desktop/`;
+  - **the groundwork refactor is OK**, after LIME-82 to 84 → **LIME-85** is drafted.
+  - **The user's first desktop frame (2026-10-04, shared in chat; not yet saved to `docs/design/desktop/`).** Plot's reading:
+    - **Two panes, no separate nav rail.**
+    - **The left pane is the mobile Messages screen exactly:** the logo top left; the search + avatar pill; All/Unread chips plus filter; the rows; **the FAB "+" and the 3-item dock (link · jam · call) at the bottom of the list pane**.
+      - **This replaces plot's "vertical rail" idea:** the dock stays a horizontal pill inside the list pane.
+    - **The right pane is the mobile chat, wide:**
+      - **a members pill at the top left showing more names** ("Jean, Rise, Journey, Autumn, Sage, Ember, Mary…") plus "13 members", with **no back button**;
+      - the right glass pill: search · call · ⋯;
+      - **others' messages at the pane's left edge, your own at its right edge** (full pane width; **not** the centred 720px column plot proposed);
+      - the composer spans the pane (shown expanded with the v2 toolbar).
+    - **The details/thread pane isn't shown yet** (presumably it slides in). The user is to add frames for Settings, hover and right-click, and details/thread.
+  - **The user's feedback on LIME-82 and 83 (2026-10-04): "looking good, I tried it out and it works smoothly."** LIME-82 `1d131e1` and LIME-83 `96b7372` landed; LIME-84 was in progress (uncommitted).
+  - **LIME-84 landed as `4057474`** (2026-10-05, pushed; the full matrix passed before the push: mobile 504, api 117). Open items:
+    - (a) the desktop UI for usernames and Linked Devices (unbriefed; it goes into desktop v2);
+    - (b) **design 06 shows a first name on the Name row; ours shows the full display name.** Ask the user;
+    - (c) a revoked device only notices on its next request. Candidate: the server sends a `{type:'revoked'}` realtime message before closing, and the client signs out at once (fold it into LIME-80).
+    - **The user's iPhone review of LIME-84 is pending.**
+  - **The order (updated 2026-10-05):** LIME-82, 83, 84 → **LIME-86 (QA round 3)** → **LIME-85 (the shared components; no visual change)** → LIME-80, 81 (built on the shared parts) → the desktop v2 briefs (after the user's frames).
+
 ### Unbriefed candidates (offer when the queue thins)
+- **Swipe actions** (the user, 2026-10-05, "we can add these later"): on list rows, **swipe left for read/unread** and **swipe right for pin or delete** (the native mail/messaging pattern). Horizontal gestures are otherwise disabled (LIME-86 item 2).
 - **A mobile layout pass** (seen in the user's iPhone screenshots of the LAN URL, 2026-10-01):
   - the top-centre toast covers the header and list;
   - the composer box is narrower than the screen and offset, and the bubble or location card is cut off on the right;
@@ -165,6 +212,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 - **Measure with Playwright + Firefox;** CSS changes report the browser-parsed rule counts; JS changes load the real app in jsdom.
 - **The user pastes tend's output here.** Tend only acts on text typed into *its* window. Say so plainly when the user re-pastes an old message.
 - **UPDATED AGAIN (the user, 2026-09-30, LIME-61): every primary button uses the pale lime of Add/↵ (`--lime-primary-*`, lime-100/200/300, ink text).** Solid brand green `#09a950` remains only for the presence "active" dot, the voice/audio play buttons, and the unread ring.
+- **UPDATED (the user, 2026-10-05):** **own chat bubbles use `--lime-primary-bg`, the same green as the "+" FAB** (LIME-86 item 18), replacing `--seed-lime-300`.
 - **UPDATED AGAIN (the user, 2026-10-03, the mobile design):** **the user's own chat bubbles are light green (`--seed-lime-300`).** Bubble and wallpaper customisation come later.
 - **The lime rule (UPDATED by the user, 2026-09-30, LIME-55-fix): lime is for primary actions only** (the "+ Add" button, Send, primary buttons). **Nav items are neutral now** (they match menus and the selected list row). The unread ring and the voice play button stay lime by the user's earlier choice. Everything else stays neutral, and neutral layers derive from the canvas tone (LIME-50-fix).
 
@@ -377,6 +425,118 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-86 → `tend` (next, BEFORE LIME-85): the mobile QA round on LIME-82 to 84
+
+**The user's iPhone QA (2026-10-05, 9 screenshots) plus decisions.** Tiered verification (mostly CSS and UI JS: the `mobile` and `smoke` suites on the dev LAN, and the full matrix once before the push). ≤ 767px and touch landscape. **Then LIME-85** (the refactor must start from the corrected visuals).
+
+**Toasts**
+1. **Move the phone toasts to the top right, under the avatar pill**, right-aligned with it, glass, about 75% wide. The browser's own "Save username?" password prompt occupies the bottom, so toasts must never sit there.
+
+**Chat and thread layout and scrolling**
+2. **No horizontal scrolling anywhere in the chat** (the user can currently drag the chat sideways and the bubbles move). Clamp the width (`overflow-x: hidden` on the scroller, `overscroll-behavior: contain`, `touch-action: pan-y` on the message list; find the element that overflows and fix its width). Horizontal gestures are reserved for **future swipe actions** (swipe a row left for read, right for pin or delete; listed in Unbriefed).
+3. **The header must never move or break while scrolling** ("sometimes everything scrolls and the header moves"): a fixed app shell (`height: 100dvh`, the body doesn't scroll, **only the list or messages container scrolls**), `overscroll-behavior: none` on the shell, and the floating header pinned. Test a fast fling, rubber-band at the top and bottom, and the keyboard open and closed.
+4. **Landscape needs breathing room:** horizontal padding including `env(safe-area-inset-left/right)`, so nothing touches or hides behind the notch or edges (screenshot 844×390, notch on each side).
+5. **Thread and teacher-details screens use the same header treatment as the chat:** floating glass round "‹" plus a glass title pill, the fade under it, **no plain "Thread" bar with a line**.
+
+**The chat header**
+6. **"⋯" is plain three dots with no circle** (as in the mockup; the current glyph has its own ring). Use the same glyph and stroke as search and call.
+7. **The header icons are a little smaller inside their glass pill** (a ~22px glyph) with **equal stroke weight** across back, search, call and "⋯". Measure them.
+8. **The "⋯" menu is narrower:** content-width with a sensible max (~260px), wrapping the "Rename" reason onto two lines inside it. (The "Unstar" label becomes "Pin"/"Unpin" in LIME-80; don't change it here.)
+
+**Bubbles and the under-bubble row**
+9. **Hide the add-reaction button unless the message already has reactions** (then it sits after the chips). New reactions come from press-and-hold. This cuts visual noise.
+10. **Receipts:**
+    - give the two ticks of ✓✓ a little space so they read as two;
+    - **semantics until LIME-81:** show **one ✓ when the server has it**;
+    - **✓✓ only means "read"**, so don't show ✓✓ until read receipts exist (the user saw ✓✓ on a message the other person hadn't read).
+11. **Reaction chips are lighter still:** a very faint fill and no dark outline, with less horizontal padding.
+12. **A compact reply summary on short bubbles:** when the bubble is narrower than the full "N replies · Last reply …" text, show just **"N replies"** (or "1 reply"), aligned to the bubble. The full text when there's room.
+
+**The composer** (main and thread)
+13. **Fix the responsive glitches** (the toolbar wrapping or overflowing at 360 and 390, the text area jumping when expanding). Screenshot each width collapsed, expanded and typing.
+14. **The toolbar:** **left: +, emoji, Aa, list, align, link, code**; **right: mic, ↵.**
+    - **Aa → a glass menu with only Bold, Italic, Underline, Strikethrough** (as in the mockup);
+    - **list → a glass menu with Bulleted list and Numbered list**;
+    - **align → a glass menu with Align left, centre, right, justify, plus Indent and Outdent**;
+    - link and code as today.
+15. **Selecting text** (the user's choice): **while text is selected in the composer, the toolbar row itself switches to inline Bold / Italic / Underline / Strikethrough buttons** (plus a "done" to return), **with no popup**, so iOS's Cut/Copy/Paste bubble never stacks with a Lime menu. Deselect and the normal toolbar returns. The Aa menu is still available when nothing is selected.
+16. **Round buttons:** every circular hover or press state (toolbar icons, ↵, the header icons) is a **true circle** (equal width and height, `border-radius: 50%`). **The ↵ glyph shrinks to the standard inline size.**
+
+**The dock**
+17. **The dock icons share one stroke weight** (link, jam's book, call). Redraw any outlier at the shared stroke. Measure it.
+
+**Own-bubble colour (added by the user, 2026-10-05)**
+18. **Your own chat bubbles use the same green as the "+" FAB** at the bottom right of Messages: **`--lime-primary-bg`** (the FAB's fill, `.m-fab::before`, `lime.css` ~9657; currently pale lime) instead of `--seed-lime-300`, with `--lime-primary-ink` text. **Point both at the shared token** so they can never drift. Apply it on phones and **in the desktop chat too**, where own bubbles exist. Check:
+    - the own bubble stays clearly distinct from the neutral bubble and the canvas **in all 8 tones and dark** (ΔE against both; flag Sage);
+    - link colour and inline code stay readable on it (≥ 4.5:1).
+    - **Update the lime-rule note** in `TEND.md`: own bubble = `--lime-primary-bg`.
+
+**The user's answers recorded here:** horizontal gestures come later (item 2); selection → an inline B/I/U/S toolbar (item 15); **the Profile Name row shows the full display name** (keep it as is).
+
+**Gate (iPhone):**
+- toasts appear at the top right, clear of the password prompt;
+- the chat no longer slides sideways, and the header never jumps;
+- landscape has margins;
+- thread and details headers match the chat;
+- "⋯" has no ring, and its menu is slimmer;
+- the smiley only shows on messages with reactions;
+- ticks are clear (one ✓ until read receipts);
+- lighter chips;
+- "1 reply" on short bubbles;
+- the chat box behaves at every width;
+- selecting text turns the toolbar into B/I/U/S;
+- all round buttons are round and the send arrow is smaller;
+- dock icons match;
+- **your bubbles are the same green as the "+" button.**
+
+**Record:** add a `## LIME-86` entry to `TEND.md`. Commit: `fix(mobile): QA round 3: toasts, scroll lock, headers, receipts, composer menus, selection toolbar`, trailer `Brief: LIME-86`, plus the attribution trailer. Push. **Stop for the user's review.**
+
+---
+
+### LIME-85 → `tend` (after LIME-84's review): one shared component set; NO visual change on any size
+
+**The user (2026-10-04):** chose desktop approach **A** ("same app, wider": desktop = the mobile screens as panes, from one shared component set) and approved this **invisible groundwork** before LIME-80/81 and desktop v2. **Nothing may look or behave differently after this brief.** It changes structure, not design.
+
+**Assumptions:** the agent can refactor CSS and JS, run the full test matrix, take screenshot diffs, and commit. No build step exists (plain files served statically). Keep it that way unless the user agrees otherwise.
+
+**Phase 1: an inventory (read-only; record it in `TEND.md`, then continue):** list every primary UI part and **where it's duplicated or diverges** between the phone and desktop paths (CSS selectors and JS render code):
+- the conversation row;
+- the message (bubble, under-bubble row, reply summary, reactions);
+- the avatar, the stack and the presence icon;
+- the badge;
+- the chips;
+- the composer (main and thread);
+- the header controls (glass buttons and pills);
+- the glass menu (all menus, including the long-press and reactions ones);
+- the sheet and screen container (Settings, New message, Members, Thread);
+- the toast;
+- the icon button;
+- the search field.
+
+**If a divergence is a genuine design difference** (not accidental duplication), **list it and keep both looks as variants. Don't pick one.**
+
+**Phase 2: the refactor:**
+1. **CSS by component:** split the component styles out of `public/css/lime.css` into **`public/css/components/<name>.css`** (one per part above), loaded by `<link>` tags in a fixed order. Tokens and theme stay in `lime.css` (or a `tokens.css`).
+   - **Each component styles itself from its own container:** a pane or screen sets `container-type: inline-size`, and the component uses **`@container`** queries for its narrow and wide variants.
+   - **Viewport media queries remain only for the shell** (one screen vs panes, dock vs rail).
+   - Keep `vendor/` untouched.
+2. **JS by component:** one render function per part (e.g. `renderConversationRow`, `renderMessage`, `renderAvatar`, `renderComposer`, `openGlassMenu`, `openScreen`/`openSheet`, `showToast`), in `public/js/components/` or clearly grouped modules. **The phone and desktop paths both call the same functions** (variant options where Phase 1 found real differences). Remove the dead duplicates.
+3. **A component catalogue:** **`docs/components.md`**, with each part's name, variants, states, the screens that use it, and its CSS file. **Use the same names the user can use in Penpot**, so designs and code share a vocabulary. This is the reference for the desktop design.
+4. **The CSS guard** (the `css` suite) covers every new file (no `*/` in comments, rule counts).
+
+**Verification (the full matrix: this touches JS):**
+- **Screenshot diffs, before and after, must be zero** (allow only documented sub-pixel anti-aliasing) at **390×844, 360×780, 844×390 (touch), 1280×800, 1024×768 and 800×600**, for: Messages, a DM, a group, the thread, Members, a person, Settings and Profile, New message, each menu open, a toast, the composer collapsed and expanded, light and dark, and 2 tones.
+- **All suites pass** on localhost, dev and LAN in Firefox and Chrome.
+- Report the inventory, the files created, the lines removed by de-duplication, and the diff results.
+
+**Scope:** `public/css/` (the split), `public/js/` (the component extraction), `public/index.html` and `auth.html` (link and script tags), `docs/components.md` (new), `tests/` (the css guard covering new files; screenshot-diff helper), and `TEND.md`. **No design changes, no new features.** If something can't be shared without a visible change, **stop and ask the user.**
+
+**Gate:** you shouldn't notice anything. Lime looks and works exactly the same on phone and desktop. Read `docs/components.md`: those are the names to use when you design the desktop in Penpot.
+
+**Record:** add a `## LIME-85` entry to `TEND.md`. Commits may be split into parts (each with the trailer `Brief: LIME-85`), e.g. `refactor: component CSS and container queries`, `refactor: shared render functions`, `docs: component catalogue`. Push. **Stop for the user's check.**
+
+---
 
 > **Shared context for LIME-82 to 84 (mobile v2).**
 > - **The source of truth is the user's PNGs in `docs/design/mobile/` (01–06). Open and compare against them; screenshot your result next to each.**
@@ -820,6 +980,7 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
    - inputs get the right `type` / `inputmode` / `autocomplete`.
 4. **Find in chat** (the search icon): a search field in the top bar that highlights matches in the loaded messages, with up and down to step between them and a "3 of 12" count. **Local only.**
 5. **Calls** (the dock and the phone icon): the toast "Calls are coming soon".
+6. **(Added 2026-10-05) Instant sign-out of a revoked device:** when Linked Devices signs a device out, the server sends `{ type: 'revoked' }` on that device's realtime stream before closing it. The client signs out at once, with the toast "You were signed out from another device". Add an api-suite check.
 
 **Gate:** "⋯" opens a frosted menu right where you tapped; Pin keeps a chat at the top; Share opens your phone's share sheet; search finds words in the chat.
 
