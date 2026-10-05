@@ -570,17 +570,25 @@
                       <button type="button" class="lime-menu__item" data-cmd="italic"><i class="lime-format-glyph">I</i>Italic</button>
                       <button type="button" class="lime-menu__item" data-cmd="underline"><u class="lime-format-glyph">U</u>Underline</button>
                       <button type="button" class="lime-menu__item" data-cmd="strikethrough"><s class="lime-format-glyph">S</s>Strikethrough</button>
-                      <div class="lime-menu__divider" role="separator"></div>
+                    </div>
+                    <!-- LIME-86: phones only. The list button opens Bulleted / Numbered list; the align button opens the four alignments, Indent and Outdent. -->
+                    <button type="button" class="lime-composer__tool lime-composer__tool--list" id="composer-list-btn" aria-haspopup="menu" aria-expanded="false" title="Lists" aria-label="Lists"><i class="icon-list"></i></button>
+                    <div class="lime-menu lime-format-menu" id="composer-list-menu" role="menu" aria-label="Lists">
                       <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
                       <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
-                      <button type="button" class="lime-menu__item" data-cmd="indent"><span class="m-icon m-icon--indent" aria-hidden="true"></span>Indent</button>
-                      <button type="button" class="lime-menu__item" data-cmd="outdent"><span class="m-icon m-icon--outdent" aria-hidden="true"></span>Outdent</button>
-                      <div class="lime-menu__divider" role="separator"></div>
+                    </div>
+                    <button type="button" class="lime-composer__tool lime-composer__tool--align" id="composer-align-btn" aria-haspopup="menu" aria-expanded="false" title="Alignment" aria-label="Alignment"><span class="m-icon m-icon--align-left" aria-hidden="true"></span></button>
+                    <div class="lime-menu lime-format-menu" id="composer-align-menu" role="menu" aria-label="Alignment">
                       <button type="button" class="lime-menu__item" data-cmd="alignLeft"><span class="m-icon m-icon--align-left" aria-hidden="true"></span>Align left</button>
                       <button type="button" class="lime-menu__item" data-cmd="alignCenter"><span class="m-icon m-icon--align-center" aria-hidden="true"></span>Align centre</button>
                       <button type="button" class="lime-menu__item" data-cmd="alignRight"><span class="m-icon m-icon--align-right" aria-hidden="true"></span>Align right</button>
                       <button type="button" class="lime-menu__item" data-cmd="alignJustify"><span class="m-icon m-icon--align-justify" aria-hidden="true"></span>Justify</button>
+                      <div class="lime-menu__divider" role="separator"></div>
+                      <button type="button" class="lime-menu__item" data-cmd="indent"><span class="m-icon m-icon--indent" aria-hidden="true"></span>Indent</button>
+                      <button type="button" class="lime-menu__item" data-cmd="outdent"><span class="m-icon m-icon--outdent" aria-hidden="true"></span>Outdent</button>
                     </div>
+                    <!-- LIME-86: while text is selected the toolbar row shows B I U S and this Done button instead (no popup, so the system Cut/Copy/Paste bubble never stacks with ours). -->
+                    <button type="button" class="lime-composer__tool lime-composer__tool--done" data-sel-done title="Done" aria-label="Done">Done</button>
                     <button type="button" class="lime-composer__tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
                     <button type="button" class="lime-composer__tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
                     <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
@@ -729,17 +737,25 @@
                 <button type="button" class="lime-menu__item" data-cmd="italic"><i class="lime-format-glyph">I</i>Italic</button>
                 <button type="button" class="lime-menu__item" data-cmd="underline"><u class="lime-format-glyph">U</u>Underline</button>
                 <button type="button" class="lime-menu__item" data-cmd="strikethrough"><s class="lime-format-glyph">S</s>Strikethrough</button>
-                <div class="lime-menu__divider" role="separator"></div>
+              </div>
+              <!-- LIME-86: phones only. The list button opens Bulleted / Numbered list; the align button opens the four alignments, Indent and Outdent. -->
+              <button type="button" class="lime-composer__tool lime-composer__tool--list" id="replies-composer-list-btn" aria-haspopup="menu" aria-expanded="false" title="Lists" aria-label="Lists"><i class="icon-list"></i></button>
+              <div class="lime-menu lime-format-menu" id="replies-composer-list-menu" role="menu" aria-label="Lists">
                 <button type="button" class="lime-menu__item" data-cmd="unorderedList"><i class="icon-list"></i>Bulleted list</button>
                 <button type="button" class="lime-menu__item" data-cmd="orderedList"><i class="icon-list-ordered"></i>Numbered list</button>
-                <button type="button" class="lime-menu__item" data-cmd="indent"><span class="m-icon m-icon--indent" aria-hidden="true"></span>Indent</button>
-                <button type="button" class="lime-menu__item" data-cmd="outdent"><span class="m-icon m-icon--outdent" aria-hidden="true"></span>Outdent</button>
-                <div class="lime-menu__divider" role="separator"></div>
+              </div>
+              <button type="button" class="lime-composer__tool lime-composer__tool--align" id="replies-composer-align-btn" aria-haspopup="menu" aria-expanded="false" title="Alignment" aria-label="Alignment"><span class="m-icon m-icon--align-left" aria-hidden="true"></span></button>
+              <div class="lime-menu lime-format-menu" id="replies-composer-align-menu" role="menu" aria-label="Alignment">
                 <button type="button" class="lime-menu__item" data-cmd="alignLeft"><span class="m-icon m-icon--align-left" aria-hidden="true"></span>Align left</button>
                 <button type="button" class="lime-menu__item" data-cmd="alignCenter"><span class="m-icon m-icon--align-center" aria-hidden="true"></span>Align centre</button>
                 <button type="button" class="lime-menu__item" data-cmd="alignRight"><span class="m-icon m-icon--align-right" aria-hidden="true"></span>Align right</button>
                 <button type="button" class="lime-menu__item" data-cmd="alignJustify"><span class="m-icon m-icon--align-justify" aria-hidden="true"></span>Justify</button>
+                <div class="lime-menu__divider" role="separator"></div>
+                <button type="button" class="lime-menu__item" data-cmd="indent"><span class="m-icon m-icon--indent" aria-hidden="true"></span>Indent</button>
+                <button type="button" class="lime-menu__item" data-cmd="outdent"><span class="m-icon m-icon--outdent" aria-hidden="true"></span>Outdent</button>
               </div>
+              <!-- LIME-86: while text is selected the toolbar row shows B I U S and this Done button instead (no popup, so the system Cut/Copy/Paste bubble never stacks with ours). -->
+              <button type="button" class="lime-composer__tool lime-composer__tool--done" data-sel-done title="Done" aria-label="Done">Done</button>
               <button type="button" class="lime-composer__tool" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
               <button type="button" class="lime-composer__tool" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
               <button type="button" class="lime-composer__tool" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
@@ -971,9 +987,9 @@
   <!-- LIME-82: three items, link, jam (a book) and call. Account moved to the avatar at the top right (Settings). -->
   <nav class="m-dock" id="m-dock" aria-label="Main">
     <span class="m-dock__lens" id="m-dock-lens" aria-hidden="true"></span>
-    <button type="button" class="m-dock__item is-active" id="m-dock-link" aria-current="page"><span class="m-dock__iconwrap"><span class="dew dew-chat" aria-hidden="true"></span><span class="m-dock__badge" id="m-dock-badge" hidden></span></span><span class="m-dock__label">link</span></button>
+    <button type="button" class="m-dock__item is-active" id="m-dock-link" aria-current="page"><span class="m-dock__iconwrap"><span class="m-icon m-icon--chat" aria-hidden="true"></span><span class="m-dock__badge" id="m-dock-badge" hidden></span></span><span class="m-dock__label">link</span></button>
     <button type="button" class="m-dock__item" id="m-dock-jam"><span class="m-dock__iconwrap"><span class="m-icon m-icon--book" aria-hidden="true"></span></span><span class="m-dock__label">jam</span></button>
-    <button type="button" class="m-dock__item" id="m-dock-calls"><span class="m-dock__iconwrap"><span class="m-icon m-icon--phone" aria-hidden="true"></span></span><span class="m-dock__label">call</span></button>
+    <button type="button" class="m-dock__item" id="m-dock-calls"><span class="m-dock__iconwrap"><span class="m-icon m-icon--h-phone" aria-hidden="true"></span></span><span class="m-dock__label">call</span></button>
   </nav>
 
   <!-- The chat's actions menu (the title caret on desktop, the "..." on a phone). Fixed-positioned by wireDropdownToggle, and kept

@@ -1044,9 +1044,16 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
   // input/submit inside this same toolbar need to receive focus normally.
   if (toolbar) {
     toolbar.addEventListener('mousedown', (e) => {
-      if (e.target.closest('[data-cmd], .lime-composer__tool--aa')) e.preventDefault();
+      if (e.target.closest('[data-cmd], .lime-composer__tool--aa, .lime-composer__tool--list, .lime-composer__tool--align, [data-sel-done]')) e.preventDefault();
     });
     toolbar.addEventListener('click', (e) => {
+      if (e.target.closest('[data-sel-done]')) {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount) sel.collapseToEnd();
+        syncSelecting();
+        input.focus();
+        return;
+      }
       const btn = e.target.closest('[data-cmd]');
       if (!btn) return;
       const cmd = btn.dataset.cmd;
@@ -1201,9 +1208,21 @@ function createComposer(rootEl, { onSend, stickyScroll } = {}) {
     ro.observe(rootEl);
   }
 
+  // LIME-86: on a phone, while text is selected in this composer the toolbar row shows B I U S and "Done" instead of its usual tools
+  // (CSS reads .is-selecting). No popup, so the system's Cut / Copy / Paste bubble never stacks with one of ours.
+  function syncSelecting() {
+    let on = false;
+    if (isPhone() && document.activeElement === input) {
+      const sel = window.getSelection();
+      on = !!(sel && sel.rangeCount && !sel.isCollapsed && input.contains(sel.anchorNode) && input.contains(sel.focusNode));
+    }
+    rootEl.classList.toggle('is-selecting', on);
+  }
   document.addEventListener('selectionchange', () => {
     if (document.activeElement === input) updatePressedStates();
+    syncSelecting();
   });
+  input.addEventListener('blur', syncSelecting);
 
   input.addEventListener('paste', (e) => {
     e.preventDefault();
@@ -1307,13 +1326,15 @@ function receiptTimes(message) {
   return { sent: new Date(written).toISOString(), delivered: message.created_at };
 }
 
-// One tick while a message is still on its way (not yet taken by the server), two once it has been delivered. (Read ticks: LIME-81.)
+// LIME-86: until read receipts exist (LIME-81) a message shows ONE tick once the server has it, and none while it is still on its way.
+// Two ticks are only for "read": ticksHtml(message, true) draws the pair, spaced so they read as two.
 const TICK_PATH = 'M3.5 8.6l3.1 3.1 6.4-7';
-const TICK_PATH_2 = 'M8.6 11.2l.9.9 5.9-6.6';
-function ticksHtml(message) {
-  const delivered = !message._pending && !!message.client_ts;
-  return '<svg class="lime-ticks" viewBox="0 0 18 16" width="18" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
-    + '<path d="' + TICK_PATH + '"/>' + (delivered ? '<path d="' + TICK_PATH_2 + '"/>' : '') + '</svg>';
+const TICK_PATH_2 = 'M15.5 8.6l3.1 3.1 6.4-7';
+function ticksHtml(message, read) {
+  const onServer = !message._pending && !!message.client_ts;
+  if (!onServer) return '';
+  return '<svg class="lime-ticks' + (read ? ' lime-ticks--read' : '') + '" viewBox="0 0 ' + (read ? 28 : 17) + ' 16" width="' + (read ? 28 : 17) + '" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="' + TICK_PATH + '"/>' + (read ? '<path d="' + TICK_PATH_2 + '"/>' : '') + '</svg>';
 }
 
 function messageTimeText(message) {
@@ -2015,6 +2036,30 @@ function replyIndicatorHtml(messageId) {
     + '</div>';
 }
 
+// LIME-86: on a bubble too narrow for the whole "N replies · Last reply ..." line, the summary shows just "N replies". The footer is
+// exactly as wide as the bubble (see lime.css), so "does the full line fit in it" is measured here, after every render, resize and
+// rotation. A MutationObserver and a ResizeObserver on the thread keep it current; the work is batched to one frame.
+function fitReplySummaries() {
+  const list = document.getElementById('thread-messages');
+  if (!list) return;
+  const buttons = list.querySelectorAll('.lime-message__replies');
+  buttons.forEach((b) => b.classList.remove('is-compact'));
+  if (!isPhone()) return;
+  buttons.forEach((b) => {
+    const footer = b.parentElement;
+    if (footer && b.offsetWidth > footer.clientWidth + 0.5) b.classList.add('is-compact');
+  });
+}
+(function watchReplySummaries() {
+  const list = document.getElementById('thread-messages');
+  if (!list) return;
+  let queued = false;
+  const queue = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; fitReplySummaries(); }); };
+  new MutationObserver(queue).observe(list, { childList: true, subtree: true });
+  if (window.ResizeObserver) new ResizeObserver(queue).observe(list);
+  queue();
+})();
+
 // Keeps the main thread's reply summary correct after a reply is sent
 // anywhere (the thread panel), without a full re-render (LIME-17).
 // Replaces the whole .lime-message__footer (avatars + count + time all
@@ -2344,7 +2389,7 @@ function initMessagesList() {
       + '<div class="lime-message__reactions">' + reactionsHtml(message.id) + '</div>'
       + '<button type="button" class="lime-foot-btn lime-react-add" title="Add reaction" aria-label="Add reaction"><span class="m-icon m-icon--smile-plus" aria-hidden="true"></span></button>'
       + '<button type="button" class="lime-message__stamp" data-receipt aria-label="Message details"><span class="lime-message__stamp-time">' + clockText(receiptTimes(message).sent) + '</span>'
-      + (isSent ? '<span class="lime-receipt" role="img" aria-label="' + (message._pending ? 'Sent' : 'Delivered') + '">' + ticksHtml(message) + '</span>' : '')
+      + (isSent ? '<span class="lime-receipt" role="img" aria-label="' + (message._pending ? 'Sending' : 'Sent') + '">' + ticksHtml(message) + '</span>' : '')
       + '</button>'
       + '</div>'
       + replyIndicatorHtml(message.id)
@@ -5013,6 +5058,11 @@ wireDropdownToggle('composer-toolbar-overflow', 'composer-toolbar-overflow-dropd
 // LIME-79-fix4: the phone composers' "Aa" formatting menu (glass), one per composer.
 wireDropdownToggle('composer-aa-btn', 'composer-format-menu', { fixed: true });
 wireDropdownToggle('replies-composer-aa-btn', 'replies-composer-format-menu', { fixed: true });
+// LIME-86: the list and align buttons open their own glass menus the same way
+wireDropdownToggle('composer-list-btn', 'composer-list-menu', { fixed: true });
+wireDropdownToggle('replies-composer-list-btn', 'replies-composer-list-menu', { fixed: true });
+wireDropdownToggle('composer-align-btn', 'composer-align-menu', { fixed: true });
+wireDropdownToggle('replies-composer-align-btn', 'replies-composer-align-menu', { fixed: true });
 // LIME-55: the split Add button's own ⌄ menu (New message, New jam —
 // Soon). "+ Add" itself needs no wiring here — it's just another
 // [data-open-picker] trigger, the same delegated listener LIME-29's own
@@ -7206,3 +7256,15 @@ wireScrollFades(document.getElementById('wall-scroller'), document.getElementByI
 // settingsBodyFrameOpen) — wired from showSection itself, below, not
 // here, since the element doesn't exist yet at parse time and gets
 // replaced on every section switch.
+
+// LIME-86: iOS pans the visible area while the keyboard is open, which would carry the floating headers away with it. --vv-top is how far
+// the visible area has moved; the headers translate by it (lime.css) so they stay put on screen.
+(function pinHeadersToVisibleArea() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const root = document.documentElement;
+  const sync = () => root.style.setProperty('--vv-top', Math.max(0, Math.round(vv.offsetTop)) + 'px');
+  vv.addEventListener('resize', sync);
+  vv.addEventListener('scroll', sync);
+  sync();
+})();

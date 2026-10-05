@@ -60,7 +60,9 @@ const measureIcons = (page, items) => page.evaluate(async (items) => {
       const S = 480; const c = document.createElement('canvas'); c.width = S; c.height = S; const x = c.getContext('2d');
       x.drawImage(img, 0, 0, S, S); const d = x.getImageData(0, 0, S, S).data; let x0 = S, y0 = S, x1 = -1, y1 = -1;
       for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) if (d[(j * S + i) * 4 + 3] > 40) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; }
-      resolve(x1 < 0 ? null : { w: (x1 - x0 + 1) / S, h: (y1 - y0 + 1) / S });
+      let area = 0, per = 0; const on = (i, j) => i >= 0 && j >= 0 && i < S && j < S && d[(j * S + i) * 4 + 3] > 127;
+      for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++) if (on(i, j)) { area++; if (!on(i - 1, j) || !on(i + 1, j) || !on(i, j - 1) || !on(i, j + 1)) per++; }
+      resolve(x1 < 0 ? null : { w: (x1 - x0 + 1) / S, h: (y1 - y0 + 1) / S, stroke: per ? 2 * area / per / S : 0 });
     };
     img.onerror = () => resolve(null);
     img.src = url.replace(/^url\("?|"?\)$/g, '').replace(/currentColor/g, 'black');
@@ -72,7 +74,8 @@ const measureIcons = (page, items) => page.evaluate(async (items) => {
     const mask = cs.webkitMaskImage && cs.webkitMaskImage !== 'none' ? cs.webkitMaskImage : cs.maskImage;
     const btn = el.closest('button'); const br = btn ? btn.getBoundingClientRect() : null;
     const f = mask && mask !== 'none' ? await ink(mask) : null;
-    out.push({ label, ink: f ? [Math.round(f.w * r.width * 10) / 10, Math.round(f.h * r.height * 10) / 10] : null, tap: br ? [Math.round(br.width), Math.round(br.height)] : null });
+    const attr = mask && mask !== 'none' ? /stroke-width=['"]?%?[^\d]*([\d.]+)/.exec(decodeURIComponent(mask)) : null; // the drawn stroke width (units of a 24 grid) for the icons drawn here
+    out.push({ label, ink: f ? [Math.round(f.w * r.width * 10) / 10, Math.round(f.h * r.height * 10) / 10] : null, tap: br ? [Math.round(br.width), Math.round(br.height)] : null, line: attr ? Math.round(parseFloat(attr[1]) / 24 * r.width * 100) / 100 : (f ? Math.round(f.stroke * r.width * 100) / 100 : null) });
   }
   return out;
 }, items);
@@ -179,10 +182,12 @@ async function runOne(check, browser, name, server, S, size) {
     check(tag('dock press: on release it snaps to the item under the finger, the item is chosen (calls toast) and the pill fades'), /Calls are coming soon/.test(await page.evaluate(() => document.getElementById('toast-container').textContent)) && Math.abs(d3.mid - it0[2]) < 6 && !d3.pressing && d3.opacity < 0.1, JSON.stringify(d3));
     await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
   }
-  const icons1 = await measureIcons(page, [['fab plus', '.m-fab .dew'], ['filter', '#m-filter-btn .dew'], ['dock link', '#m-dock-link .dew'], ['dock jam', '#m-dock-jam .m-icon'], ['dock calls', '#m-dock-calls .m-icon'], ['header search', '#m-search-btn .dew'], ['pin', '.lime-contact--pinned .lime-icon-pin']]);
+  const icons1 = await measureIcons(page, [['fab plus', '.m-fab .dew'], ['filter', '#m-filter-btn .dew'], ['dock link', '#m-dock-link .m-icon'], ['dock jam', '#m-dock-jam .m-icon'], ['dock calls', '#m-dock-calls .m-icon'], ['header search', '#m-search-btn .dew'], ['pin', '.lime-contact--pinned .lime-icon-pin']]);
   const big = (f) => (f.ink ? Math.max(...f.ink) : 0);
   const byName = Object.fromEntries(icons1.map((i) => [i.label, i]));
-  check(tag('header and dock icons: a ~24px visible glyph (+/-1.5) in a >= 44px target: ' + icons1.slice(0, 6).map((i) => i.label + ' ' + big(i)).join(', ')), ['header search', 'filter', 'dock link', 'dock jam', 'dock calls'].every((n) => Math.abs(big(byName[n]) - 24) <= 1.5 && Math.min(...byName[n].tap) >= 44) && Math.abs(big(byName['fab plus']) - 30) <= 1.5, JSON.stringify(icons1));
+  check(tag('header icons: a ~24px visible glyph (+/-1.5) in a >= 44px target: ' + icons1.filter((i) => /search|filter|fab/.test(i.label)).map((i) => i.label + ' ' + big(i)).join(', ')), ['header search', 'filter'].every((n) => Math.abs(big(byName[n]) - 24) <= 1.5 && Math.min(...byName[n].tap) >= 44) && Math.abs(big(byName['fab plus']) - 30) <= 1.5, JSON.stringify(icons1));
+  const dockIcons = ['dock link', 'dock jam', 'dock calls'].map((n) => byName[n]);
+  check(tag('dock icons share ONE line weight (' + dockIcons.map((i) => i.label + ' ' + i.line + 'px').join(', ') + ') and a 20 to 25px glyph in a >= 44px target'), dockIcons.every((i) => i.line && Math.abs(i.line - dockIcons[0].line) <= 0.05 && big(i) >= 20 && big(i) <= 25 && Math.min(...i.tap) >= 44), JSON.stringify(dockIcons));
   check(tag('the pin beside a name is 16 to 18px tall'), byName.pin.ink[1] >= 16 && byName.pin.ink[1] <= 18, JSON.stringify(byName.pin.ink));
   const tintPairs = await page.evaluate(() => {
     const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
@@ -249,15 +254,21 @@ async function runOne(check, browser, name, server, S, size) {
   });
   check(tag('design 02: the chat header is floating glass: a round "<" (' + centre.back + 'px), a pill with the avatars, the name and "' + centre.sub + '", and one pill at the right; the messages scroll under them with a soft fade'), centre.back === 52 && centre.backGlass && centre.midGlass && centre.toolsGlass && centre.order && centre.midH === 52 && centre.toolsH === 52 && /^\d+ members$/.test(centre.sub) && centre.fade && centre.barBorder === '0px' && centre.pos === 'absolute' && centre.threadTop <= centre.barTop + 1 && centre.barBottom > centre.threadTop && centre.doc <= centre.vw && centre.right >= 8, JSON.stringify(centre));
   const chatIcons = await measureIcons(page, [['back', '#m-chat-back .dew'], ['search', '#m-chat-search .m-icon'], ['call', '#m-chat-call .m-icon'], ['more', '#m-chat-more .m-icon']]);
-  check(tag('chat header icons are one size: ~24px visible glyphs in targets at least 40 wide and 44 high (' + chatIcons.map((i) => i.label + ' ' + Math.max(...i.ink)).join(', ') + ')'), chatIcons.every((i) => Math.abs(Math.max(...i.ink) - 24) <= 1.5 && i.tap[1] >= 44 && i.tap[0] >= 40), JSON.stringify(chatIcons));
+  const ln = Object.fromEntries(chatIcons.map((i) => [i.label, i]));
+  check(tag('chat header icons: ~22px glyphs (16 to 23) in round targets at least 40 wide and high (the back button 52), with one line weight for back, search and call (' + chatIcons.map((i) => i.label + ' ' + Math.max(...i.ink) + ' @' + i.line).join(', ') + '), and "more" is plain dots with no ring (' + ln.more.ink[1] + 'px tall)'), chatIcons.every((i) => Math.max(...i.ink) >= 16 && Math.max(...i.ink) <= 23 && i.tap[1] >= 40 && i.tap[0] >= 40) && ['back', 'search', 'call'].every((n) => Math.abs(ln[n].line - ln.search.line) <= 0.4) && ln.more.ink[1] <= 4, JSON.stringify(chatIcons));
   await page.click('#m-chat-center');
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'panel');
   check(tag('the header\'s avatars and title open the details as a pushed screen'), (await view(page)) === 'panel' && (await visible(page, '#right-panel')));
   const members = await page.evaluate(() => ({ panel: document.getElementById('right-panel').dataset.panel, rows: [...document.querySelectorAll('.lime-members-panel__row')].map((r) => r.querySelector('.lime-members-panel__row-name').textContent + '|' + (r.querySelector('.lime-presence') ? r.querySelector('.lime-presence').dataset.presence : 'none')) }));
   check(tag('Members shows everyone in the group (3), each with a live status icon: ' + members.rows.join(', ')), members.panel === 'members' && members.rows.length === 3 && members.rows.every((r) => /\|(active|away|busy|dnd)$/.test(r)), JSON.stringify(members));
+  const hdrOf = (backSel, titleSel) => page.evaluate((a) => { const R = (e) => e.getBoundingClientRect(); const glass = (e) => { const cs = getComputedStyle(e); return /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''); }; const b = document.querySelector(a.backSel); const t = a.titleSel ? document.querySelector(a.titleSel) : null; const fade = getComputedStyle(document.getElementById('right-panel'), '::before'); const first = document.querySelector(a.firstSel); return { back: [R(b).width, R(b).height, getComputedStyle(b).borderTopLeftRadius, glass(b), Math.round(R(b).top), Math.round(R(b).left)], pill: t ? [Math.round(R(t).height), glass(t), t.textContent.trim()] : null, fade: /gradient/.test(fade.backgroundImage), firstBelow: first ? R(first).top >= R(b).bottom - 1 : null }; }, { backSel, titleSel, firstSel: '.lime-members-panel__row' });
+  const mh = await hdrOf('#right-panel-toggle', '.lime-members-panel__title');
+  check(tag('LIME-86 the Members screen has the chat\'s header: a round glass "<" and a glass title pill "' + (mh.pill && mh.pill[2]) + '", with the fade, and the list starts below them'), mh.back[0] === 52 && mh.back[2] === '50%' && mh.back[3] && mh.pill && mh.pill[0] === 52 && mh.pill[1] && mh.fade && mh.firstBelow, JSON.stringify(mh));
   await page.click('.lime-members-panel__row:nth-child(2)');
   await wait(page, () => document.getElementById('right-panel').dataset.panel === 'profile');
   check(tag('a member\'s details open with the back arrow to Members'), (await visible(page, '#profile-back-btn')));
+  const dh = await hdrOf('#profile-back-btn', null);
+  check(tag('LIME-86 a person\'s details have the same round glass "<" at the top left with the fade under it'), dh.back[0] === 52 && dh.back[2] === '50%' && dh.back[3] && dh.fade && dh.back[4] >= 10 && dh.back[5] >= 12, JSON.stringify(dh));
   await page.click('#profile-back-btn');
   await wait(page, () => document.getElementById('right-panel').dataset.panel === 'members');
   check(tag('"back" from a member returns to Members'), true);
@@ -292,11 +303,25 @@ async function runOne(check, browser, name, server, S, size) {
   }, pid);
   const al = await align(parentId);
   const near = (a, b) => Math.abs(a - b) <= 6;
-  check(tag('under your bubble: add-reaction starts at the bubble\'s left edge (' + Math.round(al.addL - al.bubL) + 'px in), the time and ticks end at its right edge (' + Math.round(al.bubR - al.stampR) + 'px in), the reply summary starts at its left edge (' + Math.round(al.sumL - al.bubL) + 'px in)'), near(al.addL, al.bubL) && near(al.stampR, al.bubR) && al.sumL !== null && near(al.sumL, al.bubL) && al.sumR <= al.bubR + 1, JSON.stringify(al));
-  const alR = await page.evaluate(() => { const ms = [...document.querySelectorAll('#thread-messages .lime-message--received')]; const m = ms[ms.length - 1]; const L = (e) => e.getBoundingClientRect(); return { bubL: L(m.querySelector('.lime-message__content')).left, bubR: L(m.querySelector('.lime-message__content')).right, addL: L(m.querySelector('.lime-react-add')).left, stampR: L(m.querySelector('.lime-message__stamp')).right }; });
-  check(tag('and the same for others\' bubbles'), near(alR.addL, alR.bubL) && near(alR.stampR, alR.bubR), JSON.stringify(alR));
+  check(tag('under your bubble: the time and ticks end at its right edge (' + Math.round(al.bubR - al.stampR) + 'px in) and the reply summary sits at the bubble\'s own edge: right-aligned for yours (' + Math.round(al.bubR - al.sumR) + 'px in), never past the screen'), near(al.stampR, al.bubR) && al.sumL !== null && near(al.sumR, al.bubR) && al.sumR <= al.bubR + 1 && al.sumL >= 0, JSON.stringify(al));
+  const alR = await page.evaluate(() => { const ms = [...document.querySelectorAll('#thread-messages .lime-message--received')]; const m = ms[ms.length - 1]; const L = (e) => e.getBoundingClientRect(); return { bubL: L(m.querySelector('.lime-message__content')).left, bubR: L(m.querySelector('.lime-message__content')).right, stampR: L(m.querySelector('.lime-message__stamp')).right }; });
+  check(tag('and the time and ticks end at the bubble\'s right edge for others\' bubbles'), near(alR.stampR, alR.bubR), JSON.stringify(alR));
+  // LIME-86 item 12: a bubble too narrow for the whole "N replies · Last reply ..." line shows just "N replies"; a wide one shows it all
+  const sums = await page.evaluate(async (id) => {
+    const m = document.querySelector('#thread-messages [data-message-id="' + id + '"]'); const b = m.querySelector('.lime-message__replies'); const f = b.parentElement;
+    const time = (e) => getComputedStyle(e.querySelector('.lime-replies__time')).display; const text = (e) => e.querySelector('.lime-replies__count').textContent;
+    const narrow = { compact: b.classList.contains('is-compact'), time: time(b), text: text(b), fitsBubble: b.getBoundingClientRect().right <= m.querySelector('.lime-message__content').getBoundingClientRect().right + 1, left: b.getBoundingClientRect().left >= 0 };
+    const wrap = document.createElement('div'); wrap.className = 'lime-message lime-message--received'; const stack = m.querySelector('.lime-message__stack').cloneNode(true);
+    stack.querySelector('.lime-message__content').style.minWidth = '330px'; wrap.appendChild(stack); document.getElementById('thread-messages').appendChild(wrap);
+    await new Promise((r) => setTimeout(r, 250));
+    const b2 = stack.querySelector('.lime-message__replies');
+    const wide = { compact: b2.classList.contains('is-compact'), time: time(b2), fits: b2.offsetWidth <= b2.parentElement.clientWidth + 0.5 };
+    wrap.remove();
+    return { narrow, wide, sw: document.getElementById('thread-messages').scrollWidth, cw: document.getElementById('thread-messages').clientWidth };
+  }, parentId);
+  check(tag('reply summary: on a narrow bubble just "' + sums.narrow.text + '" (the time is hidden, nothing past the bubble\'s right edge); on a wide bubble the whole line shows'), sums.narrow.compact && sums.narrow.time === 'none' && /^\d+ repl(y|ies)$/.test(sums.narrow.text) && sums.narrow.fitsBubble && sums.narrow.left && !sums.wide.compact && sums.wide.time !== 'none' && sums.wide.fits && sums.sw <= sums.cw, JSON.stringify(sums));
   const rcpt = await page.evaluate((id) => { const m = document.querySelector('#thread-messages [data-message-id="' + id + '"]'); const t = [...document.querySelectorAll('#thread-messages .lime-message__stamp-time')].map((e) => e.textContent); return { times: t, words: t.some((x) => /sent|delivered/i.test(x)), ticks: m.querySelectorAll('.lime-ticks path').length, label: m.querySelector('.lime-receipt').getAttribute('aria-label') }; }, parentId);
-  check(tag('receipts are only the time plus ticks (no "Sent ... delivered" words; two ticks once delivered)'), !rcpt.words && rcpt.ticks === 2 && /^Delivered$/.test(rcpt.label), JSON.stringify(rcpt));
+  check(tag('receipts are only the time plus ticks (no "Sent ... delivered" words); ONE tick once the server has it (two are for "read", LIME-81)'), !rcpt.words && rcpt.ticks === 1 && /^Sent$/.test(rcpt.label), JSON.stringify(rcpt));
   await page.evaluate((id) => document.querySelector('#thread-messages [data-message-id="' + id + '"] [data-receipt]').click(), parentId);
   await wait(page, () => !!document.querySelector('.m-receipt-pop.is-open'));
   await sleep(250);
@@ -307,15 +332,22 @@ async function runOne(check, browser, name, server, S, size) {
   await page.evaluate((pid) => document.querySelector('#thread-messages [data-message-id="' + pid + '"] .lime-message__replies').click(), parentId);
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'panel');
   check(tag('a thread opens as its own pushed screen with the back arrow'), (await visible(page, '#right-panel-toggle .m-back-icon')) && !(await visible(page, '#right-panel-toggle .dew-sidebar-right-closed')));
+  // LIME-86 item 5: the thread screen has the chat's header: a round glass "<", a glass title pill, the fade, no plain bar with a line
+  const thHead = await page.evaluate(() => {
+    const R = (e) => e.getBoundingClientRect(); const glass = (e) => { const cs = getComputedStyle(e); return /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''); };
+    const b = document.getElementById('right-panel-toggle'); const t = document.querySelector('.lime-replies-panel__title'); const h = document.querySelector('.lime-replies-panel__header'); const fade = getComputedStyle(document.getElementById('right-panel'), '::before'); const q = document.querySelector('#replies-quote .lime-message');
+    return { back: [R(b).width, R(b).height, getComputedStyle(b).borderTopLeftRadius, glass(b), Math.round(R(b).top)], title: t.textContent.trim(), pill: [Math.round(R(t).height), glass(t), Math.round(R(t).top), getComputedStyle(t).borderTopLeftRadius], line: getComputedStyle(h).borderBottomWidth, headBg: getComputedStyle(h).backgroundColor, fade: /gradient/.test(fade.backgroundImage), belowPill: q ? R(q).top >= R(t).bottom - 1 : null, pillRight: Math.round(R(t).left - R(b).right) };
+  });
+  check(tag('LIME-86 the Thread screen: a round glass "<" (' + thHead.back[0] + 'px), a glass title pill "' + thHead.title + '" (' + thHead.pill[0] + 'px high) beside it, the fade under both, no line and no plain bar; the content starts below'), thHead.back[0] === 52 && thHead.back[1] === 52 && thHead.back[2] === '50%' && thHead.back[3] && thHead.pill[0] === 52 && thHead.pill[1] && thHead.title === 'Thread' && thHead.line === '0px' && /rgba\(0, 0, 0, 0\)|transparent/.test(thHead.headBg) && thHead.fade && thHead.belowPill && thHead.pillRight >= 6 && thHead.pillRight <= 14 && thHead.back[4] === thHead.pill[2], JSON.stringify(thHead));
   const th = await page.evaluate(() => {
     const L = (e) => e.getBoundingClientRect(); const q = document.querySelector('#replies-quote .lime-message'); const r = document.querySelector('#replies-list .lime-message');
-    const edges = (m) => ({ bubL: L(m.querySelector('.lime-message__content')).left, bubR: L(m.querySelector('.lime-message__content')).right, addL: L(m.querySelector('.lime-react-add')).left, stampR: L(m.querySelector('.lime-message__stamp')).right });
+    const edges = (m) => ({ bubL: L(m.querySelector('.lime-message__content')).left, bubR: L(m.querySelector('.lime-message__content')).right, stampR: L(m.querySelector('.lime-message__stamp')).right });
     const bg = (m) => getComputedStyle(m.querySelector('.lime-message__content')).backgroundColor;
-    return { quote: edges(q), reply: edges(r), quoteSent: q.classList.contains('lime-message--sent'), quoteBg: bg(q), replyBg: bg(r), flat: !!document.querySelector('#replies-list .lime-reply'), foot: getComputedStyle(r.querySelector('.lime-message__foot')).display };
+    return { quote: edges(q), reply: edges(r), quoteSent: q.classList.contains('lime-message--sent'), quoteBg: bg(q), replyBg: bg(r), flat: !!document.querySelector('#replies-list .lime-reply'), foot: getComputedStyle(r.querySelector('.lime-message__foot')).display, fabBg: getComputedStyle(document.querySelector('.m-fab'), '::before').backgroundColor };
   });
   const nr = (a, b) => Math.abs(a - b) <= 6;
-  check(tag('the thread screen uses the same bubbles: your parent message and your reply are green bubbles, no flat rows'), th.quoteSent && th.quoteBg === 'rgb(163, 225, 138)' && th.replyBg === 'rgb(163, 225, 138)' && !th.flat && th.foot === 'flex', JSON.stringify(th));
-  check(tag('and the same alignment rules under its bubbles'), nr(th.quote.addL, th.quote.bubL) && nr(th.quote.stampR, th.quote.bubR) && nr(th.reply.addL, th.reply.bubL) && nr(th.reply.stampR, th.reply.bubR), JSON.stringify(th));
+  check(tag('the thread screen uses the same bubbles: your parent message and your reply are bubbles in the plus button green (--lime-primary-bg), no flat rows'), th.quoteSent && th.quoteBg === th.fabBg && th.replyBg === th.fabBg && !th.flat && th.foot === 'flex', JSON.stringify(th));
+  check(tag('and the same alignment rule under its bubbles: the time and ticks end at the bubble\'s right edge'), nr(th.quote.stampR, th.quote.bubR) && nr(th.reply.stampR, th.reply.bubR), JSON.stringify(th));
   // ── LIME-79-fix4: the thread's composer is the chat's composer ──
   const tc0 = await comp('#replies-composer');
   check(tag('the thread composer is the same collapsed pill as the chat\'s (grid, one line, inside the screen, "Reply..." placeholder)'), tc0.display === 'grid' && !tc0.expanded && tc0.h <= 60 && tc0.left >= 8 && tc0.right >= 8 && /Reply/.test(tc0.placeholder) && !tc0.shown.privacy, JSON.stringify(tc0));
@@ -340,7 +372,7 @@ async function runOne(check, browser, name, server, S, size) {
   await wait(page, () => document.getElementById('replies-composer-format-menu').classList.contains('is-open'));
   await sleep(350);
   const fm2 = await page.evaluate(() => { const m = document.getElementById('replies-composer-format-menu'); const cs = getComputedStyle(m); const r = m.getBoundingClientRect(); const it = m.querySelector('.lime-menu__item'); return { items: [...m.querySelectorAll('.lime-menu__item')].map((e) => e.lastChild.textContent.trim()).join(), blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), radius: parseFloat(cs.borderTopLeftRadius), rowH: it.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(it).fontSize), inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, focusKept: document.activeElement === document.getElementById('replies-composer-input') }; });
-  check(tag('"Aa" opens a glass formatting menu: ' + fm2.items), fm2.items === 'Bold,Italic,Underline,Strikethrough,Bulleted list,Numbered list,Indent,Outdent,Align left,Align centre,Align right,Justify' && fm2.blur && fm2.radius >= 20 && fm2.rowH >= 44 && fm2.fs === 17 && fm2.inside && fm2.focusKept, JSON.stringify(fm2));
+  check(tag('"Aa" opens a glass menu with only Bold, Italic, Underline, Strikethrough: ' + fm2.items), fm2.items === 'Bold,Italic,Underline,Strikethrough' && fm2.blur && fm2.radius >= 20 && fm2.rowH >= 44 && fm2.fs === 17 && fm2.inside && fm2.focusKept, JSON.stringify(fm2));
   await page.evaluate(() => { const i = document.getElementById('replies-composer-input'); i.focus(); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
   await page.click('#replies-composer-format-menu [data-cmd="bold"]');
   await sleep(200);
@@ -348,7 +380,7 @@ async function runOne(check, browser, name, server, S, size) {
   check(tag('choosing Bold in the menu formats the selected text'), /<b>|<strong>/.test(bolded), bolded);
   const circle = await page.evaluate(() => { const b = document.getElementById('replies-composer-send'); const r = b.getBoundingClientRect(); const cs = getComputedStyle(b); const bf = getComputedStyle(b, '::before'); return { w: r.width, h: r.height, radius: cs.borderTopLeftRadius, mask: bf.webkitMaskImage || bf.maskImage, box: parseFloat(bf.width) }; });
   const inkSend = await page.evaluate(async (c) => new Promise((resolve) => { const img = new Image(); img.onload = () => { const S = 480; const cv = document.createElement('canvas'); cv.width = S; cv.height = S; const x = cv.getContext('2d'); x.drawImage(img, 0, 0, S, S); const d = x.getImageData(0, 0, S, S).data; let x0 = S, y0 = S, x1 = -1, y1 = -1; for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) if (d[(j * S + i) * 4 + 3] > 40) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; } resolve(Math.max(x1 - x0 + 1, y1 - y0 + 1) / S * c.box); }; img.src = c.mask.replace(/^url\("?|"?\)$/g, '').replace(/currentColor/g, 'black'); }), circle);
-  check(tag('the send button is a perfect circle (' + circle.w + 'x' + circle.h + ', radius ' + circle.radius + ') and its arrow is about 20px (' + Math.round(inkSend * 10) / 10 + ')'), Math.abs(circle.w - circle.h) < 0.5 && circle.w >= 40 && circle.radius === '50%' && Math.abs(inkSend - 20) <= 1.5, JSON.stringify([circle, inkSend]));
+  check(tag('the send button is a perfect circle (' + circle.w + 'x' + circle.h + ', radius ' + circle.radius + ') and its arrow is the standard inline size, about 15px of ink in a 20px box (' + Math.round(inkSend * 10) / 10 + ')'), Math.abs(circle.w - circle.h) < 0.5 && circle.w >= 40 && circle.radius === '50%' && inkSend >= 13.5 && inkSend <= 17 && circle.box === 20, JSON.stringify([circle, inkSend]));
   const nBefore = await page.evaluate(() => document.querySelectorAll('#replies-list .lime-message').length);
   await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click());
   await page.click('#replies-composer-send');
@@ -503,18 +535,18 @@ async function runOne(check, browser, name, server, S, size) {
     await sleep(500);
     return page.evaluate((chat) => {
       const t = document.querySelector('#toast-container .lime-toast'); const r = t.getBoundingClientRect(); const cs = getComputedStyle(t);
-      const ref = chat ? document.getElementById('composer').getBoundingClientRect().top : document.getElementById('m-dock').getBoundingClientRect().top;
+      const pill = (chat ? document.querySelector('.m-chatbar__tools') : document.querySelector('.m-head-pill')).getBoundingClientRect();
       const header = chat ? document.getElementById('m-chatbar').getBoundingClientRect().bottom : document.getElementById('m-messages-head').getBoundingClientRect().bottom;
-      return { pct: Math.round(r.width / innerWidth * 100), centre: Math.round(Math.abs((r.left + r.right) / 2 - innerWidth / 2)), gap: Math.round(ref - r.bottom), belowHeader: r.top > header, blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), radius: parseFloat(cs.borderTopLeftRadius) };
+      return { pct: Math.round(r.width / innerWidth * 100), rightGap: Math.round(Math.abs(r.right - pill.right)), under: Math.round(r.top - pill.bottom), top: Math.round(r.top), belowHeader: r.top > header - 8 && r.top >= pill.bottom, topHalf: r.bottom < innerHeight / 2, blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), radius: parseFloat(cs.borderTopLeftRadius) };
     }, inChat);
   };
   const tm = await toastBox(false);
-  check(tag('toast on Messages: glass, ' + tm.pct + '% of the width, centred, ' + tm.gap + 'px above the dock, below the header'), tm.pct >= 73 && tm.pct <= 77 && tm.centre <= 2 && tm.gap >= 4 && tm.gap <= 40 && tm.belowHeader && tm.blur && tm.radius >= 20, JSON.stringify(tm));
+  check(tag('toast on Messages: glass, ' + tm.pct + '% of the width, at the top right, right-aligned with the avatar pill (' + tm.rightGap + 'px off) and ' + tm.under + 'px under it, never at the bottom'), tm.pct >= 73 && tm.pct <= 77 && tm.rightGap <= 2 && tm.under >= 4 && tm.under <= 20 && tm.belowHeader && tm.topHalf && tm.blur && tm.radius >= 20, JSON.stringify(tm));
   await page.evaluate((id) => document.querySelector('#m-list [data-conversation-id="' + id + '"]').click(), S.zed);
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
   await sleep(400);
   const tc = await toastBox(true);
-  check(tag('toast in a chat: ' + tc.pct + '% wide, centred, ' + tc.gap + 'px above the composer, never over the header'), tc.pct >= 73 && tc.pct <= 77 && tc.centre <= 2 && tc.gap >= 4 && tc.gap <= 40 && tc.belowHeader && tc.blur, JSON.stringify(tc));
+  check(tag('toast in a chat: ' + tc.pct + '% wide, at the top right under the header\'s tools (' + tc.rightGap + 'px off, ' + tc.under + 'px under), never at the bottom'), tc.pct >= 73 && tc.pct <= 77 && tc.rightGap <= 2 && tc.under >= 4 && tc.under <= 20 && tc.belowHeader && tc.topHalf && tc.blur, JSON.stringify(tc));
   await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
 
   // ── LIME-82: the photo wall and the viewer are on the back stack: back closes the viewer, then the wall, then you are in the chat ──
@@ -571,23 +603,37 @@ async function runOne(check, browser, name, server, S, size) {
     const c = document.getElementById('composer'); const tbar = c.querySelector('.lime-composer__toolbar'); const R = (e) => e.getBoundingClientRect();
     const shown = (q) => { const e = c.querySelector(q); if (!e) return false; const r = R(e); return getComputedStyle(e).display !== 'none' && r.width > 0; };
     const left = (q) => Math.round(R(c.querySelector(q)).left);
-    const xs = { plus: left('[data-attach-btn]'), emoji: left('[data-emoji-btn]'), aa: left('.lime-composer__tool--aa'), bullets: left('.lime-composer__toolbar > [data-cmd="unorderedList"]'), numbers: left('.lime-composer__toolbar > [data-cmd="orderedList"]'), link: left('.lime-composer__toolbar > [data-cmd="link"]'), code: left('.lime-composer__toolbar > [data-cmd="code"]'), mic: left('.lime-voice-split__mic'), send: left('.lime-composer__return') };
-    const order = Object.values(xs); const cr = R(c);
-    return { xs, ordered: order.every((v, i) => i === 0 || v > order[i - 1]), hidden: !['.lime-composer__toolbar > [data-cmd="bold"]', '.lime-composer__toolbar > [data-cmd="italic"]', '.lime-composer__toolbar > [data-cmd="underline"]', '.lime-composer__toolbar > [data-cmd="strikethrough"]', '.lime-composer__toolbar > [data-cmd="quote"]', '.lime-composer__overflow'].some(shown), fits: tbar.scrollWidth <= tbar.clientWidth + 1, inside: cr.left >= 8 && cr.right <= innerWidth - 8, sendRight: Math.round(cr.right - R(c.querySelector('.lime-composer__return')).right), glass: /blur/.test(getComputedStyle(c).backdropFilter || getComputedStyle(c).webkitBackdropFilter || '') };
+    const xs = { plus: left('[data-attach-btn]'), emoji: left('[data-emoji-btn]'), aa: left('.lime-composer__tool--aa'), list: left('.lime-composer__tool--list'), align: left('.lime-composer__tool--align'), link: left('.lime-composer__toolbar > [data-cmd="link"]'), code: left('.lime-composer__toolbar > [data-cmd="code"]'), mic: left('.lime-voice-split__mic'), send: left('.lime-composer__return') };
+    const order = Object.values(xs); const cr = R(c); const lastTool = Math.round(Math.max(...[...c.querySelectorAll('.lime-composer__toolbar > *')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => R(e).right))); const micLeft = Math.round(R(c.querySelector('.lime-voice-split')).left);
+    return { lastTool, micLeft, xs, ordered: order.every((v, i) => i === 0 || v > order[i - 1]), hidden: !['.lime-composer__toolbar > [data-cmd="bold"]', '.lime-composer__toolbar > [data-cmd="italic"]', '.lime-composer__toolbar > [data-cmd="underline"]', '.lime-composer__toolbar > [data-cmd="strikethrough"]', '.lime-composer__toolbar > [data-cmd="quote"]', '.lime-composer__toolbar > [data-cmd="unorderedList"]', '.lime-composer__toolbar > [data-cmd="orderedList"]', '.lime-composer__tool--done', '.lime-composer__overflow'].some(shown), fits: tbar.scrollWidth <= tbar.clientWidth + 1, inside: cr.left >= 8 && cr.right <= innerWidth - 8, sendRight: Math.round(cr.right - R(c.querySelector('.lime-composer__return')).right), glass: /blur/.test(getComputedStyle(c).backdropFilter || getComputedStyle(c).webkitBackdropFilter || '') };
   });
-  check(tag('the expanded composer (design 03): "+", emoji, Aa, bulleted list, numbered list, link, code on the left, mic and send on the right, in that order, all fitting, no B I U S or "...", glass'), tb.ordered && tb.hidden && tb.fits && tb.inside && tb.glass, JSON.stringify(tb));
+  check(tag('the expanded composer: "+", emoji, Aa, list, align, link, code on the left, mic and send on the right, in that order, all fitting inside the pill (no overflow, nothing under the mic), no B I U S or "...", glass'), tb.ordered && tb.hidden && tb.fits && tb.inside && tb.glass && tb.lastTool <= tb.micLeft, JSON.stringify(tb));
   await page.keyboard.type('Hello world');
-  await page.evaluate(() => { const i = document.getElementById('composer-input'); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
-  const fmt = async (cmd) => { await page.click('#composer-aa-btn'); await wait(page, () => document.getElementById('composer-format-menu').classList.contains('is-open')); await sleep(300); await page.click('#composer-format-menu [data-cmd="' + cmd + '"]'); await sleep(200); };
-  const aaGroups = await (async () => { await page.click('#composer-aa-btn'); await wait(page, () => document.getElementById('composer-format-menu').classList.contains('is-open')); await sleep(300); const g = await page.evaluate(() => { const m = document.getElementById('composer-format-menu'); const out = [[]]; [...m.children].forEach((e) => { if (e.classList.contains('lime-menu__divider')) out.push([]); else out[out.length - 1].push(e.dataset.cmd); }); return out.map((x) => x.join()).join(' | '); }); await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click()); await sleep(150); return g; })();
-  check(tag('the Aa menu has three groups: ' + aaGroups), aaGroups === 'bold,italic,underline,strikethrough | unorderedList,orderedList,indent,outdent | alignLeft,alignCenter,alignRight,alignJustify', aaGroups);
-  await page.evaluate(() => { const i = document.getElementById('composer-input'); i.focus(); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
-  await fmt('bold');
-  await page.evaluate(() => { const i = document.getElementById('composer-input'); i.focus(); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
-  await fmt('alignCenter');
-  await fmt('indent');
-  const comp1 = await page.evaluate(() => { const i = document.getElementById('composer-input'); return { html: i.innerHTML, center: !!i.querySelector('[data-align="center"]'), indent: !!i.querySelector('[data-indent="1"]'), bold: !!i.querySelector('b, strong'), style: /style=/.test(i.innerHTML), pressed: [...document.querySelectorAll('#composer-format-menu [aria-pressed="true"]')].map((e) => e.dataset.cmd).sort().join() }; });
-  check(tag('Bold, Align centre and Indent apply to the text in the composer (data-align, data-indent, no style), and the active ones show as on: ' + comp1.pressed), comp1.center && comp1.indent && comp1.bold && !comp1.style && /alignCenter/.test(comp1.pressed) && /indent/.test(comp1.pressed) && /bold/.test(comp1.pressed), JSON.stringify(comp1));
+  const selectAll = () => page.evaluate(() => { const i = document.getElementById('composer-input'); i.focus(); const r = document.createRange(); r.selectNodeContents(i); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); });
+  const toolbarShown = () => page.evaluate(() => [...document.querySelectorAll('#composer .lime-composer__toolbar > *')].filter((e) => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left).map((e) => e.dataset.cmd || (e.matches('.lime-composer__tool--done') ? 'done' : e.matches('.lime-composer__tool--aa') ? 'aa' : e.matches('.lime-composer__tool--list') ? 'list' : e.matches('.lime-composer__tool--align') ? 'align' : e.matches('.lime-composer__tool--emoji') ? 'emoji' : '?')).join());
+  const openMenu = async (btn, menu) => { await page.click('#composer-' + btn + '-btn'); await wait(page, (m) => document.getElementById(m).classList.contains('is-open'), 'composer-' + menu + '-menu'); await sleep(300); };
+  const menuGroups = (menu) => page.evaluate((m) => { const out = [[]]; [...document.getElementById(m).children].forEach((e) => { if (e.classList.contains('lime-menu__divider')) out.push([]); else out[out.length - 1].push(e.dataset.cmd); }); return out.map((x) => x.join()).join(' | '); }, 'composer-' + menu + '-menu');
+  const closeMenus = async () => { await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click()); await sleep(150); };
+  // LIME-86 items 14 and 15: Aa is only B I U S, the list and align buttons have their own menus
+  await openMenu('aa', 'format'); const gAa = await menuGroups('format'); await closeMenus();
+  await openMenu('list', 'list'); const gList = await menuGroups('list'); await closeMenus();
+  await openMenu('align', 'align'); const gAlign = await menuGroups('align'); await closeMenus();
+  check(tag('the menus: Aa = ' + gAa + '; list = ' + gList + '; align = ' + gAlign), gAa === 'bold,italic,underline,strikethrough' && gList === 'unorderedList,orderedList' && gAlign === 'alignLeft,alignCenter,alignRight,alignJustify | indent,outdent', JSON.stringify([gAa, gList, gAlign]));
+  const tbBefore = await toolbarShown();
+  await selectAll(); await sleep(250);
+  const during = await toolbarShown();
+  const selCls = await page.evaluate(() => ({ cls: document.getElementById('composer').classList.contains('is-selecting'), popups: document.querySelectorAll('#composer .lime-menu.is-open, .lime-link-popover.is-open').length }));
+  check(tag('selecting text turns the toolbar into B I U S and Done, with no popup: before "' + tbBefore + '", while selected "' + during + '"'), /emoji,aa,list,align,link,code/.test(tbBefore) && during === 'bold,italic,underline,strikethrough,done' && selCls.cls && selCls.popups === 0, JSON.stringify([tbBefore, during, selCls]));
+  await page.click('#composer .lime-composer__toolbar > [data-cmd="bold"]'); await sleep(200);
+  const boldNow = await page.evaluate(() => ({ html: document.getElementById('composer-input').innerHTML, pressed: document.querySelector('#composer .lime-composer__toolbar > [data-cmd="bold"]').getAttribute('aria-pressed'), still: document.getElementById('composer').classList.contains('is-selecting') }));
+  check(tag('Bold on the selection toolbar formats the text, shows as on, and the selection toolbar stays'), /<b>|<strong>/.test(boldNow.html) && boldNow.pressed === 'true' && boldNow.still, JSON.stringify(boldNow));
+  await page.click('#composer [data-sel-done]'); await sleep(250);
+  const afterDone = await toolbarShown();
+  check(tag('Done returns the usual toolbar: "' + afterDone + '"'), /emoji,aa,list,align,link,code/.test(afterDone) && !(await page.evaluate(() => document.getElementById('composer').classList.contains('is-selecting'))), afterDone);
+  await openMenu('align', 'align'); await page.click('#composer-align-menu [data-cmd="alignCenter"]'); await sleep(200);
+  await openMenu('align', 'align'); await page.click('#composer-align-menu [data-cmd="indent"]'); await sleep(200);
+  const comp1 = await page.evaluate(() => { const i = document.getElementById('composer-input'); return { html: i.innerHTML, center: !!i.querySelector('[data-align="center"]'), indent: !!i.querySelector('[data-indent="1"]'), bold: !!i.querySelector('b, strong'), style: /style=/.test(i.innerHTML), pressed: [...document.querySelectorAll('#composer-align-menu [aria-pressed="true"]')].map((e) => e.dataset.cmd).sort().join() }; });
+  check(tag('Bold, Align centre and Indent apply to the text in the composer (data-align, data-indent, no style), and the active ones show as on: ' + comp1.pressed), comp1.center && comp1.indent && comp1.bold && !comp1.style && /alignCenter/.test(comp1.pressed) && /indent/.test(comp1.pressed), JSON.stringify(comp1));
   await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click());
   await page.evaluate(() => { document.getElementById('composer-input').focus(); });
   await page.keyboard.press('Enter');
@@ -596,10 +642,67 @@ async function runOne(check, browser, name, server, S, size) {
   check(tag('the sent bubble shows it: centred, indented, bold ("' + sent1.text + '")'), sent1.text === 'Hello world' && sent1.align === 'center' && sent1.marginLeft > 10 && sent1.bold && sent1.indentAttr === '1', JSON.stringify(sent1));
   await page.click('#composer-input'); await sleep(200);
   await page.keyboard.type('Alpha');
-  await page.click('#composer .lime-composer__toolbar > [data-cmd="unorderedList"]'); await sleep(200);
+  await page.click('#composer-list-btn'); await wait(page, () => document.getElementById('composer-list-menu').classList.contains('is-open')); await sleep(300);
+  await page.click('#composer-list-menu [data-cmd="unorderedList"]'); await sleep(200);
   await page.click('#composer-send'); // Return inside a list adds an item (existing rule), so a list is sent with the arrow
   await wait(page, () => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); return m && m.querySelector('ul li'); });
-  check(tag('the bulleted-list button in the toolbar makes a real list in the sent bubble'), (await page.evaluate(() => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); return m.querySelector('ul li').textContent; })) === 'Alpha');
+  check(tag('Bulleted list from the list menu makes a real list in the sent bubble'), (await page.evaluate(() => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')].pop(); return m.querySelector('ul li').textContent; })) === 'Alpha');
+  // ── LIME-86: QA round 3 ──
+  await page.evaluate(() => { document.getElementById('composer-input').blur(); });
+  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+  await sleep(250);
+  // 2 and 3: a fixed shell; nothing scrolls sideways; the header never moves
+  const shell86 = await page.evaluate(async () => {
+    const m = document.getElementById('thread-messages'); const cs = getComputedStyle(m); const L = document.getElementById('layout');
+    const bar = () => Math.round(document.getElementById('m-chatbar').getBoundingClientRect().top);
+    const out = { bodyPos: getComputedStyle(document.body).position, bodyOver: getComputedStyle(document.body).overflow, layoutOver: getComputedStyle(L).overflow, htmlOsb: getComputedStyle(document.documentElement).overscrollBehaviorY, bodyOsb: getComputedStyle(document.body).overscrollBehaviorY, msgOx: cs.overflowX, msgTa: cs.touchAction, msgOsb: cs.overscrollBehaviorY, sw: m.scrollWidth, cw: m.clientWidth, docSw: document.documentElement.scrollWidth, vw: innerWidth };
+    const wide = [...document.querySelectorAll('#thread-messages *')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && getComputedStyle(e).visibility !== 'hidden' && (r.right > innerWidth + 0.5 || r.left < -0.5); }).length;
+    m.scrollTop = m.scrollHeight; await new Promise((r) => setTimeout(r, 120)); const atBottom = bar();
+    m.scrollTop = 0; await new Promise((r) => setTimeout(r, 120)); const atTop = bar();
+    window.scrollTo(0, 80); document.documentElement.scrollTop = 80; document.body.scrollTop = 80; L.scrollTop = 80; await new Promise((r) => setTimeout(r, 80));
+    const afterTry = { bar: bar(), y: scrollY, body: document.body.scrollTop, layout: L.scrollTop };
+    document.documentElement.style.setProperty('--vv-top', '30px'); await new Promise((r) => setTimeout(r, 60)); const pinned = bar(); document.documentElement.style.removeProperty('--vv-top');
+    return Object.assign(out, { wide, atBottom, atTop, afterTry, pinned });
+  });
+  check(tag('LIME-86 fixed shell: the body is fixed and does not scroll, nothing chains or rubber-bands the page (overscroll none), the chat scrolls only vertically (overflow-x hidden, pan-y, contained) and nothing is wider than the screen'), shell86.bodyPos === 'fixed' && shell86.bodyOver === 'hidden' && shell86.layoutOver === 'hidden' && shell86.htmlOsb === 'none' && shell86.bodyOsb === 'none' && shell86.msgOx === 'hidden' && shell86.msgTa === 'pan-y' && shell86.msgOsb === 'contain' && shell86.sw <= shell86.cw && shell86.docSw <= shell86.vw && shell86.wide === 0, JSON.stringify(shell86));
+  check(tag('LIME-86 the chat header never moves: at the top, at the bottom, and after trying to scroll the page it stays at 0 (' + [shell86.atTop, shell86.atBottom, shell86.afterTry.bar].join(', ') + '); it follows the visible area when the keyboard pans it (30px -> ' + shell86.pinned + ')'), shell86.atTop === 0 && shell86.atBottom === 0 && shell86.afterTry.bar === 0 && shell86.afterTry.y === 0 && shell86.afterTry.body === 0 && shell86.afterTry.layout === 0 && shell86.pinned === 30, JSON.stringify(shell86));
+  // 8: the "..." menu is as wide as its content (about 260px at most)
+  await page.click('#m-chat-more'); await wait(page, () => document.getElementById('conversation-menu').classList.contains('is-open')); await sleep(250);
+  const moreMenu = await page.evaluate(() => { const m = document.getElementById('conversation-menu'); const r = m.getBoundingClientRect(); return { w: Math.round(r.width), inside: r.left >= 0 && r.right <= innerWidth, items: [...m.querySelectorAll('.lime-menu__item')].map((e) => e.getBoundingClientRect().height) }; });
+  check(tag('LIME-86 the "..." menu is narrower: ' + moreMenu.w + 'px (content width, 260px at most)'), moreMenu.w <= 262 && moreMenu.w >= 150 && moreMenu.inside, JSON.stringify(moreMenu));
+  await page.keyboard.press('Escape'); await page.evaluate(() => document.body.click()); await sleep(150);
+  // 11 and 16: lighter chips; true circles
+  await page.evaluate(() => LimeStore.toggleReaction(document.querySelector('#thread-messages .lime-message').dataset.messageId, '\u{1F44D}'));
+  await wait(page, () => !!document.querySelector('#thread-messages .lime-message__foot .lime-reaction')); await sleep(150);
+  const chipsNow = await page.evaluate(() => { const c = document.querySelector('#thread-messages .lime-message__foot .lime-reaction'); if (!c) return null; const cs = getComputedStyle(c); const a = /\/\s*([\d.]+)\)/.exec(cs.backgroundColor); return { border: cs.borderTopWidth, padL: parseFloat(cs.paddingLeft), alpha: a ? parseFloat(a[1]) : 1 }; });
+  check(tag('LIME-86 reaction chips are lighter: no outline, a very faint fill, tighter padding'), chipsNow && chipsNow.border === '0px' && chipsNow.padL <= 6.5 && chipsNow.alpha <= 0.1, JSON.stringify(chipsNow));
+  await page.click('#composer-input'); await wait(page, () => document.getElementById('composer').classList.contains('is-expanded')); await sleep(250);
+  const rounds = await page.evaluate(() => ['.m-chatbar__tools .m-iconbtn', '.m-chatbar__back', '#composer .lime-composer__tool--emoji', '#composer .lime-composer__tool--aa', '#composer .lime-composer__tool--list', '#composer .lime-composer__tool--align', '#composer [data-attach-btn]', '#composer .lime-voice-split__mic', '#composer .lime-composer__return'].map((q) => { const e = [...document.querySelectorAll(q)].find((x) => x.getBoundingClientRect().width > 0); if (!e) return [q, 'missing']; const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return [q, Math.round(r.width * 10) / 10, Math.round(r.height * 10) / 10, cs.borderTopLeftRadius]; }));
+  check(tag('LIME-86 every round control is a true circle (equal width and height, 50% radius)'), rounds.every((r) => r[1] !== 'missing' && Math.abs(r[1] - r[2]) < 0.6 && (r[3] === '50%' || parseFloat(r[3]) >= r[1] / 2 - 0.5)), JSON.stringify(rounds));
+  await page.evaluate(() => document.getElementById('composer-input').blur()); await sleep(250);
+  // 18: your own bubble is the plus button's green in every tone and in dark: distinct from the neutral bubble and the canvas, and its link and code stay readable
+  const tones = await page.evaluate(async () => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 1; const cx = cv.getContext('2d', { willReadFrequently: true });
+    const px = (css) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = css; cx.fillRect(0, 0, 1, 1); return [...cx.getImageData(0, 0, 1, 1).data].slice(0, 3).map((v) => v / 255); };
+    const lin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    const lab = ([r, g, b]) => { [r, g, b] = [r, g, b].map(lin); const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s2 = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b); return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s2, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s2, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s2]; };
+    const dE = (a, b) => Math.round(Math.hypot(...lab(a).map((v, i) => v - lab(b)[i])) * 1000) / 10;
+    const Lum = (c) => { const [r, g, b] = c.map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const cr = (a, b) => { const x = Lum(a), y = Lum(b); return Math.round((Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) * 100) / 100; };
+    const sent = document.querySelector('#thread-messages .lime-message--sent .lime-message__content'); const recv = document.querySelector('#thread-messages .lime-message--received .lime-message__content');
+    const keep = sent.querySelector('.lime-message__text').innerHTML; sent.querySelector('.lime-message__text').innerHTML = 'Mine <a href="https://example.com">a link</a> and <code>code()</code>';
+    const out = [];
+    for (const theme of ['light', 'dark']) for (const tone of ['warm', 'cool-gray', 'warm-cream', 'blue-tint', 'pure-white', 'lemon', 'sage', 'lilac']) {
+      LimeAppearance.applyCanvas(tone); LimeAppearance.applyTheme(theme); await new Promise((r) => setTimeout(r, 90));
+      const fab = px(getComputedStyle(document.querySelector('.m-fab'), '::before').backgroundColor); const bg = px(getComputedStyle(sent).backgroundColor);
+      const link = sent.querySelector('a'); const code = sent.querySelector('code');
+      out.push({ theme, tone, same: fab.join() === bg.join(), vsCanvas: dE(bg, px(getComputedStyle(document.body).backgroundColor)), vsNeutral: dE(bg, px(getComputedStyle(recv).backgroundColor)), link: cr(px(getComputedStyle(link).color), bg), code: cr(px(getComputedStyle(code).color), bg) });
+    }
+    LimeAppearance.applyCanvas('warm'); LimeAppearance.applyTheme('light'); sent.querySelector('.lime-message__text').innerHTML = keep;
+    return out;
+  });
+  const lightMin = Math.min(...tones.filter((t) => t.theme === 'light').map((t) => Math.min(t.vsCanvas, t.vsNeutral))); const darkMin = Math.min(...tones.filter((t) => t.theme === 'dark').map((t) => Math.min(t.vsCanvas, t.vsNeutral)));
+  check(tag('LIME-86 your bubble is the plus button\'s green (the same token) in all 8 tones and dark; the smallest OKLab distance from the canvas or the neutral bubble is ' + lightMin + ' (light) and ' + darkMin + ' (dark: flagged, it is low); links and code stay at 4.5:1 or better'), tones.every((t) => t.same && t.link >= 4.5 && t.code >= 4.5) && lightMin >= 4 && darkMin >= 1.5, JSON.stringify(tones.filter((t) => t.vsCanvas < 6 || t.vsNeutral < 6)));
   await page.evaluate(() => document.getElementById('composer-input').blur()); await sleep(300);
   await page.click('#m-chat-back');
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'contacts');
@@ -719,16 +822,20 @@ async function runOne(check, browser, name, server, S, size) {
   });
   const oli = chat.info.filter((m) => !m.sent), mine = chat.info.filter((m) => m.sent);
   check(tag('a run: only the first of Oli\'s three messages shows the avatar and the name; the next two keep the space but show neither'), oli.length === 3 && oli[0].first && oli[0].avatarVis === 'visible' && oli[0].metaDisplay !== 'none' && oli.slice(1).every((m) => m.cont && m.avatarVis === 'hidden' && m.metaDisplay === 'none'), JSON.stringify(oli.map((m) => [m.first, m.avatarVis, m.metaDisplay])));
-  check(tag('your own messages are on the right, in light green (#a3e18a) with ink text, and with no avatar or name'), mine.length === 2 && mine.every((m) => m.bg === '163,225,138' && m.ink.split(',').reduce((x, y) => x + Number(y), 0) < 120 && m.avatarDisplay === 'none' && m.metaDisplay === 'none' && chat.vw - m.right <= 16), JSON.stringify(mine.map((m) => [m.bg, m.ink, m.avatarDisplay, Math.round(chat.vw - m.right)])));
-  check(tag('others\' messages are on the left in the neutral bubble (not green), clear of the avatar'), oli.every((m) => m.bg !== '163,225,138' && m.left >= 44 && m.left < chat.vw / 2), JSON.stringify(oli.map((m) => [m.bg, Math.round(m.left)])));
+  const fabRgb = await page.evaluate(() => getComputedStyle(document.querySelector('.m-fab'), '::before').backgroundColor.match(/\d+/g).slice(0, 3).join(','));
+  check(tag('your own messages are on the right, in the plus button green (' + fabRgb + ', --lime-primary-bg) with ink text, and with no avatar or name'), mine.length === 2 && mine.every((m) => m.bg === fabRgb && m.ink.split(',').reduce((x, y) => x + Number(y), 0) < 120 && m.avatarDisplay === 'none' && m.metaDisplay === 'none' && chat.vw - m.right <= 16), JSON.stringify(mine.map((m) => [m.bg, m.ink, m.avatarDisplay, Math.round(chat.vw - m.right)])));
+  check(tag('others\' messages are on the left in the neutral bubble (not green), clear of the avatar'), oli.every((m) => m.bg !== fabRgb && m.left >= 44 && m.left < chat.vw / 2), JSON.stringify(oli.map((m) => [m.bg, Math.round(m.left)])));
   check(tag('no bubble is wider than about 78% of the thread'), chat.info.every((m) => m.width <= chat.tw * 0.78 + 1), JSON.stringify(chat.info.map((m) => Math.round(m.width / chat.tw * 100))));
   check(tag('nothing overflows the screen: the long link wraps, the thread does not scroll sideways'), chat.info.every((m) => m.overflows === 0) && chat.sw <= chat.tw && chat.docSw <= chat.vw, JSON.stringify({ sw: chat.sw, tw: chat.tw, docSw: chat.docSw, vw: chat.vw }));
-  check(tag('under every bubble: the reaction row with add-reaction, and a time written in lowercase'), chat.info.every((m) => m.footVisible && m.addVisible && /^\d{1,2}:\d{2} (am|pm)$|^Sent \d{1,2}:\d{2} (am|pm) \u00b7 delivered \d{1,2}:\d{2} (am|pm)$/.test(m.time)), JSON.stringify(chat.info.map((m) => m.time)));
+  check(tag('under every bubble: the row with a time written in lowercase (add-reaction only where there are reactions)'), chat.info.every((m) => m.footVisible && /^\d{1,2}:\d{2} (am|pm)$|^Sent \d{1,2}:\d{2} (am|pm) \u00b7 delivered \d{1,2}:\d{2} (am|pm)$/.test(m.time)), JSON.stringify(chat.info.map((m) => m.time)));
   check(tag('your messages carry a receipt slot (a check); others\' do not'), mine.every((m) => m.receipt === true) && oli.every((m) => m.receipt === null));
   // reactions: Oli's thumbs-up on Mia's "Thanks!" shows as a chip; the add-reaction button opens the picker and adds one
   check(tag('Oli\'s reaction shows as a chip under Mia\'s message'), await page.evaluate(() => { const m = [...document.querySelectorAll('#thread-messages .lime-message--sent')][0]; return /1/.test(m.querySelector('.lime-message__reactions').textContent) && m.querySelector('.lime-message__reactions').textContent.includes('\u{1F44D}'); }));
   // the add-reaction button opens the same glass menu as press-and-hold, right beside the button (and never the old floating strip)
   await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+  // add-reaction only shows once a message has a reaction, so give the first received message one
+  await page.evaluate(() => LimeStore.toggleReaction(document.querySelector('#thread-messages .lime-message--received').dataset.messageId, '\u{1F44D}'));
+  await wait(page, () => { const m = document.querySelector('#thread-messages .lime-message--received'); return m.querySelector('.lime-message__reactions').children.length > 0 && getComputedStyle(m.querySelector('.lime-react-add')).display !== 'none'; });
   await page.evaluate(() => [...document.querySelectorAll('#thread-messages .lime-message--received .lime-react-add')][0].click());
   await wait(page, () => !!document.querySelector('.m-msg-menu.is-open'));
   await sleep(250);
@@ -737,6 +844,9 @@ async function runOne(check, browser, name, server, S, size) {
   await page.evaluate(() => document.querySelector('.m-msg-menu [data-emoji="❤️"]').click());
   await wait(page, () => { const m = document.querySelector('#thread-messages .lime-message--received'); return m.querySelector('.lime-message__reactions').textContent.includes('❤'); });
   check(tag('the chosen emoji from that menu appears as a chip'), !(await page.evaluate(() => !!document.querySelector('.m-msg-menu.is-open'))));
+  // LIME-86 item 9: add-reaction only on a message that already has reactions, then right after the chips
+  const addBtn = await page.evaluate(() => { const L = (e) => e.getBoundingClientRect(); const vis = (e) => getComputedStyle(e).display !== 'none' && L(e).width > 0; const all = [...document.querySelectorAll('#thread-messages .lime-message')]; const withR = all.filter((m) => m.querySelector('.lime-reaction')); const without = all.filter((m) => !m.querySelector('.lime-reaction')); const m = withR[0]; return { withCount: withR.length, withoutCount: without.length, hiddenWithout: without.every((x) => !vis(x.querySelector('.lime-react-add'))), shownWith: m ? vis(m.querySelector('.lime-react-add')) : null, afterChips: m ? L(m.querySelector('.lime-react-add')).left >= L([...m.querySelectorAll('.lime-reaction')].pop()).right - 1 : null }; });
+  check(tag('add-reaction is hidden on messages without reactions (' + addBtn.withoutCount + ') and shows after the chips on one with a reaction'), addBtn.withCount >= 1 && addBtn.withoutCount >= 1 && addBtn.hiddenWithout && addBtn.shownWith && addBtn.afterChips, JSON.stringify(addBtn));
   // "+" grows the menu with more emoji
   await page.evaluate(() => [...document.querySelectorAll('#thread-messages .lime-message--received .lime-react-add')][0].click());
   await wait(page, () => !!document.querySelector('.m-msg-menu.is-open'));
@@ -913,8 +1023,8 @@ async function runOne(check, browser, name, server, S, size) {
       return { faces: tiles.length - 1, more: more && more.textContent, members: LimeStore.getMembers(document.querySelector('.lime-contact--active').dataset.conversationId).length, sub: sub.textContent, oneLine: R(t).height < 24 && R(sub).height < 24, truncated: t.scrollWidth > t.clientWidth, within: center.bottom <= bar.bottom && tools.bottom <= bar.bottom && center.right <= tools.left + 1, doc: document.documentElement.scrollWidth, vw: innerWidth };
     });
     check(tag('a big group\'s header (design 02): the list\'s avatar stack with "' + hdr.more + '", the long name cut with an ellipsis, "' + hdr.sub + '" under it, all beside the icon pill, nothing overflowing'), hdr.faces === 3 && hdr.more === '+' + (hdr.members - 1 - 3) && hdr.sub === hdr.members + ' members' && hdr.oneLine && hdr.truncated && hdr.within && hdr.doc <= hdr.vw, JSON.stringify(hdr));
-    const stroke = await big.evaluate(() => ['#m-chat-search', '#m-chat-call', '#m-chat-more'].map((id) => { const m = getComputedStyle(document.querySelector(id + ' .m-icon')); const u = decodeURIComponent((m.webkitMaskImage || m.maskImage)); return /stroke-width='1\.7'/.test(u); }));
-    check(tag('the three header icons are drawn in one set with the same 1.7 stroke'), stroke.every(Boolean), JSON.stringify(stroke));
+    const stroke = await big.evaluate(() => ['#m-chat-search', '#m-chat-call', '#m-chat-more'].map((id) => { const m = getComputedStyle(document.querySelector(id + ' .m-icon')); const u = decodeURIComponent((m.webkitMaskImage || m.maskImage)); return id === '#m-chat-more' ? !/<circle/.test(u) : /stroke-width='1\.8'/.test(u); }));
+    check(tag('the three header icons are drawn in one set (the same 1.8 stroke) and "more" is plain dots with no circle'), stroke.every(Boolean), JSON.stringify(stroke));
     const addColor = await big.evaluate(() => { const b = document.querySelector('.lime-react-add'); const t = document.createElement('i'); t.style.color = 'var(--soil-text-muted)'; document.body.appendChild(t); const c = getComputedStyle(t).color; t.remove(); return { btn: getComputedStyle(b).color, token: c, op: parseFloat(getComputedStyle(b).opacity) }; });
     check(tag('the add-reaction icon is the muted secondary text colour'), addColor.btn === addColor.token && addColor.op < 1, JSON.stringify(addColor));
     await big.close();
@@ -980,11 +1090,23 @@ async function landscape(check, browser, server, S) {
   check(tag('the phone layout shows (dock, Messages header; no drawer, tabs or breadcrumb row)'), (await vis('#m-dock')) && (await vis('#m-logo-btn')) && !(await vis('.seed-layout__left')) && !(await vis('#scope-tablist')) && !(await vis('.lime-center-top')));
   const geo = await page.evaluate(() => { const l = document.getElementById('list-col').getBoundingClientRect(); const d = document.getElementById('m-dock').getBoundingClientRect(); return { listW: l.width, vw: innerWidth, dockL: d.left, dockR: d.right, dockB: d.bottom, vh: innerHeight, doc: document.documentElement.scrollWidth }; });
   check(tag('the list is full width, the dock is inside the screen, nothing scrolls sideways'), geo.listW >= geo.vw - 1 && geo.dockL >= 8 && geo.dockR <= geo.vw - 8 && geo.dockB <= geo.vh && geo.doc <= geo.vw, JSON.stringify(geo));
+  // LIME-86 item 4: with a notch on each side (47px, the real iPhone landscape inset) nothing touches or hides behind it
+  const cdp86 = await page.createCDPSession();
+  let insetsOk = true; try { await cdp86.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, left: 47, right: 47, bottom: 21 } }); } catch (e) { insetsOk = false; }
+  await sleep(300);
+  if (insetsOk) {
+    const lm = await page.evaluate(() => { const R = (e) => e.getBoundingClientRect(); const row = document.querySelector('#m-list .lime-contact'); const txt = row.querySelector('.lime-contact__name'); return { logoL: Math.round(R(document.getElementById('m-logo-btn')).left), pillR: Math.round(innerWidth - R(document.querySelector('.m-head-pill')).right), rowText: Math.round(R(txt).left), fabR: Math.round(innerWidth - R(document.getElementById('m-fab')).right), vw: innerWidth }; });
+    check(tag('LIME-86 landscape with a 47px notch inset: the logo, the avatar pill, the rows and the plus button all clear it (' + JSON.stringify(lm) + ')'), lm.logoL >= 47 && lm.pillR >= 47 && lm.rowText >= 47 + 10 && lm.fabR >= 47, JSON.stringify(lm));
+  }
   await page.click(`#m-list [data-conversation-id="${S.dm}"]`); // the first row; lower ones sit under the dock until the list is scrolled
   await wait(page, () => document.getElementById('layout').dataset.mobileView === 'thread');
   await sleep(400);
   const chat = await page.evaluate(() => { const b = document.getElementById('m-chatbar').getBoundingClientRect(); const t = document.getElementById('thread-messages').getBoundingClientRect(); const c = document.getElementById('composer').getBoundingClientRect(); return { barW: b.width, vw: innerWidth, threadW: t.width, composerR: c.right, composerB: c.bottom, vh: innerHeight, doc: document.documentElement.scrollWidth }; });
   check(tag('the chat is full width with its bar and composer inside the screen'), (await vis('#m-chatbar')) && !(await vis('#m-dock')) && chat.barW >= chat.vw - 1 && chat.threadW >= chat.vw - 1 && chat.composerR <= chat.vw && chat.composerB <= chat.vh && chat.doc <= chat.vw, JSON.stringify(chat));
+  if (insetsOk) {
+    const lc = await page.evaluate(() => { const R = (e) => e.getBoundingClientRect(); const mb = R(document.querySelector('#thread-messages .lime-message__content')); const mel = document.getElementById('thread-messages'); return { back: Math.round(R(document.getElementById('m-chat-back')).left), toolsR: Math.round(innerWidth - R(document.querySelector('.m-chatbar__tools')).right), padL: parseFloat(getComputedStyle(mel).paddingLeft), padR: parseFloat(getComputedStyle(mel).paddingRight), compL: Math.round(R(document.getElementById('composer')).left), compR: Math.round(innerWidth - R(document.getElementById('composer')).right), bub: [Math.round(mb.left), Math.round(innerWidth - mb.right)] }; });
+    check(tag('LIME-86 landscape chat with a 47px notch inset: the header, the messages and the composer all clear it (' + JSON.stringify(lc) + ')'), lc.back >= 47 && lc.toolsR >= 47 && lc.padL >= 47 && lc.padR >= 47 && lc.compL >= 47 && lc.compR >= 47 && lc.bub[0] >= 47 && lc.bub[1] >= 47, JSON.stringify(lc));
+  }
   await page.screenshot({ path: process.env.LIME_SHOTS ? process.env.LIME_SHOTS + 'landscape-chat.png' : '/dev/null' });
   check(tag('zero console or page errors'), errors.length === 0, errors.slice(0, 2).join(' | '));
   await page.close();

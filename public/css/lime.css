@@ -7767,8 +7767,8 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
 
 /* ═══════════════════════════════════════════════════════
    LIME-79: THE PHONE CHAT (<= 767px): bubbles, the row under each bubble, the composer
-   Others on the left with an avatar and name on the first message of a run, in a neutral bubble; your own on the right in light
-   green (--seed-lime-300) with ink text. Under each bubble: reaction chips, add-reaction and reply buttons, and at the right the
+   Others on the left with an avatar and name on the first message of a run, in a neutral bubble; your own on the right in the
+   plus button's green (--lime-primary-bg since LIME-86; it was --seed-lime-300) with ink text. Under each bubble: reaction chips, add-reaction and reply buttons, and at the right the
    time with a receipt slot. The composer is one pill until its text field is focused, then grows into a text area above a toolbar.
 ═══════════════════════════════════════════════════════ */
 
@@ -7873,13 +7873,13 @@ div.lime-composer__input::-webkit-scrollbar-thumb {
     padding: 0;
   }
   .lime-message--sent .lime-message__content:not(.lime-message__content--media):not(.lime-message__content--bare) {
-    background: var(--seed-lime-300);
-    color: var(--seed-soil-900);
+    background: var(--lime-primary-bg); /* LIME-86: the "+" button's green (the same token, so they never drift) */
+    color: var(--lime-primary-ink);
   }
   .lime-message--sent .lime-message__content .lime-message__text,
   .lime-message--sent .lime-message__content .lime-message__caption,
   .lime-message--sent .lime-message__content .lime-message__text * {
-    color: var(--seed-soil-900);
+    color: var(--lime-primary-ink);
   }
   .lime-message__text,
   .lime-message__caption {
@@ -10244,5 +10244,447 @@ html {
   }
   .lime-settings__pane[data-mode="about"] .lime-settings__profile-top {
     display: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   LIME-86: QA ROUND 3 ON LIME-82 TO 84 (phones: <= 767px and touch landscape; desktop is untouched)
+   Toasts at the top right, a fixed shell that never scrolls as a page, no sideways scroll in the chat, landscape margins, thread and
+   details headers like the chat's, plain three dots, one stroke weight (header and dock), a slimmer "..." menu, hidden add-reaction,
+   one tick, lighter chips, a compact reply summary, the composer toolbar (Aa, list and align menus; the selection toolbar), true
+   circles for every round control, and your own bubbles in the "+" button's green.
+═══════════════════════════════════════════════════════ */
+
+/* The glyphs the header and dock share: drawn on one 24 grid at one stroke (1.8), so the same font-size gives the same line weight. */
+.m-icon--h-more {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M5.6 12h.01M12 12h.01M18.4 12h.01'/%3E%3C/svg%3E");
+}
+.m-icon--h-search {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.6' cy='10.6' r='7.4'/%3E%3Cpath d='M16.2 16.2L21.2 21.2'/%3E%3C/svg%3E");
+}
+.m-icon--h-phone {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5.2 3.2h3.4l1.7 4.4-2.3 1.4a12.4 12.4 0 0 0 5.6 5.6l1.4-2.3 4.4 1.7v3.4a1.7 1.7 0 0 1-1.7 1.7C10.4 19.1 4.9 13.6 3.5 4.9a1.7 1.7 0 0 1 1.7-1.7Z'/%3E%3C/svg%3E");
+}
+.m-icon--book {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 6.2C10.4 4.9 8 4.2 3.5 4.3v13.4c4.5-.1 6.9.6 8.5 1.9 1.6-1.3 4-2 8.5-1.9V4.3c-4.5-.1-6.9.6-8.5 1.9ZM12 6.2v13.4'/%3E%3C/svg%3E");
+}
+.m-icon--chat {
+  --m-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.4 12a7.6 7.6 0 1 1 3.2 6.2l-4 1.4 1.3-3.9A7.6 7.6 0 0 1 4.4 12Z'/%3E%3C/svg%3E");
+}
+
+/* Phone-only controls are hidden everywhere else. */
+.lime-composer__tool--list,
+.lime-composer__tool--align,
+.lime-composer__tool--done {
+  display: none;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  :root {
+    --m-pad-l: max(12px, env(safe-area-inset-left));
+    --m-pad-r: max(12px, env(safe-area-inset-right));
+    --m-top: calc(env(safe-area-inset-top) + 10px);
+  }
+
+  /* ── 3. a fixed shell: the page never scrolls, only the list or the messages do; nothing chains to the page and nothing rubber-bands it ── */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+  body {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    overflow: hidden;
+  }
+  #layout.seed-layout {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .lime-list-col__scroll,
+  .lime-messages,
+  .lime-replies-panel__list,
+  .lime-members-panel__list,
+  .lime-profile__scroll,
+  .lime-settings__body,
+  .lime-settings__pane {
+    overscroll-behavior: contain;
+  }
+  /* the floating headers follow the visible area (iOS pans it while the keyboard is open); app.js keeps --vv-top current */
+  .m-chatbar,
+  .m-messages__head {
+    transform: translateY(var(--vv-top, 0px));
+  }
+
+  /* ── 2. no sideways scrolling in the chat: only vertical pans; code blocks keep their own horizontal scroll ── */
+  .lime-messages,
+  .lime-replies-panel__list,
+  .lime-list-col__scroll {
+    overflow-x: hidden;
+    touch-action: pan-y;
+  }
+  .lime-messages pre,
+  .lime-replies-panel__list pre {
+    touch-action: pan-x pan-y;
+  }
+  .lime-message,
+  .lime-message__stack {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .lime-message__col {
+    min-width: 0;
+  }
+
+  /* ── 4. margins that clear the notch and the rounded corners in landscape (portrait: 12px as before) ── */
+  .lime-messages,
+  .lime-replies-panel__quote.is-bubbles,
+  .lime-replies-panel__list.is-bubbles {
+    padding-left: var(--m-pad-l);
+    padding-right: var(--m-pad-r);
+  }
+  .m-messages__head,
+  .m-messages__tools {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+  .m-list .lime-contact {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+  #layout[data-mobile-view="thread"] .m-chatbar {
+    padding-left: var(--m-pad-l);
+    padding-right: var(--m-pad-r);
+  }
+  :is(#composer.lime-composer, #replies-composer) {
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+  }
+  #replies-composer#replies-composer {
+    margin-left: max(10px, env(safe-area-inset-left));
+    margin-right: max(10px, env(safe-area-inset-right));
+  }
+  .m-fab {
+    right: max(16px, env(safe-area-inset-right));
+  }
+
+  /* ── 1. toasts: the top right, right-aligned under the avatar pill (or the chat header's tools), glass, about 75% wide. The browser's
+        own "Save username?" prompt takes the bottom, so a toast is never there. ── */
+  #toast-container.seed-toast-container,
+  body:is([data-m-view="thread"], [data-m-view="panel"]) #toast-container.seed-toast-container,
+  body:is([data-m-view="thread"], [data-m-view="panel"]):has(.lime-composer.is-expanded, #replies-composer.is-expanded) #toast-container.seed-toast-container {
+    top: calc(var(--m-top) + 52px + 8px);
+    bottom: auto;
+    left: auto;
+    right: max(16px, env(safe-area-inset-right));
+    transform: none;
+    align-items: flex-end;
+  }
+  body:is([data-m-view="thread"], [data-m-view="panel"]) #toast-container.seed-toast-container {
+    right: var(--m-pad-r);
+  }
+  #toast-container .lime-toast.seed-toast--exiting { transform: translateY(-8px); }
+
+  /* ── 5. thread, members and person details: the chat's header: a round glass "<", a glass title pill, the fade under it ── */
+  #right-panel::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: calc(72px + env(safe-area-inset-top) + 14px);
+    z-index: 5;
+    pointer-events: none;
+    background: linear-gradient(to bottom, color-mix(in oklab, var(--soil-bg-canvas) 86%, transparent) 0, color-mix(in oklab, var(--soil-bg-canvas) 70%, transparent) 55%, transparent 100%);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 52%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 52%, transparent 100%);
+  }
+  .lime-panel-close,
+  .lime-profile__back {
+    position: absolute;
+    z-index: 7;
+    left: var(--m-pad-l);
+    top: var(--m-top);
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border-radius: 50%;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--soil-text);
+    border: 0.5px solid var(--m-glass-line);
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.09), 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lime-profile__back[hidden] {
+    display: none;
+  }
+  .lime-panel-close:active,
+  .lime-profile__back:active {
+    background: color-mix(in oklab, var(--m-glass-bg), var(--soil-text) 8%);
+  }
+  .lime-panel-close .dew,
+  .lime-profile__back .dew,
+  .m-chatbar__back .dew {
+    font-size: 21.6px; /* a dew icon's box is 1.5em and its line 1.5 of 24: this makes the line the same 2.0px as the header icons (1.8 of 24 at 27px) */
+  }
+  .lime-replies-panel__header,
+  .lime-members-panel__header {
+    position: absolute;
+    z-index: 6;
+    top: var(--m-top);
+    left: calc(var(--m-pad-l) + 52px + 10px);
+    right: var(--m-pad-r);
+    height: 52px;
+    padding: 0;
+    border: 0;
+    pointer-events: none;
+  }
+  .lime-replies-panel__title,
+  .lime-members-panel__title {
+    pointer-events: auto;
+    height: 52px;
+    box-sizing: border-box;
+    padding: 0 24px;
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    border-radius: 26px;
+    border: 0.5px solid var(--m-glass-line);
+    background: var(--m-glass-bg);
+    -webkit-backdrop-filter: var(--m-glass-blur);
+    backdrop-filter: var(--m-glass-blur);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.09), 0 1px 0 rgba(255, 255, 255, 0.35) inset;
+    font-size: 17px;
+    font-weight: 600;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .lime-replies-panel {
+    padding-top: calc(72px + env(safe-area-inset-top) + 4px);
+  }
+  .lime-members-panel__list {
+    padding-top: calc(72px + env(safe-area-inset-top) + 8px);
+  }
+  .lime-profile__scroll {
+    padding-top: calc(72px + env(safe-area-inset-top) + 4px);
+  }
+
+  /* ── 6 and 7. the chat header's three icons: plain dots (no ring), one size (27px box, about a 22px glyph), one 2px line ── */
+  .m-chatbar__tools .m-icon {
+    font-size: 27px;
+  }
+  .m-chatbar__tools {
+    padding: 0 1px;
+  }
+  .m-chatbar__tools .m-iconbtn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+  }
+  .m-chatbar__center {
+    padding: 0 8px 0 6px;
+    gap: 6px;
+  }
+
+  /* ── 8. the "..." menu: as wide as its content, no wider than about 260px; long reasons wrap inside ── */
+  #conversation-menu {
+    min-width: 0;
+    width: max-content;
+    max-width: min(260px, calc(100vw - 24px));
+  }
+  #conversation-menu .lime-menu__item {
+    white-space: normal;
+  }
+
+  /* ── 9. add-reaction shows only on a message that already has reactions (then it follows the chips); new ones come from press and hold ── */
+  .lime-message__reactions:empty + .lime-foot-btn {
+    display: none;
+  }
+
+  /* ── 10. receipts: one tick once the server has it; the pair (read, LIME-81) is drawn with a gap ── */
+  .lime-ticks {
+    width: 17px;
+    height: 15px;
+  }
+  .lime-ticks--read {
+    width: 26px;
+  }
+
+  /* ── 11. reaction chips: a very faint fill, no outline, tighter ── */
+  .lime-message__foot .lime-reaction {
+    background: color-mix(in oklab, var(--soil-text) 3.5%, transparent);
+    border: 0;
+    padding: 1px 6px;
+  }
+  .lime-message__foot .lime-reaction--active {
+    background: color-mix(in oklab, var(--soil-text) 8%, transparent);
+    border: 0;
+  }
+
+  /* ── 12. the reply summary: on a bubble too narrow for the whole line it shows just "N replies" (app.js adds .is-compact), and it
+        sits at the bubble's own edge (right for yours) so it can never push the chat wider than the screen ── */
+  .lime-message__footer {
+    display: flex;
+    justify-content: flex-start;
+  }
+  .lime-message--sent .lime-message__footer {
+    justify-content: flex-end;
+  }
+  .lime-message__footer .lime-message__replies {
+    flex: none;
+    max-width: none;
+    overflow: visible;
+  }
+  .lime-message__replies.is-compact .lime-replies__time {
+    display: none;
+  }
+
+  /* ── 16. every round hover or press state is a true circle ── */
+  .m-iconbtn,
+  .m-pill-btn,
+  .lime-foot-btn,
+  :is(#composer, #replies-composer) [data-attach-btn],
+  :is(#composer, #replies-composer) .lime-composer__tool,
+  :is(#composer, #replies-composer) .lime-voice-split__mic,
+  :is(#composer, #replies-composer) .lime-composer__return {
+    border-radius: 50%;
+    aspect-ratio: 1;
+  }
+
+  /* ── 17. the dock's three icons are drawn on one grid at one stroke (1.8) and sized alike, so the line weight is identical ── */
+  .m-dock .m-dock__iconwrap .m-icon { font-size: 30px; }
+
+  /* ── 13 and 14. the composer toolbar, left to right: + (the grid's first column), emoji, Aa, list, align, link, code; at the right
+        mic and send. Every tool is a 32px circle so the row fits at 360 and 390. ── */
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="unorderedList"],
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="orderedList"] {
+    display: none;
+  }
+  :is(#composer, #replies-composer) .lime-composer__tool--list,
+  :is(#composer, #replies-composer) .lime-composer__tool--align {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--soil-text);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :is(#composer, #replies-composer) .lime-composer__tool--list { order: 3; }
+  :is(#composer, #replies-composer) .lime-composer__tool--align { order: 4; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="link"] { order: 5; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd="code"] { order: 6; }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > .lime-composer__tool,
+  :is(#composer, #replies-composer) .lime-composer__toolbar > .lime-composer__tool--aa,
+  :is(#composer, #replies-composer) .lime-composer__toolbar > .lime-composer__tool--emoji {
+    width: 32px;
+    height: 32px;
+    min-width: 0;
+    flex: none;
+  }
+  :is(#composer, #replies-composer) .lime-composer__tool--list i[class^="icon-"] {
+    font-size: 19px;
+  }
+  :is(#composer, #replies-composer) .lime-composer__tool--align .m-icon {
+    font-size: 22px;
+  }
+  :is(#composer, #replies-composer) .lime-composer__tool--list:active,
+  :is(#composer, #replies-composer) .lime-composer__tool--align:active,
+  :is(#composer, #replies-composer) .lime-composer__tool--list[aria-expanded="true"],
+  :is(#composer, #replies-composer) .lime-composer__tool--align[aria-expanded="true"] {
+    background: var(--lime-layer-hover);
+  }
+  :is(#composer, #replies-composer) .lime-composer__toolbar > [data-cmd][aria-pressed="true"] {
+    border-radius: 50%;
+  }
+  :is(#composer, #replies-composer).is-expanded [data-attach-btn] { width: 36px; height: 36px; }
+  :is(#composer, #replies-composer) .lime-voice-split,
+  :is(#composer, #replies-composer) .lime-voice-split__mic,
+  :is(#composer, #replies-composer).is-expanded .lime-composer__return,
+  :is(#composer, #replies-composer) .lime-composer__return {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+  }
+  /* the send arrow at the standard inline icon size */
+  .lime-composer__return::before {
+    width: 20px;
+    height: 20px;
+  }
+  .lime-format-menu {
+    min-width: 0;
+    width: max-content;
+  }
+
+  /* ── 15. text selected in the composer: the toolbar row becomes B I U S and Done (no popup, so the system's Cut / Copy / Paste bubble
+        never stacks with ours); deselect and the usual tools come back ── */
+  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > :is(.lime-composer__tool--emoji, .lime-composer__tool--aa, .lime-composer__tool--list, .lime-composer__tool--align, [data-cmd="link"], [data-cmd="code"]) {
+    display: none;
+  }
+  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > :is([data-cmd="bold"], [data-cmd="italic"], [data-cmd="underline"], [data-cmd="strikethrough"]) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--soil-text);
+    font: inherit;
+    font-size: 17px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > [data-cmd="bold"] { order: 1; }
+  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > [data-cmd="italic"] { order: 2; }
+  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > [data-cmd="underline"] { order: 3; }
+  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > [data-cmd="strikethrough"] { order: 4; }
+  :is(#composer, #replies-composer).is-selecting .lime-composer__toolbar > .lime-composer__tool--done {
+    display: inline-flex;
+    order: 5;
+    width: auto;
+    height: 32px;
+    padding: 0 14px;
+    margin-left: 6px;
+    border-radius: 16px;
+    aspect-ratio: auto;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: var(--lime-primary-bg);
+    color: var(--lime-primary-ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+}
+
+/* the pill grows into the card in one step; the text and toolbar ease in so it reads as one movement instead of a jump */
+@keyframes lime-composer-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (max-width: 767px) and (prefers-reduced-motion: no-preference), (pointer: coarse) and (max-height: 500px) and (prefers-reduced-motion: no-preference) {
+  :is(#composer, #replies-composer).is-expanded div.lime-composer__input,
+  :is(#composer, #replies-composer).is-expanded .lime-composer__toolbar {
+    animation: lime-composer-in 140ms ease-out;
+  }
+}
+
+@media (max-width: 767px) and (orientation: landscape), (pointer: coarse) and (max-height: 500px) {
+  .lime-messages {
+    padding-left: max(24px, env(safe-area-inset-left));
+    padding-right: max(24px, env(safe-area-inset-right));
   }
 }
