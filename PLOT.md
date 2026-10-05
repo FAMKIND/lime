@@ -378,6 +378,98 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ## Drafted briefs
 
+> **Shared context for LIME-82 to 84 (mobile v2).**
+> - **The source of truth is the user's PNGs in `docs/design/mobile/` (01–06). Open and compare against them; screenshot your result next to each.**
+> - **Commit the PNGs in LIME-82** (`.DS_Store` stays ignored).
+> - Everything floating (header buttons and pills, menus, the composer, the dock, toasts, the Settings sheet) uses **Lime's liquid-glass style** (translucent, blurred, a hairline outline, a soft shadow, a large radius; solid when the system asks for reduced transparency).
+> - ≤ 767px (and touch landscape) only; **desktop unchanged.**
+> - **Tiered verification;** push each brief; stop after LIME-84.
+> - **No personal data in commits** (the design PNGs use a fake phone number).
+
+### LIME-82 → `tend` (next): the v2 Messages screen and chat header, glass toasts, the photo viewer on the back stack
+1. **Messages (`01-messages.png`):**
+   - **top left:** the **logo in a round glass button** (it scrolls the list to the top);
+   - **top right:** a **glass pill with search and the user's avatar** (search opens a search field over the list; **the avatar opens Settings**, LIME-84);
+   - **filter chips "All" and "Unread"** plus the **filter icon** (a glass menu: Pinned, Groups, Archived);
+   - **no "Messages" title** (keep an accessible heading);
+   - rows as designed: **times in ink** (not green), the green unread badges, the pin icon, the pastel avatars, group stacks;
+   - a **floating lime-shaped pale-lime "+" (FAB) at the bottom right** above the dock (New message);
+   - **the dock has 3 items: link · jam (book icon; use dew's closest book or notebook glyph, or a hand-drawn SVG in dew's style) · call.** **Account leaves the dock.**
+2. **The chat header (`02-chat.png`):** floating glass at the top, over the messages:
+   - **"‹" in a round glass button;**
+   - a **glass pill with the 2-avatar stack + "+N", the truncated name, and "N members"** (a DM shows the person and their status). Tapping it opens **Members**;
+   - **at the right, one glass pill with search, call and "⋯"** (search arrives in LIME-80; call shows the toast);
+   - the messages scroll **under** the floating controls with the fade;
+   - the "‹ 13" unread count is dropped in this design (only "‹"). **Confirm by matching the PNG.**
+3. **Toasts on phones:** **liquid glass**, about **75% of the screen width**, centred, **just above the dock** (or the composer in a chat), never covering the header or list. **Confirm the position with the user at the gate** (they said "that position works").
+4. **The photo wall and viewer join the back stack** (LIME-79-fix6's gap): back closes the viewer, then the wall, then returns to the chat.
+
+**Gate:** Messages and the chat top look like your designs 01 and 02, side by side with the screenshots; toasts are glass, not full width, and sit above the dock.
+
+**Record:** add a `## LIME-82` entry to `TEND.md`. Commit: `feat(mobile): v2 Messages and chat header, glass toasts, viewer back stack (+ design PNGs)`, trailer `Brief: LIME-82`, plus the attribution trailer. Push.
+
+### LIME-83 → `tend` (after 82): the v2 composer and the "Aa" formatting menu
+1. **The composer (`02`, `03`):**
+   - **collapsed:** a glass pill, "+ · Send message… · mic";
+   - **expanded on focus:** a glass card with the text area, then a toolbar: **left: +, emoji, Aa, bulleted list, numbered list, link, code**; **right: mic, ↵** (↵ disabled until text);
+   - the same in the thread reply composer.
+2. **"Aa" opens a glass menu (`04`)** in context, above the composer:
+   - **Bold, Italic, Underline, Strikethrough**;
+   - plus **Bulleted list, Numbered list, Indent, Outdent**;
+   - **Align left, centre, right, justify.**
+   - It applies to the selection (or the current paragraph for lists, indent and alignment), with the active states shown.
+3. **The sanitiser (LIME-37's allow-list) must allow the new formatting safely:**
+   - lists (`ul`, `ol`, `li`, already allowed?);
+   - **indentation** as nested lists or `blockquote`;
+   - **alignment** as a **single whitelisted attribute or class** (e.g. `data-align="center"` on `p`/`div`/`li`), **never free `style`**.
+   - Rendered bubbles respect it.
+   - **Update `docs/data-model.md`**: message content is sanitised HTML with this allow-list, which native clients must render too.
+   - Add tests that a hostile `style`, `on*` or `javascript:` is still stripped.
+
+**Gate:** tap the chat box: it opens as in your design; "Aa" offers bold, italic, underline, strikethrough, lists, indent and alignment, and they show correctly in the sent bubble.
+
+**Record:** add a `## LIME-83` entry to `TEND.md`. Commit: `feat(mobile): v2 composer, Aa formatting (lists, indent, align) with safe sanitiser`, trailer `Brief: LIME-83`, plus the attribution trailer. Push.
+
+### LIME-84 → `tend` (after 83): v2 Settings and Profile, Linked Devices, usernames, Donate
+1. **Settings (`05-settings.png`):** a **glass sheet** opened from the top-right avatar, with a "×" to close:
+   - a **profile card** (avatar, name, and **your own** phone or email; it's shown only to you; tap → Profile);
+   - a group of **Account** (email, password, sign out; today's Login & security content) · **Linked Devices** · **Donate to lime**;
+   - a group of **Customize** (today's Appearance).
+   - Each row pushes its screen, with "‹" back (the LIME-79-fix6 back rule).
+2. **Profile (`06-profile.png`):**
+   - a large avatar plus **Edit Photo**;
+   - a group of **Name** (→ an edit screen) · **About** (→ an edit screen for the bio);
+   - the note **"Your profile and changes to it are visible to teachers you message and your groups."** (fix the PNG's typos; Lime has no "contacts" concept, so the word is dropped);
+   - a group of **Username** (→ an edit screen), with the note **"Teachers can find you by your optional username, so you don't have to share your phone number."**
+   - The other profile fields (pronouns, role, school, grades, subjects, timezone) stay reachable: **put them under About's screen.** Report it.
+3. **Usernames (new):**
+   - an optional, **unique**, case-insensitive `@username`: 3–20 characters, letters, numbers, `.` and `_`, not starting or ending with a dot;
+   - **reserved words blocked** (admin, lime, support, …);
+   - shown on profiles and member lists **instead of** an email or phone;
+   - **New message search matches an exact `@username`** (or the username without the @).
+   - **Contract and server:**
+     - add `username` to `profiles` (`docs/api.md`, `docs/schema.sql`: a unique index on `lower(username)`);
+     - `profile.update` accepts it, with the server rejecting duplicates as `conflict` and showing a clear inline message;
+     - `GET /profiles?q=` matches it;
+     - the visibility rule: username is a **public** field.
+   - The local adapter mirrors the rules.
+   - Seed: give the two test accounts usernames, e.g. `@shem` and `@jean`; others none.
+4. **Linked Devices (new):**
+   - **the contract and server:** `GET /auth/devices` (the caller's devices: `device_id`, a friendly label derived from the user agent, e.g. "iPhone · Safari", the last active time, "This device") and `DELETE /auth/devices/:device_id` (revokes that device's refresh token and ends its realtime connection; you can't remove the current device here; use Sign out);
+   - **the screen:** the list, plus "Sign out" per device, with a confirm;
+   - add api-suite checks.
+5. **Donate to lime:**
+   - opens an **external donation URL** from a config value (`LIME_DONATE_URL` in a committed, non-secret `public/js/config.js`, empty by default);
+   - **when it's empty, tapping shows "Coming soon"**;
+   - it opens in a new tab or the system browser.
+6. **Desktop** keeps today's Settings modal. **Note** that usernames and Linked Devices need desktop UI later (list it in Unbriefed).
+
+**Gate:** tap your avatar at the top right: Settings opens as in design 05; Profile matches 06; set a username and find yourself from the other phone by typing it in New message; Linked Devices shows both of your devices and can sign one out.
+
+**Record:** add a `## LIME-84` entry to `TEND.md`. Commit: `feat(mobile): v2 Settings/Profile; usernames; linked devices; donate link`, trailer `Brief: LIME-84`, plus the attribution trailer. Push. **Stop for the user's review.**
+
+---
+
 > **Shared context for LIME-78 to 81: the mobile build (the user's Penpot design, 2026-10-03).** Applies at **≤ 767px only**; desktop is refined later. Read this before each brief.
 >
 > **The design, in words:**
@@ -517,6 +609,57 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
   - (c) **a bug found, not fixed:** a `#c=` deep link to a chat that arrived after the cached copy opens the list instead (unbriefed candidate);
   - (d) plot's uncommitted `PLOT.md` lines were correctly left out.
 - **The user asked "why did this take an hour?"** Plot's answer: 4 briefs and about 35 items, each with full verification (the whole suite across localhost, dev and LAN in Firefox and Chrome; desktop pixel diffs; ΔE and contrast computation; screenshot sweeps), and re-runs after each fix. **Proposed tiered verification** (waiting for the user's choice): CSS-only polish runs the mobile suite plus smoke on one origin; JS, data or server changes run the full matrix; the full matrix runs once at the end of a chain rather than per brief.
+
+### The user's updated Penpot designs, v2 (2026-10-04): to be exported into `docs/design/mobile/`
+- **The user:** "my updates. Where can I add them for tend to reference? All the menus and chat boxes are liquid glass, Apple native aesthetic." **Plot's answer:** export them as PNGs into **`docs/design/mobile/`** in the repo, named in order (e.g. `01-messages.png`, `02-chat.png`, `03-chat-composer-open.png`, `04-format-menu.png`, `05-settings.png`, `06-profile.png`). **Warn: the Settings design shows a real phone number** (the test account's); replace it with a fake one (`+1 555-0100`) **before** exporting, because `docs/` gets pushed to GitHub.
+- **The changes in v2 (plot's reading; confirm when briefing):**
+  - **Messages:**
+    - no "Messages" title;
+    - the **logo in a round button at the top left**;
+    - a **glass pill at the top right with search plus the user's avatar** (the avatar opens Settings);
+    - **filter chips "All" and "Unread"** plus a filter icon;
+    - the list as before (pastel non-green avatars; pin icon; green unread badges; times now in **ink**, not green);
+    - a **floating pale-lime lime-shaped "+" button at the bottom right** (FAB);
+    - **the dock: 3 items, link · jam (now a book icon) · call.** **Account leaves the dock** (it's now the top-right avatar).
+  - **The chat header: floating glass circles:**
+    - "‹";
+    - a **glass pill with the avatar stack, the truncated name and "13 members"**;
+    - **call**;
+    - "⋯".
+    - **No search icon in the chat header.**
+  - **The composer:**
+    - a glass bar; collapsed it's "+ Send message… mic";
+    - expanded it shows **+, emoji, Aa, bulleted list, numbered list, link, code** on the left and **mic, ↵** on the right;
+    - **"Aa" opens a glass menu with Bold, Italic, Underline and Strikethrough** (shown applied to selected text).
+  - **Settings** (a glass sheet with "×"):
+    - a **profile card** (avatar, name, phone);
+    - a group of **Account · Linked Devices · Donate to lime**;
+    - a group of **Customize**.
+  - **Profile** ("‹"):
+    - a large avatar and **Edit Photo**;
+    - a group of **name** and **About**;
+    - the note "visible to teachers you message, contacts and groups";
+    - **Username** (optional, "so you don't have to give out your phone number").
+  - **New features implied** (to plan, not build blind): **usernames**, **About** (the bio), **Linked Devices**, **Donate**, and the filter chips. Settings/Profile restructure the LIME-79-fix6 Account screen.
+- **Next:** once the PNGs are in, plot drafts the v2 briefs. **Hold LIME-80 and 81** until then; their scope overlaps (menus, composer, search placement).
+- **2026-10-04: the PNGs are in `docs/design/mobile/` (01–06, untracked until tend commits them; plot confirmed the Settings design now shows the fake `+1 555-0100`).** Corrections to the reading above:
+  - **the chat header's right side is one glass pill with search, call and "⋯"** (so search *is* in the chat header);
+  - **"Aa" also covers** bulleted and numbered lists, **indent and outdent**, and **alignment** (left, centre, right, justified) (the user, 2026-10-04).
+- **The user's decisions (2026-10-04):**
+  - **Donate:** opens an external donation link (a configurable URL the user supplies later; until then, "Coming soon");
+  - **Linked Devices:** build it now (list devices, sign any of them out);
+  - **Usernames:** build them now;
+  - **Toasts:** "that position works" (read as **just above the dock**, plot's recommended option; confirm at the gate), restyled in **liquid glass** and about **75% of the screen width**, not full width.
+- **Briefs LIME-82, 83 and 84 are drafted.** LIME-80 and 81 follow them.
+
+### LIME-79-fix6 landed as `c0a0b50` (pushed, 2026-10-04; about 25 minutes under tiered verification)
+- History entries cover every layered screen; Account (with Login & security and Preferences rows); New message full screen (Start → the chat over Messages); the back audit table is in `TEND.md`.
+- Also fixed: a stale "Discard changes?" when reopening Settings (desktop too), and a New message pick opening details behind it (desktop too).
+- **Open, waiting on the user:**
+  - (a) the dock exists only on Messages, so a chat has no account button. Does the user want one? Plot's lean: **no** (keep chats focused; the WhatsApp pattern);
+  - (b) the **photo wall and viewer aren't on the back stack** (a browser back there leaves the chat). An unbriefed candidate; small;
+  - (c) **toasts can cover the first list rows.** Candidate: on phones, show toasts above the dock (bottom) instead of at the top. Ask the user.
+- **The user's iPhone review is pending.** Then LIME-80 and 81.
 
 ### LIME-79-fix6 → `tend` (after fix5): back always returns to where you came from; the Account screen; New message full screen
 
