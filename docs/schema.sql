@@ -38,9 +38,14 @@ create table profiles (
   phone          text,
   status         text not null default 'offline' check (status in ('online', 'offline', 'busy')),
   avatar_url     text,
+  -- LIME-84: an optional public handle ("@ada.lovelace"), unique ignoring case. 3 to 20 characters: letters, numbers, "." and "_",
+  -- not starting or ending with a dot; a few words are reserved (the server checks the list). People can find each other by it
+  -- (GET /profiles?q=), so nobody has to share a phone number. Stored with the case it was typed in.
+  username       text check (username is null or username ~ '^[A-Za-z0-9._]{3,20}$' and username !~ '^\.|\.$'),
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
+create unique index profiles_username_lower_key on profiles (lower(username));
 
 -- ── user_settings (LIME-45, repurposed LIME-50/51) ──────────
 -- One row per user, created lazily (first write) rather than alongside

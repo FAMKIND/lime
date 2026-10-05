@@ -3362,6 +3362,8 @@ function initMessagesList() {
       const normalizedQuery = normalizeForSearch(q);
       if (normalizeForSearch(person.display_name).includes(normalizedQuery)) return true;
       if (normalizeForSearch(person.email).includes(normalizedQuery)) return true;
+      // LIME-84: an exact @username, with or without the @
+      if (person.username && person.username.toLowerCase() === q.replace(/^@/, '')) return true;
       if (normalizeForSearch(person.school).includes(normalizedQuery)) return true;
       // Only once ≥4 digits are typed — a 1-3 digit query would match
       // nearly every phone number in the directory, which isn't useful.
@@ -3394,7 +3396,7 @@ function initMessagesList() {
       const selected = selectedIds.includes(person.id);
       return '<button type="button" class="lime-menu__item lime-picker__result' + (selected ? ' is-selected' : '') + (index === activeIndex ? ' is-active' : '') + '" role="option" aria-selected="' + (selected ? 'true' : 'false') + '" data-profile-id="' + escapeHtml(person.id) + '" data-index="' + index + '">'
         + '<span class="seed-avatar seed-avatar--sm lime-avatar" ' + avatarAttrsHtml(person) + '></span>'
-        + '<span class="lime-notif__body"><span class="lime-notif__name">' + escapeHtml(person.display_name) + '</span><p class="lime-notif__preview">' + escapeHtml(person.school || person.email || '') + '</p></span>'
+        + '<span class="lime-notif__body"><span class="lime-notif__name">' + escapeHtml(person.display_name) + '</span><p class="lime-notif__preview">' + escapeHtml(person.username ? '@' + person.username : (person.school || person.email || '')) + '</p></span>'
         + '</button>';
     }
 
@@ -4316,7 +4318,9 @@ function renderProfilePanel(person) {
   // falls back to "away" for anything it doesn't recognize), so it's
   // never conditionally left out the way the other two are.
   let contact = '';
-  if (person.email) contact += '<p><span class="dew dew-chat"></span>' + escapeHtml(person.email) + '</p>';
+  // LIME-84: a username stands in for the email when there is one (the email is not what people should be handing around)
+  if (person.username) contact += '<p><span class="m-icon m-icon--at"></span>@' + escapeHtml(person.username) + '</p>';
+  else if (person.email) contact += '<p><span class="dew dew-chat"></span>' + escapeHtml(person.email) + '</p>';
   if (localTime) contact += '<p><span class="dew dew-calendar"></span>' + escapeHtml(localTime) + '</p>';
   contact += '<p>' + presenceHtml(person.status, null, true) + PRESENCE_LABEL[presence] + '</p>';
   html += '<section class="lime-profile__section"><h3>Contact Information</h3>' + contact + '</section>';
@@ -4397,7 +4401,7 @@ function renderMembersPanel(conversation) {
       + '<span class="lime-avatar-frame lime-avatar-frame--md"><span class="seed-avatar seed-avatar--md lime-avatar" ' + avatarAttrsHtml(m) + '></span>' + presenceHtml(m.status, 'md') + '</span>'
       + '<div class="lime-members-panel__row-body">'
       + '<span class="lime-members-panel__row-name">' + escapeHtml(m.display_name) + '</span>'
-      + '<span class="lime-members-panel__row-role">' + role + PRESENCE_LABEL[presenceFor(m.status)] + '</span>'
+      + '<span class="lime-members-panel__row-role">' + (m.username ? '@' + escapeHtml(m.username) + ' \u00b7 ' : '') + role + PRESENCE_LABEL[presenceFor(m.status)] + '</span>'
       + '</div>'
       + '</button>';
   }).join('');
@@ -5969,6 +5973,7 @@ document.addEventListener('keydown', (e) => {
       pendingAvatarPath = path;
       updateProfileAvatarPreview(path, false);
       updateFooterState();
+      if (currentSection === 'm-profile') savePhotoNow(path); // LIME-84: the phone Profile screen has no Save button
     }).catch((err) => {
       console.error(err);
       if (token !== avatarUploadJobToken) return;
@@ -6004,7 +6009,11 @@ document.addEventListener('keydown', (e) => {
     });
   }
 
-  function renderProfileSection() {
+  // LIME-84: on a phone the full profile form is split across screens: "name" shows only the display name, "about" everything else (bio,
+  // pronouns, role, school, grades, subjects, timezone, phone); the hidden fields stay in the form so Save still sends one patch.
+  let profileMode = 'full';
+  function renderProfileSection(mode) {
+    if (typeof mode === 'string') profileMode = mode;
     const user = LimeStore.getCurrentUser();
     profileOriginal = {
       display_name: user.display_name || '',
@@ -6032,7 +6041,7 @@ document.addEventListener('keydown', (e) => {
     // LIME-31-fix layout: avatar beside Display name, then compact
     // label-left/control-right rows, Bio last, an always-visible footer
     // (Save/Cancel disabled until dirty — see updateFooterState).
-    pane.innerHTML = paneHeaderHtml(isPhone() ? 'Account' : 'Profile', 'Your details as others see them across Lime.')
+    pane.innerHTML = paneHeaderHtml(profileMode === 'name' ? 'Name' : profileMode === 'about' ? 'About' : 'Profile', 'Your details as others see them across Lime.')
       + settingsBodyFrameOpen()
       + '<div class="lime-settings__body" id="settings-profile-form">'
       + '<div class="lime-settings__profile-top" data-row-label="Photo" data-field="photo">'
@@ -6052,25 +6061,20 @@ document.addEventListener('keydown', (e) => {
       + timezoneFieldHtml(profileOriginal.timezone)
       + compactRowHtml('phone', 'Phone', compactInputHtml('phone', profileOriginal.phone, 'type="tel"'))
       + textareaFieldHtml('bio', 'Bio', profileOriginal.bio)
-      // LIME-79-fix6: on a phone this screen is "Account": below the profile fields, rows for the other two sections (each its own screen,
-      // with "<" back to here). Desktop's Settings modal keeps its sidebar list instead.
-      + (isPhone() ? '<div class="m-account-links">'
-        + '<button type="button" class="m-account-link" data-account-go="security"><span class="dew dew-shield-check" aria-hidden="true"></span><span>Login &amp; security</span><span class="dew dew-chevron-right m-account-link__chev" aria-hidden="true"></span></button>'
-        + '<button type="button" class="m-account-link" data-account-go="preferences"><span class="dew dew-gear" aria-hidden="true"></span><span>Preferences</span><span class="dew dew-chevron-right m-account-link__chev" aria-hidden="true"></span></button>'
-        + '</div>' : '')
       + '</div>'
       + SETTINGS_BODY_FRAME_CLOSE
       + '<div class="lime-settings__footer">'
       + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="settings-discard-btn" disabled>Cancel</button>'
       + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="settings-save-btn" disabled>Save changes</button>'
       + '</div>';
+    pane.dataset.mode = profileMode;
     pane.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
 
     const form = document.getElementById('settings-profile-form');
     if (form) form.addEventListener('input', updateFooterState);
 
     const discardBtn = document.getElementById('settings-discard-btn');
-    if (discardBtn) discardBtn.addEventListener('click', renderProfileSection);
+    if (discardBtn) discardBtn.addEventListener('click', () => renderProfileSection(profileMode));
 
     const saveBtn = document.getElementById('settings-save-btn');
     if (saveBtn) {
@@ -6114,7 +6118,9 @@ document.addEventListener('keydown', (e) => {
         saveBtn.disabled = true;
         LimeStore.updateProfile(patch).then(() => {
           LimeToast.show({ title: 'Profile updated', tone: 'success' });
-          renderProfileSection(); // fresh values, and clears the dirty state
+          renderProfileSection(profileMode); // fresh values, and clears the dirty state
+          // a phone's Name / About screens return to Profile once saved
+          if (isPhone() && window.LimeMobileNav && /^m-(name|about)$/.test(currentSection)) LimeMobileNav.popOverlay('account-' + currentSection);
         }).catch((err) => {
           saveBtn.disabled = false;
           setFieldError('display_name', err.message);
@@ -6243,7 +6249,7 @@ document.addEventListener('keydown', (e) => {
     // LIME-31-fix: Notion-style "Account security" / "Account" subsections
     // with headings and dividers, replacing the flat row list. No footer
     // here — changes are per-row via the inline Change forms above.
-    pane.innerHTML = paneHeaderHtml('Login & security', 'How you sign in, and how to sign out.')
+    pane.innerHTML = paneHeaderHtml(isPhone() ? 'Account' : 'Login & security', 'How you sign in, and how to sign out.')
       + settingsBodyFrameOpen()
       + '<div class="lime-settings__body">'
       + '<h3 class="lime-settings__subsection-heading">Account security</h3>'
@@ -6267,7 +6273,7 @@ document.addEventListener('keydown', (e) => {
   function renderPreferencesSection() {
     const appearance = LimeStore.getAppearance();
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    pane.innerHTML = paneHeaderHtml('Preferences', 'How Lime looks for you.')
+    pane.innerHTML = paneHeaderHtml(isPhone() ? 'Customize' : 'Preferences', 'How Lime looks for you.')
       + settingsBodyFrameOpen()
       + '<div class="lime-settings__body">'
       + '<h3 class="lime-settings__subsection-heading">Appearance</h3>'
@@ -6280,8 +6286,156 @@ document.addEventListener('keydown', (e) => {
     paintAttachments(pane);
   }
 
+  // ── LIME-84: the phone Settings (docs/design/mobile/05-settings.png and 06-profile.png) ──
+  // A glass sheet opened from your avatar at the top right: a profile card, then Account, Linked Devices and Donate, then Customize.
+  // Each row pushes its own screen, and "<" returns to the screen it came from (LIME-79-fix6's rule): Settings > Profile > Name /
+  // About / Username, Settings > Account, Settings > Linked Devices, Settings > Customize.
+  const M_PARENT = { 'm-profile': 'm-home', 'm-account': 'm-home', 'm-devices': 'm-home', 'm-customize': 'm-home', 'm-name': 'm-profile', 'm-about': 'm-profile', 'm-username': 'm-profile' };
+  const mRow = (go, icon, label, value) => '<button type="button" class="m-row" data-account-go="' + go + '"><span class="m-row__icon">' + icon + '</span><span class="m-row__label">' + label + '</span>'
+    + (value ? '<span class="m-row__value">' + escapeHtml(value) + '</span>' : '') + '<span class="dew dew-chevron-right m-row__chev" aria-hidden="true"></span></button>';
+
+  function renderHomeSection() {
+    const user = LimeStore.getCurrentUser();
+    // your own phone, or your email if there is no phone: shown only to you (nobody else is ever sent either)
+    const contact = user.phone || user.email || '';
+    pane.innerHTML = paneHeaderHtml('Settings', '')
+      + settingsBodyFrameOpen()
+      + '<div class="lime-settings__body m-settings-body">'
+      + '<button type="button" class="m-profile-card" data-account-go="m-profile">'
+      + '<span class="seed-avatar seed-avatar--xl lime-avatar" ' + avatarAttrsHtml(user) + '></span>'
+      + '<span class="m-profile-card__text"><b>' + escapeHtml(user.display_name) + '</b><small>' + escapeHtml(contact) + '</small></span></button>'
+      + '<div class="m-group">'
+      + mRow('m-account', '<span class="dew dew-person" aria-hidden="true"></span>', 'Account')
+      + mRow('m-devices', '<span class="m-icon m-icon--device" aria-hidden="true"></span>', 'Linked Devices')
+      + mRow('donate', '<span class="dew dew-heart" aria-hidden="true"></span>', 'Donate to <b>lime</b>')
+      + '</div>'
+      + '<div class="m-group">'
+      + mRow('m-customize', '<span class="dew dew-palette" aria-hidden="true"></span>', 'Customize')
+      + '</div>'
+      + '</div>'
+      + SETTINGS_BODY_FRAME_CLOSE;
+    pane.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+  }
+
+  function renderProfileHub() {
+    const user = LimeStore.getCurrentUser();
+    pendingAvatarPath = undefined;
+    pane.innerHTML = paneHeaderHtml('Profile', '')
+      + settingsBodyFrameOpen()
+      + '<div class="lime-settings__body m-settings-body">'
+      + '<div class="m-profile-photo" data-field="photo">'
+      + profileAvatarButtonHtml(user)
+      + '<button type="button" class="m-pill-link" data-profile-photo-action="change">Edit Photo</button>'
+      + '<button type="button" class="m-text-link" data-profile-photo-action="remove"' + (user.avatar_url ? '' : ' hidden') + '>Remove photo</button>'
+      + '<p class="lime-settings__field-error"></p>'
+      + '</div>'
+      + '<div class="m-group">'
+      + mRow('m-name', '<span class="dew dew-person" aria-hidden="true"></span>', escapeHtml(user.display_name))
+      + mRow('m-about', '<span class="dew dew-pencil" aria-hidden="true"></span>', 'About')
+      + '</div>'
+      + '<p class="m-note">Your profile and changes to it are visible to teachers you message and your groups.</p>'
+      + '<div class="m-group">'
+      + mRow('m-username', '<span class="m-icon m-icon--at" aria-hidden="true"></span>', 'Username', user.username ? '@' + user.username : '')
+      + '</div>'
+      + '<p class="m-note">Teachers can find you by your optional username, so you don’t have to share your phone number.</p>'
+      + '</div>'
+      + SETTINGS_BODY_FRAME_CLOSE;
+    pane.querySelectorAll('.lime-avatar[data-name]').forEach(paintAvatar);
+  }
+  // The Profile screen saves a new photo at once (there is no Save button there).
+  function savePhotoNow(path) {
+    LimeStore.updateProfile({ avatar_url: path }).then(() => {
+      pendingAvatarPath = undefined;
+      if (currentSection === 'm-profile') renderProfileHub();
+      LimeToast.show({ title: path ? 'Photo updated' : 'Photo removed', tone: 'success' });
+    }).catch((err) => setFieldError('photo', (err && err.message) || 'Couldn’t save the photo.'));
+  }
+
+  function renderUsernameSection() {
+    const user = LimeStore.getCurrentUser();
+    const current = user.username || '';
+    pane.innerHTML = paneHeaderHtml('Username', '')
+      + settingsBodyFrameOpen()
+      + '<div class="lime-settings__body m-settings-body">'
+      + '<label class="m-username-field" for="m-username-input"><span class="m-username-field__at">@</span>'
+      + '<input class="seed-input" id="m-username-input" type="text" inputmode="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="done" maxlength="21" placeholder="username" value="' + escapeHtml(current) + '"></label>'
+      + '<p class="lime-settings__field-error m-username-error" id="m-username-error" role="alert"></p>'
+      + '<p class="m-note">3 to 20 characters: letters, numbers, dots and underscores. It can’t start or end with a dot. Usernames are public and unique.</p>'
+      + (current ? '<button type="button" class="m-text-link m-username-remove" id="m-username-remove">Remove username</button>' : '')
+      + '</div>'
+      + SETTINGS_BODY_FRAME_CLOSE
+      + '<div class="lime-settings__footer">'
+      + '<button type="button" class="seed-button seed-button--secondary seed-button--sm" id="m-username-cancel">Cancel</button>'
+      + '<button type="button" class="seed-button seed-button--primary seed-button--sm" id="m-username-save" disabled>Save</button>'
+      + '</div>';
+    const input = document.getElementById('m-username-input');
+    const errEl = document.getElementById('m-username-error');
+    const save = document.getElementById('m-username-save');
+    const clean = () => input.value.trim().replace(/^@/, '');
+    const refresh = () => {
+      const v = clean();
+      const msg = v === '' ? '' : LimeStore.usernameError(v);
+      errEl.textContent = msg || '';
+      save.disabled = v === current || (v !== '' && !!msg) || v === '';
+    };
+    input.addEventListener('input', refresh);
+    const done = (message) => LimeToast.show({ title: message, tone: 'success' });
+    const commit = (value, message) => {
+      save.disabled = true;
+      LimeStore.setUsername(value).then(() => {
+        done(message);
+        if (window.LimeMobileNav && LimeMobileNav.hasOverlay('account-m-username')) LimeMobileNav.popOverlay('account-m-username');
+        else showSection('m-profile');
+      }).catch((err) => { errEl.textContent = (err && err.message) || 'Couldn’t save that username.'; save.disabled = false; });
+    };
+    save.addEventListener('click', () => commit(clean(), 'Username saved'));
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!save.disabled) save.click(); } });
+    document.getElementById('m-username-cancel').addEventListener('click', () => LimeMobileNav.popOverlay('account-m-username'));
+    const rm = document.getElementById('m-username-remove');
+    if (rm) rm.addEventListener('click', () => commit('', 'Username removed'));
+  }
+
+  function renderDevicesSection() {
+    pane.innerHTML = paneHeaderHtml('Linked Devices', '')
+      + settingsBodyFrameOpen()
+      + '<div class="lime-settings__body m-settings-body">'
+      + '<p class="m-note m-note--top">Where you’re signed in to Lime. Sign out any you don’t recognise.</p>'
+      + '<div class="m-group m-devices" id="m-devices-list" aria-live="polite"><p class="m-devices__loading">Loading…</p></div>'
+      + '</div>'
+      + SETTINGS_BODY_FRAME_CLOSE;
+    const list = document.getElementById('m-devices-list');
+    const paint = (devices) => {
+      list.innerHTML = devices.map((d) => '<div class="m-device" data-device-id="' + escapeHtml(d.device_id) + '">'
+        + '<span class="m-row__icon"><span class="m-icon m-icon--device" aria-hidden="true"></span></span>'
+        + '<span class="m-device__text"><b>' + escapeHtml(d.label) + '</b><small>' + (d.current ? 'This device' : 'Last active ' + escapeHtml(formatLastReply(d.last_active_at))) + '</small></span>'
+        + (d.current ? '' : '<button type="button" class="m-text-link m-device__out" data-device-out="' + escapeHtml(d.device_id) + '" data-label="' + escapeHtml(d.label) + '">Sign out</button>')
+        + '</div>').join('') || '<p class="m-devices__loading">No devices.</p>';
+    };
+    LimeStore.listDevices().then(paint).catch((err) => { list.innerHTML = '<p class="m-devices__loading">' + escapeHtml((err && err.message) || 'Couldn’t load your devices.') + '</p>'; });
+    list.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-device-out]');
+      if (!b) return;
+      confirmDialog({ title: 'Sign out of ' + b.dataset.label + '?', message: 'It will be signed out of Lime straight away.', confirmLabel: 'Sign out' }).then((ok) => {
+        if (!ok) return;
+        LimeStore.revokeDevice(b.dataset.deviceOut).then(() => {
+          const row = list.querySelector('[data-device-id="' + b.dataset.deviceOut + '"]');
+          if (row) row.remove();
+          LimeToast.show({ title: 'Signed out of ' + b.dataset.label, tone: 'success' });
+        }).catch((err) => LimeToast.show({ title: 'Couldn’t sign that device out', body: (err && err.message) || '', tone: 'error' }));
+      });
+    });
+  }
+
   const SETTINGS_SECTIONS = [
-    { id: 'profile', label: 'Profile', render: renderProfileSection },
+    { id: 'm-home', label: 'Settings', render: renderHomeSection },
+    { id: 'm-profile', label: 'Profile', render: renderProfileHub },
+    { id: 'm-name', label: 'Name', render: () => renderProfileSection('name') },
+    { id: 'm-about', label: 'About', render: () => renderProfileSection('about') },
+    { id: 'm-username', label: 'Username', render: renderUsernameSection },
+    { id: 'm-account', label: 'Account', render: renderSecuritySection },
+    { id: 'm-devices', label: 'Linked Devices', render: renderDevicesSection },
+    { id: 'm-customize', label: 'Customize', render: renderPreferencesSection },
+    { id: 'profile', label: 'Profile', render: () => renderProfileSection('full') },
     { id: 'security', label: 'Login & security', render: renderSecuritySection },
     { id: 'preferences', label: 'Preferences', render: renderPreferencesSection },
   ];
@@ -6293,6 +6447,8 @@ document.addEventListener('keydown', (e) => {
     return confirmDiscardIfDirty().then((proceed) => {
       if (!proceed) return false;
       currentSection = id;
+      modal.dataset.screen = id;
+      delete pane.dataset.mode; // only the Name / About screens set it (renderProfileSection)
       nav.querySelectorAll('.lime-settings__nav-item').forEach((btn) => {
         btn.classList.toggle('is-active', btn.dataset.settingsSection === id);
       });
@@ -6328,7 +6484,7 @@ document.addEventListener('keydown', (e) => {
       // LIME-79-fix6: on a phone "<" returns to where you came from: from Login & security or Preferences, back to Account; from Account,
       // back to whatever was under it (Messages, a chat, a person...). Both pop exactly one history entry.
       if (isPhone() && window.LimeMobileNav && LimeMobileNav.hasOverlay('account')) {
-        if (currentSection !== 'profile') LimeMobileNav.popOverlay('account-' + currentSection);
+        if (currentSection !== 'm-home') LimeMobileNav.popOverlay('account-' + currentSection);
         else settingsModal.close();
         return;
       }
@@ -6340,7 +6496,14 @@ document.addEventListener('keydown', (e) => {
     const go = e.target.closest('[data-account-go]');
     if (go) {
       const id = go.dataset.accountGo;
-      showSection(id).then((ok) => { if (ok) LimeMobileNav.pushOverlay('account-' + id, () => showSection('profile')); });
+      if (id === 'donate') {
+        // an external donation page from public/js/config.js, in a new tab; "Coming soon" while no address is set
+        const url = window.LIME_DONATE_URL;
+        if (url && /^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener');
+        else LimeToast.show({ title: 'Donating is coming soon', tone: 'info' });
+        return;
+      }
+      showSection(id).then((ok) => { if (ok) LimeMobileNav.pushOverlay('account-' + id, () => showSection(M_PARENT[id] || 'm-home')); });
       return;
     }
     if (e.target.closest('#settings-sign-out-btn')) {
@@ -6356,6 +6519,7 @@ document.addEventListener('keydown', (e) => {
       pendingAvatarPath = null;
       updateProfileAvatarPreview(null, false);
       updateFooterState();
+      if (currentSection === 'm-profile') savePhotoNow(null);
       return;
     }
     if (handleAppearanceClick(e, pane, renderPreferencesSection, (msg, isError) => {
@@ -6419,7 +6583,7 @@ document.addEventListener('keydown', (e) => {
       // immediately) — filterSettings has to wait for Profile to have
       // actually rendered into the pane, or it reads the pane's stale
       // pre-render content.
-      showSection('profile').then(() => {
+      showSection(isPhone() ? 'm-home' : 'profile').then(() => {
         filterSettings();
         // Matches the search modal's own pattern (focus its input on
         // open) — without this, focus is left wherever it was, which

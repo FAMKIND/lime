@@ -268,6 +268,8 @@ const LocalAdapter = (function () {
       auth_user_id: null,
       display_name: t.display_name,
       email: t.email,
+      // LIME-84: optional, unique, public; only the two test accounts have one in the seed.
+      username: t.username || null,
       role: t.role,
       pronouns: t.pronouns,
       school: t.school,

@@ -204,8 +204,16 @@ fields; every id is client-made. "May perform" mirrors `LimeStore.can` /
 - Payload: a `patch` containing **only the fields being changed**, from the
   allowed set `display_name`, `pronouns`, `role`, `school`, `grade_levels`,
   `subjects`, `bio`, `timezone`, `phone`, `avatar_url` (`avatar_url` holds a
-  `file_id`; photos upload through `POST /files` first). `display_name`,
-  if present, must not be blank.
+  `file_id`; photos upload through `POST /files` first) and `username`
+  (LIME-84). `display_name`, if present, must not be blank.
+- **`username`** is optional, **unique ignoring case**, and **public**
+  (everyone who can see the profile sees it, like the name). 3 to 20
+  characters: letters, numbers, `.` and `_`; it cannot start or end with a
+  dot; a few words are reserved (admin, lime, support, root, ...: the list is
+  in `server/lib/util.mjs`). `null` or an empty string clears it. A bad one
+  is `invalid_op` with a message fit to show inline; one somebody else has
+  (in any case) is **`conflict`** ("That username is taken. Try another.").
+  The stored value keeps the case it was typed in.
 - May perform: the user, **their own** profile only
   (`profiles_update_self`). Email is not in this list (next op).
 
@@ -262,6 +270,21 @@ endpoint except `/auth/signup`, `/auth/signin`, `/auth/refresh` and
 
 `POST /auth/signout`
 - Revokes the calling device's refresh token. Returns `204`.
+
+`GET /auth/devices` (LIME-84, Linked Devices)
+- Returns `{ devices: [ { device_id, label, last_active_at, current } ] }`: the
+  caller's signed-in devices (a device that has signed out or been removed is
+  not listed), most recently active first. `label` is a friendly name derived
+  from the browser's User-Agent ("iPhone · Safari", "Mac · Chrome";
+  best effort), `last_active_at` is an ISO time, and `current` is true for the
+  device making the call. Only the caller's own devices are ever returned.
+
+`DELETE /auth/devices/:device_id` (LIME-84)
+- Signs one of the caller's **other** devices out: its refresh token and its
+  access token stop working at once and its realtime connection is closed.
+  Returns `204`. `400 bad_request` for the calling device itself (use
+  `POST /auth/signout`), `404 not_found` for a device that is not the
+  caller's or is already signed out.
 
 `POST /auth/password` (LIME-74)
 - Body: `{ current_password, new_password }`. Verifies the current password, stores a new salted hash, and **revokes every
@@ -379,12 +402,14 @@ the feed. It travels over realtime only, as `{ "type": "presence",
 - Finds people, for the new-message picker. `q` must be at least **2
   characters** (otherwise `400 bad_request`).
 - Matches: **partial, case-insensitive text** in `display_name` and `school`;
+  an **exact username** (LIME-84; case-insensitive, with or without a leading
+  `@`: `@ada.lovelace` and `ada.lovelace` both find it, `@ada.lov` does not);
   **exact** (case-insensitive) `email`; **exact digits-only** `phone` (the
   query is stripped to digits; it must be at least 7 digits to count as a
   phone). Email and phone are **only** ever matched exactly, so the
   directory cannot be used to browse or guess them.
 - Returns `{ profiles: [ ... ] }`, at most **50**, excluding the caller. Each
-  result has only the **public fields**: `id`, `display_name`, `school`,
+  result has only the **public fields**: `id`, `display_name`, `username`, `school`,
   `role`, `pronouns`, `grade_levels`, `subjects`, `bio`, `timezone`,
   `avatar_url`. **It never reveals the email or phone** of a match, even
   when that is what matched.

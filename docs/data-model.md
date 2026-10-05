@@ -1601,3 +1601,12 @@ also dropped alongside `flush()` itself on the switch checklist.
   around with, say, a `type: 'text'` message that *looks* like a system
   line; a future brief adding a real system-message type should wire this
   in then.
+
+## Usernames and Linked Devices (LIME-84)
+
+- **`profiles.username`**: optional, **public**, unique ignoring case (a unique index on `lower(username)`), 3 to 20 characters of letters,
+  numbers, `.` and `_`, not starting or ending with a dot, a few words reserved. It is shown on profiles and in member lists in place of an
+  email or phone, and the directory (`GET /profiles?q=`) finds a person by their exact `@username`. The local adapter applies the same rules.
+- **Linked Devices** are the server's sessions (one per `(user, device_id)`), listed by `GET /auth/devices` and ended by
+  `DELETE /auth/devices/:device_id` (docs/api.md). A session remembers the browser's User-Agent text (shown as a friendly label) and when it
+  was last used. The browser-only backend has just the one device.

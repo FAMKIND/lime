@@ -59,12 +59,13 @@ async function openEvents(client) {
   const ctl = new AbortController();
   const res = await fetch(client.base + '/events?ticket=' + t.body.ticket, { signal: ctl.signal });
   const events = [];
+  let ended = false;
   (async () => {
     const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
-    try { for (;;) { const { value, done } = await reader.read(); if (done) break; buf += dec.decode(value); let i; while ((i = buf.indexOf('\n\n')) > -1) { const block = buf.slice(0, i); buf = buf.slice(i + 2); const d = /^data: (.*)$/m.exec(block); if (d) events.push(JSON.parse(d[1])); } } } catch (e) { /* aborted */ }
+    try { for (;;) { const { value, done } = await reader.read(); if (done) { ended = true; break; } buf += dec.decode(value); let i; while ((i = buf.indexOf('\n\n')) > -1) { const block = buf.slice(0, i); buf = buf.slice(i + 2); const d = /^data: (.*)$/m.exec(block); if (d) events.push(JSON.parse(d[1])); } } } catch (e) { /* aborted */ }
   })();
   const waitFor = async (pred, ms = 4000) => { const end = Date.now() + ms; while (Date.now() < end) { const f = events.find(pred); if (f) return f; await sleep(20); } return null; };
-  return { events, waitFor, ticket: t.body.ticket, status: res.status, close: () => ctl.abort() };
+  return { events, waitFor, ticket: t.body.ticket, status: res.status, close: () => ctl.abort(), ended: () => ended };
 }
 
 export async function run({ check }) {
@@ -233,10 +234,43 @@ export async function run({ check }) {
     check('directory: exact email finds the person but does not reveal it; partial email finds nobody', (await dir(C, 'ada@example.com')).profiles.some((p) => p.id === A.id) && (await dir(C, 'ada@example.com')).profiles.every((p) => !('email' in p)) && (await dir(C, 'ada@exam')).profiles.length === 0);
     check('directory: exact phone (digits only) finds the person; partial phone finds nobody; no phone in results', (await dir(C, '(555) 000-9999')).profiles.some((p) => p.id === A.id) && (await dir(C, '555-000')).profiles.length === 0 && (await dir(C, '5550009999')).profiles.every((p) => !('phone' in p)));
     check('directory: needs 2+ characters, excludes you, and is capped at 50', (await C.json('GET', '/profiles?q=a')).status === 400 && !(await dir(A, 'ada')).profiles.some((p) => p.id === A.id) && (await dir(C, 'teacher')).profiles.length <= 50);
+    // ── usernames (LIME-84) ──
+    const ok1 = await A.one('profile.update', { patch: { username: 'Ada.L_1' } });
+    check('username: a valid one is applied, and everyone can see it (it is a public field)', ok1.status === 'applied' && (await B.snapshot()).profiles.find((p) => p.id === A.id).username === 'Ada.L_1' && (await A.snapshot()).profile.username === 'Ada.L_1');
+    const badName = async (v) => (await B.one('profile.update', { patch: { username: v } })).error;
+    const badRows = [['ab', 'too short'], ['a'.repeat(21), 'too long'], ['has space', 'a space'], ['no-dash', 'a dash'], ['.leading', 'a leading dot'], ['trailing.', 'a trailing dot'], ['emoji\u{1F600}x', 'an emoji'], ['@at', 'an @ inside'], ['Admin', 'reserved (Admin)'], ['LIME', 'reserved (LIME)'], ['support', 'reserved (support)']];
+    const badResults = await Promise.all(badRows.map(([v]) => badName(v)));
+    check('username: ' + badRows.map((r) => r[1]).join(', ') + ' are all refused as invalid_op with a message', badResults.every((e) => e && e.code === 'invalid_op' && e.message));
+    check('username: unique ignoring case: another person taking it in any case is a conflict with a clear message', (await badName('ada.l_1')).code === 'conflict' && /taken/i.test((await badName('ADA.L_1')).message) && (await badName('Ada.L_1')).code === 'conflict');
+    check('username: you can re-save your own, change it, and clear it (null or empty); the old one is free again', (await A.one('profile.update', { patch: { username: 'Ada.L_1' } })).status === 'applied'
+      && (await A.one('profile.update', { patch: { username: 'ada.new' } })).status === 'applied' && (await B.one('profile.update', { patch: { username: 'Ada.L_1' } })).status === 'applied'
+      && (await B.one('profile.update', { patch: { username: '' } })).status === 'applied' && (await B.snapshot()).profile.username === null && (await A.one('profile.update', { patch: { username: null } })).status === 'applied');
+    await A.one('profile.update', { patch: { username: 'ada.lovelace' } });
+    const byHandle = async (c, q) => (await c.json('GET', '/profiles?q=' + encodeURIComponent(q))).body.profiles;
+    check('directory: an exact @username (with or without the @, any case) finds the person; a partial one finds nobody; email and phone stay hidden', (await byHandle(C, '@ada.lovelace')).some((p) => p.id === A.id) && (await byHandle(C, 'ada.lovelace')).some((p) => p.id === A.id)
+      && (await byHandle(C, '@ADA.LOVELACE')).some((p) => p.id === A.id) && (await byHandle(C, '@ada.lov')).every((p) => p.id !== A.id) && (await byHandle(C, '@ada.lovelace')).every((p) => !('email' in p) && !('phone' in p) && p.username === 'ada.lovelace'));
+    check('username: the seed gives the two test accounts @shem and @jean (found by anyone, exactly), and no one else', (await byHandle(C, '@shem')).some((p) => p.id === 'teacher-002' && p.username === 'shem') && (await byHandle(C, 'jean')).some((p) => p.id === 'teacher-001' && p.username === 'jean') && (await byHandle(C, '@mary')).every((p) => p.id !== 'teacher-004' || !p.username));
+    check('username: the stored value keeps its case, and a new account starts with none', (await A.snapshot()).profile.username === 'ada.lovelace' && (await C.snapshot()).profile.username === null);
     const em = await A.one('profile.setEmail', { email: 'ada.new@example.com' });
     check('profile.setEmail: taken is a conflict; a change moves the sign-in too', (await B.one('profile.setEmail', { email: 'ada.new@example.com' })).error.code === 'conflict' && em.status === 'applied'
       && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: dev('x1') }, token: null })).status === 200
       && (await new Client(base).json('POST', '/auth/signin', { body: { email: 'ada@example.com', password: 'password123', device_id: dev('x2') }, token: null })).status === 401);
+
+    // ── linked devices (LIME-84) ──
+    const A2 = new Client(base, 'ada.new@example.com', 'Ada Lovelace'); A2.device = dev('ada-phone');
+    const siPhone = await A2.json('POST', '/auth/signin', { body: { email: 'ada.new@example.com', password: 'password123', device_id: A2.device }, headers: { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' }, token: null });
+    A2.token = siPhone.body.access_token;
+    const devList = (await A.json('GET', '/auth/devices')).body.devices;
+    const phoneDev = devList.find((d) => d.device_id === A2.device);
+    check('devices: the list has this device (marked) and the phone, with a friendly label and a last-active time', devList.length >= 2 && devList.find((d) => d.device_id === A.device).current === true && phoneDev && phoneDev.current === false && phoneDev.label === 'iPhone · Safari' && !Number.isNaN(Date.parse(phoneDev.last_active_at)));
+    check('devices: nobody else\'s devices show, and it needs a token', (await C.json('GET', '/auth/devices')).body.devices.every((d) => d.device_id !== A2.device) && (await new Client(base).json('GET', '/auth/devices', { token: null })).status === 401);
+    const evPhone = await openEvents(A2);
+    check('devices: you cannot remove the device you are on (400), and an unknown device is 404', (await A.json('DELETE', '/auth/devices/' + A.device)).status === 400 && (await A.json('DELETE', '/auth/devices/' + dev('no-such'))).status === 404 && (await C.json('DELETE', '/auth/devices/' + A2.device)).status === 404);
+    const del = await A.json('DELETE', '/auth/devices/' + A2.device);
+    await sleep(300);
+    check('devices: removing the phone answers 204, its token stops working at once, its refresh token too, and its realtime connection ends', del.status === 204 && (await A2.json('GET', '/snapshot')).status === 401
+      && (await new Client(base).json('POST', '/auth/refresh', { body: { refresh_token: siPhone.body.refresh_token, device_id: A2.device }, token: null })).status === 401 && evPhone.ended());
+    check('devices: the removed device is gone from the list and this device still works', !(await A.json('GET', '/auth/devices')).body.devices.some((d) => d.device_id === A2.device) && (await A.json('GET', '/snapshot')).status === 200);
 
     // ── files ──
     const bytes = crypto.randomBytes(2048);

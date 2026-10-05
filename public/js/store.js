@@ -930,7 +930,7 @@ const LimeStore = (function () {
   // docs/data-model.md's production-ready rules.
   // LIME-49: avatar_url added — the profiles.avatar_url column already
   // existed in the schema, just never had a writer.
-  const PROFILE_EDITABLE_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone', 'avatar_url'];
+  const PROFILE_EDITABLE_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone', 'avatar_url', 'username'];
 
   function updateProfile(patch) {
     const profile = getProfile(currentUserId);
@@ -953,6 +953,58 @@ const LimeStore = (function () {
     scheduleSave();
     emit('lime:profile-changed', { profileId: profile.id });
     return Promise.resolve(profile);
+  }
+
+  // ── LIME-84: usernames ─────────────────────────────────────
+  // Optional, unique (ignoring case), public: 3 to 20 characters, letters, numbers, "." and "_", not starting or ending with a dot, and
+  // a few reserved words blocked. The same rules as server/lib/util.mjs (usernameError); the server is the authority, this gives the
+  // message at once and also covers the browser-only backend.
+  const USERNAME_RESERVED = ['admin', 'administrator', 'lime', 'support', 'help', 'root', 'system', 'moderator', 'mod', 'staff', 'team',
+    'official', 'security', 'abuse', 'postmaster', 'webmaster', 'null', 'undefined', 'api', 'www', 'mail', 'info', 'contact', 'billing',
+    'settings', 'account', 'me', 'you', 'everyone', 'all', 'here', 'famkind'];
+  function usernameError(value) {
+    if (typeof value !== 'string') return 'Username must be text.';
+    if (value.length < 3 || value.length > 20) return 'Use 3 to 20 characters.';
+    if (!/^[A-Za-z0-9._]+$/.test(value)) return 'Use only letters, numbers, dots and underscores.';
+    if (value.startsWith('.') || value.endsWith('.')) return 'A username can\u2019t start or end with a dot.';
+    if (USERNAME_RESERVED.includes(value.toLowerCase())) return 'That username is reserved. Try another.';
+    return null;
+  }
+  // Sets (or, with an empty value, removes) your username. Resolves with the profile; rejects with a message fit to show inline
+  // ("That username is taken. Try another.") after the server has really answered.
+  function setUsername(raw) {
+    const value = String(raw == null ? '' : raw).trim().replace(/^@/, '');
+    const me = getProfile(currentUserId);
+    if (!me) return Promise.reject(new Error('LimeStore: no current profile'));
+    if (value !== '') {
+      const err = usernameError(value);
+      if (err) return Promise.reject(new Error(err));
+    }
+    if (api) {
+      return apiWriteAndWait('profile.update', { patch: { username: value === '' ? null : value } }).then(() => { emit('lime:profile-changed', { profileId: currentUserId }); return getProfile(currentUserId); });
+    }
+    if (value !== '' && [...profiles.values()].some((p) => p.id !== currentUserId && (p.username || '').toLowerCase() === value.toLowerCase())) {
+      return Promise.reject(new Error('That username is taken. Try another.'));
+    }
+    const profile = profiles.get(currentUserId);
+    Object.assign(profile, { username: value === '' ? null : value, updated_at: new Date().toISOString() });
+    scheduleSave();
+    emit('lime:profile-changed', { profileId: profile.id });
+    return Promise.resolve(profile);
+  }
+  // LIME-84: Linked Devices. With the server: the account's signed-in devices; the browser-only backend has just this one.
+  function listDevices() {
+    if (api) return ApiAdapter.listDevices();
+    return Promise.resolve([{ device_id: 'this-browser', label: 'This browser', last_active_at: new Date().toISOString(), current: true }]);
+  }
+  function revokeDevice(id) {
+    if (api) return ApiAdapter.revokeDevice(id);
+    return Promise.reject(new Error('Only the server can sign other devices out.'));
+  }
+  function findProfileByUsername(raw) {
+    const h = String(raw || '').trim().replace(/^@/, '').toLowerCase();
+    if (!h) return null;
+    return [...profiles.values(), ...directory.values()].find((p) => p.username && p.username.toLowerCase() === h) || null;
   }
 
   // LIME-50. A separate function from updateProfile, not folded into its
@@ -1183,6 +1235,7 @@ const LimeStore = (function () {
     lookupProfileByEmail,
     isApi,
     updateProfile: guarded('updateProfile', updateProfile),
+    setUsername, usernameError, findProfileByUsername, listDevices, revokeDevice,
     setProfileEmail,
     createProfile,
   };

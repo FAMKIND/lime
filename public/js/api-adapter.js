@@ -610,6 +610,12 @@ const ApiAdapter = (function () {
     return urlCache.get(fileId);
   }
 
+  // LIME-84: Linked Devices.
+  const listDevices = () => http('GET', '/auth/devices').then((r) => r.devices);
+  const revokeDevice = (id) => http('DELETE', '/auth/devices/' + encodeURIComponent(id), { raw: true }).then((res) => {
+    if (res.status === 204) return true;
+    return toJson(res); // an error body: throws an ApiError with the server's message
+  });
   const searchProfiles = (q) => http('GET', '/profiles?q=' + encodeURIComponent(q)).then((r) => r.profiles);
   const linkPreview = (url) => http('GET', '/link-preview?url=' + encodeURIComponent(url));
   async function devReset() {
@@ -634,7 +640,7 @@ const ApiAdapter = (function () {
   return {
     ApiError, forgetLocal, setSessionEmail, open, start, stop, write, discard, flush, pull, persistNow,
     session: readSession, deviceId, signUp, signIn, signOut, accountExists, changePassword,
-    uploadFile, fileUrl, searchProfiles, linkPreview, devReset,
+    uploadFile, fileUrl, searchProfiles, linkPreview, devReset, listDevices, revokeDevice,
     pendingCount: () => (sync ? sync.outbox.length : 0),
     isOnline: () => !sync || sync.online,
     view: () => (sync ? sync.view : emptyState()),

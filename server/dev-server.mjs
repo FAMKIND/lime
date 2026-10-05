@@ -28,6 +28,7 @@ const engine = new Engine({ dataDir: DATA_DIR, seedLoader: () => seedData, files
 const auth = new Auth(DATA_DIR, demoPassword);
 await auth.ensureSeedCredentials(engine.seedProfileIds.map((id) => engine.profiles.get(id)).filter(Boolean));
 engine.emailChanged = (userId, oldEmail, newEmail) => auth.renameEmail(userId, oldEmail, newEmail);
+engine.mergeSeedUsernames(seedData.profiles); // the two test accounts' usernames, for data made before usernames existed
 const testAccounts = loadTestAccounts(REPO_ROOT);
 // The demo Shem and Jean (teacher-002, teacher-001) may have a phone and a password of their own from the gitignored local file.
 async function ensureTestAccounts() {
@@ -65,7 +66,13 @@ engine.subscribe((entry) => {
 });
 setInterval(() => { for (const set of connections.values()) for (const res of set) res.write(': keep-alive\n\n'); }, 20000).unref();
 
-function openEvents(req, res, userId) {
+// Ends the realtime connection(s) a signed-out device had open.
+function endDeviceConnections(userId, deviceId) {
+  for (const r of [...(connections.get(userId) || [])]) if (r.limeDevice === deviceId) r.end();
+}
+
+function openEvents(req, res, userId, deviceId) {
+  res.limeDevice = deviceId || null;
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.write('retry: 3000\n\n');
   const set = connections.get(userId) || new Set();
@@ -103,6 +110,15 @@ function requireAuth(req) {
 // ── /api/v1 ──
 async function api(req, res, url) {
   const route = req.method + ' ' + url.pathname.replace(/^\/api\/v1/, '');
+
+  // LIME-84: Linked Devices. A device id may carry a "web-" style prefix, so it is matched loosely here and checked by auth.
+  const deviceRoute = /^DELETE \/auth\/devices\/([A-Za-z0-9._-]{1,80})$/.exec(route);
+  if (deviceRoute) {
+    const { userId, deviceId } = requireAuth(req);
+    auth.revokeDevice(userId, deviceRoute[1], deviceId);
+    endDeviceConnections(userId, deviceRoute[1]); // its realtime connection ends too
+    res.writeHead(204); return res.end();
+  }
   switch (route) {
     case 'GET /health': return sendJson(res, 200, { ok: true, api: 'v1', seq: engine.seq, log_start: engine.meta.log_start });
 
@@ -129,7 +145,7 @@ async function api(req, res, url) {
       const userId = uuid();
       await auth.createAccount(email, body.password, userId);
       const profile = engine.createProfile({ id: userId, email, display_name: body.display_name.trim() });
-      const tokens = auth.tokensFor(userId, body.device_id);
+      const tokens = auth.tokensFor(userId, body.device_id, undefined, req.headers['user-agent']);
       return sendJson(res, 201, Object.assign({ user: engine.profileFor(profile, userId) }, tokens, { seq: engine.seq }));
     }
     case 'POST /auth/signin': {
@@ -138,12 +154,16 @@ async function api(req, res, url) {
       const userId = await auth.verify(body.email.trim().toLowerCase(), body.password);
       const profile = engine.profiles.get(userId);
       if (!profile) throw E.invalidCredentials();
-      return sendJson(res, 200, Object.assign({ user: engine.profileFor(profile, userId) }, auth.tokensFor(userId, body.device_id), { seq: engine.seq }));
+      return sendJson(res, 200, Object.assign({ user: engine.profileFor(profile, userId) }, auth.tokensFor(userId, body.device_id, undefined, req.headers['user-agent']), { seq: engine.seq }));
     }
     case 'POST /auth/refresh': {
       const body = await jsonBody(req);
       if (typeof body.refresh_token !== 'string' || !isDeviceId(body.device_id)) throw E.badRequest('refresh_token and a valid device_id (a UUID) are required.');
-      return sendJson(res, 200, auth.refresh(body.refresh_token, body.device_id).tokens);
+      return sendJson(res, 200, auth.refresh(body.refresh_token, body.device_id, req.headers['user-agent']).tokens);
+    }
+    case 'GET /auth/devices': {
+      const { userId, deviceId } = requireAuth(req);
+      return sendJson(res, 200, { devices: auth.devicesFor(userId, deviceId) });
     }
     case 'POST /auth/signout': {
       const { userId, deviceId } = requireAuth(req);
@@ -194,9 +214,10 @@ async function api(req, res, url) {
     }
     case 'GET /events': {
       let userId;
-      if (url.searchParams.has('ticket')) userId = auth.redeemTicket(url.searchParams.get('ticket')).userId;
-      else userId = requireAuth(req).userId;
-      return openEvents(req, res, userId);
+      let deviceId;
+      if (url.searchParams.has('ticket')) { const t = auth.redeemTicket(url.searchParams.get('ticket')); userId = t.userId; deviceId = t.deviceId; }
+      else { const a = requireAuth(req); userId = a.userId; deviceId = a.deviceId; }
+      return openEvents(req, res, userId, deviceId);
     }
     case 'GET /profiles': {
       const { userId } = requireAuth(req);

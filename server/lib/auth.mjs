@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
-import { E, ApiError, ensureDir, writeJsonAtomic, readJson, sha256, b64url, isEmail, isId, isDeviceId, uuid, nowIso } from './util.mjs';
+import { E, ApiError, ensureDir, writeJsonAtomic, readJson, sha256, b64url, isEmail, isId, isDeviceId, uuid, nowIso, deviceLabel } from './util.mjs';
 
 export const PBKDF2_ITERATIONS = 600000;
 const ACCESS_TTL_SECS = 15 * 60;
@@ -141,22 +141,42 @@ export class Auth {
     // A signed-out or revoked device stops working at once, not when its token expires.
     const s = this.data.sessions[claims.sub + '|' + claims.dev];
     if (!s || s.revoked) throw E.unauthenticated('This device is signed out.');
+    s.last_active_at = nowIso(); // in memory; reaches the disk with the next save
     return { userId: claims.sub, deviceId: claims.dev };
   }
 
-  newRefresh(userId, deviceId, previousHash) {
+  // LIME-84: a session also remembers the browser's own description (the User-Agent) and when it was last used, for the Linked Devices list.
+  newRefresh(userId, deviceId, previousHash, userAgent) {
     const token = crypto.randomBytes(32).toString('base64url');
+    const old = this.data.sessions[userId + '|' + deviceId];
     this.data.sessions[userId + '|' + deviceId] = {
       user_id: userId, device_id: deviceId, token_hash: sha256(token), prev_hash: previousHash || null,
-      created_at: nowIso(), expires_at: new Date(Date.now() + REFRESH_TTL_MS).toISOString(), revoked: false,
+      created_at: old && previousHash ? old.created_at : nowIso(), expires_at: new Date(Date.now() + REFRESH_TTL_MS).toISOString(), revoked: false,
+      user_agent: userAgent || (old && old.user_agent) || '', last_active_at: nowIso(),
     };
     this.save();
     return token;
   }
-  tokensFor(userId, deviceId, previousHash) {
-    return { access_token: this.signAccess(userId, deviceId), expires_in: ACCESS_TTL_SECS, refresh_token: this.newRefresh(userId, deviceId, previousHash) };
+  tokensFor(userId, deviceId, previousHash, userAgent) {
+    return { access_token: this.signAccess(userId, deviceId), expires_in: ACCESS_TTL_SECS, refresh_token: this.newRefresh(userId, deviceId, previousHash, userAgent) };
   }
-  refresh(refreshToken, deviceId) {
+
+  // The caller's signed-in devices (not signed out), newest activity first.
+  devicesFor(userId, currentDeviceId) {
+    return Object.values(this.data.sessions)
+      .filter((s) => s.user_id === userId && !s.revoked && s.expires_at > nowIso())
+      .map((s) => ({ device_id: s.device_id, label: deviceLabel(s.user_agent), last_active_at: s.last_active_at || s.created_at, current: s.device_id === currentDeviceId }))
+      .sort((a, b) => (b.last_active_at > a.last_active_at ? 1 : -1));
+  }
+  // Sign one of the caller's OTHER devices out: its refresh token stops working and so does its access token, at once.
+  revokeDevice(userId, deviceId, currentDeviceId) {
+    if (deviceId === currentDeviceId) throw E.badRequest('That is this device. Use Sign out to leave it.');
+    const s = this.data.sessions[userId + '|' + deviceId];
+    if (!s || s.revoked) throw E.notFound('No such device.');
+    s.revoked = true;
+    this.save();
+  }
+  refresh(refreshToken, deviceId, userAgent) {
     const hash = sha256(String(refreshToken || ''));
     const session = Object.values(this.data.sessions).find((s) => s.device_id === deviceId && (s.token_hash === hash || s.prev_hash === hash));
     if (!session) throw E.unauthenticated('Sign in again.');
@@ -166,7 +186,7 @@ export class Auth {
       throw E.unauthenticated('Sign in again.');
     }
     if (session.revoked || session.expires_at < nowIso()) throw E.unauthenticated('Sign in again.');
-    return { userId: session.user_id, tokens: this.tokensFor(session.user_id, deviceId, session.token_hash) };
+    return { userId: session.user_id, tokens: this.tokensFor(session.user_id, deviceId, session.token_hash, userAgent) };
   }
   signOut(userId, deviceId) {
     const s = this.data.sessions[userId + '|' + deviceId];

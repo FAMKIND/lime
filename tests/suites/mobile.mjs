@@ -373,49 +373,96 @@ async function runOne(check, browser, name, server, S, size) {
   check(tag('calls and jam show a gentle "coming soon" toast'), true);
   await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; }); // toasts now float at the bottom, over Account's last rows
   await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; }); // toasts float at the bottom now, over Account's last rows
-  await page.click('#m-account-btn');
-  await wait(page, () => document.getElementById('settings-modal').classList.contains('is-open') && document.getElementById('settings-modal').classList.contains('is-showing-section'));
-  check(tag('account opens Settings on the Profile section, full screen'), (await page.evaluate(() => { const r = document.getElementById('settings-modal').getBoundingClientRect(); return !!document.getElementById('settings-profile-form') && r.width >= window.innerWidth - 1 && r.height >= window.innerHeight - 1; })));
-  const sbar = await page.evaluate(() => {
-    const back = document.querySelector('.lime-settings__back').getBoundingClientRect(); const t = document.getElementById('settings-pane-title').getBoundingClientRect();
-    const close = document.getElementById('settings-modal-close'); const foot = document.querySelector('.lime-settings__footer');
-    return { backW: back.width, backH: back.height, backLeft: back.left, titleText: document.getElementById('settings-pane-title').textContent, titleMid: (t.left + t.right) / 2, vw: innerWidth, closeShown: getComputedStyle(close).display !== 'none', footBottom: foot ? foot.getBoundingClientRect().bottom : null, vh: innerHeight };
-  });
-  check(tag('Account: the native header (a back arrow, the title "Account" centred, no x), no section list, and rows for Login & security and Preferences'), sbar.backW >= 44 && sbar.backH >= 44 && sbar.backLeft < 16 && sbar.titleText === 'Account' && Math.abs(sbar.titleMid - sbar.vw / 2) < 4 && !sbar.closeShown && !(await visible(page, '#settings-nav')) && (await page.evaluate(() => [...document.querySelectorAll('.m-account-link')].map((e) => e.textContent.trim()).join())) === 'Login & security,Preferences', JSON.stringify(sbar));
-  check(tag('its Save / Cancel footer is inside the screen'), sbar.footBottom !== null && sbar.footBottom <= sbar.vh + 0.5, JSON.stringify([sbar.footBottom, sbar.vh]));
-  // A fresh account's empty timezone makes the Profile form count as "edited" (the select shows a default), so Account may ask
-  // "Discard changes?" first. That is existing behaviour; take the Discard.
   const discard = async () => { await sleep(350); if (await visible(page, '#confirm-dialog.is-open, #confirm-dialog[open], .lime-confirm-dialog.is-open')) await page.click('#confirm-dialog-confirm'); };
   const top = () => page.evaluate(() => LimeMobileNav.topOverlay());
   const stateOv = () => page.evaluate(() => JSON.stringify((history.state && history.state.ov) || []));
-  check(tag('Account is one history entry on top of Messages (overlays: ' + (await stateOv()) + ')'), (await top()) === 'account' && (await stateOv()) === '["account"]');
-  await page.click('[data-account-go="security"]');
-  await discard();
-  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Login & security');
-  check(tag('Login & security opens as its own screen on top of Account'), (await top()) === 'account-security' && (await stateOv()) === '["account","account-security"]');
-  await page.click('.lime-settings__back');
-  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Account');
-  check(tag('"<" from Login & security returns to Account'), (await top()) === 'account');
-  await page.click('[data-account-go="preferences"]');
-  await discard();
-  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Preferences');
-  await page.goBack();
-  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Account');
-  check(tag('the browser\'s back from Preferences does the same: back on Account'), (await top()) === 'account' && (await visible(page, '#settings-modal')));
-  await page.click('.lime-settings__back');
-  await discard();
-  await wait(page, () => !document.getElementById('settings-modal').classList.contains('is-open'));
-  check(tag('"<" from Account returns to Messages: the dock is back, no overlay left in the history entry'), (await view(page)) === 'contacts' && (await visible(page, '#m-dock')) && (await stateOv()) === '[]' && (await top()) === null);
-  // Account → Login & security → "<" twice = back where you started
-  await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; }); // toasts float at the bottom now, over Account's last rows
+  const screen = () => page.evaluate(() => document.getElementById('settings-modal').dataset.screen);
+  const titleOf = () => page.evaluate(() => (document.getElementById('settings-pane-title') || {}).textContent);
+  const toScreen = async (id) => { await page.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; }); try { await page.click('[data-account-go="' + id + '"]'); } catch (e) { throw new Error('toScreen(' + id + ') failed: ' + JSON.stringify(await page.evaluate((x) => { const el = document.querySelector('[data-account-go="' + x + '"]'); const m = document.getElementById('settings-modal'); return { found: !!el, rect: el && el.getBoundingClientRect().toJSON(), screen: m.dataset.screen, open: m.classList.contains('is-open'), title: (document.getElementById('settings-pane-title') || {}).textContent, mode: document.getElementById('settings-pane').dataset.mode, conf: document.getElementById('confirm-dialog').classList.contains('is-open') }; }, id))); } await discard(); await wait(page, (x) => document.getElementById('settings-modal').dataset.screen === x, id); await sleep(250); };
+  const closed = () => wait(page, () => !document.getElementById('settings-modal').classList.contains('is-open'));
+
+  // ── LIME-84: Settings (design 05): a glass sheet from your avatar ──
   await page.click('#m-account-btn');
-  await wait(page, () => document.getElementById('settings-modal').classList.contains('is-open') && !!document.querySelector('[data-account-go="security"]'));
-  await page.click('[data-account-go="security"]'); await discard();
-  await wait(page, () => document.getElementById('settings-pane-title').textContent === 'Login & security');
-  await page.click('.lime-settings__back'); await sleep(300);
+  await wait(page, () => document.getElementById('settings-modal').classList.contains('is-open') && document.getElementById('settings-modal').dataset.screen === 'm-home');
+  await sleep(300);
+  const home = await page.evaluate(() => {
+    const m = document.getElementById('settings-modal'); const r = m.getBoundingClientRect(); const cs = getComputedStyle(m); const R = (e) => e.getBoundingClientRect();
+    const close = document.getElementById('settings-modal-close'); const cr = R(close); const hit = document.elementFromPoint(cr.left + cr.width / 2, cr.top + cr.height / 2);
+    const card = document.querySelector('.m-profile-card');
+    return { top: Math.round(r.top), w: Math.round(r.width), vw: innerWidth, radius: parseFloat(cs.borderTopLeftRadius), blur: /blur/.test(cs.backdropFilter || cs.webkitBackdropFilter || ''), title: document.getElementById('settings-pane-title').textContent, closeW: Math.round(cr.width), closeHit: !!(hit && close.contains(hit)), backShown: getComputedStyle(document.querySelector('.lime-settings__back')).display !== 'none', card: card.querySelector('b').textContent, contact: card.querySelector('small').textContent, rows: [...document.querySelectorAll('.m-row')].map((e) => e.textContent.trim()).join(), groups: document.querySelectorAll('.m-group').length, list: getComputedStyle(document.getElementById('settings-nav')).display };
+  });
+  check(tag('Settings (design 05): a glass sheet (top ' + home.top + 'px, radius ' + home.radius + ') titled "Settings" with a round x (hit-testable) and no back arrow'), home.top >= 6 && home.top <= 24 && home.w >= home.vw - 1 && home.radius >= 24 && home.blur && home.title === 'Settings' && home.closeW === 52 && home.closeHit && !home.backShown && home.list === 'none', JSON.stringify(home));
+  check(tag('Settings: a profile card with your name and your own email (you have no phone), then Account, Linked Devices, Donate to lime in one group and Customize in another: ' + home.rows), home.card === 'Mia Moreno' && /@example\.com$/.test(home.contact) && home.rows === 'Account,Linked Devices,Donate to lime,Customize' && home.groups === 2, JSON.stringify(home));
+  check(tag('Settings is one history entry on top of Messages (overlays: ' + (await stateOv()) + ')'), (await top()) === 'account' && (await stateOv()) === '["account"]');
+  await page.evaluate(() => document.getElementById('toast-container').innerHTML = '');
+  await page.click('[data-account-go="donate"]'); await sleep(250);
+  check(tag('Donate to lime says "Coming soon" while no donation address is set'), /Donating is coming soon/.test(await page.evaluate(() => document.getElementById('toast-container').textContent)));
+  await page.evaluate(() => { window.LIME_DONATE_URL = 'https://example.org/donate'; window.__opened = null; window.open = (u, t, f) => { window.__opened = [u, t, f]; return null; }; });
+  await page.click('[data-account-go="donate"]'); await sleep(150);
+  check(tag('with an address set it opens it in a new tab (noopener)'), JSON.stringify(await page.evaluate(() => window.__opened)) === '["https://example.org/donate","_blank","noopener"]');
+  await page.evaluate(() => { window.LIME_DONATE_URL = ''; });
+
+  // Profile (design 06)
+  await toScreen('m-profile');
+  const prof = await page.evaluate(() => {
+    const R = (e) => e.getBoundingClientRect(); const av = document.querySelector('.m-profile-photo .seed-avatar'); const edit = [...document.querySelectorAll('.m-pill-link')].find((b) => b.textContent === 'Edit Photo');
+    return { title: document.getElementById('settings-pane-title').textContent, avatar: Math.round(R(av).width), edit: !!edit && R(edit).width > 0, rows: [...document.querySelectorAll('.m-row')].map((e) => e.querySelector('.m-row__label').textContent + (e.querySelector('.m-row__value') ? '=' + e.querySelector('.m-row__value').textContent : '')).join('|'), notes: [...document.querySelectorAll('.m-note')].map((e) => e.textContent).join('|'), back: R(document.querySelector('.lime-settings__back')).width };
+  });
+  check(tag('Profile (design 06): a large avatar and Edit Photo, then Name and About, the visibility note, then Username and its note, with a round "<"'), prof.title === 'Profile' && prof.avatar >= 110 && prof.edit && prof.rows === 'Mia Moreno|About|Username' && prof.notes === 'Your profile and changes to it are visible to teachers you message and your groups.|Teachers can find you by your optional username, so you don’t have to share your phone number.' && prof.back === 52, JSON.stringify(prof));
+  await toScreen('m-name');
+  const nameScreen = await page.evaluate(() => ({ title: document.getElementById('settings-pane-title').textContent, shown: [...document.querySelectorAll('.lime-settings__body [data-field]:not(.lime-settings__profile-top)')].filter((e) => e.getBoundingClientRect().height > 0).map((e) => e.dataset.field).join(), save: !!document.getElementById('settings-save-btn') }));
+  check(tag('Name opens an edit screen with just the display name and Save / Cancel'), nameScreen.title === 'Name' && nameScreen.shown === 'display_name' && nameScreen.save, JSON.stringify(nameScreen));
   await page.click('.lime-settings__back'); await discard();
-  await wait(page, () => !document.getElementById('settings-modal').classList.contains('is-open'));
-  check(tag('Account > Login & security > "<" twice: back on Messages'), (await view(page)) === 'contacts' && (await stateOv()) === '[]');
+  await wait(page, () => document.getElementById('settings-modal').dataset.screen === 'm-profile');
+  await toScreen('m-about');
+  const aboutScreen = await page.evaluate(() => ({ title: document.getElementById('settings-pane-title').textContent, shown: [...document.querySelectorAll('.lime-settings__body [data-field]:not(.lime-settings__profile-top)')].filter((e) => e.getBoundingClientRect().height > 0).map((e) => e.dataset.field).join() }));
+  check(tag('About opens the rest of the profile (bio, pronouns, role, school, grades, subjects, timezone, phone), not the name: ' + aboutScreen.shown), aboutScreen.title === 'About' && !/display_name|photo/.test(aboutScreen.shown) && ['bio', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'timezone', 'phone'].every((f) => aboutScreen.shown.includes(f)), JSON.stringify(aboutScreen));
+  await page.click('.lime-settings__back'); await discard();
+  await wait(page, () => document.getElementById('settings-modal').dataset.screen === 'm-profile');
+
+  // Username: rules shown at once, saved with a message, shown on the Profile row
+  await toScreen('m-username');
+  const typeUser = async (v) => { await page.evaluate(() => { const i = document.getElementById('m-username-input'); i.value = ''; i.focus(); i.dispatchEvent(new Event('input', { bubbles: true })); }); if (v) await page.keyboard.type(v); await sleep(120); return page.evaluate(() => ({ err: document.getElementById('m-username-error').textContent, saveDisabled: document.getElementById('m-username-save').disabled })); };
+  const myHandle = 'mia.' + Math.random().toString(36).slice(2, 8); // each run has its own people on one server, and usernames are unique
+  const u1 = await typeUser('ab'), u2 = await typeUser('has space'), u3 = await typeUser('Admin'), u4 = await typeUser('.dots'), u5 = await typeUser(myHandle);
+  check(tag('Username: too short, a space, a reserved word and a leading dot are refused as you type, with Save off; a good one is accepted'), [u1, u2, u3, u4].every((u) => u.err && u.saveDisabled) && !u5.err && !u5.saveDisabled, JSON.stringify([u1, u2, u3, u4, u5]));
+  await page.click('#m-username-save');
+  await wait(page, () => document.getElementById('settings-modal').dataset.screen === 'm-profile');
+  await sleep(300);
+  check(tag('saving the username returns to Profile, which shows @' + myHandle + ', and it is on your profile'), (await page.evaluate(() => [...document.querySelectorAll('.m-row__value')].map((e) => e.textContent).join())) === '@' + myHandle && (await page.evaluate(() => LimeStore.getCurrentUser().username)) === myHandle);
+  await page.evaluate(() => { const u = LimeStore.getProfile(LimeStore.getCurrentUserId()); });
+  await page.click('.lime-settings__back'); await discard();
+  await wait(page, () => document.getElementById('settings-modal').dataset.screen === 'm-home');
+  await toScreen('m-account');
+  const acct = await page.evaluate(() => ({ title: document.getElementById('settings-pane-title').textContent, rows: [...document.querySelectorAll('.lime-settings__account-row')].map((e) => e.dataset.rowLabel).join() }));
+  check(tag('Account has the sign-in details: ' + acct.rows), acct.title === 'Account' && acct.rows === 'Email,Password,Sign out', JSON.stringify(acct));
+  await page.click('.lime-settings__back'); await wait(page, () => document.getElementById('settings-modal').dataset.screen === 'm-home');
+  await toScreen('m-customize');
+  check(tag('Customize is the appearance settings'), (await titleOf()) === 'Customize' && (await page.evaluate(() => !!document.querySelector('[data-row-label="Mode"], .lime-settings__stacked-row'))));
+  await page.click('.lime-settings__back'); await wait(page, () => document.getElementById('settings-modal').dataset.screen === 'm-home');
+  const phoneUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+  const otherDevice = await fetch(server.origin + '/api/v1/auth/signin', { method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': phoneUA }, body: JSON.stringify({ email: S.mia.email, password: S.mia.password, device_id: crypto.randomUUID() }) }).then((r) => r.json());
+  await toScreen('m-devices');
+  await wait(page, () => document.querySelectorAll('#m-devices-list .m-device').length > 1);
+  const devs = await page.evaluate(() => ({ title: document.getElementById('settings-pane-title').textContent, rows: [...document.querySelectorAll('#m-devices-list .m-device')].map((e) => e.querySelector('b').textContent + '/' + e.querySelector('small').textContent) }));
+  check(tag('Linked Devices lists this device: ' + devs.rows.join(' ; ')), devs.title === 'Linked Devices' && devs.rows.some((r) => /This device/.test(r)), JSON.stringify(devs));
+  await page.click('[data-device-out]');
+  await wait(page, () => document.getElementById('confirm-dialog').classList.contains('is-open'));
+  await page.click('#confirm-dialog-confirm');
+  await wait(page, () => document.querySelectorAll('#m-devices-list .m-device').length === 1);
+  const snapAfter = await fetch(server.origin + '/api/v1/snapshot', { headers: { authorization: 'Bearer ' + otherDevice.access_token } });
+  check(tag('Linked Devices: the iPhone shows with a friendly label ("iPhone · Safari"); Sign out (with a confirm) removes it, and that device is signed out at once'), /iPhone · Safari/.test(devs.rows.join()) && snapAfter.status === 401, JSON.stringify([devs.rows, snapAfter.status]));
+  check(tag('the screens are stacked: Settings, Linked Devices (overlays: ' + (await stateOv()) + ')'), (await stateOv()) === '["account","account-m-devices"]');
+  await page.goBack();
+  await wait(page, () => document.getElementById('settings-modal').dataset.screen === 'm-home');
+  check(tag('the browser\'s back from Linked Devices returns to Settings'), (await top()) === 'account');
+  await toScreen('m-profile'); await toScreen('m-username');
+  await page.click('.lime-settings__back'); await wait(page, () => document.getElementById('settings-modal').dataset.screen === 'm-profile');
+  await page.click('.lime-settings__back'); await wait(page, () => document.getElementById('settings-modal').dataset.screen === 'm-home');
+  check(tag('Settings > Profile > Username > "<" twice: back on Settings, each step one entry'), (await stateOv()) === '["account"]');
+  await page.click('#settings-modal-close');
+  await closed();
+  check(tag('the x closes Settings: Messages and its dock are back, no overlay left'), (await view(page)) === 'contacts' && (await visible(page, '#m-dock')) && (await stateOv()) === '[]');
 
   // ── a deep link opens that chat, and back goes to the list ──
   const deep = await openPhone(browser, server, S.mia, tag('deep link'), errors, Object.assign({}, size, { hash: '#c=' + S.zed }));
@@ -623,9 +670,9 @@ async function runOne(check, browser, name, server, S, size) {
   await page.evaluate((id) => document.querySelector('.lime-members-panel__row[data-profile-id="' + id + '"]').click(), S.mia.userId);
   await wait(page, () => document.getElementById('right-panel').dataset.panel === 'profile');
   await page.click('#profile-edit-btn');
-  await wait(page, () => document.getElementById('settings-modal').classList.contains('is-open') && !!document.querySelector('[data-account-go="security"]'));
-  check(tag('Account opened from a person\'s details stacks on top of it (overlays: ' + (await ovState()) + ')'), (await ovState()) === '["person","account"]');
-  await page.click('.lime-settings__back'); await discard();
+  await wait(page, () => document.getElementById('settings-modal').classList.contains('is-open') && document.getElementById('settings-modal').dataset.screen === 'm-home');
+  check(tag('Settings opened from a person\'s details stacks on top of it (overlays: ' + (await ovState()) + ')'), (await ovState()) === '["person","account"]');
+  await page.click('#settings-modal-close'); await discard();
   await wait(page, () => !document.getElementById('settings-modal').classList.contains('is-open'));
   check(tag('"<" from Account returns to that person\'s details'), (await page.evaluate(() => document.getElementById('right-panel').dataset.panel)) === 'profile' && (await view(page)) === 'panel' && (await ovState()) === '["person"]');
   await page.click('#profile-back-btn');
@@ -871,6 +918,24 @@ async function runOne(check, browser, name, server, S, size) {
     const addColor = await big.evaluate(() => { const b = document.querySelector('.lime-react-add'); const t = document.createElement('i'); t.style.color = 'var(--soil-text-muted)'; document.body.appendChild(t); const c = getComputedStyle(t).color; t.remove(); return { btn: getComputedStyle(b).color, token: c, op: parseFloat(getComputedStyle(b).opacity) }; });
     check(tag('the add-reaction icon is the muted secondary text colour'), addColor.btn === addColor.token && addColor.op < 1, JSON.stringify(addColor));
     await big.close();
+  }
+
+  // ── LIME-84: find someone by their @username in New message ──
+  if (name === 'Chrome' && size.width === 390) {
+    const handle = await page.evaluate(() => LimeStore.getCurrentUser().username);
+    const findPage = await openPhone(browser, server, S.ned, tag('find by username'), errors, size);
+    await findPage.evaluate(() => { document.getElementById('toast-container').innerHTML = ''; });
+    await findPage.click('#m-fab');
+    await wait(findPage, () => document.getElementById('picker-modal').classList.contains('is-open'));
+    const found = {};
+    for (const q of ['@' + handle, handle, '@' + handle.toUpperCase(), '@' + handle.slice(0, 5)]) {
+      await findPage.evaluate(() => { const i = document.getElementById('picker-input'); i.value = ''; i.focus(); i.dispatchEvent(new Event('input', { bubbles: true })); });
+      await findPage.keyboard.type(q);
+      await sleep(1100);
+      found[q] = await findPage.evaluate(() => [...document.querySelectorAll('#picker-results .lime-picker__result')].map((r) => r.querySelector('.lime-notif__name').textContent + '/' + r.querySelector('.lime-notif__preview').textContent));
+    }
+    check(tag('New message finds Mia by her exact @username, with or without the @ and in any case, showing "@' + handle + '" under her name; a partial username finds nobody'), [handle, '@' + handle, '@' + handle.toUpperCase()].every((q) => found[q].includes('Mia Moreno/@' + handle)) && !found['@' + handle.slice(0, 5)].some((r) => /^Mia Moreno/.test(r)), JSON.stringify(found));
+    await findPage.close();
   }
 
   // ── LIME-79-fix: live presence with two clients (Chrome 390 only): Ned signs in and out; Mia's list, chat header and Members follow ──

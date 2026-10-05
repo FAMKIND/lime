@@ -55,3 +55,30 @@ export const MIME = {
   '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.map': 'application/json',
 };
 export const mimeFor = (file) => MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+
+// ── usernames (LIME-84) ──
+// Optional, unique (case-insensitively), 3 to 20 characters: letters, numbers, "." and "_", not starting or ending with a dot. A few
+// words are reserved so nobody can pass for the app or its staff. The same rules live in public/js/store.js for the browser.
+export const USERNAME_RESERVED = new Set(['admin', 'administrator', 'lime', 'support', 'help', 'root', 'system', 'moderator', 'mod',
+  'staff', 'team', 'official', 'security', 'abuse', 'postmaster', 'webmaster', 'null', 'undefined', 'api', 'www', 'mail', 'info',
+  'contact', 'billing', 'settings', 'account', 'me', 'you', 'everyone', 'all', 'here', 'famkind']);
+// Returns an error message, or null when `value` is a valid username (a leading "@" is not part of it and must be removed first).
+export function usernameError(value) {
+  if (typeof value !== 'string') return 'Username must be text.';
+  if (value.length < 3 || value.length > 20) return 'Use 3 to 20 characters.';
+  if (!/^[A-Za-z0-9._]+$/.test(value)) return 'Use only letters, numbers, dots and underscores.';
+  if (value.startsWith('.') || value.endsWith('.')) return 'A username can\u2019t start or end with a dot.';
+  if (USERNAME_RESERVED.has(value.toLowerCase())) return 'That username is reserved. Try another.';
+  return null;
+}
+
+// A friendly label for a device from its browser's User-Agent text: "iPhone \u00b7 Safari", "Mac \u00b7 Chrome". Best effort, never exact.
+export function deviceLabel(ua) {
+  const s = String(ua || '');
+  if (!s) return 'Unknown device';
+  const os = /iPhone/i.test(s) ? 'iPhone' : /iPad/i.test(s) ? 'iPad' : /Android/i.test(s) ? 'Android' : /Macintosh|Mac OS X/i.test(s) ? 'Mac'
+    : /Windows/i.test(s) ? 'Windows' : /CrOS/i.test(s) ? 'Chromebook' : /Linux|X11/i.test(s) ? 'Linux' : 'Device';
+  const browser = /Edg\//i.test(s) ? 'Edge' : /OPR\/|Opera/i.test(s) ? 'Opera' : /(Firefox|FxiOS)\//i.test(s) ? 'Firefox' : /(Chrome|CriOS|HeadlessChrome)\//i.test(s) ? 'Chrome'
+    : /Safari\//i.test(s) ? 'Safari' : /node|undici|curl/i.test(s) ? 'App' : 'Browser';
+  return os + ' \u00b7 ' + browser;
+}

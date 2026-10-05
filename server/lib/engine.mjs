@@ -2,10 +2,10 @@
 // processOp(); the append-only log is the source of truth and state.json is only a cache of replaying it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { E, ApiError, isStr, isId, isDeviceId, isObj, isEmail, nowIso, ensureDir, writeJsonAtomic, readJson } from './util.mjs';
+import { E, ApiError, isStr, isId, isDeviceId, isObj, isEmail, nowIso, ensureDir, writeJsonAtomic, readJson, usernameError } from './util.mjs';
 
-const PROFILE_PATCH_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone', 'avatar_url'];
-const PUBLIC_PROFILE_FIELDS = ['id', 'display_name', 'school', 'role', 'pronouns', 'grade_levels', 'subjects', 'bio', 'timezone', 'avatar_url'];
+const PROFILE_PATCH_FIELDS = ['display_name', 'pronouns', 'role', 'school', 'grade_levels', 'subjects', 'bio', 'timezone', 'phone', 'avatar_url', 'username'];
+const PUBLIC_PROFILE_FIELDS = ['id', 'display_name', 'username', 'school', 'role', 'pronouns', 'grade_levels', 'subjects', 'bio', 'timezone', 'avatar_url'];
 const OP_TYPES = ['message.send', 'reaction.toggle', 'conversation.create', 'conversation.rename', 'conversation.delete',
   'conversation.deleteForMe', 'membership.add', 'membership.setStarred', 'membership.setArchived', 'membership.markRead',
   'profile.update', 'profile.setEmail'];
@@ -128,6 +128,18 @@ export class Engine {
     }
     if (changed.length) this.append({ kind: 'system.merge', server_ts: ts, audience: [], merge: { profiles: changed } });
     return found;
+  }
+
+  // Seed teachers that define a username (the two test accounts) get it, once, if their stored profile has none yet (data made before
+  // usernames existed). Idempotent.
+  mergeSeedUsernames(seedProfiles) {
+    const changed = [];
+    const ts = nowIso();
+    for (const sp of seedProfiles) {
+      const p = this.profiles.get(sp.id);
+      if (p && sp.username && !p.username) changed.push(Object.assign({}, p, { username: sp.username, updated_at: ts }));
+    }
+    if (changed.length) this.append({ kind: 'system.merge', server_ts: ts, audience: [], merge: { profiles: changed } });
   }
 
   // ── the log ──
@@ -397,8 +409,16 @@ export class Engine {
               if (!isId(v)) throw E.invalidOp('avatar_url must be a file id.');
               if (!replay) { const f = this.files.get(v); if (!f || f.uploader !== actorId) throw E.notFound('That photo was not uploaded by you.'); }
             }
+          } else if (k === 'username') {
+            // optional and unique (ignoring case): null or an empty string clears it
+            if (v !== null && v !== '') {
+              const err = usernameError(v);
+              if (err) throw E.invalidOp(err);
+              if (!replay && [...this.profiles.values()].some((x) => x.id !== actorId && (x.username || '').toLowerCase() === v.toLowerCase())) throw E.conflict('That username is taken. Try another.');
+            }
           } else if (v !== null && !isStr(v, 5000)) throw E.invalidOp(k + ' must be text.');
         }
+        if (patch.username === '') patch.username = null;
         Object.assign(profile, patch, { updated_at: ts });
         if (!replay && patch.avatar_url) this.files.markAvatar(patch.avatar_url, actorId);
         return { audience: this.coMemberIds(actorId, true) };
@@ -543,6 +563,7 @@ export class Engine {
     const text = String(q || '').trim();
     if (text.length < 2) throw E.badRequest('q must be at least 2 characters.');
     const lower = text.toLowerCase();
+    const handle = lower.replace(/^@/, ''); // an exact @username, with or without the @
     const digits = text.replace(/\D/g, '');
     const phoneQuery = digits.length >= 7 && digits.length === text.replace(/[\s()+.-]/g, '').length ? digits : null;
     const out = [];
@@ -550,6 +571,7 @@ export class Engine {
       if (p.id === callerId) continue;
       const hit = (p.display_name || '').toLowerCase().includes(lower) || (p.school || '').toLowerCase().includes(lower)
         || (p.email || '').toLowerCase() === lower
+        || (!!handle && !!p.username && p.username.toLowerCase() === handle)
         || (phoneQuery && p.phone && String(p.phone).replace(/\D/g, '') === phoneQuery);
       if (!hit) continue;
       const pub = {};
@@ -564,7 +586,7 @@ export class Engine {
     const ts = nowIso();
     const profile = {
       id, auth_user_id: null, display_name, email, role: null, pronouns: null, school: null, grade_levels: null, subjects: null,
-      bio: null, timezone: null, phone: null, status: null, avatar_url: null, created_at: ts, updated_at: ts,
+      bio: null, timezone: null, phone: null, status: null, avatar_url: null, username: null, created_at: ts, updated_at: ts,
     };
     this.append({ kind: 'system.profile', server_ts: ts, audience: [], profile });
     return profile;
