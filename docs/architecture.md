@@ -70,7 +70,7 @@ Each device has its own keys, in the Matrix style.
 
 **The server is a blind mailbox (D8).** It does not run conversations; it delivers sealed envelopes to device mailboxes.
 
-- **Sealed sender.** The sender's identity travels inside the encrypted envelope, so the server does not learn who sent a message.
+- **Sealed sender.** The sender's identity travels inside the encrypted envelope, so the server does not learn who sent a message. The one exception is a stranger's first message, which is sent identified so that it can land in Requests ([`api-v2.md`](./api-v2.md) section 4).
 - **Client-managed encrypted group state.** Who is in a group, its name and its avatar are state that member devices keep and change themselves, as encrypted group-state ops. The server holds no list of groups and does not know their names.
 - **Per-device mailboxes.** A message is delivered to each recipient device's mailbox and removed after delivery. Because the server does not track groups, it does not check membership: clients and delivery tokens, not database row-level rules, take over what those checks did.
 
@@ -92,20 +92,20 @@ Each device has its own keys, in the Matrix style.
 
 **Reporting abuse:** a Report sends the reported messages, decrypted, by the reporter's choice. Nothing else is readable.
 
-**What the server can still see** (the honest limit): the **recipient devices** a message is for, **timing**, **sizes**, and **IP addresses**. Even Signal's server sees these. It never sees message content, the sender of a message, or who belongs to which group.
+**What the server can still see** (the honest limit): the **recipient devices** a message is for, **timing**, **sizes**, and **IP addresses**. Even Signal's server sees these. It never sees message content or who belongs to which group, and it does not see the sender of a sealed message (a stranger's first message is the exception, as above).
 
 The server also holds two things by design, because finding people and starting conversations needs them: the **key directory** (public keys) and the **user directory** (the public profile fields people choose to publish, section 8).
 
 ## 6. API v2 deltas from v1
 
-This section describes the shape of the changes. Endpoint specifications are a later brief; the v1 contract is [`api.md`](./api.md).
+This section describes the shape of the changes. Endpoint specifications are a later brief; the v1 contract is [`api.md`](./api.md). The decided protocol is in [`api-v2.md`](./api-v2.md).
 
 - **A signed envelope.** Every op envelope gains `sig` (section 4). Anything unsigned or badly signed is dropped.
 - **Encrypted payloads.** A message op's `payload` becomes `{ algorithm, session_id, ciphertext }`. The server can no longer validate, search or preview content.
 - **Group-state ops.** The v1 membership and conversation ops become encrypted group-state ops that member devices apply themselves. The server no longer holds memberships, so the v1 row-level rules that depend on them (`api.md` §8, Visibility) do not carry over to the native apps.
 - **Mailbox delivery.** Ops are delivered to per-device mailboxes (section 5) instead of being read from one op log per user. A device fetches its mailbox, applies the ops locally, and the server deletes what has been delivered.
-- **`seq`.** DESIGN-01 kept `seq` as the server's ordering of what it delivers online. How that ordering works for a mailbox that cannot see conversations is not yet specified (section 11, item 5).
-- **De-duplication** by `op_id` stays: sending an op twice has the same effect as once, which also lets a relay and the server both carry the same op.
+- **Ordering.** The server's mailbox `cursor` is for sync only; the order of a conversation comes from the devices (a hybrid logical clock plus `parents[]`). This answers the question that was open here (section 11, item 5; [`api-v2.md`](./api-v2.md) section 5).
+- **De-duplication.** The server cannot see the inner `op_id`, so it de-duplicates by a hash of the outer ciphertext per recipient device, and recipients de-duplicate by `op_id`: sending an op twice has the same effect as once, which lets a relay and the server both carry the same op ([`api-v2.md`](./api-v2.md) section 8).
 - **Call signalling** moves into encrypted call ops (`call.invite`, `call.answer`, `call.end`) in the conversation (section 9).
 - **Everything else in v1 that does not touch content** (client-made ids, the outbox, idempotent ops, local-first reads) carries over unchanged.
 
@@ -113,7 +113,7 @@ This section describes the shape of the changes. Endpoint specifications are a l
 
 - **The unit is the signed, encrypted op envelope**, already unreadable to relays.
 - **Any Lime phone relays** (D6). A relay sees only scrambled data and routing hints.
-- **Store and forward:** at most 7 hops and 72 hours, de-duplicated by `op_id`. Devices exchange "what I have" summaries and swap the missing ops. There are per-device-key rate limits, and anything unsigned is dropped. Whoever reaches the internet first uploads; the server de-duplicates by `op_id`.
+- **Store and forward:** at most 7 hops and 72 hours. Relays carry the outer envelope unchanged. Devices exchange "what I have" summaries and swap the missing items. There are per-device-key rate limits, and anything unsigned is dropped. Whoever reaches the internet first uploads; the server de-duplicates by a hash of the outer ciphertext per recipient device, and recipients de-duplicate by `op_id` ([`api-v2.md`](./api-v2.md) section 8; how a relay recognises an envelope it already carries is open item 5 in its section 11).
 - **Transport:**
   - iOS: CoreBluetooth with background modes and state restoration;
   - Android: a foreground service;
@@ -185,3 +185,4 @@ DESIGN-01's order, **as amended by the user on 2026-10-05: mesh v1 comes before 
 3. **Metadata hiding beyond the mailbox** (zkgroup-style private group credentials), to be revisited later.
 4. **The web and desktop client's end-to-end encryption** (vodozemac compiled to WebAssembly), later.
 5. **Message ordering under the mailbox** (raised while writing this document). v1 makes the server's `seq` the one order of events. DESIGN-01 kept `seq` as the server's ordering online, and then D8 made the server blind to conversations. How a per-mailbox delivery order relates to the order messages appear in a conversation is not specified, and the API v2 brief has to answer it.
+   **Answered in `docs/api-v2.md` §5 (2026-10-06).**
