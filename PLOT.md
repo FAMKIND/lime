@@ -228,6 +228,19 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - group video comes only when funded.
 
   Raise these with the user before LIME-88 if possible, or as a DESIGN-01 amendment.
+- **DECIDED (user, 2026-10-05):**
+  1. **1:1 calls go peer-to-peer WebRTC** (with a TURN fallback); **the self-hosted LiveKit SFU only for group calls**. LIME-88 must write DESIGN-01 §6 this way.
+  2. **The first TestFlight waits until offline mesh relaying is included.** So the build order moves "Mesh v1" **before** "TestFlight":
+     1. … 7. sync + E2EE messaging;
+     2. 8. push;
+     3. 9. **mesh v1**;
+     4. 10. **TestFlight**;
+     5. 11. 1:1 calls (P2P);
+     6. 12. group calls (LiveKit);
+     7. 13. Android.
+
+     LIME-88 writes the amended order.
+- **The cost-design leans** (the mailbox deletes after delivery, attachments expire, audio before video, group video only when funded) are carried into LIME-88 as **principles**, not hard numbers.
 
 ### Open thread: voice and video calls (raised by the user 2026-10-05: "a major part of teachers connecting")
 - **Plot's plan:**
@@ -869,6 +882,13 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
+**Update: LIME-87-fix3 landed as `6131d50`** (pushed and verified).
+- `ios/Local.xcconfig` is gitignored and not tracked; it holds the team `CZH2QUHB3Y`.
+- 16 tests pass.
+- The accent comparison (`acc/accent-compare.png`): **plot's lean is to keep `#a3e18a`**. It reads well on both canvases; `#b8e8a3` is faint in light; `#8fd473` is fine but heavier.
+- DM sender names stay groups-only (tend's call, matches Apple).
+- Awaiting the user's pick and phone check, then LIME-88.
+
 **Update: the user ran Lime on their own iPhone 13 mini** (free Personal Team signing; Developer Mode on; trusted). "Looks good." **LIME-87-fix3 is drafted:** DM avatars, the accent `#a3e18a` for the badges and "+", and persistent local signing. The plain title (no capsule) was accepted implicitly.
 
 **Update: LIME-87-fix2 landed as `4f1db1e`** (pushed and verified).
@@ -973,7 +993,45 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-88 → `tend` (lime-aa) (after LIME-87-fix3 is reviewed): DESIGN-01 into `docs/` (docs only)
+### LIME-87-fix4 → `tend` (lime-aa) (next): the dark own bubble in the accent green; a chat title that fits on small iPhones
+**What it does:** the user approved `#a3e18a` ("looks good in light and dark") and asked for **the dark-mode own bubble to be `#a3e18a`** too. Their iPhone 13 mini screenshot also shows the chat title cut to "Autu…" (375pt wide).
+
+**Capabilities assumed:** edit files, XcodeGen, `xcodebuild`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):** the theme tokens for the own bubble, the bubble ink, the send button and the accent; the iOS 26 toolbar title (principal) and the iOS 17–25 title pill. If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Dark mode only:**
+   - the **own bubble** = the accent `#a3e18a`, with the accent ink for its text, links and timestamps inside it (≥ 4.5:1);
+   - the **send button** (the up arrow) = the same accent + ink, so the composer matches.
+   - **Light mode is unchanged** (the own bubble keeps its light primary).
+   - Update the tests: in dark, the own bubble equals the accent and the ink contrast is ≥ 4.5:1; in light, the own bubble is unchanged.
+   - Remove the now-unused dark primary from LIME-87-fix **only if nothing else uses it**; otherwise leave it.
+2. **The chat title on narrow phones, Apple Messages-style:**
+   - On iOS 26+, the principal title shows the **avatar (or avatar stack) above the name**, small, centred (Apple Messages' layout). The name gets the full width between the back button and the trailing group; "N members" is dropped from the title on phones narrower than 390pt if needed.
+   - On iOS 17–25, keep the pill but let the name take priority: shrink the avatar stack first, then truncate.
+   - **Acceptance:** at 375pt wide (the iPhone 13 mini / SE size), "Autumn Reyes", "Journey Park" and "Grade 4 Team" show **in full**. Longer names may still truncate.
+
+**Out of scope:** light-mode colours; anything outside `ios/`.
+
+**Phase 3: verification.**
+- `./generate.sh`; build + test on the iPhone 18 Pro (iOS 27.0) **and the smallest available iPhone simulator** (create an iPhone SE / 13 mini-class simulator with `simctl` if one exists for iOS 27; otherwise use the narrowest one available and say which). 0 failures, no warnings.
+- **A UI test:** in the Autumn Reyes chat, the title's full name is visible (not truncated) at the narrow size.
+- Screenshots: a dark DM chat with own bubbles and the send button; light DM unchanged; a narrow-width chat header. Report the paths.
+- If the iPhone ("iPhone") is connected, also build for it and report the result.
+
+**Gate (the user, on the iPhone):**
+- in dark mode your bubbles and the send arrow are the bright `#a3e18a` with dark text;
+- light mode is unchanged;
+- chat titles show full names on your iPhone 13 mini.
+
+**Record:** a `## LIME-87-fix4` entry in `TEND.md`. Commit: `fix(ios): accent-green dark own bubble and send; Apple-style chat title on narrow phones`, trailer `Brief: LIME-87-fix4`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-88 → `tend` (lime-aa) (after LIME-87-fix4 is reviewed): DESIGN-01 into `docs/` (docs only)
 **What it does:** writes the decided native architecture into the repo, so every later brief and agent works from one document instead of `PLOT.md`.
 
 **Capabilities assumed:** edit files, commit, push. No builds needed.
@@ -996,8 +1054,8 @@ If anything in them conflicts, **stop and ask the user**; don't resolve it yours
    6. API v2 deltas from v1 (the signed envelope `sig`, encrypted payloads, group-state ops, mailbox delivery). Describe the shape; **don't write endpoint specs** (that's a later brief);
    7. Offline mesh (D6 = A);
    8. Discovery and safety (D7 = A, message requests, block, report, "hide me from search", 18+);
-   9. Calls;
-   10. Build order (DESIGN-01 §7 as amended);
+   9. Calls (**1:1 = peer-to-peer WebRTC + TURN; group = self-hosted LiveKit**);
+   10. Build order (DESIGN-01 §7 **as amended by the user on 2026-10-05: mesh v1 before TestFlight**; see "Open thread: market and bootstrapping"), plus a short "Cost principles" note from that thread;
    11. Open questions: the licence; the Bluetooth spike's results; metadata hiding beyond the mailbox (zkgroup-style), revisited later; the web/desktop client's E2EE (vodozemac WASM), later.
 
    Plain, precise prose. **Copy decisions faithfully; add no new decisions.**
