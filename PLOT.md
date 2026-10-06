@@ -75,6 +75,8 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **The bigger choice is the Apple account type:** individual (the seller shows the user's personal name) vs organisation (needs a legal entity + a D-U-N-S number, free but it can take days to weeks).
   - The user is to decide before enrolling next month.
 
+**Update: LIME-94w landed as `e15afb6`** (pushed and verified). The web sign-in now shows only email. Plot checked the 390px screenshot: it's tidy. **Next: LIME-94.**
+
 **Update: LIME-93 landed as `7f411a0`** (pushed and verified; no project ref in HEAD).
 - **The first E2EE exchange between two accounts passes locally and on staging**; staging was left clean.
 - 30 Rust + 13 server + 36 iOS tests pass; the app size is +848 KB.
@@ -1297,6 +1299,13 @@ If anything contradicts this brief, stop and ask the user.
   - **If the built-in sender can't deliver codes to the two test addresses the user will provide, stop and ask the user** (the likely fix is a free Resend account plus DNS records on famkind.com, which only the user can do).
 
 If anything contradicts DESIGN-03 or `api-v2.md`, stop and ask the user.
+
+**The test addresses (the user, 2026-10-06):**
+- `shem@famkind.com` (the iPhone) and `jean@famkind.com` (the simulator). These are the intentionally public demo emails (see the session lessons).
+- **The Supabase org FAM now has 2 members** (2026-10-06): `shem@` (Owner) and `jean@` (Administrator; accepted). **MFA is enabled on both.** So the built-in sender's team-member restriction, if it applies, is satisfied for both test addresses.
+- **The user can edit famkind.com's DNS** (confirmed 2026-10-06).
+  - If the built-in sender can't reach both addresses, try the simplest fix first: invite `jean@famkind.com` to the Supabase organisation.
+  - Otherwise, propose Resend (a free tier) with the exact DNS records for the user to add. **Stop and give the user the records and the steps; don't create accounts for them.**
 
 **Phase 2: the change.**
 1. **Server:**
