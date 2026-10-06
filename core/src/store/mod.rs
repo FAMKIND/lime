@@ -9,6 +9,7 @@
 //! design: the envelope signature (`sig`), a hybrid logical clock for ordering, and message
 //! parents. See `docs/architecture.md` section 6.
 
+pub(crate) mod account;
 mod migrations;
 mod sample;
 #[cfg(test)]
@@ -41,6 +42,20 @@ pub enum StoreError {
     EmptyMessage,
     /// Any other database failure (the message carries no key material).
     Database,
+    /// The network request could not be made (no response).
+    Network,
+    /// The server refused the request (a 4xx: bad request, not allowed, rate limited, conflict).
+    Rejected,
+    /// The server could not handle the request (a 5xx).
+    Unavailable,
+    /// A message or a response was malformed, failed verification, or stored state is unreadable.
+    BadMessage,
+    /// This device has not been registered with the server yet.
+    NotRegistered,
+    /// The recipient has no devices to send to, or no keys to start a session with.
+    NoRecipientKeys,
+    /// A person's master key differs from the one remembered for them.
+    KeyMismatch,
 }
 
 impl std::fmt::Display for StoreError {
@@ -53,6 +68,13 @@ impl std::fmt::Display for StoreError {
             StoreError::NotFound => "no such conversation",
             StoreError::EmptyMessage => "a message cannot be empty",
             StoreError::Database => "a database error occurred",
+            StoreError::Network => "the network request failed",
+            StoreError::Rejected => "the server refused the request",
+            StoreError::Unavailable => "the server could not handle the request",
+            StoreError::BadMessage => "a message or response could not be verified",
+            StoreError::NotRegistered => "this device is not registered yet",
+            StoreError::NoRecipientKeys => "the recipient has no keys to send to",
+            StoreError::KeyMismatch => "a person's master key changed",
         };
         f.write_str(text)
     }
@@ -98,24 +120,28 @@ pub struct ConversationSummary {
 #[derive(uniffi::Object)]
 pub struct LimeStore {
     conn: Mutex<Connection>,
+    /// Encrypts the Olm pickles: derived from the store key (HKDF). Never logged.
+    pub(crate) pickle_key: [u8; 32],
+    /// Serialises register, send and sync, so two of them never interleave their network calls.
+    pub(crate) protocol_lock: Mutex<()>,
 }
 
-fn db_err(_: rusqlite::Error) -> StoreError {
+pub(crate) fn db_err(_: rusqlite::Error) -> StoreError {
     StoreError::Database
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
 
-fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     Uuid::now_v7().to_string()
 }
 
-fn initials_of(name: &str) -> String {
+pub(crate) fn initials_of(name: &str) -> String {
     name.split_whitespace()
         .take(2)
         .filter_map(|word| word.chars().next())
@@ -255,7 +281,7 @@ impl LimeStore {
 }
 
 impl LimeStore {
-    fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
+    pub(crate) fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
         // A poisoned lock only means another call panicked; the database itself is intact.
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -298,6 +324,8 @@ impl LimeStore {
         migrations::run(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
+            pickle_key: crate::keys::derive_pickle_key(key),
+            protocol_lock: Mutex::new(()),
         })
     }
 }

@@ -28,7 +28,7 @@ supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF" --use-api
 echo "Setting function secrets (the limits; the defaults decided in LIME-92)..."
 supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" \
   LIME_RATE_SEND_PER_MIN=120 LIME_RATE_CLAIM_PER_MIN=60 LIME_RATE_REGISTER_PER_HOUR=10 \
-  LIME_MAX_ITEM_BYTES=65536 >/dev/null
+  LIME_MAX_ITEM_BYTES=65536 LIME_RATE_LOOKUP_PER_MIN=30 >/dev/null
 
 # The URL and the anon (publishable) key are meant to ship inside the app, so they may be written
 # to a gitignored file for the later iOS brief. The service-role key is never read here.

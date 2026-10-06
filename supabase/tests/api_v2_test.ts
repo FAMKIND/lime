@@ -345,3 +345,51 @@ Deno.test("a send nudges the device's Realtime channel with no content", opts, a
     assertEquals(message?.payload, { type: "new" }, "the nudge carries no content");
   });
 });
+
+Deno.test("users-lookup: an exact email gives a user id, nothing else is listed, and it is rate-limited", opts, async () => {
+  await withUsers(2, async ([alice, bob]) => {
+    // Exact and case-insensitive.
+    const found = await call("users-lookup", alice.token, { email: bob.email });
+    assertEquals(found.status, 200);
+    assertEquals(found.body, { user_id: bob.id }, "only the user id is returned");
+    assertEquals((await call("users-lookup", alice.token, { email: bob.email.toUpperCase() })).body.user_id, bob.id);
+
+    // Not found, and no partial matching or listing.
+    assertEquals((await call("users-lookup", alice.token, { email: "nobody@example.invalid" })).status, 404);
+    const partial = bob.email.slice(0, bob.email.indexOf("@") - 3) + "@example.invalid";
+    assertEquals((await call("users-lookup", alice.token, { email: partial })).status, 404);
+    assertEquals((await call("users-lookup", alice.token, { email: "%@example.invalid" })).status, 404);
+    assertEquals((await call("users-lookup", alice.token, { email: "not an email" })).status, 400);
+
+    // A user token is required, and the anon key alone is not enough.
+    assertEquals((await call("users-lookup", null, { email: bob.email })).status, 401);
+    assertEquals((await call("users-lookup", ANON_KEY, { email: bob.email })).status, 401);
+
+    // The 30-per-minute limit trips (some of the calls above already counted).
+    let tripped = 0;
+    for (let i = 0; i < 35; i++) {
+      if ((await call("users-lookup", alice.token, { email: bob.email })).status === 429) tripped++;
+    }
+    assert(tripped > 0, "the lookup rate limit trips");
+
+    // anon / authenticated cannot call the SQL function directly.
+    const signedIn = createClient(API_URL, ANON_KEY, {
+      auth: { persistSession: false }, global: { headers: { authorization: `Bearer ${alice.token}` } },
+    });
+    assert((await signedIn.rpc("lookup_user_id_by_email", { p_email: bob.email })).error !== null);
+  });
+});
+
+Deno.test("devices-register returns the account's user id", opts, async () => {
+  await withUsers(1, async ([bob]) => {
+    const master = await newMasterKey();
+    const device = { deviceId: crypto.randomUUID(), identityKey: toBase64(randomBytes(32)), signingKey: toBase64(randomBytes(32)) };
+    const res = await call("devices-register", bob.token, {
+      device_id: device.deviceId, identity_key: device.identityKey, signing_key: device.signingKey,
+      master_key: master.publicKey,
+      master_signature: await master.sign(`lime-device-v1\n${device.deviceId}\n${device.identityKey}\n${device.signingKey}`),
+    });
+    assertEquals(res.status, 201);
+    assertEquals(res.body.user_id, bob.id);
+  });
+});

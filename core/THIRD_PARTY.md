@@ -1,6 +1,6 @@
 # Third-party licences (LimeCore)
 
-Checked 2026-10-06 (updated for LIME-90) against the crates in `Cargo.lock` (`cargo metadata`). Lime's own code is MIT.
+Checked 2026-10-06 (updated for LIME-90 and LIME-93) against the crates in `Cargo.lock` (`cargo metadata`). Lime's own code is MIT.
 
 ## Direct dependencies
 
@@ -9,7 +9,10 @@ Checked 2026-10-06 (updated for LIME-90) against the crates in `Cargo.lock` (`ca
 | [vodozemac](https://crates.io/crates/vodozemac) | 0.11.1 | Apache-2.0 | Olm and Megolm encryption (Matrix's reference implementation; audited by Least Authority in 2022). Linked into the app. |
 | [rusqlite](https://crates.io/crates/rusqlite) | 0.40.2 | MIT | The Rust SQLite API for the local store. |
 | [libsqlite3-sys](https://crates.io/crates/libsqlite3-sys) | 0.38.2 | MIT | Compiles the bundled **SQLCipher** (feature `bundled-sqlcipher`); see below. |
-| [uuid](https://crates.io/crates/uuid) | 1.27.0 | Apache-2.0 or MIT | UUIDv7 message ids made by the core. |
+| [uuid](https://crates.io/crates/uuid) | 1.27.0 | Apache-2.0 or MIT | UUIDv7 message and op ids, and random device ids (`v7` and `v4`). |
+| [serde](https://crates.io/crates/serde), [serde_json](https://crates.io/crates/serde_json) | 1.0.229, 1.0.151 | MIT or Apache-2.0 | The op and envelope JSON (LIME-93). |
+| [hkdf](https://crates.io/crates/hkdf), [sha2](https://crates.io/crates/sha2) | 0.13.0, 0.11.0 | MIT or Apache-2.0 | Derives the pickle key from the store key (HKDF-SHA256). The same versions vodozemac already uses. |
+| [ureq](https://crates.io/crates/ureq) | 2.12.1 | MIT or Apache-2.0 | **Tests only** (a dev-dependency): the HTTP client of the integration tests. With its TLS stack (`rustls`, `ring` Apache-2.0 AND ISC, `rustls-webpki` ISC, `webpki-roots` CDLA-Permissive-2.0) it is not linked into the app. |
 | [tempfile](https://crates.io/crates/tempfile) | 3.27.0 | MIT or Apache-2.0 | Tests only (a dev-dependency); not linked into the app. |
 | [uniffi](https://crates.io/crates/uniffi) | 0.32.2 | MPL-2.0 | Generates the Swift bindings (build tool, `cargo run --features cli --bin uniffi-bindgen`) and provides the small runtime (`uniffi_core` and the macros) linked into the library. |
 
@@ -28,7 +31,7 @@ MPL-2.0 is a file-level ("weak") copyleft licence, not a project-wide one. Using
 
 The generated Swift (`ios/Lime/Core/Generated/`) contains UniFFI template code, so those files stay under UniFFI's terms. They are gitignored and rebuilt from source, and nothing in them is edited by hand. This is a reading of the licence, not legal advice; it is worth a lawyer's glance before the first public release.
 
-## Transitive crates (155 packages in the resolved graph, including build-time and other-platform crates)
+## Transitive crates (202 packages in the resolved graph, including build-time, test-only and other-platform crates)
 
 `cargo metadata` shows only permissive licences, plus UniFFI's own MPL-2.0 crates (`uniffi`, `uniffi_bindgen`, `uniffi_core`, `uniffi_internal_macros`, `uniffi_macros`, `uniffi_meta`, `uniffi_pipeline`, `uniffi_udl`). No GPL or AGPL licence applies to anything linked.
 

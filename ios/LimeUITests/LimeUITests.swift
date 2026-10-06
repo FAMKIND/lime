@@ -86,6 +86,10 @@ final class LimeUITests: XCTestCase {
         expectation(for: passed, evaluatedWith: result)
         waitForExpectations(timeout: 10)
         XCTAssertTrue(app.staticTexts["about-versions"].label.contains("Core"))
+        #if DEBUG
+        XCTAssertTrue(app.staticTexts["developer-staging"].exists, "Debug builds show the staging row")
+        XCTAssertTrue(app.staticTexts["developer-staging"].label.contains("Not connected"))
+        #endif
         let storage = app.staticTexts["storage-result"]
         XCTAssertTrue(storage.waitForExistence(timeout: 10))
         expectation(for: NSPredicate(format: "label CONTAINS 'encrypted'"), evaluatedWith: storage)

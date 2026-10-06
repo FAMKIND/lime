@@ -12,6 +12,8 @@ name = "lime_core"
 crate-type = ["staticlib", "lib"]
 
 [features]
+# The integration tests talk to a real Supabase stack (local or staging); see core/README.md.
+integration = []
 # Only the binding generator binary needs this (see uniffi-bindgen.rs).
 cli = ["uniffi/cli"]
 
@@ -24,7 +26,11 @@ required-features = ["cli"]
 uniffi = { version = "0.32.2" }
 vodozemac = "0.11.1"
 rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher"] }
-uuid = { version = "1.27.0", features = ["v7"] }
+uuid = { version = "1.27.0", features = ["v7", "v4"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hkdf = "0.13"
+sha2 = "0.11"
 
 [profile.release]
 lto = true
@@ -34,3 +40,4 @@ strip = true
 
 [dev-dependencies]
 tempfile = "3"
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }

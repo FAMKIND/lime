@@ -1,0 +1,684 @@
+//! The API v2 client: register this device, look people up, send an identified Olm message, and
+//! sync (fetch, decrypt, store, acknowledge). The protocol lives here; the network is the
+//! platform's [`Transport`]. Auth tokens are passed in per call and never stored.
+//!
+//! Scope of LIME-93: identified 1:1 sends only, Olm only. No Megolm, sealed sends, delivery keys,
+//! groups or Requests yet. The op's `payload` is a plain `{ "text": ... }` inside the Olm
+//! ciphertext until Megolm lands.
+
+use std::sync::Arc;
+
+use rusqlite::{params, Connection};
+use serde_json::{json, Value};
+use vodozemac::olm::{OlmMessage, SessionConfig};
+use vodozemac::Curve25519PublicKey;
+
+use crate::keys::AccountState;
+use crate::protocol::{dm_conversation_id, Hlc, Op, SealedInner, SenderCert};
+use crate::store::account::{
+    load_account, load_sessions, pin_master_key, save_account, save_session,
+};
+use crate::store::{db_err, new_id, now_ms, LimeStore, MessageItem, StoreError, ME_ID};
+use crate::transport::{HeaderPair, Transport, TransportError};
+
+/// The upload size of the one-time-key pool, and when to top it up (`api-v2.md` section 11).
+const POOL_SIZE: usize = 50;
+const POOL_LOW: u32 = 20;
+/// A text message must fit in a 64 KB mailbox item once wrapped and encrypted.
+const MAX_TEXT_BYTES: usize = 30_000;
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DeviceInfo {
+    pub device_id: String,
+    pub user_id: String,
+    pub identity_key: String,
+    pub signing_key: String,
+    pub master_key: String,
+    pub remaining_one_time_keys: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SyncReport {
+    /// Messages decrypted, verified and stored.
+    pub received: u32,
+}
+
+// ---------------------------------------------------------------- the FFI surface
+
+#[uniffi::export]
+impl LimeStore {
+    /// Registers this device with the server (idempotent) and tops up its one-time keys. The first
+    /// call creates the device's keys (and, being the account's first device, its master key).
+    pub fn register_device(
+        &self,
+        transport: Arc<dyn Transport>,
+        auth_token: String,
+    ) -> Result<DeviceInfo, StoreError> {
+        let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self.load_or_create_account()?;
+        let cert = state.cert();
+
+        let (status, body) = call(
+            &transport,
+            Some(&auth_token),
+            "devices-register",
+            &json!({
+                "device_id": cert.device_id,
+                "identity_key": cert.identity_key,
+                "signing_key": cert.signing_key,
+                "master_key": cert.master_key,
+                "master_signature": cert.master_signature,
+            }),
+        )?;
+        check(status)?;
+        let user_id = body
+            .get("user_id")
+            .and_then(Value::as_str)
+            .ok_or(StoreError::BadMessage)?
+            .to_owned();
+        let mut remaining = body
+            .get("remaining_one_time_keys")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as u32;
+        state.user_id = Some(user_id.clone());
+        state.registered = true;
+        self.save(&state)?;
+
+        if remaining < POOL_LOW {
+            remaining =
+                self.top_up_one_time_keys(&transport, &auth_token, &mut state, remaining)?;
+        }
+        Ok(DeviceInfo {
+            device_id: state.device_id.clone(),
+            user_id,
+            identity_key: state.identity_key(),
+            signing_key: state.signing_key(),
+            master_key: state.master_key(),
+            remaining_one_time_keys: remaining,
+        })
+    }
+
+    /// Sends a text to another account as an **identified** Olm message (the server knows the
+    /// sender, as it does for any first message). Returns the message as stored locally.
+    pub fn send_text_identified(
+        &self,
+        transport: Arc<dyn Transport>,
+        auth_token: String,
+        recipient_user_id: String,
+        text: String,
+    ) -> Result<MessageItem, StoreError> {
+        let body = text.trim();
+        if body.is_empty() {
+            return Err(StoreError::EmptyMessage);
+        }
+        if body.len() > MAX_TEXT_BYTES {
+            return Err(StoreError::Rejected);
+        }
+        let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self.load_or_create_account()?;
+        let me = state
+            .user_id
+            .clone()
+            .filter(|_| state.registered)
+            .ok_or(StoreError::NotRegistered)?;
+
+        // 1. The recipient's devices, each vouched for by their master key.
+        let devices = self.recipient_devices(&transport, &auth_token, &recipient_user_id)?;
+
+        // 2. A session per device; claim a one-time key for each device that has none.
+        let mut sessions = Vec::new();
+        let mut needs_claim = Vec::new();
+        for device in &devices {
+            let existing =
+                self.with_conn(|conn| load_sessions(conn, &self.pickle_key, &recipient_user_id))?;
+            match existing
+                .into_iter()
+                .find(|s| s.peer_identity_key == device.identity_key)
+            {
+                Some(stored) => sessions.push((device.clone(), stored.session)),
+                None => needs_claim.push(device.clone()),
+            }
+        }
+        if !needs_claim.is_empty() {
+            let claimed = self.claim_keys(&transport, &auth_token, &recipient_user_id)?;
+            for device in needs_claim {
+                let Some(one_time_key) = claimed.get(&device.device_id) else {
+                    continue;
+                };
+                let identity = Curve25519PublicKey::from_base64(&device.identity_key)
+                    .map_err(|_| StoreError::BadMessage)?;
+                let one_time = Curve25519PublicKey::from_base64(one_time_key)
+                    .map_err(|_| StoreError::BadMessage)?;
+                let session = state
+                    .account
+                    .create_outbound_session(SessionConfig::version_1(), identity, one_time)
+                    .map_err(|_| StoreError::BadMessage)?;
+                sessions.push((device, session));
+            }
+        }
+        if sessions.is_empty() {
+            return Err(StoreError::NoRecipientKeys);
+        }
+
+        // 3. The signed op, wrapped with this device's certificate.
+        let now = now_ms();
+        state.hlc = state.hlc.tick(now);
+        let conversation_id = dm_conversation_id(&me, &recipient_user_id);
+        let local_conversation = format!("dm:{recipient_user_id}");
+        let parents = self.with_conn(|conn| latest_op_ids(conn, &local_conversation))?;
+        let mut op = Op {
+            op_id: new_id(),
+            op_type: "message.send".into(),
+            conversation_id,
+            hlc: state.hlc.render(),
+            parents,
+            payload: json!({ "text": body }),
+            sig: String::new(),
+        };
+        op.sig = state.account.sign(op.signing_bytes()).to_base64();
+        let inner = SealedInner {
+            sender_user: me,
+            sender_device: state.device_id.clone(),
+            sender_cert: state.cert(),
+            op: op.clone(),
+        }
+        .to_bytes();
+
+        // 4. One Olm ciphertext per recipient device, each sent identified.
+        let mut sent = 0;
+        let mut updated = Vec::new();
+        for (device, mut session) in sessions {
+            let message = session.encrypt(&inner).map_err(|_| StoreError::BadMessage)?;
+            let (kind, bytes) = message.to_parts();
+            let mut wire = vec![kind as u8];
+            wire.extend_from_slice(&bytes);
+            let (status, _) = call(
+                &transport,
+                Some(&auth_token),
+                "send",
+                &json!({
+                    "ciphertext": vodozemac::base64_encode(&wire),
+                    "recipients": [{ "to_device": device.device_id, "access": { "identified": true } }],
+                }),
+            )?;
+            check(status)?;
+            sent += 1;
+            updated.push((device, session));
+        }
+        debug_assert!(sent > 0);
+
+        // 5. Remember the sessions (their ratchets moved) and the message.
+        self.with_conn(|conn| {
+            for (device, session) in &updated {
+                save_session(
+                    conn,
+                    &self.pickle_key,
+                    &recipient_user_id,
+                    &device.device_id,
+                    &device.identity_key,
+                    session,
+                    now,
+                )?;
+            }
+            save_account(conn, &self.pickle_key, &state)
+        })?;
+        let item = MessageItem {
+            id: op.op_id.clone(),
+            conversation_id: local_conversation.clone(),
+            sender_id: None,
+            text: body.to_owned(),
+            sent_at: now,
+            local_state: "sent".to_owned(),
+        };
+        self.with_conn(|conn| {
+            ensure_dm(conn, &recipient_user_id)?;
+            conn.execute(
+                "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?1, ?7)",
+                params![item.id, item.conversation_id, ME_ID, item.text, item.sent_at, item.local_state, op.hlc],
+            )
+            .map_err(db_err)?;
+            Ok(())
+        })?;
+        Ok(item)
+    }
+
+    /// Fetches this device's mailbox, decrypts and verifies what it can, stores it, and
+    /// acknowledges everything it fetched.
+    pub fn sync(
+        &self,
+        transport: Arc<dyn Transport>,
+        auth_token: String,
+    ) -> Result<SyncReport, StoreError> {
+        let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self.load_or_create_account()?;
+        let me = state
+            .user_id
+            .clone()
+            .filter(|_| state.registered)
+            .ok_or(StoreError::NotRegistered)?;
+
+        let mut received = 0u32;
+        let mut after = 0i64;
+        loop {
+            let (status, body) = call(
+                &transport,
+                Some(&auth_token),
+                "mailbox-fetch",
+                &json!({ "device_id": state.device_id, "after": after }),
+            )?;
+            check(status)?;
+            let items = body
+                .get("items")
+                .and_then(Value::as_array)
+                .ok_or(StoreError::BadMessage)?;
+            if items.is_empty() {
+                break;
+            }
+            let mut highest = after;
+            for item in items {
+                let cursor = item
+                    .get("cursor")
+                    .and_then(Value::as_i64)
+                    .ok_or(StoreError::BadMessage)?;
+                highest = highest.max(cursor);
+                if self.process_item(&mut state, &me, item).unwrap_or(false) {
+                    received += 1;
+                }
+            }
+            // Everything fetched is acknowledged, including an item that could not be read: it
+            // would otherwise come back on every sync (api-v2.md section 11 notes the open point).
+            let (status, _) = call(
+                &transport,
+                Some(&auth_token),
+                "mailbox-ack",
+                &json!({ "device_id": state.device_id, "up_to_cursor": highest }),
+            )?;
+            check(status)?;
+            after = highest;
+            if body.get("has_more").and_then(Value::as_bool) != Some(true) {
+                break;
+            }
+        }
+        Ok(SyncReport { received })
+    }
+}
+
+/// Exact, case-insensitive email to user id (no profile data), or `None` when nobody has it.
+#[uniffi::export]
+pub fn lookup_user_by_email(
+    transport: Arc<dyn Transport>,
+    auth_token: String,
+    email: String,
+) -> Result<Option<String>, StoreError> {
+    let (status, body) = call(
+        &transport,
+        Some(&auth_token),
+        "users-lookup",
+        &json!({ "email": email }),
+    )?;
+    if status == 404 {
+        return Ok(None);
+    }
+    check(status)?;
+    Ok(Some(
+        body.get("user_id")
+            .and_then(Value::as_str)
+            .ok_or(StoreError::BadMessage)?
+            .to_owned(),
+    ))
+}
+
+// ---------------------------------------------------------------- internals
+
+#[derive(Clone)]
+struct PeerDevice {
+    device_id: String,
+    identity_key: String,
+}
+
+impl LimeStore {
+    fn with_conn<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T, StoreError>,
+    ) -> Result<T, StoreError> {
+        let conn = self.lock();
+        f(&conn)
+    }
+
+    fn save(&self, state: &AccountState) -> Result<(), StoreError> {
+        self.with_conn(|conn| save_account(conn, &self.pickle_key, state))
+    }
+
+    fn load_or_create_account(&self) -> Result<AccountState, StoreError> {
+        if let Some(state) = self.with_conn(|conn| load_account(conn, &self.pickle_key))? {
+            return Ok(state);
+        }
+        let state = AccountState::create();
+        self.save(&state)?;
+        Ok(state)
+    }
+
+    fn top_up_one_time_keys(
+        &self,
+        transport: &Arc<dyn Transport>,
+        token: &str,
+        state: &mut AccountState,
+        remaining: u32,
+    ) -> Result<u32, StoreError> {
+        let wanted = POOL_SIZE.saturating_sub(remaining as usize).max(1);
+        state.account.generate_one_time_keys(wanted);
+        let keys: Vec<Value> = state
+            .account
+            .one_time_keys()
+            .into_iter()
+            .map(|(id, key)| json!({ "key_id": id.to_base64(), "key": key.to_base64() }))
+            .collect();
+        self.save(state)?;
+        if keys.is_empty() {
+            return Ok(remaining);
+        }
+        let (status, body) = call(
+            transport,
+            Some(token),
+            "keys-upload",
+            &json!({ "device_id": state.device_id, "one_time_keys": keys }),
+        )?;
+        check(status)?;
+        state.account.mark_keys_as_published();
+        self.save(state)?;
+        Ok(body
+            .get("remaining_one_time_keys")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as u32)
+    }
+
+    /// The recipient's devices whose cross-signature verifies, with their master key pinned.
+    fn recipient_devices(
+        &self,
+        transport: &Arc<dyn Transport>,
+        token: &str,
+        user_id: &str,
+    ) -> Result<Vec<PeerDevice>, StoreError> {
+        let (status, body) = call(
+            transport,
+            Some(token),
+            "users-devices",
+            &json!({ "user_id": user_id }),
+        )?;
+        check(status)?;
+        let master = body
+            .get("master_key")
+            .and_then(Value::as_str)
+            .ok_or(StoreError::NoRecipientKeys)?;
+        self.with_conn(|conn| pin_master_key(conn, user_id, master))?;
+        let mut devices = Vec::new();
+        for entry in body
+            .get("devices")
+            .and_then(Value::as_array)
+            .ok_or(StoreError::BadMessage)?
+        {
+            let text = |k: &str| entry.get(k).and_then(Value::as_str).map(str::to_owned);
+            let (Some(device_id), Some(identity_key), Some(signing_key), Some(master_signature)) = (
+                text("device_id"),
+                text("identity_key"),
+                text("signing_key"),
+                text("master_signature"),
+            ) else {
+                continue;
+            };
+            let cert = SenderCert {
+                device_id: device_id.clone(),
+                identity_key: identity_key.clone(),
+                signing_key,
+                master_key: master.to_owned(),
+                master_signature,
+            };
+            if cert.verify() {
+                devices.push(PeerDevice {
+                    device_id,
+                    identity_key,
+                });
+            }
+        }
+        if devices.is_empty() {
+            return Err(StoreError::NoRecipientKeys);
+        }
+        Ok(devices)
+    }
+
+    /// One-time keys claimed for a user's devices: device id to key.
+    fn claim_keys(
+        &self,
+        transport: &Arc<dyn Transport>,
+        token: &str,
+        user_id: &str,
+    ) -> Result<std::collections::HashMap<String, String>, StoreError> {
+        let (status, body) = call(
+            transport,
+            Some(token),
+            "keys-claim",
+            &json!({ "user_id": user_id }),
+        )?;
+        check(status)?;
+        let mut claimed = std::collections::HashMap::new();
+        for entry in body
+            .get("devices")
+            .and_then(Value::as_array)
+            .ok_or(StoreError::BadMessage)?
+        {
+            let device = entry.get("device_id").and_then(Value::as_str);
+            let key = entry
+                .get("one_time_key")
+                .and_then(|k| k.get("key"))
+                .and_then(Value::as_str);
+            if let (Some(device), Some(key)) = (device, key) {
+                claimed.insert(device.to_owned(), key.to_owned());
+            }
+        }
+        Ok(claimed)
+    }
+
+    /// Decrypts, verifies and stores one mailbox item. Returns `Ok(true)` when a message was stored.
+    fn process_item(
+        &self,
+        state: &mut AccountState,
+        me: &str,
+        item: &Value,
+    ) -> Result<bool, StoreError> {
+        // Only identified items are understood here (sealed sends are not built yet).
+        if item.get("identified").and_then(Value::as_bool) != Some(true) {
+            return Ok(false);
+        }
+        let sender = item
+            .get("sender_user")
+            .and_then(Value::as_str)
+            .ok_or(StoreError::BadMessage)?
+            .to_owned();
+        if sender == me {
+            return Ok(false);
+        }
+        let wire = vodozemac::base64_decode(
+            item.get("ciphertext")
+                .and_then(Value::as_str)
+                .ok_or(StoreError::BadMessage)?,
+        )
+        .map_err(|_| StoreError::BadMessage)?;
+        let (kind, rest) = wire.split_first().ok_or(StoreError::BadMessage)?;
+        let message =
+            OlmMessage::from_parts(*kind as usize, rest).map_err(|_| StoreError::BadMessage)?;
+
+        let now = now_ms();
+        let sessions = self.with_conn(|conn| load_sessions(conn, &self.pickle_key, &sender))?;
+
+        // Decrypt with an existing session, or (for a pre-key message) start one.
+        let (plaintext, session, peer_identity) = 'decrypt: {
+            for mut stored in sessions {
+                let fits = match &message {
+                    OlmMessage::PreKey(pre_key) => {
+                        stored.session.session_id() == pre_key.session_id()
+                    }
+                    OlmMessage::Normal(_) => true,
+                };
+                if !fits {
+                    continue;
+                }
+                if let Ok(plaintext) = stored.session.decrypt(&message) {
+                    break 'decrypt (plaintext, stored.session, stored.peer_identity_key);
+                }
+            }
+            let OlmMessage::PreKey(pre_key) = &message else {
+                return Err(StoreError::BadMessage);
+            };
+            let identity = pre_key.identity_key();
+            let created = state
+                .account
+                .create_inbound_session(SessionConfig::version_1(), identity, pre_key)
+                .map_err(|_| StoreError::BadMessage)?;
+            // The one-time key it used is gone from the account now: save that.
+            self.save(state)?;
+            (created.plaintext, created.session, identity.to_base64())
+        };
+
+        let inner = SealedInner::from_bytes(&plaintext).ok_or(StoreError::BadMessage)?;
+        let cert = &inner.sender_cert;
+        let valid = inner.sender_user == sender
+            && inner.sender_device == cert.device_id
+            && cert.identity_key == peer_identity
+            && cert.verify()
+            && inner.op.verify(&cert.signing_key)
+            && inner.op.op_type == "message.send"
+            && inner.op.conversation_id == dm_conversation_id(&sender, me);
+        if !valid {
+            return Err(StoreError::BadMessage);
+        }
+        let text = inner
+            .op
+            .payload
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or(StoreError::BadMessage)?
+            .to_owned();
+        let remote_hlc = Hlc::parse(&inner.op.hlc).ok_or(StoreError::BadMessage)?;
+
+        self.with_conn(|conn| {
+            pin_master_key(conn, &sender, &cert.master_key)?;
+            save_session(conn, &self.pickle_key, &sender, &cert.device_id, &peer_identity, &session, now)?;
+            ensure_dm(conn, &sender)?;
+            // The display time is never in the future (api-v2.md section 5).
+            let shown = remote_hlc.wall.min(now);
+            let inserted = conn
+                .execute(
+                    "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6)",
+                    params![inner.op.op_id, format!("dm:{sender}"), sender, text, shown, inner.op.hlc],
+                )
+                .map_err(db_err)?;
+            if inserted > 0 {
+                conn.execute(
+                    "UPDATE conversations SET unread = unread + 1 WHERE id = ?1",
+                    params![format!("dm:{sender}")],
+                )
+                .map_err(db_err)?;
+            }
+            Ok(inserted > 0)
+        })
+        .and_then(|stored| {
+            state.hlc = state.hlc.observe(remote_hlc, now);
+            self.save(state)?;
+            Ok(stored)
+        })
+    }
+}
+
+/// The most recent op id in a conversation (the op's `parents`), if any.
+fn latest_op_ids(conn: &Connection, conversation_id: &str) -> Result<Vec<String>, StoreError> {
+    let mut statement = conn
+        .prepare(
+            "SELECT op_id FROM messages WHERE conversation_id = ?1 AND op_id IS NOT NULL
+             ORDER BY hlc DESC LIMIT 1",
+        )
+        .map_err(db_err)?;
+    let ids = statement
+        .query_map(params![conversation_id], |r| r.get::<_, String>(0))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    Ok(ids)
+}
+
+/// Makes sure there is a DM conversation (and a person) for `peer`, titled with their user id for
+/// now (profiles come later).
+fn ensure_dm(conn: &Connection, peer: &str) -> Result<(), StoreError> {
+    let tone = peer.bytes().fold(0u32, |acc, b| {
+        acc.wrapping_mul(31).wrapping_add(u32::from(b))
+    }) % 8;
+    conn.execute(
+        "INSERT OR IGNORE INTO people (id, name, tone) VALUES (?1, ?1, ?2)",
+        params![peer, tone],
+    )
+    .map_err(db_err)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO people (id, name, tone) VALUES (?1, 'Me', 4)",
+        params![ME_ID],
+    )
+    .map_err(db_err)?;
+    let id = format!("dm:{peer}");
+    conn.execute(
+        "INSERT OR IGNORE INTO conversations (id, title, is_group, is_pinned, unread) VALUES (?1, ?2, 0, 0, 0)",
+        params![id, peer],
+    )
+    .map_err(db_err)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO members (conversation_id, person_id, position) VALUES (?1, ?2, 0)",
+        params![id, peer],
+    )
+    .map_err(db_err)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO members (conversation_id, person_id, position) VALUES (?1, ?2, 1)",
+        params![id, ME_ID],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+/// One call to an Edge Function. `token` is the user's access token (None for the sealed path).
+fn call(
+    transport: &Arc<dyn Transport>,
+    token: Option<&str>,
+    function: &str,
+    body: &Value,
+) -> Result<(u16, Value), StoreError> {
+    let mut headers = vec![HeaderPair {
+        name: "content-type".into(),
+        value: "application/json".into(),
+    }];
+    if let Some(token) = token {
+        headers.push(HeaderPair {
+            name: "authorization".into(),
+            value: format!("Bearer {token}"),
+        });
+    }
+    let response = transport
+        .request(
+            "POST".into(),
+            format!("/functions/v1/{function}"),
+            headers,
+            serde_json::to_vec(body).map_err(|_| StoreError::BadMessage)?,
+        )
+        .map_err(|_: TransportError| StoreError::Network)?;
+    let value = if response.body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&response.body).unwrap_or(Value::Null)
+    };
+    Ok((response.status, value))
+}
+
+fn check(status: u16) -> Result<(), StoreError> {
+    match status {
+        200..=299 => Ok(()),
+        500..=599 => Err(StoreError::Unavailable),
+        _ => Err(StoreError::Rejected),
+    }
+}

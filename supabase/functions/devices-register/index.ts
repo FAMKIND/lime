@@ -79,5 +79,5 @@ Deno.serve(handler(async (req) => {
   }
 
   const { data: remaining } = await db.rpc("remaining_one_time_keys", { p_device: deviceId });
-  return json({ device_id: deviceId, remaining_one_time_keys: remaining ?? 0 }, existing ? 200 : 201);
+  return json({ device_id: deviceId, user_id: userId, remaining_one_time_keys: remaining ?? 0 }, existing ? 200 : 201);
 }));

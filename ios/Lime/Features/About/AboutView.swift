@@ -63,6 +63,13 @@ struct AboutView: View {
             .font(Theme.body.weight(.semibold))
             .foregroundStyle(Theme.text)
             .accessibilityIdentifier("storage-result")
+            #if DEBUG
+            // Debug builds only: there is no sign-in yet (LIME-94), so the staging backend is not connected.
+            Text("Developer: staging · Not connected")
+                .font(Theme.caption)
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityIdentifier("developer-staging")
+            #endif
             Button("Done") { dismiss() }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.primary)

@@ -92,3 +92,7 @@ The database is **never backed up**: the folder and every database file are mark
 If the store cannot be opened (the Keychain key is missing or wrong, or the file is damaged), the old file is moved aside to `lime-<ISO time>.unreadable.db` (the newest two are kept), a new key and a fresh store are made, and Messages shows a one-time notice. A first launch (no key, no database) is not an error and shows nothing. Debug-only test hooks: `-lime-test-corrupt-key` and `-lime-test-delete-key`.
 
 `project.yml` sets `xcodeVersion: "2700"` and `STRING_CATALOG_GENERATE_SYMBOLS: YES`, so Xcode 27 does not offer "Update to recommended settings" (which `./generate.sh` would overwrite).
+
+## Network (LimeCore's transport)
+
+LimeCore owns the protocol and asks the platform to make the HTTPS calls: `Lime/Core/Network/URLSessionTransport.swift` implements its `Transport` callback with `URLSession` (blocking, called from a background task; it adds the project URL and the public `apikey`). Nothing in the app calls it yet: sign-in and the visible phone-to-phone chat are the next brief. Debug builds show a "Developer: staging" row in About Lime ("Not connected").

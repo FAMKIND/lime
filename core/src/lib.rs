@@ -6,10 +6,16 @@
 //! The public FFI surface is [`core_version`], [`encryption_self_test`] and the encrypted
 //! local store [`LimeStore`] (LIME-90). No secret material crosses the FFI or is logged.
 
+mod client;
+mod keys;
+mod protocol;
 mod selftest;
 mod store;
+mod transport;
 
+pub use client::{lookup_user_by_email, DeviceInfo, SyncReport};
 pub use store::{ConversationSummary, LimeStore, MemberInfo, MessageItem, StoreError};
+pub use transport::{HeaderPair, Transport, TransportError, TransportResponse};
 
 uniffi::setup_scaffolding!();
 

@@ -34,6 +34,34 @@ const MIGRATIONS: &[&str] = &[
          local_state     TEXT NOT NULL
      );
      CREATE INDEX messages_by_conversation ON messages (conversation_id, sent_at);",
+    // 2: the protocol state (LIME-93): this device's keys, its Olm sessions, pinned master keys,
+    // and the op id and hybrid logical clock of messages that came through the protocol.
+    "CREATE TABLE account (
+         id            INTEGER PRIMARY KEY CHECK (id = 1),
+         olm_pickle    TEXT NOT NULL,      -- vodozemac pickle, encrypted with a key derived from the store key
+         master_secret TEXT NOT NULL,      -- the master signing key (base64), inside the encrypted database
+         device_id     TEXT NOT NULL,
+         user_id       TEXT,
+         registered    INTEGER NOT NULL DEFAULT 0,
+         hlc_wall      INTEGER NOT NULL DEFAULT 0,
+         hlc_counter   INTEGER NOT NULL DEFAULT 0
+     );
+     CREATE TABLE olm_sessions (
+         peer_user_id      TEXT NOT NULL,
+         peer_device_id    TEXT NOT NULL,
+         peer_identity_key TEXT NOT NULL,
+         session_pickle    TEXT NOT NULL,  -- vodozemac pickle, encrypted as above
+         created_at        INTEGER NOT NULL,
+         updated_at        INTEGER NOT NULL,
+         PRIMARY KEY (peer_user_id, peer_identity_key)
+     );
+     CREATE TABLE peers (
+         user_id    TEXT PRIMARY KEY NOT NULL,
+         master_key TEXT NOT NULL          -- trust on first use
+     );
+     ALTER TABLE messages ADD COLUMN op_id TEXT;
+     ALTER TABLE messages ADD COLUMN hlc TEXT;
+     CREATE UNIQUE INDEX messages_by_op_id ON messages (op_id) WHERE op_id IS NOT NULL;",
 ];
 
 /// The schema version this build writes.

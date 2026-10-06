@@ -355,3 +355,81 @@ final class LimeCoreTests: XCTestCase {
         XCTAssertFalse(coreVersion().isEmpty)
     }
 }
+
+/// Stands in for the network: records the request and returns a canned response.
+final class StubURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var handler: (@Sendable (URLRequest) throws -> (Int, Data))?
+    nonisolated(unsafe) static var lastBody: Data?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+
+    override func startLoading() {
+        do {
+            // The body of a request made through URLSession arrives as a stream.
+            if let stream = request.httpBodyStream {
+                stream.open()
+                var data = Data()
+                var buffer = [UInt8](repeating: 0, count: 4096)
+                while stream.hasBytesAvailable {
+                    let n = stream.read(&buffer, maxLength: buffer.count)
+                    if n <= 0 { break }
+                    data.append(buffer, count: n)
+                }
+                stream.close()
+                Self.lastBody = data
+            } else {
+                Self.lastBody = request.httpBody
+            }
+            let (status, body) = try (Self.handler ?? { _ in (500, Data()) })(request)
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+}
+
+final class URLSessionTransportTests: XCTestCase {
+    private func makeTransport() -> URLSessionTransport {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        return URLSessionTransport(baseURL: URL(string: "https://example.invalid")!, apiKey: "public-key",
+                                   session: URLSession(configuration: configuration))
+    }
+
+    func testSendsTheRequestAndReturnsStatusAndBody() throws {
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://example.invalid/functions/v1/send")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "apikey"), "public-key")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "authorization"), "Bearer token")
+            return (409, Data("{\"error\":\"x\"}".utf8))
+        }
+        let response = try makeTransport().request(
+            method: "POST", path: "/functions/v1/send",
+            headers: [HeaderPair(name: "authorization", value: "Bearer token")],
+            body: Data("{}".utf8))
+        XCTAssertEqual(response.status, 409, "an error status is a response, not a failure")
+        XCTAssertEqual(String(decoding: response.body, as: UTF8.self), "{\"error\":\"x\"}")
+        XCTAssertEqual(StubURLProtocol.lastBody, Data("{}".utf8))
+    }
+
+    func testANetworkFailureIsATransportError() {
+        StubURLProtocol.handler = { _ in throw URLError(.notConnectedToInternet) }
+        XCTAssertThrowsError(try makeTransport().request(method: "POST", path: "/x", headers: [], body: Data())) { error in
+            XCTAssertEqual(error as? TransportError, .Failed)
+        }
+    }
+
+    /// LimeCore accepts the Swift transport as its callback interface (the protocol is Sendable and
+    /// usable from a background thread, as the app calls it).
+    func testLimeCoreCanCallThroughTheTransport() throws {
+        StubURLProtocol.handler = { _ in (404, Data("{\"error\":\"not_found\"}".utf8)) }
+        let found = try lookupUserByEmail(transport: makeTransport(), authToken: "token", email: "nobody@example.invalid")
+        XCTAssertNil(found, "a 404 means nobody has that email")
+    }
+}

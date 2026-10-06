@@ -243,3 +243,152 @@ fn initials_follow_the_app_rule() {
     assert_eq!(initials_of("madonna"), "M");
     assert_eq!(initials_of("Ana Maria de la Cruz"), "AM");
 }
+
+mod protocol_state {
+    use super::*;
+    use crate::keys::{derive_pickle_key, AccountState};
+    use crate::store::account::{
+        load_account, load_sessions, pin_master_key, save_account, save_session,
+    };
+    use vodozemac::olm::{Account, AccountPickle, SessionConfig};
+
+    #[test]
+    fn the_account_and_sessions_survive_a_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let (identity, signing, master, device_id, session_id);
+        {
+            let store = LimeStore::open_inner(&path_in(&dir), &key(7)).unwrap();
+            let mut state = AccountState::create();
+            state.user_id = Some("user-1".into());
+            state.registered = true;
+            state.hlc = crate::protocol::Hlc {
+                wall: 42,
+                counter: 3,
+            };
+            identity = state.identity_key();
+            signing = state.signing_key();
+            master = state.master_key();
+            device_id = state.device_id.clone();
+
+            // A session with some other account.
+            let mut other = Account::new();
+            other.generate_one_time_keys(1);
+            let otk = *other.one_time_keys().values().next().unwrap();
+            let session = state
+                .account
+                .create_outbound_session(SessionConfig::version_1(), other.curve25519_key(), otk)
+                .unwrap();
+            session_id = session.session_id();
+
+            let conn = store.lock();
+            save_account(&conn, &store.pickle_key, &state).unwrap();
+            save_session(
+                &conn,
+                &store.pickle_key,
+                "peer",
+                "peer-device",
+                "peer-identity",
+                &session,
+                1,
+            )
+            .unwrap();
+            pin_master_key(&conn, "peer", "master-1").unwrap();
+        }
+        let store = LimeStore::open_inner(&path_in(&dir), &key(7)).unwrap();
+        let conn = store.lock();
+        let state = load_account(&conn, &store.pickle_key)
+            .unwrap()
+            .expect("the account was saved");
+        assert_eq!(state.identity_key(), identity);
+        assert_eq!(state.signing_key(), signing);
+        assert_eq!(
+            state.master_key(),
+            master,
+            "the master signing key survives too"
+        );
+        assert_eq!(state.device_id, device_id);
+        assert_eq!(state.user_id.as_deref(), Some("user-1"));
+        assert!(state.registered);
+        assert_eq!((state.hlc.wall, state.hlc.counter), (42, 3));
+        let sessions = load_sessions(&conn, &store.pickle_key, "peer").unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session.session_id(), session_id);
+        // The pinned master key is remembered; a different one is refused.
+        pin_master_key(&conn, "peer", "master-1").unwrap();
+        assert_eq!(
+            pin_master_key(&conn, "peer", "master-2"),
+            Err(StoreError::KeyMismatch)
+        );
+    }
+
+    #[test]
+    fn a_wrong_store_key_cannot_read_the_pickles() {
+        let dir = tempfile::tempdir().unwrap();
+        let encrypted_pickle;
+        {
+            let store = LimeStore::open_inner(&path_in(&dir), &key(7)).unwrap();
+            let state = AccountState::create();
+            save_account(&store.lock(), &store.pickle_key, &state).unwrap();
+            encrypted_pickle = store
+                .lock()
+                .query_row("SELECT olm_pickle FROM account WHERE id = 1", [], |r| {
+                    r.get::<_, String>(0)
+                })
+                .unwrap();
+        }
+        // The file itself is not readable with another key...
+        assert!(matches!(
+            LimeStore::open_inner(&path_in(&dir), &key(8)),
+            Err(StoreError::WrongKeyOrNotADatabase)
+        ));
+        // ...and even the pickle text alone does not decrypt under another store key's derived key.
+        assert!(
+            AccountPickle::from_encrypted(&encrypted_pickle, &derive_pickle_key(&key(8))).is_err()
+        );
+        assert!(
+            AccountPickle::from_encrypted(&encrypted_pickle, &derive_pickle_key(&key(7))).is_ok()
+        );
+        // The derived key is not the store key.
+        assert_ne!(derive_pickle_key(&key(7)).to_vec(), key(7));
+    }
+
+    #[test]
+    fn the_pickle_text_holds_no_key_material_in_the_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LimeStore::open_inner(&path_in(&dir), &key(7)).unwrap();
+        let state = AccountState::create();
+        let signing = state.signing_key();
+        save_account(&store.lock(), &store.pickle_key, &state).unwrap();
+        let pickle: String = store
+            .lock()
+            .query_row("SELECT olm_pickle FROM account WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(!pickle.contains(&signing));
+    }
+
+    #[test]
+    fn migration_two_applies_to_a_database_that_has_version_one() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let store = LimeStore::open_inner(&path_in(&dir), &key(7)).unwrap();
+            store.seed_sample_data_if_empty().unwrap();
+        }
+        let store = LimeStore::open_inner(&path_in(&dir), &key(7)).unwrap();
+        let conn = store.lock();
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, migrations::LATEST);
+        assert!(version >= 2);
+        let columns: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('messages') WHERE name IN ('op_id', 'hlc')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(columns, 2);
+    }
+}
