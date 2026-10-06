@@ -75,6 +75,17 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **The bigger choice is the Apple account type:** individual (the seller shows the user's personal name) vs organisation (needs a legal entity + a D-U-N-S number, free but it can take days to weeks).
   - The user is to decide before enrolling next month.
 
+**Update: LIME-93 landed as `7f411a0`** (pushed and verified; no project ref in HEAD).
+- **The first E2EE exchange between two accounts passes locally and on staging**; staging was left clean.
+- 30 Rust + 13 server + 36 iOS tests pass; the app size is +848 KB.
+- **Tend's gap-fills, reviewed by plot:**
+  - **Accepted:** canonical JSON signing; a sender cert chaining to the master key; recipients **pin the master key on first use**. This later needs a "safety number changed" UX (with device linking).
+  - **Accepted for now:** one Olm ciphertext and one request per recipient device. Megolm fan-out will use the shared-ciphertext batch.
+  - **⚠ Must change before sealed sends or real users:** "sync acks everything it fetches, **including unreadable items; sealed items are acked unread**". That silently loses messages.
+    - **Fix (fold into LIME-94 or the sealed-send brief):** store unreadable/unsupported items in a local **`pending_inbound`** table (ciphertext + reason + attempts), ack them on the server only after they are safely stored locally, and retry decryption when sessions/keys change.
+    - Never drop sealed items: LIME-94 or 95 must handle sealed sends before anyone sends them.
+  - `StoreError.Protocol` was renamed `BadMessage`: fine.
+
 **Update: LIME-92 landed as `a046a66`** (pushed and verified).
 - **Plot's own check:** `git grep` finds no project ref in HEAD and no `.env` files tracked.
 - The staging smoke test passed; RLS is on; anon/authenticated have no grants; the expiry cron is scheduled.
@@ -100,6 +111,67 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - approve `supabase login` in the browser when tend asks.
 
 **Update: LIME-90-fix landed as `9d18cad`** (pushed and verified). 33 iOS tests pass. Tend set `xcodeVersion: "2700"` + `STRING_CATALOG_GENERATE_SYMBOLS`; the user is to report whether the Xcode "recommended settings" warning is gone.
+
+### DESIGN-03 (draft, plot, 2026-10-06): native sign-up and sign-in (for LIME-94), adapted from Signal
+**The user's ask:** "remove the coming-soon Google and Apple sign-in; keep sign-in by phone number, username or email; take the best of Signal's sign-in". They shared 11 screenshots of Signal's onboarding.
+- **Privacy note for plot:** those screenshots contain the user's real phone number. **Never copy it into any file.**
+
+**What we take from Signal:**
+- a splash;
+- a welcome with one primary "Continue";
+- **one question per screen**, with a glass "Next" top right, disabled until valid;
+- **a confirmation sheet** ("Is this correct? Yes / Edit") before sending a code;
+- **one-time codes instead of passwords**;
+- a short permissions explainer *before* the system prompt;
+- an empty state with "Get started" cards.
+
+**What we don't take:**
+- **Contacts upload:** Lime has no private contact discovery (Signal uses secure enclaves; hashed phone numbers are reversible). This matches DESIGN-01 §5 "no contact-book upload in v1".
+- **A short PIN for backups:** without Signal's enclave, a 4–6-digit PIN can be brute-forced offline. **Lime uses the long recovery key (D5)** instead.
+- **"Restore or Transfer" options before they exist:** show them only once device linking and the recovery backup are built.
+
+**The proposed flow (native iOS):**
+1. **Splash:** the lime logo on the canvas.
+2. **Welcome:**
+   - an illustration of teachers (to be designed);
+   - "Connect with every teacher. Privately.";
+   - "Built by teachers, for teachers" (**not** "a 501(c)(3)": Lime isn't one yet);
+   - Terms & Privacy;
+   - **Continue**.
+3. **"Your phone, email or username"**: **one field**. It detects the type: digits/`+` show a country-code picker (Signal's style); `@…` is an email; otherwise a username. **No Google or Apple buttons.**
+4. **The confirmation sheet:** "We'll send a code to: … Is this correct?" (Yes / Edit).
+   - For a **username**, the code goes to the email or phone on that account, shown masked ("s•••@famkind.com").
+   - An unknown username gets "No account with that username" plus "Use your phone or email instead".
+5. **The code screen:** 6 digits, with autofill (`oneTimeCode`), Resend after 30s, and Edit.
+6. **A new account only:**
+   - "Your name" (display name);
+   - optional **username** (unique, as on the web);
+   - optional **school**;
+   - then go to Messages.
+7. **Messages, empty state:** "No chats yet" plus Get started cards (**New message**, **Invite a teacher**).
+- **Later briefs (not 94):**
+  - a permissions explainer: Notifications, with the push brief; Bluetooth "Nearby messaging", with the mesh brief;
+  - "Save your recovery key", with the backup brief;
+  - Restore/Transfer, with the linking/backup briefs.
+
+**DECIDED (user, 2026-10-06):**
+- **S1 = A:** email + username at launch; phone sign-in when funded.
+- **S2 = B: password + code.** Plot's interpretation, written into LIME-94:
+  - **Sign-up:** email → emailed 6-digit code (verifies the email) → create a password → name, optional username and school.
+  - **Sign-in:** email **or** username → password → **a 6-digit code emailed every time a device signs in** (two-step).
+  - **Forgot password:** emailed code → new password.
+  - The server must **enforce** that a device registers only after both the password and the code were verified for that sign-in.
+- **Remove "Continue with Google/Apple · Soon" from the web sign-in page too:** yes (LIME-94w).
+
+**(History) Decisions for the user (asked 2026-10-06):**
+- **S1, phone numbers at launch:**
+  - **A.** Email + username now; **phone sign-in switched on when funded**. SMS costs money per message (around a cent in the US, more abroad) and attracts SMS-fraud attacks; email codes are nearly free. **Lean A.**
+  - **B.** Phone too from day one: needs a paid SMS provider + fraud protection.
+- **S2, codes or passwords:**
+  - **A.** Codes only, no passwords, like Signal: nothing to forget or leak. Stolen-email risk is mitigated later by the recovery key and device verification. **Lean A.**
+  - **B.** Password + code.
+- **Note:** email codes in production need a proper email sender (Supabase's built-in one is for testing and heavily rate-limited; e.g. Resend's free tier). Staging can use the built-in one.
+- **The web app** keeps its old auth (frozen). The native app never had Google/Apple buttons, so "remove" means "never add". The user may still ask to remove them from the web.
 
 ### DESIGN-02 (draft, plot, 2026-10-06): API v2, the blind mailbox protocol
 **Status:**
@@ -1176,7 +1248,109 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-93 → `tend` (lime-aa) (next): LimeCore speaks API v2: persisted keys, device registration, the first encrypted 1:1 message (core + tests)
+### LIME-94w → `tend` (lime-aa) (next; tiny, web): remove the Google/Apple "Soon" buttons from the web sign-in
+**What it does:** the user asked (2026-10-06) to remove "Continue with Google" and "Continue with Apple" (both disabled, "Soon") from `public/auth.html`. This is the only change to the frozen web app.
+
+**Capabilities assumed:** edit files, run the `tests/` suites, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey:**
+- `public/auth.html` around lines 51–55 (the two `lime-auth__oauth` buttons);
+- any wrapper, divider ("or") or CSS that exists only for them (`public/css/auth.css`), and the `.lime-badge--soon` usage elsewhere (**keep it if it's used elsewhere**);
+- the tests that reference them.
+
+**Phase 2:**
+- Remove both buttons, plus any divider/wrapper that would be left empty or orphaned, and CSS used **only** by them.
+- Don't change anything else on the page.
+- Update any test that asserted them.
+
+**Verification:**
+- `cd tests && node run.mjs smoke css auth auth-phone`: 0 failures.
+- `grep -n -i "Continue with Google\|Continue with Apple" public/` → no matches.
+- Screenshots of `auth.html` at 1280 and 390 wide: the card has no gap where the buttons were.
+
+**Gate:** the user opens the web sign-in page: no Google/Apple buttons, and the layout is tidy.
+
+**Record:** a `## LIME-94w` entry in `TEND.md`. Commit: `chore(web): remove Google/Apple sign-in placeholders`, trailer `Brief: LIME-94w`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-94 → `tend` (lime-aa) (after LIME-94w; needs the user's email-delivery answer): native sign-up and sign-in (email/username + password + emailed code), profiles, and safe inbound handling
+**What it does:** builds DESIGN-03 (as decided: S1 = A, S2 = B) on iOS and the server.
+- New users sign up, existing users sign in, and the device registers with the v2 server.
+- **The Messages screen shows the account's real (empty) store** instead of the sample data.
+- It also fixes LIME-93's **unsafe ack-everything sync**.
+- The visible phone↔simulator chat is **LIME-95**.
+
+**Capabilities assumed:** edit files, `cargo`, the Supabase CLI (logged in), the local stack via Colima, XcodeGen, `xcodebuild`, commit, push. **Stop and ask the user** if anything needs a paid plan, DNS changes, a password, or a new third-party account.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- `PLOT.md` "DESIGN-03" (the flow; the DECIDED block);
+- `docs/api-v2.md` (§2 profiles/directory, §11);
+- `supabase/`, `core/`, `ios/`;
+- Supabase Auth's capabilities: email + password, email OTP, the JWT `amr` claim, MFA options. **Find out how to make the server *require both* the password and the email code before `devices-register` accepts a device.** If Supabase can't express it natively, design a small Edge Function challenge, e.g. a server-issued sign-in challenge marked complete only after both steps; describe it in the report.
+- **Email delivery:**
+  - Supabase's built-in email is for testing and heavily rate-limited (and may only send to the organisation's team members). **Confirm the current rules.**
+  - **If the built-in sender can't deliver codes to the two test addresses the user will provide, stop and ask the user** (the likely fix is a free Resend account plus DNS records on famkind.com, which only the user can do).
+
+If anything contradicts DESIGN-03 or `api-v2.md`, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Server:**
+   - a `profiles` table (the user id, display name, username (unique, case-insensitive, the same rules as on the web), school, `hide_from_search`), with RLS deny-all and Edge Functions only;
+   - functions: profile set/get-own; **`username-resolve`** (username → a masked email hint for the sign-in confirmation sheet; exact match only; rate-limited; reveals nothing for unknown usernames beyond "not found");
+   - the **two-factor enforcement** for `devices-register` from the survey;
+   - tests in `supabase/test.sh`; deploy to staging.
+2. **Core:**
+   - **`pending_inbound`**: store every fetched item that can't be processed yet (unreadable, unsupported, sealed) **before** acking, with the reason and the attempts.
+   - Retry it on each `sync` and after key or session changes. Never drop silently.
+   - Tests: an unreadable item survives the sync and is retried successfully once the session exists; sealed items are kept, not lost.
+3. **iOS onboarding (DESIGN-03 steps 1–7; the Lime look; glass Next; one question per screen):**
+   - the splash;
+   - the welcome (a **placeholder illustration** using the logo until the art exists; the copy from DESIGN-03; Terms & Privacy linking to `https://famkind.com` placeholders);
+   - **"Your email or username"**: one field; phone numbers show "Phone sign-in is coming later. Use your email for now." (S1 = A);
+   - the confirmation sheet (Yes / Edit; a masked hint for usernames);
+   - the **6-digit code** (`oneTimeCode` autofill, resend after 30s);
+   - **password** (sign-up: create + confirm, min 10 characters, a strength hint; sign-in: enter; "Forgot password?" → code → new password);
+   - new account → name / optional username / optional school;
+   - then Messages.
+   - **Tokens go in the Keychain** (this device only). The core registers the device once both factors pass.
+   - Sign out lives in the About sheet for now: it clears the tokens and the local store **after a confirmation**.
+4. **Messages after sign-in** reads the account's real store: **empty for a new account**, with the empty state ("No chats yet" + cards **New message** and **Invite a teacher**; both show "Coming next" for now). **The sample conversations appear only in Debug builds**, behind a "Load sample chats" developer row in About.
+5. **About (Debug):** "Developer: staging · Signed in as <masked email> · device registered ✓".
+6. **Docs:** `docs/api-v2.md` §11 (the 2FA enforcement design, `username-resolve`, `pending_inbound`); `ios/README.md` (how to sign up on staging).
+
+**Out of scope:** phone/SMS, Google/Apple, New message/compose and real chats (LIME-95), push, contacts, recovery key, device linking, Android, `public/` (LIME-94w handles the web).
+
+**Phase 3: verification.**
+- `./supabase/test.sh`; `cargo test` (+ integration); clippy; iOS tests on the three simulators. 0 failures; no warnings in Lime's sources.
+- **New tests:**
+  - sign-up → code → password → profile → device registered;
+  - sign-in by email and by username;
+  - **a password-only session cannot register a device**;
+  - **a code-only session cannot register a device**;
+  - a wrong code is limited after 5 tries;
+  - forgot password;
+  - sign out clears the Keychain and the store;
+  - `pending_inbound` retention and retry.
+- Staging: deploy, then run one sign-up end to end with a test address the user provides. Report it, and delete the test account after.
+- **Secrets:** the `git grep` checks as in LIME-92/93.
+- Screenshots of every onboarding screen (light and dark, 375pt).
+
+**Gate (the user, on the iPhone via ▶ Run):**
+1. **Sign up** with your email: a code arrives, you set a password, and enter your name.
+2. Messages shows "No chats yet".
+3. Sign out, then **sign in with your username** + password + a new code.
+4. Never any Google/Apple buttons.
+
+**Record:** a `## LIME-94` entry in `TEND.md`. Commit: `feat: native sign-up/sign-in (email or username, password + emailed code), profiles, safe pending inbound`, trailer `Brief: LIME-94`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-93 → `tend` (lime-aa) (landed as `7f411a0`): LimeCore speaks API v2: persisted keys, device registration, the first encrypted 1:1 message (core + tests)
 **What it does:** teaches LimeCore the protocol from `docs/api-v2.md`, so that **two LimeCore instances, as two different accounts, exchange an Olm-encrypted message through the server**.
 - This is proven by automated tests against the **local** Supabase stack, then once against **staging**.
 - The iOS UI change is only a status line. The visible phone-to-phone chat is LIME-94.
