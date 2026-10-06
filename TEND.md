@@ -3956,3 +3956,15 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - The cert/identity check means a message is only accepted from a device whose master-signed certificate matches the Olm session; a **new device of an existing contact** will be accepted if its master key matches the pinned one, and a changed master key is refused until a later brief gives the user a way to accept it.
 - The core has no way yet to learn the user's own user id except from the registration response; a store that was registered under one account and then given another account's token will report the server's error rather than switch accounts. There is one account per install.
 - `register_device` is where the one-time-key pool is topped up; the platform should call it at startup. The server reports remaining keys in its responses; `sync` does not top up.
+
+## LIME-94w
+
+**The Google and Apple "Soon" buttons are gone from the web sign-in (committed, awaiting the user's check).** The only change to the frozen web app.
+
+- `public/auth.html`: removed the two disabled "Continue with Google" / "Continue with Apple" buttons **and the "OR" divider** that existed only to separate them from the email form (it would otherwise have been left orphaned at the top of the card).
+- `public/css/auth.css`: removed the rules used only by them: `.lime-auth__oauth`, `.lime-auth__oauth .lime-badge--soon` and `.lime-auth__divider` (with its two pseudo-element lines). Nothing else on the page changed.
+- `.lime-badge--soon` is **kept** in `lime.css`: it is still used in `index.html` and `app.js`. No test referenced the buttons, so none needed updating.
+
+**Verification.** `cd tests && node run.mjs smoke css auth auth-phone`: **smoke 6, css 8, auth 12, auth-phone 25 passed, 0 failed.** `grep -rn -i "Continue with Google\|Continue with Apple" public/`: no matches (and no remaining references to the removed classes). Screenshots (Chrome, served by a throwaway dev server on its own data folder): `/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/auth94w/auth-1280.png` and `auth-390.png`: the card now starts at the Email field with the "Continue with email" button and the terms line; no gap where the buttons were, at either width.
+
+`PLOT.md` has newer edits that are not mine; left alone.

@@ -112,37 +112,6 @@
   padding: var(--seed-space-6);
 }
 
-.lime-auth__oauth {
-  width: 100%;
-  justify-content: center;
-  margin-bottom: var(--seed-space-3);
-}
-
-/* .lime-badge--soon (lime.css) is a status tag, not a disabled look —
-   pairing it with a genuinely `disabled` button communicates both:
-   this action exists, and it isn't wired up yet. */
-.lime-auth__oauth .lime-badge--soon {
-  margin-left: var(--seed-space-2);
-}
-
-.lime-auth__divider {
-  display: flex;
-  align-items: center;
-  gap: var(--seed-space-3);
-  margin: var(--seed-space-4) 0;
-  color: var(--soil-text-muted);
-  font-size: var(--seed-text-xs);
-  font-weight: var(--seed-weight-medium);
-}
-
-.lime-auth__divider::before,
-.lime-auth__divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--soil-border-subtle);
-}
-
 .lime-auth__field {
   margin-bottom: var(--seed-space-4);
 }
