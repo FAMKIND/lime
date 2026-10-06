@@ -75,6 +75,17 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **The bigger choice is the Apple account type:** individual (the seller shows the user's personal name) vs organisation (needs a legal entity + a D-U-N-S number, free but it can take days to weeks).
   - The user is to decide before enrolling next month.
 
+**Update: LIME-91 landed as `9f74780`** (pushed and verified).
+- `architecture.md` was corrected to match DESIGN-02 (identified first messages from strangers; de-dupe by the outer ciphertext hash).
+- **Accepted:** tend's §9 inference (the server sees which account looks up whose keys), an honest limit.
+- **For the mesh brief:** relays de-dupe by a hash of the outer envelope.
+- **LIME-92 is drafted** (the Supabase v2 core).
+- **Machine (2026-10-06):** no Docker, no Supabase CLI, no Deno. LIME-92 installs them via brew + **Colima** (open source).
+- **User prerequisites given:**
+  - create the `lime-staging` project (East US, free);
+  - write `~/.lime/staging.env` with a one-line Terminal command;
+  - approve `supabase login` in the browser when tend asks.
+
 **Update: LIME-90-fix landed as `9d18cad`** (pushed and verified). 33 iOS tests pass. Tend set `xcodeVersion: "2700"` + `STRING_CATALOG_GENERATE_SYMBOLS`; the user is to report whether the Xcode "recommended settings" warning is gone.
 
 ### DESIGN-02 (draft, plot, 2026-10-06): API v2, the blind mailbox protocol
@@ -1152,7 +1163,99 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-91 → `tend` (lime-aa) (next): DESIGN-02 into `docs/api-v2.md` (docs only)
+### LIME-92 → `tend` (lime-aa) (after the user creates the Supabase project): the v2 server core on Supabase: keys, devices, mailbox
+**What it does:** builds the first half of `docs/api-v2.md` on Supabase and deploys it to a **staging** project:
+- the schema;
+- device registration;
+- the key directory;
+- one-time keys;
+- delivery-key access;
+- the fan-out send;
+- mailbox fetch/ack;
+- the 30-day expiry.
+
+It is tested on a local Supabase stack first. **The iOS app is untouched** (LIME-93 connects it).
+
+**Plot's decisions filling `api-v2.md` §11's open items (record them in `api-v2.md` §11 as "decided in LIME-92"):**
+- **Sealed access:**
+  - Each user has a random 32-byte **delivery key** (shared with contacts in encrypted messages).
+  - The sender presents `access_key = HKDF-SHA256(delivery_key, info="lime-access-v1")` (16 bytes) per recipient user.
+  - The server stores **only SHA-256(access_key)** per user and compares in constant time. This is Signal's unidentified-access model.
+  - Rotation (block) = the user uploads a new hash.
+- **The one-time-key pool:** upload 50 per device; the client tops up when the server reports fewer than 20 left.
+- **Rate limits (config, not constants):**
+  - sends: 120 recipient-items/min per authenticated user, or per access key for sealed sends;
+  - key claims: 60/min per user;
+  - registration: 10/hour per user.
+- **Undelivered expiry: 30 days**, via `pg_cron` (daily).
+
+**Capabilities assumed:** edit files, Homebrew installs without sudo, run the Supabase CLI, Docker via **Colima** (open source), Deno, commit, push.
+- If anything needs `sudo`, a password, or a paid plan, **stop and ask the user**.
+- **Prerequisites (the user's, done before this brief):**
+  - a free Supabase project **`lime-staging`** (region East US);
+  - `~/.lime/staging.env` (outside the repo, `chmod 600`) holding `SUPABASE_PROJECT_REF` and `SUPABASE_DB_PASSWORD`.
+- **Tend runs `supabase login`**, which opens the user's browser to approve; tell the user when to click.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- `docs/api-v2.md` (all) and `docs/architecture.md` §§4–5;
+- the current Supabase CLI docs: local dev, migrations, Edge Functions (Deno), `pg_cron`, the secrets handling;
+- the Free plan's limits. **Note:** free projects pause after inactivity; record it in the docs.
+
+If anything contradicts `api-v2.md`, stop and ask the user.
+
+**Phase 2: the change.** Use the Supabase CLI's standard layout, at **`supabase/`** in the repo root.
+1. **Tooling:** `brew install supabase/tap/supabase deno colima docker`; `colima start`. **No Docker Desktop** (its licence terms vary).
+2. **Migrations** (`supabase/migrations/`):
+   - the tables of `api-v2.md` §2 needed now: `devices`, `master_keys`, `one_time_keys`, `mailbox_items`, `delivery_access` (the user id + `access_key_hash`), plus a rate-limit table;
+   - **RLS on every table, denying all access to `anon` and `authenticated`.** Only the Edge Functions (service role, server-side) touch them.
+   - **The staging project was created with "Automatically expose new tables" OFF and "Enable automatic RLS" ON** (the user, 2026-10-06; the Data API stays enabled). So the migrations must **explicitly `GRANT` the needed privileges to `service_role` only**, and must work identically on the local stack. A test asserts `anon`/`authenticated` have no grants.
+   - **No tables for** conversations, membership, profiles' social data, blobs, backup or calls in this brief.
+3. **Edge Functions** (`supabase/functions/`, TypeScript/Deno), each authenticated with a Supabase Auth JWT **except the sealed path of `send`**:
+   - `devices-register`: binds `device_id` to the user; stores the identity + signing keys and the master-key signature; verifies the signature.
+   - `keys-upload`: one-time keys; returns the remaining count.
+   - `users-devices`: a user's devices + cross-signatures.
+   - `keys-claim`: atomically claims one one-time key per device.
+   - `delivery-access-set`: stores SHA-256(access_key).
+   - `send`: a fan-out batch `{ ciphertext, recipients: [{ to_device, access }] }`.
+     - `access` is either `{ sealed: access_key }` (no JWT required) or `{ identified: true }` (JWT required; the item is marked as identified, with the sender user id).
+     - **De-dupe by SHA-256(ciphertext) per recipient device.** Enforce the size limit (64 KB per item; blobs come later) and the rate limits.
+   - `mailbox-fetch`: items after a cursor for the caller's own device, oldest first, at most 100 per call.
+   - `mailbox-ack`: deletes the caller's items up to a cursor.
+   - **Realtime nudge:** after storing items, broadcast `{ type: "new" }` on the channel `device:<device_id>`. No content.
+   - **Never log** ciphertext, keys, access keys or tokens.
+4. **Expiry:** a `pg_cron` job deletes `mailbox_items` older than 30 days (daily); a test proves it.
+5. **Tests** (`supabase/tests/`, Deno; one command: `./supabase/test.sh`), against the **local** stack (`supabase start`), creating throwaway users through the local admin API. They must cover:
+   - register → upload keys → claim (a key is claimed only once; the count drops);
+   - a sealed send with the right `access_key` succeeds **with no JWT**, and with a wrong one fails (`403`); an identified send records the sender;
+   - fan-out to 3 devices → each fetches only its own items;
+   - ack deletes;
+   - **the de-dupe:** sending the same ciphertext twice → one item;
+   - the size limit; a rate limit trips;
+   - RLS: `anon` and `authenticated` clients can't select any table directly;
+   - expiry deletes a back-dated item;
+   - a revoked device can't fetch.
+6. **Staging deploy** (`./supabase/deploy-staging.sh`): it reads `~/.lime/staging.env`, links, pushes migrations, deploys functions and sets function secrets. **Never echo secrets.**
+   - The **anon (publishable) key and URL** go into a gitignored `supabase/.staging.public.env` for the later iOS brief.
+   - **The service-role key never leaves Supabase.**
+7. **Docs:** `supabase/README.md` (what's here, the prerequisites, `test.sh`, `deploy-staging.sh`, the free-plan pause note). `docs/api-v2.md` §11: mark the four items as decided, with the values above.
+
+**Out of scope:** the iOS app, `core/`, directory/profiles, blobs, backup, push/APNs, calls/TURN/LiveKit, production, `public/`, `server/` (v1 stays as it is), `tests/`.
+
+**Phase 3: verification.**
+- `./supabase/test.sh`: all pass; report the count.
+- `./supabase/deploy-staging.sh` succeeds. Then a **smoke test against staging:** two throwaway users, one sealed send, one fetch, one ack. Then delete the throwaway users.
+- `git status`: no secrets, no `.env` files with values, no `~/.lime` content, no Colima/Docker state tracked. Run `git grep` for the project ref, the password and `service_role` → no matches.
+- Report the tool versions, the Supabase plan limits noted, and anything that needed the user (the browser login).
+
+**Gate (the user):** in the Supabase dashboard, **Table Editor** shows the new tables (empty after the smoke test). Tend's report shows the staging smoke test passing. No secrets on GitHub.
+
+**Record:** a `## LIME-92` entry in `TEND.md`. Commit: `feat(server): API v2 core on Supabase (keys, devices, sealed mailbox, 30-day expiry) with local tests and staging deploy`, trailer `Brief: LIME-92`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-91 → `tend` (lime-aa) (landed as `9f74780`): DESIGN-02 into `docs/api-v2.md` (docs only)
 **What it does:** writes the decided API v2 (the blind-mailbox protocol) into the repo, so the Supabase and core briefs work from one document.
 
 **Capabilities assumed:** edit files, commit, push.
@@ -1185,6 +1288,12 @@ If anything contradicts this brief, stop and ask the user.
    - §11 item 5: append "Answered in `docs/api-v2.md` §5 (2026-10-06)".
    - §6: add a one-line pointer to `docs/api-v2.md`.
 3. **`README.md`:** add a link line beside the architecture link.
+
+**Amendment (plot, 2026-10-06, after tend raised two conflicts):** DESIGN-02 deliberately refines `architecture.md` in two places:
+- a stranger's first message is sent **identified** (the D7 message requests);
+- **the server de-dupes by a hash of the outer ciphertext**, not by `op_id`.
+
+**Correct `architecture.md` §5 and §6/§7 to match DESIGN-02** (a few lines). This is the user's choice "option 1".
 
 **Out of scope:** code, `ios/`, `core/`, `public/`, `server/`, `tests/`, schema SQL.
 
