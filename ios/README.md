@@ -59,10 +59,12 @@ Colours live in `Lime/Resources/Assets.xcassets` (light / dark) and are read thr
 | Token | Light | Dark |
 |---|---|---|
 | Canvas | `#F9F8F4` | `#131B17` |
-| Primary (own bubble, "+", unread badges, dock badge) | `#E4F9BE` | `#2D6A45` |
-| Primary ink | `#131B17` | `#F5F3ED` |
+| Own bubble and send arrow (primary) | `#E4F9BE` | `#A3E18A` (the accent) |
+| Own bubble ink | `#131B17` | `#131B17` |
+| Accent (unread badges, dock badge, Messages "+") | `#A3E18A` | `#A3E18A` |
+| Accent ink | `#131B17` | `#131B17` |
 
-**Dark primary is native-only.** The web's dark `--lime-primary-bg` (`#0D2016`) is almost the same as the canvas and disappears; `#2D6A45` sits 27 OKLab units from the canvas (the unit tests require at least 8) and its ink is 5.8:1 (they require 4.5:1). The web app is frozen, so it keeps its own value; if the web ever changes, align them then. Light values are unchanged.
+**Dark primary is native-only.** The web's dark `--lime-primary-bg` (`#0D2016`) is almost the same as the canvas and disappears, so on iOS the dark own bubble and send arrow use the accent `#A3E18A` (ink 11.4:1; the tests require 4.5:1 and at least 8 OKLab units from the canvas). The web app is frozen, so it keeps its own value; if the web ever changes, align them then. Light values are unchanged.
 
 On iOS 26+ the screens use the system toolbar (back button, swipe back, glass groups) and the soft scroll edge effect top and bottom, as in Apple Messages. On iOS 17-25 they keep custom glass pills, a `TopFade` (a subtle progressive blur and low-opacity canvas veil from the top of the screen to about 10pt under the header buttons) and `SwipeBack`, which re-enables the edge-swipe gesture with the navigation bar hidden.
 

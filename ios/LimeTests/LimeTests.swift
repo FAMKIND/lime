@@ -34,12 +34,19 @@ final class ThemeTests: XCTestCase {
         return (max(x, y) + 0.05) / (min(x, y) + 0.05)
     }
 
-    /// Light is the web's `--lime-primary-bg` (lime-100), unchanged. Dark is native-only (LIME-87-fix):
-    /// the web's dark value (#0D2016) vanishes on the dark canvas.
+    /// Light is the web's `--lime-primary-bg` (lime-100), unchanged. Dark is native-only: the accent
+    /// (LIME-87-fix4), since the web's dark value (#0D2016) vanishes on the dark canvas.
     func testOwnBubbleIsThePrimaryColour() {
         XCTAssertEqual(Theme.Name.primary, "OwnBubble")
         XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: false)), "E4F9BE")
-        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: true)), "2D6A45")
+        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: true)), "A3E18A")
+    }
+
+    func testDarkOwnBubbleIsTheAccent() {
+        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: true)), hex(Theme.uiColor(Theme.Name.accent, dark: true)))
+        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primaryInk, dark: true)), hex(Theme.uiColor(Theme.Name.accentInk, dark: true)))
+        let ratio = contrast(Theme.uiColor(Theme.Name.primaryInk, dark: true), Theme.uiColor(Theme.Name.primary, dark: true))
+        XCTAssertGreaterThanOrEqual(ratio, 4.5, "ratio \(ratio)")
     }
 
     func testLightValuesUnchangedFromLime87() {
@@ -90,12 +97,10 @@ final class ThemeTests: XCTestCase {
         }
     }
 
-    /// LIME-87-fix2 values: the own bubble did not move to the accent.
-    func testOwnBubbleUnchangedFromFix2() {
+    /// Light mode is unchanged: the own bubble keeps its light primary.
+    func testLightOwnBubbleUnchanged() {
         XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: false)), "E4F9BE")
-        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: true)), "2D6A45")
         XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primaryInk, dark: false)), "131B17")
-        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primaryInk, dark: true)), "F5F3ED")
     }
 
     func testTextOnBubblesMeetsContrast() {

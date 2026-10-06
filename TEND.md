@@ -3788,3 +3788,21 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - **Device:** the iPhone 13 mini ("iPhone") was connected; `xcodebuild -destination 'platform=iOS,name=iPhone' build` **BUILD SUCCEEDED** (signed with the team). I did not install or launch it on the phone.
 
 **Screenshots** (`/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/acc/`): `accent-compare.png`, the six Messages shots, `dm-chat-light.png` (Journey Park with avatars). **Not captured:** a dark DM chat.
+
+## LIME-87-fix4
+
+**Dark own bubble in the accent; a chat title that fits narrow phones (committed, awaiting the user's check).** iOS app only; light mode unchanged.
+
+1. **Dark own bubble and send arrow = `#A3E18A`** with ink `#131B17` (11.44:1). Done by pointing the dark values of the `OwnBubble` / `OwnInk` colour sets at the accent, so the bubble, the send arrow and their ink stay one token. The old dark green (`#2D6A45`) was used by nothing else, so it is gone. Tests: dark own bubble equals the accent, ink >= 4.5:1, dark primary still >= 8 OKLab from the canvas, light own bubble unchanged (`E4F9BE` / `131B17`). README Theme table updated.
+2. **Chat title.**
+   - **iOS 26+:** the principal title is now Apple Messages-style: a 26pt avatar (or stack) above the name, centred; the name gets the full width. "N members" shows only when the screen is 390pt or wider (measured with `onGeometryChange`), so it is dropped on a 375pt phone.
+   - **iOS 17-25:** the pill uses `ViewThatFits`: avatar 36 + name + members, then avatar 24, then no members line, then no avatar; the name truncates only after all of that.
+
+**Verification.**
+- **Narrowest iOS 27 phone:** I created an **iPhone 13 mini (375pt) simulator on iOS 27.0** ("Lime 13 mini 27", `1AB12230-CBEB-49DE-88AA-BEAB8668AD3C`; it stays on this Mac). iOS 27: that mini and the iPhone 18 Pro. iOS 18.3: iPhone SE 3rd gen (375pt, the legacy path) and iPhone 16 Pro. **18 tests, 0 failures on all four**, no warnings in Lime sources.
+- New UI test `testChatTitleShowsFullName`: in the Autumn Reyes, Journey Park and Grade 4 Team chats the title text's rendered width is at least 97% of the untruncated string (at the expected font). It passes at 375pt on both the native (iOS 27 mini) and legacy (iOS 18.3 SE) paths.
+- iPhone 13 mini (the device) connected: `xcodebuild -destination 'platform=iOS,name=iPhone' build` BUILD SUCCEEDED. Not installed or launched by me.
+
+**Screenshots** (`/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/fix4/`): `ios27-dark-dm-own-bubbles-send.png` (iPhone 18 Pro, dark: own bubbles and the send arrow in the accent, with the Autumn Reyes title), `ios27-narrow-375-light-chat-header.png` (iOS 27 13 mini: "Autumn Reyes" in full under a centred avatar). **Not captured:** a light DM on the 18 Pro (unchanged by design), a dark narrow header, and any legacy-path (18.3) header screenshot; the legacy path is covered by the SE test only.
+
+**Caveats:** the 13 mini screenshot shows the iOS 27 title tight against the back button group but not truncated; the real phone is the check. Two capture attempts showed the simulator ignoring dark mode on the new mini sim, so the dark shot is from the 18 Pro.
