@@ -76,7 +76,7 @@ final class StorageRecoveryTests: XCTestCase {
         XCTAssertNil(StorageKeychain.existingKey(service: location.keychainService))
         let opened = try StorageBootstrap.open(at: location)
         XCTAssertFalse(opened.startedFresh, "no key and no database is a first launch: no notice")
-        XCTAssertEqual(try conversationCount(opened), 5)
+        XCTAssertEqual(try conversationCount(opened), 0, "a new account's store is empty (the sample chats are Debug-only)")
         XCTAssertTrue(StorageBootstrap.unreadableFileNames(in: location).isEmpty)
     }
 
@@ -100,6 +100,7 @@ final class StorageRecoveryTests: XCTestCase {
         let location = try makeLocation()
         do {
             let first = try StorageBootstrap.open(at: location)
+            try first.store.seedSampleDataIfEmpty()
             _ = try first.store.sendLocalMessage(conversationId: "c1", text: "before the key was lost")
         }
         // A restore without the Keychain: the file survives, the key does not match.
@@ -108,9 +109,9 @@ final class StorageRecoveryTests: XCTestCase {
 
         let recovered = try StorageBootstrap.open(at: location)
         XCTAssertTrue(recovered.startedFresh)
-        XCTAssertEqual(try conversationCount(recovered), 5)
+        XCTAssertEqual(try conversationCount(recovered), 0, "the fresh store starts empty")
         let texts = try recovered.store.listMessages(conversationId: "c1").map(\.text)
-        XCTAssertFalse(texts.contains("before the key was lost"), "the fresh store starts from the sample data")
+        XCTAssertFalse(texts.contains("before the key was lost"))
         let aside = StorageBootstrap.unreadableFileNames(in: location)
         XCTAssertEqual(aside.count, 1)
         XCTAssertTrue(aside[0].hasPrefix("lime-") && aside[0].hasSuffix(".unreadable.db"), aside[0])
@@ -130,7 +131,7 @@ final class StorageRecoveryTests: XCTestCase {
         let recovered = try StorageBootstrap.open(at: location)
         XCTAssertTrue(recovered.startedFresh)
         XCTAssertEqual(StorageBootstrap.unreadableFileNames(in: location).count, 1)
-        XCTAssertEqual(try conversationCount(recovered), 5)
+        XCTAssertEqual(try conversationCount(recovered), 0)
         XCTAssertNotNil(StorageKeychain.existingKey(service: location.keychainService))
     }
 

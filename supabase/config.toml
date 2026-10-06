@@ -105,7 +105,8 @@ openai_api_key = "env(OPENAI_API_KEY)"
 # Email testing server. Emails sent with the local dev setup are not actually sent - rather, they
 # are monitored, and you can view the emails that would have been sent from the web interface.
 [local_smtp]
-enabled = false
+# On locally so the tests can read the emailed sign-in codes (Inbucket, port 54324).
+enabled = true
 # Port to use for the email testing server web interface.
 port = 54324
 # Uncomment to expose additional ports for testing user applications that send emails.
@@ -181,7 +182,7 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+minimum_password_length = 10
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""
@@ -198,7 +199,7 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 2
+email_sent = 1000
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -206,9 +207,9 @@ anonymous_users = 30
 # Number of sessions that can be refreshed in a 5 minute interval per IP address.
 token_refresh = 150
 # Number of sign up and sign-in requests that can be made in a 5 minute interval per IP address (excludes anonymous users).
-sign_in_sign_ups = 30
+sign_in_sign_ups = 1000
 # Number of OTP / Magic link verifications that can be made in a 5 minute interval per IP address.
-token_verifications = 30
+token_verifications = 1000
 # Number of Web3 logins that can be made in a 5 minute interval per IP address.
 web3 = 30
 
@@ -244,6 +245,15 @@ otp_expiry = 3600
 # pass = "env(SENDGRID_API_KEY)"
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
+
+# The emails carry the 6-digit code ({{ .Token }}), not a link.
+[auth.email.template.confirmation]
+subject = "Your Lime code"
+content_path = "./supabase/templates/code.html"
+
+[auth.email.template.magic_link]
+subject = "Your Lime code"
+content_path = "./supabase/templates/code.html"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]
@@ -418,4 +428,19 @@ enabled = true
 # The sealed path of `send` has no user token, so the platform's JWT check is off for it; the
 # function verifies the user token itself when a recipient is "identified".
 [functions.send]
+verify_jwt = false
+
+# The sign-in steps that have no user token yet. (code-verify, code-resend, signup-set-password and
+# the profile functions keep the platform's JWT check and then require a verified session themselves.)
+[functions.identify]
+verify_jwt = false
+[functions.signin-password]
+verify_jwt = false
+[functions.signup-start]
+verify_jwt = false
+[functions.signup-verify]
+verify_jwt = false
+[functions.reset-start]
+verify_jwt = false
+[functions.reset-verify]
 verify_jwt = false

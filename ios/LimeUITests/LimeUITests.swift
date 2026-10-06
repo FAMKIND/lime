@@ -2,12 +2,27 @@ import XCTest
 
 @MainActor
 final class LimeUITests: XCTestCase {
+    /// An app that is already signed in (no backend) with the made-up sample chats loaded: what the
+    /// older tests of Messages and Chat need now that a new account starts empty.
+    private func signedInApp(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-load-sample-chats"] + extra
+        return app
+    }
+
+    /// An app using the stand-in backend, with no saved session: the sign-up and sign-in screens.
+    private func onboardingApp(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-fake-auth", "-lime-reset-session", "-lime-reset-store"] + extra
+        return app
+    }
+
     override func setUp() {
         continueAfterFailure = false
     }
 
     func testMessagesToChatAndBack() {
-        let app = XCUIApplication()
+        let app = signedInApp()
         app.launch()
 
         let list = app.scrollViews["messages-list"]
@@ -39,7 +54,7 @@ final class LimeUITests: XCTestCase {
     }
 
     func testEdgeSwipeGoesBack() {
-        let app = XCUIApplication()
+        let app = signedInApp()
         app.launch()
         let list = app.scrollViews["messages-list"]
         XCTAssertTrue(list.waitForExistence(timeout: 10))
@@ -58,7 +73,7 @@ final class LimeUITests: XCTestCase {
     /// The chat title is the avatar beside the name, with "N members" under it for groups. At 375pt it
     /// may truncate (accepted), so this checks the title exists with the right content, not its width.
     func testChatTitleShowsNameAndMembers() {
-        let app = XCUIApplication()
+        let app = signedInApp()
         app.launch()
         XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 10))
         for (row, name, members) in [("c2", "Autumn Reyes", false), ("c4", "Grade 4 Team", true)] {
@@ -76,7 +91,7 @@ final class LimeUITests: XCTestCase {
 
     /// Long-pressing the logo opens About Lime, which runs LimeCore's encryption self-test.
     func testLongPressLogoShowsSelfTestPassed() {
-        let app = XCUIApplication()
+        let app = signedInApp()
         app.launch()
         XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 10))
         app.buttons["Lime menu"].press(forDuration: 1.2)
@@ -88,7 +103,9 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["about-versions"].label.contains("Core"))
         #if DEBUG
         XCTAssertTrue(app.staticTexts["developer-staging"].exists, "Debug builds show the staging row")
-        XCTAssertTrue(app.staticTexts["developer-staging"].label.contains("Not connected"))
+        let developer = app.staticTexts["developer-staging"].label
+        XCTAssertTrue(developer.contains("Developer: staging"))
+        XCTAssertTrue(developer.contains("Not connected") || developer.contains("Signed in as"), developer)
         #endif
         let storage = app.staticTexts["storage-result"]
         XCTAssertTrue(storage.waitForExistence(timeout: 10))
@@ -99,8 +116,8 @@ final class LimeUITests: XCTestCase {
     /// A message you send is written to the encrypted local store: it survives the app being
     /// terminated and relaunched.
     func testSentMessagePersistsAcrossRelaunch() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-lime-reset-store"] // a fresh sample database for a clean start
+        let app = signedInApp()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-load-sample-chats", "-lime-reset-store"] // a fresh sample database for a clean start
         app.launch()
         XCTAssertTrue(app.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
         app.buttons["conversation-row-c1"].tap()
@@ -114,7 +131,7 @@ final class LimeUITests: XCTestCase {
 
         app.terminate()
 
-        let relaunched = XCUIApplication() // no reset: the same encrypted database
+        let relaunched = signedInApp() // no reset: the same encrypted database
         relaunched.launch()
         XCTAssertTrue(relaunched.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
         relaunched.buttons["conversation-row-c1"].tap()
@@ -126,23 +143,112 @@ final class LimeUITests: XCTestCase {
     /// fresh one is made, and Messages shows a one-time notice.
     func testUnopenableStoreShowsAOneTimeNotice() {
         let first = XCUIApplication()
-        first.launchArguments = ["-lime-reset-store"]
+        first.launchArguments = ["-lime-skip-sign-in", "-lime-load-sample-chats", "-lime-reset-store"]
         first.launch()
         XCTAssertTrue(first.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
         XCTAssertFalse(first.staticTexts["recovery-notice"].exists, "a normal launch has no notice")
         first.terminate()
 
         let recovered = XCUIApplication()
-        recovered.launchArguments = ["-lime-test-corrupt-key"]
+        recovered.launchArguments = ["-lime-skip-sign-in", "-lime-load-sample-chats", "-lime-test-corrupt-key"]
         recovered.launch()
         XCTAssertTrue(recovered.staticTexts["recovery-notice"].waitForExistence(timeout: 10))
         XCTAssertTrue(recovered.staticTexts["recovery-notice"].label.contains("started fresh"))
         XCTAssertTrue(recovered.buttons["conversation-row-c1"].exists, "a fresh sample store is there")
         recovered.terminate()
 
-        let next = XCUIApplication()
+        let next = signedInApp()
         next.launch()
         XCTAssertTrue(next.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
         XCTAssertFalse(next.staticTexts["recovery-notice"].exists, "the notice does not come back")
+    }
+
+    // MARK: Signing up and in (the stand-in backend)
+
+    private func type(_ text: String, into id: String, in app: XCUIApplication, secure: Bool = false) {
+        let field = secure ? app.secureTextFields[id] : app.textFields[id]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), id)
+        field.tap()
+        field.typeText(text)
+    }
+
+    func testSignUpEndToEndThenSignOutAndSignInByUsername() {
+        let app = onboardingApp()
+        app.launch()
+
+        // Welcome: no Google or Apple, ever.
+        XCTAssertTrue(app.buttons["welcome-continue"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Google' OR label CONTAINS[c] 'Apple'")).count, 0)
+        app.buttons["welcome-continue"].tap()
+
+        // One question: email or username. A new address asks to confirm, then sends a code.
+        type("new.teacher@example.com", into: "identifier-field", in: app)
+        XCTAssertTrue(app.buttons["next-button"].isEnabled)
+        app.buttons["next-button"].tap()
+        XCTAssertTrue(app.buttons["confirm-yes"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["confirmation-detail"].label.contains("new.teacher@example.com"))
+        app.buttons["confirm-yes"].tap()
+
+        // The code (the stand-in's is 123456), then a password, then the name.
+        type("123456", into: "code-field", in: app)
+        type("a long enough password", into: "password-field", in: app, secure: true)
+        type("a long enough password", into: "confirm-password-field", in: app, secure: true)
+        app.buttons["next-button"].tap()
+        type("Ada Lovelace", into: "name-field", in: app)
+        app.buttons["next-button"].tap()
+
+        // Messages: empty, with the two ways to start.
+        XCTAssertTrue(app.staticTexts["empty-title"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["empty-title"].label, "No chats yet")
+        XCTAssertTrue(app.buttons["card-new-message"].exists)
+        XCTAssertTrue(app.buttons["card-invite"].exists)
+        app.buttons["card-invite"].tap()
+        XCTAssertTrue(app.staticTexts["coming-soon-banner"].waitForExistence(timeout: 5))
+
+        // Sign out (after a confirmation), then sign in with the username: password, then a new code.
+        app.buttons["Lime menu"].press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 10))
+        app.buttons["sign-out"].tap()
+        let confirm = app.buttons.matching(identifier: "sign-out-confirm").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "signing out asks first")
+        confirm.tap()
+
+        XCTAssertTrue(app.buttons["welcome-continue"].waitForExistence(timeout: 10), "back at the start")
+        app.buttons["welcome-continue"].tap()
+        type("teacher", into: "identifier-field", in: app)
+        app.buttons["next-button"].tap()
+        XCTAssertTrue(app.buttons["confirm-yes"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["confirmation-detail"].label.contains("t•••@famkind.com"), "a masked hint, not the email")
+        app.buttons["confirm-yes"].tap()
+        type("correct horse battery", into: "password-field", in: app, secure: true)
+        app.buttons["next-button"].tap()
+        type("123456", into: "code-field", in: app)
+        XCTAssertTrue(app.staticTexts["empty-title"].waitForExistence(timeout: 10), "signed in: Messages")
+    }
+
+    func testAPhoneNumberIsToldItIsComingLater() {
+        let app = onboardingApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["welcome-continue"].waitForExistence(timeout: 10))
+        app.buttons["welcome-continue"].tap()
+        type("+1 555 010 0199", into: "identifier-field", in: app)
+        XCTAssertTrue(app.staticTexts["identifier-note"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["identifier-note"].label, "Phone sign-in is coming later. Use your email for now.")
+        XCTAssertFalse(app.buttons["next-button"].isEnabled)
+    }
+
+    func testAWrongPasswordAndAWrongCodeSayWhatIsWrong() {
+        let app = onboardingApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["welcome-continue"].waitForExistence(timeout: 10))
+        app.buttons["welcome-continue"].tap()
+        type("teacher@famkind.com", into: "identifier-field", in: app)
+        app.buttons["next-button"].tap()
+        XCTAssertTrue(app.buttons["confirm-yes"].waitForExistence(timeout: 10))
+        app.buttons["confirm-yes"].tap()
+        type("not the password", into: "password-field", in: app, secure: true)
+        app.buttons["next-button"].tap()
+        XCTAssertTrue(app.staticTexts["error-message"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["error-message"].label.contains("isn't right"))
     }
 }

@@ -10,11 +10,15 @@ struct DockBar: View {
         let badge: Int?
     }
 
-    private let items = [
-        Item(id: "link", symbol: "bubble.left", badge: 5),
-        Item(id: "jam", symbol: "book", badge: nil),
-        Item(id: "call", symbol: "phone", badge: nil),
-    ]
+    /// The link badge is the real number of unread messages (none, for a new account).
+    private var items: [Item] {
+        let unread = store.conversations.reduce(0) { $0 + $1.unread }
+        return [
+            Item(id: "link", symbol: "bubble.left", badge: unread > 0 ? unread : nil),
+            Item(id: "jam", symbol: "book", badge: nil),
+            Item(id: "call", symbol: "phone", badge: nil),
+        ]
+    }
 
     var body: some View {
         HStack(spacing: 4) {

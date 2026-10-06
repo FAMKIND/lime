@@ -18,6 +18,7 @@ use crate::protocol::{dm_conversation_id, Hlc, Op, SealedInner, SenderCert};
 use crate::store::account::{
     load_account, load_sessions, pin_master_key, save_account, save_session,
 };
+use crate::store::pending::{self, Fetched, PendingRow};
 use crate::store::{db_err, new_id, now_ms, LimeStore, MessageItem, StoreError, ME_ID};
 use crate::transport::{HeaderPair, Transport, TransportError};
 
@@ -39,8 +40,11 @@ pub struct DeviceInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SyncReport {
-    /// Messages decrypted, verified and stored.
+    /// Messages decrypted, verified and stored (including earlier items that were retried).
     pub received: u32,
+    /// Fetched items that are still waiting (unreadable for now, unsupported, or invalid): kept,
+    /// never dropped.
+    pub pending: u32,
 }
 
 // ---------------------------------------------------------------- the FFI surface
@@ -188,7 +192,9 @@ impl LimeStore {
         let mut sent = 0;
         let mut updated = Vec::new();
         for (device, mut session) in sessions {
-            let message = session.encrypt(&inner).map_err(|_| StoreError::BadMessage)?;
+            let message = session
+                .encrypt(&inner)
+                .map_err(|_| StoreError::BadMessage)?;
             let (kind, bytes) = message.to_parts();
             let mut wire = vec![kind as u8];
             wire.extend_from_slice(&bytes);
@@ -258,7 +264,6 @@ impl LimeStore {
             .filter(|_| state.registered)
             .ok_or(StoreError::NotRegistered)?;
 
-        let mut received = 0u32;
         let mut after = 0i64;
         loop {
             let (status, body) = call(
@@ -275,6 +280,7 @@ impl LimeStore {
             if items.is_empty() {
                 break;
             }
+            let mut fetched = Vec::with_capacity(items.len());
             let mut highest = after;
             for item in items {
                 let cursor = item
@@ -282,12 +288,31 @@ impl LimeStore {
                     .and_then(Value::as_i64)
                     .ok_or(StoreError::BadMessage)?;
                 highest = highest.max(cursor);
-                if self.process_item(&mut state, &me, item).unwrap_or(false) {
-                    received += 1;
-                }
+                fetched.push(Fetched {
+                    cursor,
+                    sender_user: item
+                        .get("sender_user")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    identified: item.get("identified").and_then(Value::as_bool) == Some(true),
+                    ciphertext: item
+                        .get("ciphertext")
+                        .and_then(Value::as_str)
+                        .ok_or(StoreError::BadMessage)?
+                        .to_owned(),
+                    received_at: item
+                        .get("received_at")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                });
             }
-            // Everything fetched is acknowledged, including an item that could not be read: it
-            // would otherwise come back on every sync (api-v2.md section 11 notes the open point).
+            // Keep every item BEFORE telling the server to delete it: if this fails nothing is
+            // acknowledged, and if the acknowledgement fails the items are still safe here.
+            {
+                let now = now_ms();
+                let mut conn = self.lock();
+                pending::insert_all(&mut conn, &fetched, now)?;
+            }
             let (status, _) = call(
                 &transport,
                 Some(&auth_token),
@@ -300,7 +325,15 @@ impl LimeStore {
                 break;
             }
         }
-        Ok(SyncReport { received })
+
+        // Turn what is waiting into messages (and retry what failed before). A new session can make
+        // an earlier item readable, so go round again while anything makes progress.
+        let received = self.retry_pending(&mut state, &me)?;
+        let waiting = self.with_conn(pending::count)?;
+        Ok(SyncReport {
+            received,
+            pending: waiting,
+        })
     }
 }
 
@@ -479,40 +512,68 @@ impl LimeStore {
         Ok(claimed)
     }
 
-    /// Decrypts, verifies and stores one mailbox item. Returns `Ok(true)` when a message was stored.
+    /// Tries every waiting item that is worth trying; returns how many became messages.
+    fn retry_pending(&self, state: &mut AccountState, me: &str) -> Result<u32, StoreError> {
+        let mut received = 0;
+        loop {
+            let rows = self.with_conn(pending::retryable)?;
+            let mut progress = false;
+            for row in rows {
+                let outcome = self.process_item(state, me, &row)?;
+                let now = now_ms();
+                match outcome {
+                    Outcome::Stored => {
+                        self.with_conn(|conn| pending::remove(conn, row.id))?;
+                        received += 1;
+                        progress = true;
+                    }
+                    Outcome::Duplicate => {
+                        self.with_conn(|conn| pending::remove(conn, row.id))?;
+                        progress = true;
+                    }
+                    Outcome::Keep(reason) => {
+                        self.with_conn(|conn| pending::keep(conn, row.id, reason, now))?;
+                    }
+                }
+            }
+            if !progress {
+                return Ok(received);
+            }
+        }
+    }
+
+    /// Decrypts, verifies and stores one waiting item, or says why it stays waiting.
     fn process_item(
         &self,
         state: &mut AccountState,
         me: &str,
-        item: &Value,
-    ) -> Result<bool, StoreError> {
-        // Only identified items are understood here (sealed sends are not built yet).
-        if item.get("identified").and_then(Value::as_bool) != Some(true) {
-            return Ok(false);
+        row: &PendingRow,
+    ) -> Result<Outcome, StoreError> {
+        // Only identified items are understood here (sealed sends are not built yet): keep them.
+        if !row.identified {
+            return Ok(Outcome::Keep(pending::SEALED_UNSUPPORTED));
         }
-        let sender = item
-            .get("sender_user")
-            .and_then(Value::as_str)
-            .ok_or(StoreError::BadMessage)?
-            .to_owned();
+        let Some(sender) = row.sender_user.clone() else {
+            return Ok(Outcome::Keep(pending::INVALID));
+        };
         if sender == me {
-            return Ok(false);
+            return Ok(Outcome::Keep(pending::INVALID));
         }
-        let wire = vodozemac::base64_decode(
-            item.get("ciphertext")
-                .and_then(Value::as_str)
-                .ok_or(StoreError::BadMessage)?,
-        )
-        .map_err(|_| StoreError::BadMessage)?;
-        let (kind, rest) = wire.split_first().ok_or(StoreError::BadMessage)?;
-        let message =
-            OlmMessage::from_parts(*kind as usize, rest).map_err(|_| StoreError::BadMessage)?;
+        let Ok(wire) = vodozemac::base64_decode(&row.ciphertext) else {
+            return Ok(Outcome::Keep(pending::INVALID));
+        };
+        let Some((kind, rest)) = wire.split_first() else {
+            return Ok(Outcome::Keep(pending::INVALID));
+        };
+        let Ok(message) = OlmMessage::from_parts(*kind as usize, rest) else {
+            return Ok(Outcome::Keep(pending::INVALID));
+        };
 
         let now = now_ms();
         let sessions = self.with_conn(|conn| load_sessions(conn, &self.pickle_key, &sender))?;
 
         // Decrypt with an existing session, or (for a pre-key message) start one.
-        let (plaintext, session, peer_identity) = 'decrypt: {
+        let decrypted = 'decrypt: {
             for mut stored in sessions {
                 let fits = match &message {
                     OlmMessage::PreKey(pre_key) => {
@@ -524,23 +585,38 @@ impl LimeStore {
                     continue;
                 }
                 if let Ok(plaintext) = stored.session.decrypt(&message) {
-                    break 'decrypt (plaintext, stored.session, stored.peer_identity_key);
+                    break 'decrypt Some((plaintext, stored.session, stored.peer_identity_key));
                 }
             }
             let OlmMessage::PreKey(pre_key) = &message else {
-                return Err(StoreError::BadMessage);
+                break 'decrypt None; // a normal message with no session that can read it (yet)
             };
             let identity = pre_key.identity_key();
-            let created = state
-                .account
-                .create_inbound_session(SessionConfig::version_1(), identity, pre_key)
-                .map_err(|_| StoreError::BadMessage)?;
-            // The one-time key it used is gone from the account now: save that.
-            self.save(state)?;
-            (created.plaintext, created.session, identity.to_base64())
+            match state.account.create_inbound_session(
+                SessionConfig::version_1(),
+                identity,
+                pre_key,
+            ) {
+                Ok(created) => {
+                    // The one-time key it used is gone from the account now: save that.
+                    self.save(state)?;
+                    Some((created.plaintext, created.session, identity.to_base64()))
+                }
+                Err(_) => {
+                    return Ok(Outcome::Keep(pending::DECRYPT_FAILED));
+                }
+            }
+        };
+        let Some((plaintext, session, peer_identity)) = decrypted else {
+            return Ok(Outcome::Keep(match &message {
+                OlmMessage::Normal(_) => pending::NO_SESSION,
+                OlmMessage::PreKey(_) => pending::DECRYPT_FAILED,
+            }));
         };
 
-        let inner = SealedInner::from_bytes(&plaintext).ok_or(StoreError::BadMessage)?;
+        let Some(inner) = SealedInner::from_bytes(&plaintext) else {
+            return Ok(Outcome::Keep(pending::INVALID));
+        };
         let cert = &inner.sender_cert;
         let valid = inner.sender_user == sender
             && inner.sender_device == cert.device_id
@@ -549,20 +625,21 @@ impl LimeStore {
             && inner.op.verify(&cert.signing_key)
             && inner.op.op_type == "message.send"
             && inner.op.conversation_id == dm_conversation_id(&sender, me);
-        if !valid {
-            return Err(StoreError::BadMessage);
-        }
         let text = inner
             .op
             .payload
             .get("text")
             .and_then(Value::as_str)
-            .ok_or(StoreError::BadMessage)?
-            .to_owned();
-        let remote_hlc = Hlc::parse(&inner.op.hlc).ok_or(StoreError::BadMessage)?;
+            .map(str::to_owned);
+        let remote_hlc = Hlc::parse(&inner.op.hlc);
+        let (true, Some(text), Some(remote_hlc)) = (valid, text, remote_hlc) else {
+            return Ok(Outcome::Keep(pending::INVALID));
+        };
 
-        self.with_conn(|conn| {
-            pin_master_key(conn, &sender, &cert.master_key)?;
+        let stored = self.with_conn(|conn| {
+            if pin_master_key(conn, &sender, &cert.master_key) == Err(StoreError::KeyMismatch) {
+                return Ok(None);
+            }
             save_session(conn, &self.pickle_key, &sender, &cert.device_id, &peer_identity, &session, now)?;
             ensure_dm(conn, &sender)?;
             // The display time is never in the future (api-v2.md section 5).
@@ -581,14 +658,29 @@ impl LimeStore {
                 )
                 .map_err(db_err)?;
             }
-            Ok(inserted > 0)
-        })
-        .and_then(|stored| {
-            state.hlc = state.hlc.observe(remote_hlc, now);
-            self.save(state)?;
-            Ok(stored)
+            Ok(Some(inserted > 0))
+        })?;
+        let Some(inserted) = stored else {
+            return Ok(Outcome::Keep(pending::KEY_MISMATCH));
+        };
+        state.hlc = state.hlc.observe(remote_hlc, now);
+        self.save(state)?;
+        Ok(if inserted {
+            Outcome::Stored
+        } else {
+            Outcome::Duplicate
         })
     }
+}
+
+/// What became of one waiting item.
+enum Outcome {
+    /// It is now a message.
+    Stored,
+    /// It was a message already (the same op arrived twice).
+    Duplicate,
+    /// It stays, for this reason.
+    Keep(&'static str),
 }
 
 /// The most recent op id in a conversation (the op's `parents`), if any.

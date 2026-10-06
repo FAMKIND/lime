@@ -44,6 +44,9 @@ impl Transport for HttpTransport {
             Err(_) => return Err(TransportError::Failed),
         };
         let status = response.status();
+        if status >= 400 {
+            eprintln!("integration transport: {method} {path} answered {status}");
+        }
         let mut bytes = Vec::new();
         std::io::Read::read_to_end(&mut response.into_reader(), &mut bytes)
             .map_err(|_| TransportError::Failed)?;
@@ -122,14 +125,24 @@ impl Admin {
                 .set("apikey", &self.anon_key),
             Some(json!({ "email": email, "password": password })),
         );
-        Account {
-            id,
-            email,
-            token: session["access_token"]
-                .as_str()
-                .expect("an access token")
-                .to_owned(),
-        }
+        let token = session["access_token"]
+            .as_str()
+            .expect("an access token")
+            .to_owned();
+        // The server only lets a session that passed the password AND the emailed code do anything.
+        // The account functions record that after really checking both; a test that is about the
+        // messaging, not the sign-in, writes the same record directly (this needs the service key).
+        let claims: Value =
+            serde_json::from_slice(&base64_url_decode(token.split('.').nth(1).expect("a JWT")))
+                .expect("claims");
+        let session_id = claims["session_id"].as_str().expect("a session id");
+        let marked = self
+            .with_service_key(ureq::post(&format!("{}/rest/v1/auth_proofs", self.base)))
+            .send_json(json!({
+                "session_id": session_id, "user_id": id, "password_ok": true, "code_ok": true
+            }));
+        assert!(marked.is_ok(), "could not mark the session verified");
+        Account { id, email, token }
     }
 
     fn delete_account(&self, account: &Account) {
@@ -175,6 +188,11 @@ impl Drop for Cleanup<'_> {
             self.0.delete_account(account);
         }
     }
+}
+
+fn base64_url_decode(part: &str) -> Vec<u8> {
+    let standard = part.replace('-', "+").replace('_', "/");
+    vodozemac::base64_decode(standard.trim_end_matches('=')).expect("base64")
 }
 
 fn store(dir: &tempfile::TempDir, name: &str, key_byte: u8) -> Arc<LimeStore> {

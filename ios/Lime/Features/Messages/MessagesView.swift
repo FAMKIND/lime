@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MessagesView: View {
     @Environment(ConversationStore.self) private var store
+    @Environment(AccountSession.self) private var session
     @State private var showAbout = false
 
     var body: some View {
@@ -42,7 +43,7 @@ struct MessagesView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { store.comingSoon("Search") } label: { Image(systemName: "magnifyingglass") }
                     .accessibilityLabel("Search")
-                Button { store.comingSoon("Your profile") } label: { AvatarView(person: SampleData.me, size: 30) }
+                Button { store.comingSoon("Your profile") } label: { AvatarView(person: session.mePerson, size: 30) }
                     .accessibilityLabel("Your profile")
             }
         }
@@ -68,6 +69,7 @@ struct MessagesView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 if store.showsRecoveryNotice { RecoveryNotice() }
+                if store.isLoaded && store.conversations.isEmpty { EmptyChatsView() }
                 ForEach(store.conversations) { conversation in
                     NavigationLink(value: conversation.id) {
                         ConversationRow(conversation: conversation)
@@ -93,6 +95,53 @@ struct MessagesView: View {
                 .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         }
         .accessibilityLabel("New message")
+    }
+}
+
+/// A new account's Messages: nothing yet, and two ways to start (both come next).
+private struct EmptyChatsView: View {
+    @Environment(ConversationStore.self) private var store
+
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 6) {
+                Text("No chats yet")
+                    .font(.system(.title2, design: .default, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .accessibilityIdentifier("empty-title")
+                Text("Get started")
+                    .font(Theme.body)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            VStack(spacing: 12) {
+                card("New message", detail: "Message a teacher you know", symbol: "square.and.pencil", id: "card-new-message")
+                card("Invite a teacher", detail: "Bring a colleague to Lime", symbol: "person.badge.plus", id: "card-invite")
+            }
+        }
+        .padding(.top, 48)
+        .padding(.horizontal, 12)
+    }
+
+    private func card(_ title: String, detail: String, symbol: String, id: String) -> some View {
+        Button { store.comingNext(title) } label: {
+            HStack(spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.system(size: 22))
+                    .foregroundStyle(Theme.accentInk)
+                    .frame(width: 48, height: 48)
+                    .background(Theme.accent, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Theme.title).foregroundStyle(Theme.text)
+                    Text(detail).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
     }
 }
 
@@ -123,6 +172,7 @@ private struct RecoveryNotice: View {
 
 private struct TopControls: View {
     @Environment(ConversationStore.self) private var store
+    @Environment(AccountSession.self) private var session
     let onAbout: () -> Void
 
     var body: some View {
@@ -147,7 +197,7 @@ private struct TopControls: View {
                 }
                 .accessibilityLabel("Search")
                 Button { store.comingSoon("Your profile") } label: {
-                    AvatarView(person: SampleData.me, size: 36)
+                    AvatarView(person: session.mePerson, size: 36)
                 }
                 .accessibilityLabel("Your profile")
             }

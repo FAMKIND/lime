@@ -16,13 +16,19 @@ final class ConversationStore {
     /// Shown on Messages after the previous data could not be opened and a fresh store was made.
     private(set) var showsRecoveryNotice = false
 
-    private var core: LimeStore?
+    private(set) var core: LimeStore?
     private var bannerTask: Task<Void, Never>?
 
-    init() {}
+    /// Where the database lives (tests use a temporary folder; nil is Application Support).
+    private let storageLocation: StorageBootstrap.Location?
+
+    init(storageLocation: StorageBootstrap.Location? = nil) {
+        self.storageLocation = storageLocation
+    }
 
     /// For tests: use an already opened store.
     init(store: LimeStore, path: String? = nil) {
+        storageLocation = nil
         core = store
         databasePath = path
     }
@@ -33,10 +39,11 @@ final class ConversationStore {
     func bootstrap(arguments: [String] = ProcessInfo.processInfo.arguments) async {
         if core == nil {
             let resetStore = StorageBootstrap.resetRequested(arguments: arguments, debugBuild: StorageBootstrap.isDebugBuild)
+            let location = storageLocation
             do {
                 let opened = try await Task.detached(priority: .userInitiated) {
                     StorageBootstrap.applyDebugHooks(arguments: arguments)
-                    return try StorageBootstrap.open(resetFirst: resetStore)
+                    return try StorageBootstrap.open(at: location, resetFirst: resetStore)
                 }.value
                 core = opened.store
                 databasePath = opened.path
@@ -61,6 +68,43 @@ final class ConversationStore {
     func dismissRecoveryNotice() {
         UserDefaults.standard.removeObject(forKey: Self.noticePendingKey)
         showsRecoveryNotice = false
+    }
+
+    /// Registers this device with the backend (idempotent) and tops up its one-time keys.
+    func registerDevice(transport: Transport, token: String) async throws -> DeviceInfo {
+        guard let core else { throw AuthError.network }
+        return try await Task.detached(priority: .userInitiated) {
+            try core.registerDevice(transport: transport, authToken: token)
+        }.value
+    }
+
+    /// Fetches the mailbox, stores what arrived, and refreshes the list.
+    func sync(transport: Transport, token: String) async throws {
+        guard let core else { return }
+        _ = try await Task.detached(priority: .userInitiated) {
+            try core.sync(transport: transport, authToken: token)
+        }.value
+        await reload()
+    }
+
+    #if DEBUG
+    /// Debug builds only: the made-up sample chats (a developer row in About, and a test launch argument).
+    func loadSampleChats() async {
+        guard let core else { return }
+        try? await Task.detached(priority: .userInitiated) { try core.seedSampleDataIfEmpty() }.value
+        await reload()
+    }
+    #endif
+
+    /// Signing out: forget everything on this device (the database, its key) and start empty.
+    func wipe() {
+        core = nil
+        databasePath = nil
+        conversations = []
+        isLoaded = false
+        storageError = nil
+        showsRecoveryNotice = false
+        StorageBootstrap.wipe(at: storageLocation)
     }
 
     func reload() async {
@@ -114,6 +158,16 @@ final class ConversationStore {
         return await Task.detached(priority: .userInitiated) {
             StorageBootstrap.rejectsWrongKey(path: path)
         }.value
+    }
+
+    /// "Coming next": for the entry points whose screens are the next brief's.
+    func comingNext(_ what: String) {
+        banner = "\(what): coming next"
+        bannerTask?.cancel()
+        bannerTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            if !Task.isCancelled { banner = nil }
+        }
     }
 
     func comingSoon(_ what: String = "This") {

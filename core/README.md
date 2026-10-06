@@ -27,7 +27,7 @@ FFI additions (on `LimeStore`, plus one function):
 
 - `register_device(transport, auth_token) -> DeviceInfo`: creates this device's keys on first use, registers the device (idempotent), and tops up its one-time keys (upload 50; top up below 20).
 - `send_text_identified(transport, auth_token, recipient_user_id, text) -> MessageItem`: looks up the recipient's devices and verifies their cross-signatures (pinning their master key on first use), claims one-time keys, starts or reuses an Olm session per device, and sends the signed op.
-- `sync(transport, auth_token) -> SyncReport { received }`: fetches the mailbox, decrypts and verifies, stores each message in a DM with the sender (titled with their user id for now), and acknowledges.
+- `sync(transport, auth_token) -> SyncReport { received, pending }`: fetches the mailbox and writes **every item to `pending_inbound` before acknowledging it**, then decrypts and verifies what it can and stores each message in a DM with the sender (titled with their user id for now). An item that cannot be read yet (no session for a normal Olm message), a sealed item (not supported yet), or one that is invalid stays in `pending_inbound` with its reason and attempt count; the readable ones are retried on every sync and when a new session appears, and nothing is dropped silently.
 - `lookup_user_by_email(transport, auth_token, email) -> Option<String>`: an exact, case-insensitive email match; the user id only.
 
 Modules: `keys` (the Olm account and master key), `protocol` (the signed op and sealed inner, canonical bytes, the hybrid logical clock), `client` (the calls above), `transport` (the callback), `store/account.rs` (the persisted state).

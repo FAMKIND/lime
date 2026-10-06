@@ -23,3 +23,12 @@ export const config = {
   maxKeysPerUpload: () => intFromEnv("LIME_MAX_KEYS_PER_UPLOAD", 100),
   maxItemsPerFetch: () => intFromEnv("LIME_MAX_ITEMS_PER_FETCH", 100),
 };
+
+/** Account-function limits (configuration, like the rest). */
+export const accountConfig = {
+  /** Identify / sign-in attempts per minute per client address. */
+  identifyPerMinute: () => intFromEnv("LIME_RATE_IDENTIFY_PER_MIN", 30),
+  signInPerTenMinutes: () => intFromEnv("LIME_RATE_SIGNIN_PER_10MIN", 10),
+  /** Emails asked for (sign-up, sign-in code, reset) per hour per address. */
+  emailPerHour: () => intFromEnv("LIME_RATE_EMAIL_PER_HOUR", 10),
+};

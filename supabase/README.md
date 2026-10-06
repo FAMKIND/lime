@@ -4,12 +4,21 @@ The first half of [`docs/api-v2.md`](../docs/api-v2.md), built on Supabase: the 
 
 ## What is here
 
-- `migrations/`: the tables (`devices`, `master_keys`, `one_time_keys`, `mailbox_items`, `delivery_access`, `rate_limits`), their functions, and the daily `pg_cron` expiry job. **Row-level security is on for every table with no policies, and `anon` and `authenticated` get no privileges at all.** Only the Edge Functions touch the tables, with the service role. Staging was created with "Automatically expose new tables" off and "Enable automatic RLS" on, so every privilege is an explicit `GRANT` to `service_role`, and the local stack is configured the same way (`auto_expose_new_tables = false` in `config.toml`).
-- `functions/`: nine Edge Functions (TypeScript on Deno): `devices-register`, `keys-upload`, `users-devices`, `keys-claim`, `delivery-access-set`, `send`, `mailbox-fetch`, `mailbox-ack`, and (LIME-93) `users-lookup`, an exact, case-insensitive email match that returns the user id only (30 a minute per user; it never lists). Every one needs a Supabase Auth user token **except the sealed path of `send`**, which proves knowledge of the recipient's access key instead. Nothing logs ciphertext, keys, access keys or tokens. Shared code is in `functions/_shared/`; the limits are configuration (`functions/_shared/config.ts`, set as function secrets).
+- `migrations/`: the tables (`devices`, `master_keys`, `one_time_keys`, `mailbox_items`, `delivery_access`, `rate_limits`, and from LIME-94 `profiles`, `auth_proofs`, `code_challenges`), their functions, and the daily `pg_cron` expiry job. **Row-level security is on for every table with no policies, and `anon` and `authenticated` get no privileges at all.** Only the Edge Functions touch the tables, with the service role. Staging was created with "Automatically expose new tables" off and "Enable automatic RLS" on, so every privilege is an explicit `GRANT` to `service_role`, and the local stack is configured the same way (`auto_expose_new_tables = false` in `config.toml`).
+- `functions/`: twenty Edge Functions (TypeScript on Deno). **Keys and the mailbox:** `devices-register`, `keys-upload`, `users-devices`, `keys-claim`, `delivery-access-set`, `send`, `mailbox-fetch`, `mailbox-ack`, and `users-lookup` (an exact, case-insensitive email match that returns the user id only; 30 a minute per user; it never lists). **Accounts (LIME-94):** `identify`, `signin-password`, `code-verify`, `code-resend`, `signup-start`, `signup-verify`, `signup-set-password`, `reset-start`, `reset-verify`, `profile-set`, `profile-get`. Every function needs a **verified** Supabase Auth session (a password and an emailed code, see below) **except** the sign-in steps themselves and the sealed path of `send`, which proves knowledge of the recipient's access key instead. Nothing logs ciphertext, keys, access keys, codes, passwords or tokens. Shared code is in `functions/_shared/`; the limits are configuration (`functions/_shared/config.ts`, set as function secrets).
 - `tests/`: the Deno tests (`api_v2_test.ts`, against the local stack) and a staging smoke test.
 - `test.sh`, `deploy-staging.sh`, `smoke-staging.sh`.
 
 The decisions that fill the open items in `api-v2.md` section 11 are recorded there ("decided in LIME-92").
+
+## Sign-up and sign-in (LIME-94)
+
+A session can do nothing until it has passed **both** a password and an emailed 6-digit code; the functions check both and keep a proof record per session (`docs/api-v2.md` section 11). The codes go out through Supabase Auth's email. Two things in the Auth settings matter:
+
+- **The emails carry the code, not a link.** The templates are `supabase/templates/code.html` (used for "Confirm signup" and "Magic Link"); `config.toml` applies them locally. On the hosted project, paste its contents into Authentication, Emails, Templates for both. Also set the minimum password length to 10 and the minimum interval between emails to 30 seconds or less.
+- **The built-in sender is for testing only:** it sends to the project's team members, **2 messages an hour** for the whole project. Real sign-ups need a custom SMTP sender (Resend's free tier works): add and verify the sending domain in Resend (it shows the DNS records), create a "sending access" API key, then enter it in Authentication, SMTP Settings (host `smtp.resend.com`, port 465, user `resend`, the key as the password) and raise the hourly email limit. Put the key only in the Supabase dashboard.
+
+Locally, `supabase start` runs a mail catcher (Mailpit, port 54324) and the tests read the codes from it.
 
 ## Prerequisites
 

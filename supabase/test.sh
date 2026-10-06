@@ -13,6 +13,10 @@ fi
 supabase status >/dev/null 2>&1 || supabase start
 supabase migration up --local >/dev/null 2>&1 || true   # apply any new migration to an existing local database
 
+# The local Edge runtime can keep serving an older copy of a function after it is edited: restart it.
+docker restart supabase_edge_runtime_lime >/dev/null 2>&1 || true
+sleep 3
+
 eval "$(supabase status -o env | grep -E '^(API_URL|DB_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
 export LIME_API_URL="$API_URL" LIME_DB_URL="$DB_URL" LIME_ANON_KEY="$ANON_KEY" LIME_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
 

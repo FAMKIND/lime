@@ -96,3 +96,11 @@ If the store cannot be opened (the Keychain key is missing or wrong, or the file
 ## Network (LimeCore's transport)
 
 LimeCore owns the protocol and asks the platform to make the HTTPS calls: `Lime/Core/Network/URLSessionTransport.swift` implements its `Transport` callback with `URLSession` (blocking, called from a background task; it adds the project URL and the public `apikey`). Nothing in the app calls it yet: sign-in and the visible phone-to-phone chat are the next brief. Debug builds show a "Developer: staging" row in About Lime ("Not connected").
+
+## Signing up
+
+The app opens at a welcome screen, then one question per screen: your email or username, a confirmation ("Is this correct?"), then either **sign-up** (an emailed 6-digit code, a password of at least 10 characters, your name with an optional username and school) or **sign-in** (your password, then a new emailed code every time a device signs in). "Forgot password?" asks for a code and a new password. A new account's Messages is empty ("No chats yet"). **Sign out** is in About Lime (long-press the logo); it asks first and then removes the tokens and the local store from this phone. Phone numbers are not supported yet and say so.
+
+The app talks to the backend named in `supabase/.staging.public.env` (written by `supabase/deploy-staging.sh`; `./generate.sh` reads it, so run `./generate.sh` after deploying). To sign up on staging the project needs a real email sender: see `supabase/README.md`.
+
+Debug builds only (launch arguments): `-lime-skip-sign-in` (signed in with no backend), `-lime-load-sample-chats` (the made-up chats; also a "Load sample chats" row in About), `-lime-fake-auth` (a stand-in backend: any email starting with "new" is a new account, the code is `123456`, the password `correct horse battery`), `-lime-reset-session`, `-lime-onboarding-screen <name>` (open one screen, for screenshots), and `-lime-api-url` / `-lime-api-key` (point at another backend, for example the local stack). `./ios/run-e2e-local.sh` runs the real app code (sign-up, both steps, the device registering through LimeCore, sign-out, sign-in by username) against the local Supabase stack.

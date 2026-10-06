@@ -21,7 +21,26 @@ export const admin: SupabaseClient = createClient(API_URL, SERVICE_ROLE_KEY, {
 
 export type TestUser = { id: string; token: string; email: string };
 
+export function sessionIdOf(token: string): string {
+  const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+  return JSON.parse(atob(part + "=".repeat((4 - (part.length % 4)) % 4))).session_id;
+}
+
+/**
+ * A throwaway user with a session that has already passed BOTH sign-in steps (the proof record is
+ * written directly, as the account functions would). Use `newUnverifiedUser` for a session that
+ * has not.
+ */
 export async function newUser(): Promise<TestUser> {
+  const user = await newUnverifiedUser();
+  const { error } = await admin.from("auth_proofs").upsert({
+    session_id: sessionIdOf(user.token), user_id: user.id, password_ok: true, code_ok: true, verified_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(`could not mark the session verified: ${error.message}`);
+  return user;
+}
+
+export async function newUnverifiedUser(): Promise<TestUser> {
   const email = `t-${crypto.randomUUID()}@example.invalid`;
   const password = crypto.randomUUID();
   const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
@@ -30,6 +49,31 @@ export async function newUser(): Promise<TestUser> {
   const signedIn = await anon.auth.signInWithPassword({ email, password });
   if (signedIn.error || !signedIn.data.session) throw new Error("could not sign in the throwaway user");
   return { id: data.user.id, token: signedIn.data.session.access_token, email };
+}
+
+export const MAIL_URL = Deno.env.get("LIME_MAIL_URL") ?? "http://127.0.0.1:54324";
+
+/** The newest emailed 6-digit code for an address, read from the local mail catcher (Mailpit). */
+export async function emailedCode(email: string, notBefore = 0): Promise<string> {
+  const query = encodeURIComponent(`to:${email}`);
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const found = await (await fetch(`${MAIL_URL}/api/v1/search?query=${query}`)).json() as {
+      messages?: { ID: string; Created: string }[];
+    };
+    const fresh = (found.messages ?? []).filter((m) => new Date(m.Created).getTime() >= notBefore)
+      .sort((a, b) => (a.Created < b.Created ? 1 : -1));
+    if (fresh.length > 0) {
+      const message = await (await fetch(`${MAIL_URL}/api/v1/message/${fresh[0].ID}`)).json() as { Text?: string; HTML?: string };
+      const match = /\b(\d{6})\b/.exec((message.Text ?? "") + " " + (message.HTML ?? ""));
+      if (match) return match[1];
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error("no code arrived in the local mail catcher");
+}
+
+export async function clearMailbox(email: string) {
+  await fetch(`${MAIL_URL}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`, { method: "DELETE" });
 }
 
 export async function deleteUser(user: TestUser) {
@@ -72,8 +116,16 @@ export async function registerDevice(user: TestUser, master: MasterKey): Promise
 }
 
 /** An Edge Function call. `token` null sends no Authorization header at all. */
-export async function call(fn: string, token: string | null, body: unknown): Promise<{ status: number; body: any }> {
+export async function call(fn: string, token: string | null, body: unknown, extraHeaders: Record<string, string> = {}): Promise<{ status: number; body: any }> {
+  // Each call comes from its own made-up address unless a test says otherwise, so the per-address
+  // limits only trip in the tests that mean them to.
   const headers: Record<string, string> = { "content-type": "application/json" };
+  // Only the local stack takes a made-up address: a real project sits behind Cloudflare, which refuses
+  // a forged one (error 1000).
+  if (API_URL.startsWith("http://127.0.0.1") || API_URL.startsWith("http://localhost")) {
+    headers["cf-connecting-ip"] = extraHeaders["cf-connecting-ip"] ??
+      `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+  }
   if (token) {
     headers.authorization = `Bearer ${token}`;
     headers.apikey = ANON_KEY;
@@ -86,6 +138,9 @@ export async function call(fn: string, token: string | null, body: unknown): Pro
   } catch { /* leave as text */ }
   return { status: res.status, body: parsed };
 }
+
+/** Supabase Auth allows one email to an address per second (config max_frequency): wait it out. */
+export const pause = (ms = 1100) => new Promise((r) => setTimeout(r, ms));
 
 export function otk(count: number, prefix = "k"): { key_id: string; key: string }[] {
   return Array.from({ length: count }, (_, i) => ({ key_id: `${prefix}${i}`, key: toBase64(randomBytes(32)) }));

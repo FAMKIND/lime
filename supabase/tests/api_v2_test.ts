@@ -10,7 +10,7 @@ import {
 import { toBase64 } from "../functions/_shared/bytes.ts";
 
 const opts = { sanitizeOps: false, sanitizeResources: false };
-const TABLES = ["master_keys", "devices", "one_time_keys", "mailbox_items", "delivery_access", "rate_limits"];
+const TABLES = ["master_keys", "devices", "one_time_keys", "mailbox_items", "delivery_access", "rate_limits", "profiles", "auth_proofs", "code_challenges"];
 
 async function withUsers<T>(count: number, fn: (users: TestUser[]) => Promise<T>): Promise<T> {
   const users = await Promise.all(Array.from({ length: count }, newUser));

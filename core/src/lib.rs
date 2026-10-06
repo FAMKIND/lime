@@ -13,6 +13,11 @@ mod selftest;
 mod store;
 mod transport;
 
+#[cfg(test)]
+mod client_tests;
+#[cfg(test)]
+mod testing;
+
 pub use client::{lookup_user_by_email, DeviceInfo, SyncReport};
 pub use store::{ConversationSummary, LimeStore, MemberInfo, MessageItem, StoreError};
 pub use transport::{HeaderPair, Transport, TransportError, TransportResponse};

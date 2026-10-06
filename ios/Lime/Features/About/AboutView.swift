@@ -17,7 +17,17 @@ struct AboutView: View {
     /// nil while checking; then whether the database on disk is encrypted.
     @State private var storageEncrypted: Bool?
     @Environment(ConversationStore.self) private var store
+    @Environment(AccountSession.self) private var session
+    @State private var confirmingSignOut = false
     @Environment(\.dismiss) private var dismiss
+
+    #if DEBUG
+    private var developerLine: String {
+        guard session.hasBackend else { return "Developer: staging · Not connected" }
+        let who = session.maskedEmail ?? session.profile?.username.map { "@\($0)" } ?? "—"
+        return "Developer: staging · Signed in as \(who) · device registered \(session.deviceRegistered ? "✓" : "✗")"
+    }
+    #endif
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -64,12 +74,20 @@ struct AboutView: View {
             .foregroundStyle(Theme.text)
             .accessibilityIdentifier("storage-result")
             #if DEBUG
-            // Debug builds only: there is no sign-in yet (LIME-94), so the staging backend is not connected.
-            Text("Developer: staging · Not connected")
+            // Debug builds only: the staging backend's state.
+            Text(developerLine)
                 .font(Theme.caption)
                 .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
                 .accessibilityIdentifier("developer-staging")
+            Button("Load sample chats") { Task { await store.loadSampleChats() } }
+                .font(Theme.secondary.weight(.semibold))
+                .foregroundStyle(Theme.text)
+                .accessibilityIdentifier("load-sample-chats")
             #endif
+            Button("Sign out", role: .destructive) { confirmingSignOut = true }
+                .font(Theme.secondary.weight(.semibold))
+                .accessibilityIdentifier("sign-out")
             Button("Done") { dismiss() }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.primary)
@@ -78,7 +96,17 @@ struct AboutView: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.canvas.ignoresSafeArea())
-        .presentationDetents([.medium])
+        .presentationDetents([.large])
+        .confirmationDialog("Sign out of Lime?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
+            Button("Sign out and remove chats from this phone", role: .destructive) {
+                dismiss()
+                Task { await session.signOut() }
+            }
+            .accessibilityIdentifier("sign-out-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Signing out removes your chats and keys from this phone. Sign in again to use Lime here.")
+        }
         .task {
             // Off the main thread: real key generation and encryption.
             let report = await Task.detached(priority: .userInitiated) { encryptionSelfTest() }.value

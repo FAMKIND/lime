@@ -62,6 +62,20 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE messages ADD COLUMN op_id TEXT;
      ALTER TABLE messages ADD COLUMN hlc TEXT;
      CREATE UNIQUE INDEX messages_by_op_id ON messages (op_id) WHERE op_id IS NOT NULL;",
+    // 3: every fetched mailbox item is kept here BEFORE it is acknowledged, and removed only once it
+    // has been turned into a message. Nothing the server delivered is ever dropped silently.
+    "CREATE TABLE pending_inbound (
+         id           INTEGER PRIMARY KEY AUTOINCREMENT,
+         cursor       INTEGER NOT NULL UNIQUE,   -- the server's cursor for this device's mailbox
+         sender_user  TEXT,                      -- only for an identified item
+         identified   INTEGER NOT NULL,
+         ciphertext   TEXT NOT NULL,             -- base64, exactly as fetched
+         received_at  TEXT,
+         reason       TEXT NOT NULL,             -- new, no_session, decrypt_failed, sealed_unsupported, invalid, key_mismatch
+         attempts     INTEGER NOT NULL DEFAULT 0,
+         first_seen   INTEGER NOT NULL,
+         last_attempt INTEGER
+     );",
 ];
 
 /// The schema version this build writes.

@@ -65,7 +65,6 @@ enum StorageBootstrap {
             store = try startFresh(at: location, moveAside: hasOldDatabase, now: now)
         }
 
-        try store.seedSampleDataIfEmpty()
         prepareFiles(in: location)
         return Opened(store: store, path: url.path, startedFresh: startedFresh)
     }
@@ -141,6 +140,19 @@ enum StorageBootstrap {
 
     static func isExcludedFromBackup(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup) ?? false
+    }
+
+    // MARK: Signing out
+
+    /// Deletes this device's database, the files moved aside, and the key (sign out: the next account
+    /// starts clean).
+    static func wipe(at location: Location? = nil) {
+        guard let location = try? location ?? Location.live() else { return }
+        let fm = FileManager.default
+        for name in (try? fm.contentsOfDirectory(atPath: location.directory.path)) ?? [] where name.hasPrefix("lime") {
+            try? fm.removeItem(at: location.directory.appendingPathComponent(name))
+        }
+        StorageKeychain.deleteKey(service: location.keychainService)
     }
 
     // MARK: Checks

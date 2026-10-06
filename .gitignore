@@ -27,3 +27,4 @@ supabase/.temp/
 supabase/.staging.public.env
 supabase/.env*
 supabase/functions/.env*
+ios/Lime/Config/BackendConfig.generated.swift

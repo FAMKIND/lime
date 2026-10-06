@@ -11,6 +11,7 @@
 
 pub(crate) mod account;
 mod migrations;
+pub(crate) mod pending;
 mod sample;
 #[cfg(test)]
 mod tests;
