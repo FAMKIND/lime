@@ -31,15 +31,19 @@ final class OnboardingModel {
     }
 
     // The screens' state
-    private(set) var step: Step = .welcome
+    /// Moving to another screen clears any error: a message belongs to the screen that caused it.
+    private(set) var step: Step = .welcome {
+        didSet { if step != oldValue { errorMessage = nil } }
+    }
     private(set) var intent: Intent = .signUp
-    var identifier = ""
-    var code = ""
-    var password = ""
-    var confirmPassword = ""
-    var displayName = ""
-    var username = ""
-    var school = ""
+    // Editing a field clears the error that was about it.
+    var identifier = "" { didSet { if identifier != oldValue { errorMessage = nil } } }
+    var code = "" { didSet { if code != oldValue { errorMessage = nil } } }
+    var password = "" { didSet { if password != oldValue { errorMessage = nil } } }
+    var confirmPassword = "" { didSet { if confirmPassword != oldValue { errorMessage = nil } } }
+    var displayName = "" { didSet { if displayName != oldValue { errorMessage = nil } } }
+    var username = "" { didSet { if username != oldValue { errorMessage = nil } } }
+    var school = "" { didSet { if school != oldValue { errorMessage = nil } } }
     private(set) var confirmation: Confirmation?
     private(set) var errorMessage: String?
     private(set) var isBusy = false
@@ -76,7 +80,11 @@ final class OnboardingModel {
         }
     }
 
-    var canSubmitCode: Bool { code.count == 6 && code.allSatisfy(\.isNumber) && !isBusy }
+    /// The code is 6 digits as configured here, but the hosted project's own setting can differ (it once
+    /// sent 8): accept 6 to 8 digits, and show as many boxes as were typed.
+    nonisolated static let codeLengths = 6...8
+    var canSubmitCode: Bool { Self.codeLengths.contains(code.count) && code.allSatisfy(\.isNumber) && !isBusy }
+    var codeBoxCount: Int { code.count > 6 ? 8 : 6 }
 
     var passwordChecks: PasswordChecks { PasswordChecks(password: password, confirmation: confirmPassword, creating: intent != .signIn) }
 

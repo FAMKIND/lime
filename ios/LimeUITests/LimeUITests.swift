@@ -191,6 +191,7 @@ final class LimeUITests: XCTestCase {
 
         // The code (the stand-in's is 123456), then a password, then the name.
         type("123456", into: "code-field", in: app)
+        app.buttons["next-button"].tap()
         type("a long enough password", into: "password-field", in: app, secure: true)
         type("a long enough password", into: "confirm-password-field", in: app, secure: true)
         app.buttons["next-button"].tap()
@@ -223,6 +224,7 @@ final class LimeUITests: XCTestCase {
         type("correct horse battery", into: "password-field", in: app, secure: true)
         app.buttons["next-button"].tap()
         type("123456", into: "code-field", in: app)
+        app.buttons["next-button"].tap()
         XCTAssertTrue(app.staticTexts["empty-title"].waitForExistence(timeout: 10), "signed in: Messages")
     }
 

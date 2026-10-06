@@ -13,7 +13,7 @@ The decisions that fill the open items in `api-v2.md` section 11 are recorded th
 
 ## Sign-up and sign-in (LIME-94)
 
-A session can do nothing until it has passed **both** a password and an emailed 6-digit code; the functions check both and keep a proof record per session (`docs/api-v2.md` section 11). The codes go out through Supabase Auth's email. Two things in the Auth settings matter:
+A session can do nothing until it has passed **both** a password and an emailed code (6 digits; the functions and the app accept 6 to 8); the functions check both and keep a proof record per session (`docs/api-v2.md` section 11). The codes go out through Supabase Auth's email. Two things in the Auth settings matter:
 
 - **The emails carry the code, not a link.** The templates are `supabase/templates/code.html` (used for "Confirm signup" and "Magic Link"); `config.toml` applies them locally. On the hosted project, paste its contents into Authentication, Emails, Templates for both. Also set the minimum password length to 10 and the minimum interval between emails to 30 seconds or less.
 - **The built-in sender is for testing only:** it sends to the project's team members, **2 messages an hour** for the whole project. Real sign-ups need a custom SMTP sender (Resend's free tier works): add and verify the sending domain in Resend (it shows the DNS records), create a "sending access" API key, then enter it in Authentication, SMTP Settings (host `smtp.resend.com`, port 465, user `resend`, the key as the password) and raise the hourly email limit. Put the key only in the Supabase dashboard.
@@ -59,3 +59,8 @@ The scripts never print the secrets. `deploy-staging.sh` writes the project URL 
 ## The free plan (as of 2026-10-06, supabase.com/pricing)
 
 500 MB database, 50,000 monthly active users, 500,000 Edge Function invocations, 200 concurrent Realtime connections and 2 million Realtime messages a month, 2 active projects. **Free projects are paused after one week of inactivity**: the first request after a pause fails until the project is restored from the dashboard. Keep that in mind for staging, and a paid plan for production.
+
+
+## Staging settings must match `config.toml`
+
+`supabase config push` is never used, so the hosted Auth settings are set by hand in the dashboard. The code length (`otp_length`, **6**) and email confirmations (**on**) must match `config.toml`; a mismatch is what broke LIME-94's gate (staging sent 8-digit codes). `./supabase/check-staging-settings.sh` compares them read-only (the CLI token stays in memory) and `smoke-staging.sh` runs it first.

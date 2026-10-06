@@ -106,6 +106,36 @@ final class OnboardingModelTests: XCTestCase {
         XCTAssertEqual(completed.first?.1, Profile(displayName: "Ada Lovelace", username: "ada.l", school: "Analytical Academy"))
     }
 
+    func testCodesOfSixToEightDigitsAreAccepted() {
+        let model = makeModel()
+        model.start()
+        for length in 1...9 {
+            model.code = String(repeating: "7", count: length)
+            XCTAssertEqual(model.canSubmitCode, (6...8).contains(length), "length \(length)")
+        }
+        model.code = "12345a"
+        XCTAssertFalse(model.canSubmitCode)
+    }
+
+    func testAnErrorIsClearedWhenTheScreenOrTheFieldChanges() async {
+        let model = makeModel()
+        model.start()
+        model.identifier = "new.teacher@example.com"
+        await model.submitIdentifier(); await model.confirmIdentifier()
+        model.code = "000000"
+        await model.submitCode()
+        XCTAssertNotNil(model.errorMessage)
+        model.code = "00000"
+        XCTAssertNil(model.errorMessage, "editing the field clears its error")
+        model.code = "000000"
+        await model.submitCode()
+        XCTAssertNotNil(model.errorMessage)
+        model.code = FakeAuthService.code
+        await model.submitCode()
+        XCTAssertEqual(model.step, .password)
+        XCTAssertNil(model.errorMessage, "an error never follows the person to the next screen")
+    }
+
     func testATakenUsernameIsReportedOnTheProfileScreen() async {
         let model = makeModel()
         model.start()

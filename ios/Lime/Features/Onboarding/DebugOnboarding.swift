@@ -2,7 +2,7 @@
 import Foundation
 
 /// Debug builds only: `-lime-onboarding-screen <name>` opens the flow straight at one screen with
-/// canned content (for screenshots). Names: welcome, identifier, identifier-phone, confirm-email,
+/// canned content (for screenshots). Names: welcome, identifier, identifier-valid, identifier-phone, confirm-email,
 /// confirm-username, confirm-unknown, code, password-create, password-signin, forgot-code,
 /// forgot-password, profile.
 @MainActor
@@ -19,6 +19,9 @@ extension OnboardingModel {
         switch name {
         case "welcome": break
         case "identifier": start()
+        case "identifier-valid":
+            start()
+            identifier = "teacher@famkind.com"
         case "identifier-phone":
             start()
             identifier = "+1 555 010 0199"

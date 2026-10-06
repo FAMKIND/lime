@@ -30,19 +30,7 @@ struct OnboardingScaffold<Content: View>: View {
                 }
                 Spacer()
                 if showsNext {
-                    Button(action: onNext) {
-                        Group {
-                            if isBusy { ProgressView() } else { Text("Next").font(Theme.body.weight(.semibold)) }
-                        }
-                        .foregroundStyle(Theme.text)
-                        .frame(minWidth: 72, minHeight: 48)
-                        .padding(.horizontal, 12)
-                        .limeGlass()
-                    }
-                    .disabled(!canNext)
-                    .opacity(canNext || isBusy ? 1 : 0.45)
-                    .accessibilityLabel("Next")
-                    .accessibilityIdentifier("next-button")
+                    NextButton(isEnabled: canNext, isBusy: isBusy, action: onNext)
                 }
             }
             .padding(.horizontal, 16)
@@ -141,5 +129,34 @@ struct PrimaryButton: View {
             .background(Theme.accent, in: Capsule())
         }
         .accessibilityIdentifier(identifier)
+    }
+}
+
+/// The glass "Next" at the top right. Enabled it is the brand primary (the accent fill and its dark
+/// ink, like the welcome screen's Continue); disabled it is neutral glass with a dimmed label.
+struct NextButton: View {
+    let isEnabled: Bool
+    var isBusy = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if isBusy { ProgressView() } else { Text("Next").font(Theme.body.weight(.semibold)) }
+            }
+            .foregroundStyle(isEnabled || isBusy ? Theme.accentInk : Theme.textSecondary.opacity(0.7))
+            .frame(minWidth: 72, minHeight: 48)
+            .padding(.horizontal, 12)
+            .background {
+                if isEnabled || isBusy {
+                    Capsule().fill(Theme.accent)
+                } else {
+                    Color.clear.limeGlass()
+                }
+            }
+        }
+        .disabled(!isEnabled)
+        .accessibilityLabel("Next")
+        .accessibilityIdentifier("next-button")
     }
 }

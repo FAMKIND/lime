@@ -3,7 +3,7 @@
 // session has both steps and is verified.
 
 import { admin } from "../_shared/db.ts";
-import { authCall, MAX_CODE_ATTEMPTS, MIN_PASSWORD_LENGTH, resolveEmail, sha256Hex, verifiedSessionFor } from "../_shared/auth.ts";
+import { CODE_PATTERN, authCall, MAX_CODE_ATTEMPTS, MIN_PASSWORD_LENGTH, resolveEmail, sha256Hex, verifiedSessionFor } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
@@ -12,7 +12,7 @@ Deno.serve(handler(async (req) => {
   const email = identifier.trim() ? await resolveEmail(identifier) : null;
   if (!email) throw new HttpError(400, "bad_code", "That code is not right.");
   const password = typeof body.new_password === "string" ? body.new_password : "";
-  if (typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) throw new HttpError(400, "bad_request", "The code is 6 digits.");
+  if (typeof body.code !== "string" || !CODE_PATTERN.test(body.code)) throw new HttpError(400, "bad_request", "The code is 6 to 8 digits.");
   if (password.length < MIN_PASSWORD_LENGTH || password.length > 256) {
     throw new HttpError(400, "weak_password", `Use at least ${MIN_PASSWORD_LENGTH} characters.`);
   }

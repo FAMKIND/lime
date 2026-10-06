@@ -10,6 +10,7 @@ set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
 set +a
+./supabase/check-staging-settings.sh
 [ -f supabase/.staging.public.env ] || { echo "Run ./supabase/deploy-staging.sh first." >&2; exit 1; }
 set -a
 . supabase/.staging.public.env

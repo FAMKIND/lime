@@ -64,7 +64,7 @@ export async function emailedCode(email: string, notBefore = 0): Promise<string>
       .sort((a, b) => (a.Created < b.Created ? 1 : -1));
     if (fresh.length > 0) {
       const message = await (await fetch(`${MAIL_URL}/api/v1/message/${fresh[0].ID}`)).json() as { Text?: string; HTML?: string };
-      const match = /\b(\d{6})\b/.exec((message.Text ?? "") + " " + (message.HTML ?? ""));
+      const match = /\b(\d{6,8})\b/.exec((message.Text ?? "") + " " + (message.HTML ?? ""));
       if (match) return match[1];
     }
     await new Promise((r) => setTimeout(r, 250));

@@ -3,14 +3,14 @@
 // (signup-set-password) before it can do anything.
 
 import { admin, sessionIdOf } from "../_shared/db.ts";
-import { authCall, MAX_CODE_ATTEMPTS, normaliseEmail, sha256Hex } from "../_shared/auth.ts";
+import { CODE_PATTERN, authCall, MAX_CODE_ATTEMPTS, normaliseEmail, sha256Hex } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
   const body = await readJson(req);
   const email = normaliseEmail(body.email);
-  if (typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) {
-    throw new HttpError(400, "bad_request", "The code is 6 digits.");
+  if (typeof body.code !== "string" || !CODE_PATTERN.test(body.code)) {
+    throw new HttpError(400, "bad_request", "The code is 6 to 8 digits.");
   }
   const db = admin();
   const key = `email:${await sha256Hex(email)}`;

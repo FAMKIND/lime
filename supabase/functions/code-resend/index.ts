@@ -2,7 +2,7 @@
 // starts the count of wrong tries again.
 
 import { admin, accountConfig, rateLimit, requireSession } from "../_shared/db.ts";
-import { authCall, RESEND_AFTER_SECONDS, sha256Hex } from "../_shared/auth.ts";
+import { RESEND_AFTER_SECONDS, sendCode, sha256Hex } from "../_shared/auth.ts";
 import { handler, HttpError, json } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
@@ -21,8 +21,7 @@ Deno.serve(handler(async (req) => {
     }
   }
   await rateLimit(`email:${await sha256Hex(session.email)}`, 1, accountConfig.emailPerHour(), 3600);
-  const sent = await authCall("/otp", { email: session.email, create_user: false });
-  if (sent.status !== 200) throw new HttpError(502, "email_failed", "We could not send the code. Try again in a moment.");
+  await sendCode(session.email, false);
   await db.rpc("start_code_challenge", { p_key: key, p_kind: "signin" });
   return json({ ok: true });
 }));

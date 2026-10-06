@@ -4,7 +4,7 @@
 // but it can do nothing until the code is verified (code-verify): see _shared/db.ts requireUser.
 
 import { admin, accountConfig, rateLimit, sessionIdOf } from "../_shared/db.ts";
-import { authCall, clientIp, maskEmail, normaliseEmail, sha256Hex, usernameError } from "../_shared/auth.ts";
+import { authCall, clientIp, maskEmail, normaliseEmail, sendCode, sha256Hex, usernameError } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
@@ -50,8 +50,7 @@ Deno.serve(handler(async (req) => {
   // The second step: the emailed code.
   await db.rpc("start_code_challenge", { p_key: `session:${sessionId}`, p_kind: "signin" });
   await rateLimit(`email:${await sha256Hex(email)}`, 1, accountConfig.emailPerHour(), 3600);
-  const sent = await authCall("/otp", { email, create_user: false });
-  if (sent.status !== 200) throw new HttpError(502, "email_failed", "We could not send the code. Try again in a moment.");
+  await sendCode(email, false);
 
   return json({
     access_token: session.access_token,

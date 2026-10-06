@@ -3,14 +3,14 @@
 // passed both steps and becomes verified.
 
 import { admin, requireSession } from "../_shared/db.ts";
-import { authCall, MAX_CODE_ATTEMPTS } from "../_shared/auth.ts";
+import { CODE_PATTERN, authCall, MAX_CODE_ATTEMPTS } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
   const session = await requireSession(req);
   const body = await readJson(req);
-  if (typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) {
-    throw new HttpError(400, "bad_request", "The code is 6 digits.");
+  if (typeof body.code !== "string" || !CODE_PATTERN.test(body.code)) {
+    throw new HttpError(400, "bad_request", "The code is 6 to 8 digits.");
   }
   const db = admin();
   const { data: proof } = await db.from("auth_proofs").select("password_ok, code_ok").eq("session_id", session.sessionId).maybeSingle();

@@ -310,3 +310,68 @@ Deno.test("the existing functions refuse a session that is not verified", opts, 
     await cleanup();
   }
 });
+
+Deno.test("a code of 6 to 8 digits is accepted as an answer (the hosted setting once sent 8)", opts, async () => {
+  try {
+    const email = newEmail();
+    await signUp(email);
+    await clearMailbox(email);
+    const started = Date.now() - 2000;
+    const signedIn = await signInPassword(email);
+    const token = signedIn.body.access_token as string;
+    const real = await emailedCode(email, started);
+    // An 8-digit answer is checked like any other, not refused as the wrong length.
+    const eight = real.length === 8 ? "00000000" : "12345678";
+    assertEquals((await call("code-verify", token, { code: eight })).body.error, "bad_code");
+    // Too short or too long is still a bad request, and not counted as a try.
+    assertEquals((await call("code-verify", token, { code: "12345" })).body.error, "bad_request");
+    assertEquals((await call("code-verify", token, { code: "123456789" })).body.error, "bad_request");
+    // The code that was really emailed (whatever its length) is accepted.
+    assertEquals((await call("code-verify", token, { code: real })).status, 200);
+  } finally {
+    await cleanup();
+  }
+});
+
+Deno.test("a rate-limited code send is reported plainly, never as a code that was sent", opts, async () => {
+  try {
+    const email = newEmail();
+    await signUp(email);
+    await clearMailbox(email);
+    await pause();
+    // The first sign-in sends a code; asking again at once is refused by Auth's per-address interval.
+    const first = await call("signin-password", null, { identifier: email, password: PASSWORD });
+    assertEquals(first.status, 200);
+    const second = await call("signin-password", null, { identifier: email, password: PASSWORD });
+    assertEquals(second.status, 429, JSON.stringify(second.body));
+    assertEquals(second.body.error, "too_soon");
+    assert(/^Please wait \d+ seconds before asking for another code\.$/.test(second.body.message), second.body.message);
+    assertEquals(second.body.access_token, undefined, "no session is handed out when no code went out");
+
+    // Forgot password: the second request at once is reported too (for an existing account).
+    await pause();
+    assertEquals((await call("reset-start", null, { identifier: email })).status, 200);
+    const again = await call("reset-start", null, { identifier: email });
+    assertEquals(again.status, 429);
+    assertEquals(again.body.error, "too_soon");
+    // A sign-up of a brand new address likewise.
+    const fresh = newEmail();
+    assertEquals((await call("signup-start", null, { email: fresh })).status, 200);
+    const freshAgain = await call("signup-start", null, { email: fresh });
+    assertEquals(freshAgain.status, 429);
+    assertEquals(freshAgain.body.error, "too_soon");
+    // Until the code is entered the address is still new, so it can ask again (Resend) after the wait.
+    assertEquals((await call("identify", null, { identifier: fresh })).body.exists, false);
+    await pause();
+    await clearMailbox(fresh);
+    const resentAt = Date.now() - 2000;
+    assertEquals((await call("signup-start", null, { email: fresh })).status, 200, "an unconfirmed address may ask for a new code");
+    const resentCode = await emailedCode(fresh, resentAt);
+    assertEquals((await call("signup-verify", null, { email: fresh, code: resentCode })).status, 200);
+    assertEquals((await call("identify", null, { identifier: fresh })).body.exists, true, "a confirmed address is an account");
+    const { data } = await admin.rpc("lookup_user_id_by_email", { p_email: fresh });
+    if (data) created.push(data);
+  } finally {
+    await cleanup();
+  }
+});

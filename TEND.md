@@ -3997,3 +3997,27 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - The decisions I made: the confirmation wording per path; "Edit" and "Back" behave as the model tests describe (after a sign-up code is verified, Back returns to the first question); an offline launch keeps the saved session and refreshes later; an expired or revoked session returns to the welcome screen; `reset-start` always answers the same (no account enumeration), while `identify` and `signup-start` do reveal whether an email has an account (as the web sign-in did).
 - The gate on the iPhone needs the email sender first: until then `signup-start` / `signin-password` cannot email a code to anyone but a team member, within 2 an hour.
 - Phone sign-in, a permissions explainer, the recovery-key prompt and Restore/Transfer are not here (later briefs).
+
+## LIME-94-fix
+
+**Emailed codes rejected on staging; stale errors; visual changes (committed, awaiting the user's check).**
+
+**Root cause.** Staging's Auth was set to send **8-digit** email codes while the app, its code boxes and `code-verify` accepted exactly **6** (the app also cut pasted codes to 6), so every real code was rejected in sign-in and in forgot-password. The user has since set staging's length to 6; read-only check: `mailer_otp_length = 6`. I could not read Auth's own logs (the Management API logs query returned a backend error), so the cause rests on that configuration, the user's finding, and the code. Behind it, three more real faults: a failed or rate-limited send was swallowed or mis-reported; a sign-up could not be resent after the first send (the unconfirmed account counted as existing); and an error message stayed on screen when the screen changed.
+
+**Changes.**
+- **Tolerant codes:** functions and app accept 6 to 8 digits (`CODE_PATTERN`; boxes show 6 or 8). Typed digits never auto-submit; only a pasted or autofilled whole code does (Next otherwise).
+- **Sends surface failure:** `sendCode` maps Auth's rate limit to 429 `too_soon` ("Please wait N seconds before asking for another code.") and other failures to 502 `email_failed`; used by signin-password, code-resend, signup-start, reset-start (which still answers alike for unknown accounts).
+- **Account state:** migration `20261006150000_email_account_state.sql` (`none`/`unconfirmed`/`confirmed`, service role only); only a confirmed address counts as existing, so an unconfirmed sign-up can be resent. Local `enable_confirmations = true` now matches hosted.
+- **Errors:** cleared on any screen change and on editing a field.
+- **Visual:** top-right Next is the accent (#a3e18a, dark ink); disabled is neutral glass, dimmed. Welcome uses `public/assets/lime-logo.svg` (vector, in the asset catalog, no circle; committed) with "Connect All Teachers" / "A secure messenger made for teachers."
+- **Staging settings check:** `supabase/check-staging-settings.sh` (read-only; `otp_length` and `enable_confirmations` against `config.toml`), run first by `smoke-staging.sh`; documented in `supabase/README.md`.
+
+**Verification.**
+- `./supabase/test.sh` **23 pass**, twice; and once more with the local Auth temporarily at `otp_length = 8` (**23 pass**; stack restarted and confirmed 8, then put back to 6).
+- iOS, iPhone 18 Pro, iPhone 13 mini (375pt) and iPhone SE 3rd gen: all unit and UI tests pass, 0 failures (new: 6 to 8 digit acceptance, errors cleared on field edit and screen change; UI tests tap Next after typing a code). `./ios/run-e2e-local.sh` passes.
+- Staging: migration and functions deployed (no `config push`); `check-staging-settings.sh` ok (6, confirmations on, 30 s). A real send for `jean@famkind.com` through Resend returned 200, an immediate second returned 429 "Please wait 28 seconds before asking for another code."; the throwaway user was then deleted. **Not done by me: entering the real emailed code (I cannot read that inbox), so the full staging sign-up, sign-out, sign-in by username with a real code is for the user's gate on the phone.**
+- Secrets: the staged diff has no project ref, database password, `sb_secret_` or JWT strings.
+
+**Screenshots** (`.../scratchpad/fix94/`): welcome, identifier (Next disabled), identifier-valid (Next enabled), code; light and dark, 375pt.
+
+**Left alone:** `public/assets/Logomark-outline.svg` and `public/assets/signin-teachers.mp4` are untracked and not mine; not committed.

@@ -15,9 +15,10 @@ Deno.serve(handler(async (req) => {
 
   if (raw.includes("@") && !raw.startsWith("@")) {
     const email = normaliseEmail(raw);
-    const { data, error } = await admin().rpc("lookup_user_id_by_email", { p_email: email });
+    const { data, error } = await admin().rpc("email_account_state", { p_email: email });
     if (error) throw new HttpError(500, "internal");
-    return json({ kind: "email", exists: !!data, hint: maskEmail(email) });
+    // An address that never proved itself (an unconfirmed sign-up) is still new.
+    return json({ kind: "email", exists: data === "confirmed", hint: maskEmail(email) });
   }
 
   const username = raw.replace(/^@/, "");

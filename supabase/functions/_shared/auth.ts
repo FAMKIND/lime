@@ -112,3 +112,27 @@ export async function resolveEmail(identifier: string): Promise<string | null> {
   const row = Array.isArray(data) ? data[0] : null;
   return row?.email ?? null;
 }
+
+/** The emailed code is 6 digits as configured here, but the hosted project's own setting can differ
+ *  (it once sent 8): accept 6 to 8 digits so a settings drift cannot lock people out. */
+export const CODE_PATTERN = /^\d{6,8}$/;
+
+/**
+ * Asks Supabase Auth to email a code. A rate-limited send (Auth allows one email per address per
+ * interval, and a project-wide hourly cap) becomes a clear "wait N seconds" error; any other
+ * failure becomes "could not send". Never reports success for a send that did not happen.
+ */
+export async function sendCode(email: string, createUser: boolean): Promise<void> {
+  const sent = await authCall("/otp", { email, create_user: createUser });
+  if (sent.status === 200) return;
+  const text = String(sent.body?.msg ?? sent.body?.message ?? "");
+  if (sent.status === 429 || sent.body?.error_code === "over_email_send_rate_limit" || /only request this after/i.test(text)) {
+    const seconds = /after (\d+) second/i.exec(text)?.[1];
+    throw new HttpError(
+      429,
+      "too_soon",
+      seconds ? `Please wait ${seconds} seconds before asking for another code.` : "Please wait a little before asking for another code.",
+    );
+  }
+  throw new HttpError(502, "email_failed", "We could not send the code. Try again in a moment.");
+}

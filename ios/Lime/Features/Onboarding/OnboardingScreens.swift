@@ -21,20 +21,19 @@ struct WelcomeView: View {
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 24)
-            // A placeholder for the illustration of teachers (to be designed): the logo on a soft disc.
-            ZStack {
-                Circle().fill(Theme.surface).frame(width: 220, height: 220)
-                Image("LimeLogo").resizable().scaledToFit().frame(width: 128, height: 128)
-            }
-            .accessibilityHidden(true)
+            Image("LimeWelcomeLogo")
+                .resizable().scaledToFit()
+                .frame(maxWidth: 190, maxHeight: 230)
+                .accessibilityHidden(true)
+                .accessibilityIdentifier("welcome-logo")
             Spacer(minLength: 24)
             VStack(spacing: 10) {
-                Text("Connect with every teacher. Privately.")
+                Text("Connect All Teachers")
                     .font(.system(.title, design: .default, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Theme.text)
                     .accessibilityIdentifier("welcome-headline")
-                Text("Built by teachers, for teachers")
+                Text("A secure messenger made for teachers.")
                     .font(Theme.body)
                     .foregroundStyle(Theme.textSecondary)
             }
@@ -180,7 +179,7 @@ struct CodeScreen: View {
     var body: some View {
         OnboardingScaffold(
             title: "Enter the code",
-            subtitle: "We sent a 6-digit code to \(model.codeDestination).",
+            subtitle: "We sent a code to \(model.codeDestination).",
             canNext: model.canSubmitCode, isBusy: model.isBusy, errorMessage: model.errorMessage,
             onBack: { model.back() }, onNext: { Task { await model.submitCode() } }
         ) {
@@ -193,17 +192,22 @@ struct CodeScreen: View {
                     .opacity(0.01)
                     .frame(height: 56)
                     .accessibilityIdentifier("code-field")
-                    .accessibilityLabel("6-digit code")
-                    .onChange(of: model.code) { _, value in
-                        let digits = String(value.filter(\.isNumber).prefix(6))
+                    .accessibilityLabel("Code from the email")
+                    .onChange(of: model.code) { old, value in
+                        let digits = String(value.filter(\.isNumber).prefix(8))
                         if digits != value { model.code = digits }
-                        if digits.count == 6 { Task { await model.submitCode() } }
+                        // A whole code arriving at once (autofill from the email, or a paste) is sent
+                        // straight away; a code typed digit by digit waits for Next, because the digits
+                        // typed so far might be only the start of a longer code.
+                        if digits.count - old.count >= 6 && OnboardingModel.codeLengths.contains(digits.count) {
+                            Task { await model.submitCode() }
+                        }
                     }
                 HStack(spacing: 10) {
-                    ForEach(0..<6, id: \.self) { index in
+                    ForEach(0..<model.codeBoxCount, id: \.self) { index in
                         let characters = Array(model.code)
                         Text(index < characters.count ? String(characters[index]) : "")
-                            .font(.system(.title, design: .monospaced, weight: .semibold))
+                            .font(.system(model.codeBoxCount > 6 ? .title3 : .title, design: .monospaced, weight: .semibold))
                             .foregroundStyle(Theme.text)
                             .frame(maxWidth: .infinity, minHeight: 56)
                             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
