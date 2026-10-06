@@ -38,6 +38,11 @@ enum StorageKeychain {
         return key
     }
 
+    /// The stored key, or nil when there is none (or it is unusable, which is treated the same way).
+    static func existingKey(service: String = defaultService) -> Data? {
+        (try? read(service: service)) ?? nil
+    }
+
     static func deleteKey(service: String = defaultService) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

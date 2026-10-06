@@ -67,6 +67,7 @@ struct MessagesView: View {
     private func list(top: CGFloat, bottom: CGFloat) -> some View {
         ScrollView {
             LazyVStack(spacing: 0) {
+                if store.showsRecoveryNotice { RecoveryNotice() }
                 ForEach(store.conversations) { conversation in
                     NavigationLink(value: conversation.id) {
                         ConversationRow(conversation: conversation)
@@ -92,6 +93,31 @@ struct MessagesView: View {
                 .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         }
         .accessibilityLabel("New message")
+    }
+}
+
+/// A non-blocking card shown once when the previous data on this phone could not be opened.
+private struct RecoveryNotice: View {
+    @Environment(ConversationStore.self) private var store
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Lime couldn't open the data saved on this phone, so it started fresh. Your chats will come back when you restore from your recovery key.")
+                .font(Theme.secondary)
+                .foregroundStyle(Theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("recovery-notice")
+            Button("OK") { store.dismissRecoveryNotice() }
+                .font(Theme.secondary.weight(.semibold))
+                .foregroundStyle(Theme.text)
+                .accessibilityIdentifier("recovery-notice-dismiss")
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+        .onAppear { store.recoveryNoticeAppeared() }
     }
 }
 

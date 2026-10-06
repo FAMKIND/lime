@@ -9,8 +9,8 @@ struct LimeApp: App {
             RootView()
                 .environment(store)
                 .task {
-                    // `-lime-reset-store` starts from a fresh sample database (used by UI tests).
-                    await store.bootstrap(resetStore: ProcessInfo.processInfo.arguments.contains("-lime-reset-store"))
+                    // Debug builds honour `-lime-reset-store` and the key test hooks (UI tests).
+                    await store.bootstrap()
                 }
         }
     }

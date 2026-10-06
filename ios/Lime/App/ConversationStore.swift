@@ -13,6 +13,8 @@ final class ConversationStore {
     /// Set when the encrypted store could not be opened (the About sheet reports it).
     private(set) var storageError: String?
     private(set) var databasePath: String?
+    /// Shown on Messages after the previous data could not be opened and a fresh store was made.
+    private(set) var showsRecoveryNotice = false
 
     private var core: LimeStore?
     private var bannerTask: Task<Void, Never>?
@@ -28,14 +30,18 @@ final class ConversationStore {
     // MARK: Loading
 
     /// Opens the encrypted store (creating it and seeding the sample data on first launch).
-    func bootstrap(resetStore: Bool = false) async {
+    func bootstrap(arguments: [String] = ProcessInfo.processInfo.arguments) async {
         if core == nil {
+            let resetStore = StorageBootstrap.resetRequested(arguments: arguments, debugBuild: StorageBootstrap.isDebugBuild)
             do {
                 let opened = try await Task.detached(priority: .userInitiated) {
-                    try StorageBootstrap.open(resetFirst: resetStore)
+                    StorageBootstrap.applyDebugHooks(arguments: arguments)
+                    return try StorageBootstrap.open(resetFirst: resetStore)
                 }.value
                 core = opened.store
                 databasePath = opened.path
+                if opened.startedFresh { UserDefaults.standard.set(true, forKey: Self.noticePendingKey) }
+                showsRecoveryNotice = UserDefaults.standard.bool(forKey: Self.noticePendingKey)
             } catch {
                 storageError = "Storage could not be opened."
                 isLoaded = true
@@ -43,6 +49,18 @@ final class ConversationStore {
             }
         }
         await reload()
+    }
+
+    private static let noticePendingKey = "lime.recoveryNoticePending"
+
+    /// The notice is on screen now: it will not come back on the next launch.
+    func recoveryNoticeAppeared() {
+        UserDefaults.standard.removeObject(forKey: Self.noticePendingKey)
+    }
+
+    func dismissRecoveryNotice() {
+        UserDefaults.standard.removeObject(forKey: Self.noticePendingKey)
+        showsRecoveryNotice = false
     }
 
     func reload() async {

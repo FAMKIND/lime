@@ -117,4 +117,28 @@ final class LimeUITests: XCTestCase {
         let again = relaunched.staticTexts.matching(identifier: "own-bubble").matching(bubble).firstMatch
         XCTAssertTrue(again.waitForExistence(timeout: 5), "the message is still in the chat after a relaunch")
     }
+
+    /// A store that cannot be opened (here: the Keychain key no longer matches) is moved aside, a
+    /// fresh one is made, and Messages shows a one-time notice.
+    func testUnopenableStoreShowsAOneTimeNotice() {
+        let first = XCUIApplication()
+        first.launchArguments = ["-lime-reset-store"]
+        first.launch()
+        XCTAssertTrue(first.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
+        XCTAssertFalse(first.staticTexts["recovery-notice"].exists, "a normal launch has no notice")
+        first.terminate()
+
+        let recovered = XCUIApplication()
+        recovered.launchArguments = ["-lime-test-corrupt-key"]
+        recovered.launch()
+        XCTAssertTrue(recovered.staticTexts["recovery-notice"].waitForExistence(timeout: 10))
+        XCTAssertTrue(recovered.staticTexts["recovery-notice"].label.contains("started fresh"))
+        XCTAssertTrue(recovered.buttons["conversation-row-c1"].exists, "a fresh sample store is there")
+        recovered.terminate()
+
+        let next = XCUIApplication()
+        next.launch()
+        XCTAssertTrue(next.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
+        XCTAssertFalse(next.staticTexts["recovery-notice"].exists, "the notice does not come back")
+    }
 }

@@ -83,4 +83,12 @@ A Personal Team build expires after 7 days; press Run again to refresh it. Witho
 
 ## Storage
 
-The app reads and writes through LimeCore's encrypted local store (SQLCipher). On first launch it generates a random 32-byte key and keeps it in the Keychain (`AfterFirstUnlockThisDeviceOnly`, so it never goes to an iCloud backup). The database is `Application Support/Lime/lime.db`, with file protection `completeUntilFirstUserAuthentication`. The made-up sample conversations are seeded into an empty database; messages you send persist across launches. Every store call runs off the main thread. Launch with `-lime-reset-store` to start from a fresh sample database (the UI tests do). Long-press the logo for About Lime, which shows "Encryption self-test" and "Storage: encrypted".
+The app reads and writes through LimeCore's encrypted local store (SQLCipher). On first launch it generates a random 32-byte key and keeps it in the Keychain (`AfterFirstUnlockThisDeviceOnly`, so it never goes to an iCloud backup). The database is `Application Support/Lime/lime.db`, with file protection `completeUntilFirstUserAuthentication`. The made-up sample conversations are seeded into an empty database; messages you send persist across launches. Every store call runs off the main thread. Launch with `-lime-reset-store` to start from a fresh sample database (the UI tests do; **Debug builds only**, a Release build ignores it). Long-press the logo for About Lime, which shows "Encryption self-test" and "Storage: encrypted".
+
+### Backups and an unopenable store
+
+The database is **never backed up**: the folder and every database file are marked `isExcludedFromBackup` on each launch, because a restored phone would get the file but not the this-device-only Keychain key. History is meant to come back through Lime's own recovery-key backup and device linking (later briefs), not iCloud.
+
+If the store cannot be opened (the Keychain key is missing or wrong, or the file is damaged), the old file is moved aside to `lime-<ISO time>.unreadable.db` (the newest two are kept), a new key and a fresh store are made, and Messages shows a one-time notice. A first launch (no key, no database) is not an error and shows nothing. Debug-only test hooks: `-lime-test-corrupt-key` and `-lime-test-delete-key`.
+
+`project.yml` sets `xcodeVersion: "2700"` and `STRING_CATALOG_GENERATE_SYMBOLS: YES`, so Xcode 27 does not offer "Update to recommended settings" (which `./generate.sh` would overwrite).

@@ -54,6 +54,122 @@ final class StorageTests: XCTestCase {
     }
 }
 
+/// The store's lifecycle on disk: backups, an unopenable store, and the debug-only reset flag.
+final class StorageRecoveryTests: XCTestCase {
+    private func makeLocation() throws -> StorageBootstrap.Location {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lime-recovery-\(UUID().uuidString)", isDirectory: true)
+        let service = "app.lime.tests.\(UUID().uuidString)"
+        addTeardownBlock {
+            StorageKeychain.deleteKey(service: service)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        return .init(directory: directory, keychainService: service)
+    }
+
+    private func conversationCount(_ opened: StorageBootstrap.Opened) throws -> Int {
+        try opened.store.listConversations().count
+    }
+
+    func testFirstLaunchIsNotAnError() throws {
+        let location = try makeLocation()
+        XCTAssertNil(StorageKeychain.existingKey(service: location.keychainService))
+        let opened = try StorageBootstrap.open(at: location)
+        XCTAssertFalse(opened.startedFresh, "no key and no database is a first launch: no notice")
+        XCTAssertEqual(try conversationCount(opened), 5)
+        XCTAssertTrue(StorageBootstrap.unreadableFileNames(in: location).isEmpty)
+    }
+
+    func testDatabaseIsExcludedFromBackupEveryLaunch() throws {
+        let location = try makeLocation()
+        _ = try StorageBootstrap.open(at: location)
+        XCTAssertTrue(StorageBootstrap.isExcludedFromBackup(location.databaseURL))
+        XCTAssertTrue(StorageBootstrap.isExcludedFromBackup(location.directory))
+
+        // The attribute can be lost when a file is replaced; the next launch sets it again.
+        var url = location.databaseURL
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = false
+        try url.setResourceValues(values)
+        XCTAssertFalse(StorageBootstrap.isExcludedFromBackup(url))
+        _ = try StorageBootstrap.open(at: location)
+        XCTAssertTrue(StorageBootstrap.isExcludedFromBackup(location.databaseURL))
+    }
+
+    func testWrongKeyMovesTheOldFileAsideAndStartsFresh() throws {
+        let location = try makeLocation()
+        do {
+            let first = try StorageBootstrap.open(at: location)
+            _ = try first.store.sendLocalMessage(conversationId: "c1", text: "before the key was lost")
+        }
+        // A restore without the Keychain: the file survives, the key does not match.
+        StorageKeychain.deleteKey(service: location.keychainService)
+        _ = try StorageKeychain.loadOrCreateKey(service: location.keychainService)
+
+        let recovered = try StorageBootstrap.open(at: location)
+        XCTAssertTrue(recovered.startedFresh)
+        XCTAssertEqual(try conversationCount(recovered), 5)
+        let texts = try recovered.store.listMessages(conversationId: "c1").map(\.text)
+        XCTAssertFalse(texts.contains("before the key was lost"), "the fresh store starts from the sample data")
+        let aside = StorageBootstrap.unreadableFileNames(in: location)
+        XCTAssertEqual(aside.count, 1)
+        XCTAssertTrue(aside[0].hasPrefix("lime-") && aside[0].hasSuffix(".unreadable.db"), aside[0])
+        XCTAssertTrue(StorageBootstrap.isExcludedFromBackup(location.directory.appendingPathComponent(aside[0])))
+
+        // The next launch is normal: no notice, nothing more moved aside.
+        let next = try StorageBootstrap.open(at: location)
+        XCTAssertFalse(next.startedFresh)
+        XCTAssertEqual(StorageBootstrap.unreadableFileNames(in: location), aside)
+    }
+
+    func testMissingKeyWithAnExistingDatabaseTakesTheSamePath() throws {
+        let location = try makeLocation()
+        do { _ = try StorageBootstrap.open(at: location) }
+        StorageKeychain.deleteKey(service: location.keychainService)
+
+        let recovered = try StorageBootstrap.open(at: location)
+        XCTAssertTrue(recovered.startedFresh)
+        XCTAssertEqual(StorageBootstrap.unreadableFileNames(in: location).count, 1)
+        XCTAssertEqual(try conversationCount(recovered), 5)
+        XCTAssertNotNil(StorageKeychain.existingKey(service: location.keychainService))
+    }
+
+    func testAKeyWithNoDatabaseIsNotAnError() throws {
+        let location = try makeLocation()
+        _ = try StorageKeychain.loadOrCreateKey(service: location.keychainService)
+        let opened = try StorageBootstrap.open(at: location)
+        XCTAssertFalse(opened.startedFresh)
+    }
+
+    func testOnlyTheTwoNewestUnreadableFilesAreKept() throws {
+        let location = try makeLocation()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        do { _ = try StorageBootstrap.open(at: location, now: start) }
+        for step in 1...4 {
+            StorageKeychain.deleteKey(service: location.keychainService)
+            let opened = try StorageBootstrap.open(at: location, now: start.addingTimeInterval(Double(step) * 60))
+            XCTAssertTrue(opened.startedFresh)
+        }
+        let names = StorageBootstrap.unreadableFileNames(in: location)
+        XCTAssertEqual(names.count, StorageBootstrap.keptUnreadableFiles)
+        let formatter = ISO8601DateFormatter()
+        let expected = [3, 4].map { "lime-\(formatter.string(from: start.addingTimeInterval(Double($0) * 60))).unreadable.db" }
+        XCTAssertEqual(names, expected, "the two newest are kept")
+    }
+
+    func testResetFlagIsIgnoredOutsideDebugBuilds() {
+        let args = ["Lime", "-lime-reset-store"]
+        XCTAssertFalse(StorageBootstrap.resetRequested(arguments: args, debugBuild: false), "a Release build ignores the flag")
+        XCTAssertTrue(StorageBootstrap.resetRequested(arguments: args, debugBuild: true))
+        XCTAssertFalse(StorageBootstrap.resetRequested(arguments: ["Lime"], debugBuild: true))
+        #if DEBUG
+        XCTAssertTrue(StorageBootstrap.isDebugBuild)
+        #else
+        XCTAssertFalse(StorageBootstrap.isDebugBuild)
+        #endif
+    }
+}
+
 final class ThemeTests: XCTestCase {
     private func hex(_ c: UIColor) -> String {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
