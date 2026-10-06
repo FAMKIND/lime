@@ -48,9 +48,11 @@ struct ChatView: View {
                 }
             }
         }
+        .overlay(alignment: .top) { TopFade() }
         .overlay(alignment: .top) { header(conversation) }
         .safeAreaInset(edge: .bottom) { composer(conversation) }
         .toolbar(.hidden, for: .navigationBar)
+        .swipeBackEnabled()
     }
 
     // MARK: Header

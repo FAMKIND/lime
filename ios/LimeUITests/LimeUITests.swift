@@ -35,4 +35,20 @@ final class LimeUITests: XCTestCase {
         app.buttons["back-button"].tap()
         XCTAssertTrue(list.waitForExistence(timeout: 5), "back to Messages")
     }
+
+    func testEdgeSwipeGoesBack() {
+        let app = XCUIApplication()
+        app.launch()
+        let list = app.scrollViews["messages-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        app.buttons["conversation-row-c2"].tap()
+        XCTAssertTrue(app.scrollViews["chat-scroll"].waitForExistence(timeout: 5))
+
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.0, dy: 0.5))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: end)
+
+        XCTAssertTrue(list.waitForExistence(timeout: 5), "swiping from the left edge returns to Messages")
+        XCTAssertFalse(app.scrollViews["chat-scroll"].exists)
+    }
 }

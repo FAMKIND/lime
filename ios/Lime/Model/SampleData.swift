@@ -21,9 +21,9 @@ enum SampleData {
             Conversation(
                 id: "c1", title: journey.name, members: [journey],
                 messages: [
-                    msg("c1-1", journey, "Best breakfast in town? I'm trying the new place by the school.", 60 * 26),
-                    msg("c1-2", nil, "Yes! Their pancakes are worth the wait.", 60 * 26 - 3),
-                    msg("c1-3", journey, "Best breakfast in town breakfast in town. Save me a seat on Friday?", 55),
+                    msg("c1-1", journey, "Have you tried the new bakery by the school? Their muffins are huge.", 60 * 26),
+                    msg("c1-2", nil, "Not yet! Is it worth the line?", 60 * 26 - 3),
+                    msg("c1-3", journey, "Totally. Want to go before first bell on Friday? I can save us a table.", 55),
                 ],
                 isPinned: true, unread: 1),
             Conversation(
@@ -37,11 +37,11 @@ enum SampleData {
             Conversation(
                 id: "c3", title: "Jean, Rise & Me", members: [jean, rise],
                 messages: [
-                    msg("c3-1", jean, "Best breakfast in town", 60 * 30),
-                    msg("c3-2", rise, "Agreed. Pickup at 7:30?", 60 * 29),
-                    msg("c3-3", nil, "I'll bring the coffee.", 60 * 28),
-                    msg("c3-4", jean, "Best breakfast in town breakfast in town Best breakfast in town", 60 * 27),
-                    msg("c3-5", nil, "Best breakfast in town breakfast in town Best breakfast in town", 60 * 26),
+                    msg("c3-1", jean, "Did anyone get the field trip forms back yet?", 60 * 30),
+                    msg("c3-2", rise, "Eleven so far. Two more families said they'd send them tomorrow.", 60 * 29),
+                    msg("c3-3", nil, "Perfect, I'll make a list of who's still missing.", 60 * 28),
+                    msg("c3-4", jean, "Thanks! The bus company wants a final headcount by Thursday.", 60 * 27),
+                    msg("c3-5", nil, "Got it. I'll send the count Wednesday night.", 60 * 26),
                 ]),
             Conversation(
                 id: "c4", title: "Grade 4 Team", members: [grace, marcus, jean, rise],

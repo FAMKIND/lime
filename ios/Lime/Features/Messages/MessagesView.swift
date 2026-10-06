@@ -23,6 +23,7 @@ struct MessagesView: View {
             }
             .accessibilityIdentifier("messages-list")
         }
+        .overlay(alignment: .top) { TopFade() }
         .overlay(alignment: .top) { TopControls() }
         .overlay(alignment: .bottomTrailing) {
             Button { store.comingSoon("New message") } label: {

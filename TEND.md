@@ -3738,3 +3738,18 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - The nav bar is hidden on both screens, so the edge-swipe back gesture is off; the glass back button works.
 - The Simulator app itself is not installed under Xcode here (no `Simulator.app`), so the app was installed and launched with `simctl` on the booted iPhone 18 Pro; there is no window to look at on the Mac.
 - `PLOT.md` has uncommitted edits that are not mine; left untouched. `public/assets/Logomark-outline.svg` and `signin-teachers.mp4` still untracked.
+
+## LIME-87-fix
+
+**Visible dark green, header fade, swipe back, sample text (committed, awaiting the user's check).** iOS app only.
+
+1. **Dark primary** is now `#2D6A45` with ink `#F5F3ED` (one `OwnBubble` colour set drives the own bubble, "+", unread badges and the dock badge). Measured: **27.1 OKLab** from the dark canvas `#131B17` (needs >= 8) and **5.81:1** ink (needs 4.5). Light values unchanged (a unit test pins all nine). Native-only: the web's dark `--lime-primary-bg` (`#0D2016`) is untouched, and `ios/README.md` (Theme) documents the values and why.
+2. **Header fade:** `Theme/TopFade.swift`, canvas to clear (status bar + 56pt header + 24pt), behind the floating pills on **both Chat and Messages**; no hit testing, hidden from accessibility.
+3. **Swipe back:** `Theme/SwipeBack.swift` re-enables the navigation controller's interactive pop gesture (delegate allows it only when more than one screen is on the stack) on Chat; the glass back button still works.
+4. **Sample data:** the repeated breakfast text is gone; new distinct teacher messages (bakery, field-trip forms and bus headcount).
+
+**Verification.** `./generate.sh`, build, test: **iPhone 18 Pro, iOS 27.0: 11 tests, 0 failures**, no warnings in Lime sources. New unit tests: dark primary vs canvas OKLab >= 8, dark ink >= 4.5:1, light values unchanged. New UI test: open a chat, drag from the left edge, Messages is shown (`testEdgeSwipeGoesBack`). **iOS 18.3 runtime (iPhone 16 Pro): the same 11 tests pass.** Still no iOS 17 runtime. `git status`: only `ios/` and `TEND.md` (plus `PLOT.md` in Phase 0, `c1284c0`).
+
+**Screenshots** (`/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/keep/`): `chat-light-sent.png`, `chat-dark-sent.png`, `chat-dark-sent-2.png` (own bubble visible), `chat-light-scrolled-fade.png` (older messages fading under the header), `messages-dark.png` ("+", badges, dock badge). **Not captured:** a light Messages shot and a scrolled dark chat (the throwaway capture test was removed). Screenshots came from a throwaway UI test, since deleted.
+
+**Things to look at (please):** run it from Xcode; own bubble and "+" in dark; scroll a chat and watch the fade; edge-swipe back. The real-finger swipe feel is only tested with a synthetic drag. The simulator Messages row for the group chats now shows a "+3" slot (unchanged from LIME-87).

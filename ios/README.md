@@ -51,3 +51,17 @@ Lime/Features   Messages, Chat, Dock
 Lime/Model      Conversation, Message, Person, SampleData
 Lime/Resources  asset catalog (AppIcon, logo, colour sets)
 ```
+
+## Theme
+
+Colours live in `Lime/Resources/Assets.xcassets` (light / dark) and are read through `Theme`. They come from `public/css/lime.css`, except one:
+
+| Token | Light | Dark |
+|---|---|---|
+| Canvas | `#F9F8F4` | `#131B17` |
+| Primary (own bubble, "+", unread badges, dock badge) | `#E4F9BE` | `#2D6A45` |
+| Primary ink | `#131B17` | `#F5F3ED` |
+
+**Dark primary is native-only.** The web's dark `--lime-primary-bg` (`#0D2016`) is almost the same as the canvas and disappears; `#2D6A45` sits 27 OKLab units from the canvas (the unit tests require at least 8) and its ink is 5.8:1 (they require 4.5:1). The web app is frozen, so it keeps its own value; if the web ever changes, align them then. Light values are unchanged.
+
+A `TopFade` (canvas to clear, header height plus 24pt) sits behind the floating headers on Messages and Chat. The navigation bar is hidden, so `SwipeBack` re-enables the edge-swipe back gesture.
