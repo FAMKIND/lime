@@ -882,6 +882,13 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
+**Update: LIME-89 landed as `fa8fd3c`** (pushed and verified; no generated or binary artefacts tracked).
+- vodozemac 0.11.1 (Apache-2.0), UniFFI 0.32.2 (MPL-2.0, file-level; tend's reading: fine for MIT, and a lawyer's glance before public release). No GPL/AGPL linked.
+- Rust 1.99.0 pinned (installed via brew rustup, no sudo, no profile edits). 6 Rust tests + 21 iOS tests pass.
+- **+896 KB** app size; a cold `./generate.sh` takes 1m36s.
+- Tend added `EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64` (no Intel simulator slice); fine on Apple-silicon Macs.
+- **LIME-90 is drafted** (the SQLCipher store; iOS reads from the core). It waits on the user's phone check of 89.
+
 **Update: LIME-88 landed as `65b3755`** (pushed and verified): `docs/architecture.md` (187 lines, 11 sections).
 - **Tend's judgement calls:** all three accepted by plot.
   - The key/user directories were added to "the server can see"; correct, and more honest.
@@ -1054,7 +1061,70 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-89 → `tend` (lime-aa) (after LIME-88 is reviewed): the shared Rust core skeleton (LimeCore + vodozemac, linked into iOS)
+### LIME-90 → `tend` (lime-aa) (after LIME-89 is reviewed): the encrypted local store in LimeCore; the iOS screens read from it
+**What it does:** gives LimeCore its on-device database, **SQLite encrypted at rest with SQLCipher**, and moves the iOS app off `SampleData.swift` onto the core.
+- Messages you send **persist across app restarts**.
+- Still **no networking and no persisted Olm keys** (those come with the backend brief).
+- Follows `docs/architecture.md` §3 (Components) and §4.
+
+**Capabilities assumed:** edit files, `cargo`, XcodeGen, `xcodebuild`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- `core/` (lib layout, UniFFI setup), `ios/Lime/Model/` and the views using `SampleData`;
+- `docs/architecture.md` §§3–5;
+- the rusqlite SQLCipher options for iOS: **prefer a build that uses Apple's CommonCrypto** over vendoring OpenSSL. Report the choice, the licence (SQLCipher Community is BSD-style) and the size impact.
+
+If anything contradicts this brief, or a dependency is GPL/AGPL, **stop and ask the user**.
+
+**Phase 2: the change.**
+1. **The core store** (`core/src/store/`):
+   - opened with `(path, key: 32 bytes)`; SQLCipher with that raw key; schema versioned with `PRAGMA user_version` and forward-only migrations.
+   - **Tables, the local view only:** `people`, `conversations` (DM or group, title, pinned), `members`, `messages` (id = a UUIDv7 made by the core, conversation, sender, body text, the display time, `local_state` = `sent_local` for now).
+   - Leave clearly marked placeholders in a comment (not columns) for the v2 fields that come later (signature, HLC, parents), so nothing pre-bakes the API v2 design.
+2. **The FFI surface** (a UniFFI object `LimeStore`, thread-safe; nothing else is exported beyond LIME-89's two functions):
+   - `LimeStore::open(path: String, key: Vec<u8>) -> Result<LimeStore, StoreError>`
+   - `seed_sample_data_if_empty()`: inserts **the same made-up people, conversations and messages as `SampleData.swift`** (move that content into Rust; no personal data);
+   - `list_conversations() -> Vec<ConversationSummary>` (with the last message, unread count, pinned, member initials and colours as today);
+   - `list_messages(conversation_id) -> Vec<MessageItem>`;
+   - `send_local_message(conversation_id, text) -> MessageItem`;
+   - `StoreError` is a small enum. **No key material in any error or log.**
+3. **The iOS key and the file:**
+   - On first launch, Swift generates a 32-byte random key and stores it in the **Keychain** (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, which a later background mesh relay needs; this-device-only, so it never goes to iCloud backup).
+   - The DB lives in Application Support with file protection `completeUntilFirstUserAuthentication`.
+   - All store calls run off the main thread; the UI updates on the main actor.
+4. **The iOS screens read from the core:**
+   - Messages and Chat use `LimeStore`; sending writes through `send_local_message`.
+   - Delete `SampleData.swift` (or reduce it to previews only).
+   - The look is unchanged.
+5. **The About sheet** gains the line **"Storage: encrypted ✓"**. It is shown when the store opened with a key and the core's own check passes: a reopen with a wrong key fails.
+
+**Out of scope:** networking, Olm/Megolm key persistence, search/FTS, attachments, Android, anything outside `core/`, `ios/`, `.gitignore` and `TEND.md`.
+
+**Phase 3: verification.**
+- `cargo test`:
+  - open/seed/list/send round-trip;
+  - **reopening with the wrong key fails**;
+  - the DB file contains no plaintext sample strings (scan its bytes for a known message);
+  - migrations from an empty DB.
+
+  `cargo clippy -D warnings` is clean.
+- iOS build + test on the iPhone 18 Pro, the 13 mini (iOS 27.0) and the SE (iOS 18.3): 0 failures, no warnings in Lime's sources.
+- **A UI test:** send "persist me", terminate the app, relaunch, and the message is still in the chat.
+- Report the size change and any CommonCrypto vs OpenSSL details.
+- If the iPhone is connected, build for it and report.
+- `git status`: no DB files, binaries or generated code tracked.
+
+**Gate (the user, on the iPhone via ▶ Run):**
+- send a message, **swipe the app away, reopen it**, and the message is still there;
+- the About sheet shows "Encryption self-test: passed ✓" and "Storage: encrypted ✓".
+
+**Record:** a `## LIME-90` entry in `TEND.md`. Commit: `feat(core): SQLCipher-encrypted local store; iOS reads and writes through LimeCore`, trailer `Brief: LIME-90`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-89 → `tend` (lime-aa) (landed as `fa8fd3c`): the shared Rust core skeleton (LimeCore + vodozemac, linked into iOS)
 **What it does:** starts DESIGN-01's shared core (`docs/architecture.md` once LIME-88 lands): a Rust library **LimeCore** that wraps **vodozemac**, exposed to Swift with **UniFFI** and linked into the iOS app. It proves the whole toolchain end to end with a real encryption round-trip. **No networking, no storage, no persisted keys yet.**
 
 **Capabilities assumed:** edit files, install developer tools via Homebrew/rustup (user-level, no sudo), `cargo`, XcodeGen, `xcodebuild`, commit, push. If any install needs `sudo` or a password, **stop and ask the user**.
