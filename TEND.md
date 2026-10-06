@@ -3772,3 +3772,19 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - **The Chat screens are not captured scrolled with a message under the header** on either runtime (the swipe only revealed the top of the chat; the captured chats show the bottom soft edge and the header). Scrolled Messages is captured.
 - **Native title has no glass capsule:** in the iOS 26 toolbar the `.principal` title (avatars, name, members) shows as plain content, not a glass pill like the legacy path. The brief said stop if the toolbar could not hold the title pill; it holds the content but not a capsule. Say if you want a capsule drawn behind it.
 - Screenshots came from a throwaway UI test, since removed. The real Messages-vs-Lime fade comparison needs your eyes on a device.
+
+## LIME-87-fix3
+
+**DM avatars, accent green, persistent local signing (committed, awaiting the user's check).** iOS app only.
+
+1. **DM avatars:** incoming messages in 1:1 chats now show the sender's avatar beside the bubble, same size and position as in groups, with the same grouping (avatar on the first of a run). The row logic moved to `Model/ChatRows.swift` (`ChatRow.rows(for:)`, `showAvatar`) so it is unit-tested. Sender **names** above bubbles stay groups-only (a DM's title already names the person); say if you want the name in DMs too.
+2. **Accent `#A3E18A`:** new `Accent` and `AccentInk` (`#131B17`) colour sets, identical in light and dark, used for the unread badges (Messages rows, dock "link" badge) and the Messages "+". Ink contrast **11.44:1**. The own bubble and the composer send arrow keep the primary (light `E4F9BE`, dark `2D6A45`); a test pins them. New tests: accent equals `#A3E18A` in both modes, ink >= 4.5:1, own bubble unchanged, DM avatar flags (2 row tests).
+   - **Comparison for the user's choice:** `/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/acc/accent-compare.png` (Messages, light above, dark below; labelled): `#a3e18a` (shipped), `#8fd473` deeper (ink 9.89:1), `#b8e8a3` softer (ink 12.62:1). Individual shots are in the same folder. Not switched away from `#a3e18a`.
+3. **Signing survives `./generate.sh`:** `ios/Config/Base.xcconfig` (committed; `CODE_SIGN_STYLE = Automatic` and an optional `#include? "../Local.xcconfig"`) is the app target's config for Debug and Release in `project.yml`. `ios/Local.xcconfig.example` is committed; the real `ios/Local.xcconfig` (**gitignored, not committed**) holds `DEVELOPMENT_TEAM = CZH2QUHB3Y`. **Team id verified:** the certificate name's `SCV29U533Y` is the certificate id; the team is the cert's `OU`, `CZH2QUHB3Y`, which also matches Xcode's stored "Shem Rajoon (Personal Team)" and the existing project. `ios/README.md` has a "Run on your iPhone" section.
+
+**Verification.**
+- iPhone 18 Pro (iOS 27.0): build and **16 tests, 0 failures**, no warnings in Lime sources; iPhone 16 Pro (iOS 18.3): the suite passed (run before the screenshot-only steps; the code did not change after).
+- After `./generate.sh`: `xcodebuild -showBuildSettings` shows `DEVELOPMENT_TEAM = CZH2QUHB3Y`. With `Local.xcconfig` moved away it shows no team and the simulator build still succeeds. `git check-ignore` confirms `Local.xcconfig` is ignored.
+- **Device:** the iPhone 13 mini ("iPhone") was connected; `xcodebuild -destination 'platform=iOS,name=iPhone' build` **BUILD SUCCEEDED** (signed with the team). I did not install or launch it on the phone.
+
+**Screenshots** (`/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/acc/`): `accent-compare.png`, the six Messages shots, `dm-chat-light.png` (Journey Park with avatars). **Not captured:** a dark DM chat.

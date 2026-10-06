@@ -15,6 +15,9 @@ enum Theme {
         static let primary = "OwnBubble"
         /// `--lime-primary-ink`
         static let primaryInk = "OwnInk"
+        /// The accent for unread badges and the Messages "+" (not the own bubble).
+        static let accent = "Accent"
+        static let accentInk = "AccentInk"
         static let text = "TextPrimary"
         static let textSecondary = "TextSecondary"
         static let hairline = "Hairline"
@@ -30,6 +33,8 @@ enum Theme {
     static let bubbleEdge = color(Name.bubbleEdge)
     static let primary = color(Name.primary)
     static let primaryInk = color(Name.primaryInk)
+    static let accent = color(Name.accent)
+    static let accentInk = color(Name.accentInk)
     static let ownBubble = primary
     static let ownBubbleInk = primaryInk
     static let text = color(Name.text)

@@ -14,3 +14,4 @@ ios/Lime.xcodeproj
 DerivedData/
 xcuserdata/
 *.xcresult
+ios/Local.xcconfig

@@ -29,9 +29,9 @@ struct DockBar: View {
                                 if let badge = item.badge {
                                     Text("\(badge)")
                                         .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(Theme.primaryInk)
+                                        .foregroundStyle(Theme.accentInk)
                                         .padding(.horizontal, 5).padding(.vertical, 1)
-                                        .background(Theme.primary, in: Capsule())
+                                        .background(Theme.accent, in: Capsule())
                                         .offset(x: 12, y: -8)
                                 }
                             }

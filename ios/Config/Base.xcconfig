@@ -1,0 +1,6 @@
+// Shared build settings for the Lime app target (referenced from project.yml).
+CODE_SIGN_STYLE = Automatic
+
+// Your own signing team lives in the gitignored ios/Local.xcconfig (see Local.xcconfig.example).
+// The leading `?` makes the include optional: builds without it (e.g. the simulator) still work.
+#include? "../Local.xcconfig"

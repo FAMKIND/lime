@@ -77,6 +77,27 @@ final class ThemeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(ratio, 4.5, "ratio \(ratio)")
     }
 
+    func testAccentIsA3E18AInBothModes() {
+        for dark in [false, true] {
+            XCTAssertEqual(hex(Theme.uiColor(Theme.Name.accent, dark: dark)), "A3E18A", dark ? "dark" : "light")
+        }
+    }
+
+    func testAccentInkMeetsContrast() {
+        for dark in [false, true] {
+            let ratio = contrast(Theme.uiColor(Theme.Name.accentInk, dark: dark), Theme.uiColor(Theme.Name.accent, dark: dark))
+            XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(dark ? "dark" : "light") ratio \(ratio)")
+        }
+    }
+
+    /// LIME-87-fix2 values: the own bubble did not move to the accent.
+    func testOwnBubbleUnchangedFromFix2() {
+        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: false)), "E4F9BE")
+        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: true)), "2D6A45")
+        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primaryInk, dark: false)), "131B17")
+        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primaryInk, dark: true)), "F5F3ED")
+    }
+
     func testTextOnBubblesMeetsContrast() {
         for dark in [false, true] {
             let mode = dark ? "dark" : "light"
@@ -106,5 +127,32 @@ final class StoreTests: XCTestCase {
         let before = store.conversations[0].messages.count
         store.send("  \n ", in: id)
         XCTAssertEqual(store.conversations[0].messages.count, before)
+    }
+}
+
+final class ChatRowTests: XCTestCase {
+    /// A DM's incoming message shows an avatar, as a group's does.
+    func testDirectMessageIncomingHasAvatar() throws {
+        let dm = try XCTUnwrap(SampleData.conversations().first { !$0.isGroup && $0.messages.contains { !$0.isOwn } })
+        let avatars = ChatRow.rows(for: dm).compactMap { row -> Bool? in
+            if case .message(let m, let showAvatar) = row.kind, !m.isOwn { return showAvatar }
+            return nil
+        }
+        XCTAssertFalse(avatars.isEmpty)
+        XCTAssertTrue(avatars.first ?? false, "the first incoming DM message shows the sender's avatar")
+    }
+
+    func testConsecutiveIncomingMessagesShareOneAvatar() {
+        let p = SampleData.jean
+        let now = Date()
+        let c = Conversation(id: "t", title: "t", members: [p], messages: [
+            Message(id: "1", senderID: p.id, text: "a", date: now),
+            Message(id: "2", senderID: p.id, text: "b", date: now),
+        ])
+        let flags = ChatRow.rows(for: c).compactMap { row -> Bool? in
+            if case .message(_, let a) = row.kind { return a }
+            return nil
+        }
+        XCTAssertEqual(flags, [true, false])
     }
 }

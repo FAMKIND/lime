@@ -62,7 +62,7 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(rows(conversation)) { row in
+                    ForEach(ChatRow.rows(for: conversation)) { row in
                         switch row.kind {
                         case .day(let text):
                             Text(text)
@@ -70,10 +70,11 @@ struct ChatView: View {
                                 .foregroundStyle(Theme.textSecondary)
                                 .padding(.vertical, 12)
                                 .accessibilityAddTraits(.isHeader)
-                        case .message(let message, let showSender):
+                        case .message(let message, let showAvatar):
                             MessageBubble(message: message,
                                           sender: store.person(message.senderID, in: conversation),
-                                          showSender: showSender && conversation.isGroup)
+                                          showAvatar: showAvatar,
+                                          showName: showAvatar && conversation.isGroup)
                                 .padding(.bottom, 8)
                         }
                     }
@@ -206,49 +207,25 @@ struct ChatView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
     }
-
-    // MARK: Rows
-
-    private struct Row: Identifiable {
-        enum Kind { case day(String), message(Message, showSender: Bool) }
-        let id: String
-        let kind: Kind
-    }
-
-    private func rows(_ conversation: Conversation) -> [Row] {
-        var result: [Row] = []
-        var lastDay: Date?
-        var lastSender: String??
-        let cal = Calendar.current
-        for message in conversation.messages {
-            if lastDay == nil || !cal.isDate(lastDay!, inSameDayAs: message.date) {
-                result.append(Row(id: "day-\(message.id)", kind: .day(MessageFormat.day(message.date))))
-                lastSender = nil
-            }
-            lastDay = message.date
-            let showSender = !message.isOwn && lastSender != .some(message.senderID)
-            result.append(Row(id: message.id, kind: .message(message, showSender: showSender)))
-            lastSender = .some(message.senderID)
-        }
-        return result
-    }
 }
 
 struct MessageBubble: View {
     let message: Message
     let sender: Person?
-    let showSender: Bool
+    let showAvatar: Bool
+    /// Sender names appear above the bubble in groups only; a DM's title already names the person.
+    let showName: Bool
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 36
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             if message.isOwn { Spacer(minLength: 56) }
             if !message.isOwn, let sender {
-                if showSender { AvatarView(person: sender, size: avatarSize) }
+                if showAvatar { AvatarView(person: sender, size: avatarSize) }
                 else { Color.clear.frame(width: avatarSize, height: 1) }
             }
             VStack(alignment: message.isOwn ? .trailing : .leading, spacing: 4) {
-                if showSender, let sender {
+                if showName, let sender {
                     Text(sender.name)
                         .font(Theme.caption.weight(.medium))
                         .foregroundStyle(Theme.text)

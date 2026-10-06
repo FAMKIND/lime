@@ -65,3 +65,13 @@ Colours live in `Lime/Resources/Assets.xcassets` (light / dark) and are read thr
 **Dark primary is native-only.** The web's dark `--lime-primary-bg` (`#0D2016`) is almost the same as the canvas and disappears; `#2D6A45` sits 27 OKLab units from the canvas (the unit tests require at least 8) and its ink is 5.8:1 (they require 4.5:1). The web app is frozen, so it keeps its own value; if the web ever changes, align them then. Light values are unchanged.
 
 On iOS 26+ the screens use the system toolbar (back button, swipe back, glass groups) and the soft scroll edge effect top and bottom, as in Apple Messages. On iOS 17-25 they keep custom glass pills, a `TopFade` (a subtle progressive blur and low-opacity canvas veil from the top of the screen to about 10pt under the header buttons) and `SwipeBack`, which re-enables the edge-swipe gesture with the navigation bar hidden.
+
+## Run on your iPhone
+
+1. In Xcode, Settings → Accounts, sign in with your Apple ID (a free Personal Team is enough).
+2. On the phone: Settings → Privacy & Security → Developer Mode → on (it restarts the phone).
+3. Copy `Local.xcconfig.example` to `Local.xcconfig` (gitignored; never commit it) and put your team id in `DEVELOPMENT_TEAM`. The team id is the `OU=` field of your "Apple Development" certificate, not the id in parentheses in its name. `./generate.sh` keeps it, so you never re-pick the team in Xcode.
+4. `./generate.sh`, open `Lime.xcodeproj`, pick your phone and press Run.
+5. First launch: Settings → General → VPN & Device Management → your Apple ID → Trust.
+
+A Personal Team build expires after 7 days; press Run again to refresh it. Without `Local.xcconfig` everything still builds for the Simulator.

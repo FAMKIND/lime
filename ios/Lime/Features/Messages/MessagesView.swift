@@ -79,9 +79,9 @@ struct MessagesView: View {
         Button { store.comingSoon("New message") } label: {
             Image(systemName: "plus")
                 .font(.system(size: 26, weight: .regular))
-                .foregroundStyle(Theme.primaryInk)
+                .foregroundStyle(Theme.accentInk)
                 .frame(width: 64, height: 64)
-                .background(Theme.primary, in: Circle())
+                .background(Theme.accent, in: Circle())
                 .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         }
         .accessibilityLabel("New message")
@@ -166,10 +166,10 @@ struct ConversationRow: View {
                     if conversation.unread > 0 {
                         Text("\(conversation.unread)")
                             .font(Theme.caption.weight(.semibold))
-                            .foregroundStyle(Theme.primaryInk)
+                            .foregroundStyle(Theme.accentInk)
                             .frame(minWidth: 22)
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Theme.primary, in: Capsule())
+                            .background(Theme.accent, in: Capsule())
                     }
                 }
             }
