@@ -882,6 +882,12 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
+**Update: LIME-87-fix4 landed as `360aabb`** (pushed and verified).
+- 18 tests pass on 4 simulators, including 375pt ones; the build for the user's iPhone succeeded.
+- Plot reviewed the screenshots: the dark accent bubble reads well; full names show at 375pt.
+- **A minor observation:** the stacked title sits left of centre (next to the back button) because the trailing 3-button group is wide; Apple centres it. Offer it as a polish item only if the user minds.
+- Next: the user's on-phone check, then LIME-88.
+
 **Update: LIME-87-fix3 landed as `6131d50`** (pushed and verified).
 - `ios/Local.xcconfig` is gitignored and not tracked; it holds the team `CZH2QUHB3Y`.
 - 16 tests pass.
@@ -1031,7 +1037,48 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-88 → `tend` (lime-aa) (after LIME-87-fix4 is reviewed): DESIGN-01 into `docs/` (docs only)
+### LIME-87-fix5 → `tend` (lime-aa) (next): a slightly dimmer dark bubble; revert the stacked chat title
+**What it does:** the user reviewed LIME-87-fix4 on the phone:
+- "I like the green in light more, and agree in dark mode it can be slightly dimmer";
+- "I like the previous title treatment better, so we should go back even if it's truncated".
+
+**Plot's reading:** light mode stays as it is; only the dark own bubble (and its matching send arrow) gets slightly dimmer. If the user meant something else, they'll say so at the gate.
+
+**Capabilities assumed:** edit files, XcodeGen, `xcodebuild`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):** the dark own-bubble and send tokens from fix4; the title code before fix4 (`git show 6131d50:` the Chat files) and after it. If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **The dark own bubble + send arrow, slightly dimmer:**
+   - Use a new dark-only token for them: the same green family as `#a3e18a`, about **6–8% lower OKLCH lightness**, same hue, similar chroma. **Start from `#8fd473`** (the "deeper" swatch the user saw) unless it fails the checks below.
+   - The ink on it ≥ 4.5:1.
+   - **The badges and the Messages "+" stay `#a3e18a`** in both modes (small areas; no glare).
+   - **Light mode is fully unchanged.**
+   - Tests: the dark own bubble = the new value, ink ≥ 4.5:1, and the dark own bubble ≠ the accent; light unchanged; the accent unchanged.
+   - README Theme table updated.
+2. **Revert the chat title to the LIME-87-fix3 treatment** on both the iOS 26+ and the iOS 17–25 paths: the avatar (or stack) **beside** the name, with "N members" under the name for groups, exactly as in `6131d50`. Truncation is acceptable (the user's words).
+   - Remove the fix4 narrow-width title logic and its full-name UI test (or change it to assert the side-by-side layout).
+   - Keep the 375pt simulators in the test matrix.
+
+**Out of scope:** light-mode colours, the accent, anything outside `ios/`.
+
+**Phase 3: verification.**
+- Build + test on the iPhone 18 Pro and the iPhone 13 mini (iOS 27.0), plus the SE (iOS 18.3): 0 failures, no warnings.
+- Screenshots: a dark DM with own bubbles and the send arrow; a light DM (unchanged); a group chat header at 375pt showing the side-by-side title.
+- If the iPhone is connected, build for it and report.
+
+**Gate (the user, on the iPhone):**
+- in dark mode, your bubbles are a slightly calmer green;
+- light mode is the same as now;
+- the chat title is back to the avatar-beside-name style.
+
+**Record:** a `## LIME-87-fix5` entry in `TEND.md`. Commit: `fix(ios): dimmer dark own bubble; restore side-by-side chat title`, trailer `Brief: LIME-87-fix5`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-88 → `tend` (lime-aa) (after LIME-87-fix5 is reviewed): DESIGN-01 into `docs/` (docs only)
 **What it does:** writes the decided native architecture into the repo, so every later brief and agent works from one document instead of `PLOT.md`.
 
 **Capabilities assumed:** edit files, commit, push. No builds needed.
