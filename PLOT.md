@@ -66,6 +66,9 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   3. **The edge-swipe back is disabled** (the nav bar is hidden). Restore it; it's core iOS behaviour.
   4. A sample message repeats oddly ("Best breakfast in town breakfast in town").
 - The bundle id `com.famkind.lime` is awaiting the user's confirmation.
+- **Running on the user's own iPhone (asked 2026-10-05):**
+  - TestFlight needs the paid account (next month). For now: **free provisioning** (a personal Apple ID team in Xcode, USB, Developer Mode on the phone; the build expires after 7 days).
+  - **Follow-up for a future brief:** persist signing in a **gitignored `ios/Local.xcconfig`** (`DEVELOPMENT_TEAM`), included by `project.yml`, so `./generate.sh` doesn't wipe the user's team choice. The team id is personal, so keep it out of git.
 - **The user reviewed LIME-87: "looks great".** They approved the visible dark green; **LIME-87-fix is drafted** (items 1–4).
 - **Bundle id:** there is no Lime domain yet; everything is under famkind.com.
   - Plot's advice: **keep `com.famkind.lime`**. Bundle ids needn't match a domain you own later. Signal's iOS app still uses `org.whispersystems.signal`, from its old company. The app can later be *transferred* to the foundation's Apple account with the bundle id unchanged.
@@ -866,7 +869,47 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
-### LIME-88 → `tend` (lime-aa) (after LIME-87-fix is reviewed): DESIGN-01 into `docs/` (docs only)
+### LIME-87-fix2 → `tend` (lime-aa) (after LIME-87-fix lands): Apple's own scroll edge effect and toolbar
+**What it does:** the user compared Lime's header fade with Apple Messages on iOS 26 (screenshots, 2026-10-05): "the fade needs to be higher up and more subtle; look at the Apple Messages example; we should copy that".
+- In Apple Messages, the content **blurs and softly fades starting at the very top of the screen (behind the status bar)** and is clear just below the glass buttons.
+- Lime's fade sits lower, with a heavier wash.
+
+The faithful way to match it is to **use the system's own toolbar and scroll edge effect** instead of hand-drawn fades. That also gives the system swipe-back and back button for free.
+
+**Capabilities assumed:** edit files, XcodeGen, `xcodebuild`, `simctl`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):** how the Messages and Chat headers, the fades and the swipe-back are built after LIME-87-fix. Check that the installed SDK has `scrollEdgeEffectStyle` and toolbar glass for iOS 26+. If anything contradicts this brief, or the native toolbar can't hold the title pill (avatars + name + "N members"), **stop and ask the user**.
+
+**Phase 2: the change.**
+1. **iOS 26 and newer: native toolbar plus the system scroll edge effect.**
+   - **Messages:** `NavigationStack` toolbar items: leading, the logo button; trailing, **one group** with search + avatar (the system draws one shared glass capsule). The custom header and fade are removed. The scroll view uses the system **soft** top edge effect (`.scrollEdgeEffectStyle(.soft, for: .top)` or the SDK's equivalent), so the list blurs and fades under the status bar and buttons exactly as Apple Messages does.
+   - **Chat:**
+     - leading, the **system back button** (system glass and the system swipe-back; remove LIME-87-fix's custom swipe workaround if it becomes redundant);
+     - principal, the title pill (the avatar stack, the name, "N members");
+     - trailing, one group with search, call and "⋯".
+     - The same soft top edge effect.
+   - **Bottom:** the soft bottom edge effect behind the composer (Chat) and the dock (Messages), so content softens under them instead of cutting.
+2. **iOS 17–25 fallback:** keep visually close, with a **subtle** top treatment: a progressive blur/material plus a canvas-colour gradient that starts **at the top of the screen (behind the status bar)** and fades out about 8–12pt below the header buttons. The maximum opacity is low enough that rows read as softly veiled, not washed out. Custom glass pills stay as they are below 26.
+3. Keep the LIME-87-fix dark green, the sample text and the button sizes. Don't change the colours.
+
+**Out of scope:** anything outside `ios/`; networking; new screens; the bundle id.
+
+**Phase 3: verification.**
+- `./generate.sh`; build + test on the iPhone 18 Pro (iOS 27.0): 0 failures, no warnings in Lime sources. Also on the iOS 18.3 runtime (the fallback path).
+- The UI tests still pass:
+  - launch → open chat → send → back via the back button;
+  - **and** via an edge swipe.
+- **Screenshots** (light and dark, iOS 27, plus one on 18.3) with the list **scrolled** so a row sits under the header: Messages, and Chat scrolled. Report the paths, and describe in one line each how the top edge compares with Apple Messages (where the fade starts and ends).
+
+**Gate (the user, on the iPhone via Xcode → Run):** scroll the list and a chat. The top looks like Apple Messages: a soft blur that starts behind the clock and clears just under the buttons. The back swipe still works.
+
+**Record:** a `## LIME-87-fix2` entry in `TEND.md`. Commit: `fix(ios): system toolbar and scroll edge effect (Apple Messages-style fade)`, trailer `Brief: LIME-87-fix2`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-88 → `tend` (lime-aa) (after LIME-87-fix2 is reviewed): DESIGN-01 into `docs/` (docs only)
 **What it does:** writes the decided native architecture into the repo, so every later brief and agent works from one document instead of `PLOT.md`.
 
 **Capabilities assumed:** edit files, commit, push. No builds needed.
