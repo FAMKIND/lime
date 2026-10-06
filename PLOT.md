@@ -75,6 +75,90 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **The bigger choice is the Apple account type:** individual (the seller shows the user's personal name) vs organisation (needs a legal entity + a D-U-N-S number, free but it can take days to weeks).
   - The user is to decide before enrolling next month.
 
+**Update: LIME-90-fix landed as `9d18cad`** (pushed and verified). 33 iOS tests pass. Tend set `xcodeVersion: "2700"` + `STRING_CATALOG_GENERATE_SYMBOLS`; the user is to report whether the Xcode "recommended settings" warning is gone.
+
+### DESIGN-02 (draft, plot, 2026-10-06): API v2, the blind mailbox protocol
+**Status:**
+- **The user's decision needed: R1 only** (below). Everything else follows from D1–D8.
+- Once decided, **LIME-91** writes it into `docs/api-v2.md` (docs only); then come the Supabase briefs.
+- **Grounded in:** `docs/architecture.md` §§3–7 and 11.5; `docs/api.md` v1 §§2–8 (the op envelope, idempotency, auth).
+- **Not verified:** Supabase Realtime/Edge Function limits at scale; the first Supabase brief will survey them.
+
+**1. What the server stores (Supabase Postgres + Storage):**
+- `profiles`: the public directory fields only (display name, username, school, avatar file id, `hide_from_search`). This is the one cleartext social data (D7).
+- `devices`: the device id, the user id, the Curve25519 identity key, the Ed25519 signing key, **a signature by the user's master key** (cross-signing), and the revoked time.
+- `master_keys`: the user's public master signing key.
+- `one_time_keys`: a pool per device, each **claimed once**.
+- `mailbox_items`: the recipient device, a `cursor` (bigserial), the outer ciphertext bytes, the size and the received time. **Deleted when acknowledged**; **undelivered items expire after R1 days**.
+- `blobs`: encrypted attachments (the id, the size, the uploader for quota, the expiry).
+- `delivery_keys`: per user, **a hash** of the current delivery-key material (see 3). Never the key itself.
+- `backups`: opaque recovery-key-encrypted backup blobs (D5).
+- **The server never stores:** conversations, group names, membership, senders of sealed messages, message text, or reactions.
+
+**2. Envelopes (two layers):**
+- **Outer (the server sees it):** `{ to_device, access, ciphertext, size }`. **No sender.** `access` is either a delivery-token proof (sealed) or the sender's auth (identified; see 3).
+- **Sealed inner (after the recipient's Olm decrypt):** `{ sender_user, sender_device, sender_cert, op }`, where `sender_cert` is the sender device key signed by its master key.
+- **`op` (signed, as `architecture.md` §4):** `{ op_id (UUIDv7), type, conversation_id, hlc, parents[], payload, sig }`.
+  - `payload` is a **Megolm ciphertext** for messages/reactions/edits, or an encrypted group-state op.
+  - `sig` is the Ed25519 signature of the sender device over the canonical op.
+- **Fan-out:** one request carries a shared Megolm ciphertext plus a list of `(to_device, access)`. The server stores one item per recipient device. **Honest limit (already in `architecture.md` §5):** the server sees the recipient set of each request, and so could infer group membership statistically.
+- **Megolm session keys** travel as Olm-encrypted to-device ops through the same mailbox.
+
+**3. Sealed sender and message requests (D7 + D8):**
+- Each user has a **delivery key**, shared only inside their encrypted conversations (so contacts have it).
+- A sealed send proves knowledge of the recipient's delivery key (an HMAC over the request); the server checks it against the stored hash and **learns nothing about the sender**.
+- **Strangers don't have the key**, so their first message is sent **identified** (the server sees the sender) and lands in the recipient's **Requests**.
+- **Accept** shares your delivery key.
+- **Block rotates your delivery key** and shares the new one with everyone except the blocked person, so their sealed sends fail.
+- Rate limits apply per access token and per IP.
+
+**4. Ordering (the answer to `architecture.md` §11.5; told to the user 2026-10-06, no objection):**
+- The server's `cursor` is **per mailbox, for sync only**.
+- The conversation order comes from the devices: **HLC + `parents[]`** (the latest op ids the sender had seen). Display order is causal, tie-broken by HLC, then `op_id`. It is identical online and over the mesh.
+- The display time keeps v1's "never in the future" rule.
+
+**5. Group state (client-managed):**
+- The ops are `group.create`, `group.add`, `group.remove`, `group.leave`, `group.rename`, `group.set_avatar`, `group.set_role`. All are encrypted and signed, and ordered by rule 4.
+- **The authority rules are checked by every client:** only the owner and admins add, remove or rename; a member may leave.
+- **Conflict rules:** a concurrent remove beats an add; a rename/avatar is last-writer-wins by `(hlc, op_id)`; the owner can't be removed except by leaving (then the oldest admin, else the oldest member, becomes owner).
+- **Rotate the Megolm session on any membership change** (`architecture.md` §3).
+
+**6. Endpoints (`/v2`, Supabase Edge Functions):**
+- **Auth:** Supabase Auth email + password, plus device registration that binds a token to a `device_id`.
+- **Keys:**
+  - upload the device keys + a one-time-key batch;
+  - `GET /v2/users/:id/devices` (the identity keys + cross-signatures);
+  - `POST /v2/keys/claim` (one-time keys);
+  - publish the master key.
+- **Mailbox:** `POST /v2/send` (the fan-out batch); `GET /v2/mailbox?after=cursor`; `POST /v2/mailbox/ack` (deletes up to the cursor).
+- **Realtime:** one Supabase Realtime channel per device, carrying a **"new items" nudge only** (no content).
+- **Push:** APNs with **no content**; the notification extension fetches and decrypts on the device.
+- **Blobs:** upload/download of encrypted files via signed URLs, with the expiry rule from cost principles.
+- **Directory:** search with exact username/email/phone match, as v1; respects `hide_from_search`.
+- **Backup:** `PUT/GET /v2/backup` (opaque).
+- **Calls:** `POST /v2/turn` (time-limited TURN credentials, rate-limited); `POST /v2/calls/token` (a LiveKit token in exchange for a **per-call capability** from the encrypted invite, so no server membership check is needed).
+
+**7. Mesh:** relays carry the **outer** envelope unchanged (`to_device` + ciphertext + access). Whoever gets online first posts it to `/v2/send`.
+- **The server de-dupes by a hash of the outer ciphertext per recipient device**; it can't see the inner `op_id`.
+- **Recipients de-dupe by `op_id`.**
+
+**Decision for the user:**
+- **R1: how long an undelivered message waits on the server** for a phone that's been offline (e.g. lost, or off for the summer):
+  - **A. 30 days** (lean);
+  - **B. 90 days** (more forgiving, more storage);
+  - **C. 7 days** (Signal-like strictness).
+
+  After that, the sender's message is gone for that device. Its other devices and the recovery backup are unaffected.
+
+**R1 DECIDED (user, 2026-10-06, after the correction): 30 days.** Undelivered mailbox items expire 30 days after they are received. DESIGN-02 is final for LIME-91.
+
+**(History) R1: the user first chose C (7 days) on 2026-10-06, but plot had mislabelled C as "Signal-like".** Signal actually drops queued messages after about **30 days** (support.signal.org, "Troubleshoot receiving messages"). Plot corrected this and asked the user to confirm 7 or switch to 30. **Pending the user's confirmation; don't write LIME-91 until it's confirmed.**
+
+**Briefs this unlocks (after R1):**
+1. **LIME-91:** `docs/api-v2.md` (docs only).
+2. **LIME-92:** a Supabase **staging** project + the schema + the key/mailbox Edge Functions + tests. Needs **the user to create a free Supabase account and a project**; the credentials go in a gitignored file.
+3. **LIME-93:** the core: persisted Olm/Megolm keys (in the SQLCipher store), device registration, send and fetch. **Two simulators exchange an encrypted message through staging.**
+
 ### DESIGN-01 (draft, plot, 2026-10-05): native Lime architecture: E2EE, devices, mesh, discovery, calls
 **Status:**
 - **A draft for the user's decisions D5–D8 (below).** Once they're decided, LIME-88 (docs only) moves it into `docs/architecture.md`, and `docs/api.md` gets a "v2: E2EE" section.
@@ -1068,7 +1152,56 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-90-fix → `tend` (lime-aa) (next): a lost-key and backup-restore path for the local store; a debug-only reset flag
+### LIME-91 → `tend` (lime-aa) (next): DESIGN-02 into `docs/api-v2.md` (docs only)
+**What it does:** writes the decided API v2 (the blind-mailbox protocol) into the repo, so the Supabase and core briefs work from one document.
+
+**Capabilities assumed:** edit files, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- In `PLOT.md`, the "DESIGN-02" section: §§1–7, **R1 = 30 days**. Ignore the "(History)" R1 lines except as context.
+- `docs/architecture.md` (especially §§4–7 and §11.5);
+- `docs/api.md` §§2–8 (v1's envelope, idempotency and auth, for the "changes from v1" notes).
+
+**If anything in DESIGN-02 conflicts with `architecture.md`, stop and ask the user. Don't resolve it yourself.**
+
+**Phase 2: the change.**
+1. **Create `docs/api-v2.md`, "Lime API v2: the blind mailbox"**, with exactly these sections:
+   1. Status and scope: decided 2026-10-06; the native apps only; v1 is frozen for the web;
+   2. What the server stores, and never stores (DESIGN-02 §1, with **30-day expiry** for undelivered items);
+   3. Envelopes (outer, sealed inner, the signed op; fan-out; Megolm key distribution) (§2);
+   4. Sealed sender, delivery keys, message requests and blocking (§3);
+   5. Ordering: the per-mailbox cursor; HLC + `parents[]`; the display time (§4). **Mark it as the answer to `architecture.md` §11 item 5**;
+   6. Group state ops, authority and conflict rules (§5);
+   7. Endpoints: the **shape only**, request and response fields at the level DESIGN-02 gives, no full JSON schemas (§6);
+   8. The mesh relay and de-duplication (§7);
+   9. Honest limits: what the server can still infer (recipient sets, timing, sizes, IP, the directory, the key directory);
+   10. Changes from v1 (a short table);
+   11. Open items for the Supabase briefs: Realtime/Edge Function limits; the delivery-key HMAC construction details; the one-time-key pool size; the rate-limit numbers.
+
+   Copy decisions faithfully; **add no new decisions**. Where DESIGN-02 is silent, list the point under §11 rather than filling it in.
+2. **`docs/architecture.md`:**
+   - §11 item 5: append "Answered in `docs/api-v2.md` §5 (2026-10-06)".
+   - §6: add a one-line pointer to `docs/api-v2.md`.
+3. **`README.md`:** add a link line beside the architecture link.
+
+**Out of scope:** code, `ios/`, `core/`, `public/`, `server/`, `tests/`, schema SQL.
+
+**Verification:**
+- `git diff --stat` touches only `docs/api-v2.md`, `docs/architecture.md`, `README.md` and `TEND.md` (plus `PLOT.md` from Phase 0);
+- `docs/api-v2.md` has the 11 numbered sections;
+- it contains "30 days", "delivery key", "HLC", "parents" and "sealed";
+- it contains **no** statement that the server stores conversations, membership, group names or senders of sealed messages;
+- no personal data.
+
+**Gate:** the user skims `docs/api-v2.md` on GitHub.
+
+**Record:** a `## LIME-91` entry in `TEND.md`. Commit: `docs: API v2, the blind mailbox protocol`, trailer `Brief: LIME-91`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-90-fix → `tend` (lime-aa) (landed as `9d18cad`): a lost-key and backup-restore path for the local store; a debug-only reset flag
 **What it does:** closes the gap tend flagged in LIME-90 ("if the Keychain key is lost while the DB file survives, the store can't open").
 - **The likely real-world trigger:** restoring a new iPhone from an iCloud backup. The DB file in Application Support is backed up, but the Keychain key is `ThisDeviceOnly`, so it is not.
 - **Plot's decision (consistent with D5):** the local DB is **never backed up**. History comes back through Lime's own recovery-key backup and device linking (later briefs), not through iCloud.
