@@ -882,6 +882,13 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
+**Update: LIME-90 landed as `2fcf708`** (pushed and verified).
+- SQLCipher via CommonCrypto (BSD-style; the Zetetic notice is needed in acknowledgements). 19 Rust + 25 iOS tests pass; the app size is now +1528 KB.
+- **Plot's findings:** the DB is **not excluded from iCloud backup** while its key is `ThisDeviceOnly`, so a restore onto a new phone would fail. And `-lime-reset-store` isn't Debug-gated. **LIME-90-fix is drafted** (a plot decision consistent with D5: the DB is never backed up; recovery comes via the recovery key).
+- **Next-step plan:**
+  - The Bluetooth spike needs a **second iPhone**. Plot believes the free provisioning covers the `UIBackgroundModes` bluetooth keys (no paid entitlement), but this is unverified, so the spike may not need the paid account.
+  - While the hardware is pending, plot drafts **DESIGN-02: API v2** (mailbox, key directory, signed envelopes, group-state ops, HLC + parents ordering, delivery tokens), ahead of the Supabase brief.
+
 **Update: LIME-89 landed as `fa8fd3c`** (pushed and verified; no generated or binary artefacts tracked).
 - vodozemac 0.11.1 (Apache-2.0), UniFFI 0.32.2 (MPL-2.0, file-level; tend's reading: fine for MIT, and a lawyer's glance before public release). No GPL/AGPL linked.
 - Rust 1.99.0 pinned (installed via brew rustup, no sudo, no profile edits). 6 Rust tests + 21 iOS tests pass.
@@ -1061,7 +1068,49 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-90 → `tend` (lime-aa) (after LIME-89 is reviewed): the encrypted local store in LimeCore; the iOS screens read from it
+### LIME-90-fix → `tend` (lime-aa) (next): a lost-key and backup-restore path for the local store; a debug-only reset flag
+**What it does:** closes the gap tend flagged in LIME-90 ("if the Keychain key is lost while the DB file survives, the store can't open").
+- **The likely real-world trigger:** restoring a new iPhone from an iCloud backup. The DB file in Application Support is backed up, but the Keychain key is `ThisDeviceOnly`, so it is not.
+- **Plot's decision (consistent with D5):** the local DB is **never backed up**. History comes back through Lime's own recovery-key backup and device linking (later briefs), not through iCloud.
+- Also gates LIME-90's `-lime-reset-store` flag to Debug builds.
+
+**Capabilities assumed:** edit files, XcodeGen, `xcodebuild`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):** the iOS store bootstrap (`LimeApp.swift`, the store wrapper), where the DB path is created, and how the open errors surface. If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Exclude the DB from backups:** set `isExcludedFromBackup` on the database file (and any `-wal`/`-shm` siblings or its containing folder) every launch, since the attribute can be lost when files are replaced.
+2. **The unopenable-store path:** if the Keychain key is missing **or** the store fails to open with the key (wrong key or corrupted):
+   - **move the old file aside** (rename it to `lime-<ISO timestamp>.unreadable.db` in the same folder; keep at most the 2 newest, delete older ones);
+   - generate a new key, create a fresh store, seed it (sample data, for now);
+   - show a one-time, non-blocking notice on Messages: **"Lime couldn't open the data saved on this phone, so it started fresh. Your chats will come back when you restore from your recovery key."** (for now there is no restore; the wording stands for the later feature);
+   - **never log the key**, and log no plaintext.
+   - **A missing key with no DB** (a first launch) is not an error: no notice.
+3. **`-lime-reset-store`** works only in Debug builds (`#if DEBUG`); Release ignores it.
+5. **Silence Xcode's "Update to recommended settings" warning at the source:** set Xcode 27's recommended project settings in `project.yml` (the dialog offered *Enable String Catalog Symbol Generation*; apply whatever `xcodebuild` / Xcode lists as recommended for this project). There must be no behaviour change, and the warning must be gone after `./generate.sh`. If a recommended setting would change behaviour, leave it off and say which. (The user was told not to click the dialog, because `./generate.sh` would overwrite it.)
+4. **Pre-release checklist note:** add `docs/release-checklist.md` with two items: the acknowledgements screen (the Zetetic/SQLCipher notice, plus `core/THIRD_PARTY.md`), and a lawyer's glance at UniFFI's MPL-2.0 use. Keep it short; later briefs append to it.
+
+**Out of scope:** the recovery-key backup itself; anything outside `ios/`, `core/` (only if a small error-type change is needed), `docs/release-checklist.md` and `TEND.md`.
+
+**Phase 3: verification.**
+- Build + test on the iPhone 18 Pro, the 13 mini (iOS 27.0) and the SE (18.3): 0 failures, no warnings.
+- **New tests:**
+  - the DB file reports `isExcludedFromBackup == true` after launch;
+  - **wrong-key simulation:** replace the Keychain key with random bytes (a test hook, Debug only), relaunch → the old file is moved aside, a fresh store opens, the notice shows once and doesn't show on the next launch;
+  - a missing key with an existing DB → the same path;
+  - a first launch (no key, no DB) → no notice;
+  - in Release configuration, `-lime-reset-store` has no effect (a unit test of the gating function).
+- If the iPhone is connected, build for it and report.
+
+**Gate (the user, on the iPhone):** nothing visible changes in normal use. Sending, closing and reopening still keeps your messages. (The lost-key path is proven by the tests.)
+
+**Record:** a `## LIME-90-fix` entry in `TEND.md`. Commit: `fix(ios): keep the local store out of backups; recover from an unopenable store; debug-only reset`, trailer `Brief: LIME-90-fix`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-90 → `tend` (lime-aa) (landed as `2fcf708`): the encrypted local store in LimeCore; the iOS screens read from it
 **What it does:** gives LimeCore its on-device database, **SQLite encrypted at rest with SQLCipher**, and moves the iOS app off `SampleData.swift` onto the core.
 - Messages you send **persist across app restarts**.
 - Still **no networking and no persisted Olm keys** (those come with the backend brief).
