@@ -32,7 +32,9 @@ final class LimeUITests: XCTestCase {
         let bubble = app.staticTexts.matching(identifier: "own-bubble").matching(NSPredicate(format: "label == %@", "hello")).firstMatch
         XCTAssertTrue(bubble.waitForExistence(timeout: 5), "a new own bubble with hello appears")
 
-        app.buttons["back-button"].tap()
+        // iOS 26+ has the system back button; below it, the custom glass one.
+        let custom = app.buttons["back-button"]
+        (custom.exists ? custom : app.navigationBars.buttons.element(boundBy: 0)).tap()
         XCTAssertTrue(list.waitForExistence(timeout: 5), "back to Messages")
     }
 

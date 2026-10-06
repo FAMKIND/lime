@@ -1,24 +1,31 @@
 import SwiftUI
 
-/// A soft fade (canvas to clear) behind the floating header pills, so scrolled content
-/// never shows hard-cut under them. Covers the status bar, the pills and 24pt below.
+/// iOS 17-25 only (iOS 26+ uses the system's soft scroll edge effect). A subtle veil behind the
+/// floating header pills: a progressive blur plus a low-opacity canvas gradient. It starts at the
+/// very top of the screen (behind the status bar), as in Apple Messages, and is gone about 10pt
+/// below the header buttons.
 struct TopFade: View {
     private let headerHeight: CGFloat = 56
-    private let fadeLength: CGFloat = 24
+    private let tail: CGFloat = 10
+    /// How strongly the canvas colour veils the very top. Low on purpose: rows read as softly veiled.
+    private let veil = 0.55
 
     var body: some View {
         GeometryReader { geo in
-            let solid = geo.safeAreaInsets.top + headerHeight
-            let total = solid + fadeLength
-            LinearGradient(
+            let total = geo.safeAreaInsets.top + headerHeight + tail
+            let fade = LinearGradient(
                 stops: [
-                    .init(color: Theme.canvas, location: 0),
-                    .init(color: Theme.canvas, location: solid / total),
-                    .init(color: Theme.canvas.opacity(0), location: 1),
+                    .init(color: .black, location: 0),
+                    .init(color: .black.opacity(0.55), location: 0.55),
+                    .init(color: .clear, location: 1),
                 ],
                 startPoint: .top, endPoint: .bottom)
-                .frame(height: total)
-                .ignoresSafeArea(edges: .top)
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial).mask(fade)
+                Theme.canvas.opacity(veil).mask(fade)
+            }
+            .frame(height: total)
+            .ignoresSafeArea(edges: .top)
         }
         .frame(height: 0, alignment: .top)
         .allowsHitTesting(false)

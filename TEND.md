@@ -3753,3 +3753,22 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 **Screenshots** (`/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/keep/`): `chat-light-sent.png`, `chat-dark-sent.png`, `chat-dark-sent-2.png` (own bubble visible), `chat-light-scrolled-fade.png` (older messages fading under the header), `messages-dark.png` ("+", badges, dock badge). **Not captured:** a light Messages shot and a scrolled dark chat (the throwaway capture test was removed). Screenshots came from a throwaway UI test, since deleted.
 
 **Things to look at (please):** run it from Xcode; own bubble and "+" in dark; scroll a chat and watch the fade; edge-swipe back. The real-finger swipe feel is only tested with a synthetic drag. The simulator Messages row for the group chats now shows a "+3" slot (unchanged from LIME-87).
+
+## LIME-87-fix2
+
+**System toolbar and scroll edge effect (committed, awaiting the user's check).** iOS app only; colours, sample text and button sizes unchanged.
+
+- **iOS 26+ (`#available(iOS 26, *)`):** Messages and Chat use the real `NavigationStack` toolbar. Messages: leading logo button; trailing one group (search + avatar). Chat: the **system back button and swipe-back**, a `.principal` title (avatar stack, name, "N members"), trailing one group (search, call, "⋯"). `.scrollEdgeEffectStyle(.soft, for: .top / .bottom)` on the scroll views; the dock (Messages) and the composer (Chat) sit in `safeAreaBar(edge: .bottom)` so content softens under them. The SDK has `scrollEdgeEffectStyle`, `scrollEdgeEffectHidden` and `safeAreaBar`.
+- **iOS 17-25:** the LIME-87-fix layout (custom glass pills, hidden bar, `SwipeBack`), with `TopFade` redone: progressive `.ultraThinMaterial` plus a canvas veil at 0.55 max opacity that starts at the very top (behind the status bar) and ends about 10pt below the header buttons.
+- Refactor: `MessagesView` and `ChatView` each have a native and a legacy body sharing `list` / `messageScroll` / `titlePill` / `composer`. UI test back-navigation now uses the custom back button if present, else the nav bar's first button.
+
+**Verification.** iPhone 18 Pro (iOS 27.0) and iPhone 16 Pro (iOS 18.3): build and **11 tests, 0 failures on each** (9 unit, 2 UI: back button and edge swipe), no warnings in Lime sources.
+
+**Screenshots** (`/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/keep2/`): `ios27-messages-light-large-text.png`, `ios27-messages-dark-scrolled.png`, `ios27-chat-light.png`, `ios27-chat-dark.png`, `ios183-messages-light.png`, `ios183-messages-light-scrolled.png`, `ios183-chat-light.png`. Messages was scrolled with a large Dynamic Type size so the 5-row list overflows.
+- **iOS 27 Messages (dark, scrolled):** a row blurs and fades starting behind the clock and is clear a little below the buttons; the same bottom softening behind the dock. Same shape as Apple Messages as far as I can judge from memory; I had no Apple screenshot to compare.
+- **iOS 18.3 Messages (scrolled):** the veil starts at the top edge and is gone about 10pt under the pills; rows under the pills stay legible but softened.
+
+**Not captured / caveats**
+- **The Chat screens are not captured scrolled with a message under the header** on either runtime (the swipe only revealed the top of the chat; the captured chats show the bottom soft edge and the header). Scrolled Messages is captured.
+- **Native title has no glass capsule:** in the iOS 26 toolbar the `.principal` title (avatars, name, members) shows as plain content, not a glass pill like the legacy path. The brief said stop if the toolbar could not hold the title pill; it holds the content but not a capsule. Say if you want a capsule drawn behind it.
+- Screenshots came from a throwaway UI test, since removed. The real Messages-vs-Lime fade comparison needs your eyes on a device.

@@ -9,50 +9,108 @@ struct ChatView: View {
 
     var body: some View {
         if let conversation = store.conversation(conversationID) {
-            content(conversation)
+            if #available(iOS 26, *) {
+                nativeContent(conversation)
+            } else {
+                legacyContent(conversation)
+            }
         }
     }
 
-    private func content(_ conversation: Conversation) -> some View {
+    // MARK: iOS 26+: system back button, toolbar and scroll edge effect (as in Apple Messages)
+
+    @available(iOS 26, *)
+    private func nativeContent(_ conversation: Conversation) -> some View {
         ZStack {
             Theme.canvas.ignoresSafeArea()
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(rows(conversation)) { row in
-                            switch row.kind {
-                            case .day(let text):
-                                Text(text)
-                                    .font(Theme.caption.weight(.medium))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .padding(.vertical, 12)
-                                    .accessibilityAddTraits(.isHeader)
-                            case .message(let message, let showSender):
-                                MessageBubble(message: message,
-                                              sender: store.person(message.senderID, in: conversation),
-                                              showSender: showSender && conversation.isGroup)
-                                    .padding(.bottom, 8)
-                            }
-                        }
-                        Color.clear.frame(height: 1).id("bottom")
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 84)
-                    .padding(.bottom, 8)
-                }
-                .accessibilityIdentifier("chat-scroll")
-                .scrollDismissesKeyboard(.interactively)
-                .defaultScrollAnchor(.bottom)
-                .onChange(of: conversation.messages.count) {
-                    withAnimation { proxy.scrollTo("bottom") }
-                }
+            messageScroll(conversation, top: 8)
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
+        }
+        .safeAreaBar(edge: .bottom) { composer(conversation) }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) { titlePill(conversation) }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { store.comingSoon("Search in chat") } label: { Image(systemName: "magnifyingglass") }
+                    .accessibilityLabel("Search in chat")
+                Button { store.comingSoon("Call") } label: { Image(systemName: "phone") }
+                    .accessibilityLabel("Call")
+                Button { store.comingSoon("More") } label: { Image(systemName: "ellipsis") }
+                    .accessibilityLabel("More")
             }
+        }
+    }
+
+    // MARK: iOS 17-25: custom glass header and a subtle top veil
+
+    private func legacyContent(_ conversation: Conversation) -> some View {
+        ZStack {
+            Theme.canvas.ignoresSafeArea()
+            messageScroll(conversation, top: 84)
         }
         .overlay(alignment: .top) { TopFade() }
         .overlay(alignment: .top) { header(conversation) }
         .safeAreaInset(edge: .bottom) { composer(conversation) }
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
+    }
+
+    // MARK: Shared
+
+    private func messageScroll(_ conversation: Conversation, top: CGFloat) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(rows(conversation)) { row in
+                        switch row.kind {
+                        case .day(let text):
+                            Text(text)
+                                .font(Theme.caption.weight(.medium))
+                                .foregroundStyle(Theme.textSecondary)
+                                .padding(.vertical, 12)
+                                .accessibilityAddTraits(.isHeader)
+                        case .message(let message, let showSender):
+                            MessageBubble(message: message,
+                                          sender: store.person(message.senderID, in: conversation),
+                                          showSender: showSender && conversation.isGroup)
+                                .padding(.bottom, 8)
+                        }
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, top)
+                .padding(.bottom, 8)
+            }
+            .accessibilityIdentifier("chat-scroll")
+            .scrollDismissesKeyboard(.interactively)
+            .defaultScrollAnchor(.bottom)
+            .onChange(of: conversation.messages.count) {
+                withAnimation { proxy.scrollTo("bottom") }
+            }
+        }
+    }
+
+    private func titlePill(_ conversation: Conversation) -> some View {
+        HStack(spacing: 8) {
+            ConversationAvatar(conversation: conversation, size: 36)
+                .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(conversation.title)
+                    .font(Theme.secondary.weight(.semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                if conversation.isGroup {
+                    Text(conversation.subtitle)
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("chat-title")
     }
 
     // MARK: Header
@@ -69,27 +127,10 @@ struct ChatView: View {
             .accessibilityLabel("Back")
             .accessibilityIdentifier("back-button")
 
-            HStack(spacing: 8) {
-                ConversationAvatar(conversation: conversation, size: 36)
-                    .frame(width: 36, height: 36)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(conversation.title)
-                        .font(Theme.secondary.weight(.semibold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    if conversation.isGroup {
-                        Text(conversation.subtitle)
-                            .font(Theme.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
-                    }
-                }
-            }
+            titlePill(conversation)
             .padding(.horizontal, 10).padding(.vertical, 6)
             .frame(minHeight: 48)
             .limeGlass()
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("chat-title")
 
             Spacer(minLength: 0)
 

@@ -64,4 +64,4 @@ Colours live in `Lime/Resources/Assets.xcassets` (light / dark) and are read thr
 
 **Dark primary is native-only.** The web's dark `--lime-primary-bg` (`#0D2016`) is almost the same as the canvas and disappears; `#2D6A45` sits 27 OKLab units from the canvas (the unit tests require at least 8) and its ink is 5.8:1 (they require 4.5:1). The web app is frozen, so it keeps its own value; if the web ever changes, align them then. Light values are unchanged.
 
-A `TopFade` (canvas to clear, header height plus 24pt) sits behind the floating headers on Messages and Chat. The navigation bar is hidden, so `SwipeBack` re-enables the edge-swipe back gesture.
+On iOS 26+ the screens use the system toolbar (back button, swipe back, glass groups) and the soft scroll edge effect top and bottom, as in Apple Messages. On iOS 17-25 they keep custom glass pills, a `TopFade` (a subtle progressive blur and low-opacity canvas veil from the top of the screen to about 10pt under the header buttons) and `SwipeBack`, which re-enables the edge-swipe gesture with the navigation bar hidden.

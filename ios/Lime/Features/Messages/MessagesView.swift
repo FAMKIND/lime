@@ -4,42 +4,87 @@ struct MessagesView: View {
     @Environment(ConversationStore.self) private var store
 
     var body: some View {
+        if #available(iOS 26, *) {
+            nativeBody
+        } else {
+            legacyBody
+        }
+    }
+
+    // MARK: iOS 26+: the system toolbar and scroll edge effect (as in Apple Messages)
+
+    @available(iOS 26, *)
+    private var nativeBody: some View {
         ZStack {
             Theme.canvas.ignoresSafeArea()
-
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(store.conversations) { conversation in
-                        NavigationLink(value: conversation.id) {
-                            ConversationRow(conversation: conversation)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("conversation-row-\(conversation.id)")
-                    }
+            list(top: 8, bottom: 24)
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
+        }
+        .safeAreaBar(edge: .bottom) { DockBar().padding(.bottom, 8) }
+        .overlay(alignment: .bottomTrailing) { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { store.comingSoon() } label: {
+                    Image("LimeLogo").renderingMode(.original).resizable().scaledToFit()
+                        .frame(width: 30, height: 30)
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 76)
-                .padding(.bottom, 170)
+                .accessibilityLabel("Lime menu")
             }
-            .accessibilityIdentifier("messages-list")
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { store.comingSoon("Search") } label: { Image(systemName: "magnifyingglass") }
+                    .accessibilityLabel("Search")
+                Button { store.comingSoon("Your profile") } label: { AvatarView(person: SampleData.me, size: 30) }
+                    .accessibilityLabel("Your profile")
+            }
+        }
+    }
+
+    // MARK: iOS 17-25: custom glass pills and a subtle top veil
+
+    private var legacyBody: some View {
+        ZStack {
+            Theme.canvas.ignoresSafeArea()
+            list(top: 76, bottom: 170)
         }
         .overlay(alignment: .top) { TopFade() }
         .overlay(alignment: .top) { TopControls() }
-        .overlay(alignment: .bottomTrailing) {
-            Button { store.comingSoon("New message") } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 26, weight: .regular))
-                    .foregroundStyle(Theme.primaryInk)
-                    .frame(width: 64, height: 64)
-                    .background(Theme.primary, in: Circle())
-                    .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
-            }
-            .accessibilityLabel("New message")
-            .padding(.trailing, 20)
-            .padding(.bottom, 92)
-        }
+        .overlay(alignment: .bottomTrailing) { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) }
         .overlay(alignment: .bottom) { DockBar().padding(.bottom, 8) }
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    // MARK: Shared
+
+    private func list(top: CGFloat, bottom: CGFloat) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(store.conversations) { conversation in
+                    NavigationLink(value: conversation.id) {
+                        ConversationRow(conversation: conversation)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("conversation-row-\(conversation.id)")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, top)
+            .padding(.bottom, bottom)
+        }
+        .accessibilityIdentifier("messages-list")
+    }
+
+    private var newMessageButton: some View {
+        Button { store.comingSoon("New message") } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 26, weight: .regular))
+                .foregroundStyle(Theme.primaryInk)
+                .frame(width: 64, height: 64)
+                .background(Theme.primary, in: Circle())
+                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        }
+        .accessibilityLabel("New message")
     }
 }
 
