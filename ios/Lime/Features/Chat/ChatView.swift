@@ -6,7 +6,6 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
     @FocusState private var composerFocused: Bool
-    @State private var screenWidth: CGFloat = 0
 
     var body: some View {
         if let conversation = store.conversation(conversationID) {
@@ -28,11 +27,10 @@ struct ChatView: View {
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
         .safeAreaBar(edge: .bottom) { composer(conversation) }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) { titleStack(conversation) }
+            ToolbarItem(placement: .principal) { titlePill(conversation) }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { store.comingSoon("Search in chat") } label: { Image(systemName: "magnifyingglass") }
                     .accessibilityLabel("Search in chat")
@@ -95,44 +93,16 @@ struct ChatView: View {
         }
     }
 
-    /// iOS 26+ toolbar title, as in Apple Messages: a small avatar above the name, centred, so the
-    /// name gets the full width between the back button and the trailing group. "N members" only
-    /// when the phone is wide enough (390pt and up).
-    private func titleStack(_ conversation: Conversation) -> some View {
-        VStack(spacing: 1) {
-            ConversationAvatar(conversation: conversation, size: 26)
-                .frame(width: 26, height: 26)
-            Text(conversation.title)
-                .font(Theme.caption.weight(.semibold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-                .accessibilityIdentifier("chat-title-name")
-            if conversation.isGroup, screenWidth >= 390 {
-                Text(conversation.subtitle)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("chat-title")
-    }
-
-    /// iOS 17-25 pill content. The name has priority: the avatar stack shrinks first, then the
-    /// "N members" line goes, and only then does the name truncate.
-    private func pillContent(_ conversation: Conversation, avatar: CGFloat, members: Bool) -> some View {
+    private func titlePill(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
-            if avatar > 0 {
-                ConversationAvatar(conversation: conversation, size: avatar)
-                    .frame(width: avatar, height: avatar)
-            }
+            ConversationAvatar(conversation: conversation, size: 36)
+                .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 0) {
                 Text(conversation.title)
                     .font(Theme.secondary.weight(.semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
-                    .accessibilityIdentifier("chat-title-name")
-                if conversation.isGroup, members {
+                if conversation.isGroup {
                     Text(conversation.subtitle)
                         .font(Theme.caption)
                         .foregroundStyle(Theme.textSecondary)
@@ -140,22 +110,7 @@ struct ChatView: View {
                 }
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .frame(minHeight: 48)
-        .limeGlass()
-    }
-
-    private func titlePill(_ conversation: Conversation) -> some View {
-        HStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                pillContent(conversation, avatar: 36, members: true).fixedSize(horizontal: true, vertical: false)
-                pillContent(conversation, avatar: 24, members: true).fixedSize(horizontal: true, vertical: false)
-                pillContent(conversation, avatar: 24, members: false).fixedSize(horizontal: true, vertical: false)
-                pillContent(conversation, avatar: 0, members: false)
-            }
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .contain)
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("chat-title")
     }
 
@@ -174,6 +129,11 @@ struct ChatView: View {
             .accessibilityIdentifier("back-button")
 
             titlePill(conversation)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .frame(minHeight: 48)
+            .limeGlass()
+
+            Spacer(minLength: 0)
 
             HStack(spacing: 0) {
                 glassIcon("magnifyingglass", label: "Search in chat")

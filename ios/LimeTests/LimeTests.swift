@@ -39,14 +39,21 @@ final class ThemeTests: XCTestCase {
     func testOwnBubbleIsThePrimaryColour() {
         XCTAssertEqual(Theme.Name.primary, "OwnBubble")
         XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: false)), "E4F9BE")
-        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: true)), "A3E18A")
+        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: true)), "8ECF73")
     }
 
-    func testDarkOwnBubbleIsTheAccent() {
-        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primary, dark: true)), hex(Theme.uiColor(Theme.Name.accent, dark: true)))
-        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.primaryInk, dark: true)), hex(Theme.uiColor(Theme.Name.accentInk, dark: true)))
+    /// LIME-87-fix5: the dark own bubble (and send arrow) is a dimmer green than the accent, which
+    /// the badges and the Messages "+" keep.
+    func testDarkOwnBubbleIsDimmerThanTheAccent() {
+        let bubble = hex(Theme.uiColor(Theme.Name.primary, dark: true))
+        XCTAssertEqual(bubble, "8ECF73")
+        XCTAssertNotEqual(bubble, hex(Theme.uiColor(Theme.Name.accent, dark: true)))
+        XCTAssertEqual(hex(Theme.uiColor(Theme.Name.accent, dark: true)), "A3E18A")
         let ratio = contrast(Theme.uiColor(Theme.Name.primaryInk, dark: true), Theme.uiColor(Theme.Name.primary, dark: true))
         XCTAssertGreaterThanOrEqual(ratio, 4.5, "ratio \(ratio)")
+        // About 6-8% lower OKLab lightness than the accent.
+        let drop = 1 - oklab(Theme.uiColor(Theme.Name.primary, dark: true)).0 / oklab(Theme.uiColor(Theme.Name.accent, dark: true)).0
+        XCTAssertGreaterThan(drop, 0.06); XCTAssertLessThan(drop, 0.08)
     }
 
     func testLightValuesUnchangedFromLime87() {

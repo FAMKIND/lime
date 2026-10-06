@@ -3806,3 +3806,16 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 **Screenshots** (`/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/fix4/`): `ios27-dark-dm-own-bubbles-send.png` (iPhone 18 Pro, dark: own bubbles and the send arrow in the accent, with the Autumn Reyes title), `ios27-narrow-375-light-chat-header.png` (iOS 27 13 mini: "Autumn Reyes" in full under a centred avatar). **Not captured:** a light DM on the 18 Pro (unchanged by design), a dark narrow header, and any legacy-path (18.3) header screenshot; the legacy path is covered by the SE test only.
 
 **Caveats:** the 13 mini screenshot shows the iOS 27 title tight against the back button group but not truncated; the real phone is the check. Two capture attempts showed the simulator ignoring dark mode on the new mini sim, so the dark shot is from the 18 Pro.
+
+## LIME-87-fix5
+
+**Dimmer dark own bubble; the side-by-side chat title is back (committed, awaiting the user's check).** iOS app only; light mode and the accent unchanged.
+
+1. **Dark own bubble + send arrow = `#8ECF73`** (ink `#131B17`, 9.46:1), a dark-only value in the `OwnBubble` colour set; the badges and the Messages "+" keep `#A3E18A`. **Deviation from the brief's starting point:** the brief said to start from `#8fd473`, but that is only **5.4%** lower OKLab lightness than `#A3E18A` (the brief asked for about 6-8%). I used `#8ECF73` (same hue 137.1deg, chroma 0.14, **6.7%** lower lightness). It is visually next to `#8fd473`; say if you want the exact swatch. Tests: dark own bubble is `8ECF73`, is not the accent, the accent is still `A3E18A`, ink >= 4.5:1, lightness drop between 6% and 8%, dark primary still >= 8 OKLab from the canvas, light values unchanged. README Theme table updated.
+2. **Chat title back to the LIME-87-fix3 treatment** on both paths: the avatar (stack) beside the name, "N members" under it for groups. Done by restoring `ChatView.swift` from `6131d50` (fix4 was the only commit that touched it since); the fix4 narrow-width logic is gone. The UI test `testChatTitleShowsFullName` became `testChatTitleShowsNameAndMembers` (title exists, contains the name, shows "members" only for groups); the 375pt simulators stay in the matrix.
+
+**Verification.** **18 tests, 0 failures, no warnings in Lime sources** on iPhone 18 Pro (iOS 27.0), the iPhone 13 mini (375pt) simulator on iOS 27.0, and iPhone SE 3rd gen (iOS 18.3). iPhone 13 mini (the device) connected: `xcodebuild -destination 'platform=iOS,name=iPhone' build` BUILD SUCCEEDED (not installed or launched by me).
+
+**Screenshots** (`/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/fix5/`): `ios27-dark-dm-own-bubbles-send.png`, `ios27-light-dm.png` (unchanged), `ios27-narrow-375-group-title.png` (Grade 4 Team header at 375pt: avatar stack beside "Grade 4…" with "5 members" under it).
+
+**Notes:** the title truncates at both 402pt ("Autumn Rey…") and 375pt, as the user accepted. The light screenshots and the dark DM were captured from throwaway UI tests (removed).

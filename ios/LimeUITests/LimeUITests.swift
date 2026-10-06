@@ -1,5 +1,4 @@
 import XCTest
-import UIKit
 
 @MainActor
 final class LimeUITests: XCTestCase {
@@ -55,22 +54,18 @@ final class LimeUITests: XCTestCase {
         XCTAssertFalse(app.scrollViews["chat-scroll"].exists)
     }
 
-    /// Short names show in full at any width (checked at 375pt on the iPhone 13 mini simulator, and
-    /// everywhere else too): the rendered name is at least as wide as the untruncated text.
-    func testChatTitleShowsFullName() {
+    /// The chat title is the avatar beside the name, with "N members" under it for groups. At 375pt it
+    /// may truncate (accepted), so this checks the title exists with the right content, not its width.
+    func testChatTitleShowsNameAndMembers() {
         let app = XCUIApplication()
         app.launch()
         XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 10))
-        for (row, name) in [("c2", "Autumn Reyes"), ("c1", "Journey Park"), ("c4", "Grade 4 Team")] {
+        for (row, name, members) in [("c2", "Autumn Reyes", false), ("c4", "Grade 4 Team", true)] {
             app.buttons["conversation-row-\(row)"].tap()
-            let title = app.staticTexts["chat-title-name"]
+            let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
             XCTAssertTrue(title.waitForExistence(timeout: 5), name)
-            XCTAssertEqual(title.label, name)
-            let style: UIFont.TextStyle
-            if #available(iOS 26, *) { style = .caption1 } else { style = .subheadline }
-            let font = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: style).pointSize, weight: .semibold)
-            let full = (name as NSString).size(withAttributes: [.font: font]).width
-            XCTAssertGreaterThanOrEqual(title.frame.width, full * 0.97, "\(name) is truncated: \(title.frame.width) < \(full)")
+            XCTAssertTrue(title.label.contains(name), "\(title.label) should contain \(name)")
+            XCTAssertEqual(title.label.contains("members"), members, title.label)
             let custom = app.buttons["back-button"]
             (custom.exists ? custom : app.navigationBars.buttons.element(boundBy: 0)).tap()
             XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
