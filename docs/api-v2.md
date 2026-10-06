@@ -147,16 +147,32 @@ Metadata hiding beyond this (private group credentials in the style of zkgroup) 
 
 ## 11. Open items for the Supabase briefs
 
-Things the decision did not settle. They are listed here rather than decided:
+Things the decision did not settle. Items marked **decided in LIME-92** were settled when the first half of the server was built (`supabase/`); the rest are still open.
 
-1. **Supabase limits.** Realtime and Edge Function limits at scale have not been verified; the first Supabase brief surveys them.
-2. **The delivery-key HMAC construction.** The decision says the proof is an HMAC over the request, checked against the stored hash. The key derivation, what exactly is MACed (including freshness and replay protection), which hash the server stores, and how a device other than the first obtains the delivery key are not specified.
-3. **The one-time-key pool size**, and when a device replenishes it.
-4. **The rate-limit numbers:** per access token and per IP for sends, key claims, directory search, `POST /v2/turn` and the rest.
-5. **The de-duplication window and the relay rule.** For how long the server remembers the hash of an outer ciphertext, and how a relaying phone (which also cannot see `op_id`) recognises an envelope it already carries.
-6. **The `access` of an identified send.** Section 3 says it is "the sender's auth"; the exact credential, and what stops identified sends being used to flood a stranger, belong to the rate-limit and message-request work.
+1. **Supabase limits.** Realtime and Edge Function limits at scale have not been verified; the first Supabase brief surveys them. (The free plan's limits and its inactivity pause are noted in `supabase/README.md`.)
+2. **The delivery-key HMAC construction. Decided in LIME-92 (sealed access).**
+   - Each user has a random 32-byte **delivery key**, shared with contacts inside encrypted messages.
+   - The sender presents `access_key = HKDF-SHA256(delivery_key, info = "lime-access-v1")`, 16 bytes, per recipient user.
+   - The server stores **only SHA-256(access_key)** per user (`delivery_access`) and compares it in constant time. This is Signal's unidentified-access model.
+   - **Rotation (block)** is the user uploading a new hash.
+   - Still open: freshness and replay protection of the proof, and how a second device obtains the delivery key (a client matter).
+3. **The one-time-key pool. Decided in LIME-92:** a device uploads **50**; the client tops up when the server reports **fewer than 20** left (every upload and registration response reports the remaining count).
+4. **The rate-limit numbers. Decided in LIME-92** (configuration, not constants; set as function secrets):
+   - sends: **120 recipient-items per minute** per authenticated user, or per access key for sealed sends;
+   - key claims: **60 per minute** per user;
+   - device registrations: **10 per hour** per user;
+   - still open: the numbers for directory search and `POST /v2/turn`, which are not built yet.
+5. **The de-duplication window and the relay rule.** Decided in LIME-92 for the server: it de-duplicates by SHA-256 of the ciphertext **per recipient device, for as long as the item exists** (until it is acknowledged or expires after 30 days). Still open: how a relaying phone (which also cannot see `op_id`) recognises an envelope it already carries.
+6. **The `access` of an identified send.** Decided in LIME-92: it is `{ identified: true }` plus the sender's user token; the item records the sender's user id and is marked identified, and the recipient's fetch returns both. Still open: what stops identified sends being used to flood a stranger, which belongs to the message-request work (the per-user send limit in item 4 applies).
 7. **The HLC and `parents[]` details:** the clock format, how many parents an op lists, and what a device does with an op whose parents it has not received yet.
 8. **Acknowledgement semantics.** `POST /v2/mailbox/ack` deletes up to a cursor; what happens to a device that acknowledges and then loses the items before applying them is not specified.
-9. **Device revocation.** `devices` records a revoked time; the flow that revokes a device, rotates Megolm sessions and stops its mailbox is not specified.
-10. **The blob expiry rule and quotas.** The cost principles give "for example 30 days after every recipient has fetched them" as an illustration, not a number; the uploader quota is not specified.
+9. **Device revocation.** `devices` records a revoked time and the server refuses a revoked device (it cannot fetch or acknowledge, is not listed, and cannot be sent to); the flow that revokes a device, rotates Megolm sessions and stops its mailbox is not specified.
+10. **The blob expiry rule and quotas.** The cost principles give "for example 30 days after every recipient has fetched them" as an illustration, not a number; the uploader quota is not specified. Blobs are not built yet.
 11. **The verified-teacher badge** (D7 says "later") and any change it brings to `profiles`.
+
+**Also decided in LIME-92 (needed to build it, not in the design):**
+
+- **The device cross-signature message.** `devices-register` verifies an Ed25519 signature by the user's master key over the UTF-8 text `lime-device-v1\n<device_id>\n<identity_key>\n<signing_key>` (the key strings as sent, standard base64). The registration also carries the master public key; an account's master key is fixed by its first registration.
+- **Function names.** The endpoints are Supabase Edge Functions under `/functions/v1/` (`devices-register`, `keys-upload`, `users-devices`, `keys-claim`, `delivery-access-set`, `send`, `mailbox-fetch`, `mailbox-ack`). The `/v2/...` paths in section 7 are the logical names; a gateway for them is not built.
+- **Sealed sends are all or nothing.** A batch is checked before anything is stored: a wrong or missing access key, an unknown device or a revoked device returns `403` for a sealed recipient (the three look the same), `404` for an identified one, and nothing is stored. An item over **64 KB** returns `413`; a rate limit returns `429`.
+- **Implementation guards** (configurable): at most 500 recipients per send, 100 keys per upload, 100 items per fetch.

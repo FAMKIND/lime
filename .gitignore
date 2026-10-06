@@ -20,3 +20,10 @@ ios/Local.xcconfig
 core/target/
 ios/Frameworks/
 ios/Lime/Core/Generated/
+
+# Supabase: local stack state and the staging public values (never committed)
+supabase/.branches/
+supabase/.temp/
+supabase/.staging.public.env
+supabase/.env*
+supabase/functions/.env*
