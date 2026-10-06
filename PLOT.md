@@ -57,6 +57,175 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 
   After the answers: the first brief is **LIME-87, the iOS skeleton** (Xcode project, SwiftUI, builds and runs in the Simulator, CI-free, no networking).
 
+### Update: LIME-87 landed as `dbe7f2e` (pushed; `dc26286` = the PLOT.md commit)
+- 7 tests pass (6 unit, 1 UI) on the iPhone 18 Pro simulator, iOS 27.0. The runtimes installed are 18.3 and 27.0; there is no iOS 17.
+- **No Simulator.app on the Mac:** tend ran the app headless via simctl. `mdfind` finds no `com.apple.iphonesimulator`; it was probably not installed with the Xcode 27 components. The user is told to open `ios/Lime.xcodeproj` in Xcode and press Run.
+- **Plot's review of tend's screenshots, for a likely LIME-87-fix after the user looks:**
+  1. **Dark own bubble / "+" / unread badge** (#0D2016 on #131B17) are nearly invisible. This is the same dark-green question as on the web. Lean: a native dark primary that clearly reads green, with text ≥ 4.5:1.
+  2. **The chat header has no scroll fade:** the sender name "Grace…" shows cut under the header pills.
+  3. **The edge-swipe back is disabled** (the nav bar is hidden). Restore it; it's core iOS behaviour.
+  4. A sample message repeats oddly ("Best breakfast in town breakfast in town").
+- The bundle id `com.famkind.lime` is awaiting the user's confirmation.
+- **The user reviewed LIME-87: "looks great".** They approved the visible dark green; **LIME-87-fix is drafted** (items 1–4).
+- **Bundle id:** there is no Lime domain yet; everything is under famkind.com.
+  - Plot's advice: **keep `com.famkind.lime`**. Bundle ids needn't match a domain you own later. Signal's iOS app still uses `org.whispersystems.signal`, from its old company. The app can later be *transferred* to the foundation's Apple account with the bundle id unchanged.
+  - **The bigger choice is the Apple account type:** individual (the seller shows the user's personal name) vs organisation (needs a legal entity + a D-U-N-S number, free but it can take days to weeks).
+  - The user is to decide before enrolling next month.
+
+### DESIGN-01 (draft, plot, 2026-10-05): native Lime architecture: E2EE, devices, mesh, discovery, calls
+**Status:**
+- **A draft for the user's decisions D5–D8 (below).** Once they're decided, LIME-88 (docs only) moves it into `docs/architecture.md`, and `docs/api.md` gets a "v2: E2EE" section.
+- **Grounded in:** `docs/api.md` §§1–3, 8, 9 and 12 (the op envelope, the auth/devices endpoints, visibility, mesh notes), `docs/data-model.md`, and the decisions D1–D4, vodozemac, teachers-as-audience and calls recorded above.
+- **Assumed:** the paid Apple account in November 2026; Supabase as decided; LiveKit self-hosted.
+
+**1. Components.**
+- **The iOS app** (SwiftUI, iOS 17+) talks only to **LimeCore**.
+- **LimeCore** is a Rust library shared later with Android and desktop, exposed to Swift and Kotlin through **UniFFI** (Mozilla's binding generator, as matrix-rust-sdk does). It holds:
+  - vodozemac;
+  - the local database (SQLite encrypted at rest with **SQLCipher**; the key in the Keychain);
+  - the op log and outbox;
+  - the sync engine;
+  - the mesh protocol;
+  - local search (SQLite FTS).
+- **Transports** plug into the core:
+  - HTTPS + a realtime socket to the backend;
+  - Bluetooth LE mesh;
+  - later, local Wi-Fi.
+- **Backend:**
+  - **Supabase:** Postgres for routing metadata and ciphertext, Auth, Storage for encrypted blobs, and Edge Functions implementing the op endpoints (separate staging and production projects);
+  - **LiveKit** (self-hosted) for calls;
+  - **APNs** (+ PushKit for calls); FCM later.
+- The current dev server and API v1 stay as the frozen web app's backend and the reference contract.
+
+**2. Identity and keys (per device, Matrix-style).**
+- Each device has a vodozemac **Olm account**: Curve25519 identity + Ed25519 signing keys. It uploads its public keys and a pool of one-time keys to a **key directory** on the server.
+- **Op signing (closes `api.md` §9 Q1):** every op envelope carries `sig`, the device's Ed25519 signature over the canonical envelope. Server and peers reject an unsigned op or a bad signature. This is what makes a relayed op from a stranger's phone trustworthy.
+- **Cross-signing:** a per-user **master key** signs each device key, so other people trust a teacher's new phone without re-verifying.
+- **Adding a device** (Linked Devices becomes this): the new device shows a QR code; an existing device scans it, signs the new key and hands over the history keys directly (encrypted).
+- **Optional "verify in person"** (scan each other's QR) gives a verified badge.
+
+**3. What is encrypted.**
+- **Every conversation uses Megolm** (vodozemac). Each sending device has an outbound session per conversation and shares its key with every member device over Olm. **Rotation:** on any membership change, every 100 messages, or every 7 days.
+- **Encrypted:**
+  - message text and formatting, edits, replies' content, reactions;
+  - the conversation name and avatar;
+  - attachment names, types and sizes.
+- **Files** are encrypted on the device with a fresh AES key, which travels inside the encrypted message. Storage only ever holds ciphertext.
+- **Link previews** are made by the sender's device; the server never fetches URLs.
+- **Search** happens on the device only. **Notifications** carry only ids; an iOS Notification Service Extension decrypts on the device to show a preview, sharing the core and keys through an App Group.
+- **The server still sees (honest limit, v1):**
+  - who is in which conversation;
+  - when messages are sent, and their sizes;
+  - the profile fields in the directory.
+
+  It sees **content, never**. Signal-grade metadata hiding (sealed sender, private groups) is a later version.
+- **API v2:**
+  - a message op's `payload` becomes `{ algorithm, session_id, ciphertext }`;
+  - membership ops stay readable, so the server can route and enforce membership;
+  - `seq` stays the server's ordering online.
+- **Reporting abuse:** a "Report" sends the reported messages, decrypted, by the reporter's choice; nothing else is readable.
+
+**4. Offline mesh (Bluetooth).**
+- **The unit is the signed, encrypted op envelope**, already unreadable to relays.
+- **Store-and-forward:** at most 7 hops and 72 hours, de-duplicated by `op_id`. Devices exchange "what I have" summaries and swap the missing ops. Rate limits per device key; anything unsigned is dropped. Whoever reaches the internet first uploads; the server de-dupes by `op_id`.
+- **Transport:**
+  - iOS: CoreBluetooth with background modes + state restoration;
+  - Android: a foreground service;
+  - wire format: borrow from **bitchat** (public domain).
+- **The key limit:** starting a *new* encrypted conversation needs the other person's keys. So offline, you can message **anyone you've already talked to or whose keys your phone cached** (the core caches members' keys while online), or someone you meet and scan in person. Strangers you've never connected with need the internet once.
+- **The open question for the spike:** how well iPhones relay with the app closed.
+
+**5. Discovery: "connect all teachers" vs privacy.**
+- Today: a directory searchable by name and school; exact match only on username, email or phone; email and phone are never shown. This carries over.
+- **New for v1:**
+  - **Message requests:** a first message from someone you share no conversation with lands in Requests (Accept / Block / Report).
+  - **Block.**
+  - **"Hide me from search"** (people can still reach you by exact username).
+  - Rate-limited search.
+  - **18+ only** (an age confirmation at sign-up).
+- No contact-book upload in v1.
+
+**6. Calls.**
+- Signalling is encrypted call ops in the conversation (`call.invite` / `answer` / `end`).
+- The server's Edge Function issues a LiveKit room token after checking membership.
+- **The media key is per call**, shared in the encrypted invite and rotated when people join or leave.
+- iOS: CallKit + a PushKit VoIP push that carries only ids.
+- Group: 50–100 people, active-speaker video, speaker view above ~12. No recording.
+
+**7. Build order (one brief each; the user's gate between):**
+1. LIME-87, the iOS skeleton (in progress).
+2. LIME-88: this design into `docs/`.
+3. LIME-89: the Rust core skeleton (`core/`, UniFFI, a vodozemac Olm round-trip test, linked into the iOS app; needs `rustup`).
+4. LIME-90: the core's encrypted local store + the iOS screens reading sample data from the core.
+5. **The Bluetooth spike** (2 iPhones; may need the paid account for background modes).
+6. Supabase staging + schema v2 + auth + the key directory.
+7. Sync + E2EE messaging end to end (two simulators, then two phones).
+8. Push + the notification extension.
+9. TestFlight (the paid account).
+10. Mesh v1.
+11. Calls v1 (1:1).
+12. Group calls.
+13. Android.
+
+**ALL DECIDED (user, 2026-10-05): D5 A (optional encrypted backup + recovery key), D6 A (any Lime phone relays), D7 A (open sign-up, verified badge later), D8 B (blind mailbox).** DESIGN-01 is final for LIME-88.
+
+**Decisions put to the user (2026-10-05):**
+- **D5 history if you lose every device:**
+  - **A.** An optional encrypted backup unlocked by a recovery key you write down (Matrix-style). **Lean A.**
+  - **B.** No backup: history is gone (Signal's strict default).
+- **D6 who relays offline messages:**
+  - **A.** Any Lime phone relays encrypted messages (the most reach in an emergency; relays see only scrambled data and routing hints). **Lean A.**
+  - **B.** Only people you're connected to.
+- **D7 joining and verification:**
+  - **A.** Open to any teacher who signs up, with a "verified teacher" badge later (e.g. school email) and message requests protecting inboxes. **Lean A.**
+  - **B.** School-email verification required up front (more trust, but it excludes teachers without a school address and ties identity to employers).
+- **D8 metadata in v1 (REVISED after the user asked whether libsignal/AGPL is worth it for this):**
+  - **Plot's finding:**
+    - Signal's metadata privacy comes mostly from **server architecture**: the server is a blind mailbox per device, the sender is hidden inside the envelope ("sealed sender"), and groups are managed by the clients.
+    - Only **private group credentials (zkgroup)** need libsignal (AGPL) code; rebuilding those ourselves would be rolling our own crypto.
+    - **The offline mesh already forces client-managed group state** (groups must change while offline, with no server to ask), so a mailbox server fits Lime anyway.
+  - **The options:**
+    - **A.** v1 as drafted (a conversation-aware server sees who/when/which group), with metadata hiding later. Later means a painful migration.
+    - **B.** Stay on vodozemac and **build v1 as a blind mailbox:**
+      - sealed sender (the server doesn't learn who sent a message);
+      - client-managed encrypted group state (the server has no list of groups or names);
+      - delivery to per-device mailboxes.
+
+      The server still sees recipients' devices, timing, sizes and IP addresses; even Signal's does. It is moderately more v1 work, and Supabase RLS can no longer enforce membership (clients and delivery tokens do). **Lean B.**
+    - **C.** Switch to libsignal (AGPL) for zkgroup + sealed-sender certificates: Signal's full model, but AGPL, a library "unsupported outside Signal", and a Signal-style server to build.
+  - **DECIDED: B (user, 2026-10-05).** Blind-mailbox server from v1, vodozemac, MIT. D5–D7 are still awaiting the user.
+  - **DESIGN-01 changes accordingly (they apply; LIME-88 must write the design this way):**
+    - §1: Supabase becomes auth + key directory + mailbox + blob storage;
+    - §3: membership ops become encrypted group-state ops;
+    - §6: the call token check uses a per-call capability instead of server membership.
+
+### Open thread: market and bootstrapping (user, 2026-10-05: "no budget, out of pocket; start small, then scale")
+- **Market (researched):**
+  - US: ~3.8M public-school teachers (NCES/Pew) + ~0.48M private (NCES FTE, 2021).
+  - Worldwide: tens of millions of teachers (UNESCO 2024 Global Report; the world still needs 44M more by 2030).
+  - The parent/school communication market is ~$2.8–3.2B (2025, analyst reports of low reliability), dominated by ParentSquare/Remind and ClassDojo (school- and parent-facing, not E2EE).
+  - **Cautionary tale:** Edmodo (100M users, free) shut down in 2022 as "no longer viable".
+- **The 2x2 given to the user:** privacy (readable by company or school ↔ E2EE) × audience (general ↔ built for teachers). Lime sits almost alone in **E2EE + built for teachers + across schools + offline**. The nearest are the German state school messengers on Matrix (E2EE but walled per state or district).
+- **Users, not dollars (a nonprofit):**
+  - TAM ≈ the world's teachers;
+  - SAM ≈ English-speaking smartphone teachers, US first (~4.3M);
+  - SOM (3 years, $0 budget) ≈ **10k–50k active teachers**;
+  - year 1 ≈ **500–2,000**.
+- **The plan given to the user:**
+  - Phase 0: $0–25/month.
+  - Pilot: ~$50–100/month.
+  - Grants: NLnet NGI Zero €5k–50k; OTF $10k–900k (check its current status); education foundations.
+  - Teachers' unions as distribution partners.
+  - Fiscal sponsor or Form 1023-EZ ($275, under $50k/yr receipts).
+- **Design implications to fold into DESIGN-01 later (leans, not yet decided):**
+  - **1:1 calls go peer-to-peer WebRTC** with a TURN fallback, and LiveKit only for group calls (LiveKit is SFU-only, so every 1:1 call would otherwise cost server bandwidth);
+  - **audio before video**;
+  - the mailbox deletes after delivery;
+  - attachments expire (e.g. 30 days after every recipient has fetched them);
+  - group video comes only when funded.
+
+  Raise these with the user before LIME-88 if possible, or as a DESIGN-01 amendment.
+
 ### Open thread: voice and video calls (raised by the user 2026-10-05: "a major part of teachers connecting")
 - **Plot's plan:**
   - WebRTC media on **LiveKit** (an open-source SFU, Apache-2.0; Swift, Kotlin, web and Rust SDKs; E2EE through frame encryption; self-hostable or LiveKit Cloud).
@@ -657,6 +826,93 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 ---
 
 ## Drafted briefs
+
+### LIME-87-fix → `tend` (lime-aa) (next): a visible dark green, the chat header fade, swipe-back, sample text
+**What it does:** the user reviewed LIME-87 ("looks great") and approved these fixes. The iOS app only.
+
+**Capabilities assumed:** edit files, XcodeGen, `xcodebuild`, `xcrun simctl`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):** `ios/Lime/Theme/`, the colour sets, the Chat and Messages headers, how the nav bar is hidden, and `SampleData.swift`. If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **A visible dark green** (the user: "the chat bubble in dark mode disappears"):
+   - In dark mode, the **primary** colour (the own bubble, the "+" button, unread badges, the dock badge) becomes a green that clearly reads as green on the dark canvas: **OKLab distance from the canvas ≥ 8**, and its ink colour **≥ 4.5:1** on it. The own bubble's text and links use that ink.
+   - Keep one token: the bubble and "+" stay identical.
+   - Light mode is unchanged.
+   - Document the chosen hex values in `ios/README.md` (Theme). Note that the web's dark `--lime-primary-bg` is intentionally different, since the web is frozen.
+2. **The chat header fade:** messages scroll under a soft fade behind the back, title and tool pills (canvas colour → clear, about the header's height plus 24pt), so no text shows hard-cut under the pills. The Messages screen gets the same fade if it lacks one. Light and dark.
+3. **Swipe back:** the left-edge swipe pops Chat back to Messages, as in any iOS app, while keeping the custom glass header (e.g. re-enable the navigation controller's interactive pop gesture despite the hidden bar). The glass back button still works.
+4. **Sample data:** replace the repeated "Best breakfast in town breakfast in town…" texts with natural, distinct teacher messages. Made-up people only; no personal data.
+
+**Out of scope:** `public/`, `server/`, `tests/`, networking, the bundle id (it stays `com.famkind.lime`; the user is deciding), new screens.
+
+**Phase 3: verification.**
+- `./generate.sh`, then `xcodebuild build` and `xcodebuild test` on the iPhone 18 Pro (iOS 27.0) simulator: 0 failures, no warnings in Lime sources.
+- **New unit tests:** the dark primary vs the dark canvas OKLab distance ≥ 8; the dark ink on the dark primary ≥ 4.5:1; the light values are unchanged from LIME-87.
+- **New UI test:** open a chat, swipe from the left edge, and Messages is shown.
+- Screenshots: Messages and Chat in **light and dark** (including a chat with the own bubble visible, and a scrolled chat showing the fade) into the scratchpad. Report the paths.
+- Also try the iOS 18.3 runtime (installed) and report whether build + tests pass there.
+- `git status` shows only `ios/`, `TEND.md` (and `PLOT.md` from Phase 0) changed.
+
+**Gate (the user, in Xcode → Run):**
+- in dark mode your bubble and "+" are clearly green;
+- messages fade under the header;
+- swiping from the left edge goes back;
+- the sample messages read naturally.
+
+**Record:** a `## LIME-87-fix` entry in `TEND.md`. Commit: `fix(ios): visible dark green, header fade, swipe back, sample text`, trailer `Brief: LIME-87-fix`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-88 → `tend` (lime-aa) (after LIME-87-fix is reviewed): DESIGN-01 into `docs/` (docs only)
+**What it does:** writes the decided native architecture into the repo, so every later brief and agent works from one document instead of `PLOT.md`.
+
+**Capabilities assumed:** edit files, commit, push. No builds needed.
+
+**Phase 0:** commit `PLOT.md` exactly as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- In `PLOT.md`: the "DESIGN-01" section (§§1–7 and the decisions D5–D8, **including the D8 = B changes**), the "Open thread: voice and video calls" section (with its decisions), and the "Open thread: the road to the iPhone app" section (the decisions D1–D4, vodozemac, audience = teachers, nonprofit context).
+- In `docs/api.md`: §§1, 2, 8, 9 and 12.
+
+If anything in them conflicts, **stop and ask the user**; don't resolve it yourself.
+
+**Phase 2: the change.**
+1. **Create `docs/architecture.md`, "Lime native architecture (v2)"**, with exactly these sections:
+   1. Purpose and status: decided 2026-10-05; the web app and API v1 are frozen as reference;
+   2. Decisions (a table: id, decision, why), covering D1–D8, the vodozemac + MIT licence note (the licence is still open), audience = teachers, full E2EE with no organisation key, offline open and closed, and calls (LiveKit self-hosted, 50–100, no recording);
+   3. Components;
+   4. Identity, devices and keys (including the D5 recovery-key backup and QR device linking);
+   5. What is encrypted, and what the server can still see: **written for the blind mailbox (D8 = B)**: sealed sender, client-managed encrypted group state, per-device mailboxes. The server sees recipient devices, timing, sizes and IP addresses only;
+   6. API v2 deltas from v1 (the signed envelope `sig`, encrypted payloads, group-state ops, mailbox delivery). Describe the shape; **don't write endpoint specs** (that's a later brief);
+   7. Offline mesh (D6 = A);
+   8. Discovery and safety (D7 = A, message requests, block, report, "hide me from search", 18+);
+   9. Calls;
+   10. Build order (DESIGN-01 §7 as amended);
+   11. Open questions: the licence; the Bluetooth spike's results; metadata hiding beyond the mailbox (zkgroup-style), revisited later; the web/desktop client's E2EE (vodozemac WASM), later.
+
+   Plain, precise prose. **Copy decisions faithfully; add no new decisions.**
+2. **`docs/api.md`:**
+   - A note at the top of §9 and §12: "Superseded for the native apps by `docs/architecture.md` (2026-10-05); kept as v1 reference."
+   - In §9's open questions, mark Q1 (op signing) and Q2 (E2EE) as **answered in architecture.md**.
+3. **`README.md`:** one line under the iOS pointer linking `docs/architecture.md`.
+
+**Out of scope:** any code, `ios/`, `public/`, `server/`, `tests/`, schema changes.
+
+**Verification:**
+- `git diff --stat` touches only `docs/architecture.md`, `docs/api.md`, `README.md` and `TEND.md`;
+- `docs/architecture.md` has the 11 numbered sections;
+- it contains "sealed sender", "recovery key", "LiveKit" and "vodozemac";
+- it contains **no** wording that says the server enforces membership or reads group names;
+- it contains no personal data.
+
+**Gate:** the user skims `docs/architecture.md` on GitHub and confirms it matches what we decided.
+
+**Record:** a `## LIME-88` entry in `TEND.md`. Commit: `docs: native architecture v2 (E2EE, mailbox server, mesh, discovery, calls)`, trailer `Brief: LIME-88`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
 
 ### LIME-87 → `tend` (lime-aa) (next; needs Xcode installed first): the native iOS app skeleton
 **What it does:** adds `ios/`, a SwiftUI iPhone app called Lime that builds and runs in the iOS Simulator. It shows a static Messages list, a chat screen and the dock, styled from Lime's tokens. There is no networking, no accounts and no encryption yet. It is the foundation every later iOS brief builds on.
