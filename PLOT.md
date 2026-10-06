@@ -75,6 +75,19 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **The bigger choice is the Apple account type:** individual (the seller shows the user's personal name) vs organisation (needs a legal entity + a D-U-N-S number, free but it can take days to weeks).
   - The user is to decide before enrolling next month.
 
+**Update: LIME-92 landed as `a046a66`** (pushed and verified).
+- **Plot's own check:** `git grep` finds no project ref in HEAD and no `.env` files tracked.
+- The staging smoke test passed; RLS is on; anon/authenticated have no grants; the expiry cron is scheduled.
+- A concurrency bug (master-key creation race) was found and fixed.
+- **Tend's guards** (accepted): ≤ 500 recipients per send, ≤ 100 keys per upload, ≤ 100 items per fetch; functions at `/functions/v1/<name>`, with the `/v2` paths logical.
+- The local stack and Colima are left running (the user can stop them).
+- **LIME-93 is drafted.**
+
+**(History) LIME-92 in progress (2026-10-06):** the local half passes 11/11, with tools installed without sudo. The staging deploy is waiting on the user running `supabase login` in tend's window.
+- **Tend's two gap-fills (recorded in `api-v2.md` §11), accepted by plot:**
+  - the cross-signature message format, `lime-device-v1\n<device_id>\n<identity_key>\n<signing_key>`, with the **master public key fixed at the account's first registration** (trust on first use). **Later needed:** a master-key reset/recovery flow, tied to D5 recovery. Add it to the device-linking/backup brief.
+  - all-or-nothing sealed sends (403 for a wrong key, an unknown device or a revoked device alike; nothing is stored), which avoids a device-existence oracle.
+
 **Update: LIME-91 landed as `9f74780`** (pushed and verified).
 - `architecture.md` was corrected to match DESIGN-02 (identified first messages from strangers; de-dupe by the outer ciphertext hash).
 - **Accepted:** tend's §9 inference (the server sees which account looks up whose keys), an honest limit.
@@ -1163,7 +1176,65 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-92 → `tend` (lime-aa) (after the user creates the Supabase project): the v2 server core on Supabase: keys, devices, mailbox
+### LIME-93 → `tend` (lime-aa) (next): LimeCore speaks API v2: persisted keys, device registration, the first encrypted 1:1 message (core + tests)
+**What it does:** teaches LimeCore the protocol from `docs/api-v2.md`, so that **two LimeCore instances, as two different accounts, exchange an Olm-encrypted message through the server**.
+- This is proven by automated tests against the **local** Supabase stack, then once against **staging**.
+- The iOS UI change is only a status line. The visible phone-to-phone chat is LIME-94.
+
+**Plot's decisions for this brief:**
+- **Networking lives in the platform; the protocol lives in the core.** LimeCore defines a UniFFI **callback interface** `Transport` (`request(method, path, headers, body) -> response`), which Swift implements with `URLSession` (and Kotlin later with OkHttp).
+  - It keeps the binary small, and it uses iOS networking (proxies, background sessions later).
+  - All protocol logic (what to call, signing, encrypting, state) stays in Rust.
+- **Key persistence:** the Olm account, the sessions and the master signing key are stored **inside the SQLCipher store** (vodozemac pickles encrypted with a key derived from the store key via HKDF). They never leave the device and are never logged.
+- **The master key:** an Ed25519 keypair per account, created on the first device, used to sign each device per `api-v2.md` §11 (`lime-device-v1\n…`). Multi-device linking is out of scope.
+- **Scope of messaging here:**
+  - **identified** 1:1 sends only (the sender is known to the server, which is what a first message is anyway, per `api-v2.md` §4);
+  - Olm encryption (claim a one-time key → an outbound session);
+  - fetch → decrypt → store → ack.
+  - **Not here:** Megolm, sealed sends, delivery-key exchange, groups, Requests UI (LIME-94/95).
+- **Finding the other person:** a minimal **`users-lookup`** Edge Function: **exact email match only**, authenticated, rate-limited, returning the user id only (no profile data). This is the smallest slice of `api-v2.md` §6 Directory.
+
+**Capabilities assumed:** edit files, `cargo`, the Supabase CLI (logged in), the local stack via Colima, XcodeGen, `xcodebuild`, commit, push. If anything needs the user (a browser login, a password, a paid plan), **stop and ask**.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):** `docs/api-v2.md` (all), `docs/architecture.md` §4, `core/` (the store, the FFI), `supabase/` (the functions, the tests), and the vodozemac pickling APIs. If anything contradicts `api-v2.md`, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Core modules:** `keys` (master + device, pickled in the store), `protocol` (the signed op envelope `api-v2.md` §3 with `hlc`, `parents[]`, `sig`; canonical bytes; verification), `client` (register, upload/top-up of one-time keys, claim, identified send, fetch/decrypt/ack), and `Transport` (the callback).
+   - **Auth tokens are passed in by the platform**; the core never stores passwords.
+2. **The FFI additions (exactly):**
+   - `LimeStore::register_device(transport, auth_token) -> DeviceInfo` (idempotent);
+   - `LimeStore::send_text_identified(transport, auth_token, recipient_user_id, text) -> MessageItem`;
+   - `LimeStore::sync(transport, auth_token) -> SyncReport { received: u32 }`;
+   - `lookup_user_by_email(transport, auth_token, email) -> Option<String>`.
+
+   Received messages land in the store as a DM conversation with the sender (the title = their user id for now; profiles come later).
+3. **`supabase/functions/users-lookup`:** exact, case-insensitive email → user id; 404 otherwise; never lists; rate-limited (30/min per user). Tests are added to `supabase/test.sh`; deploy to staging.
+4. **Tests:**
+   - **Rust unit tests:** the envelope's canonical bytes and signature verification (tampered → rejected); the pickles survive a store reopen; a wrong store key can't read the pickles.
+   - **The Rust integration test** (`cargo test --features integration`, against the local stack): two throwaway accounts → register both → A looks up B by email → A sends "hello from A" → B syncs and decrypts it → B replies → A decrypts it → items are acked and the mailboxes are empty. Also: **the ciphertext on the server ≠ the plaintext** (fetch the raw item with an admin client in the test only).
+   - **Once against staging** with two throwaway accounts (created and deleted by the test using the CLI or admin API **without committing any secret**). Report the result.
+5. **iOS (minimal):** implement `Transport` with `URLSession`. In **Debug builds only**, the About sheet gets a "Developer: staging" row that shows "Not connected" (no UI to sign in yet; LIME-94). No other UI changes.
+6. **Docs:** `core/README.md` (the protocol modules, the Transport design, how to run the integration tests); `docs/api-v2.md` §11 (record the Transport decision and `users-lookup`).
+
+**Out of scope:** Megolm, sealed sends, delivery keys, groups, Requests, profiles, push, blobs, sign-in UI, multi-device linking, recovery backup, Android, `public/`, `server/`.
+
+**Phase 3: verification.**
+- `cargo test`, `cargo test --features integration` (local) and `cargo clippy -D warnings`: all pass.
+- `./supabase/test.sh` passes (with the `users-lookup` tests).
+- The staging run of the integration test passes, with its accounts cleaned up.
+- iOS build + test on the iPhone 18 Pro, the 13 mini (27.0) and the SE (18.3): 0 failures, no warnings; the phone build if it is connected.
+- **Secrets:** `git grep` for the project ref, `sb_secret_`, the JWT prefix and the DB password → no matches outside docs describing the check. No tokens in logs (grep the test output).
+- Report the app size change.
+
+**Gate (the user):** tend's report shows the two-account encrypted exchange passing locally **and on staging**. Nothing changes on the phone yet; the visible chat between your iPhone and the simulator is LIME-94.
+
+**Record:** a `## LIME-93` entry in `TEND.md`. Commit: `feat(core): API v2 client in LimeCore (persisted keys, registration, identified Olm send/sync) + users-lookup`, trailer `Brief: LIME-93`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-92 → `tend` (lime-aa) (landed as `a046a66`): the v2 server core on Supabase: keys, devices, mailbox
 **What it does:** builds the first half of `docs/api-v2.md` on Supabase and deploys it to a **staging** project:
 - the schema;
 - device registration;
