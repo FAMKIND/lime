@@ -75,6 +75,53 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **The bigger choice is the Apple account type:** individual (the seller shows the user's personal name) vs organisation (needs a legal entity + a D-U-N-S number, free but it can take days to weeks).
   - The user is to decide before enrolling next month.
 
+**Incident (2026-10-06): famkind.com is down. Not caused by Lime work.**
+- Plot diagnosed it read-only:
+  - The domain's DNS is **self-hosted on the web server** (`ns1/ns2.famkind.com` → `108.160.153.182/.183`, PrivateSystems Networks; registrar NameSilo).
+  - The server accepts TCP on 80/443 but **never answers HTTP**, and **its DNS times out intermittently**, so public resolvers return SERVFAIL.
+  - The MX is Google Workspace (unchanged).
+  - **No `send.famkind.com` records exist**, so no Resend DNS change has been made yet.
+  - No Lime brief has ever touched famkind.com.
+- The user is working with the host.
+- **Re-verified 2026-10-06:** HTTPS 200 and resolvers NOERROR.
+- **A latent fault was found:** the zone's own NS records say `ns1/ns2.risefam.com`, which **doesn't exist (NXDOMAIN)**, while the registry delegates to `ns1/ns2.famkind.com`. That NS mismatch can cause intermittent lookup failures. The user is to ask the host to correct the zone NS records (or to move DNS to NameSilo/Cloudflare).
+- **Plot's recommendation after the fix:** move DNS to NameSilo's or Cloudflare's nameservers, so a web-server outage can't break email or the later Resend records. **Hold the Resend DNS step until the site and DNS are stable.**
+
+**Open thread: a Lime domain (raised 2026-10-06).**
+- The user asked whether to send Lime's emails from a Lime domain rather than famkind.com.
+- **Plot's advice:** use `send.famkind.com` for staging now (a subdomain, so the existing famkind.com mail is untouched). **Pick and buy a Lime domain before TestFlight.** It will also be needed for the privacy policy/terms URLs, universal links/deep links, the App Store support URL and the eventual foundation.
+- Switching the email sender later is a dashboard change (a new Resend domain + the SMTP sender), with no code change.
+- **Update (user, 2026-10-06):** famkind.com's site and DNS are on **KnownHost** (moving DNS is too big a job). The user may **buy a Lime domain now**.
+  - **Correction:** the user has **never used NameSilo directly**. famkind.com was bought through **KnownHost**, which resells registrations through NameSilo (that's why WHOIS shows NameSilo).
+  - **Plot's advice:** register it where the **DNS is not on the web server** (any reputable registrar: Porkbun, Cloudflare Registrar, NameSilo; open-source nonprofit DNS: deSEC), and host the policy pages on free static hosting (Cloudflare Pages / GitHub Pages).
+  - **If it's bought now, skip `send.famkind.com` and set Resend up directly on the Lime domain** (once, not twice).
+  - The user should still ask KnownHost to fix the `risefam` NS records.
+- **The name check (USPTO, the user, 2026-10-06):**
+  - **"LimeChat": no marks, live or dead.**
+  - **"Lime" in classes 9/38/42 is crowded with live marks, e.g. NEUTRON HOLDINGS (the Lime scooters) "LIME VISION" (class 42, software) and LIME CELLULAR LLC (class 38, telecom).** The user's search for "chat" covered page 1 of 7 only.
+  - **Plot's advice:** prefer **"LimeChat" as the distinctive brand/App Store name** over bare "Lime", **register limechat.org**, and **add a trademark review (Neutron Holdings' LIME portfolio; Lime Cellular) to `docs/release-checklist.md`** for the lawyer before launch.
+- **DONE (user, 2026-10-06): `limechat.org` registered at NameSilo**, for 1 year with WHOIS privacy.
+  - Registrant email verified; auto-renew ON.
+  - **Nameservers = deSEC (`ns1.desec.io`, `ns2.desec.org`).**
+  - **The DS record was added at NameSilo** (key tag 14658, alg 13, digest type 2; it matches deSEC's CDS). Resolvers answered NOERROR right after, without the AD flag yet (propagating); check with the DNSSEC Analyzer.
+  - **`limechat.com`** has been owned by a third party since 2002 and is listed for sale on Atom (a brand marketplace). Not needed.
+  - **Resend DNS added in deSEC (2026-10-06), verified by plot via dig:** the DKIM TXT at `resend._domainkey.send` (ends `…QIDAQAB`), the CNAMEs `rsend.send` / `send.send` → `*.forge.rmta.net.`, and `_dmarc` "v=DMARC1; p=none;". **Public resolvers already see them, so the delegation to deSEC is live.**
+  - **The Resend domain `send.limechat.org` is VERIFIED** (2026-10-06 15:53; DKIM + both CNAMEs). Receiving is off.
+  - **The user reports (2026-10-06):** the Resend API key was created; **Supabase custom SMTP is on** (`no-reply@send.limechat.org`, smtp.resend.com:465, 30s minimum interval); the Confirm signup + Magic Link/OTP templates are the code template; password min 10. **Unblocks the LIME-94 gate and tend's staging e2e.**
+  - **(History) Next:** an API key (Sending access) → the Supabase SMTP settings (sender `no-reply@send.limechat.org`), the templates, password min 10, email interval ≤ 30s → `./generate.sh` → the LIME-94 gate.
+  - Plot gave the deSEC (DNS + DNSSEC) and Resend-on-`send.limechat.org` steps; **this supersedes `send.famkind.com`**.
+  - The Supabase SMTP sender becomes `no-reply@send.limechat.org`.
+  - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
+- **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
+
+**Update: LIME-94 landed as `461110e`** (pushed and verified; no project ref in HEAD).
+- **2FA is enforced by the Edge Functions** with per-session records of both checks, since Supabase Auth can't require both.
+- `identify` replaces `username-resolve`.
+- `pending_inbound` is built (this fixes LIME-93's ack-everything).
+- 21 server + 36 Rust + 60 iOS tests pass; a local e2e script is in place; the app is 5640 KB.
+- Plot reviewed all 12 onboarding screenshots: they match DESIGN-03, with no Google/Apple.
+- **The staging end-to-end test and the user's gate are BLOCKED on the user's Resend + Supabase SMTP setup.** Plot gave the user the step-by-step (use a `send.famkind.com` subdomain; the API key is entered only in the Supabase dashboard).
+
 **Update: LIME-94w landed as `e15afb6`** (pushed and verified). The web sign-in now shows only email. Plot checked the 390px screenshot: it's tidy. **Next: LIME-94.**
 
 **Update: LIME-93 landed as `7f411a0`** (pushed and verified; no project ref in HEAD).
@@ -1250,6 +1297,69 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
+### LIME-94-fix → `tend` (lime-aa) (next): emailed codes are rejected on staging; stale error messages
+**What it does:** fixes the LIME-94 gate failure (the user's iPhone, 2026-10-06).
+- **Sign-up works.**
+- **But entering the emailed code fails** with "That code is not right. N tries left" during **sign-in** and **forgot password**.
+- **The same red error also stays visible on later screens** (the password screens).
+
+**Capabilities assumed:** edit files, the Supabase CLI (logged in), deploy to staging, Xcode tests, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**ROOT CAUSE CONFIRMED by the user (2026-10-06): the staging emails contain 8-digit codes**, while the app and `code-verify` accept 6.
+- **The user was told to set Authentication → Sign In / Providers → Email → "Email OTP Length" = 6 in the dashboard.**
+- Tend should still:
+  - **verify** the staging OTP length reads 6 (read-only);
+  - make the app and functions **tolerant of either 6 or 8 digits** (`^\d{6,8}$`; the app adapts its boxes to the configured length, or accepts paste of up to 8), so a future settings drift can't lock users out;
+  - **add `otp_length` to a "staging settings that must match config.toml" check** in `supabase/test.sh` or `smoke-staging.sh` (read-only);
+  - plus the stale-error and send-failure items below.
+
+**Added visual changes (the user, 2026-10-06), iOS onboarding only:**
+1. **The top-right "Next" glass button uses the brand primary**, like the main CTA ("Continue"): the accent `#a3e18a` fill with the dark accent ink (the same tokens as the welcome screen's Continue).
+   - **The disabled state** stays clearly distinct: the neutral glass with a dimmed label.
+   - Applies to every onboarding screen.
+2. **The welcome screen logo:**
+   - **remove the grey circle/backdrop** behind it;
+   - **use the user's new asset `public/assets/lime-logo.svg`** (Penpot export, 288×349, about 44 KB; currently **untracked**, so commit it as part of this brief).
+   - Bring it into the iOS asset catalog as a vector (preserve vector data; if the SVG has unsupported features for the asset catalog, convert it faithfully and say how).
+   - Keep the app icon unchanged unless the user asks.
+3. **The welcome copy:**
+   - heading: **"Connect All Teachers"**;
+   - subtext: **"A secure messenger made for teachers."** The user wrote "A secure, messenger…"; **drop the stray comma** as a typo. Show it to the user at the gate.
+   - The rest of the welcome screen (Terms & Privacy, Continue) is unchanged.
+- **The verification adds:** onboarding screenshots (light and dark, 375pt) of the welcome screen and one screen with the enabled + disabled Next; UI tests updated for the new copy.
+
+**Phase 1: diagnose (read only first). Report the root cause before changing anything.**
+1. **The staging Auth settings vs `supabase/config.toml`:** the hosted **Email OTP length** (local = 6; `code-verify` accepts only `^\d{6}$`, and the app has 6 boxes), the OTP expiry, and the per-user send interval (**the user set 30s minimum interval** in the SMTP settings). Read them via the Management API or the CLI **without changing them**.
+2. **The staging Auth logs** (the Management API / the dashboard log query) for `shem@famkind.com`'s recent `/otp` and `/verify` calls: was each sign-in actually *sent* a new code, or was the `/otp` call rate-limited (so the user typed an older, already-used code)? What error does `/verify` return (expired, invalid, …)?
+3. Whether `signin-password` / `code-resend` / `reset-start` **surface a failed `/otp` send** to the app (they must not show "We sent a code" if the send failed).
+
+**Plausible causes to check:** an OTP-length mismatch (staging sending 8 digits); a code not re-sent because of the 30s interval or Supabase's own email rate limit; the wrong `type` for `/verify`; codes invalidated by a later resend.
+
+**Phase 2: the fix** (the smallest change that addresses the diagnosed cause):
+- **If it's a staging setting** (e.g. the OTP length), **tell the user exactly which dashboard field to change.**
+  - **Do NOT run `supabase config push`**, or anything that writes Auth config to staging: it could wipe the user's custom SMTP (Resend) settings.
+- **If it's code:** fix the function(s), plus a test reproducing it; deploy only the affected functions.
+- **Always:**
+  - a failed or rate-limited code *send* returns a clear error the app shows ("Please wait 30 seconds before asking for another code");
+  - **error messages are cleared when moving to a new screen** and when the user edits the field;
+  - the password screens never show a code error.
+
+**Out of scope:** new features; changing the Auth settings on staging yourself.
+
+**Verification:**
+- the server tests (a new test for the diagnosed case) + the iOS tests pass;
+- `./ios/run-e2e-local.sh` passes;
+- **the staging e2e: sign-up → sign-out → sign-in by username → the code accepted**, with `jean@famkind.com` (clean up the account after; mind the 30s interval);
+- no secrets in git.
+
+**Gate (the user, on the iPhone):** sign in with your username + password, the emailed code is accepted, and you reach Messages; forgot password works; no stale red errors.
+
+**Record:** a `## LIME-94-fix` entry in `TEND.md` (the root cause stated plainly). Commit: `fix(auth): <root cause>; clear stale errors`, trailer `Brief: LIME-94-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
 ### LIME-94w → `tend` (lime-aa) (next; tiny, web): remove the Google/Apple "Soon" buttons from the web sign-in
 **What it does:** the user asked (2026-10-06) to remove "Continue with Google" and "Continue with Apple" (both disabled, "Soon") from `public/auth.html`. This is the only change to the frozen web app.
 
@@ -1302,6 +1412,8 @@ If anything contradicts DESIGN-03 or `api-v2.md`, stop and ask the user.
 
 **The test addresses (the user, 2026-10-06):**
 - `shem@famkind.com` (the iPhone) and `jean@famkind.com` (the simulator). These are the intentionally public demo emails (see the session lessons).
+- **Tend found** that the built-in sender allows 2 emails per hour for the whole project. **The user is advised to pick option 1:** build and test locally with the mail catcher, give the user the Resend steps, and run the staging end-to-end test after SMTP is set up in the dashboard (tend never sees the key).
+- **The second test phone for the Bluetooth spike = Jean's iPhone** (the user, 2026-10-06), installed from the user's Mac (free provisioning, 7-day expiry) or via TestFlight later.
 - **The Supabase org FAM now has 2 members** (2026-10-06): `shem@` (Owner) and `jean@` (Administrator; accepted). **MFA is enabled on both.** So the built-in sender's team-member restriction, if it applies, is satisfied for both test addresses.
 - **The user can edit famkind.com's DNS** (confirmed 2026-10-06).
   - If the built-in sender can't reach both addresses, try the simplest fix first: invite `jean@famkind.com` to the Supabase organisation.
