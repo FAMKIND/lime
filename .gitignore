@@ -8,3 +8,9 @@ node_modules/
 dist/
 data/
 *.local.json
+
+# iOS (Xcode / XcodeGen)
+ios/Lime.xcodeproj
+DerivedData/
+xcuserdata/
+*.xcresult

@@ -1,0 +1,53 @@
+# Lime for iOS
+
+A native SwiftUI iPhone app. This is the skeleton (LIME-87): a static Messages list, a chat screen and the dock, styled from the web app's tokens. There is no networking, no accounts and no encryption yet; everything is sample data in memory.
+
+- Minimum iOS 17. Liquid Glass (`glassEffect`) on iOS 26+, `.ultraThinMaterial` plus a hairline below that.
+- Swift 6 language mode, iPhone only, portrait and landscape.
+- The bundle identifier `com.famkind.lime` is a placeholder until the app is registered with Apple.
+
+## Prerequisites
+
+1. Xcode (opened once, licence accepted, an iOS Simulator runtime installed) and `xcode-select` pointing at it.
+2. [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`.
+
+## Generate the project
+
+The project is defined in `project.yml`. `Lime.xcodeproj` is generated and gitignored.
+
+```bash
+cd ios
+./generate.sh
+```
+
+## Run it
+
+```bash
+open Lime.xcodeproj
+```
+
+Pick an iPhone simulator and press Run. Or from the terminal:
+
+```bash
+xcodebuild -scheme Lime -destination 'platform=iOS Simulator,name=iPhone 18 Pro' build
+```
+
+Switch light/dark in the Simulator with Features → Toggle Appearance (or Settings → Developer → Dark Appearance).
+
+## Tests
+
+```bash
+xcodebuild test -scheme Lime -destination 'platform=iOS Simulator,name=iPhone 18 Pro'
+```
+
+`LimeTests` covers the sample data, the store and the theme (own bubble colour, 4.5:1 text contrast in light and dark). `LimeUITests` launches the app, opens a chat, sends a message and goes back.
+
+## Layout
+
+```
+Lime/App        the @main app, root view, in-memory store
+Lime/Theme      colours, typography, the limeGlass() modifier
+Lime/Features   Messages, Chat, Dock
+Lime/Model      Conversation, Message, Person, SampleData
+Lime/Resources  asset catalog (AppIcon, logo, colour sets)
+```

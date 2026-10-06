@@ -11,6 +11,10 @@ git submodule update --init --recursive
 open public/index.html
 ```
 
+## iOS app
+
+A native SwiftUI iPhone app lives in [`ios/`](ios/README.md) (skeleton only for now). Generate and open it with `cd ios && ./generate.sh && open Lime.xcodeproj`.
+
 ## Running the dev server
 
 ```bash
