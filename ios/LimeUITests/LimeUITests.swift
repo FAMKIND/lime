@@ -71,4 +71,18 @@ final class LimeUITests: XCTestCase {
             XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
         }
     }
+
+    /// Long-pressing the logo opens About Lime, which runs LimeCore's encryption self-test.
+    func testLongPressLogoShowsSelfTestPassed() {
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 10))
+        app.buttons["Lime menu"].press(forDuration: 1.2)
+        let result = app.staticTexts["self-test-result"]
+        XCTAssertTrue(result.waitForExistence(timeout: 10), "the About sheet did not appear")
+        let passed = NSPredicate(format: "label CONTAINS 'passed'")
+        expectation(for: passed, evaluatedWith: result)
+        waitForExpectations(timeout: 10)
+        XCTAssertTrue(app.staticTexts["about-versions"].label.contains("Core"))
+    }
 }

@@ -2,13 +2,17 @@ import SwiftUI
 
 struct MessagesView: View {
     @Environment(ConversationStore.self) private var store
+    @State private var showAbout = false
 
     var body: some View {
-        if #available(iOS 26, *) {
-            nativeBody
-        } else {
-            legacyBody
+        Group {
+            if #available(iOS 26, *) {
+                nativeBody
+            } else {
+                legacyBody
+            }
         }
+        .sheet(isPresented: $showAbout) { AboutView() }
     }
 
     // MARK: iOS 26+: the system toolbar and scroll edge effect (as in Apple Messages)
@@ -29,8 +33,11 @@ struct MessagesView: View {
                 Button { store.comingSoon() } label: {
                     Image("LimeLogo").renderingMode(.original).resizable().scaledToFit()
                         .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                        .onLongPressGesture(minimumDuration: 0.6) { showAbout = true }
                 }
                 .accessibilityLabel("Lime menu")
+                .accessibilityHint("Press and hold for About Lime")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { store.comingSoon("Search") } label: { Image(systemName: "magnifyingglass") }
@@ -49,7 +56,7 @@ struct MessagesView: View {
             list(top: 76, bottom: 170)
         }
         .overlay(alignment: .top) { TopFade() }
-        .overlay(alignment: .top) { TopControls() }
+        .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }) }
         .overlay(alignment: .bottomTrailing) { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) }
         .overlay(alignment: .bottom) { DockBar().padding(.bottom, 8) }
         .toolbar(.hidden, for: .navigationBar)
@@ -90,6 +97,7 @@ struct MessagesView: View {
 
 private struct TopControls: View {
     @Environment(ConversationStore.self) private var store
+    let onAbout: () -> Void
 
     var body: some View {
         HStack {
@@ -101,6 +109,8 @@ private struct TopControls: View {
                     .limeGlass()
             }
             .accessibilityLabel("Lime menu")
+            .accessibilityHint("Press and hold for About Lime")
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in onAbout() })
             Spacer()
             HStack(spacing: 12) {
                 Button { store.comingSoon("Search") } label: {

@@ -1,0 +1,31 @@
+[package]
+name = "lime_core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+description = "LimeCore: Lime's shared core (encryption today; sync and storage later)."
+publish = false
+
+[lib]
+name = "lime_core"
+crate-type = ["staticlib", "lib"]
+
+[features]
+# Only the binding generator binary needs this (see uniffi-bindgen.rs).
+cli = ["uniffi/cli"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+required-features = ["cli"]
+
+[dependencies]
+uniffi = { version = "0.32.2" }
+vodozemac = "0.11.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true

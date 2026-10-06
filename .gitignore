@@ -15,3 +15,8 @@ DerivedData/
 xcuserdata/
 *.xcresult
 ios/Local.xcconfig
+
+# LimeCore (Rust) build outputs, rebuilt from source by core/build-ios.sh
+core/target/
+ios/Frameworks/
+ios/Lime/Core/Generated/

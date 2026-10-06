@@ -10,6 +10,7 @@ A native SwiftUI iPhone app. This is the skeleton (LIME-87): a static Messages l
 
 1. Xcode (opened once, licence accepted, an iOS Simulator runtime installed) and `xcode-select` pointing at it.
 2. [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`.
+3. Rust, for LimeCore (`brew install rustup && rustup-init -y --no-modify-path`). `./generate.sh` now builds `../core` first (the first run takes a couple of minutes) and fails with a clear message if Rust is missing. See [`../core/README.md`](../core/README.md).
 
 ## Generate the project
 
@@ -50,6 +51,8 @@ Lime/Theme      colours, typography, the limeGlass() modifier
 Lime/Features   Messages, Chat, Dock
 Lime/Model      Conversation, Message, Person, SampleData
 Lime/Resources  asset catalog (AppIcon, logo, colour sets)
+Lime/Core       generated Swift bindings for LimeCore (gitignored)
+Frameworks      LimeCoreFFI.xcframework (gitignored)
 ```
 
 ## Theme

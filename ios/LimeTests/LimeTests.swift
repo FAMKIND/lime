@@ -168,3 +168,17 @@ final class ChatRowTests: XCTestCase {
         XCTAssertEqual(flags, [true, false])
     }
 }
+
+final class LimeCoreTests: XCTestCase {
+    /// Real vodozemac Olm and Megolm round trips, through the UniFFI Swift bindings.
+    func testEncryptionSelfTestPasses() {
+        let report = encryptionSelfTest()
+        XCTAssertTrue(report.olmOk, report.detail)
+        XCTAssertTrue(report.megolmOk, report.detail)
+        XCTAssertFalse(report.detail.isEmpty)
+    }
+
+    func testCoreVersionIsReported() {
+        XCTAssertFalse(coreVersion().isEmpty)
+    }
+}

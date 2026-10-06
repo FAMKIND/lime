@@ -1,0 +1,68 @@
+import SwiftUI
+
+/// "About Lime": the app and LimeCore versions, and a live run of LimeCore's encryption self-test
+/// (real vodozemac Olm and Megolm round trips, in memory). Opened by long-pressing the logo.
+struct AboutView: View {
+    private enum Result {
+        case running
+        case finished(SelfTestReport)
+
+        var passed: Bool {
+            if case .finished(let report) = self { return report.olmOk && report.megolmOk }
+            return false
+        }
+    }
+
+    @State private var result: Result = .running
+    @Environment(\.dismiss) private var dismiss
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image("LimeLogo")
+                .resizable().scaledToFit()
+                .frame(width: 72, height: 72)
+                .accessibilityHidden(true)
+            VStack(spacing: 4) {
+                Text("About Lime").font(Theme.title)
+                Text("Lime \(appVersion) · Core \(coreVersion())")
+                    .font(Theme.secondary)
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("about-versions")
+            }
+            VStack(spacing: 6) {
+                switch result {
+                case .running:
+                    ProgressView()
+                    Text("Encryption self-test: running…")
+                        .accessibilityIdentifier("self-test-result")
+                case .finished(let report):
+                    Text(result.passed ? "Encryption self-test: passed ✓" : "Encryption self-test: failed")
+                        .font(Theme.body.weight(.semibold))
+                        .foregroundStyle(Theme.text)
+                        .accessibilityIdentifier("self-test-result")
+                    Text(report.detail)
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            Button("Done") { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.primary)
+                .foregroundStyle(Theme.primaryInk)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas.ignoresSafeArea())
+        .presentationDetents([.medium])
+        .task {
+            // Off the main thread: real key generation and encryption.
+            let report = await Task.detached(priority: .userInitiated) { encryptionSelfTest() }.value
+            result = .finished(report)
+        }
+    }
+}
