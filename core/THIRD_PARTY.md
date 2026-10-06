@@ -1,13 +1,23 @@
 # Third-party licences (LimeCore)
 
-Checked 2026-10-06 against the crates in `Cargo.lock` (`cargo metadata`). Lime's own code is MIT.
+Checked 2026-10-06 (updated for LIME-90) against the crates in `Cargo.lock` (`cargo metadata`). Lime's own code is MIT.
 
 ## Direct dependencies
 
 | Crate | Version | Licence | Use |
 |---|---|---|---|
 | [vodozemac](https://crates.io/crates/vodozemac) | 0.11.1 | Apache-2.0 | Olm and Megolm encryption (Matrix's reference implementation; audited by Least Authority in 2022). Linked into the app. |
+| [rusqlite](https://crates.io/crates/rusqlite) | 0.40.2 | MIT | The Rust SQLite API for the local store. |
+| [libsqlite3-sys](https://crates.io/crates/libsqlite3-sys) | 0.38.2 | MIT | Compiles the bundled **SQLCipher** (feature `bundled-sqlcipher`); see below. |
+| [uuid](https://crates.io/crates/uuid) | 1.27.0 | Apache-2.0 or MIT | UUIDv7 message ids made by the core. |
+| [tempfile](https://crates.io/crates/tempfile) | 3.27.0 | MIT or Apache-2.0 | Tests only (a dev-dependency); not linked into the app. |
 | [uniffi](https://crates.io/crates/uniffi) | 0.32.2 | MPL-2.0 | Generates the Swift bindings (build tool, `cargo run --features cli --bin uniffi-bindgen`) and provides the small runtime (`uniffi_core` and the macros) linked into the library. |
+
+## SQLCipher and SQLite (the encrypted local store)
+
+`libsqlite3-sys` vendors the **SQLCipher Community Edition** source (an amalgamation of SQLite 3.51.3 plus Zetetic's encryption layer). SQLCipher Community is licensed **BSD-3-Clause-style** (Zetetic LLC; the licence text ships in `libsqlite3-sys/sqlcipher/LICENSE`); the SQLite code inside it is in the public domain. Both are permissive and compatible with an MIT app. Binary redistribution must reproduce Zetetic's copyright notice and disclaimer, so the app's acknowledgements screen will need to list it (a later brief).
+
+**Crypto provider: Apple's CommonCrypto, not OpenSSL.** On an Apple target `libsqlite3-sys` compiles SQLCipher with `-DSQLCIPHER_CRYPTO_CC` and links the system `Security` and `CoreFoundation` frameworks, so no OpenSSL is vendored or linked (`OPENSSL_DIR` must stay unset, or the build would pick OpenSSL instead). The app target links `Security.framework`. The size cost is in the LIME-90 entry in `TEND.md`.
 
 ## UniFFI and MIT (MPL-2.0)
 
@@ -18,7 +28,7 @@ MPL-2.0 is a file-level ("weak") copyleft licence, not a project-wide one. Using
 
 The generated Swift (`ios/Lime/Core/Generated/`) contains UniFFI template code, so those files stay under UniFFI's terms. They are gitignored and rebuilt from source, and nothing in them is edited by hand. This is a reading of the licence, not legal advice; it is worth a lawyer's glance before the first public release.
 
-## Transitive crates (127 packages in the resolved graph, including build-time and other-platform crates)
+## Transitive crates (155 packages in the resolved graph, including build-time and other-platform crates)
 
 `cargo metadata` shows only permissive licences, plus UniFFI's own MPL-2.0 crates (`uniffi`, `uniffi_bindgen`, `uniffi_core`, `uniffi_internal_macros`, `uniffi_macros`, `uniffi_meta`, `uniffi_pipeline`, `uniffi_udl`). No GPL or AGPL licence applies to anything linked.
 

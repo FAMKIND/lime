@@ -8,6 +8,10 @@ struct LimeApp: App {
         WindowGroup {
             RootView()
                 .environment(store)
+                .task {
+                    // `-lime-reset-store` starts from a fresh sample database (used by UI tests).
+                    await store.bootstrap(resetStore: ProcessInfo.processInfo.arguments.contains("-lime-reset-store"))
+                }
         }
     }
 }

@@ -23,9 +23,14 @@ required-features = ["cli"]
 [dependencies]
 uniffi = { version = "0.32.2" }
 vodozemac = "0.11.1"
+rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher"] }
+uuid = { version = "1.27.0", features = ["v7"] }
 
 [profile.release]
 lto = true
 codegen-units = 1
 opt-level = "s"
 strip = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -27,6 +27,8 @@ targets:
       # LimeCore's static library (core/build-ios.sh builds it; gitignored).
       - framework: Frameworks/LimeCoreFFI.xcframework
         embed: false
+      # SQLCipher (inside LimeCore) uses Apple's CommonCrypto and the Security framework.
+      - sdk: Security.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.famkind.lime   # placeholder; confirm before registering with Apple

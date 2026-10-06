@@ -80,3 +80,7 @@ On iOS 26+ the screens use the system toolbar (back button, swipe back, glass gr
 5. First launch: Settings → General → VPN & Device Management → your Apple ID → Trust.
 
 A Personal Team build expires after 7 days; press Run again to refresh it. Without `Local.xcconfig` everything still builds for the Simulator.
+
+## Storage
+
+The app reads and writes through LimeCore's encrypted local store (SQLCipher). On first launch it generates a random 32-byte key and keeps it in the Keychain (`AfterFirstUnlockThisDeviceOnly`, so it never goes to an iCloud backup). The database is `Application Support/Lime/lime.db`, with file protection `completeUntilFirstUserAuthentication`. The made-up sample conversations are seeded into an empty database; messages you send persist across launches. Every store call runs off the main thread. Launch with `-lime-reset-store` to start from a fresh sample database (the UI tests do). Long-press the logo for About Lime, which shows "Encryption self-test" and "Storage: encrypted".

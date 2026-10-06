@@ -3,10 +3,13 @@
 //! This is the skeleton (LIME-89): it proves the toolchain with a real vodozemac encryption
 //! round trip. There is no networking, storage or persisted key material yet.
 //!
-//! The public FFI surface is exactly [`core_version`] and [`encryption_self_test`]. No secret
-//! material crosses the FFI or is logged.
+//! The public FFI surface is [`core_version`], [`encryption_self_test`] and the encrypted
+//! local store [`LimeStore`] (LIME-90). No secret material crosses the FFI or is logged.
 
 mod selftest;
+mod store;
+
+pub use store::{ConversationSummary, LimeStore, MemberInfo, MessageItem, StoreError};
 
 uniffi::setup_scaffolding!();
 

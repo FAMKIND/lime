@@ -16,6 +16,9 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 1
 fi
 
+# Match the app's minimum, so C code (SQLCipher) is built for iOS 17, not the SDK's newest.
+export IPHONEOS_DEPLOYMENT_TARGET=17.0
+
 for target in aarch64-apple-ios aarch64-apple-ios-sim; do
   cargo build --release --target "$target" --lib
 done

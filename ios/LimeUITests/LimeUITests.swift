@@ -43,6 +43,7 @@ final class LimeUITests: XCTestCase {
         app.launch()
         let list = app.scrollViews["messages-list"]
         XCTAssertTrue(list.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["conversation-row-c2"].waitForExistence(timeout: 10))
         app.buttons["conversation-row-c2"].tap()
         XCTAssertTrue(app.scrollViews["chat-scroll"].waitForExistence(timeout: 5))
 
@@ -61,6 +62,7 @@ final class LimeUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 10))
         for (row, name, members) in [("c2", "Autumn Reyes", false), ("c4", "Grade 4 Team", true)] {
+            XCTAssertTrue(app.buttons["conversation-row-\(row)"].waitForExistence(timeout: 10))
             app.buttons["conversation-row-\(row)"].tap()
             let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
             XCTAssertTrue(title.waitForExistence(timeout: 5), name)
@@ -84,5 +86,35 @@ final class LimeUITests: XCTestCase {
         expectation(for: passed, evaluatedWith: result)
         waitForExpectations(timeout: 10)
         XCTAssertTrue(app.staticTexts["about-versions"].label.contains("Core"))
+        let storage = app.staticTexts["storage-result"]
+        XCTAssertTrue(storage.waitForExistence(timeout: 10))
+        expectation(for: NSPredicate(format: "label CONTAINS 'encrypted'"), evaluatedWith: storage)
+        waitForExpectations(timeout: 10)
+    }
+
+    /// A message you send is written to the encrypted local store: it survives the app being
+    /// terminated and relaunched.
+    func testSentMessagePersistsAcrossRelaunch() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-reset-store"] // a fresh sample database for a clean start
+        app.launch()
+        XCTAssertTrue(app.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
+        app.buttons["conversation-row-c1"].tap()
+        let field = app.textFields["composer-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("persist me")
+        app.buttons["send-button"].tap()
+        let bubble = NSPredicate(format: "label == %@", "persist me")
+        XCTAssertTrue(app.staticTexts.matching(identifier: "own-bubble").matching(bubble).firstMatch.waitForExistence(timeout: 5))
+
+        app.terminate()
+
+        let relaunched = XCUIApplication() // no reset: the same encrypted database
+        relaunched.launch()
+        XCTAssertTrue(relaunched.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
+        relaunched.buttons["conversation-row-c1"].tap()
+        let again = relaunched.staticTexts.matching(identifier: "own-bubble").matching(bubble).firstMatch
+        XCTAssertTrue(again.waitForExistence(timeout: 5), "the message is still in the chat after a relaunch")
     }
 }

@@ -2,16 +2,55 @@ import XCTest
 import UIKit
 @testable import Lime
 
-final class SampleDataTests: XCTestCase {
-    func testConversationsAreNonEmpty() {
-        XCTAssertFalse(SampleData.conversations().isEmpty)
+/// A throwaway encrypted store in a temp directory, seeded with the sample data (as the app does).
+enum TestStore {
+    static let key = Data(repeating: 0x42, count: 32)
+
+    static func make() throws -> (store: LimeStore, path: String) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lime-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let path = directory.appendingPathComponent("lime.db").path
+        let store = try LimeStore.open(path: path, key: key)
+        try store.seedSampleDataIfEmpty()
+        return (store, path)
     }
 
-    func testEveryConversationHasNameAndMessage() {
-        for c in SampleData.conversations() {
+    static func conversations(_ store: LimeStore) throws -> [Conversation] {
+        try store.listConversations().map { Conversation($0, messages: try store.listMessages(conversationId: $0.id)) }
+    }
+}
+
+final class SampleDataTests: XCTestCase {
+    func testSeededStoreIsNonEmpty() throws {
+        let (store, _) = try TestStore.make()
+        XCTAssertFalse(try TestStore.conversations(store).isEmpty)
+    }
+
+    func testEveryConversationHasNameAndMessage() throws {
+        let (store, _) = try TestStore.make()
+        for c in try TestStore.conversations(store) {
             XCTAssertFalse(c.title.isEmpty, c.id)
             XCTAssertFalse(c.messages.isEmpty, c.id)
         }
+    }
+}
+
+final class StorageTests: XCTestCase {
+    func testWrongKeyIsRejectedAndRightKeyStillOpens() throws {
+        let (_, path) = try TestStore.make()
+        XCTAssertTrue(StorageBootstrap.rejectsWrongKey(path: path))
+        XCTAssertNoThrow(try LimeStore.open(path: path, key: TestStore.key))
+    }
+
+    func testKeychainKeyIsCreatedOnceAndIs32Bytes() throws {
+        let service = "app.lime.tests.\(UUID().uuidString)"
+        defer { StorageKeychain.deleteKey(service: service) }
+        let first = try StorageKeychain.loadOrCreateKey(service: service)
+        let second = try StorageKeychain.loadOrCreateKey(service: service)
+        XCTAssertEqual(first.count, 32)
+        XCTAssertEqual(first, second)
+        XCTAssertNotEqual(first, Data(repeating: 0, count: 32))
     }
 }
 
@@ -123,29 +162,47 @@ final class ThemeTests: XCTestCase {
 
 @MainActor
 final class StoreTests: XCTestCase {
-    func testSendAppendsOwnMessage() {
-        let store = ConversationStore()
-        let id = store.conversations[0].id
-        let before = store.conversations[0].messages.count
-        store.send("  hello  ", in: id)
-        XCTAssertEqual(store.conversations[0].messages.count, before + 1)
-        XCTAssertEqual(store.conversations[0].messages.last?.text, "hello")
-        XCTAssertTrue(store.conversations[0].messages.last?.isOwn ?? false)
+    private func loadedStore() async throws -> ConversationStore {
+        let (core, path) = try TestStore.make()
+        let store = ConversationStore(store: core, path: path)
+        await store.reload()
+        return store
     }
 
-    func testBlankSendIsIgnored() {
-        let store = ConversationStore()
-        let id = store.conversations[0].id
-        let before = store.conversations[0].messages.count
-        store.send("  \n ", in: id)
-        XCTAssertEqual(store.conversations[0].messages.count, before)
+    func testSendAppendsOwnMessageAndPersistsIt() async throws {
+        let store = try await loadedStore()
+        let id = try XCTUnwrap(store.conversations.first).id
+        let before = try XCTUnwrap(store.conversation(id)).messages.count
+        await store.sendNow("  hello  ", in: id)
+        let after = try XCTUnwrap(store.conversation(id)).messages
+        XCTAssertEqual(after.count, before + 1)
+        XCTAssertEqual(after.last?.text, "hello")
+        XCTAssertTrue(after.last?.isOwn ?? false)
+        // It was written to the encrypted store, not only shown.
+        await store.reload()
+        XCTAssertEqual(try XCTUnwrap(store.conversation(id)).messages.last?.text, "hello")
+    }
+
+    func testBlankSendIsIgnored() async throws {
+        let store = try await loadedStore()
+        let id = try XCTUnwrap(store.conversations.first).id
+        let before = try XCTUnwrap(store.conversation(id)).messages.count
+        await store.sendNow("  \n ", in: id)
+        XCTAssertEqual(try XCTUnwrap(store.conversation(id)).messages.count, before)
+    }
+
+    func testStorageReportsEncrypted() async throws {
+        let store = try await loadedStore()
+        let encrypted = await store.storageIsEncrypted()
+        XCTAssertTrue(encrypted)
     }
 }
 
 final class ChatRowTests: XCTestCase {
     /// A DM's incoming message shows an avatar, as a group's does.
     func testDirectMessageIncomingHasAvatar() throws {
-        let dm = try XCTUnwrap(SampleData.conversations().first { !$0.isGroup && $0.messages.contains { !$0.isOwn } })
+        let (store, _) = try TestStore.make()
+        let dm = try XCTUnwrap(try TestStore.conversations(store).first { !$0.isGroup && $0.messages.contains { !$0.isOwn } })
         let avatars = ChatRow.rows(for: dm).compactMap { row -> Bool? in
             if case .message(let m, let showAvatar) = row.kind, !m.isOwn { return showAvatar }
             return nil
@@ -155,11 +212,11 @@ final class ChatRowTests: XCTestCase {
     }
 
     func testConsecutiveIncomingMessagesShareOneAvatar() {
-        let p = SampleData.jean
+        let person = Person(id: "p", name: "Test Person", tone: 3)
         let now = Date()
-        let c = Conversation(id: "t", title: "t", members: [p], messages: [
-            Message(id: "1", senderID: p.id, text: "a", date: now),
-            Message(id: "2", senderID: p.id, text: "b", date: now),
+        let c = Conversation(id: "t", title: "t", members: [person], messages: [
+            Message(id: "1", senderID: person.id, text: "a", date: now),
+            Message(id: "2", senderID: person.id, text: "b", date: now),
         ])
         let flags = ChatRow.rows(for: c).compactMap { row -> Bool? in
             if case .message(_, let a) = row.kind { return a }

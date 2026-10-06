@@ -34,3 +34,22 @@ struct Conversation: Identifiable, Hashable, Sendable {
     var subtitle: String { isGroup ? "\(members.count + 1) members" : "" }
     var lastMessage: Message? { messages.last }
 }
+
+// MARK: LimeCore records to the app's models
+
+extension Message {
+    init(_ item: MessageItem) {
+        self.init(id: item.id, senderID: item.senderId, text: item.text,
+                  date: Date(timeIntervalSince1970: Double(item.sentAt) / 1000))
+    }
+}
+
+extension Conversation {
+    init(_ summary: ConversationSummary, messages: [MessageItem]) {
+        self.init(
+            id: summary.id, title: summary.title,
+            members: summary.members.map { Person(id: $0.id, name: $0.name, tone: Int($0.tone)) },
+            messages: messages.map(Message.init),
+            isPinned: summary.isPinned, unread: Int(summary.unread))
+    }
+}

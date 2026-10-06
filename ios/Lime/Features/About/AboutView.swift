@@ -14,6 +14,9 @@ struct AboutView: View {
     }
 
     @State private var result: Result = .running
+    /// nil while checking; then whether the database on disk is encrypted.
+    @State private var storageEncrypted: Bool?
+    @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     private var appVersion: String {
@@ -50,6 +53,16 @@ struct AboutView: View {
                         .multilineTextAlignment(.center)
                 }
             }
+            Group {
+                switch storageEncrypted {
+                case nil: Text("Storage: checking…")
+                case true?: Text("Storage: encrypted ✓")
+                case false?: Text("Storage: not encrypted")
+                }
+            }
+            .font(Theme.body.weight(.semibold))
+            .foregroundStyle(Theme.text)
+            .accessibilityIdentifier("storage-result")
             Button("Done") { dismiss() }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.primary)
@@ -63,6 +76,7 @@ struct AboutView: View {
             // Off the main thread: real key generation and encryption.
             let report = await Task.detached(priority: .userInitiated) { encryptionSelfTest() }.value
             result = .finished(report)
+            storageEncrypted = await store.storageIsEncrypted()
         }
     }
 }
