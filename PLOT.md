@@ -882,6 +882,11 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
+**Update: LIME-87-fix5 landed as `630c79e`** (pushed and verified).
+- The dark own bubble and send arrow = `#8ECF73` (tend chose it over `#8fd473` to meet the brief's 6–8% lightness drop; justified).
+- The title is reverted to the fix3 side-by-side style (it truncates even at 402pt; the user accepted truncation).
+- **Next:** the user's phone check → LIME-88 (docs) → **LIME-89 (drafted: the Rust core skeleton)**.
+
 **Update: LIME-87-fix4 landed as `360aabb`** (pushed and verified).
 - 18 tests pass on 4 simulators, including 375pt ones; the build for the user's iPhone succeeded.
 - Plot reviewed the screenshots: the dark accent bubble reads well; full names show at 375pt.
@@ -1037,7 +1042,61 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-87-fix5 → `tend` (lime-aa) (next): a slightly dimmer dark bubble; revert the stacked chat title
+### LIME-89 → `tend` (lime-aa) (after LIME-88 is reviewed): the shared Rust core skeleton (LimeCore + vodozemac, linked into iOS)
+**What it does:** starts DESIGN-01's shared core (`docs/architecture.md` once LIME-88 lands): a Rust library **LimeCore** that wraps **vodozemac**, exposed to Swift with **UniFFI** and linked into the iOS app. It proves the whole toolchain end to end with a real encryption round-trip. **No networking, no storage, no persisted keys yet.**
+
+**Capabilities assumed:** edit files, install developer tools via Homebrew/rustup (user-level, no sudo), `cargo`, XcodeGen, `xcodebuild`, commit, push. If any install needs `sudo` or a password, **stop and ask the user**.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- `docs/architecture.md` (Components; Identity, devices and keys; What is encrypted);
+- `ios/project.yml` (note `ENABLE_USER_SCRIPT_SANDBOXING: YES` and Swift 6 strict concurrency);
+- `ios/generate.sh`;
+- the current vodozemac and UniFFI versions on crates.io, with their licences (vodozemac Apache-2.0; UniFFI MPL-2.0, used as a build tool and runtime: confirm it is compatible with an MIT app and record it).
+
+If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Toolchain:**
+   - `brew install rustup`, then `rustup-init -y` (or `rustup default stable` if rustup is already set up);
+   - `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`;
+   - pin the toolchain in `core/rust-toolchain.toml`.
+2. **The crate `core/`** (crate name `lime_core`, `crate-type = ["staticlib", "lib"]`), UniFFI in **proc-macro** mode. Its **public FFI surface is exactly:**
+   - `core_version() -> String` (the crate version);
+   - `encryption_self_test() -> SelfTestReport`, where `SelfTestReport { olm_ok: bool, megolm_ok: bool, detail: String }`.
+     - It creates **two in-memory Olm accounts**, establishes an Olm session and round-trips a message both ways (`olm_ok`).
+     - Then it creates a Megolm outbound group session, shares its key into an inbound session and round-trips a message (`megolm_ok`).
+     - `detail` is a short human-readable line with **no key material**.
+   - Nothing else is exported. Internal modules may be laid out freely, but **no secret material crosses the FFI or is logged**.
+3. **Rust tests** (`cargo test`): the Olm round-trip, the Megolm round-trip, a tampered ciphertext failing to decrypt, and `encryption_self_test()` returning both ok.
+4. **The iOS build glue (no Xcode build-phase scripts, because of the sandboxing):**
+   - `core/build-ios.sh` builds the static lib for both targets in release, makes `ios/Frameworks/LimeCoreFFI.xcframework`, and generates the Swift bindings into `ios/Lime/Core/Generated/`.
+   - `ios/generate.sh` runs it first (it fails with a clear message if Rust is missing).
+   - The **xcframework and the generated Swift are gitignored** (rebuilt from source).
+   - `project.yml` links the xcframework and compiles the generated sources. Warnings inside generated code are acceptable; Lime's own sources stay warning-free under Swift 6.
+5. **App surface (tiny):** **long-press the logo button** on Messages opens an "About Lime" sheet showing "Lime 0.1.0 · Core x.y.z", plus "Encryption self-test: passed ✓" (or "failed" with the detail line), run off the main thread. No other UI changes.
+6. **Licences:** `core/THIRD_PARTY.md` lists vodozemac, UniFFI and their licences (and any notable transitive crates with non-permissive licences; if one is GPL/AGPL, **stop and ask**).
+7. **Docs:** `core/README.md` (what LimeCore is, the prerequisites, `cargo test`, `build-ios.sh`); `ios/README.md` notes that `./generate.sh` now needs Rust.
+
+**Out of scope:** networking, storage/SQLCipher, persisted keys, the Keychain, Android/Kotlin bindings, `public/`, `server/`, `tests/`.
+
+**Phase 3: verification.**
+- `cd core && cargo test` (all pass) and `cargo clippy -- -D warnings` (clean).
+- `cd ios && ./generate.sh`, then build + test on the iPhone 18 Pro and the iPhone 13 mini (iOS 27.0) and the SE (iOS 18.3): 0 failures; no warnings in Lime's own sources.
+- **A new unit test** calls `encryption_self_test()` through the Swift bindings and asserts both ok.
+- **A UI test:** long-press the logo, and the About sheet shows "passed".
+- Report the **app size change** (the Release .app size before and after) and the cold `./generate.sh` time.
+- If the iPhone is connected, build for it and report the result.
+- `git status`: only `core/`, `ios/`, `.gitignore`, `README.md` (if touched) and `TEND.md` changed; **no generated or binary artefacts tracked**.
+
+**Gate (the user, on the iPhone via ▶ Run):** long-press the Lime logo, and the About sheet says **"Encryption self-test: passed ✓"**. That is real vodozemac encryption running on your phone.
+
+**Record:** a `## LIME-89` entry in `TEND.md` (the versions, the licences, the size change). Commit: `feat(core): LimeCore Rust skeleton with vodozemac, UniFFI-linked into iOS`, trailer `Brief: LIME-89`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-87-fix5 → `tend` (lime-aa) (landed as `630c79e`): a slightly dimmer dark bubble; revert the stacked chat title
 **What it does:** the user reviewed LIME-87-fix4 on the phone:
 - "I like the green in light more, and agree in dark mode it can be slightly dimmer";
 - "I like the previous title treatment better, so we should go back even if it's truncated".
