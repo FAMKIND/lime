@@ -882,6 +882,18 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
+**Update: LIME-88 landed as `65b3755`** (pushed and verified): `docs/architecture.md` (187 lines, 11 sections).
+- **Tend's judgement calls:** all three accepted by plot.
+  - The key/user directories were added to "the server can see"; correct, and more honest.
+  - It **flagged a real gap: ordering under the blind mailbox** (`architecture.md` §11 item 5).
+- **Plot's proposed answer** (put to the user 2026-10-06 as a lean; it goes into the API v2 brief, not LIME-89):
+  - The server's `seq` becomes a **per-mailbox delivery cursor only** ("what have I fetched").
+  - **The conversation order is decided on the devices:** each message carries a **hybrid logical clock** timestamp plus **references to the latest messages its sender had seen**. Devices show messages in causal order (a reply never appears before what it answers), tie-broken by the clock, then the message id.
+  - **The same rule works online and over the mesh.**
+  - The displayed time keeps v1's rule (never in the future).
+  - Group-state changes are ordered the same way, with deterministic conflict rules (e.g. a concurrent remove beats an add); detailed later.
+- **Next:** LIME-89 (drafted) once the user confirms the doc.
+
 **Update: LIME-87-fix5 landed as `630c79e`** (pushed and verified).
 - The dark own bubble and send arrow = `#8ECF73` (tend chose it over `#8fd473` to meet the brief's 6–8% lightness drop; justified).
 - The title is reverted to the fix3 side-by-side style (it truncates even at 402pt; the user accepted truncation).
