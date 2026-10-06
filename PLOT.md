@@ -869,6 +869,19 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ---
 
+**Update: the user ran Lime on their own iPhone 13 mini** (free Personal Team signing; Developer Mode on; trusted). "Looks good." **LIME-87-fix3 is drafted:** DM avatars, the accent `#a3e18a` for the badges and "+", and persistent local signing. The plain title (no capsule) was accepted implicitly.
+
+**Update: LIME-87-fix2 landed as `4f1db1e`** (pushed and verified).
+- Only `ios/` and `TEND.md` are in the commit; `TmpShots.swift` was not committed.
+- 11 tests pass on iOS 27.0 and 18.3. The dark green now clearly reads (plot checked `ios27-chat-dark.png`).
+- **The iOS 26 centre title has no capsule** (plain avatars + name). Plot's lean: **keep it plain**, since Apple Messages' own title is plain. The user decides at the gate.
+- Next: the user's on-phone check, then LIME-88.
+
+**Status (2026-10-05, 22:06; superseded):**
+- LIME-87-fix landed as `726c378`.
+- LIME-87-fix2 is in progress (its PLOT.md commit is `98f43f9`).
+- **Watch:** an untracked scratch file `ios/LimeUITests/TmpShots.swift` must not be committed.
+
 ### LIME-87-fix2 → `tend` (lime-aa) (after LIME-87-fix lands): Apple's own scroll edge effect and toolbar
 **What it does:** the user compared Lime's header fade with Apple Messages on iOS 26 (screenshots, 2026-10-05): "the fade needs to be higher up and more subtle; look at the Apple Messages example; we should copy that".
 - In Apple Messages, the content **blurs and softly fades starting at the very top of the screen (behind the status bar)** and is clear just below the glass buttons.
@@ -909,7 +922,58 @@ The faithful way to match it is to **use the system's own toolbar and scroll edg
 
 ---
 
-### LIME-88 → `tend` (lime-aa) (after LIME-87-fix2 is reviewed): DESIGN-01 into `docs/` (docs only)
+### LIME-87-fix3 → `tend` (lime-aa) (next): DM avatars, the accent green #a3e18a, signing that survives regeneration
+**What it does:** the user ran LIME-87-fix2 on their iPhone 13 mini ("looks good") and asked for two changes. It also persists their on-device signing.
+
+**Capabilities assumed:** edit files, XcodeGen, `xcodebuild`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- how Chat decides whether to show a sender avatar (it seems to be groups only);
+- the theme tokens used by the unread badges (the Messages rows and the dock's "link" badge) and the "+" button vs the own bubble;
+- how `project.yml` sets signing.
+
+If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Avatars in 1:1 chats:** in a DM (e.g. Journey Park, Autumn Reyes), the other person's messages show their avatar beside the bubble, exactly as group chats do (same size, same position, and the same grouping rule for consecutive messages if one exists).
+2. **The accent green `#a3e18a`:**
+   - Add a separate **accent** token = `#a3e18a`, used for **the unread number badges** (the Messages rows and the dock badge) and **the "+" button** on Messages, in **light and dark**.
+   - The badge numbers and the "+" glyph use a dark ink with **≥ 4.5:1** on `#a3e18a`.
+   - **The chat's own bubble keeps its current colours** (the light primary, and the LIME-87-fix dark green); only these three uses move to the accent.
+   - Update the theme unit tests: the accent equals `#a3e18a`; ink contrast ≥ 4.5:1; the own bubble is unchanged from LIME-87-fix2.
+   - **The user wants to *see* it in both modes before settling** ("#a3e18a, or something in this family that fits our system").
+     - Ship `#a3e18a` in both modes, **and** capture a comparison: Messages in light and dark with `#a3e18a`, plus **two family alternatives** rendered the same way (e.g. a slightly deeper `#8fd473`-ish and a softer `#b8e8a3`-ish; pick values that keep the ink at ≥ 4.5:1).
+     - Put the six screenshots side by side in one image (`accent-compare.png`) with the hex labelled under each. Report its path.
+     - Don't switch away from `#a3e18a` yourself; the user chooses from the comparison.
+3. **Signing survives `./generate.sh`:**
+   - `project.yml` includes an optional, **gitignored `ios/Local.xcconfig`**, and the app target reads `DEVELOPMENT_TEAM` (and `CODE_SIGN_STYLE = Automatic`) from it.
+   - Commit an `ios/Local.xcconfig.example` with a placeholder and a comment.
+   - Create the user's real `ios/Local.xcconfig` locally with their Personal Team id, taken from the existing signing state or the keychain certificate (it appears as `SCV29U533Y` in the certificate name; verify it is the **team** id, not just a certificate id). **Never commit it.**
+   - Builds without the file still work (simulator).
+   - `ios/README.md`: a short "Run on your iPhone" section (Personal Team, Developer Mode, the trust step, the 7-day expiry, `Local.xcconfig`).
+
+**Out of scope:** anything outside `ios/`; other colour changes; networking; the bundle id (it stays `com.famkind.lime`).
+
+**Phase 3: verification.**
+- `./generate.sh`; build + test on the iPhone 18 Pro (iOS 27.0) and iOS 18.3: 0 failures, no warnings in Lime sources.
+- A UI or unit check that a DM's incoming message has an avatar.
+- After `./generate.sh`, the generated project still carries the user's team (`xcodebuild -showBuildSettings | grep DEVELOPMENT_TEAM` shows it). `git status` shows `Local.xcconfig` **ignored**.
+- If the iPhone ("iPhone", the 13 mini) is connected and unlocked, also run `xcodebuild -destination 'platform=iOS,name=iPhone' build`; report the result. If it isn't connected, say so.
+- Screenshots: Messages (light and dark: the badges and "+") and a DM chat with avatars.
+
+**Gate (the user, on the iPhone via ▶ Run):**
+- Journey and Autumn have avatars in their chats;
+- the badges and "+" are `#a3e18a` in light and dark;
+- your chat bubble is unchanged;
+- ▶ Run works without re-picking the team.
+
+**Record:** a `## LIME-87-fix3` entry in `TEND.md`. Commit: `fix(ios): DM avatars, accent green badges and +, persistent local signing`, trailer `Brief: LIME-87-fix3`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-88 → `tend` (lime-aa) (after LIME-87-fix3 is reviewed): DESIGN-01 into `docs/` (docs only)
 **What it does:** writes the decided native architecture into the repo, so every later brief and agent works from one document instead of `PLOT.md`.
 
 **Capabilities assumed:** edit files, commit, push. No builds needed.
