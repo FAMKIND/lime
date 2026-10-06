@@ -3819,3 +3819,19 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 **Screenshots** (`/private/tmp/claude-501/-Users-shem-Sites-lime/705211b5-b081-4f9a-97c2-0c12495d6f05/scratchpad/fix5/`): `ios27-dark-dm-own-bubbles-send.png`, `ios27-light-dm.png` (unchanged), `ios27-narrow-375-group-title.png` (Grade 4 Team header at 375pt: avatar stack beside "Grade 4…" with "5 members" under it).
 
 **Notes:** the title truncates at both 402pt ("Autumn Rey…") and 375pt, as the user accepted. The light screenshots and the dark DM were captured from throwaway UI tests (removed).
+
+## LIME-88
+
+**`docs/architecture.md`, "Lime native architecture (v2)" (committed, awaiting the user's check).** Docs only.
+
+- **New `docs/architecture.md`** with the 11 numbered sections from the brief: purpose and status; decisions (D1-D8 plus E1-E5: full E2EE with no organisation key, vodozemac and the open licence, offline open and closed so native, calls, TestFlight after mesh); components; identity, devices and keys (including the D5 recovery key and QR linking); what is encrypted and what the server sees, written for the blind mailbox; API v2 deltas (shape only, no endpoint specs); offline mesh; discovery and safety; calls (1:1 peer-to-peer WebRTC with TURN, group on self-hosted LiveKit); the amended build order (mesh v1 before TestFlight) with the cost principles; open questions.
+- **`docs/api.md`:** a "superseded for the native apps by architecture.md" note at the top of section 9 and section 12; open questions 1 (op signing) and 2 (E2EE) in section 9 marked answered.
+- **`README.md`:** one line under the iOS pointer linking `docs/architecture.md`.
+
+**Verification.** `git diff --stat` touches only `docs/architecture.md`, `docs/api.md`, `README.md` and `TEND.md` (plus `PLOT.md` in Phase 0, `4266808`). Checked with grep: 11 numbered sections; "sealed sender" (2), "recovery key" (2), "LiveKit" (7), "vodozemac" (9) present; no wording that says the server enforces membership or reads group names; no email, phone or personal data.
+
+**Things for the user to look at**
+1. **A gap I flagged rather than decided (open question 5).** v1's `seq` is the server's one order of events, and DESIGN-01 says "`seq` stays the server's ordering online", but D8 (blind mailbox, no conversation awareness) came after and does not say how a per-mailbox delivery order relates to conversation order. I wrote section 6 neutrally (it points to open question 5) and added the question; it is not in the brief's list of four. The brief says to stop on conflicts in the sources; I judged this a gap, not a contradiction, and kept going. Overrule if you would rather have decided it first.
+2. **The "server can see" list.** The brief says recipient devices, timing, sizes and IP addresses "only". The design also has server-side **key and user directories** (public keys and the public profile fields people publish, which DESIGN-01 itself lists), so section 5 says so in one sentence rather than implying nothing else exists.
+3. **Wording I introduced beyond the notes:** "delivery tokens ... take over what those checks did" (from D8's "clients and delivery tokens do"), and the Decisions table's "why" column (summarised from the planning notes' reasons). The post-quantum gap is stated as a trade-off, as in the notes.
+4. LIME-87 is marked "done" in the build order (it landed as `dbe7f2e`).

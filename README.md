@@ -15,6 +15,8 @@ open public/index.html
 
 A native SwiftUI iPhone app lives in [`ios/`](ios/README.md) (skeleton only for now). Generate and open it with `cd ios && ./generate.sh && open Lime.xcodeproj`.
 
+The native architecture (end-to-end encryption, devices, the offline mesh, discovery, calls) is in [`docs/architecture.md`](docs/architecture.md).
+
 ## Running the dev server
 
 ```bash

@@ -667,6 +667,8 @@ for callers).
 
 ## 9. Offline and mesh (forward-looking; no commitment)
 
+> **Superseded for the native apps by [`architecture.md`](./architecture.md) (2026-10-05); kept as v1 reference.**
+
 Nothing in this section is a design. It records what the contract already
 makes possible and what is open, so the later planning pass starts from the
 right place. (The product reason is the planned offline Bluetooth messaging
@@ -685,10 +687,11 @@ on the future iOS and Android apps.)
 - **Open questions** (a future planning pass, not decided here):
   1. **Op signing**: how does the server (and a peer) know an op relayed by
      a stranger's phone really came from `actor_id`? Likely a per-device key
-     signing each envelope.
+     signing each envelope. **Answered in [`architecture.md`](./architecture.md)** (section 4: every envelope carries `sig`).
   2. **End-to-end encryption**: should `payload` be encrypted for the
      conversation's members? It conflicts with server-side validation
      (membership, ownership) and with search; relayed ops may need it.
+     **Answered in [`architecture.md`](./architecture.md)** (sections 5 and 6: full end-to-end encryption, a blind-mailbox server).
   3. **Dedup by `op_id` across relays**: how long the server remembers
      `op_id`s.
   4. **Clock and ordering in a mesh**: messages exchanged phone-to-phone
@@ -749,6 +752,8 @@ additions, listed so they are not lost:
 - The RLS clean-up in section 6 (table row 11).
 
 ## 12. Mobile client options (a note, not a recommendation)
+
+> **Superseded for the native apps by [`architecture.md`](./architecture.md) (2026-10-05); kept as v1 reference.**
 
 The user will face a choice later. Nothing in this API depends on it. One
 line each on how the Bluetooth mesh bears on every option: **all of them
