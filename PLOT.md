@@ -24,6 +24,69 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 - The 360px header was tightened; header tool buttons are now 40px circles.
 - **The next action:** the user's iPhone review of 86 (plus answering (a)), then LIME-85.
 
+### Update: LIME-86-fix landed as `8ba1989` (local; push pending the user's word; `7557554` = the PLOT.md commit, pushed)
+- The full matrix is at 0 failures (mobile 621); desktop has 0 pixels changed.
+- **Tend deviated on item 3 without asking:**
+  - light mode: white-ish others' bubbles plus a **hairline edge** (ΔE ≥ 6 is impossible on near-white canvases; Warm ≈ 2, Pure white = the canvas);
+  - dark mode: ΔE ≥ 6 is kept.
+
+  Plot thinks it is reasonable; **the user judges it at the gate.**
+- Untested on iOS: the keyboard, the callout clearance, real dictation (over the LAN expect the fallback toast) and Safari's fixed-menu correction.
+- **Lesson:** the handoff prompt said "commit and stop", which overrode the brief's push. Future prompts say "commit, push, and stop".
+
+### DIRECTION SET (user, 2026-10-05): all effort goes to the native iOS app (infrastructure + app)
+- **The web app is frozen** (fix real bugs only). **LIME-85, 80 and 81 are paused indefinitely**; their ideas carry into the iOS app. The dark "+"/own-bubble question is dropped for the web; the iOS theme decides it.
+- **`8ba1989` is pushed** (verified: `origin/main` = `8ba1989`). **The tend session is `lime-aa`**; `lime-04` is not tend. Relay to `lime-aa` only from now on.
+- **Machine survey (2026-10-05):**
+  - macOS 26.6.2;
+  - **CORRECTION: Xcode is NOT installed.** `/Applications` holds `Xcode.appdownload`, an unfinished App Store download. Plot misread it as `Xcode.app` at first.
+  - `xcode-select -p` = CommandLineTools;
+  - Homebrew is present;
+  - **Rust is not installed**.
+- **Xcode 27.0 (27A266a) installed 2026-10-05 but crashes on launch.**
+  - The cause, from running the binary: `dlopen libIDEApplicationLoader: Symbol not found _XPCTypeBool`. The system-wide `/Library/Developer/PrivateFrameworks/CoreDevice.framework` is **stale** (397.28, Dec 2024), left over from an old Xcode, and Xcode 27's first-launch packages haven't been installed.
+  - **The fix given to the user:** `sudo xcode-select -s …` then `sudo xcodebuild -runFirstLaunch`; the fallback is to install the 4 `.pkg`s in `Xcode.app/Contents/Resources/Packages/` by hand.
+  - The "Command Line Tools for Xcode 27.0" update is also pending.
+  - **Resolved:** Xcode 27.0 now opens (user screenshot, 2026-10-05). The iOS 27.0 Simulator (24A434, 8 GB) is downloading. No iOS 17 runtime is installed, so LIME-87 builds against iOS 17 but tests on iOS 27 (the brief allows this; tend reports it).
+- **D1–D4 = all A (user, 2026-10-05):** iOS 17+, a shared Rust core, one repo (`ios/` at the root), Supabase. **LIME-87 is drafted** and waits on the user finishing the Xcode install.
+- **The iOS foundation decision surface was put to the user** (see the reply of 2026-10-05). Decisions:
+  - **D1** the minimum iOS version;
+  - **D2** the shared Rust core vs Swift-only;
+  - **D3** the repo layout;
+  - **D4** the backend (re-confirm Supabase now that E2EE is in).
+
+  After the answers: the first brief is **LIME-87, the iOS skeleton** (Xcode project, SwiftUI, builds and runs in the Simulator, CI-free, no networking).
+
+### Open thread: voice and video calls (raised by the user 2026-10-05: "a major part of teachers connecting")
+- **Plot's plan:**
+  - WebRTC media on **LiveKit** (an open-source SFU, Apache-2.0; Swift, Kotlin, web and Rust SDKs; E2EE through frame encryption; self-hostable or LiveKit Cloud).
+  - **The precedent is Element Call**: Matrix + vodozemac + LiveKit, E2EE group calls of up to ~100 people. **The call keys are distributed over Lime's own E2EE channel (vodozemac)**, so the server and the SFU never see the media.
+- **The native iOS pieces:**
+  - **CallKit** (the native incoming-call screen, the lock screen, Recents, Bluetooth headsets);
+  - **PushKit VoIP pushes** to ring a closed app (needs the **paid Apple account**; every VoIP push must report a call to CallKit at once);
+  - the background-audio and VoIP modes.
+  - Android later: ConnectionService + high-priority FCM.
+- **Rejected options:**
+  - Signal's RingRTC + calling server (AGPL, and "unsupported outside Signal");
+  - Twilio/Agora/Daily (the vendor can see the media, and recurring costs);
+  - Jitsi (Apache, but weaker native mobile polish).
+- **Cost note:** the TURN relays and the SFU bandwidth are Lime's main recurring infrastructure cost (video the most). Self-hosting LiveKit keeps it bounded; budget for it in the nonprofit plan.
+- **Offline:** calls need a network. Bluetooth is too slow for audio or video. A later option is **local-network calls** (the same Wi-Fi with no internet, or peer-to-peer Wi-Fi). Messages are mesh; calls are online-first.
+- **The phases** (after the messaging core, the backend and the paid Apple account):
+  1. **Calls v1:** 1:1 voice + video, E2EE, CallKit, ringing via PushKit.
+  2. **v2:** group calls (staff meetings: grid, speaker view, mute controls).
+  3. **v3:** screen share, raise hand, larger PD sessions, and maybe a "jam" tie-in.
+  - The architecture choice (LiveKit) goes into the design pass, so the backend reserves call signalling (call-invite ops through the existing op channel) and token issuance.
+- **Requirement (user, 2026-10-05): calls must be open source and secure.**
+  - LiveKit fits: the server and every SDK are Apache-2.0, and its TURN is built in.
+  - **So: self-host LiveKit** (LiveKit Cloud is a proprietary hosting service, though it runs the same open code; keep it only as an emergency fallback, if ever).
+  - Media is E2EE, with keys from vodozemac sessions.
+  - Include the call key exchange in the pre-launch external security review; plot found no published audit of LiveKit's E2EE.
+- **DECIDED (user, 2026-10-05):**
+  1. **Group calls target 50–100 participants** (large PD sessions). LiveKit's SFU is in range; use simulcast, show only active speakers' video, and a speaker view by default above about 12. Load-test at 100 before launch.
+  2. **No recording in v1.**
+  3. **Self-host LiveKit from launch.**
+
 ### Queue override (2026-10-05, later)
 1. **LIME-86-fix** (drafted under "Drafted briefs"): the user's 14 QA notes on 86; commits `PLOT.md` first.
 2. **Then the web phone layout goes into maintenance.** LIME-85, 80 and 81 are **paused** (plot's lean, option A; the user said "close out this round of QA, save it on git and then switch to this direction"; confirm with the user).
@@ -595,7 +658,88 @@ Items 4–6 complete the user's milestone: sign up → sign in → find a teache
 
 ## Drafted briefs
 
-### LIME-86-fix → `tend` (next): close out mobile QA round 3; the last web-phone polish before the native direction
+### LIME-87 → `tend` (lime-aa) (next; needs Xcode installed first): the native iOS app skeleton
+**What it does:** adds `ios/`, a SwiftUI iPhone app called Lime that builds and runs in the iOS Simulator. It shows a static Messages list, a chat screen and the dock, styled from Lime's tokens. There is no networking, no accounts and no encryption yet. It is the foundation every later iOS brief builds on.
+
+**Decisions this brief carries (the user, 2026-10-05, "all A"):**
+- **D1** minimum **iOS 17**: real Liquid Glass (`glassEffect`) on iOS 26 behind `if #available(iOS 26, *)`, `.ultraThinMaterial` below it;
+- **D2** a shared Rust core *later* (not in this brief);
+- **D3** **one repository**: the app lives in `ios/` at the repo root, beside the frozen web app;
+- **D4** a Supabase backend *later*.
+
+**Placeholder the user confirms at the gate:** the bundle identifier **`com.famkind.lime`**. It is free to change until it is registered with Apple next month, and permanent after that.
+
+**Capabilities assumed:** edit files, run shell commands including `brew`, `xcodebuild` and `xcrun simctl`, commit and push. **Prerequisites (the user's, before tend starts):**
+1. Xcode fully installed. On 2026-10-05 `/Applications` only held an unfinished `Xcode.appdownload`.
+2. Xcode opened once, with the licence accepted and the iOS platform/simulator installed.
+3. `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+
+**If `xcodebuild -version` fails, or no iOS Simulator runtime exists, stop and tell the user what's missing. Don't work around it.**
+
+**Phase 0: save plot's state.** Commit `PLOT.md` exactly as on disk, unedited: `chore: update PLOT.md`, plus the attribution trailer. Leave `public/assets/Logomark-outline.svg` and `public/assets/signin-teachers.mp4` untracked.
+
+**Phase 1: survey (read only).** Read:
+- `docs/design/mobile/01-messages.png` and `02-chat.png`;
+- the token section of `public/css/lime.css`: the canvas tones, `--lime-primary-bg`/`-ink`, the neutral bubble, radii, the fonts in use and the dock icons;
+- `public/assets/` for the logo.
+
+List the available simulators (`xcrun simctl list devices available`). If anything here contradicts the brief, or you spot related issues, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Tooling:**
+   - Install **XcodeGen** (`brew install xcodegen`).
+   - The project is defined in **`ios/project.yml`**. The generated `ios/Lime.xcodeproj` is **gitignored**, and **`ios/generate.sh`** regenerates it.
+   - One app target `Lime` (Swift 6 language mode, iOS 17.0, iPhone only, portrait and landscape), one unit-test target `LimeTests`, and one UI-test target `LimeUITests`.
+2. **Structure** (exactly these folders under `ios/Lime/`):
+   - `App/` (the `@main` app, the root view);
+   - `Theme/` (colours, typography, the glass modifier);
+   - `Features/Messages/`, `Features/Chat/`, `Features/Dock/`;
+   - `Model/` (plain Swift structs `Conversation`, `Message`, `Person`, plus `SampleData.swift`);
+   - `Resources/` (the asset catalog: AppIcon from the lime logo, the logo image, and colour sets).
+3. **Theme:**
+   - Port the **default light tone and dark** from `lime.css` into colour sets plus a `Theme` type: the canvas, the surface, the neutral bubble (brighter than the canvas, as in LIME-86-fix), the own bubble = `lime-primary-bg` with `lime-primary-ink`, text and secondary text.
+   - One `limeGlass()` view modifier: `glassEffect` on iOS 26+, `.ultraThinMaterial` plus a hairline below that.
+   - The app follows the system light/dark setting.
+   - Use the system font (SF) for now; note the web font in a code comment for a later decision.
+4. **Screens (static, matching 01 and 02 in layout, not pixel-perfect):**
+   - **Messages:** the floating glass logo button at the top left; a glass pill at the top right with search and the avatar; a list of 5 sample conversations (DMs and groups, initials avatars, last message, time, a pinned glyph on one); a round "+" button; and the **dock** (link, jam, call) as a floating glass bar. The list scrolls under the top controls.
+   - **Chat:** pushed from a row with a `NavigationStack`. A glass back button, a title pill (avatar and name, "N members" for groups), and glass search/call/"⋯" (they do nothing yet). Sample messages with others' bubbles on the left and own bubbles on the right; date separators; and a glass composer pill ("+", "Send message…", mic).
+   - Typing and tapping send appends an own bubble **in memory only**. Return makes a new line; the send button is an up arrow and only appears with text.
+   - **Search, call, "⋯", "+", jam and call:** no-ops, or a small "Coming soon" banner. No other screens.
+5. **Sample data:** made-up teachers and groups only. **No real names, emails or phone numbers** (the seed's public demo names are fine).
+6. **Accessibility:** every button has an accessibility label, and Dynamic Type grows the list and the bubbles without clipping.
+7. **Docs:**
+   - `ios/README.md`: what this is, the prerequisites, `./generate.sh`, how to open it in Xcode and run it in the Simulator, and how to run the tests.
+   - A short "iOS app" pointer in the root `README.md`.
+   - Add the Xcode/XcodeGen ignores to `.gitignore` (`ios/Lime.xcodeproj`, `DerivedData`, `xcuserdata`, `*.xcresult`).
+
+**Out of scope:**
+- any networking, Supabase, auth, Rust, vodozemac, Bluetooth or push;
+- Android;
+- any change to `public/`, `server/` or `tests/` (the web app is frozen);
+- signing for a real device.
+
+**Phase 3: verification.**
+- `cd ios && ./generate.sh && xcodebuild -scheme Lime -destination 'platform=iOS Simulator,name=<an available iPhone>' build` → **BUILD SUCCEEDED, zero warnings in Lime sources**.
+- `xcodebuild test` (same destination) → the unit and UI tests pass:
+  - **unit tests:** `SampleData` is non-empty; every conversation has a name and at least one message; the theme's own bubble equals the primary colour; text on both bubbles is **≥ 4.5:1** in light and dark;
+  - **UI tests:** the app launches into Messages; tap the first row → the chat appears; type "hello" and tap send → a new own bubble with "hello" appears; back → Messages.
+- If an **iOS 17 simulator runtime** is installed, also build and run the tests there. If not, say so (don't install one unasked).
+- Screenshots via `xcrun simctl io booted screenshot` (Messages and Chat, light and dark) into the scratchpad. Report their paths.
+- `git status` shows only `ios/`, `README.md`, `.gitignore` and `TEND.md` changed. **No `public/`, `server/` or `tests/` changes.**
+- Report the simulator model and iOS version used, and the test count.
+
+**Gate (the user):** tend leaves the app running in the Simulator on the Mac.
+- It opens to a Messages list that looks like Lime, with glass controls and the dock.
+- Tapping a chat opens it; you can type, a new line works, and send adds your green bubble.
+- It switches correctly between light and dark (Settings → Developer → Dark Appearance, or the Simulator's Features menu).
+- Confirm or change the bundle id `com.famkind.lime`.
+
+**Record:** add a `## LIME-87` entry to `TEND.md` (what landed, the simulator used, the test count, the screenshot paths, anything skipped). Commit: `feat(ios): native SwiftUI app skeleton (Messages, Chat, dock; static data)`, trailer `Brief: LIME-87`, plus the attribution trailer. **Push.** Stop for the user's review. No /loop wakeups.
+
+---
+
+### LIME-86-fix → `tend` (landed as `8ba1989`, pushed): close out mobile QA round 3; the last web-phone polish before the native direction
 **What it does:** fixes the user's 14 QA notes on `c9712c9` (iPhone screenshots, 2026-10-05). Then this round is closed, saved to git, and the web phone layout goes into maintenance (real bugs only) while plot designs the native apps.
 
 **Capabilities assumed:** edit files, run the `tests/` suites (Chrome and Firefox), commit and push. No iPhone; the user checks on the phone at the gate.
