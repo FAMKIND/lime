@@ -111,55 +111,18 @@ impl LimeStore {
         conversation_id: String,
         text: String,
     ) -> Result<MessageItem, StoreError> {
-        // What is stored and sent is the one written form: unknown syntax downgraded to text.
-        let normalised = crate::format::normalise(&text);
-        let body = normalised.as_str();
-        if body.is_empty() {
-            return Err(StoreError::EmptyMessage);
-        }
-        if body.len() > MAX_TEXT_BYTES {
-            return Err(StoreError::Rejected);
-        }
-        let plain = crate::format::plain_text(body);
-        if conversation_id.strip_prefix("dm:").is_none() {
-            return Err(StoreError::NotFound);
-        }
-        let state = self.load_or_create_account()?;
-        state
-            .user_id
-            .as_ref()
-            .filter(|_| state.registered)
-            .ok_or(StoreError::NotRegistered)?;
-        let now = now_ms();
-        self.with_conn(|conn| {
-            let visible: bool = conn
-                .query_row(
-                    "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state != 'blocked')",
-                    params![conversation_id],
-                    |r| r.get(0),
-                )
-                .map_err(db_err)?;
-            if !visible {
-                return Err(StoreError::NotFound);
-            }
-            let hlc = tick_hlc(conn, now)?;
-            let parents = order::heads(conn, &conversation_id)?;
-            let op_id = new_id();
-            conn.execute(
-                "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'sending', ?1, ?6, ?7, ?8)",
-                params![op_id, conversation_id, ME_ID, body, now, hlc.render(), json!(parents).to_string(), plain],
-            )
-            .map_err(db_err)?;
-            Ok(MessageItem {
-                id: op_id,
-                conversation_id: conversation_id.clone(),
-                sender_id: None,
-                text: body.to_owned(),
-                sent_at: now,
-                local_state: "sending".to_owned(),
-            })
-        })
+        self.queue(conversation_id, text, None)
+    }
+
+    /// Writes a reply in the thread of `root_id` (a message of this conversation). Replying to a reply
+    /// answers the same root. Like [`LimeStore::queue_text`] it is `sending` until delivered.
+    pub fn queue_reply(
+        &self,
+        conversation_id: String,
+        root_id: String,
+        text: String,
+    ) -> Result<MessageItem, StoreError> {
+        self.queue(conversation_id, text, Some(root_id))
     }
 
     /// Sends every queued message (`sending`, or `failed` earlier), oldest first, as **identified**
@@ -382,6 +345,71 @@ struct PeerDevice {
 }
 
 impl LimeStore {
+    fn queue(
+        &self,
+        conversation_id: String,
+        text: String,
+        reply_to: Option<String>,
+    ) -> Result<MessageItem, StoreError> {
+        // What is stored and sent is the one written form: unknown syntax downgraded to text.
+        let normalised = crate::format::normalise(&text);
+        let body = normalised.as_str();
+        if body.is_empty() {
+            return Err(StoreError::EmptyMessage);
+        }
+        if body.len() > MAX_TEXT_BYTES {
+            return Err(StoreError::Rejected);
+        }
+        let plain = crate::format::plain_text(body);
+        if conversation_id.strip_prefix("dm:").is_none() {
+            return Err(StoreError::NotFound);
+        }
+        let state = self.load_or_create_account()?;
+        state
+            .user_id
+            .as_ref()
+            .filter(|_| state.registered)
+            .ok_or(StoreError::NotRegistered)?;
+        let now = now_ms();
+        self.with_conn(|conn| {
+            let visible: bool = conn
+                .query_row(
+                    "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state != 'blocked')",
+                    params![conversation_id],
+                    |r| r.get(0),
+                )
+                .map_err(db_err)?;
+            if !visible {
+                return Err(StoreError::NotFound);
+            }
+            // A reply hangs from a message of this conversation that is not itself a reply.
+            let root = match &reply_to {
+                None => None,
+                Some(id) => Some(resolve_root(conn, &conversation_id, id)?.ok_or(StoreError::NotFound)?),
+            };
+            let hlc = tick_hlc(conn, now)?;
+            let parents = match &root {
+                Some(root) => order::thread_heads(conn, root)?,
+                None => order::heads(conn, &conversation_id)?,
+            };
+            let op_id = new_id();
+            conn.execute(
+                "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain, thread_root)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'sending', ?1, ?6, ?7, ?8, ?9)",
+                params![op_id, conversation_id, ME_ID, body, now, hlc.render(), json!(parents).to_string(), plain, root],
+            )
+            .map_err(db_err)?;
+            Ok(MessageItem {
+                id: op_id,
+                conversation_id: conversation_id.clone(),
+                sender_id: None,
+                text: body.to_owned(),
+                sent_at: now,
+                local_state: "sending".to_owned(),
+            })
+        })
+    }
+
     fn with_conn<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, StoreError>,
@@ -459,7 +487,11 @@ impl LimeStore {
             conversation_id: dm_conversation_id(me, recipient),
             hlc: message.hlc.clone(),
             parents: message.parents.clone(),
-            payload: json!({ "text": message.text }),
+            // `thread_root` is part of the encrypted payload: the server never sees which message a reply answers.
+            payload: match &message.thread_root {
+                Some(root) => json!({ "text": message.text, "thread_root": root }),
+                None => json!({ "text": message.text }),
+            },
             sig: String::new(),
         };
         op.sig = state.account.sign(op.signing_bytes()).to_base64();
@@ -834,6 +866,14 @@ impl LimeStore {
             return Ok(Outcome::Keep(pending::INVALID));
         }
         let plain = crate::format::plain_text(&text);
+        // A reply names the message it answers, inside the encrypted payload.
+        let claimed_root = inner
+            .op
+            .payload
+            .get("thread_root")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty() && id.len() <= 64 && *id != inner.op.op_id)
+            .map(str::to_owned);
         let parents = json!(inner.op.parents).to_string();
         let stored = self.with_conn(|conn| {
             // The session is kept even when the key is not trusted: a pre-key message cannot be read a
@@ -861,13 +901,18 @@ impl LimeStore {
             }
             // A person we did not start a chat with is a request until accepted.
             ensure_dm_as(conn, &sender, None, "pending")?;
+            // Replying to a reply answers the same root. A root that has not arrived yet is taken as named.
+            let root = match &claimed_root {
+                None => None,
+                Some(id) => Some(resolve_root(conn, &conversation, id)?.unwrap_or_else(|| id.clone())),
+            };
             // The display time is never in the future (api-v2.md section 5).
             let shown = remote_hlc.wall.min(now);
             let inserted = conn
                 .execute(
-                    "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain)
-                     VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6, ?7, ?8)",
-                    params![inner.op.op_id, conversation, sender, text, shown, inner.op.hlc, parents, plain],
+                    "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain, thread_root)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6, ?7, ?8, ?9)",
+                    params![inner.op.op_id, conversation, sender, text, shown, inner.op.hlc, parents, plain, root],
                 )
                 .map_err(db_err)?;
             if inserted > 0 {
@@ -876,6 +921,14 @@ impl LimeStore {
                     params![conversation],
                 )
                 .map_err(db_err)?;
+                if let Some(root) = &root {
+                    conn.execute(
+                        "INSERT INTO thread_state (root_id, unread) VALUES (?1, 1)
+                         ON CONFLICT (root_id) DO UPDATE SET unread = unread + 1",
+                        params![root],
+                    )
+                    .map_err(db_err)?;
+                }
             }
             Ok(Some(inserted > 0))
         })?;
@@ -918,6 +971,20 @@ fn hex_sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// The root a reply to `id` hangs from: `id` itself when it is a message of this conversation that is
+/// not a reply, else the root that reply hangs from. `None` when there is no such message here.
+pub(crate) fn resolve_root(conn: &Connection, conversation_id: &str, id: &str) -> Result<Option<String>, StoreError> {
+    let row: Option<Option<String>> = conn
+        .query_row(
+            "SELECT thread_root FROM messages WHERE id = ?1 AND conversation_id = ?2",
+            params![id, conversation_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
+    Ok(row.map(|root| root.unwrap_or_else(|| id.to_owned())))
+}
+
 /// A message of mine waiting to be sent.
 struct Queued {
     id: String,
@@ -925,12 +992,13 @@ struct Queued {
     text: String,
     hlc: String,
     parents: Vec<String>,
+    thread_root: Option<String>,
 }
 
 fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT id, conversation_id, body, hlc, parents FROM messages
+            "SELECT id, conversation_id, body, hlc, parents, thread_root FROM messages
              WHERE sender_id = ?1 AND local_state IN ('sending', 'failed') AND op_id IS NOT NULL AND hlc IS NOT NULL
              ORDER BY hlc, id",
         )
@@ -945,6 +1013,7 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
                 text: r.get(2)?,
                 hlc: r.get(3)?,
                 parents: parents.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default(),
+                thread_root: r.get(5)?,
             })
         })
         .map_err(db_err)?

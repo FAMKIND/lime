@@ -361,6 +361,68 @@ final class LocalBackendE2ETests: XCTestCase {
         try await replacingKeys(stack)
     }
 
+    /// A thread through the real server: a reply shows on the other phone live as "1 reply" under the root (and
+    /// not in the timeline), the thread opens with its replies, a reply back arrives live, unread counts
+    /// clear when read, and it all survives a restart.
+    func testRepliesInAThreadReachTheOtherPhoneLive() async throws {
+        let stack = try stack()
+        guard stack.mail != nil, stack.serviceKey == nil else { throw XCTSkip("The local run (mail catcher, no admin key).") }
+        let ada = try await makePhone(stack, name: "Ada Lovelace")
+        try await Task.sleep(for: .milliseconds(1100))
+        let bob = try await makePhone(stack, name: "Bob Brown")
+        let found = try await ada.store.find("@\(bob.username)")
+        let person = try XCTUnwrap(found)
+        await ada.store.startChat(with: person)
+        let adaChat = "dm:\(person.userId)"
+        await ada.store.sendNow("Who has the field trip forms?", in: adaChat)
+        await eventually("the question reaches Bob") { bob.store.requests.count == 1 }
+        let bobChat = try XCTUnwrap(bob.store.requests.first).id
+        await bob.store.accept(bobChat)
+        let root = try XCTUnwrap(bob.store.conversation(bobChat)?.messages.first?.id)
+        XCTAssertEqual(root, ada.store.conversation(adaChat)?.messages.first?.id, "both phones know the message by the same id")
+
+        // Bob replies in a thread. Ada sees "1 reply" live, not a new message in the timeline.
+        await bob.store.openThread(root)
+        await bob.store.sendReply("I do, in the staff room", root: root, in: bobChat)
+        await eventually("the reply reaches Ada live") { ada.store.conversation(adaChat)?.messages.first?.thread?.replyCount == 1 }
+        XCTAssertEqual(ada.store.conversation(adaChat)?.messages.map(\.text), ["Who has the field trip forms?"], "replies are not in the timeline")
+        XCTAssertEqual(ada.store.conversation(adaChat)?.messages.first?.thread?.unread, 1)
+        XCTAssertEqual(ada.store.conversation(adaChat)?.messages.first?.thread?.repliers.count, 1)
+        XCTAssertEqual(bob.store.threads[root]?.map(\.text), ["Who has the field trip forms?", "I do, in the staff room"])
+        XCTAssertEqual(bob.store.threads[root]?.last?.state, .sent, "Sent once the server accepted it")
+
+        // Ada opens the thread, reads it, and replies; Bob sees it live inside his open thread.
+        await ada.store.openThread(root)
+        XCTAssertEqual(ada.store.threads[root]?.map(\.text), ["Who has the field trip forms?", "I do, in the staff room"])
+        await ada.store.markThreadRead(root, in: adaChat)
+        XCTAssertEqual(ada.store.conversation(adaChat)?.messages.first?.thread?.unread, 0)
+        await ada.store.sendReply("thanks, I'll pick them up", root: root, in: adaChat)
+        await eventually("Ada's reply reaches Bob's open thread live") { bob.store.threads[root]?.count == 3 }
+        XCTAssertEqual(bob.store.threads[root]?.last?.text, "thanks, I'll pick them up")
+        XCTAssertEqual(bob.store.conversation(bobChat)?.messages.first?.thread?.replyCount, 2)
+        XCTAssertEqual(bob.store.conversation(bobChat)?.messages.count, 1, "still one message in the timeline")
+        XCTAssertEqual(bob.store.conversation(bobChat)?.messages.first?.thread?.unread, 1, "Ada's reply is new to Bob")
+        await bob.store.markThreadRead(root, in: bobChat)
+        XCTAssertEqual(bob.store.conversation(bobChat)?.messages.first?.thread?.unread, 0)
+
+        // Restart both phones: the threads are still there.
+        let adaAgain = ConversationStore(storageLocation: ada.location)
+        let bobAgain = ConversationStore(storageLocation: bob.location)
+        await adaAgain.bootstrap(arguments: [])
+        await bobAgain.bootstrap(arguments: [])
+        XCTAssertEqual(adaAgain.conversation(adaChat)?.messages.first?.thread?.replyCount, 2)
+        XCTAssertEqual(bobAgain.conversation(bobChat)?.messages.first?.thread?.replyCount, 2)
+        await adaAgain.openThread(root)
+        XCTAssertEqual(adaAgain.threads[root]?.count, 3)
+
+        // A search finds the reply and names its thread.
+        let hit = await ada.store.search("staff room")
+        XCTAssertEqual(hit.messages.first?.threadRoot, root)
+
+        await ada.session.signOut()
+        await bob.session.signOut()
+    }
+
     /// A formatted message through the real server: both phones hold the same Markdown, parse it to the same
     /// blocks (so it draws identically), and the receiver finds it by its words, not its markup.
     func testAFormattedMessageRendersTheSameOnTheReceiver() async throws {

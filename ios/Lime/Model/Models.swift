@@ -36,8 +36,44 @@ struct Message: Identifiable, Hashable, Sendable {
     let text: String
     let date: Date
     var state: DeliveryState = .received
+    /// When other messages reply to this one: how many, the newest, who, and what is unread.
+    var thread: ThreadInfo?
 
     var isOwn: Bool { senderID == nil }
+}
+
+/// What a message with replies shows under its bubble ("3 replies · Last reply 8:20 AM").
+struct ThreadInfo: Hashable, Sendable {
+    let replyCount: Int
+    let lastReplyAt: Date
+    /// Up to three people who replied, the newest first.
+    let repliers: [Person]
+    /// Replies from others not yet seen in the thread.
+    let unread: Int
+
+    /// `me` is how the app shows the signed-in person (LimeCore calls them "me").
+    init(_ summary: ThreadSummary, me: Person) {
+        replyCount = Int(summary.replyCount)
+        lastReplyAt = Date(timeIntervalSince1970: Double(summary.lastReplyAt) / 1000)
+        repliers = summary.repliers.map { $0.id == "me" ? me : Person(id: $0.id, name: $0.name, tone: Int($0.tone)) }
+        unread = Int(summary.unread)
+    }
+
+    init(replyCount: Int, lastReplyAt: Date, repliers: [Person], unread: Int) {
+        self.replyCount = replyCount
+        self.lastReplyAt = lastReplyAt
+        self.repliers = repliers
+        self.unread = unread
+    }
+
+    var summaryText: String { "\(replyCount) \(replyCount == 1 ? "reply" : "replies") · Last reply \(MessageFormat.listTime(lastReplyAt))" }
+}
+
+/// Where tapping a thread (or a search hit inside one) goes: the thread of one message, optionally landing on a reply.
+struct ThreadTarget: Hashable {
+    let conversationID: String
+    let rootID: String
+    var focusMessageID: String? = nil
 }
 
 struct Conversation: Identifiable, Hashable, Sendable {

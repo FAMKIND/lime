@@ -111,25 +111,38 @@ struct MessageSearchScreen: View {
             if !results.messages.isEmpty {
                 sectionTitle("Messages")
                 ForEach(results.messages) { hit in
-                    NavigationLink(value: ChatTarget(conversationID: hit.conversationID, messageID: hit.messageID)) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text(hit.conversationTitle).font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text(MessageFormat.listTime(hit.date)).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                            }
-                            Text(hit.snippet).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                        }
-                        .padding(.horizontal, 8).padding(.vertical, 10).contentShape(Rectangle())
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let root = hit.threadRoot {
+                        NavigationLink(value: ThreadTarget(conversationID: hit.conversationID, rootID: root, focusMessageID: hit.messageID)) { messageRow(hit) }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("search-message-\(hit.messageID)")
+                            .accessibilityLabel("\(hit.conversationTitle), in a thread: \(SearchText.plain(hit.marked))")
+                    } else {
+                        NavigationLink(value: ChatTarget(conversationID: hit.conversationID, messageID: hit.messageID)) { messageRow(hit) }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("search-message-\(hit.messageID)")
+                            .accessibilityLabel("\(hit.conversationTitle): \(SearchText.plain(hit.marked))")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("search-message-\(hit.messageID)")
-                    .accessibilityLabel("\(hit.conversationTitle): \(SearchText.plain(hit.marked))")
                 }
             }
         }
+    }
+
+    private func messageRow(_ hit: MessageHit) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(hit.conversationTitle).font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
+                if hit.threadRoot != nil {
+                    Label("Thread", systemImage: "arrowshape.turn.up.left").labelStyle(.titleAndIcon)
+                        .font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                }
+                Spacer(minLength: 4)
+                Text(MessageFormat.listTime(hit.date)).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+            }
+            Text(hit.snippet).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 10).contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func sectionTitle(_ text: String) -> some View {

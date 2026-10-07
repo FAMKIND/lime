@@ -39,6 +39,7 @@ final class AccountSession {
         self.sessionService = sessionService
         self.defaults = defaults
         store.registrar = { [weak self] in await self?.registerDevice() }
+        store.meProvider = { [weak self] in self?.mePerson ?? SampleData.me }
     }
 
     var hasBackend: Bool { auth != nil }

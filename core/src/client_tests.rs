@@ -660,3 +660,180 @@ fn the_size_limit_applies_to_the_written_form() {
     assert!(alice.store.queue_text(id.clone(), "a".repeat(29_000)).is_ok());
     assert!(alice.store.queue_text(id, "a".repeat(31_000)).is_err());
 }
+
+// ---------------------------------------------------------------- LIME-101: reply threads
+
+fn reply(from: &Party, to: &Party, transport: &Arc<dyn Transport>, root: &str, text: &str) -> crate::MessageItem {
+    let item = from
+        .store
+        .queue_reply(format!("dm:{}", to.user), root.into(), text.into())
+        .unwrap();
+    from.store.deliver_queued(transport.clone(), from.token.clone()).unwrap();
+    item
+}
+
+fn first_message_id(p: &Party, peer: &Party) -> String {
+    p.store.list_messages(format!("dm:{}", peer.user)).unwrap().remove(0).id
+}
+
+#[test]
+fn a_reply_stays_out_of_the_timeline_and_hangs_from_its_root_on_both_phones() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    server.state.lock().unwrap().profiles.insert("alice".into(), ("Alice A".into(), None));
+    server.state.lock().unwrap().profiles.insert("bob".into(), ("Bob B".into(), None));
+    say(&alice, &bob, &transport, "who has the field trip forms?");
+    sync(&bob, &transport);
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    let root = first_message_id(&alice, &bob);
+
+    // Bob replies in the thread; Alice replies back; a third message is an ordinary one.
+    reply(&bob, &alice, &transport, &root, "I do, in the staff room");
+    sync(&alice, &transport);
+    reply(&alice, &bob, &transport, &root, "thanks, I'll pick them up");
+    say(&alice, &bob, &transport, "also: lunch?");
+    sync(&bob, &transport);
+
+    for (me, peer) in [(&alice, &bob), (&bob, &alice)] {
+        assert_eq!(texts(me, peer), vec!["who has the field trip forms?", "also: lunch?"], "replies are not in the main timeline");
+        let thread = me.store.list_thread(root.clone()).unwrap();
+        assert_eq!(
+            thread.iter().map(|m| m.text.as_str()).collect::<Vec<_>>(),
+            vec!["who has the field trip forms?", "I do, in the staff room", "thanks, I'll pick them up"],
+            "the root first, then the replies in order"
+        );
+        let summaries = me.store.list_thread_summaries(format!("dm:{}", peer.user)).unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].root_id, root);
+        assert_eq!(summaries[0].reply_count, 2);
+        assert_eq!(summaries[0].repliers.len(), 2, "both people replied");
+        assert_eq!(summaries[0].last_reply_at, thread[2].sent_at);
+    }
+    // Most recent replier first: on Alice's phone that is Alice herself ("me"), on Bob's it is Alice too (by id).
+    let alice_view = alice.store.list_thread_summaries(format!("dm:{}", bob.user)).unwrap().remove(0);
+    assert_eq!(alice_view.repliers[0].id, "me");
+}
+
+#[test]
+fn replying_to_a_reply_answers_the_same_root_and_a_wrong_root_is_refused() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "root question");
+    sync(&bob, &transport);
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    let root = first_message_id(&alice, &bob);
+    let first = reply(&bob, &alice, &transport, &root, "first reply");
+    sync(&alice, &transport);
+
+    // Alice answers Bob's REPLY: it still hangs from the root.
+    let second = reply(&alice, &bob, &transport, &first.id, "reply to the reply");
+    sync(&bob, &transport);
+    let thread: Vec<String> = bob.store.list_thread(root.clone()).unwrap().into_iter().map(|m| m.id).collect();
+    assert_eq!(thread, vec![root.clone(), first.id.clone(), second.id.clone()]);
+    assert_eq!(bob.store.list_thread_summaries(format!("dm:{}", alice.user)).unwrap().len(), 1, "one thread, not two");
+
+    // A message that is not here, or is in another conversation, cannot be replied to.
+    assert!(alice.store.queue_reply(format!("dm:{}", bob.user), "no-such-message".into(), "x".into()).is_err());
+    let (carol, ctransport) = party(&server, "carol", 3);
+    let _ = (&carol, &ctransport);
+    alice.store.start_dm(carol.user.clone(), "Carol".into()).unwrap();
+    assert!(alice.store.queue_reply(format!("dm:{}", carol.user), root, "wrong chat".into()).is_err(), "the root must be in this conversation");
+}
+
+#[test]
+fn unread_counts_are_per_thread_and_clear_when_the_thread_is_read() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "root");
+    sync(&bob, &transport);
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    let root = first_message_id(&alice, &bob);
+    say(&alice, &bob, &transport, "another top-level message");
+    reply(&alice, &bob, &transport, &root, "reply 1");
+    reply(&alice, &bob, &transport, &root, "reply 2");
+    sync(&bob, &transport);
+    let summary = |p: &Party, peer: &Party| p.store.list_thread_summaries(format!("dm:{}", peer.user)).unwrap().remove(0);
+    assert_eq!(summary(&bob, &alice).unread, 2, "two replies not yet seen");
+    assert_eq!(summary(&alice, &bob).unread, 0, "my own replies are not unread to me");
+    bob.store.mark_thread_read(root.clone()).unwrap();
+    assert_eq!(summary(&bob, &alice).unread, 0);
+    reply(&alice, &bob, &transport, &root, "reply 3");
+    sync(&bob, &transport);
+    assert_eq!(summary(&bob, &alice).unread, 1, "only what is new since");
+}
+
+#[test]
+fn replies_arrive_in_any_order_and_the_thread_is_still_right() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (alice_msg, _) = ("x", 0);
+    let _ = alice_msg;
+    // Establish the sessions both ways first, so the next two are ordinary Olm messages.
+    say(&alice, &bob, &transport, "hello");
+    sync(&bob, &transport);
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    say(&bob, &alice, &transport, "hi");
+    sync(&alice, &transport);
+    let root = alice.store.queue_text(format!("dm:{}", bob.user), "the root".into()).unwrap();
+    let r1 = alice.store.queue_reply(format!("dm:{}", bob.user), root.id.clone(), "reply one".into()).unwrap();
+    let r2 = alice.store.queue_reply(format!("dm:{}", bob.user), root.id.clone(), "reply two".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    // The network swaps them: the replies and the root arrive newest first.
+    server.state.lock().unwrap().mailbox.reverse();
+    sync(&bob, &transport);
+    sync(&bob, &transport);
+    let thread: Vec<String> = bob.store.list_thread(root.id.clone()).unwrap().into_iter().map(|m| m.id).collect();
+    assert_eq!(thread, vec![root.id.clone(), r1.id, r2.id], "the order is the sender's, not the arrival order");
+    assert_eq!(bob.store.list_thread_summaries(format!("dm:{}", alice.user)).unwrap()[0].reply_count, 2);
+    let timeline = texts(&bob, &alice);
+    assert_eq!(timeline, vec!["hello", "hi", "the root"]);
+}
+
+#[test]
+fn a_reply_names_its_root_only_inside_the_encrypted_payload_and_its_parents_are_the_threads() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "root");
+    sync(&bob, &transport);
+    let root = first_message_id(&alice, &bob);
+    let first = alice.store.queue_reply(format!("dm:{}", bob.user), root.clone(), "one".into()).unwrap();
+    let second = alice.store.queue_reply(format!("dm:{}", bob.user), root.clone(), "two".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    // What the server holds is ciphertext: the root's id is nowhere in it.
+    for item in server.state.lock().unwrap().mailbox.iter() {
+        assert!(!item.2.contains(&root), "the server's copy does not name the root");
+    }
+    // The first reply's parent is the root; the second's is the first reply (the thread's own heads).
+    let parents = |id: &str| -> String {
+        alice.store.lock().query_row("SELECT parents FROM messages WHERE id = ?1", params![id], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(parents(&first.id), format!("[\"{root}\"]"));
+    assert_eq!(parents(&second.id), format!("[\"{}\"]", first.id));
+}
+
+#[test]
+fn a_search_hit_in_a_reply_names_its_thread_and_in_chat_find_skips_replies() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "the fractions lesson plan");
+    sync(&bob, &transport);
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    let root = first_message_id(&alice, &bob);
+    reply(&bob, &alice, &transport, &root, "I will review the fractions tonight");
+    sync(&alice, &transport);
+
+    let hits = alice.store.search_messages("fractions".into(), None, 10).unwrap();
+    assert_eq!(hits.len(), 2);
+    let in_thread: Vec<_> = hits.iter().filter(|h| h.thread_root.is_some()).collect();
+    assert_eq!(in_thread.len(), 1);
+    assert_eq!(in_thread[0].thread_root.as_deref(), Some(root.as_str()), "the hit opens that thread");
+    let in_chat = alice.store.search_messages("fractions".into(), Some(format!("dm:{}", bob.user)), 10).unwrap();
+    assert_eq!(in_chat.len(), 1, "in-chat find steps through the timeline, where replies are not");
+    assert!(in_chat[0].thread_root.is_none());
+}

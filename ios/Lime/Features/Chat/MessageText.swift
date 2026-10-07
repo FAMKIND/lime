@@ -4,26 +4,30 @@ import SwiftUI
 /// lists, and code blocks that scroll sideways. Anything outside the subset arrives as plain text.
 struct FormattedMessageText: View {
     let markdown: String
-    /// The bubble's text colour; links and code keep it so contrast is the bubble's own.
+    /// The bubble's text colour.
     let ink: Color
+    /// The colour of links on this bubble: a green of its own, so a link is not mistaken for underlined text.
+    let link: Color
+    /// The link that was just tapped, shown pressed for a moment.
+    var pressed: String? = nil
 
     var body: some View {
         let blocks = MessageRender.blocks(markdown)
         if blocks.count == 1, case .paragraph(let spans) = blocks[0] {
             // The common case, one paragraph, is a single piece of text.
-            Text(MessageRender.attributed(spans, ink: ink)).font(Theme.body).foregroundStyle(ink)
+            Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                     switch block {
                     case .paragraph(let spans):
-                        Text(MessageRender.attributed(spans, ink: ink)).font(Theme.body).foregroundStyle(ink)
+                        Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                     case .list(let items):
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(Array(MessageRender.numbered(items).enumerated()), id: \.offset) { _, row in
                                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                                     Text(row.marker).font(Theme.body).foregroundStyle(ink).frame(minWidth: 14, alignment: .trailing)
-                                    Text(MessageRender.attributed(row.item.spans, ink: ink)).font(Theme.body).foregroundStyle(ink)
+                                    Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                                 }
                                 .padding(.leading, CGFloat(row.item.level) * 18)
                             }
@@ -78,8 +82,9 @@ enum MessageRender {
         }
     }
 
-    /// One run of text with its styles.
-    static func attributed(_ spans: [Span], ink: Color) -> AttributedString {
+    /// One run of text with its styles. A link is its own green plus an underline (and a tint while pressed);
+    /// `__underline__` is the text colour with a plain underline.
+    static func attributed(_ spans: [Span], ink: Color, link linkColor: Color, pressed: String? = nil) -> AttributedString {
         var result = AttributedString()
         for span in spans {
             var piece = AttributedString(span.text)
@@ -94,7 +99,8 @@ enum MessageRender {
             if let link = span.link, let url = URL(string: link) {
                 piece.link = url
                 piece.underlineStyle = .single
-                piece.foregroundColor = ink
+                piece.foregroundColor = linkColor
+                if link == pressed { piece.backgroundColor = linkColor.opacity(0.22) }
             }
             result.append(piece)
         }

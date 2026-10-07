@@ -34,6 +34,9 @@ private struct SignedInView: View {
                 .navigationDestination(for: Conversation.ID.self) { id in
                     ChatView(conversationID: id)
                 }
+                .navigationDestination(for: ThreadTarget.self) { target in
+                    ThreadView(target: target)
+                }
                 .navigationDestination(for: ChatTarget.self) { target in
                     ChatView(conversationID: target.conversationID, focusMessageID: target.messageID)
                 }

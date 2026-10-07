@@ -132,6 +132,15 @@ const MIGRATIONS: &[&str] = &[
      CREATE TRIGGER messages_fts_update AFTER UPDATE OF body, plain, conversation_id ON messages BEGIN
          UPDATE message_fts SET body = COALESCE(new.plain, new.body), conversation_id = new.conversation_id WHERE message_id = old.id;
      END;",
+    // 9: reply threads (LIME-101). A reply carries `thread_root`, the id of the message it answers
+    // (never itself a reply: replying to a reply answers the same root). Replies are kept out of the
+    // main timeline. `thread_state` counts the replies in each thread not yet read.
+    "ALTER TABLE messages ADD COLUMN thread_root TEXT;
+     CREATE INDEX messages_by_thread ON messages (thread_root) WHERE thread_root IS NOT NULL;
+     CREATE TABLE thread_state (
+         root_id TEXT PRIMARY KEY NOT NULL,
+         unread  INTEGER NOT NULL DEFAULT 0
+     );",
 ];
 
 /// The schema version this build writes.

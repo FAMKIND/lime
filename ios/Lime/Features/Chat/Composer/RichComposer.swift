@@ -39,6 +39,7 @@ final class RichComposerModel {
         pinned = false
         hasText = false
         hasSelection = false
+        textView.setToolbar(visible: false, model: self) // do not wait for the next view update
         refresh()
     }
 
@@ -223,7 +224,7 @@ struct RichComposerField: UIViewRepresentable {
         view.font = ComposerDocument.baseFont()
         view.adjustsFontForContentSizeCategory = true
         view.typingAttributes = ComposerTextView.plainTypingAttributes
-        view.linkTextAttributes = [.foregroundColor: UIColor.label, .underlineStyle: NSUnderlineStyle.single.rawValue]
+        view.linkTextAttributes = [.foregroundColor: UIColor(Theme.linkOther), .underlineStyle: NSUnderlineStyle.single.rawValue]
         view.accessibilityIdentifier = "composer-field"
         view.accessibilityLabel = "Message"
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)

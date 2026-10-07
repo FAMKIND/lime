@@ -23,6 +23,8 @@ pub struct SearchHit {
     pub time: i64,
     /// True when the message is mine.
     pub from_me: bool,
+    /// The message this one replies to, when it is a reply in a thread (the hit opens that thread).
+    pub thread_root: Option<String>,
 }
 
 /// One conversation whose title or people match a search.
@@ -57,8 +59,9 @@ pub(crate) fn fts_query(text: &str) -> Option<String> {
 #[uniffi::export]
 impl LimeStore {
     /// Messages matching `query`, prefix-matched and case- and diacritic-insensitive. In every
-    /// conversation (best match first, then newest) or, with `conversation_id`, in that one (oldest
-    /// first, so a person can step through them). Blocked conversations are never searched.
+    /// conversation (best match first, then newest; a reply in a thread says which thread) or, with
+    /// `conversation_id`, in that chat's main timeline (oldest first, so a person can step through
+    /// them; replies are in their threads). Blocked conversations are never searched.
     pub fn search_messages(
         &self,
         query: String,
@@ -77,12 +80,12 @@ impl LimeStore {
         let sql = format!(
             "SELECT message_fts.message_id, message_fts.conversation_id,
                     snippet(message_fts, 0, char({start}), char({end}), '…', 12),
-                    m.sent_at, m.sender_id
+                    m.sent_at, m.sender_id, m.thread_root
              FROM message_fts
              JOIN messages m ON m.id = message_fts.message_id
              JOIN conversations c ON c.id = message_fts.conversation_id
              WHERE message_fts MATCH ?1 AND c.request_state != 'blocked'
-               AND (?2 IS NULL OR message_fts.conversation_id = ?2)
+               AND (?2 IS NULL OR (message_fts.conversation_id = ?2 AND m.thread_root IS NULL))
              ORDER BY {order} LIMIT ?3",
             start = MATCH_START as u32,
             end = MATCH_END as u32,
@@ -96,6 +99,7 @@ impl LimeStore {
                     snippet: r.get(2)?,
                     time: r.get(3)?,
                     from_me: r.get::<_, String>(4)? == ME_ID,
+                    thread_root: r.get(5)?,
                 })
             })
             .map_err(db_err)?

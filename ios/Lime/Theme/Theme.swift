@@ -21,6 +21,9 @@ enum Theme {
         static let text = "TextPrimary"
         static let textSecondary = "TextSecondary"
         static let hairline = "Hairline"
+        /// Links: a green that keeps 4.5:1 contrast on the surface it sits on (see ThemeTests).
+        static let linkOther = "LinkOther"
+        static let linkOwn = "LinkOwn"
     }
 
     static func color(_ name: String) -> Color {
@@ -40,6 +43,10 @@ enum Theme {
     static let text = color(Name.text)
     static let textSecondary = color(Name.textSecondary)
     static let hairline = color(Name.hairline)
+    /// A link in someone else's bubble, and in the composer.
+    static let linkOther = color(Name.linkOther)
+    /// A link in my own bubble.
+    static let linkOwn = color(Name.linkOwn)
 
     /// Resolves an asset colour for a given appearance (used by the contrast tests).
     static func uiColor(_ name: String, dark: Bool) -> UIColor {

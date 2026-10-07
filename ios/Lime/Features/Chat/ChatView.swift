@@ -7,9 +7,6 @@ struct ChatView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var composerModel = RichComposerModel()
-    @State private var pickingEmoji = false
-    /// A link the person tapped in a message that is not https: shown to be confirmed first.
-    @State private var pendingLink: URL?
     @State private var confirmingBlock = false
     // In-chat find (the header's magnifier): the matches, which one is current, and where to scroll.
     @State private var finding = false
@@ -96,7 +93,9 @@ struct ChatView: View {
                                           showName: showAvatar && conversation.isGroup,
                                           showState: message.isOwn && (message.state != .sent || message.id == lastOwnID),
                                           highlighted: highlightedID == message.id,
-                                          onRetry: { Task { await store.resend(message.id) } })
+                                          onRetry: { Task { await store.resend(message.id) } },
+                                          onReply: conversation.isRequest ? nil : { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) },
+                                          onOpenThread: { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) })
                                 .padding(.bottom, 8)
                         }
                     }
@@ -107,19 +106,7 @@ struct ChatView: View {
                 .padding(.bottom, 8)
             }
             .accessibilityIdentifier("chat-scroll")
-            .environment(\.openURL, OpenURLAction { url in
-                if MessageRender.opensWithoutAsking(url) { return .systemAction }
-                pendingLink = url
-                return .handled
-            })
-            .confirmationDialog("Open this link?", isPresented: Binding(get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } }), titleVisibility: .visible, presenting: pendingLink) { url in
-                Button("Open \(url.scheme == "mailto" ? "mail" : "link")") { UIApplication.shared.open(url) }
-                    .accessibilityIdentifier("link-open")
-                Button("Cancel", role: .cancel) {}.accessibilityIdentifier("link-dialog-cancel")
-            } message: { url in
-                Text(url.absoluteString)
-            }
-            .sheet(item: $composerModel.linkRequest) { request in LinkSheet(request: request, composer: composerModel) }
+            .linkOpening()
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
             .refreshable { await store.syncNow() }
@@ -378,65 +365,8 @@ struct ChatView: View {
 
     // MARK: Composer
 
-    /// The composer (design 04): the text above, and under it `+`, emoji and Aa on the left, mic or send on the right.
-    /// Select text, or tap Aa, and the formatting toolbar appears above the keyboard.
     private func composer(_ conversation: Conversation) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ZStack(alignment: .topLeading) {
-                RichComposerField(model: composerModel)
-                    .onAppear { composerModel.hasText = false }
-                if !composerModel.hasText {
-                    Text("Send message…").font(Theme.body).foregroundStyle(Theme.textSecondary)
-                        .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
-                }
-            }
-            HStack(spacing: 2) {
-                composerButton("plus", label: "Add attachment", id: "composer-plus") { store.comingSoon("Attachments") }
-                composerButton("face.smiling", label: "Emoji", id: "composer-emoji") { pickingEmoji = true }
-                Button { composerModel.toggleToolbar() } label: {
-                    Text("Aa").font(.system(size: 17, weight: .medium)).foregroundStyle(composerModel.toolbarVisible ? Theme.accentInk : Theme.text)
-                        .frame(width: 44, height: 40)
-                        .background(composerModel.toolbarVisible ? Theme.accent : Color.clear, in: Capsule())
-                }
-                .accessibilityLabel("Formatting").accessibilityIdentifier("composer-aa")
-                .accessibilityAddTraits(composerModel.toolbarVisible ? [.isSelected] : [])
-                Spacer(minLength: 0)
-                if composerModel.canSend {
-                    Button { sendDraft(in: conversation) } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Theme.primaryInk)
-                            .frame(width: 36, height: 36)
-                            .background(Theme.primary, in: Circle())
-                            .frame(width: 44, height: 40)
-                    }
-                    .accessibilityLabel("Send")
-                    .accessibilityIdentifier("send-button")
-                } else {
-                    composerButton("mic", label: "Voice message", id: "composer-mic") { store.comingSoon("Voice messages") }
-                }
-            }
-        }
-        .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 4)
-        .limeGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .padding(.horizontal, 12)
-        .padding(.bottom, 4)
-        .overlay { EmojiKeyboardField(isActive: $pickingEmoji) { composerModel.insertEmoji($0) }.frame(width: 1, height: 1).opacity(0.01) }
-    }
-
-    private func composerButton(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 20)).foregroundStyle(Theme.text).frame(width: 44, height: 40)
-        }
-        .accessibilityLabel(label).accessibilityIdentifier(id)
-    }
-
-    /// Sends what is written, as Markdown (LimeCore writes it the one way), and empties the composer.
-    private func sendDraft(in conversation: Conversation) {
-        let markdown = composerModel.markdown()
-        guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        store.send(markdown, in: conversation.id)
-        composerModel.clear()
+        ChatComposer(model: composerModel) { markdown in store.send(markdown, in: conversation.id) }
     }
 }
 
@@ -451,6 +381,10 @@ struct MessageBubble: View {
     /// The message a search or find landed on.
     var highlighted: Bool = false
     var onRetry: () -> Void = {}
+    /// "Reply in thread" (long-press), and tapping the "N replies" row under a message that has them.
+    var onReply: (() -> Void)? = nil
+    var onOpenThread: (() -> Void)? = nil
+    @Environment(\.pressedLink) private var pressedLink
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 36
 
     var body: some View {
@@ -466,7 +400,8 @@ struct MessageBubble: View {
                         .font(Theme.caption.weight(.medium))
                         .foregroundStyle(Theme.text)
                 }
-                FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text)
+                FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
+                                     link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString)
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(message.isOwn ? Theme.ownBubble : Theme.bubbleOther,
                                 in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
@@ -480,10 +415,19 @@ struct MessageBubble: View {
                     )
                     .animation(.easeInOut(duration: 0.2), value: highlighted)
                     .accessibilityIdentifier(message.isOwn ? "own-bubble" : "other-bubble")
+                    .contextMenu {
+                        if let onReply, message.state != .sending, message.state != .failed {
+                            Button { onReply() } label: { Label("Reply in thread", systemImage: "arrowshape.turn.up.left") }
+                                .accessibilityIdentifier("reply-in-thread")
+                        }
+                    }
                     .overlay(alignment: .topLeading) {
                         // For assistive tools and UI tests: which message a search or find landed on.
                         if highlighted { Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("match-marker-\(message.id)") }
                     }
+                if let thread = message.thread, let onOpenThread {
+                    ThreadSummaryRow(messageID: message.id, thread: thread, action: onOpenThread)
+                }
                 HStack(spacing: 4) {
                     Text(MessageFormat.clock(message.date))
                     if showState {
@@ -508,4 +452,9 @@ struct MessageBubble: View {
             if !message.isOwn { Spacer(minLength: 56) }
         }
     }
+}
+
+extension EnvironmentValues {
+    /// The link a person just tapped, so its text can show pressed.
+    @Entry var pressedLink: URL? = nil
 }

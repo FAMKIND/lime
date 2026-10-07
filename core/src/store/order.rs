@@ -60,16 +60,25 @@ pub(crate) fn ordered(mut rows: Vec<Row>) -> Vec<Row> {
     out
 }
 
-/// Every message of a conversation, in display order.
+/// The messages of a conversation's main timeline, in display order (replies are not part of it).
 pub(crate) fn load_ordered(conn: &Connection, conversation_id: &str) -> Result<Vec<Row>, StoreError> {
+    load(conn, "conversation_id = ?1 AND thread_root IS NULL", conversation_id)
+}
+
+/// A thread: the message it hangs from, then its replies, in display order.
+pub(crate) fn load_thread(conn: &Connection, root_id: &str) -> Result<Vec<Row>, StoreError> {
+    load(conn, "(id = ?1 OR thread_root = ?1)", root_id)
+}
+
+fn load(conn: &Connection, condition: &str, key: &str) -> Result<Vec<Row>, StoreError> {
     let mut statement = conn
-        .prepare(
+        .prepare(&format!(
             "SELECT id, conversation_id, sender_id, body, sent_at, local_state, hlc, parents, op_id
-             FROM messages WHERE conversation_id = ?1",
-        )
+             FROM messages WHERE {condition}"
+        ))
         .map_err(db_err)?;
     let rows = statement
-        .query_map(params![conversation_id], |r| {
+        .query_map(params![key], |r| {
             let parents: Option<String> = r.get(7)?;
             Ok(Row {
                 id: r.get(0)?,
@@ -94,7 +103,15 @@ pub(crate) fn load_ordered(conn: &Connection, conversation_id: &str) -> Result<V
 /// The ops nothing else in the conversation lists as a parent yet, newest last, at most three:
 /// what a new op names as its `parents`.
 pub(crate) fn heads(conn: &Connection, conversation_id: &str) -> Result<Vec<String>, StoreError> {
-    let rows = load_ordered(conn, conversation_id)?;
+    heads_of(load_ordered(conn, conversation_id)?)
+}
+
+/// The same for a thread.
+pub(crate) fn thread_heads(conn: &Connection, root_id: &str) -> Result<Vec<String>, StoreError> {
+    heads_of(load_thread(conn, root_id)?)
+}
+
+fn heads_of(rows: Vec<Row>) -> Result<Vec<String>, StoreError> {
     let referenced: HashSet<&String> = rows.iter().flat_map(|r| r.parents.iter()).collect();
     let mut heads: Vec<String> = rows
         .iter()

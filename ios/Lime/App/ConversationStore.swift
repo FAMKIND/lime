@@ -33,6 +33,11 @@ final class ConversationStore {
     /// The screens pushed on Messages (chats by id, the Requests list).
     var path = NavigationPath()
     private var link: BackendLink?
+    /// How the signed-in person is shown (set by the account session): core calls them "me".
+    var meProvider: @MainActor () -> Person = { SampleData.me }
+    /// The threads that are open on screen: the root message, then its replies. Kept fresh by `reload()`.
+    private(set) var threads: [String: [Message]] = [:]
+    private var openThreadIDs: Set<String> = []
     private var isSyncing = false
     private var syncAgain = false
     /// Why the last call to the server failed, in true words; nil once one succeeds. A session that
@@ -240,7 +245,7 @@ final class ConversationStore {
             messages: hits.map { hit in
                 MessageHit(messageID: hit.messageId, conversationID: hit.conversationId,
                            conversationTitle: byID[hit.conversationId]?.title ?? "", marked: hit.snippet,
-                           date: Date(timeIntervalSince1970: Double(hit.time) / 1000), fromMe: hit.fromMe)
+                           date: Date(timeIntervalSince1970: Double(hit.time) / 1000), fromMe: hit.fromMe, threadRoot: hit.threadRoot)
             })
     }
 
@@ -357,16 +362,85 @@ final class ConversationStore {
         if isDemo { return }
         #endif
         guard let core else { return }
+        let open = openThreadIDs
         do {
-            conversations = try await Task.detached(priority: .userInitiated) {
-                try core.listConversations().map { summary in
-                    Conversation(summary, messages: try core.listMessages(conversationId: summary.id))
+            let loaded = try await Task.detached(priority: .userInitiated) { () -> ([Conversation], [String: [ThreadSummary]], [String: [MessageItem]]) in
+                var summaries: [String: [ThreadSummary]] = [:]
+                let conversations = try core.listConversations().map { summary in
+                    summaries[summary.id] = try core.listThreadSummaries(conversationId: summary.id)
+                    return Conversation(summary, messages: try core.listMessages(conversationId: summary.id))
                 }
+                var threadItems: [String: [MessageItem]] = [:]
+                for root in open { threadItems[root] = try? core.listThread(rootId: root) }
+                return (conversations, summaries, threadItems)
             }.value
+            let me = meProvider()
+            conversations = loaded.0.map { conversation in
+                var conversation = conversation
+                let byRoot = Dictionary(uniqueKeysWithValues: (loaded.1[conversation.id] ?? []).map { ($0.rootId, ThreadInfo($0, me: me)) })
+                for index in conversation.messages.indices {
+                    conversation.messages[index].thread = byRoot[conversation.messages[index].id]
+                }
+                return conversation
+            }
+            for (root, items) in loaded.2 { threads[root] = items.map(Message.init) }
         } catch {
             storageError = "Storage could not be read."
         }
         isLoaded = true
+    }
+
+    // MARK: Threads
+
+    /// A thread is on screen: load it, and keep it fresh as replies arrive.
+    func openThread(_ root: String) async {
+        openThreadIDs.insert(root)
+        #if DEBUG
+        if isDemo {
+            if demoThreads[root] == nil, let message = conversations.flatMap(\.messages).first(where: { $0.id == root }) {
+                demoThreads[root] = [message] // a message nobody has replied to yet: its thread is just itself
+            }
+            threads[root] = demoThreads[root]
+            return
+        }
+        #endif
+        guard let core else { return }
+        let loaded = try? await Task.detached(priority: .userInitiated) { try core.listThread(rootId: root) }.value
+        if let items = loaded { threads[root] = items.map(Message.init) }
+    }
+
+    func closeThread(_ root: String) {
+        openThreadIDs.remove(root)
+        threads[root] = nil
+    }
+
+    /// The thread has been looked at: its unread count goes to zero.
+    func markThreadRead(_ root: String, in conversationID: Conversation.ID) async {
+        if let c = conversations.firstIndex(where: { $0.id == conversationID }),
+           let m = conversations[c].messages.firstIndex(where: { $0.id == root }), let info = conversations[c].messages[m].thread, info.unread > 0 {
+            conversations[c].messages[m].thread = ThreadInfo(replyCount: info.replyCount, lastReplyAt: info.lastReplyAt, repliers: info.repliers, unread: 0)
+        }
+        #if DEBUG
+        if isDemo { return }
+        #endif
+        guard let core else { return }
+        try? await Task.detached(priority: .userInitiated) { try core.markThreadRead(rootId: root) }.value
+    }
+
+    /// Sends a reply in a thread: it shows as "Sending…" in the thread at once, then is delivered.
+    func sendReply(_ text: String, root: String, in conversationID: Conversation.ID) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        #if DEBUG
+        if isDemo { demoReply(trimmed, root: root, in: conversationID); return }
+        #endif
+        guard let core, link != nil else { return }
+        let queued = try? await Task.detached(priority: .userInitiated) {
+            try core.queueReply(conversationId: conversationID, rootId: root, text: trimmed)
+        }.value
+        guard let item = queued else { return }
+        threads[root, default: []].append(Message(item))
+        await deliverNow()
     }
 
     // MARK: Reading
@@ -479,6 +553,34 @@ final class ConversationStore {
         case "search-name": demoQuery = "lee"; path.append(MessagesRoute.search)
         case "chat-focus": path.append(ChatTarget(conversationID: "dm:lee", messageID: "l3"))
         case "chat-find": demoQuery = "lesson"; path.append("dm:lee")
+        case "thread", "thread-open":
+            // A chat with a thread: "3 replies · Last reply", and the thread itself with its replies.
+            let rae = Person(id: "rae", name: "Rae Torres")
+            let sam = Person(id: "sam", name: "Sam Park"), lee = Person(id: "lee", name: "Lee Wong")
+            let me = meProvider()
+            let root = Message(id: "t1", senderID: "rae", text: "Who can cover **recess duty** on Thursday?", date: now.addingTimeInterval(-7_200),
+                               thread: ThreadInfo(replyCount: 3, lastReplyAt: now.addingTimeInterval(-1_800), repliers: [me, lee, sam], unread: 1))
+            demoThreads = ["t1": [
+                Message(id: "t1", senderID: "rae", text: "Who can cover **recess duty** on Thursday?", date: now.addingTimeInterval(-7_200)),
+                Message(id: "t1a", senderID: "sam", text: "I can take the first half", date: now.addingTimeInterval(-6_000)),
+                Message(id: "t1b", senderID: "lee", text: "I'll do the second half", date: now.addingTimeInterval(-3_600)),
+                Message(id: "t1c", senderID: nil, text: "Perfect, thank you both!", date: now.addingTimeInterval(-1_800), state: .sent),
+            ]]
+            conversations = [Conversation(id: "dm:rae", title: rae.name, members: [rae, sam, lee], messages: [
+                root,
+                Message(id: "t2", senderID: nil, text: "Also, the book fair starts Monday", date: now.addingTimeInterval(-600), state: .sent),
+            ])]
+            path.append("dm:rae")
+            if screen == "thread-open" { path.append(ThreadTarget(conversationID: "dm:rae", rootID: "t1")) }
+        case "links":
+            // A link and an underline side by side, in each kind of bubble.
+            let pat = Person(id: "pat", name: "Pat Rivera")
+            conversations = [Conversation(id: "dm:links", title: pat.name, members: [pat], messages: [
+                Message(id: "k1", senderID: "pat", text: "A [link to the policy](https://limechat.org/policy) and some __underlined text__ side by side.", date: now.addingTimeInterval(-900)),
+                Message(id: "k2", senderID: nil, text: "A [link to the policy](https://limechat.org/policy) and some __underlined text__ side by side.", date: now.addingTimeInterval(-600), state: .sent),
+                Message(id: "k3", senderID: "pat", text: "Email [the office](mailto:office@example.com), **bold**, and plain text.", date: now.addingTimeInterval(-300)),
+            ])]
+            path.append("dm:links")
         case "compose":
             demoCompose = true
             path.append("dm:sam")
@@ -504,6 +606,9 @@ final class ConversationStore {
 
     /// Debug demo: where Settings opens (route names, e.g. ["profile", "edit-about"]).
     private(set) var demoSettingsRoute: [String] = []
+
+    /// Debug demo: the threads (root, then replies) by root id.
+    private(set) var demoThreads: [String: [Message]] = [:]
 
     /// Debug demo: open the composer with some text selected, so the formatting toolbar is up (for screenshots).
     private(set) var demoCompose = false
@@ -544,9 +649,41 @@ final class ConversationStore {
                     marked: SearchText.mark(message.text, query: query), date: message.date, fromMe: message.isOwn))
             }
         }
+        if id == nil {
+            // Replies in threads are found too, and open their thread.
+            for (root, items) in demoThreads {
+                guard let conversation = conversations.first(where: { $0.messages.contains { $0.id == root } }) else { continue }
+                for reply in items.dropFirst() where SearchText.matches(reply.text, query: query) {
+                    results.messages.append(MessageHit(
+                        messageID: reply.id, conversationID: conversation.id, conversationTitle: conversation.title,
+                        marked: SearchText.mark(reply.text, query: query), date: reply.date, fromMe: reply.isOwn, threadRoot: root))
+                }
+            }
+        }
         results.messages.sort { $0.date < $1.date }
         if id == nil { results.messages.reverse() }
         return results
+    }
+
+    private func demoReply(_ text: String, root: String, in conversationID: String) {
+        let reply = Message(id: UUID().uuidString, senderID: nil, text: text, date: Date(), state: .sending)
+        demoThreads[root, default: []].append(reply)
+        threads[root] = demoThreads[root]
+        if let c = conversations.firstIndex(where: { $0.id == conversationID }),
+           let m = conversations[c].messages.firstIndex(where: { $0.id == root }) {
+            let old = conversations[c].messages[m].thread
+            let me = meProvider()
+            conversations[c].messages[m].thread = ThreadInfo(
+                replyCount: (old?.replyCount ?? 0) + 1, lastReplyAt: reply.date,
+                repliers: [me] + (old?.repliers ?? []).filter { $0.id != me.id }.prefix(2), unread: old?.unread ?? 0)
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            if let i = demoThreads[root]?.firstIndex(where: { $0.id == reply.id }) {
+                demoThreads[root]?[i].state = .sent
+                threads[root] = demoThreads[root]
+            }
+        }
     }
 
     private func demoResend(_ messageID: String) {

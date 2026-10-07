@@ -140,3 +140,10 @@ Debug builds only (launch arguments): `-lime-skip-sign-in` (signed in with no ba
 - **Link:** the toolbar's link button opens a sheet for the address (and the words to show, when nothing is selected). Only http, https and mailto links are accepted.
 - **Bubbles** draw the formatting natively; a link that is not https asks before it opens. See `docs/message-format.md`.
 - `-lime-demo-screen format | compose` open a chat of formatted messages, and the composer with the toolbar up, in the in-memory demo.
+
+## Reply threads (LIME-101)
+
+- **Long-press a message, Reply in thread.** The message shows "N replies · Last reply <time>" with up to three replier avatars (and a dot when something is new); tap it to open the thread. Replies are not in the main chat.
+- **The thread screen** (a normal navigation push): the message at the top, then its replies, then its own composer with formatting. New replies arrive live. A search hit inside a thread opens the thread on that reply.
+- **Links** are green (a token per bubble surface, each at least 4.5:1 on its surface) and underlined, and show pressed when tapped; `__underline__` keeps the text colour with a plain underline. A link that is not https asks before opening.
+- `-lime-demo-screen thread | thread-open | links` open these in the in-memory demo.

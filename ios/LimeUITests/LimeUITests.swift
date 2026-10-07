@@ -118,6 +118,87 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["problem-sign-in"].exists)
     }
 
+    // MARK: Threads (LIME-101)
+
+    private func threadApp(_ screen: String = "thread") -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", screen]
+        return app
+    }
+
+    func testAMessageWithRepliesShowsASummaryAndItsRepliesAreNotInTheTimeline() {
+        let app = threadApp()
+        app.launch()
+        let summary = app.buttons["thread-summary-t1"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 10), "the root shows its thread")
+        XCTAssertTrue(summary.label.contains("3 replies · Last reply"), summary.label)
+        XCTAssertTrue(summary.label.contains("1 new"), "an unread reply is marked")
+        XCTAssertFalse(app.staticTexts["I can take the first half"].exists, "replies are not in the main timeline")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'book fair'")).firstMatch.exists, "other messages are")
+    }
+
+    func testOpeningAThreadShowsTheRootAndRepliesAndAReplyUpdatesTheSummary() {
+        let app = threadApp()
+        app.launch()
+        app.buttons["thread-summary-t1"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'recess duty'")).firstMatch.waitForExistence(timeout: 5), "the root is at the top")
+        let count = app.staticTexts["thread-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5))
+        XCTAssertEqual(count.label, "3 replies")
+        for reply in ["I can take the first half", "I'll do the second half", "Perfect, thank you both!"] {
+            XCTAssertTrue(app.staticTexts[reply].waitForExistence(timeout: 5), reply)
+        }
+        // Its own composer: reply in the thread.
+        let field = app.textViews["composer-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("I can swap Friday")
+        app.buttons["send-button"].tap()
+        XCTAssertTrue(app.staticTexts["I can swap Friday"].waitForExistence(timeout: 5), "the reply is in the thread")
+        expectation(for: NSPredicate(format: "label == '4 replies'"), evaluatedWith: count)
+        waitForExpectations(timeout: 5)
+        // Back in the chat the summary counts it, the unread mark is gone, and the reply is still not in the timeline.
+        let back = app.buttons["back-button"].exists ? app.buttons["back-button"] : app.navigationBars.buttons.element(boundBy: 0)
+        back.tap()
+        let summary = app.buttons["thread-summary-t1"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 5))
+        XCTAssertTrue(summary.label.contains("4 replies"), summary.label)
+        XCTAssertFalse(summary.label.contains("new"), "the thread was read")
+        XCTAssertFalse(app.staticTexts["I can swap Friday"].exists, "replies stay out of the timeline")
+    }
+
+    func testLongPressingAMessageOffersReplyInThread() {
+        let app = threadApp()
+        app.launch()
+        let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'book fair'")).firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 10))
+        bubble.press(forDuration: 1.2)
+        let reply = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Reply in thread' OR identifier == 'reply-in-thread'")).firstMatch
+        XCTAssertTrue(reply.waitForExistence(timeout: 5), "the long-press menu has Reply in thread")
+        reply.tap()
+        XCTAssertTrue(app.staticTexts["thread-count"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["thread-count"].label, "No replies yet")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'book fair'")).firstMatch.exists, "the thread opens on that message")
+    }
+
+    func testASearchHitInsideAThreadOpensTheThread() {
+        let app = threadApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["thread-summary-t1"].waitForExistence(timeout: 10))
+        let back = app.buttons["back-button"].exists ? app.buttons["back-button"] : app.navigationBars.buttons.element(boundBy: 0)
+        back.tap()
+        XCTAssertTrue(app.buttons["messages-search-button"].waitForExistence(timeout: 5))
+        app.buttons["messages-search-button"].tap()
+        let field = app.textFields["search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("second half")
+        let hit = app.buttons["search-message-t1b"]
+        XCTAssertTrue(hit.waitForExistence(timeout: 5), "a reply is found by its words")
+        hit.tap()
+        XCTAssertTrue(app.staticTexts["thread-count"].waitForExistence(timeout: 5), "the hit opens its thread")
+        XCTAssertTrue(app.otherElements["match-marker-t1b"].waitForExistence(timeout: 5), "and lands on the reply")
+    }
+
     // MARK: Formatting (LIME-100)
 
     private func openComposer(_ app: XCUIApplication, chat: String = "dm:sam") -> XCUIElement {

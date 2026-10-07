@@ -14,6 +14,7 @@ mod migrations;
 pub(crate) mod order;
 pub(crate) mod pending;
 pub(crate) mod search;
+pub(crate) mod threads;
 mod sample;
 #[cfg(test)]
 mod search_tests;
@@ -511,7 +512,7 @@ impl LimeStore {
     }
 }
 
-fn item_from_row(row: order::Row) -> MessageItem {
+pub(crate) fn item_from_row(row: order::Row) -> MessageItem {
     MessageItem {
         id: row.id,
         conversation_id: row.conversation_id,

@@ -89,3 +89,7 @@ See [`THIRD_PARTY.md`](./THIRD_PARTY.md).
 ## Message formatting (LIME-100)
 
 `format.rs` holds the one grammar of the message Markdown subset (`docs/message-format.md`): `parse_message_markdown(text) -> [Block]` (paragraphs of styled spans, lists with one nesting level, code blocks), `message_markdown_from_blocks(blocks) -> String` (the one written form), `message_plain_text(text)` (the words without markup) and `normalise_message_markdown(text)`. `queue_text` and an incoming message are both normalised, the size limit (30,000 bytes) applies to the written form, and each message keeps its `plain` words (migration 8) for the search index and previews.
+
+## Reply threads (LIME-101)
+
+A reply carries `thread_root` inside the encrypted payload (`queue_reply(conversation_id, root_id, text)`; replying to a reply answers the same root). Replies are kept out of `list_messages` (the main timeline); `list_thread(root_id)` returns the root then its replies in causal order; `list_thread_summaries(conversation_id)` gives each thread's reply count, newest reply time, up to three repliers and unread count; `mark_thread_read(root_id)` clears it. A reply's `parents[]` are the thread's heads. Migration 9 adds `messages.thread_root` and `thread_state`. A search hit in a reply carries `thread_root`.

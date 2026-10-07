@@ -11,6 +11,8 @@ struct MessageHit: Identifiable, Equatable, Sendable {
     let marked: String
     let date: Date
     let fromMe: Bool
+    /// When the message is a reply, the message it replies to: the hit opens that thread.
+    var threadRoot: String? = nil
 
     /// The snippet for display: matched words bold, in the accent colour's weight.
     var snippet: AttributedString { SearchText.attributed(marked) }
