@@ -402,10 +402,12 @@ impl LimeStore {
         conversation_id: String,
         text: String,
     ) -> Result<MessageItem, StoreError> {
-        let body = text.trim();
+        let normalised = crate::format::normalise(&text);
+        let body = normalised.as_str();
         if body.is_empty() {
             return Err(StoreError::EmptyMessage);
         }
+        let plain = crate::format::plain_text(body);
         let conn = self.lock();
         let exists: bool = conn
             .query_row(
@@ -426,15 +428,16 @@ impl LimeStore {
             local_state: LOCAL_STATE_SENT_LOCAL.to_string(),
         };
         conn.execute(
-            "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, plain)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 item.id,
                 item.conversation_id,
                 ME_ID,
                 item.text,
                 item.sent_at,
-                item.local_state
+                item.local_state,
+                plain
             ],
         )
         .map_err(db_err)?;

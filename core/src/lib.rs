@@ -7,6 +7,7 @@
 //! local store [`LimeStore`] (LIME-90). No secret material crosses the FFI or is logged.
 
 mod client;
+mod format;
 mod keys;
 mod protocol;
 mod selftest;
@@ -18,6 +19,7 @@ mod client_tests;
 #[cfg(test)]
 mod testing;
 
+pub use format::{Block, ListItem, Span};
 pub use client::{find_user, lookup_user_by_email, DeviceInfo, FoundUser, SyncReport};
 pub use store::search::{ConversationMatch, SearchHit};
 pub use store::{BlockedPerson, ConversationSummary, KeyInfo, LimeStore, MemberInfo, MessageItem, StoreError};

@@ -111,13 +111,16 @@ impl LimeStore {
         conversation_id: String,
         text: String,
     ) -> Result<MessageItem, StoreError> {
-        let body = text.trim();
+        // What is stored and sent is the one written form: unknown syntax downgraded to text.
+        let normalised = crate::format::normalise(&text);
+        let body = normalised.as_str();
         if body.is_empty() {
             return Err(StoreError::EmptyMessage);
         }
         if body.len() > MAX_TEXT_BYTES {
             return Err(StoreError::Rejected);
         }
+        let plain = crate::format::plain_text(body);
         if conversation_id.strip_prefix("dm:").is_none() {
             return Err(StoreError::NotFound);
         }
@@ -143,9 +146,9 @@ impl LimeStore {
             let parents = order::heads(conn, &conversation_id)?;
             let op_id = new_id();
             conn.execute(
-                "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'sending', ?1, ?6, ?7)",
-                params![op_id, conversation_id, ME_ID, body, now, hlc.render(), json!(parents).to_string()],
+                "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'sending', ?1, ?6, ?7, ?8)",
+                params![op_id, conversation_id, ME_ID, body, now, hlc.render(), json!(parents).to_string(), plain],
             )
             .map_err(db_err)?;
             Ok(MessageItem {
@@ -825,6 +828,12 @@ impl LimeStore {
             return Ok(Outcome::Keep(pending::INVALID));
         };
 
+        // Whatever the sender wrote, what is kept is the one written form (and its plain words).
+        let text = crate::format::normalise(&text);
+        if text.is_empty() {
+            return Ok(Outcome::Keep(pending::INVALID));
+        }
+        let plain = crate::format::plain_text(&text);
         let parents = json!(inner.op.parents).to_string();
         let stored = self.with_conn(|conn| {
             // The session is kept even when the key is not trusted: a pre-key message cannot be read a
@@ -856,9 +865,9 @@ impl LimeStore {
             let shown = remote_hlc.wall.min(now);
             let inserted = conn
                 .execute(
-                    "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents)
-                     VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6, ?7)",
-                    params![inner.op.op_id, conversation, sender, text, shown, inner.op.hlc, parents],
+                    "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6, ?7, ?8)",
+                    params![inner.op.op_id, conversation, sender, text, shown, inner.op.hlc, parents, plain],
                 )
                 .map_err(db_err)?;
             if inserted > 0 {

@@ -608,3 +608,55 @@ fn searching_never_calls_the_server() {
         "search made no request: it reads only the local database"
     );
 }
+
+// ---------------------------------------------------------------- LIME-100: formatted messages
+
+#[test]
+fn a_formatted_message_arrives_as_the_same_markdown_and_is_searched_by_its_words() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let text = "Hello **team**, see [the plan](https://limechat.org/plan)\n\n- bring `forms`\n- bring __snacks__\n\n```\nlet a = **raw**\n```";
+    say(&alice, &bob, &transport, text);
+    sync(&bob, &transport);
+
+    // Both sides hold the one written form, so it renders the same on both.
+    let sent = texts(&alice, &bob);
+    let got = texts(&bob, &alice);
+    assert_eq!(sent, got);
+    assert_eq!(got[0], crate::format::normalise(text));
+    assert!(got[0].contains("**team**") && got[0].contains("```"));
+
+    // Search and previews work on the words, not the markup.
+    assert_eq!(bob.store.search_messages("team".into(), None, 10).unwrap().len(), 1);
+    assert_eq!(bob.store.search_messages("limechat".into(), None, 10).unwrap().len(), 0, "a link's address is not part of the words");
+    assert_eq!(bob.store.search_messages("plan".into(), None, 10).unwrap().len(), 1, "but its text is");
+    assert_eq!(bob.store.search_messages("raw".into(), None, 10).unwrap().len(), 1, "code is searchable");
+    let hit = bob.store.search_messages("snacks".into(), None, 10).unwrap().remove(0);
+    assert!(!hit.snippet.contains("__") && !hit.snippet.contains("(https"), "the snippet has no markup (a code block stays as written): {}", hit.snippet);
+}
+
+#[test]
+fn unknown_syntax_in_a_sent_message_is_downgraded_to_text() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "[click](javascript:alert(1)) and # not a heading");
+    sync(&bob, &transport);
+    let got = texts(&bob, &alice).remove(0);
+    assert!(got.starts_with("\\[click\\]"), "the link is text, not a link: {got}");
+    let blocks = crate::format::parse(&got);
+    let crate::format::Block::Paragraph { spans } = &blocks[0] else { panic!() };
+    assert!(spans.iter().all(|s| s.link.is_none()));
+}
+
+#[test]
+fn the_size_limit_applies_to_the_written_form() {
+    let server = FakeServer::new();
+    let (alice, _) = party(&server, "alice", 1);
+    let id = alice.store.start_dm("bob".into(), "Bob".into()).unwrap();
+    // Escaping can double a message of markup characters: 20,000 stars is 40,000 bytes written.
+    assert!(alice.store.queue_text(id.clone(), "*".repeat(20_000)).is_err(), "too big once written");
+    assert!(alice.store.queue_text(id.clone(), "a".repeat(29_000)).is_ok());
+    assert!(alice.store.queue_text(id, "a".repeat(31_000)).is_err());
+}

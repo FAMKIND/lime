@@ -132,3 +132,11 @@ Debug builds only (launch arguments): `-lime-skip-sign-in` (signed in with no ba
 - **In a chat:** the magnifier in the chat header opens a find bar: "3 of 12" with up (older) and down (newer) arrows and Done. It starts at the newest match.
 - **It never leaves the phone.** The search runs in LimeCore over an FTS5 index inside the encrypted database; no search function takes a network transport, and a test checks that searching makes no request. The screen says so.
 - `-lime-demo-screen search | search-name | chat-focus | chat-find` open these states in the in-memory demo.
+
+## Formatting (LIME-100)
+
+- **Composer (design 04):** the text above, and under it `+`, emoji and **Aa** on the left, mic or send on the right. Return is a new line; the arrow sends. You see bold, italic and so on as you type (no asterisks).
+- **The formatting toolbar** is a floating glass capsule above the keyboard: **B**, *I*, U, ~~S~~, link, code, bulleted list, numbered list, each shown pressed when it is on for the caret or selection, with a round **✕** at the right end. It scrolls sideways when it does not fit. It appears **whenever text is selected**, and when you tap **Aa** (it then stays until ✕ or send). Code with several lines selected makes a code block; with one word it is inline code. Return in a list starts the next item; Return on an empty item ends the list.
+- **Link:** the toolbar's link button opens a sheet for the address (and the words to show, when nothing is selected). Only http, https and mailto links are accepted.
+- **Bubbles** draw the formatting natively; a link that is not https asks before it opens. See `docs/message-format.md`.
+- `-lime-demo-screen format | compose` open a chat of formatted messages, and the composer with the toolbar up, in the in-memory demo.

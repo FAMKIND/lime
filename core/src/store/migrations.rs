@@ -120,6 +120,18 @@ const MIGRATIONS: &[&str] = &[
      CREATE TRIGGER messages_fts_update AFTER UPDATE OF body, conversation_id ON messages BEGIN
          UPDATE message_fts SET body = new.body, conversation_id = new.conversation_id WHERE message_id = old.id;
      END;",
+    // 8: formatted messages (LIME-100). `body` is the message as Markdown (what is shown and sent);
+    // `plain` is the same words without the markup, which is what search indexes and previews show.
+    // Messages from before have no `plain` and are indexed by their `body`, which was plain text.
+    "ALTER TABLE messages ADD COLUMN plain TEXT;
+     DROP TRIGGER messages_fts_insert;
+     DROP TRIGGER messages_fts_update;
+     CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
+         INSERT INTO message_fts (body, message_id, conversation_id) VALUES (COALESCE(new.plain, new.body), new.id, new.conversation_id);
+     END;
+     CREATE TRIGGER messages_fts_update AFTER UPDATE OF body, plain, conversation_id ON messages BEGIN
+         UPDATE message_fts SET body = COALESCE(new.plain, new.body), conversation_id = new.conversation_id WHERE message_id = old.id;
+     END;",
 ];
 
 /// The schema version this build writes.

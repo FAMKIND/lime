@@ -6,7 +6,10 @@ struct ChatView: View {
     var focusMessageID: String? = nil
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var draft = ""
+    @State private var composerModel = RichComposerModel()
+    @State private var pickingEmoji = false
+    /// A link the person tapped in a message that is not https: shown to be confirmed first.
+    @State private var pendingLink: URL?
     @State private var confirmingBlock = false
     // In-chat find (the header's magnifier): the matches, which one is current, and where to scroll.
     @State private var finding = false
@@ -18,7 +21,6 @@ struct ChatView: View {
     @FocusState private var findFocused: Bool
 
     struct ScrollRequest: Equatable { let id: String; let token = UUID() }
-    @FocusState private var composerFocused: Bool
 
     var body: some View {
         if let conversation = store.conversation(conversationID) {
@@ -105,6 +107,19 @@ struct ChatView: View {
                 .padding(.bottom, 8)
             }
             .accessibilityIdentifier("chat-scroll")
+            .environment(\.openURL, OpenURLAction { url in
+                if MessageRender.opensWithoutAsking(url) { return .systemAction }
+                pendingLink = url
+                return .handled
+            })
+            .confirmationDialog("Open this link?", isPresented: Binding(get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } }), titleVisibility: .visible, presenting: pendingLink) { url in
+                Button("Open \(url.scheme == "mailto" ? "mail" : "link")") { UIApplication.shared.open(url) }
+                    .accessibilityIdentifier("link-open")
+                Button("Cancel", role: .cancel) {}.accessibilityIdentifier("link-dialog-cancel")
+            } message: { url in
+                Text(url.absoluteString)
+            }
+            .sheet(item: $composerModel.linkRequest) { request in LinkSheet(request: request, composer: composerModel) }
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
             .refreshable { await store.syncNow() }
@@ -112,6 +127,18 @@ struct ChatView: View {
                 guard let request else { return }
                 withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(request.id, anchor: .center) }
             }
+            #if DEBUG
+            .task {
+                // Screenshots: the composer with some text selected, so the toolbar is up.
+                guard store.demoCompose else { return }
+                try? await Task.sleep(for: .milliseconds(600))
+                guard let view = composerModel.textView else { return }
+                view.attributedText = ComposerDocument.attributed(fromMarkdown: "Ok I have Unit 7 ready for review")
+                composerModel.didEdit()
+                view.becomeFirstResponder()
+                view.selectedRange = (view.text as NSString).range(of: "Unit 7")
+            }
+            #endif
             #if DEBUG
             .task {
                 // Screenshots: open with the find bar already typed.
@@ -351,53 +378,65 @@ struct ChatView: View {
 
     // MARK: Composer
 
+    /// The composer (design 04): the text above, and under it `+`, emoji and Aa on the left, mic or send on the right.
+    /// Select text, or tap Aa, and the formatting toolbar appears above the keyboard.
     private func composer(_ conversation: Conversation) -> some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            Button { store.comingSoon("Attachments") } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: 40, height: 44)
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                RichComposerField(model: composerModel)
+                    .onAppear { composerModel.hasText = false }
+                if !composerModel.hasText {
+                    Text("Send message…").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                        .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
+                }
             }
-            .accessibilityLabel("Add attachment")
-
-            // `axis: .vertical` makes Return insert a new line rather than submit.
-            TextField("Send message…", text: $draft, axis: .vertical)
-                .lineLimit(1...5)
-                .font(Theme.body)
-                .foregroundStyle(Theme.text)
-                .focused($composerFocused)
-                .padding(.vertical, 10)
-                .accessibilityIdentifier("composer-field")
-
-            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button { store.comingSoon("Voice messages") } label: {
-                    Image(systemName: "mic")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Theme.text)
-                        .frame(width: 40, height: 44)
+            HStack(spacing: 2) {
+                composerButton("plus", label: "Add attachment", id: "composer-plus") { store.comingSoon("Attachments") }
+                composerButton("face.smiling", label: "Emoji", id: "composer-emoji") { pickingEmoji = true }
+                Button { composerModel.toggleToolbar() } label: {
+                    Text("Aa").font(.system(size: 17, weight: .medium)).foregroundStyle(composerModel.toolbarVisible ? Theme.accentInk : Theme.text)
+                        .frame(width: 44, height: 40)
+                        .background(composerModel.toolbarVisible ? Theme.accent : Color.clear, in: Capsule())
                 }
-                .accessibilityLabel("Voice message")
-            } else {
-                Button {
-                    store.send(draft, in: conversation.id)
-                    draft = ""
-                } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Theme.primaryInk)
-                        .frame(width: 36, height: 36)
-                        .background(Theme.primary, in: Circle())
-                        .frame(width: 40, height: 44)
+                .accessibilityLabel("Formatting").accessibilityIdentifier("composer-aa")
+                .accessibilityAddTraits(composerModel.toolbarVisible ? [.isSelected] : [])
+                Spacer(minLength: 0)
+                if composerModel.canSend {
+                    Button { sendDraft(in: conversation) } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Theme.primaryInk)
+                            .frame(width: 36, height: 36)
+                            .background(Theme.primary, in: Circle())
+                            .frame(width: 44, height: 40)
+                    }
+                    .accessibilityLabel("Send")
+                    .accessibilityIdentifier("send-button")
+                } else {
+                    composerButton("mic", label: "Voice message", id: "composer-mic") { store.comingSoon("Voice messages") }
                 }
-                .accessibilityLabel("Send")
-                .accessibilityIdentifier("send-button")
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 4)
         .limeGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
+        .overlay { EmojiKeyboardField(isActive: $pickingEmoji) { composerModel.insertEmoji($0) }.frame(width: 1, height: 1).opacity(0.01) }
+    }
+
+    private func composerButton(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 20)).foregroundStyle(Theme.text).frame(width: 44, height: 40)
+        }
+        .accessibilityLabel(label).accessibilityIdentifier(id)
+    }
+
+    /// Sends what is written, as Markdown (LimeCore writes it the one way), and empties the composer.
+    private func sendDraft(in conversation: Conversation) {
+        let markdown = composerModel.markdown()
+        guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        store.send(markdown, in: conversation.id)
+        composerModel.clear()
     }
 }
 
@@ -427,9 +466,7 @@ struct MessageBubble: View {
                         .font(Theme.caption.weight(.medium))
                         .foregroundStyle(Theme.text)
                 }
-                Text(message.text)
-                    .font(Theme.body)
-                    .foregroundStyle(message.isOwn ? Theme.ownBubbleInk : Theme.text)
+                FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text)
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(message.isOwn ? Theme.ownBubble : Theme.bubbleOther,
                                 in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))

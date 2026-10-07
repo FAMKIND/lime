@@ -46,9 +46,9 @@ final class LimeUITests: XCTestCase {
         row.tap()
         XCTAssertTrue(app.scrollViews["chat-scroll"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["request-accept"].exists && app.buttons["request-block"].exists)
-        XCTAssertFalse(app.textFields["composer-field"].exists, "no composer until the request is accepted")
+        XCTAssertFalse(app.textViews["composer-field"].exists, "no composer until the request is accepted")
         app.buttons["request-accept"].tap()
-        XCTAssertTrue(app.textFields["composer-field"].waitForExistence(timeout: 5), "accepted: you can reply")
+        XCTAssertTrue(app.textViews["composer-field"].waitForExistence(timeout: 5), "accepted: you can reply")
         goBack(app)
         // The Requests list is now empty, so it returns straight to Messages with Ada in the chat list.
         XCTAssertTrue(app.buttons["conversation-row-dm:ada"].waitForExistence(timeout: 5))
@@ -116,6 +116,169 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["problem-message"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["problem-message"].label, "Your session has ended. Please sign in again.")
         XCTAssertTrue(app.buttons["problem-sign-in"].exists)
+    }
+
+    // MARK: Formatting (LIME-100)
+
+    private func openComposer(_ app: XCUIApplication, chat: String = "dm:sam") -> XCUIElement {
+        XCTAssertTrue(app.buttons["conversation-row-\(chat)"].waitForExistence(timeout: 10))
+        app.buttons["conversation-row-\(chat)"].tap()
+        let field = app.textViews["composer-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        return field
+    }
+
+    /// Selects all of what was typed (a long press, then the callout's Select All).
+    private func selectAll(_ field: XCUIElement, in app: XCUIApplication) {
+        field.press(forDuration: 1.2)
+        let all = app.menuItems["Select All"]
+        if all.waitForExistence(timeout: 3) { all.tap() } else { field.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).doubleTap() }
+    }
+
+    func testSelectingTextShowsTheFormattingToolbarAboveTheKeyboardAndBoldWorks() {
+        let app = demoApp()
+        app.launch()
+        let field = openComposer(app)
+        XCTAssertFalse(app.buttons["fmt-bold"].exists, "no toolbar until text is selected")
+        field.typeText("hello world")
+        selectAll(field, in: app)
+        let bold = app.buttons["fmt-bold"]
+        XCTAssertTrue(bold.waitForExistence(timeout: 5), "selecting text shows the toolbar")
+        XCTAssertFalse(bold.isSelected, "bold is not on yet")
+        bold.tap()
+        XCTAssertTrue(bold.isSelected, "B shows its pressed state")
+        XCTAssertEqual(field.value as? String, "**hello world**", "and the text is bold")
+        bold.tap()
+        XCTAssertFalse(bold.isSelected)
+        XCTAssertEqual(field.value as? String, "hello world")
+        for id in ["fmt-italic", "fmt-underline", "fmt-strike"] {
+            XCTAssertTrue(app.buttons[id].exists, id)
+        }
+        app.buttons["fmt-italic"].tap()
+        XCTAssertEqual(field.value as? String, "*hello world*")
+        app.buttons["fmt-underline"].tap()
+        app.buttons["fmt-strike"].tap()
+        XCTAssertEqual(field.value as? String, "~~__*hello world*__~~")
+    }
+
+    func testTheToolbarScrollsAndTheCloseButtonRestoresTheComposerRow() {
+        let app = demoApp()
+        app.launch()
+        let field = openComposer(app)
+        field.typeText("hello world")
+        selectAll(field, in: app)
+        XCTAssertTrue(app.buttons["fmt-bold"].waitForExistence(timeout: 5))
+        let last = app.buttons["fmt-numbers"]
+        XCTAssertFalse(last.isHittable, "the last items are scrolled out of view")
+        app.scrollViews["fmt-scroll"].swipeLeft()
+        XCTAssertTrue(last.waitForExistence(timeout: 3))
+        XCTAssertTrue(last.isHittable, "the toolbar scrolls sideways to reach them")
+        XCTAssertTrue(app.buttons["fmt-close"].isHittable, "the round ✕ stays at the right end")
+        app.buttons["fmt-close"].tap()
+        XCTAssertTrue(app.buttons["fmt-bold"].waitForNonExistence(timeout: 5), "✕ closes the toolbar")
+        for id in ["composer-plus", "composer-emoji", "composer-aa"] {
+            XCTAssertTrue(app.buttons[id].exists, "the normal composer row is back: \(id)")
+        }
+        XCTAssertTrue(app.buttons["send-button"].exists, "send is there for the text that was typed")
+    }
+
+    func testAaOpensTheToolbarWithNothingSelectedAndAListIsStarted() {
+        let app = demoApp()
+        app.launch()
+        let field = openComposer(app)
+        XCTAssertFalse(app.buttons["fmt-bold"].exists)
+        app.buttons["composer-aa"].tap()
+        XCTAssertTrue(app.buttons["fmt-bold"].waitForExistence(timeout: 5), "Aa opens the toolbar with no selection")
+        XCTAssertTrue(app.buttons["composer-aa"].isSelected)
+        app.buttons["fmt-bullets"].tap()
+        field.typeText("one\ntwo")
+        XCTAssertEqual(field.value as? String, "- one\n- two", "Return continues the list")
+        XCTAssertTrue(app.buttons["fmt-bullets"].isSelected)
+        field.typeText("\n\n")
+        field.typeText("done")
+        XCTAssertEqual(field.value as? String, "- one\n- two\n\ndone", "Return on an empty item ends the list")
+        app.buttons["fmt-close"].tap()
+        XCTAssertTrue(app.buttons["fmt-bold"].waitForNonExistence(timeout: 5))
+    }
+
+    func testTheToolbarStaysUntilSendAndSendingMakesAFormattedBubble() {
+        let app = demoApp()
+        app.launch()
+        let field = openComposer(app)
+        app.buttons["composer-aa"].tap()
+        XCTAssertTrue(app.buttons["fmt-bold"].waitForExistence(timeout: 5))
+        app.buttons["fmt-bold"].tap()      // bold on at the caret
+        field.typeText("Important")
+        XCTAssertEqual(field.value as? String, "**Important**")
+        app.buttons["fmt-bold"].tap()      // and off again
+        field.typeText(" news")
+        XCTAssertEqual(field.value as? String, "**Important** news")
+        app.buttons["send-button"].tap()
+        XCTAssertTrue(app.buttons["fmt-bold"].waitForNonExistence(timeout: 5), "sending closes the toolbar")
+        let bubble = app.staticTexts.matching(identifier: "own-bubble").matching(NSPredicate(format: "label == %@", "Important news")).firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 5), "the bubble shows the words, with the markers gone")
+    }
+
+    func testALinkIsAddedThroughTheSheetAndABadOneIsRefused() {
+        let app = demoApp()
+        app.launch()
+        let field = openComposer(app)
+        field.typeText("see the plan")
+        selectAll(field, in: app)
+        XCTAssertTrue(app.buttons["fmt-link"].waitForExistence(timeout: 5))
+        app.buttons["fmt-link"].tap()
+        let address = app.textFields["link-url"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["link-text"].exists, "with text selected only the address is asked for")
+        address.typeText("javascript:alert(1)")
+        app.buttons["link-apply"].tap()
+        XCTAssertTrue(app.staticTexts["link-error"].waitForExistence(timeout: 5), "a javascript link is refused")
+        address.clearAndType("limechat.org/plan")
+        app.buttons["link-apply"].tap()
+        XCTAssertTrue(app.textViews["composer-field"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textViews["composer-field"].value as? String, "[see the plan](https://limechat.org/plan)", "https is assumed, on the selected text")
+    }
+
+    func testALinkWithNoSelectionAsksForTheTextToShow() {
+        let app = demoApp()
+        app.launch()
+        _ = openComposer(app)
+        app.buttons["composer-aa"].tap()
+        XCTAssertTrue(app.buttons["fmt-link"].waitForExistence(timeout: 5))
+        app.buttons["fmt-link"].tap()
+        XCTAssertTrue(app.textFields["link-text"].waitForExistence(timeout: 5), "no selection: the text to show is asked for too")
+        app.textFields["link-url"].typeText("https://limechat.org")
+        app.textFields["link-text"].tap()
+        app.textFields["link-text"].typeText("Lime")
+        app.buttons["link-apply"].tap()
+        XCTAssertEqual(app.textViews["composer-field"].value as? String, "[Lime](https://limechat.org)")
+    }
+
+    func testMessagesWithFormattingAreDrawnAndAnHttpLinkAsksFirst() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "format"]
+        app.launch()
+        XCTAssertTrue(app.scrollViews["chat-scroll"].waitForExistence(timeout: 10))
+        // The markers are gone from what is shown, and the structure is there.
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS '**'")).firstMatch.exists, "no raw asterisks")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'let total'")).firstMatch.exists, "the code block is drawn")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'signed'")).firstMatch.exists)
+        XCTAssertGreaterThanOrEqual(app.staticTexts.matching(NSPredicate(format: "label == '•'")).count, 2, "bullets")
+        XCTAssertTrue(app.staticTexts["2."].exists, "numbered items count")
+        // A link that is not https asks before opening.
+        let link = app.links["the old site"]
+        if link.waitForExistence(timeout: 3) {
+            link.tap()
+        } else {
+            // Some iOS versions do not expose a link inside text as its own element: tap on the link's words.
+            let line = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'the old site'")).firstMatch
+            XCTAssertTrue(line.waitForExistence(timeout: 5))
+            line.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
+        }
+        // The confirmation is an action sheet on iOS 18 and a popover on iOS 27: find its button either way.
+        let open = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'link-open' OR label == 'Open link'")).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 5), "a confirmation first")
     }
 
     // MARK: Search (LIME-99)
@@ -408,7 +571,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
         app.buttons["conversation-row-dm:sam"].tap()
         XCTAssertTrue(app.staticTexts["delivery-sending"].waitForExistence(timeout: 5), "an unsettled message says Sending…")
-        let field = app.textFields["composer-field"]
+        let field = app.textViews["composer-field"]
         field.tap()
         field.typeText("see you at 3")
         app.buttons["send-button"].tap()
@@ -430,7 +593,7 @@ final class LimeUITests: XCTestCase {
         let chat = app.scrollViews["chat-scroll"]
         XCTAssertTrue(chat.waitForExistence(timeout: 5), "chat appears")
 
-        let field = app.textFields["composer-field"]
+        let field = app.textViews["composer-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText("hello")
@@ -516,7 +679,7 @@ final class LimeUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
         app.buttons["conversation-row-c1"].tap()
-        let field = app.textFields["composer-field"]
+        let field = app.textViews["composer-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText("persist me")

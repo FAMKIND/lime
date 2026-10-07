@@ -199,7 +199,7 @@ fn existing_messages_are_indexed_by_the_migration() {
             .lock()
             .execute_batch(
                 "DROP TRIGGER messages_fts_insert; DROP TRIGGER messages_fts_delete; DROP TRIGGER messages_fts_update;
-                 DROP TABLE message_fts; PRAGMA user_version = 6;",
+                 DROP TABLE message_fts; ALTER TABLE messages DROP COLUMN plain; PRAGMA user_version = 6;",
             )
             .unwrap();
         say(&store, "c1", "old2", "another about fractions and decimals", 2);

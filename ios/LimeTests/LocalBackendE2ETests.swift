@@ -361,6 +361,42 @@ final class LocalBackendE2ETests: XCTestCase {
         try await replacingKeys(stack)
     }
 
+    /// A formatted message through the real server: both phones hold the same Markdown, parse it to the same
+    /// blocks (so it draws identically), and the receiver finds it by its words, not its markup.
+    func testAFormattedMessageRendersTheSameOnTheReceiver() async throws {
+        let stack = try stack()
+        guard stack.mail != nil, stack.serviceKey == nil else { throw XCTSkip("The local run (mail catcher, no admin key).") }
+        let ada = try await makePhone(stack, name: "Ada Lovelace")
+        try await Task.sleep(for: .milliseconds(1100))
+        let bob = try await makePhone(stack, name: "Bob Brown")
+        let found = try await ada.store.find("@\(bob.username)")
+        let person = try XCTUnwrap(found)
+        await ada.store.startChat(with: person)
+        let chat = "dm:\(person.userId)"
+
+        let written = ComposerDocument.markdown(from: ComposerDocument.attributed(fromMarkdown:
+            "Plan for **Friday**, see [the policy](https://limechat.org/policy)\n\n- bring *signed* forms\n- check `room 12`\n\n```\nlet a = **raw**\n```\n\n1. copy\n2. sign"))
+        await ada.store.sendNow(written, in: chat)
+        await eventually("the formatted message reaches Bob") { bob.store.requests.count == 1 }
+        let theirs = try XCTUnwrap(bob.store.requests.first?.messages.first)
+        let mine = try XCTUnwrap(ada.store.conversation(chat)?.messages.first)
+        XCTAssertEqual(mine.text, theirs.text, "both phones hold the same written form")
+        XCTAssertEqual(MessageRender.blocks(mine.text), MessageRender.blocks(theirs.text), "so it is drawn identically")
+        XCTAssertEqual(MessageRender.blocks(theirs.text).count, 4, "a paragraph, a list, a code block and a numbered list")
+        XCTAssertEqual(messagePlainText(text: theirs.text), messagePlainText(text: mine.text))
+
+        let byWord = await bob.store.search("friday")
+        XCTAssertEqual(byWord.messages.count, 1, "found by its words")
+        let byMarkup = await bob.store.search("limechat")
+        XCTAssertTrue(byMarkup.messages.isEmpty, "a link's address is not searched")
+        let preview = messagePlainText(text: theirs.text).replacingOccurrences(of: "\n", with: " ")
+        XCTAssertTrue(preview.hasPrefix("Plan for Friday, see the policy"), preview)
+        XCTAssertFalse(preview.prefix(60).contains("**") || preview.contains("]("), "the list preview has no markup (a code block stays as written)")
+
+        await ada.session.signOut()
+        await bob.session.signOut()
+    }
+
     /// Settings against the real local server: the About line and hiding from search reach other
     /// phones, a taken username is refused, the password changes with an emailed code (this phone
     /// carries on, the old password stops working), and unblocking brings a chat back.

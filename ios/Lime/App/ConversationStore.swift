@@ -479,6 +479,19 @@ final class ConversationStore {
         case "search-name": demoQuery = "lee"; path.append(MessagesRoute.search)
         case "chat-focus": path.append(ChatTarget(conversationID: "dm:lee", messageID: "l3"))
         case "chat-find": demoQuery = "lesson"; path.append("dm:lee")
+        case "compose":
+            demoCompose = true
+            path.append("dm:sam")
+        case "format", "format-http":
+            // A chat of formatted messages: styles, a list, a code block, a numbered list, links.
+            let pat = Person(id: "pat", name: "Pat Rivera")
+            conversations = [Conversation(id: "dm:fmt", title: pat.name, members: [pat], messages: [
+                Message(id: "f1", senderID: "pat", text: "Here's the plan for **Friday**:\n\n- bring the *signed* forms\n- check `room 12`\n- read [the policy](https://limechat.org/policy)", date: now.addingTimeInterval(-7_200)),
+                Message(id: "f2", senderID: nil, text: "Thanks! I'll run this check:\n\n```\nlet total = forms + permission_slips\nprint(\"a long line that scrolls sideways when it does not fit\")\n```\n\n__Almost__ done.", date: now.addingTimeInterval(-3_600), state: .sent),
+                Message(id: "f3", senderID: "pat", text: "~~Cancelled~~ and **__rescheduled__**\n\nSee [the old site](http://example.com/old)", date: now.addingTimeInterval(-1_800)),
+                Message(id: "f4", senderID: nil, text: "My steps:\n\n1. copy the forms\n2. sign them\n  - **both** sides\n3. hand them in", date: now.addingTimeInterval(-600), state: .sent),
+            ])]
+            path.append("dm:fmt")
         case "new-message", "new-message-found": demoSheet = screen
         default:
             // "settings", "settings/profile", "settings/profile/edit-about", "settings/privacy/blocked", ...
@@ -491,6 +504,9 @@ final class ConversationStore {
 
     /// Debug demo: where Settings opens (route names, e.g. ["profile", "edit-about"]).
     private(set) var demoSettingsRoute: [String] = []
+
+    /// Debug demo: open the composer with some text selected, so the formatting toolbar is up (for screenshots).
+    private(set) var demoCompose = false
 
     /// Debug demo: a search or find that is already typed (for screenshots).
     private(set) var demoQuery: String?

@@ -310,10 +310,12 @@ struct ConversationRow: View {
 
     private var preview: String {
         guard let last = conversation.lastMessage else { return "" }
+        // The words, without the markup (a list reads as its items).
+        let words = messagePlainText(text: last.text).replacingOccurrences(of: "\n", with: " ")
         if conversation.isGroup, let sender = conversation.members.first(where: { $0.id == last.senderID }) {
-            return "\(sender.name.split(separator: " ").first ?? ""): \(last.text)"
+            return "\(sender.name.split(separator: " ").first ?? ""): \(words)"
         }
-        return last.text
+        return words
     }
 
     private var time: String { MessageFormat.listTime(conversation.lastMessage?.date) }
