@@ -114,6 +114,24 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**Update: LIME-102 landed as `e81933d`** (pushed and verified).
+- In-app glass banner + system sound; local notifications for the short background window; previews (N2 = A; requests never show text; "Replied in a thread"); Settings → Notifications; per-chat mute; a permission explainer.
+- **No chime** (Default/None; the hook is in `ios/Lime/Resources/Sounds/README.md`).
+- 158 unit + 52 UI tests pass; 0 warnings.
+- **Real-device-only checks are pending with the user.**
+- **LIME-103 (the Bluetooth spike) is drafted.**
+
+**ROADMAP CONFIRMED (user, 2026-10-07, "wonderful"):**
+1. LIME-102 notifications (in progress; no chime yet);
+2. **LIME-103: the Bluetooth spike** (two real iPhones: Shem's 13 mini + Jean's; free provisioning; open, backgrounded and locked; Wi-Fi/cellular off);
+3. LIME-96 sealed sends;
+4. LIME-97 groups + New Message invite/QR;
+5. **mesh v1** (sealed envelopes, 7 hops / 72 h, QR offline first contact);
+6. APNs push (paid account);
+7. TestFlight (with mesh).
+
+**Plot drafts LIME-103 next** (after LIME-102's report).
+
 **Update: LIME-101b landed as `6c49400`** (pushed and verified).
 - System-blue selection, a warm-neutral pressed state (3.4:1), word-level find highlights, New Message v2 (A–Z, index rail, bottom search, exact lookup, Find by Username/Email screens).
 - 136 unit + 47 UI tests pass; 0 warnings.
@@ -1654,7 +1672,70 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-101b → `tend` (lime-aa) (after LIME-101 lands; tend is mid-101 now): colour hierarchy polish, word-level find highlight, New Message v2 (1:1)
+### LIME-103 → `tend` (lime-aa) (next): the Bluetooth spike: can two iPhones find each other and pass encrypted blobs with no internet?
+**What it does:** a **throwaway, Debug-only experiment** that measures what iOS really allows for Bluetooth LE between two Lime phones, open, backgrounded and locked, **before** the mesh is designed in detail (`architecture.md` §7, DESIGN-01 §4).
+- **The output is evidence**: `docs/spike-ble.md` with measured numbers and a recommendation. **The spike code is not the product**; it lives behind `#if DEBUG` and is deleted or replaced by mesh v1.
+
+**Capabilities assumed:** edit files, XcodeGen, `xcodebuild`, commit, push. Tend **can't** hold the phones, so the user runs the field test with **two real iPhones**: Shem's 13 mini + Jean's, both installed from the user's Mac (free provisioning). Tend prepares the build, the test script and the log export, then analyses the logs the user sends back.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- `docs/architecture.md` §§4, 7; `docs/api-v2.md` §8 (the mesh relay unit = the outer envelope);
+- Apple's current CoreBluetooth docs: the background execution modes (`bluetooth-central`, `bluetooth-peripheral`), state preservation and restoration, the background advertising limits (service UUIDs moved to the "overflow area"; discoverable only by devices explicitly scanning for that UUID), background scanning (must name service UUIDs; no duplicates; slower), L2CAP channels (`CBL2CAPChannel`) vs GATT.
+- **Confirm that `UIBackgroundModes` Bluetooth works with free (Personal Team) provisioning.** If it needs the paid account, **stop and tell the user**.
+
+**Phase 2: the change (Debug only).**
+1. **A "Nearby test" screen**, reachable only in Debug from About (long-press the logo):
+   - **Start/Stop**, a role display (each phone is both central and peripheral);
+   - a live log: discovered / connected / sent / received, each with timestamps, RSSI and sizes;
+   - **Send test blobs:** random bytes of **200 B, 4 KB, 32 KB** each, signed with the device's Ed25519 key from LimeCore (so the receiver verifies them). **No real messages, no user data, no keys in the payload.**
+2. **The transport:**
+   - one custom service UUID; the peripheral advertises it; the central scans for it (with the service filter, as required in the background);
+   - **GATT** write-with-response + notify as the baseline;
+   - **an L2CAP channel** attempt for throughput (report both).
+   - De-dupe by blob hash.
+   - **State restoration** enabled, with the identifiers recorded.
+3. **Background modes:** add `bluetooth-central` + `bluetooth-peripheral` to `UIBackgroundModes` **in Debug builds only** (via `project.yml` per-configuration Info.plist keys). Add `NSBluetoothAlwaysUsageDescription`: "Lime uses Bluetooth to pass messages between nearby teachers when there's no internet."
+4. **The log export:** a "Share log" button (the iOS share sheet), with a JSON lines file per run: the device model, the iOS version, the scenario label, the events. **No personal data.**
+5. **`docs/spike-ble-test-plan.md`: a step-by-step field script for the user** (plain language) covering these scenarios, each run ~5 minutes, with the label typed into the app before starting:
+   1. both open, 1 m apart;
+   2. A open, B **backgrounded** (Home);
+   3. **both backgrounded**;
+   4. A open, B **locked, screen off**;
+   5. **both locked**;
+   6. distance: 10 m same room, and through one wall (both open);
+   7. **Airplane mode with Bluetooth re-enabled** (no internet at all), both open;
+   8. B **force-quit** (swiped away), to confirm it does nothing, as expected.
+
+   For each: time to first discovery, the connection success, the throughput per size, the reconnects, and the delivery while backgrounded/locked. Also note the battery % at the start and end of the whole session.
+
+**Out of scope:** the mesh protocol, multi-hop, the store-and-forward database, real message delivery, Android, anything in Release builds.
+
+**Phase 3: verification (tend's part).**
+- Build + the existing tests pass on the three simulators (the Bluetooth features are guarded so the simulators don't crash); `ios/check-warnings.sh` reports 0 warnings.
+- **A Release-configuration build contains no Bluetooth background modes and no Nearby screen** (check the built Info.plist and the symbols).
+- **Build to both iPhones if connected**; otherwise give the user the exact steps.
+- Write `docs/spike-ble-test-plan.md`. **Stop and hand over to the user for the field test.**
+
+**Phase 4 (after the user returns the logs): the analysis.**
+- Tend parses the logs into **`docs/spike-ble.md`**: a results table per scenario (discovery time, success, throughput, background/locked behaviour), what iOS allowed vs blocked, the battery note.
+- **A recommendation for mesh v1:** GATT vs L2CAP; the realistic expectations ("works when at least one phone has Lime open"…); UX implications (e.g. a "Nearby mode" the teacher turns on); whether any of DESIGN-01 §4 / `architecture.md` §7 needs changing (**flag it, don't decide**).
+
+**Gate (the user):**
+- run the field test with Jean using the plan;
+- send tend the exported logs (AirDrop them to the Mac, then tell tend the folder);
+- read `docs/spike-ble.md`.
+
+**Record:** a `## LIME-103` entry in `TEND.md` (the build) and an update after the analysis. Commits:
+- `spike(ios): Debug-only Bluetooth LE field test (Nearby test screen, logs, test plan)`;
+- later `docs: Bluetooth spike results`.
+
+Both get the trailer `Brief: LIME-103` plus the attribution trailer. **Push.** Stop after each. No /loop wakeups.
+
+---
+
+### LIME-101b → `tend` (lime-aa) (landed as `6c49400`): colour hierarchy polish, word-level find highlight, New Message v2 (1:1)
 **What it does:** the user's review of LIME-99/100 on real phones (2026-10-07).
 - **Milestone:** the screenshots show **Shem's and Jean's iPhones chatting end to end** ("it works" / "True it does work!"), so **the LIME-95-fix two-phone gate has passed.**
 - **The principle the user set:** **the accent green is reserved for the one primary action on a screen** (send, Find, Next, Continue). Secondary/active states use a **warm neutral**.
