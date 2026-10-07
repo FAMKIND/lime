@@ -423,6 +423,66 @@ final class LocalBackendE2ETests: XCTestCase {
         await bob.session.signOut()
     }
 
+    /// Notifications through the real server: a stranger's first message is announced without its words, an
+    /// accepted chat's message shows its words, the chat on screen only ticks, a muted chat is silent, a
+    /// thread reply says so, and with Lime in the background the announcement is a local notification.
+    func testArrivalsAreAnnouncedByTheNotificationRules() async throws {
+        let stack = try stack()
+        guard stack.mail != nil, stack.serviceKey == nil else { throw XCTSkip("The local run (mail catcher, no admin key).") }
+        let ada = try await makePhone(stack, name: "Ada Lovelace")
+        try await Task.sleep(for: .milliseconds(1100))
+        let bob = try await makePhone(stack, name: "Bob Brown")
+        let center = FakeCenter()
+        let bobNotes = NotificationCoordinator(settings: NotificationSettings(defaults: UserDefaults(suiteName: "lime.e2e.\(UUID().uuidString)")!),
+                                               center: center, feedback: center)
+        bob.store.notifications = bobNotes
+        await bob.store.reload() // the first look only learns what is already here
+        await bobNotes.refreshAuthorization()
+
+        let found = try await ada.store.find("@\(bob.username)")
+        let person = try XCTUnwrap(found)
+        await ada.store.startChat(with: person)
+        let adaChat = "dm:\(person.userId)"
+        await ada.store.sendNow("Who has the field trip forms?", in: adaChat)
+        await eventually("the request reaches Bob") { bob.store.requests.count == 1 }
+        XCTAssertEqual(bobNotes.banner?.content.body, "Wants to message you", "a stranger's words are never shown")
+        XCTAssertFalse(bobNotes.banner?.content.body.contains("field trip") ?? true)
+        let bobChat = try XCTUnwrap(bob.store.requests.first).id
+        await bob.store.accept(bobChat)
+        bobNotes.dismissBanner()
+
+        await ada.store.sendNow("Second message, with words", in: adaChat)
+        await eventually("an accepted chat's message shows its words") { bobNotes.banner?.content.body == "Second message, with words" }
+        XCTAssertEqual(bobNotes.banner?.content.title, "Ada Lovelace")
+        XCTAssertEqual(center.sounds, 2)
+
+        bobNotes.dismissBanner()
+        bobNotes.viewing = ViewingTarget(conversationID: bobChat)
+        await ada.store.sendNow("Third, while Bob is in the chat", in: adaChat)
+        await eventually("the open chat only ticks") { center.ticks == 1 }
+        XCTAssertNil(bobNotes.banner)
+
+        bobNotes.viewing = nil
+        bobNotes.settings.mute(bobChat, for: .hour)
+        await ada.store.sendNow("Fourth, muted", in: adaChat)
+        await eventually("a muted chat is announced as nothing") { bobNotes.log.last == Presentation.none }
+        XCTAssertNil(bobNotes.banner)
+
+        bobNotes.settings.unmute(bobChat)
+        bobNotes.isActive = false
+        let root = try XCTUnwrap(bob.store.conversation(bobChat)?.messages.first?.id)
+        await ada.store.openThread(root)
+        await ada.store.sendReply("A reply in a thread", root: root, in: adaChat)
+        await eventually("in the background the reply becomes a local notification") { center.scheduled.contains { $0.body == "Replied in a thread: A reply in a thread" } }
+        let local = try XCTUnwrap(center.scheduled.last)
+        XCTAssertEqual(local.threadRoot, root, "tapping it opens the thread")
+        XCTAssertEqual(local.threadIdentifier, bobChat, "grouped by chat")
+        XCTAssertNil(bobNotes.banner)
+
+        await ada.session.signOut()
+        await bob.session.signOut()
+    }
+
     /// A formatted message through the real server: both phones hold the same Markdown, parse it to the same
     /// blocks (so it draws identically), and the receiver finds it by its words, not its markup.
     func testAFormattedMessageRendersTheSameOnTheReceiver() async throws {

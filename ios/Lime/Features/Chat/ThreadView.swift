@@ -4,6 +4,7 @@ import SwiftUI
 /// (with formatting). New replies arrive live. Replies are not in the main chat.
 struct ThreadView: View {
     let target: ThreadTarget
+    @Environment(NotificationCoordinator.self) private var notifications
     @Environment(ConversationStore.self) private var store
     @State private var composerModel = RichComposerModel()
     @State private var highlightedID: String?
@@ -67,7 +68,11 @@ struct ThreadView: View {
                 if highlightedID == focus { withAnimation { highlightedID = nil } }
             }
         }
-        .onDisappear { store.closeThread(target.rootID) }
+        .onAppear { notifications.viewing = ViewingTarget(conversationID: target.conversationID, threadRoot: target.rootID) }
+        .onDisappear {
+            store.closeThread(target.rootID)
+            if notifications.viewing == ViewingTarget(conversationID: target.conversationID, threadRoot: target.rootID) { notifications.viewing = nil }
+        }
     }
 
     private var replyCountText: String {

@@ -18,6 +18,9 @@ enum MessagesRoute: Hashable { case requests, search }
 @Observable
 final class ConversationStore {
     var conversations: [Conversation] = []
+    /// Announces new messages (banner, tick, local notification); set by the app.
+    @ObservationIgnored var notifications: NotificationCoordinator?
+    @ObservationIgnored private var detector = ArrivalDetector()
     var banner: String?
     /// True once the store has opened and the first load has finished.
     private(set) var isLoaded = false
@@ -327,6 +330,7 @@ final class ConversationStore {
     func markRead(_ id: Conversation.ID) async {
         guard let index = conversations.firstIndex(where: { $0.id == id }), conversations[index].unread > 0 else { return }
         conversations[index].unread = 0
+        if let notifications { await notifications.chatOpened(id); await notifications.updateBadge(unreadChats: conversations.filter { $0.unread > 0 }.count) }
         #if DEBUG
         if isDemo { return }
         #endif
@@ -354,6 +358,8 @@ final class ConversationStore {
         isLoaded = false
         storageError = nil
         showsRecoveryNotice = false
+        detector.reset()
+        notifications?.settings.reset()
         StorageBootstrap.wipe(at: storageLocation)
     }
 
@@ -364,15 +370,21 @@ final class ConversationStore {
         guard let core else { return }
         let open = openThreadIDs
         do {
-            let loaded = try await Task.detached(priority: .userInitiated) { () -> ([Conversation], [String: [ThreadSummary]], [String: [MessageItem]]) in
+            let loaded = try await Task.detached(priority: .userInitiated) { () -> ([Conversation], [String: [ThreadSummary]], [String: [MessageItem]], [UnreadReplies]) in
                 var summaries: [String: [ThreadSummary]] = [:]
+                var replies: [UnreadReplies] = []
                 let conversations = try core.listConversations().map { summary in
-                    summaries[summary.id] = try core.listThreadSummaries(conversationId: summary.id)
+                    let threads = try core.listThreadSummaries(conversationId: summary.id)
+                    summaries[summary.id] = threads
+                    // Replies live outside the timeline: read the threads with something new, to announce them.
+                    for thread in threads where thread.unread > 0 {
+                        replies.append(UnreadReplies(conversationID: summary.id, root: thread.rootId, items: (try? core.listThread(rootId: thread.rootId)) ?? []))
+                    }
                     return Conversation(summary, messages: try core.listMessages(conversationId: summary.id))
                 }
                 var threadItems: [String: [MessageItem]] = [:]
                 for root in open { threadItems[root] = try? core.listThread(rootId: root) }
-                return (conversations, summaries, threadItems)
+                return (conversations, summaries, threadItems, replies)
             }.value
             let me = meProvider()
             conversations = loaded.0.map { conversation in
@@ -384,10 +396,52 @@ final class ConversationStore {
                 return conversation
             }
             for (root, items) in loaded.2 { threads[root] = items.map(Message.init) }
+            await announceArrivals(unreadReplies: loaded.3)
         } catch {
             storageError = "Storage could not be read."
         }
         isLoaded = true
+    }
+
+    // MARK: Notifications
+
+    /// A tapped banner or notification: the chat (and the thread in it) opens from Messages.
+    func openFromNotification(_ conversationID: String, thread root: String?) {
+        guard conversation(conversationID) != nil else { return }
+        var fresh = NavigationPath()
+        fresh.append(conversationID)
+        if let root { fresh.append(ThreadTarget(conversationID: conversationID, rootID: root)) }
+        path = fresh
+    }
+
+    /// Replies from others in the threads that have something unread (read from the core in `reload`).
+    private struct UnreadReplies: Sendable {
+        let conversationID: String
+        let root: String
+        let items: [MessageItem]
+    }
+
+    /// Tells the notification coordinator about messages that arrived since the last look, and sets the badge.
+    private func announceArrivals(unreadReplies: [UnreadReplies]) async {
+        guard let notifications else { return }
+        var candidates: [IncomingMessage] = []
+        for conversation in conversations {
+            func make(_ message: Message, root: String?) -> IncomingMessage? {
+                guard let sender = message.senderID else { return nil }
+                return IncomingMessage(
+                    id: message.id, conversationID: conversation.id, conversationTitle: conversation.title, senderID: sender,
+                    senderName: person(sender, in: conversation)?.name ?? conversation.title,
+                    text: messagePlainText(text: message.text), threadRoot: root, isGroup: conversation.isGroup,
+                    isRequest: conversation.isRequest, date: message.date)
+            }
+            candidates += conversation.messages.compactMap { make($0, root: nil) }
+            for thread in unreadReplies where thread.conversationID == conversation.id {
+                candidates += thread.items.filter { $0.id != thread.root }.map(Message.init).compactMap { make($0, root: thread.root) }
+            }
+        }
+        let arrivals = detector.arrivals(among: candidates)
+        if !arrivals.isEmpty { await notifications.announce(arrivals) }
+        await notifications.updateBadge(unreadChats: conversations.filter { $0.unread > 0 }.count)
     }
 
     // MARK: Threads
@@ -594,6 +648,7 @@ final class ConversationStore {
                 Message(id: "f4", senderID: nil, text: "My steps:\n\n1. copy the forms\n2. sign them\n  - **both** sides\n3. hand them in", date: now.addingTimeInterval(-600), state: .sent),
             ])]
             path.append("dm:fmt")
+        case "notif-banner": demoNotification = "banner"
         case "new-message", "new-message-found", "new-message-filter", "new-message-empty", "find-username", "find-username-found":
             demoSheet = screen
             if screen == "new-message-empty" {
@@ -625,6 +680,9 @@ final class ConversationStore {
 
     /// Debug demo: a search or find that is already typed (for screenshots).
     private(set) var demoQuery: String?
+
+    /// Debug demo: a notification to show on arrival ("banner").
+    private(set) var demoNotification: String?
 
     /// Debug demo: a screen that opens as a sheet.
     private(set) var demoSheet: String?

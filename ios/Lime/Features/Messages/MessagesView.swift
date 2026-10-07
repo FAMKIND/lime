@@ -3,6 +3,7 @@ import SwiftUI
 struct MessagesView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
+    @Environment(NotificationCoordinator.self) private var notifications
     @State private var showAbout = false
     @State private var showNewMessage = false
     @State private var showSettings = false
@@ -20,6 +21,12 @@ struct MessagesView: View {
         .sheet(isPresented: $showSettings) { SettingsView() }
         #if DEBUG
         .task {
+            if store.demoNotification == "banner" {
+                try? await Task.sleep(for: .milliseconds(500))
+                await notifications.announce([IncomingMessage(
+                    id: "demo-banner", conversationID: "dm:lee", conversationTitle: "Lee Wong", senderID: "lee", senderName: "Lee Wong",
+                    text: "Can you cover my bus duty on Friday? I have a dentist appointment.", threadRoot: nil, isGroup: false, isRequest: false, date: Date())])
+            }
             if store.demoSheet == "settings" { showSettings = true }
             else if store.demoSheet != nil { showNewMessage = true }
         }
@@ -306,6 +313,7 @@ private struct TopControls: View {
 
 struct ConversationRow: View {
     let conversation: Conversation
+    @Environment(NotificationCoordinator.self) private var notifications
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 52
 
     private var preview: String {
@@ -329,6 +337,12 @@ struct ConversationRow: View {
                         .font(Theme.title)
                         .foregroundStyle(Theme.text)
                         .lineLimit(2)
+                    if notifications.settings.isMuted(conversation.id) {
+                        Image(systemName: "bell.slash.fill")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .accessibilityIdentifier("muted-\(conversation.id)")
+                    }
                     if conversation.isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption)
@@ -361,7 +375,7 @@ struct ConversationRow: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(conversation.title)\(conversation.isPinned ? ", pinned" : ""), \(preview), \(time)\(conversation.unread > 0 ? ", \(conversation.unread) unread" : "")")
+        .accessibilityLabel("\(conversation.title)\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.unread > 0 ? ", \(conversation.unread) unread" : "")")
         .accessibilityAddTraits(.isButton)
     }
 }

@@ -17,6 +17,7 @@ struct RootView: View {
             }
         }
         .overlay(alignment: .top) { ComingSoonBanner() }
+        .overlay(alignment: .top) { IncomingBannerView() }
     }
 }
 
@@ -25,7 +26,9 @@ struct RootView: View {
 private struct SignedInView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
+    @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.scenePhase) private var scenePhase
+    @State private var explaining = false
 
     var body: some View {
         @Bindable var store = store
@@ -48,10 +51,19 @@ private struct SignedInView: View {
                 }
         }
         .tint(Theme.text)
+        .sheet(isPresented: $explaining) { NotificationExplainerSheet() }
+        .task {
+            // Once, after signing in: why Lime would like to notify, before the system's prompt.
+            await notifications.refreshAuthorization()
+            if notifications.shouldExplain { explaining = true }
+        }
         .onChange(of: scenePhase) { _, phase in
+            notifications.isActive = phase == .active
             Task {
                 switch phase {
-                case .active: await session.appBecameActive()
+                case .active:
+                    await notifications.refreshAuthorization()
+                    await session.appBecameActive()
                 case .background: await session.appLeftForeground()
                 default: break
                 }

@@ -24,6 +24,8 @@ targets:
     platform: iOS
     sources:
       - path: Lime
+        excludes:
+          - "Resources/Sounds/README.md"
     configFiles:
       Debug: Config/Base.xcconfig
       Release: Config/Base.xcconfig

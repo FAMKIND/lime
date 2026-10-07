@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Who is signed in on this phone. Tokens live in the Keychain (this device only). After both steps
 /// of signing in, LimeCore registers the device with the backend. Signing out forgets all of it.
@@ -24,6 +25,8 @@ final class AccountSession {
     private var nudges: RealtimeNudges?
     private var refreshing: Task<AuthTokens, Error>?
     private var isRegistering = false
+    /// Keeps listening for a short while after the app leaves the front (iOS allows this briefly).
+    private var listening: UIBackgroundTaskIdentifier = .invalid
 
     private static let profileKey = "lime.profile"
     /// Whose chats and keys are on this phone, so signing in again as the same person keeps them.
@@ -156,14 +159,30 @@ final class AccountSession {
 
     /// The app came to the front: listen for nudges and catch up on anything that arrived meanwhile.
     func appBecameActive() async {
+        endBackgroundListening()
         guard phase == .signedIn, deviceRegistered else { return }
         await nudges?.start()
         await store.syncNow()
     }
 
-    /// The app left the front: there is no push yet, so stop listening until it returns.
+    /// The app left the front. There is no push yet, so Lime keeps listening only for the short time
+    /// iOS lets a background app run (a message that arrives then becomes a local notification); when
+    /// that time is up, or the person signs out, it stops and waits for the app to return.
     func appLeftForeground() async {
-        await nudges?.stop()
+        guard nudges != nil, phase == .signedIn else { await nudges?.stop(); return }
+        guard listening == .invalid else { return }
+        listening = UIApplication.shared.beginBackgroundTask(withName: "lime.listen") { [weak self] in
+            Task { @MainActor in
+                await self?.nudges?.stop()
+                self?.endBackgroundListening()
+            }
+        }
+    }
+
+    private func endBackgroundListening() {
+        guard listening != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(listening)
+        listening = .invalid
     }
 
     /// A valid access token, refreshed first when it is about to expire. Calls that arrive together
@@ -199,6 +218,7 @@ final class AccountSession {
 
     /// Ends the session on the server, then forgets the tokens, the profile and the local store.
     func signOut() async {
+        endBackgroundListening()
         await nudges?.stop()
         nudges = nil
         if let auth, let tokens { await auth.signOut(tokens: tokens) }

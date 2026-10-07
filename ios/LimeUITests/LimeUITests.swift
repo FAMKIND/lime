@@ -526,6 +526,96 @@ final class LimeUITests: XCTestCase {
         waitForExpectations(timeout: 5)
     }
 
+    // MARK: Notifications (LIME-102)
+
+    private func notifApp(_ screen: String? = nil, _ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-reset-session"] + (screen.map { ["-lime-demo-screen", $0] } ?? []) + extra
+        return app
+    }
+
+    func testNotificationSettingsOffersPreviewSoundAndMutedChats() {
+        let app = notifApp("settings/notifications")
+        app.launch()
+        XCTAssertTrue(app.switches["notif-toggle"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.switches["notif-toggle"].value as? String, "1", "on by default")
+        XCTAssertTrue(app.buttons["preview-nameAndMessage"].isSelected, "name and message by default")
+        app.buttons["preview-hidden"].tap()
+        XCTAssertTrue(app.buttons["preview-hidden"].isSelected)
+        XCTAssertFalse(app.buttons["preview-nameAndMessage"].isSelected)
+        XCTAssertTrue(app.buttons["sound-systemDefault"].isSelected)
+        XCTAssertTrue(app.buttons["sound-none"].exists)
+        XCTAssertFalse(app.buttons["sound-limeChime"].exists, "no Lime chime until the file exists")
+        app.buttons["sound-none"].tap()
+        XCTAssertTrue(app.buttons["sound-none"].isSelected)
+        XCTAssertTrue(app.staticTexts["notif-no-muted"].exists)
+        app.switches["notif-toggle"].tap()
+        XCTAssertFalse(app.buttons["preview-hidden"].exists, "off hides the details")
+    }
+
+    func testRefusedInIosSettingsSaysSoAndOffersIosSettings() {
+        let app = notifApp("settings/notifications", ["-lime-notif-denied"])
+        app.launch()
+        XCTAssertTrue(app.staticTexts["notif-denied"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["notif-open-settings"].exists)
+    }
+
+    func testTheExplainerComesOnceAndNotNowIsRespected() {
+        let app = notifApp(nil, ["-lime-notif-undetermined"])
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["notification-explainer"].waitForExistence(timeout: 10), "asked once, with the reason first")
+        app.buttons["explainer-not-now"].tap()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 5))
+        app.buttons["settings-button"].tap()
+        app.buttons["settings-notifications"].tap()
+        XCTAssertTrue(app.buttons["notif-allow"].waitForExistence(timeout: 5), "Settings still offers it")
+        app.buttons["notif-allow"].tap()
+        XCTAssertTrue(app.buttons["explainer-allow"].waitForExistence(timeout: 5))
+        app.buttons["explainer-allow"].tap()
+        XCTAssertTrue(app.buttons["notif-allow"].waitForNonExistence(timeout: 5), "allowed: the row goes")
+    }
+
+    func testMutingAChatShowsABellAndCanBeUndoneFromSettings() {
+        let app = notifApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["conversation-row-dm:lee"].waitForExistence(timeout: 10))
+        app.buttons["conversation-row-dm:lee"].tap()
+        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 5))
+        app.buttons["chat-more"].tap()
+        app.buttons["chat-mute"].tap()
+        for title in ["For 1 hour", "For 8 hours", "For 1 week", "Always"] {
+            XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3), title)
+        }
+        app.buttons["For 1 hour"].tap()
+        app.buttons["chat-more"].tap()
+        XCTAssertTrue(app.buttons["chat-unmute"].waitForExistence(timeout: 3), "the menu now offers to unmute")
+        app.buttons["chat-unmute"].tap()
+        app.buttons["chat-more"].tap()
+        app.buttons["chat-mute"].tap()
+        app.buttons["Always"].tap()
+        goBack(app)
+        XCTAssertTrue(app.descendants(matching: .any)["muted-dm:lee"].waitForExistence(timeout: 5), "a bell on the muted chat")
+        app.buttons["settings-button"].tap()
+        app.buttons["settings-notifications"].tap()
+        XCTAssertTrue(app.buttons["unmute-dm:lee"].waitForExistence(timeout: 5))
+        app.buttons["unmute-dm:lee"].tap()
+        XCTAssertTrue(app.staticTexts["notif-no-muted"].waitForExistence(timeout: 5))
+    }
+
+    func testABannerShowsTheNewMessageAndTappingOpensTheChat() {
+        let app = notifApp("notif-banner")
+        app.launch()
+        let banner = app.buttons["incoming-banner"]
+        XCTAssertTrue(banner.waitForExistence(timeout: 10))
+        XCTAssertTrue(banner.label.contains("Lee Wong"), banner.label)
+        XCTAssertTrue(banner.label.contains("bus duty"), banner.label)
+        banner.tap()
+        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(title.label.contains("Lee Wong"))
+        XCTAssertFalse(app.buttons["incoming-banner"].exists)
+    }
+
     // MARK: Settings (LIME-98)
 
     private func openSettings(_ app: XCUIApplication) {

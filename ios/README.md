@@ -113,6 +113,17 @@ Debug builds only (launch arguments): `-lime-skip-sign-in` (signed in with no ba
 - **Requests:** a message from someone you have not chatted with waits in a **Requests** row at the top of Messages. Open it to read, then **Accept** (it moves into Messages and you can reply) or **Block** (it disappears and that person's new messages are not shown on this phone).
 - **Debug demo:** the launch argument `-lime-demo-chat` (with `-lime-skip-sign-in`) shows made-up conversations in memory (a request, a chat with a message still sending); the UI tests and screenshots use it.
 
+## Notifications (LIME-102, stage 1: no push yet)
+
+Everything is decided on this phone, from messages decrypted on this phone; no server sees what an alert says.
+
+- **While Lime is open:** a message in *another* chat shows a glass banner at the top (tap to open the chat or thread; it goes by itself, or swipe up) and plays the system message sound (which follows the silent switch). In the chat or thread you are looking at, a soft haptic tick only.
+- **Just after leaving Lime** (iOS lets the app run for a short time): the listener keeps going, and a message that arrives becomes a **local notification** (the name and message by default, grouped by chat; a reply says "Replied in a thread"; tapping opens the chat or thread). The icon badge is the number of chats with something unread. When iOS ends that time, nothing arrives until Lime is opened again. **APNs and a notification service extension are stage 2** (they need the paid Apple account); until then a closed app only catches up when opened.
+- **Settings → Notifications:** on or off; Preview (**Name and message** / **Name only** / **No preview**); Sound (**Default** / **None**); muted chats (each can be unmuted). A chat's **⋯** menu mutes it for 1 hour, 8 hours, 1 week or always (a bell with a slash then shows on its row). A message request never shows its words.
+- **Permission:** a short explainer (why, then "Turn on notifications" or "Not now") comes up once after signing in; the system's own prompt follows only from the button. "Not now" is respected: Settings → Notifications offers it again, and says so when iOS Settings has it off.
+- **The chime** is not bundled yet (nothing is synthesised). `Lime/Resources/Sounds/README.md` says exactly how to add `lime-chime.caf` and the one-case change that makes it an option and the default.
+- Code: `Lime/Core/Notifications/` (settings, the pure rules in `NotificationPolicy`, the coordinator and the iOS pieces); the arrivals are spotted in `ConversationStore.reload`. Debug launch arguments: `-lime-notif-denied`, `-lime-notif-undetermined` (the default in demo mode is "allowed"), `-lime-demo-screen notif-banner`, `-lime-demo-screen settings/notifications`.
+
 ## Checks
 
 - `./ios/check-warnings.sh`: builds everything (app and both test targets) **from clean**, for a **simulator and a device** destination (unsigned), and fails on **any** warning in Lime's own sources (not the generated UniFFI file). An incremental `xcodebuild` only prints warnings for files it recompiled, so use this, not a quick build, to say "no warnings".

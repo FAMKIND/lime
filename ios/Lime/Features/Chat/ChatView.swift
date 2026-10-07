@@ -7,6 +7,7 @@ struct ChatView: View {
     /// The words of the search that led here: highlighted in the chat like find does.
     var focusWords: [String] = []
     @Environment(ConversationStore.self) private var store
+    @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.dismiss) private var dismiss
     @State private var composerModel = RichComposerModel()
     @State private var confirmingBlock = false
@@ -58,8 +59,7 @@ struct ChatView: View {
                     .accessibilityIdentifier("chat-search-button")
                 Button { store.comingSoon("Call") } label: { Image(systemName: "phone") }
                     .accessibilityLabel("Call")
-                Button { store.comingSoon("More") } label: { Image(systemName: "ellipsis") }
-                    .accessibilityLabel("More")
+                moreMenu(conversation) { Image(systemName: "ellipsis") }
             }
         }
     }
@@ -156,6 +156,8 @@ struct ChatView: View {
                 Task { await store.markRead(conversationID) }
             }
             .task { await store.markRead(conversationID) }
+            .onAppear { notifications.viewing = ViewingTarget(conversationID: conversationID) }
+            .onDisappear { if notifications.viewing == ViewingTarget(conversationID: conversationID) { notifications.viewing = nil } }
         }
     }
 
@@ -283,13 +285,38 @@ struct ChatView: View {
                 .accessibilityLabel("Search in chat")
                 .accessibilityIdentifier("chat-search-button")
                 glassIcon("phone", label: "Call")
-                glassIcon("ellipsis", label: "More")
+                moreMenu(conversation) {
+                    Image(systemName: "ellipsis").font(.system(size: 18)).foregroundStyle(Theme.text).frame(width: 44, height: 48)
+                }
             }
             .padding(.horizontal, 4)
             .limeGlass()
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)
+    }
+
+    /// The ⋯ menu: mute this chat's notifications (1 hour, 8 hours, 1 week, always), or unmute it.
+    private func moreMenu<Icon: View>(_ conversation: Conversation, @ViewBuilder label: () -> Icon) -> some View {
+        let settings = notifications.settings
+        return Menu {
+            if settings.isMuted(conversation.id), let until = settings.activeMutes().first(where: { $0.conversationID == conversation.id })?.until {
+                Button { settings.unmute(conversation.id) } label: {
+                    Label("Unmute (\(MuteText.until(until).lowercased()))", systemImage: "bell")
+                }
+                .accessibilityIdentifier("chat-unmute")
+            } else {
+                Menu {
+                    ForEach(MuteDuration.allCases) { duration in
+                        Button(duration.title) { settings.mute(conversation.id, for: duration) }
+                            .accessibilityIdentifier("mute-\(duration.rawValue)")
+                    }
+                } label: { Label("Mute notifications", systemImage: "bell.slash") }
+                .accessibilityIdentifier("chat-mute")
+            }
+        } label: { label() }
+        .accessibilityLabel("More")
+        .accessibilityIdentifier("chat-more")
     }
 
     private func glassIcon(_ symbol: String, label: String) -> some View {

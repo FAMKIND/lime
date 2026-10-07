@@ -14,6 +14,7 @@ enum SignOutCopy {
 struct SettingsView: View {
     @Environment(AccountSession.self) private var session
     @Environment(ConversationStore.self) private var store
+    @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.dismiss) private var dismiss
     @State private var path: [SettingsRoute] = []
 
@@ -28,7 +29,7 @@ struct SettingsView: View {
                     case .blocked: BlockedScreen()
                     case .keys: KeysScreen()
                     case .devices: LinkedDevicesScreen()
-                    case .notifications: EmptyView()
+                    case .notifications: NotificationsScreen()
                     case .customize: CustomizeScreen()
                     case .about: AboutScreen()
                     case .acknowledgements: AcknowledgementsScreen()
@@ -48,7 +49,7 @@ struct SettingsView: View {
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
             "profile": .profile, "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
-            "customize": .customize, "about": .about, "ack": .acknowledgements, "password": .changePassword,
+            "notifications": .notifications, "customize": .customize, "about": .about, "ack": .acknowledgements, "password": .changePassword,
         ]
         return names.compactMap { table[$0] }
     }
@@ -73,11 +74,8 @@ struct SettingsView: View {
                     }
                 }
                 SettingsCard {
-                    Button { store.comingNext("Notifications") } label: {
-                        SettingsRowLabel(symbol: "bell", title: "Notifications", value: "Coming next")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("settings-notifications")
+                    SettingsRow(symbol: "bell", title: "Notifications", value: notifications.settings.enabled ? "On" : "Off",
+                                route: .notifications, id: "settings-notifications")
                     SettingsRow(symbol: "paintpalette", title: "Customize", route: .customize, id: "settings-customize", showsDivider: false)
                 }
                 SettingsCard {

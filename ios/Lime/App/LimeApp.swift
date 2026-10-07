@@ -4,6 +4,7 @@ import SwiftUI
 struct LimeApp: App {
     @State private var store: ConversationStore
     @State private var session: AccountSession
+    @State private var notifications: NotificationCoordinator
     @AppStorage(AppearanceSetting.storageKey) private var appearance = AppearanceSetting.system.rawValue
 
     init() {
@@ -16,7 +17,11 @@ struct LimeApp: App {
             auth = FakeAuthService()
         }
         #endif
+        let coordinator = Self.makeNotifications()
+        store.notifications = coordinator
+        coordinator.onOpen = { [weak store] conversation, thread in store?.openFromNotification(conversation, thread: thread) }
         _store = State(initialValue: store)
+        _notifications = State(initialValue: coordinator)
         _session = State(initialValue: AccountSession(auth: auth, config: config, store: store))
     }
 
@@ -25,8 +30,30 @@ struct LimeApp: App {
             RootView()
                 .environment(store)
                 .environment(session)
+                .environment(notifications)
                 .preferredColorScheme(AppearanceSetting(rawValue: appearance)?.colorScheme)
                 .task { await session.resume() }
         }
+    }
+
+    /// The real notification centre, or (UI tests and screenshots) a stand-in with no system prompts.
+    private static func makeNotifications() -> NotificationCoordinator {
+        let arguments = ProcessInfo.processInfo.arguments
+        #if DEBUG
+        if arguments.contains("-lime-skip-sign-in") || arguments.contains("-lime-fake-auth") {
+            // Allowed unless a test asks otherwise (so the explainer never covers an unrelated test).
+            let status: NotificationAuthorization = arguments.contains("-lime-notif-denied") ? .denied
+                : arguments.contains("-lime-notif-undetermined") ? .notDetermined : .authorized
+            let demo = DemoNotifications(status: status)
+            // A throwaway suite, so a test never reads or leaves a real phone's choices.
+            let suite = UserDefaults(suiteName: "lime.demo.notifications") ?? .standard
+            if arguments.contains("-lime-reset-session") { suite.removePersistentDomain(forName: "lime.demo.notifications") }
+            return NotificationCoordinator(settings: NotificationSettings(defaults: suite), center: demo, feedback: demo)
+        }
+        #endif
+        let system = SystemNotifications()
+        let coordinator = NotificationCoordinator(center: system, feedback: SystemArrivalFeedback())
+        system.onTap = { [weak coordinator] conversation, thread in coordinator?.open(conversationID: conversation, threadRoot: thread) }
+        return coordinator
     }
 }
