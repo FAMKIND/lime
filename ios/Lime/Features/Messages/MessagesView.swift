@@ -4,6 +4,7 @@ struct MessagesView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
     @State private var showAbout = false
+    @State private var showNewMessage = false
 
     var body: some View {
         Group {
@@ -14,6 +15,10 @@ struct MessagesView: View {
             }
         }
         .sheet(isPresented: $showAbout) { AboutView() }
+        .sheet(isPresented: $showNewMessage) { NewMessageSheet() }
+        #if DEBUG
+        .task { if store.demoSheet != nil { showNewMessage = true } }
+        #endif
     }
 
     // MARK: iOS 26+: the system toolbar and scroll edge effect (as in Apple Messages)
@@ -69,8 +74,11 @@ struct MessagesView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 if store.showsRecoveryNotice { RecoveryNotice() }
-                if store.isLoaded && store.conversations.isEmpty { EmptyChatsView() }
-                ForEach(store.conversations) { conversation in
+                if !store.requests.isEmpty { RequestsRow(count: store.requests.count) }
+                if store.isLoaded && store.chats.isEmpty && store.requests.isEmpty {
+                    EmptyChatsView(onNewMessage: { showNewMessage = true })
+                }
+                ForEach(store.chats) { conversation in
                     NavigationLink(value: conversation.id) {
                         ConversationRow(conversation: conversation)
                     }
@@ -83,10 +91,11 @@ struct MessagesView: View {
             .padding(.bottom, bottom)
         }
         .accessibilityIdentifier("messages-list")
+        .refreshable { await store.syncNow() }
     }
 
     private var newMessageButton: some View {
-        Button { store.comingSoon("New message") } label: {
+        Button { showNewMessage = true } label: {
             Image(systemName: "plus")
                 .font(.system(size: 26, weight: .regular))
                 .foregroundStyle(Theme.accentInk)
@@ -95,12 +104,51 @@ struct MessagesView: View {
                 .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         }
         .accessibilityLabel("New message")
+        .accessibilityIdentifier("new-message-button")
+    }
+}
+
+/// The first row of Messages while strangers' first messages are waiting.
+private struct RequestsRow: View {
+    let count: Int
+
+    var body: some View {
+        NavigationLink(value: MessagesRoute.requests) {
+            HStack(spacing: 12) {
+                Image(systemName: "envelope.badge")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Theme.accentInk)
+                    .frame(width: 52, height: 52)
+                    .background(Theme.accent, in: Circle())
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Requests").font(Theme.title).foregroundStyle(Theme.text)
+                    Text(count == 1 ? "1 person wants to message you" : "\(count) people want to message you")
+                        .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                }
+                Spacer(minLength: 4)
+                Text("\(count)")
+                    .font(Theme.caption.weight(.semibold))
+                    .foregroundStyle(Theme.accentInk)
+                    .frame(minWidth: 22)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Theme.accent, in: Capsule())
+            }
+            .padding(.horizontal, 8).padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Requests, \(count == 1 ? "1 person wants" : "\(count) people want") to message you")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("requests-row")
     }
 }
 
 /// A new account's Messages: nothing yet, and two ways to start (both come next).
 private struct EmptyChatsView: View {
     @Environment(ConversationStore.self) private var store
+    let onNewMessage: () -> Void
 
     var body: some View {
         VStack(spacing: 20) {
@@ -114,16 +162,16 @@ private struct EmptyChatsView: View {
                     .foregroundStyle(Theme.textSecondary)
             }
             VStack(spacing: 12) {
-                card("New message", detail: "Message a teacher you know", symbol: "square.and.pencil", id: "card-new-message")
-                card("Invite a teacher", detail: "Bring a colleague to Lime", symbol: "person.badge.plus", id: "card-invite")
+                card("New message", detail: "Message a teacher you know", symbol: "square.and.pencil", id: "card-new-message", action: onNewMessage)
+                card("Invite a teacher", detail: "Bring a colleague to Lime", symbol: "person.badge.plus", id: "card-invite") { store.comingNext("Invite a teacher") }
             }
         }
         .padding(.top, 48)
         .padding(.horizontal, 12)
     }
 
-    private func card(_ title: String, detail: String, symbol: String, id: String) -> some View {
-        Button { store.comingNext(title) } label: {
+    private func card(_ title: String, detail: String, symbol: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: symbol)
                     .font(.system(size: 22))

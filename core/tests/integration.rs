@@ -145,6 +145,14 @@ impl Admin {
         Account { id, email, token }
     }
 
+    /// Gives an account a public profile (the directory fields), as `profile-set` would.
+    fn give_profile(&self, account: &Account, name: &str, username: &str) {
+        let made = self
+            .with_service_key(ureq::post(&format!("{}/rest/v1/profiles", self.base)))
+            .send_json(json!({ "user_id": account.id, "display_name": name, "username": username }));
+        assert!(made.is_ok(), "could not make the profile");
+    }
+
     fn delete_account(&self, account: &Account) {
         let _ = self
             .with_service_key(ureq::delete(&format!(
@@ -471,4 +479,53 @@ fn a_message_that_was_tampered_with_is_not_stored() {
         .is_empty());
     assert!(admin.raw_mailbox(&bob_device.device_id).is_empty());
     drop(cleanup);
+}
+
+#[test]
+fn find_request_accept_reply_and_block_through_the_real_server() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let alice = admin.create_account();
+    let bob = admin.create_account();
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in [&alice, &bob] {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (alice_name, bob_name) = (format!("al{}", &suffix[..8]), format!("bo{}", &suffix[..8]));
+    admin.give_profile(&alice, "Alice Adams", &alice_name);
+    admin.give_profile(&bob, "Bob Brown", &bob_name);
+    let dir = tempfile::tempdir().unwrap();
+    let (alice_store, bob_store) = (store(&dir, "alice.db", 1), store(&dir, "bob.db", 2));
+    alice_store.register_device(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.register_device(transport.clone(), bob.token.clone()).unwrap();
+
+    // Alice finds Bob by his exact username, then writes to him.
+    let found = lime_core::find_user(transport.clone(), alice.token.clone(), format!("@{}", bob_name.to_uppercase()))
+        .unwrap()
+        .expect("found");
+    assert_eq!((found.display_name.as_str(), found.user_id.as_str()), ("Bob Brown", bob.id.as_str()));
+    assert!(lime_core::find_user(transport.clone(), alice.token.clone(), bob_name[..5].to_owned()).unwrap().is_none());
+    let chat = alice_store.start_dm(found.user_id.clone(), found.display_name.clone()).unwrap();
+    alice_store.queue_text(chat.clone(), "hello Bob".into()).unwrap();
+    assert_eq!(alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap(), 1);
+
+    // It is a request on Bob's side, named from Alice's public profile.
+    assert_eq!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received, 1);
+    let request = bob_store.list_conversations().unwrap().remove(0);
+    assert_eq!((request.request_state.as_str(), request.title.as_str()), ("pending", "Alice Adams"));
+    bob_store.accept_request(request.id.clone()).unwrap();
+    bob_store.queue_text(request.id.clone(), "hi Alice".into()).unwrap();
+    bob_store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(alice_store.sync(transport.clone(), alice.token.clone()).unwrap().received, 1);
+    let texts: Vec<String> = alice_store.list_messages(chat.clone()).unwrap().into_iter().map(|m| m.text).collect();
+    assert_eq!(texts, vec!["hello Bob", "hi Alice"]);
+
+    // Bob blocks Alice: her next message is read and dropped, never shown.
+    bob_store.block_sender(request.id.clone()).unwrap();
+    alice_store.queue_text(chat, "are you there?".into()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let report = bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!((report.received, report.pending), (0, 0));
+    assert!(bob_store.list_conversations().unwrap().is_empty());
 }

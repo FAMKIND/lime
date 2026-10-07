@@ -174,7 +174,6 @@ struct CodeScreen: View {
     @Bindable var model: OnboardingModel
     @FocusState private var focused: Bool
     @State private var now = Date()
-    private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         OnboardingScaffold(
@@ -236,7 +235,13 @@ struct CodeScreen: View {
             }
         }
         .onAppear { focused = true }
-        .onReceive(tick) { now = $0 }
+        // The resend countdown: a once-a-second loop that ends with the screen.
+        .task {
+            while !Task.isCancelled {
+                now = Date()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
 }
 

@@ -16,6 +16,8 @@ export const config = {
   claimPerMinute: () => intFromEnv("LIME_RATE_CLAIM_PER_MIN", 60),
   /** Directory lookups (exact email) per minute per user. */
   lookupPerMinute: () => intFromEnv("LIME_RATE_LOOKUP_PER_MIN", 30),
+  /** Public profile reads (other people's display names) per minute per user. */
+  profilePerMinute: () => intFromEnv("LIME_RATE_PROFILE_PER_MIN", 120),
   /** Device registrations per hour per user. */
   registerPerHour: () => intFromEnv("LIME_RATE_REGISTER_PER_HOUR", 10),
   /** Guards (implementation limits, not protocol): recipients per send, keys per upload, items per fetch. */

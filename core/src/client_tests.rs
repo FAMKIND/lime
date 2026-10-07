@@ -247,3 +247,184 @@ fn an_item_from_a_changed_master_key_is_kept_not_stored() {
     assert_eq!(pending_rows(&bob)[0].0, "key_mismatch");
     assert_eq!(texts(&bob, &alice), vec!["first"]);
 }
+
+// ---------------------------------------------------------------- LIME-95: requests, blocking,
+// queued sends, names and ordering
+
+fn conversation(p: &Party, peer: &Party) -> Option<crate::ConversationSummary> {
+    p.store
+        .list_conversations()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.id == format!("dm:{}", peer.user))
+}
+
+fn states(p: &Party, peer: &Party) -> Vec<(String, String)> {
+    p.store
+        .list_messages(format!("dm:{}", peer.user))
+        .unwrap()
+        .into_iter()
+        .map(|m| (m.text, m.local_state))
+        .collect()
+}
+
+#[test]
+fn a_strangers_first_message_is_a_request_until_accepted() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    server
+        .state
+        .lock()
+        .unwrap()
+        .profiles
+        .insert("alice".into(), ("Alice A".into(), Some("alice.a".into())));
+
+    // Alice started the chat, so for her it is a normal conversation.
+    alice.store.start_dm("bob".into(), "Bob B".into()).unwrap();
+    say(&alice, &bob, &transport, "hello");
+    let hers = conversation(&alice, &bob).unwrap();
+    assert_eq!((hers.request_state.as_str(), hers.title.as_str()), ("accepted", "Bob B"));
+
+    // For Bob it is a request, and it already carries her profile name.
+    assert_eq!(sync(&bob, &transport).received, 1);
+    let request = conversation(&bob, &alice).unwrap();
+    assert_eq!(request.request_state, "pending");
+    assert_eq!(request.title, "Alice A", "the name comes from her public profile");
+    assert_eq!(request.unread, 1);
+    assert_eq!(texts(&bob, &alice), vec!["hello"]);
+
+    // Accepting moves it into Messages; replying works; reading clears the badge.
+    bob.store.accept_request(request.id.clone()).unwrap();
+    bob.store.mark_read(request.id.clone()).unwrap();
+    let accepted = conversation(&bob, &alice).unwrap();
+    assert_eq!((accepted.request_state.as_str(), accepted.unread), ("accepted", 0));
+    say(&bob, &alice, &transport, "hi Alice");
+    assert_eq!(sync(&alice, &transport).received, 1);
+    assert_eq!(texts(&alice, &bob), vec!["hello", "hi Alice"]);
+    assert_eq!(texts(&bob, &alice), vec!["hello", "hi Alice"]);
+}
+
+#[test]
+fn a_blocked_senders_new_messages_stay_hidden_and_nothing_is_left_waiting() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "first");
+    sync(&bob, &transport);
+    let id = conversation(&bob, &alice).unwrap().id;
+    bob.store.block_sender(id.clone()).unwrap();
+    assert!(conversation(&bob, &alice).is_none(), "a blocked conversation is not listed");
+
+    say(&alice, &bob, &transport, "second");
+    let report = sync(&bob, &transport);
+    assert_eq!((report.received, report.pending), (0, 0), "read and dropped, not kept");
+    assert_eq!(server.mailbox_len(&bob.device), 0);
+    assert!(conversation(&bob, &alice).is_none());
+    let stored: i64 = bob
+        .store
+        .lock()
+        .query_row("SELECT count(*) FROM messages WHERE body = 'second'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(stored, 0, "never stored");
+
+    // The session stayed in step, so a later (unblocked) message still reads.
+    bob.store.accept_request(id).unwrap();
+    say(&alice, &bob, &transport, "third");
+    assert_eq!(sync(&bob, &transport).received, 1);
+    assert_eq!(texts(&bob, &alice), vec!["first", "third"]);
+    assert!(bob.store.accept_request("dm:nobody".into()).is_err());
+}
+
+#[test]
+fn a_queued_message_goes_sending_then_sent_and_a_failure_is_retried_in_order() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let id = alice.store.start_dm("bob".into(), "Bob".into()).unwrap();
+
+    let one = alice.store.queue_text(id.clone(), "one".into()).unwrap();
+    alice.store.queue_text(id.clone(), "two".into()).unwrap();
+    assert_eq!(one.local_state, "sending");
+    assert_eq!(states(&alice, &bob), vec![("one".into(), "sending".into()), ("two".into(), "sending".into())]);
+
+    // The server is down: the first fails, the second waits behind it, nothing is lost.
+    server.state.lock().unwrap().fail_sends = true;
+    assert!(alice.store.deliver_queued(transport.clone(), alice.token.clone()).is_err());
+    assert_eq!(states(&alice, &bob), vec![("one".into(), "failed".into()), ("two".into(), "sending".into())]);
+    assert_eq!(sync(&bob, &transport).received, 0);
+
+    // Back up: both go, in order, and Bob sees each once.
+    server.state.lock().unwrap().fail_sends = false;
+    assert_eq!(alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap(), 2);
+    assert_eq!(states(&alice, &bob), vec![("one".into(), "sent".into()), ("two".into(), "sent".into())]);
+    assert_eq!(alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap(), 0, "nothing is sent twice");
+    assert_eq!(sync(&bob, &transport).received, 2);
+    assert_eq!(texts(&bob, &alice), vec!["one", "two"]);
+
+    // Blank text and a conversation that is not a DM are refused.
+    assert!(alice.store.queue_text(id, "   ".into()).is_err());
+    assert!(alice.store.queue_text("nope".into(), "x".into()).is_err());
+}
+
+#[test]
+fn people_are_found_by_exact_username_or_email_and_named_from_their_profile() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    {
+        let mut state = server.state.lock().unwrap();
+        state.profiles.insert("bob".into(), ("Bob B".into(), Some("bob.b".into())));
+        state.emails.insert("bob@example.com".into(), "bob".into());
+    }
+    let by_name = crate::find_user(transport.clone(), alice.token.clone(), "@Bob.B".into()).unwrap().unwrap();
+    assert_eq!((by_name.user_id.as_str(), by_name.display_name.as_str(), by_name.is_self), ("bob", "Bob B", false));
+    let by_email = crate::find_user(transport.clone(), alice.token.clone(), "bob@example.com".into()).unwrap().unwrap();
+    assert_eq!(by_email.user_id, "bob");
+    assert!(crate::find_user(transport.clone(), alice.token.clone(), "bob".into()).unwrap().is_none(), "no partial match");
+}
+
+#[test]
+fn a_reply_that_names_a_missing_parent_still_shows_and_the_order_survives_a_restart() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "a1");
+    sync(&bob, &transport);
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    say(&bob, &alice, &transport, "b1");
+    say(&bob, &alice, &transport, "b2");
+    sync(&alice, &transport);
+    say(&alice, &bob, &transport, "a2");
+    sync(&bob, &transport);
+    let expected = vec!["a1", "b1", "b2", "a2"];
+    assert_eq!(texts(&alice, &bob), expected);
+    assert_eq!(texts(&bob, &alice), expected);
+
+    // The parents are real: a2 names b2 (the latest op Alice had seen).
+    let parents: String = alice
+        .store
+        .lock()
+        .query_row("SELECT parents FROM messages WHERE body = 'a2'", [], |r| r.get(0))
+        .unwrap();
+    let b2: String = alice
+        .store
+        .lock()
+        .query_row("SELECT op_id FROM messages WHERE body = 'b2'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(parents, format!("[\"{b2}\"]"));
+
+    // Restart: reopen the same encrypted file.
+    let path = _path(&alice);
+    let reopened = LimeStore::open(path, vec![1; 32]).unwrap();
+    let after: Vec<String> = reopened
+        .list_messages(format!("dm:{}", bob.user))
+        .unwrap()
+        .into_iter()
+        .map(|m| m.text)
+        .collect();
+    assert_eq!(after, expected);
+}
+
+fn _path(p: &Party) -> String {
+    p._dir.path().join("lime.db").to_string_lossy().into_owned()
+}

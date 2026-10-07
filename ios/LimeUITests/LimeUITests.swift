@@ -17,8 +17,96 @@ final class LimeUITests: XCTestCase {
         return app
     }
 
+    /// Signed in, no backend, with made-up conversations in memory: a request waiting and a chat.
+    private func demoApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
+        return app
+    }
+
+    private func goBack(_ app: XCUIApplication) {
+        let custom = app.buttons["back-button"]
+        (custom.exists ? custom : app.navigationBars.buttons.element(boundBy: 0)).tap()
+    }
+
     override func setUp() {
         continueAfterFailure = false
+    }
+
+    // MARK: New message, requests and delivery states (in-memory demo conversations)
+
+    func testARequestIsAcceptedFromTheRequestsRow() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["requests-row"].waitForExistence(timeout: 10), "a request waits at the top of Messages")
+        XCTAssertFalse(app.buttons["conversation-row-dm:ada"].exists, "a request is not in the chat list yet")
+        app.buttons["requests-row"].tap()
+        let row = app.buttons["request-row-dm:ada"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(app.scrollViews["chat-scroll"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["request-accept"].exists && app.buttons["request-block"].exists)
+        XCTAssertFalse(app.textFields["composer-field"].exists, "no composer until the request is accepted")
+        app.buttons["request-accept"].tap()
+        XCTAssertTrue(app.textFields["composer-field"].waitForExistence(timeout: 5), "accepted: you can reply")
+        goBack(app)
+        // The Requests list is now empty, so it returns straight to Messages with Ada in the chat list.
+        XCTAssertTrue(app.buttons["conversation-row-dm:ada"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["requests-row"].exists)
+    }
+
+    func testBlockingARequestRemovesItAfterAConfirmation() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["requests-row"].waitForExistence(timeout: 10))
+        app.buttons["requests-row"].tap()
+        app.buttons["request-row-dm:ada"].tap()
+        XCTAssertTrue(app.buttons["request-block"].waitForExistence(timeout: 5))
+        app.buttons["request-block"].tap()
+        let confirm = app.buttons.matching(identifier: "request-block-confirm").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "blocking asks first")
+        confirm.tap()
+        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["requests-row"].exists)
+        XCTAssertFalse(app.buttons["conversation-row-dm:ada"].exists)
+    }
+
+    func testNewMessageFindsAPersonAndOpensTheChat() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["new-message-button"].waitForExistence(timeout: 10))
+        app.buttons["new-message-button"].tap()
+        let field = app.textFields["new-message-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["find-button"].isEnabled, "nothing to find yet")
+        field.typeText("nobody.here")
+        app.buttons["find-button"].tap()
+        XCTAssertTrue(app.staticTexts["find-result-none"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["find-result-none"].label, "No teacher found with that username or email.")
+
+        field.tap()
+        field.clearAndType("grace.h")
+        app.buttons["find-button"].tap()
+        XCTAssertTrue(app.staticTexts["find-result-name"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["find-result-name"].label, "Grace Hopper")
+        app.buttons["message-button"].tap()
+        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(title.label.contains("Grace Hopper"))
+    }
+
+    func testAMessageShowsSendingThenSent() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
+        app.buttons["conversation-row-dm:sam"].tap()
+        XCTAssertTrue(app.staticTexts["delivery-sending"].waitForExistence(timeout: 5), "an unsettled message says Sending…")
+        let field = app.textFields["composer-field"]
+        field.tap()
+        field.typeText("see you at 3")
+        app.buttons["send-button"].tap()
+        XCTAssertTrue(app.staticTexts.matching(identifier: "own-bubble").matching(NSPredicate(format: "label == %@", "see you at 3")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["delivery-sent"].waitForExistence(timeout: 8), "then it is Sent")
     }
 
     func testMessagesToChatAndBack() {
@@ -252,5 +340,14 @@ final class LimeUITests: XCTestCase {
         app.buttons["next-button"].tap()
         XCTAssertTrue(app.staticTexts["error-message"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["error-message"].label.contains("isn't right"))
+    }
+}
+
+private extension XCUIElement {
+    /// Replaces the field's text.
+    func clearAndType(_ text: String) {
+        guard let current = value as? String, !current.isEmpty else { return typeText(text) }
+        typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+        typeText(text)
     }
 }

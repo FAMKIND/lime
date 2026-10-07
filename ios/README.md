@@ -104,3 +104,17 @@ The app opens at a welcome screen, then one question per screen: your email or u
 The app talks to the backend named in `supabase/.staging.public.env` (written by `supabase/deploy-staging.sh`; `./generate.sh` reads it, so run `./generate.sh` after deploying). To sign up on staging the project needs a real email sender: see `supabase/README.md`.
 
 Debug builds only (launch arguments): `-lime-skip-sign-in` (signed in with no backend), `-lime-load-sample-chats` (the made-up chats; also a "Load sample chats" row in About), `-lime-fake-auth` (a stand-in backend: any email starting with "new" is a new account, the code is `123456`, the password `correct horse battery`), `-lime-reset-session`, `-lime-onboarding-screen <name>` (open one screen, for screenshots), and `-lime-api-url` / `-lime-api-key` (point at another backend, for example the local stack). `./ios/run-e2e-local.sh` runs the real app code (sign-up, both steps, the device registering through LimeCore, sign-out, sign-in by username) against the local Supabase stack.
+
+## Chatting (LIME-95)
+
+- **New message** (the "+" button, or the card on an empty Messages): one field for an exact username or email, **Find**, the person's name and school, **Message**. Nothing is listed or partly matched.
+- A message you send shows **Sending…**, then **Sent** once the server accepted it (a failure says "Not sent. Tap to retry"). It is end-to-end encrypted (LimeCore, Olm); the server cannot read it.
+- **Receiving:** while the app is open, a private Realtime channel nudges the phone the moment something arrives and it fetches its mailbox. It also fetches when the app comes to the front and on pull-to-refresh. (There is no push yet, so a closed app only catches up when opened.)
+- **Requests:** a message from someone you have not chatted with waits in a **Requests** row at the top of Messages. Open it to read, then **Accept** (it moves into Messages and you can reply) or **Block** (it disappears and that person's new messages are not shown on this phone).
+- **Debug demo:** the launch argument `-lime-demo-chat` (with `-lime-skip-sign-in`) shows made-up conversations in memory (a request, a chat with a message still sending); the UI tests and screenshots use it.
+
+## Checks
+
+- `./ios/check-warnings.sh`: builds everything (app and both test targets) **from clean**, for a **simulator and a device** destination (unsigned), and fails on **any** warning in Lime's own sources (not the generated UniFFI file). An incremental `xcodebuild` only prints warnings for files it recompiled, so use this, not a quick build, to say "no warnings".
+- `./ios/run-e2e-local.sh`: the real app code against the local stack, including two phones chatting live (the Realtime nudge), accepting, restarting and blocking.
+- `./ios/run-e2e-staging.sh`: the same two-phone conversation against staging with two throwaway accounts made and deleted through the admin API (no email, no inbox). The service key stays in that process's memory.

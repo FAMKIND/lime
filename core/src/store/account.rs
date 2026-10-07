@@ -60,11 +60,46 @@ pub(crate) fn save_account(
         "INSERT INTO account (id, olm_pickle, master_secret, device_id, user_id, registered, hlc_wall, hlc_counter)
          VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT (id) DO UPDATE SET olm_pickle = ?1, master_secret = ?2, device_id = ?3,
-           user_id = ?4, registered = ?5, hlc_wall = ?6, hlc_counter = ?7",
+           user_id = ?4, registered = ?5",
+        // The clock is moved only by tick_hlc / observe_hlc (atomically), never from a stale copy.
         params![olm, master, state.device_id, state.user_id, state.registered, state.hlc.wall, state.hlc.counter],
     )
     .map_err(db_err)?;
     Ok(())
+}
+
+/// The next clock value for an op made now. Atomic in the database, so a send and a sync running
+/// side by side never move the clock backwards.
+pub(crate) fn tick_hlc(conn: &Connection, now_ms: i64) -> Result<Hlc, StoreError> {
+    move_hlc(conn, |hlc| hlc.tick(now_ms))
+}
+
+/// Folds in the clock of an op received from another device.
+pub(crate) fn observe_hlc(conn: &Connection, remote: Hlc, now_ms: i64) -> Result<Hlc, StoreError> {
+    move_hlc(conn, |hlc| hlc.observe(remote, now_ms))
+}
+
+fn move_hlc(conn: &Connection, next: impl FnOnce(Hlc) -> Hlc) -> Result<Hlc, StoreError> {
+    conn.execute_batch("SAVEPOINT hlc").map_err(db_err)?;
+    let result = (|| {
+        let (wall, counter): (i64, i64) = conn
+            .query_row(
+                "SELECT hlc_wall, hlc_counter FROM account WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(db_err)?;
+        let moved = next(Hlc { wall, counter });
+        conn.execute(
+            "UPDATE account SET hlc_wall = ?1, hlc_counter = ?2 WHERE id = 1",
+            params![moved.wall, moved.counter],
+        )
+        .map_err(db_err)?;
+        Ok(moved)
+    })();
+    conn.execute_batch(if result.is_ok() { "RELEASE hlc" } else { "ROLLBACK TO hlc; RELEASE hlc" })
+        .map_err(db_err)?;
+    result
 }
 
 pub(crate) struct StoredSession {

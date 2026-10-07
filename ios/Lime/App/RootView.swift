@@ -13,16 +13,41 @@ struct RootView: View {
                 SignedOutView()
                     .id(session.onboardingGeneration)
             case .signedIn:
-                NavigationStack {
-                    MessagesView()
-                        .navigationDestination(for: Conversation.ID.self) { id in
-                            ChatView(conversationID: id)
-                        }
-                }
-                .tint(Theme.text)
+                SignedInView()
             }
         }
         .overlay(alignment: .top) { ComingSoonBanner() }
+    }
+}
+
+/// Messages and the screens pushed from it. Leaving the app stops the nudge listener (there is no
+/// push yet); coming back listens again and catches up.
+private struct SignedInView: View {
+    @Environment(ConversationStore.self) private var store
+    @Environment(AccountSession.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        @Bindable var store = store
+        NavigationStack(path: $store.path) {
+            MessagesView()
+                .navigationDestination(for: Conversation.ID.self) { id in
+                    ChatView(conversationID: id)
+                }
+                .navigationDestination(for: MessagesRoute.self) { _ in
+                    RequestsView()
+                }
+        }
+        .tint(Theme.text)
+        .onChange(of: scenePhase) { _, phase in
+            Task {
+                switch phase {
+                case .active: await session.appBecameActive()
+                case .background: await session.appLeftForeground()
+                default: break
+                }
+            }
+        }
     }
 }
 

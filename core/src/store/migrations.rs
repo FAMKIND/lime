@@ -76,6 +76,11 @@ const MIGRATIONS: &[&str] = &[
          first_seen   INTEGER NOT NULL,
          last_attempt INTEGER
      );",
+    // 4: message requests and causal ordering (LIME-95). A conversation is `pending` (a stranger's
+    // first message: it waits in Requests), `accepted`, or `blocked` (hidden; its new messages are
+    // not stored). `parents` is the JSON list of op ids the sender had seen (api-v2.md section 5).
+    "ALTER TABLE conversations ADD COLUMN request_state TEXT NOT NULL DEFAULT 'accepted';
+     ALTER TABLE messages ADD COLUMN parents TEXT;",
 ];
 
 /// The schema version this build writes.

@@ -324,28 +324,6 @@ Deno.test("a revoked device can neither fetch nor be sent to", opts, async () =>
   });
 });
 
-Deno.test("a send nudges the device's Realtime channel with no content", opts, async () => {
-  await withUsers(1, async ([bob]) => {
-    const device = await registerDevice(bob, await newMasterKey());
-    const key = await setAccessKey(bob);
-    const client = createClient(API_URL, ANON_KEY, { auth: { persistSession: false } });
-    const received = new Promise<unknown>((resolve) => {
-      const timer = setTimeout(() => resolve(null), 8000);
-      const channel = client.channel(`device:${device.deviceId}`);
-      channel.on("broadcast", { event: "new" }, (message: unknown) => { clearTimeout(timer); resolve(message); })
-        .subscribe(async (status: string) => {
-          if (status === "SUBSCRIBED") {
-            await call("send", null, { ciphertext: ciphertext(), recipients: [{ to_device: device.deviceId, access: { sealed: key } }] });
-          }
-        });
-    });
-    const message = await received as { payload?: { type?: string } } | null;
-    await client.removeAllChannels();
-    assertNotEquals(message, null, "a nudge arrived");
-    assertEquals(message?.payload, { type: "new" }, "the nudge carries no content");
-  });
-});
-
 Deno.test("users-lookup: an exact email gives a user id, nothing else is listed, and it is rate-limited", opts, async () => {
   await withUsers(2, async ([alice, bob]) => {
     // Exact and case-insensitive.

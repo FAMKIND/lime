@@ -18,7 +18,7 @@ mod client_tests;
 #[cfg(test)]
 mod testing;
 
-pub use client::{lookup_user_by_email, DeviceInfo, SyncReport};
+pub use client::{find_user, lookup_user_by_email, DeviceInfo, FoundUser, SyncReport};
 pub use store::{ConversationSummary, LimeStore, MemberInfo, MessageItem, StoreError};
 pub use transport::{HeaderPair, Transport, TransportError, TransportResponse};
 

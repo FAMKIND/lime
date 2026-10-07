@@ -11,6 +11,7 @@
 
 pub(crate) mod account;
 mod migrations;
+pub(crate) mod order;
 pub(crate) mod pending;
 mod sample;
 #[cfg(test)]
@@ -57,6 +58,8 @@ pub enum StoreError {
     NoRecipientKeys,
     /// A person's master key differs from the one remembered for them.
     KeyMismatch,
+    /// The server says too many requests (a 429): try again shortly.
+    RateLimited,
 }
 
 impl std::fmt::Display for StoreError {
@@ -76,6 +79,7 @@ impl std::fmt::Display for StoreError {
             StoreError::NotRegistered => "this device is not registered yet",
             StoreError::NoRecipientKeys => "the recipient has no keys to send to",
             StoreError::KeyMismatch => "a person's master key changed",
+            StoreError::RateLimited => "too many requests; try again shortly",
         };
         f.write_str(text)
     }
@@ -112,6 +116,9 @@ pub struct ConversationSummary {
     pub is_group: bool,
     pub is_pinned: bool,
     pub unread: u32,
+    /// `pending` (a stranger's first message, waiting in Requests) or `accepted`. Blocked
+    /// conversations are not listed.
+    pub request_state: String,
     pub last_message: Option<MessageItem>,
     /// The other people (never me), in a stable order.
     pub members: Vec<MemberInfo>,
@@ -180,8 +187,9 @@ impl LimeStore {
         let conn = self.lock();
         let mut statement = conn
             .prepare(
-                "SELECT c.id, c.title, c.is_group, c.is_pinned, c.unread
+                "SELECT c.id, c.title, c.is_group, c.is_pinned, c.unread, c.request_state
                  FROM conversations c
+                 WHERE c.request_state != 'blocked'
                  ORDER BY c.is_pinned DESC,
                           COALESCE((SELECT MAX(m.sent_at) FROM messages m
                                     WHERE m.conversation_id = c.id), 0) DESC,
@@ -196,6 +204,7 @@ impl LimeStore {
                     r.get::<_, bool>(2)?,
                     r.get::<_, bool>(3)?,
                     r.get::<_, u32>(4)?,
+                    r.get::<_, String>(5)?,
                 ))
             })
             .map_err(db_err)?
@@ -203,7 +212,7 @@ impl LimeStore {
             .map_err(db_err)?;
 
         let mut summaries = Vec::with_capacity(rows.len());
-        for (id, title, is_group, is_pinned, unread) in rows {
+        for (id, title, is_group, is_pinned, unread, request_state) in rows {
             summaries.push(ConversationSummary {
                 last_message: last_message(&conn, &id)?,
                 members: members_of(&conn, &id)?,
@@ -212,26 +221,57 @@ impl LimeStore {
                 is_group,
                 is_pinned,
                 unread,
+                request_state,
             });
         }
         Ok(summaries)
     }
 
-    /// A conversation's messages, oldest first.
+    /// A conversation's messages in display order (causal, ties by clock then op id).
     pub fn list_messages(&self, conversation_id: String) -> Result<Vec<MessageItem>, StoreError> {
         let conn = self.lock();
-        let mut statement = conn
-            .prepare(
-                "SELECT id, conversation_id, sender_id, body, sent_at, local_state
-                 FROM messages WHERE conversation_id = ?1 ORDER BY sent_at, id",
-            )
-            .map_err(db_err)?;
-        let items = statement
-            .query_map(params![conversation_id], message_from_row)
-            .map_err(db_err)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(db_err)?;
-        Ok(items)
+        Ok(order::load_ordered(&conn, &conversation_id)?
+            .into_iter()
+            .map(item_from_row)
+            .collect())
+    }
+
+    /// Starts (or finds) the 1:1 conversation with a person you chose to message: it is yours, so
+    /// it is `accepted` and appears in Messages. The name is their profile's display name.
+    pub fn start_dm(&self, user_id: String, display_name: String) -> Result<String, StoreError> {
+        let mut conn = self.lock();
+        let tx = conn.transaction().map_err(db_err)?;
+        let id = crate::client::ensure_dm(&tx, &user_id, Some(&display_name))?;
+        tx.execute(
+            "UPDATE conversations SET request_state = 'accepted' WHERE id = ?1",
+            params![id],
+        )
+        .map_err(db_err)?;
+        tx.commit().map_err(db_err)?;
+        Ok(id)
+    }
+
+    /// Accepts a request: the conversation moves into Messages. (Sharing your delivery key with
+    /// them, so later messages can be sealed, comes with sealed sends.)
+    pub fn accept_request(&self, conversation_id: String) -> Result<(), StoreError> {
+        self.set_request_state(&conversation_id, "accepted")
+    }
+
+    /// Blocks a sender: the conversation is hidden and their new messages are not stored here.
+    /// (The server-side block, rotating the delivery key, comes with sealed sends.)
+    pub fn block_sender(&self, conversation_id: String) -> Result<(), StoreError> {
+        self.set_request_state(&conversation_id, "blocked")
+    }
+
+    /// Marks a conversation as read.
+    pub fn mark_read(&self, conversation_id: String) -> Result<(), StoreError> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE conversations SET unread = 0 WHERE id = ?1 AND unread != 0",
+            params![conversation_id],
+        )
+        .map_err(db_err)?;
+        Ok(())
     }
 
     /// Writes a message from this device into the conversation and returns it. It is stored
@@ -282,6 +322,21 @@ impl LimeStore {
 }
 
 impl LimeStore {
+    fn set_request_state(&self, conversation_id: &str, state: &str) -> Result<(), StoreError> {
+        let conn = self.lock();
+        let changed = conn
+            .execute(
+                "UPDATE conversations SET request_state = ?2, unread = CASE WHEN ?2 = 'blocked' THEN 0 ELSE unread END
+                 WHERE id = ?1",
+                params![conversation_id, state],
+            )
+            .map_err(db_err)?;
+        if changed == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
+    }
+
     pub(crate) fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
         // A poisoned lock only means another call panicked; the database itself is intact.
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
@@ -331,30 +386,24 @@ impl LimeStore {
     }
 }
 
-fn message_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MessageItem> {
-    let sender: String = r.get(2)?;
-    Ok(MessageItem {
-        id: r.get(0)?,
-        conversation_id: r.get(1)?,
-        sender_id: if sender == ME_ID { None } else { Some(sender) },
-        text: r.get(3)?,
-        sent_at: r.get(4)?,
-        local_state: r.get(5)?,
-    })
+fn item_from_row(row: order::Row) -> MessageItem {
+    MessageItem {
+        id: row.id,
+        conversation_id: row.conversation_id,
+        sender_id: if row.sender_id == ME_ID { None } else { Some(row.sender_id) },
+        text: row.body,
+        sent_at: row.sent_at,
+        local_state: row.local_state,
+    }
 }
 
 fn last_message(
     conn: &Connection,
     conversation_id: &str,
 ) -> Result<Option<MessageItem>, StoreError> {
-    conn.query_row(
-        "SELECT id, conversation_id, sender_id, body, sent_at, local_state
-         FROM messages WHERE conversation_id = ?1 ORDER BY sent_at DESC, id DESC LIMIT 1",
-        params![conversation_id],
-        message_from_row,
-    )
-    .optional()
-    .map_err(db_err)
+    Ok(order::load_ordered(conn, conversation_id)?
+        .pop()
+        .map(item_from_row))
 }
 
 fn members_of(conn: &Connection, conversation_id: &str) -> Result<Vec<MemberInfo>, StoreError> {

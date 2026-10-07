@@ -20,6 +20,10 @@ pub(crate) struct ServerState {
     /// Make the next `mailbox-ack` fail with a 500.
     pub fail_next_ack: bool,
     pub emails: HashMap<String, String>,
+    /// user id to (display name, username)
+    pub profiles: HashMap<String, (String, Option<String>)>,
+    /// Make every `send` fail with a 500 while true.
+    pub fail_sends: bool,
 }
 
 #[derive(Default)]
@@ -166,6 +170,9 @@ impl Transport for FakeServer {
                 respond(200, json!({ "user_id": target, "devices": out }))
             }
             "send" => {
+                if state.fail_sends {
+                    return respond(500, json!({ "error": "internal" }));
+                }
                 let ciphertext = text("ciphertext");
                 let recipients = body
                     .get("recipients")
@@ -225,6 +232,33 @@ impl Transport for FakeServer {
                     None => respond(404, json!({ "error": "not_found" })),
                 }
             }
+            "users-find" => {
+                let query = text("query").to_lowercase();
+                let query = query.trim_start_matches('@');
+                let found = if let Some(id) = state.emails.get(query) {
+                    Some(id.clone())
+                } else {
+                    state
+                        .profiles
+                        .iter()
+                        .find(|(_, p)| p.1.as_deref().map(str::to_lowercase).as_deref() == Some(query))
+                        .map(|(id, _)| id.clone())
+                };
+                match found.and_then(|id| state.profiles.get(&id).map(|p| (id, p.clone()))) {
+                    Some((id, (name, username))) => respond(
+                        200,
+                        json!({ "user_id": id, "display_name": name, "username": username, "school": null, "is_self": id == user }),
+                    ),
+                    None => respond(404, json!({ "error": "not_found" })),
+                }
+            }
+            "profile-get" => match state.profiles.get(&text("user_id")) {
+                Some((name, username)) => respond(
+                    200,
+                    json!({ "profile": { "user_id": text("user_id"), "display_name": name, "username": username, "school": null } }),
+                ),
+                None => respond(404, json!({ "error": "not_found" })),
+            },
             _ => respond(404, json!({ "error": "unknown function" })),
         }
     }

@@ -64,3 +64,10 @@ The scripts never print the secrets. `deploy-staging.sh` writes the project URL 
 ## Staging settings must match `config.toml`
 
 `supabase config push` is never used, so the hosted Auth settings are set by hand in the dashboard. The code length (`otp_length`, **6**) and email confirmations (**on**) must match `config.toml`; a mismatch is what broke LIME-94's gate (staging sent 8-digit codes). `./supabase/check-staging-settings.sh` compares them read-only (the CLI token stays in memory) and `smoke-staging.sh` runs it first.
+
+## Finding people, public profiles and the private nudge (LIME-95)
+
+- `users-find { query }`: an exact username or email to the person's public profile fields (404 for nobody, for someone who hid from search, or for an account with no profile). 30 a minute per user.
+- `profile-get { user_id }`: another person's public fields (a name only when they hid from search). 120 a minute per user (`LIME_RATE_PROFILE_PER_MIN`).
+- The Realtime "new items" nudge is a **private** channel (`device:<id>`); a policy on `realtime.messages` (migration `20261006160000`) lets only the device's owner, on a fully signed-in session, join it. A client must set its access token before it joins.
+- **After adding a new function directory, restart the local stack** (`supabase stop && supabase start`): the local Edge runtime only learns about a new function folder at start. `./supabase/test.sh` restarts the runtime, which is enough for edits to existing functions.

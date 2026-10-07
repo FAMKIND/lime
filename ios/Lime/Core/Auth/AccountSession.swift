@@ -12,6 +12,8 @@ final class AccountSession {
     private(set) var profile: Profile?
     private(set) var deviceRegistered = false
     private(set) var maskedEmail: String?
+    /// This account's user id, once the device is registered (tests use it).
+    private(set) var userID: String?
     /// Bumped on sign-out so the onboarding screens start fresh.
     private(set) var onboardingGeneration = 0
 
@@ -19,6 +21,7 @@ final class AccountSession {
     private let config: BackendConfig?
     private let store: ConversationStore
     private var tokens: AuthTokens?
+    private var nudges: RealtimeNudges?
 
     private static let profileKey = "lime.profile"
     private let sessionService: String
@@ -57,6 +60,7 @@ final class AccountSession {
             maskedEmail = "t•••@example.invalid"
             await store.bootstrap(arguments: arguments)
             if arguments.contains("-lime-load-sample-chats") { await store.loadSampleChats() }
+            if arguments.contains("-lime-demo-chat") { store.loadDemo(screen: arguments.firstIndex(of: "-lime-demo-screen").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }) }
             phase = .signedIn
             return
         }
@@ -103,7 +107,47 @@ final class AccountSession {
     func registerDevice() async {
         guard let config, tokens != nil, let token = try? await accessToken() else { return }
         let transport = URLSessionTransport(baseURL: config.url, apiKey: config.apiKey)
-        deviceRegistered = (try? await store.registerDevice(transport: transport, token: token)) != nil
+        guard let device = try? await store.registerDevice(transport: transport, token: token) else {
+            deviceRegistered = false
+            return
+        }
+        deviceRegistered = true
+        userID = device.userId
+        await goLive(device: device, transport: transport, config: config)
+    }
+
+    /// Registered: deliver and fetch for real, and listen for the "new items" nudge while the app is open.
+    private func goLive(device: DeviceInfo, transport: Transport, config: BackendConfig) async {
+        store.connect(BackendLink(transport: transport, token: { [weak self] in
+            guard let self else { throw AuthError.notVerified }
+            return try await self.accessToken()
+        }))
+        let store = self.store
+        await nudges?.stop()
+        let live = RealtimeNudges(
+            baseURL: config.url, apiKey: config.apiKey, deviceID: device.deviceId,
+            token: { [weak self] in
+                guard let self else { throw AuthError.notVerified }
+                return try await self.accessToken()
+            },
+            onNudge: { Task { @MainActor in await store.syncNow() } })
+        nudges = live
+        await live.start()
+        await store.syncNow()
+    }
+
+    // MARK: Foreground and background
+
+    /// The app came to the front: listen for nudges and catch up on anything that arrived meanwhile.
+    func appBecameActive() async {
+        guard phase == .signedIn, deviceRegistered else { return }
+        await nudges?.start()
+        await store.syncNow()
+    }
+
+    /// The app left the front: there is no push yet, so stop listening until it returns.
+    func appLeftForeground() async {
+        await nudges?.stop()
     }
 
     /// A valid access token, refreshed first when it is about to expire.
@@ -121,6 +165,8 @@ final class AccountSession {
 
     /// Ends the session on the server, then forgets the tokens, the profile and the local store.
     func signOut() async {
+        await nudges?.stop()
+        nudges = nil
         if let auth, let tokens { await auth.signOut(tokens: tokens) }
         SessionKeychain.clear(service: sessionService)
         defaults.removeObject(forKey: Self.profileKey)
@@ -129,6 +175,7 @@ final class AccountSession {
         profile = nil
         maskedEmail = nil
         deviceRegistered = false
+        userID = nil
         onboardingGeneration += 1
         phase = .signedOut
     }

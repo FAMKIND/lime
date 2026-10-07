@@ -4,7 +4,7 @@
 // about the sender) or { identified: true } (a user token is required; the item records the
 // sender, so a stranger's first message can land in Requests). The server stores one item per
 // recipient device, de-duplicated by SHA-256(ciphertext) per device, then nudges the device's
-// Realtime channel with { type: "new" } (no content).
+// Realtime channel (a private channel only its owner may join) with { type: "new" } (no content).
 //
 // Nothing here logs ciphertext, keys, access keys or tokens.
 
@@ -23,7 +23,7 @@ async function nudge(deviceIds: string[]): Promise<void> {
       method: "POST",
       headers: { "content-type": "application/json", apikey: key, authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        messages: deviceIds.map((id) => ({ topic: `device:${id}`, event: "new", payload: { type: "new" }, private: false })),
+        messages: deviceIds.map((id) => ({ topic: `device:${id}`, event: "new", payload: { type: "new" }, private: true })),
       }),
     });
   } catch {

@@ -5,6 +5,7 @@ struct ChatView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
+    @State private var confirmingBlock = false
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -27,7 +28,7 @@ struct ChatView: View {
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
         }
-        .safeAreaBar(edge: .bottom) { composer(conversation) }
+        .safeAreaBar(edge: .bottom) { bottomBar(conversation) }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { titlePill(conversation) }
@@ -51,7 +52,7 @@ struct ChatView: View {
         }
         .overlay(alignment: .top) { TopFade() }
         .overlay(alignment: .top) { header(conversation) }
-        .safeAreaInset(edge: .bottom) { composer(conversation) }
+        .safeAreaInset(edge: .bottom) { bottomBar(conversation) }
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
     }
@@ -61,6 +62,7 @@ struct ChatView: View {
     private func messageScroll(_ conversation: Conversation, top: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
+                let lastOwnID = conversation.messages.last(where: \.isOwn)?.id
                 LazyVStack(spacing: 0) {
                     ForEach(ChatRow.rows(for: conversation)) { row in
                         switch row.kind {
@@ -74,7 +76,9 @@ struct ChatView: View {
                             MessageBubble(message: message,
                                           sender: store.person(message.senderID, in: conversation),
                                           showAvatar: showAvatar,
-                                          showName: showAvatar && conversation.isGroup)
+                                          showName: showAvatar && conversation.isGroup,
+                                          showState: message.isOwn && (message.state != .sent || message.id == lastOwnID),
+                                          onRetry: { Task { await store.deliverNow() } })
                                 .padding(.bottom, 8)
                         }
                     }
@@ -87,9 +91,13 @@ struct ChatView: View {
             .accessibilityIdentifier("chat-scroll")
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
+            .refreshable { await store.syncNow() }
             .onChange(of: conversation.messages.count) {
                 withAnimation { proxy.scrollTo("bottom") }
+                // A message that arrives while the chat is open is read.
+                Task { await store.markRead(conversationID) }
             }
+            .task { await store.markRead(conversationID) }
         }
     }
 
@@ -157,6 +165,53 @@ struct ChatView: View {
         .accessibilityLabel(label)
     }
 
+    // MARK: Bottom: the composer, or Accept / Block for a request
+
+    @ViewBuilder
+    private func bottomBar(_ conversation: Conversation) -> some View {
+        if conversation.isRequest { requestBar(conversation) } else { composer(conversation) }
+    }
+
+    private func requestBar(_ conversation: Conversation) -> some View {
+        VStack(spacing: 12) {
+            Text("\(conversation.title) isn't in your chats yet. Accept to reply.")
+                .font(Theme.secondary)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("request-note")
+            HStack(spacing: 12) {
+                Button { confirmingBlock = true } label: {
+                    Text("Block").font(Theme.title).foregroundStyle(Theme.text)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(Theme.surface, in: Capsule())
+                }
+                .accessibilityIdentifier("request-block")
+                Button { Task { await store.accept(conversation.id) } } label: {
+                    Text("Accept").font(Theme.title).foregroundStyle(Theme.accentInk)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(Theme.accent, in: Capsule())
+                }
+                .accessibilityIdentifier("request-accept")
+            }
+        }
+        .padding(16)
+        .limeGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+        .confirmationDialog("Block \(conversation.title)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
+            Button("Block", role: .destructive) {
+                Task {
+                    await store.block(conversation.id)
+                    store.path = NavigationPath()
+                }
+            }
+            .accessibilityIdentifier("request-block-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Their new messages won't be shown on this phone.")
+        }
+    }
+
     // MARK: Composer
 
     private func composer(_ conversation: Conversation) -> some View {
@@ -215,6 +270,9 @@ struct MessageBubble: View {
     let showAvatar: Bool
     /// Sender names appear above the bubble in groups only; a DM's title already names the person.
     let showName: Bool
+    /// Own messages say "Sending…" or "Sent" (the last one always; others only while unsettled).
+    var showState: Bool = false
+    var onRetry: () -> Void = {}
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 36
 
     var body: some View {
@@ -241,9 +299,22 @@ struct MessageBubble: View {
                             .strokeBorder(message.isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5)
                     )
                     .accessibilityIdentifier(message.isOwn ? "own-bubble" : "other-bubble")
-                Text(MessageFormat.clock(message.date))
-                    .font(Theme.caption)
-                    .foregroundStyle(Theme.textSecondary)
+                HStack(spacing: 4) {
+                    Text(MessageFormat.clock(message.date))
+                    if showState {
+                        switch message.state {
+                        case .sending: Text("· Sending…").accessibilityIdentifier("delivery-sending")
+                        case .sent: Text("· Sent").accessibilityIdentifier("delivery-sent")
+                        case .failed:
+                            Button("· Not sent. Tap to retry", action: onRetry)
+                                .foregroundStyle(Color.red)
+                                .accessibilityIdentifier("delivery-failed")
+                        case .received: EmptyView()
+                        }
+                    }
+                }
+                .font(Theme.caption)
+                .foregroundStyle(Theme.textSecondary)
             }
             if !message.isOwn { Spacer(minLength: 56) }
         }

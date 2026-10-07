@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use vodozemac::olm::{OlmMessage, SessionConfig};
 use vodozemac::Curve25519PublicKey;
@@ -16,8 +16,9 @@ use vodozemac::Curve25519PublicKey;
 use crate::keys::AccountState;
 use crate::protocol::{dm_conversation_id, Hlc, Op, SealedInner, SenderCert};
 use crate::store::account::{
-    load_account, load_sessions, pin_master_key, save_account, save_session,
+    load_account, load_sessions, observe_hlc, pin_master_key, save_account, save_session, tick_hlc,
 };
+use crate::store::order;
 use crate::store::pending::{self, Fetched, PendingRow};
 use crate::store::{db_err, new_id, now_ms, LimeStore, MessageItem, StoreError, ME_ID};
 use crate::transport::{HeaderPair, Transport, TransportError};
@@ -102,13 +103,12 @@ impl LimeStore {
         })
     }
 
-    /// Sends a text to another account as an **identified** Olm message (the server knows the
-    /// sender, as it does for any first message). Returns the message as stored locally.
-    pub fn send_text_identified(
+    /// Writes a text into a 1:1 conversation as `sending` and returns it at once (nothing is sent
+    /// yet: [`LimeStore::deliver_queued`] does that). The op's id, clock and parents are fixed here,
+    /// so the message keeps its place however long delivery takes.
+    pub fn queue_text(
         &self,
-        transport: Arc<dyn Transport>,
-        auth_token: String,
-        recipient_user_id: String,
+        conversation_id: String,
         text: String,
     ) -> Result<MessageItem, StoreError> {
         let body = text.trim();
@@ -118,6 +118,56 @@ impl LimeStore {
         if body.len() > MAX_TEXT_BYTES {
             return Err(StoreError::Rejected);
         }
+        if conversation_id.strip_prefix("dm:").is_none() {
+            return Err(StoreError::NotFound);
+        }
+        let state = self.load_or_create_account()?;
+        state
+            .user_id
+            .as_ref()
+            .filter(|_| state.registered)
+            .ok_or(StoreError::NotRegistered)?;
+        let now = now_ms();
+        self.with_conn(|conn| {
+            let visible: bool = conn
+                .query_row(
+                    "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state != 'blocked')",
+                    params![conversation_id],
+                    |r| r.get(0),
+                )
+                .map_err(db_err)?;
+            if !visible {
+                return Err(StoreError::NotFound);
+            }
+            let hlc = tick_hlc(conn, now)?;
+            let parents = order::heads(conn, &conversation_id)?;
+            let op_id = new_id();
+            conn.execute(
+                "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'sending', ?1, ?6, ?7)",
+                params![op_id, conversation_id, ME_ID, body, now, hlc.render(), json!(parents).to_string()],
+            )
+            .map_err(db_err)?;
+            Ok(MessageItem {
+                id: op_id,
+                conversation_id: conversation_id.clone(),
+                sender_id: None,
+                text: body.to_owned(),
+                sent_at: now,
+                local_state: "sending".to_owned(),
+            })
+        })
+    }
+
+    /// Sends every queued message (`sending`, or `failed` earlier), oldest first, as **identified**
+    /// Olm messages, marking each `sent` once the server accepted it. Stops at the first failure
+    /// (that message becomes `failed`; the order is kept) and returns the error. Returns how many
+    /// were sent. A recipient de-duplicates by op id, so a retry never shows twice.
+    pub fn deliver_queued(
+        &self,
+        transport: Arc<dyn Transport>,
+        auth_token: String,
+    ) -> Result<u32, StoreError> {
         let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut state = self.load_or_create_account()?;
         let me = state
@@ -125,127 +175,36 @@ impl LimeStore {
             .clone()
             .filter(|_| state.registered)
             .ok_or(StoreError::NotRegistered)?;
-
-        // 1. The recipient's devices, each vouched for by their master key.
-        let devices = self.recipient_devices(&transport, &auth_token, &recipient_user_id)?;
-
-        // 2. A session per device; claim a one-time key for each device that has none.
-        let mut sessions = Vec::new();
-        let mut needs_claim = Vec::new();
-        for device in &devices {
-            let existing =
-                self.with_conn(|conn| load_sessions(conn, &self.pickle_key, &recipient_user_id))?;
-            match existing
-                .into_iter()
-                .find(|s| s.peer_identity_key == device.identity_key)
-            {
-                Some(stored) => sessions.push((device.clone(), stored.session)),
-                None => needs_claim.push(device.clone()),
-            }
-        }
-        if !needs_claim.is_empty() {
-            let claimed = self.claim_keys(&transport, &auth_token, &recipient_user_id)?;
-            for device in needs_claim {
-                let Some(one_time_key) = claimed.get(&device.device_id) else {
-                    continue;
-                };
-                let identity = Curve25519PublicKey::from_base64(&device.identity_key)
-                    .map_err(|_| StoreError::BadMessage)?;
-                let one_time = Curve25519PublicKey::from_base64(one_time_key)
-                    .map_err(|_| StoreError::BadMessage)?;
-                let session = state
-                    .account
-                    .create_outbound_session(SessionConfig::version_1(), identity, one_time)
-                    .map_err(|_| StoreError::BadMessage)?;
-                sessions.push((device, session));
-            }
-        }
-        if sessions.is_empty() {
-            return Err(StoreError::NoRecipientKeys);
-        }
-
-        // 3. The signed op, wrapped with this device's certificate.
-        let now = now_ms();
-        state.hlc = state.hlc.tick(now);
-        let conversation_id = dm_conversation_id(&me, &recipient_user_id);
-        let local_conversation = format!("dm:{recipient_user_id}");
-        let parents = self.with_conn(|conn| latest_op_ids(conn, &local_conversation))?;
-        let mut op = Op {
-            op_id: new_id(),
-            op_type: "message.send".into(),
-            conversation_id,
-            hlc: state.hlc.render(),
-            parents,
-            payload: json!({ "text": body }),
-            sig: String::new(),
-        };
-        op.sig = state.account.sign(op.signing_bytes()).to_base64();
-        let inner = SealedInner {
-            sender_user: me,
-            sender_device: state.device_id.clone(),
-            sender_cert: state.cert(),
-            op: op.clone(),
-        }
-        .to_bytes();
-
-        // 4. One Olm ciphertext per recipient device, each sent identified.
+        let queued = self.with_conn(queued_messages)?;
         let mut sent = 0;
-        let mut updated = Vec::new();
-        for (device, mut session) in sessions {
-            let message = session
-                .encrypt(&inner)
-                .map_err(|_| StoreError::BadMessage)?;
-            let (kind, bytes) = message.to_parts();
-            let mut wire = vec![kind as u8];
-            wire.extend_from_slice(&bytes);
-            let (status, _) = call(
-                &transport,
-                Some(&auth_token),
-                "send",
-                &json!({
-                    "ciphertext": vodozemac::base64_encode(&wire),
-                    "recipients": [{ "to_device": device.device_id, "access": { "identified": true } }],
-                }),
-            )?;
-            check(status)?;
-            sent += 1;
-            updated.push((device, session));
-        }
-        debug_assert!(sent > 0);
-
-        // 5. Remember the sessions (their ratchets moved) and the message.
-        self.with_conn(|conn| {
-            for (device, session) in &updated {
-                save_session(
-                    conn,
-                    &self.pickle_key,
-                    &recipient_user_id,
-                    &device.device_id,
-                    &device.identity_key,
-                    session,
-                    now,
-                )?;
+        for message in queued {
+            match self.deliver_one(&transport, &auth_token, &mut state, &me, &message) {
+                Ok(()) => {
+                    self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
+                    sent += 1;
+                }
+                Err(error) => {
+                    self.with_conn(|conn| set_state(conn, &message.id, "failed"))?;
+                    return Err(error);
+                }
             }
-            save_account(conn, &self.pickle_key, &state)
-        })?;
-        let item = MessageItem {
-            id: op.op_id.clone(),
-            conversation_id: local_conversation.clone(),
-            sender_id: None,
-            text: body.to_owned(),
-            sent_at: now,
-            local_state: "sent".to_owned(),
-        };
-        self.with_conn(|conn| {
-            ensure_dm(conn, &recipient_user_id)?;
-            conn.execute(
-                "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?1, ?7)",
-                params![item.id, item.conversation_id, ME_ID, item.text, item.sent_at, item.local_state, op.hlc],
-            )
-            .map_err(db_err)?;
-            Ok(())
-        })?;
+        }
+        Ok(sent)
+    }
+
+    /// Queues a text for `recipient_user_id` and delivers it now (the conversation is created if
+    /// needed). Returns the message as `sent`.
+    pub fn send_text_identified(
+        &self,
+        transport: Arc<dyn Transport>,
+        auth_token: String,
+        recipient_user_id: String,
+        text: String,
+    ) -> Result<MessageItem, StoreError> {
+        self.with_conn(|conn| ensure_dm(conn, &recipient_user_id, None).map(|_| ()))?;
+        let mut item = self.queue_text(format!("dm:{recipient_user_id}"), text)?;
+        self.deliver_queued(transport, auth_token)?;
+        item.local_state = "sent".to_owned();
         Ok(item)
     }
 
@@ -329,6 +288,9 @@ impl LimeStore {
         // Turn what is waiting into messages (and retry what failed before). A new session can make
         // an earlier item readable, so go round again while anything makes progress.
         let received = self.retry_pending(&mut state, &me)?;
+        if received > 0 {
+            self.refresh_names(&transport, &auth_token);
+        }
         let waiting = self.with_conn(pending::count)?;
         Ok(SyncReport {
             received,
@@ -362,6 +324,46 @@ pub fn lookup_user_by_email(
     ))
 }
 
+/// A person found by exact username or email: public profile fields only.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FoundUser {
+    pub user_id: String,
+    pub display_name: String,
+    pub username: Option<String>,
+    pub school: Option<String>,
+    /// True when the search found yourself.
+    pub is_self: bool,
+}
+
+/// Finds a person by their exact username or exact email (nothing partial, never a list). `None`
+/// when nobody matches, or they chose not to be found.
+#[uniffi::export]
+pub fn find_user(
+    transport: Arc<dyn Transport>,
+    auth_token: String,
+    query: String,
+) -> Result<Option<FoundUser>, StoreError> {
+    let (status, body) = call(
+        &transport,
+        Some(&auth_token),
+        "users-find",
+        &json!({ "query": query }),
+    )?;
+    match status {
+        404 => return Ok(None),
+        429 => return Err(StoreError::RateLimited),
+        _ => check(status)?,
+    }
+    let text = |k: &str| body.get(k).and_then(Value::as_str).map(str::to_owned);
+    Ok(Some(FoundUser {
+        user_id: text("user_id").ok_or(StoreError::BadMessage)?,
+        display_name: text("display_name").ok_or(StoreError::BadMessage)?,
+        username: text("username"),
+        school: text("school"),
+        is_self: body.get("is_self").and_then(Value::as_bool) == Some(true),
+    }))
+}
+
 // ---------------------------------------------------------------- internals
 
 #[derive(Clone)]
@@ -390,6 +392,144 @@ impl LimeStore {
         let state = AccountState::create();
         self.save(&state)?;
         Ok(state)
+    }
+
+    /// Sends one queued message to every device of its recipient.
+    fn deliver_one(
+        &self,
+        transport: &Arc<dyn Transport>,
+        token: &str,
+        state: &mut AccountState,
+        me: &str,
+        message: &Queued,
+    ) -> Result<(), StoreError> {
+        let recipient = message.peer.as_str();
+        // 1. The recipient's devices, each vouched for by their master key.
+        let devices = self.recipient_devices(transport, token, recipient)?;
+
+        // 2. A session per device; claim a one-time key for each device that has none.
+        let mut sessions = Vec::new();
+        let mut needs_claim = Vec::new();
+        for device in &devices {
+            let existing =
+                self.with_conn(|conn| load_sessions(conn, &self.pickle_key, recipient))?;
+            match existing
+                .into_iter()
+                .find(|s| s.peer_identity_key == device.identity_key)
+            {
+                Some(stored) => sessions.push((device.clone(), stored.session)),
+                None => needs_claim.push(device.clone()),
+            }
+        }
+        if !needs_claim.is_empty() {
+            let claimed = self.claim_keys(transport, token, recipient)?;
+            for device in needs_claim {
+                let Some(one_time_key) = claimed.get(&device.device_id) else {
+                    continue;
+                };
+                let identity = Curve25519PublicKey::from_base64(&device.identity_key)
+                    .map_err(|_| StoreError::BadMessage)?;
+                let one_time = Curve25519PublicKey::from_base64(one_time_key)
+                    .map_err(|_| StoreError::BadMessage)?;
+                let session = state
+                    .account
+                    .create_outbound_session(SessionConfig::version_1(), identity, one_time)
+                    .map_err(|_| StoreError::BadMessage)?;
+                sessions.push((device, session));
+            }
+        }
+        if sessions.is_empty() {
+            return Err(StoreError::NoRecipientKeys);
+        }
+
+        // 3. The signed op (the id, clock and parents were fixed when it was queued), wrapped with
+        // this device's certificate.
+        let mut op = Op {
+            op_id: message.id.clone(),
+            op_type: "message.send".into(),
+            conversation_id: dm_conversation_id(me, recipient),
+            hlc: message.hlc.clone(),
+            parents: message.parents.clone(),
+            payload: json!({ "text": message.text }),
+            sig: String::new(),
+        };
+        op.sig = state.account.sign(op.signing_bytes()).to_base64();
+        let inner = SealedInner {
+            sender_user: me.to_owned(),
+            sender_device: state.device_id.clone(),
+            sender_cert: state.cert(),
+            op,
+        }
+        .to_bytes();
+
+        // 4. One Olm ciphertext per recipient device, each sent identified.
+        let mut updated = Vec::new();
+        for (device, mut session) in sessions {
+            let encrypted = session
+                .encrypt(&inner)
+                .map_err(|_| StoreError::BadMessage)?;
+            let (kind, bytes) = encrypted.to_parts();
+            let mut wire = vec![kind as u8];
+            wire.extend_from_slice(&bytes);
+            let (status, _) = call(
+                transport,
+                Some(token),
+                "send",
+                &json!({
+                    "ciphertext": vodozemac::base64_encode(&wire),
+                    "recipients": [{ "to_device": device.device_id, "access": { "identified": true } }],
+                }),
+            )?;
+            check(status)?;
+            updated.push((device, session));
+        }
+
+        // 5. Remember the sessions: their ratchets moved.
+        let now = now_ms();
+        self.with_conn(|conn| {
+            for (device, session) in &updated {
+                save_session(
+                    conn,
+                    &self.pickle_key,
+                    recipient,
+                    &device.device_id,
+                    &device.identity_key,
+                    session,
+                    now,
+                )?;
+            }
+            save_account(conn, &self.pickle_key, state)
+        })
+    }
+
+    /// Fills in the profile name of people we only know by id (best effort, a few per sync).
+    fn refresh_names(&self, transport: &Arc<dyn Transport>, token: &str) {
+        let unnamed: Vec<String> = self
+            .with_conn(|conn| {
+                let mut statement = conn
+                    .prepare("SELECT id FROM people WHERE id != ?1 AND name = id LIMIT 10")
+                    .map_err(db_err)?;
+                let rows = statement
+                    .query_map(params![ME_ID], |r| r.get::<_, String>(0))
+                    .map_err(db_err)?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(db_err)?;
+                Ok(rows)
+            })
+            .unwrap_or_default();
+        for id in unnamed {
+            let Ok((200, body)) = call(transport, Some(token), "profile-get", &json!({ "user_id": id }))
+            else {
+                continue;
+            };
+            if let Some(name) = body
+                .pointer("/profile/display_name")
+                .and_then(Value::as_str)
+                .filter(|n| !n.trim().is_empty())
+            {
+                let _ = self.with_conn(|conn| set_person_name(conn, &id, name));
+            }
+        }
     }
 
     fn top_up_one_time_keys(
@@ -636,25 +776,41 @@ impl LimeStore {
             return Ok(Outcome::Keep(pending::INVALID));
         };
 
+        let parents = json!(inner.op.parents).to_string();
         let stored = self.with_conn(|conn| {
             if pin_master_key(conn, &sender, &cert.master_key) == Err(StoreError::KeyMismatch) {
                 return Ok(None);
             }
             save_session(conn, &self.pickle_key, &sender, &cert.device_id, &peer_identity, &session, now)?;
-            ensure_dm(conn, &sender)?;
+            let conversation = format!("dm:{sender}");
+            let blocked = conn
+                .query_row(
+                    "SELECT request_state = 'blocked' FROM conversations WHERE id = ?1",
+                    params![conversation],
+                    |r| r.get::<_, bool>(0),
+                )
+                .optional()
+                .map_err(db_err)?
+                .unwrap_or(false);
+            if blocked {
+                // Read (so the session keeps in step) but never stored or shown.
+                return Ok(Some(false));
+            }
+            // A person we did not start a chat with is a request until accepted.
+            ensure_dm_as(conn, &sender, None, "pending")?;
             // The display time is never in the future (api-v2.md section 5).
             let shown = remote_hlc.wall.min(now);
             let inserted = conn
                 .execute(
-                    "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc)
-                     VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6)",
-                    params![inner.op.op_id, format!("dm:{sender}"), sender, text, shown, inner.op.hlc],
+                    "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6, ?7)",
+                    params![inner.op.op_id, conversation, sender, text, shown, inner.op.hlc, parents],
                 )
                 .map_err(db_err)?;
             if inserted > 0 {
                 conn.execute(
                     "UPDATE conversations SET unread = unread + 1 WHERE id = ?1",
-                    params![format!("dm:{sender}")],
+                    params![conversation],
                 )
                 .map_err(db_err)?;
             }
@@ -663,8 +819,7 @@ impl LimeStore {
         let Some(inserted) = stored else {
             return Ok(Outcome::Keep(pending::KEY_MISMATCH));
         };
-        state.hlc = state.hlc.observe(remote_hlc, now);
-        self.save(state)?;
+        self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
         Ok(if inserted {
             Outcome::Stored
         } else {
@@ -683,31 +838,86 @@ enum Outcome {
     Keep(&'static str),
 }
 
-/// The most recent op id in a conversation (the op's `parents`), if any.
-fn latest_op_ids(conn: &Connection, conversation_id: &str) -> Result<Vec<String>, StoreError> {
+/// A message of mine waiting to be sent.
+struct Queued {
+    id: String,
+    peer: String,
+    text: String,
+    hlc: String,
+    parents: Vec<String>,
+}
+
+fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT op_id FROM messages WHERE conversation_id = ?1 AND op_id IS NOT NULL
-             ORDER BY hlc DESC LIMIT 1",
+            "SELECT id, conversation_id, body, hlc, parents FROM messages
+             WHERE sender_id = ?1 AND local_state IN ('sending', 'failed') AND op_id IS NOT NULL AND hlc IS NOT NULL
+             ORDER BY hlc, id",
         )
         .map_err(db_err)?;
-    let ids = statement
-        .query_map(params![conversation_id], |r| r.get::<_, String>(0))
+    let rows = statement
+        .query_map(params![ME_ID], |r| {
+            let conversation: String = r.get(1)?;
+            let parents: Option<String> = r.get(4)?;
+            Ok(Queued {
+                id: r.get(0)?,
+                peer: conversation.strip_prefix("dm:").unwrap_or_default().to_owned(),
+                text: r.get(2)?,
+                hlc: r.get(3)?,
+                parents: parents.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default(),
+            })
+        })
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
-    Ok(ids)
+    Ok(rows.into_iter().filter(|q| !q.peer.is_empty()).collect())
 }
 
-/// Makes sure there is a DM conversation (and a person) for `peer`, titled with their user id for
-/// now (profiles come later).
-fn ensure_dm(conn: &Connection, peer: &str) -> Result<(), StoreError> {
+fn set_state(conn: &Connection, id: &str, state: &str) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE messages SET local_state = ?2 WHERE id = ?1",
+        params![id, state],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+/// Gives a person (and their 1:1 conversation) their profile name.
+fn set_person_name(conn: &Connection, id: &str, name: &str) -> Result<(), StoreError> {
+    conn.execute("UPDATE people SET name = ?2 WHERE id = ?1", params![id, name])
+        .map_err(db_err)?;
+    conn.execute(
+        "UPDATE conversations SET title = ?2 WHERE id = ?1",
+        params![format!("dm:{id}"), name],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+/// Makes sure there is an accepted DM conversation (and a person) for `peer`.
+pub(crate) fn ensure_dm(
+    conn: &Connection,
+    peer: &str,
+    name: Option<&str>,
+) -> Result<String, StoreError> {
+    ensure_dm_as(conn, peer, name, "accepted")
+}
+
+/// Makes sure there is a DM conversation (and a person) for `peer`; a new one starts in
+/// `state_if_new`. Titled with their profile name when known, else their user id until it is.
+pub(crate) fn ensure_dm_as(
+    conn: &Connection,
+    peer: &str,
+    name: Option<&str>,
+    state_if_new: &str,
+) -> Result<String, StoreError> {
     let tone = peer.bytes().fold(0u32, |acc, b| {
         acc.wrapping_mul(31).wrapping_add(u32::from(b))
     }) % 8;
+    let shown = name.map(str::trim).filter(|n| !n.is_empty()).unwrap_or(peer);
     conn.execute(
-        "INSERT OR IGNORE INTO people (id, name, tone) VALUES (?1, ?1, ?2)",
-        params![peer, tone],
+        "INSERT OR IGNORE INTO people (id, name, tone) VALUES (?1, ?2, ?3)",
+        params![peer, shown, tone],
     )
     .map_err(db_err)?;
     conn.execute(
@@ -717,10 +927,14 @@ fn ensure_dm(conn: &Connection, peer: &str) -> Result<(), StoreError> {
     .map_err(db_err)?;
     let id = format!("dm:{peer}");
     conn.execute(
-        "INSERT OR IGNORE INTO conversations (id, title, is_group, is_pinned, unread) VALUES (?1, ?2, 0, 0, 0)",
-        params![id, peer],
+        "INSERT OR IGNORE INTO conversations (id, title, is_group, is_pinned, unread, request_state)
+         VALUES (?1, ?2, 0, 0, 0, ?3)",
+        params![id, shown, state_if_new],
     )
     .map_err(db_err)?;
+    if shown != peer {
+        set_person_name(conn, peer, shown)?;
+    }
     conn.execute(
         "INSERT OR IGNORE INTO members (conversation_id, person_id, position) VALUES (?1, ?2, 0)",
         params![id, peer],
@@ -731,7 +945,7 @@ fn ensure_dm(conn: &Connection, peer: &str) -> Result<(), StoreError> {
         params![id, ME_ID],
     )
     .map_err(db_err)?;
-    Ok(())
+    Ok(id)
 }
 
 /// One call to an Edge Function. `token` is the user's access token (None for the sealed path).
