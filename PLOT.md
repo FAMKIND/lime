@@ -114,6 +114,17 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**Update: LIME-95 landed as `d2686f3`** (pushed and verified; no project ref).
+- **New message** (exact username/email), the identified-Olm DM, live receive via a **private** Realtime channel (tend found and fixed a public-channel metadata leak), Requests (Accept/Block, local), atomic HLC, `check-warnings.sh` (clean builds for a device + simulator).
+- 27 server / 46 Rust / 64+13 iOS tests pass; local + staging e2e pass.
+- **Tend's decisions, accepted:**
+  - Accept is local until LIME-96;
+  - hidden-from-search users still show their name on a request;
+  - messaging a requester or a blocked person marks them accepted;
+  - no unblock UI yet (**a follow-up: Settings → Blocked**);
+  - no push.
+- **Awaiting the user's two-device gate**, then LIME-96 (sealed sends).
+
 **Update: LIME-94-fix landed as `8d21e18`** (pushed and verified; no project ref).
 - **Root cause:** staging sent 8-digit OTPs while the app and `code-verify` took exactly 6. The user set staging to 6; the code now accepts 6–8.
 - **Also fixed:** the sign-up resend for unconfirmed accounts (a migration; local `enable_confirmations` on); send failures and rate limits are surfaced; stale errors are cleared.
@@ -1305,6 +1316,65 @@ If anything contradicts this brief, stop and ask the user.
 - chat titles show full names on your iPhone 13 mini.
 
 **Record:** a `## LIME-87-fix4` entry in `TEND.md`. Commit: `fix(ios): accent-green dark own bubble and send; Apple-style chat title on narrow phones`, trailer `Brief: LIME-87-fix4`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-95-fix → `tend` (lime-aa) (next): the user's phone can't search or receive; inconsistent avatar colours
+**What the user saw (2026-10-07, two real iPhones on staging):**
+- **Jean's iPhone (newly installed, signed up fresh):** finds `@shem` and sends "Hi Shem" → "Sent".
+- **Shem's iPhone (13 mini; account created during the 8-digit-OTP period; signed in earlier):**
+  - every search (`jean`, `jean@famkind.com`) fails with **"Couldn't search. Check your connection and try again."** while the phone is online;
+  - **Jean's message never appears** (no Request).
+- **Avatar colours differ:** "SR" is purple in Jean's search result but yellow in Jean's chat header.
+
+**Plot's hypothesis (unverified):**
+- Shem's phone's session is in a bad server-side state, e.g. a session never marked verified in `auth_proofs`, a device registered under an older schema/flow, or a session/token rejected after refresh.
+- So **every authenticated function returns 401/403**, and the app maps it to a "connection" message.
+- `sync` fails the same way, so nothing is fetched.
+
+**Capabilities assumed:** edit files, the Supabase CLI/admin access to **staging (read-only queries for diagnosis)**, deploy functions **without `config push`**, Xcode, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: diagnose. Report the root cause before changing anything. Read-only on staging.**
+- **Don't ask the user to sign out yet:** signing out wipes the evidence (and the local keys, so Jean's first message would become unreadable).
+- For `shem@famkind.com` on staging, inspect:
+  - the Auth sessions;
+  - `auth_proofs` rows (`password_ok` / `code_ok`, per `session_id`);
+  - `devices` (registered? revoked? which keys);
+  - `profiles`;
+  - **`mailbox_items` addressed to Shem's device(s)** (is Jean's message waiting there, and for which `to_device`?);
+  - the Edge Function logs for Shem's recent `identify`/`users-lookup`/`mailbox-fetch` calls (the status codes).
+- Read only metadata; **never decrypt or print ciphertext or tokens**.
+- Also check: did Jean's send target **all of Shem's current devices**? Is there a stale device for Shem from an earlier sign-up?
+
+**Phase 2: the fix** (from the diagnosed cause):
+- **The server or core fix** for the root cause, with a test reproducing it. Typical candidates:
+  - the session-proof lookup across token refresh;
+  - devices registered before LIME-94-fix;
+  - sends that fan out only to stale devices.
+- **The app must tell the truth:**
+  - map 401/403 (session not verified/expired) to **"Your session has ended. Please sign in again."** with a Sign in button;
+  - map rate limits and server errors distinctly;
+  - keep "Check your connection" for real network failures only.
+  - Log the HTTP status (no secrets) in Debug builds.
+- **Recovery path for this user without losing data, if possible:** e.g. re-verify the existing session (password + code) instead of a full sign-out that wipes the store. If a full reset is unavoidable, say so plainly in the report.
+- **Consistent avatars:** one function derives the avatar colour (and the initials) **from the user id** everywhere (Messages, chat header, New message results, Requests), the same on every device. Unit-test it.
+
+**Out of scope:** LIME-96 (sealed sends), new features.
+
+**Verification:**
+- tests pass (server, Rust, iOS) and `ios/check-warnings.sh` reports 0 warnings;
+- **a new e2e:** an account whose session was created, then refreshed after the 1h access-token expiry (simulate it), can still search and sync;
+- the staging e2e passes;
+- report **exactly what was wrong with Shem's account** and what the user must do on the phone, if anything.
+
+**Gate (the user):**
+- Shem's phone can find Jean and **receives Jean's messages** (Requests → Accept);
+- both directions work;
+- "SR"/"JC" avatars are the same colour everywhere on both phones.
+
+**Record:** a `## LIME-95-fix` entry in `TEND.md`. Commit: `fix: <root cause>; truthful auth errors; consistent avatars`, trailer `Brief: LIME-95-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ---
 
