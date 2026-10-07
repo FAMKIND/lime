@@ -332,6 +332,9 @@ pub struct FoundUser {
     pub display_name: String,
     pub username: Option<String>,
     pub school: Option<String>,
+    /// The About line: an optional leading emoji, then a few words.
+    pub about_emoji: Option<String>,
+    pub about_text: Option<String>,
     /// True when the search found yourself.
     pub is_self: bool,
 }
@@ -361,6 +364,8 @@ pub fn find_user(
         display_name: text("display_name").ok_or(StoreError::BadMessage)?,
         username: text("username"),
         school: text("school"),
+        about_emoji: text("about_emoji"),
+        about_text: text("about_text"),
         is_self: body.get("is_self").and_then(Value::as_bool) == Some(true),
     }))
 }

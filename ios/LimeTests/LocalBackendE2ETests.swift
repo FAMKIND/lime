@@ -361,6 +361,96 @@ final class LocalBackendE2ETests: XCTestCase {
         try await replacingKeys(stack)
     }
 
+    /// Settings against the real local server: the About line and hiding from search reach other
+    /// phones, a taken username is refused, the password changes with an emailed code (this phone
+    /// carries on, the old password stops working), and unblocking brings a chat back.
+    func testSettingsAgainstTheLocalStack() async throws {
+        let stack = try stack()
+        guard stack.mail != nil, stack.serviceKey == nil else { throw XCTSkip("The local run (mail catcher, no admin key).") }
+        let ada = try await makePhone(stack, name: "Ada Lovelace")
+        try await Task.sleep(for: .milliseconds(1100))
+        let bob = try await makePhone(stack, name: "Bob Brown")
+
+        // The About line is public: Bob sees it when he finds Ada.
+        var draft = ProfileDraft(try XCTUnwrap(ada.session.profile))
+        draft.aboutEmoji = "👋"
+        draft.aboutText = "Happy to help"
+        try await ada.session.updateProfile(draft)
+        XCTAssertEqual(ada.session.profile?.about, "👋 Happy to help")
+        let seen = try await bob.store.find("@\(ada.username)")
+        XCTAssertEqual(seen?.aboutText, "Happy to help")
+        XCTAssertEqual(seen?.aboutEmoji, "👋")
+
+        // Hide me from search: Bob can no longer find her; un-hiding brings her back.
+        draft.hideFromSearch = true
+        try await ada.session.updateProfile(draft)
+        let hidden = try await bob.store.find("@\(ada.username)")
+        XCTAssertNil(hidden, "hidden from search")
+        draft.hideFromSearch = false
+        try await ada.session.updateProfile(draft)
+        let back = try await bob.store.find("@\(ada.username)")
+        XCTAssertNotNil(back)
+
+        // A username somebody has is refused, in the app's words.
+        var steal = ProfileDraft(try XCTUnwrap(bob.session.profile))
+        steal.username = ada.username.uppercased()
+        do {
+            try await bob.session.updateProfile(steal)
+            XCTFail("a taken username must be refused")
+        } catch {
+            XCTAssertEqual(error as? AuthError, .usernameTaken)
+        }
+
+        // Your own masked address comes from the server for the Account screen.
+        let service = LiveAuthService(config: stack.config)
+        let loaded = try await service.loadProfile(tokens: try await ada.session.debugTokens())
+        XCTAssertTrue(loaded?.maskedEmail?.contains("•••") == true)
+        XCTAssertFalse(loaded?.maskedEmail?.contains(ada.email) == true, "the full address is never sent")
+
+        // Change the password: the current one, an emailed code, then the new one.
+        let newPassword = "an even longer new password"
+        try await Task.sleep(for: .milliseconds(1300))
+        let started = Date().addingTimeInterval(-1)
+        do {
+            try await ada.session.startPasswordChange(current: "not the current password")
+            XCTFail("a wrong current password must be refused")
+        } catch {
+            XCTAssertEqual(error as? AuthError, .invalidCredentials)
+        }
+        try await ada.session.startPasswordChange(current: ada.password)
+        let code = try await emailedCode(stack, to: ada.email, since: started)
+        try await ada.session.finishPasswordChange(code: code, newPassword: newPassword)
+        let still = try await ada.store.find("@\(bob.username)")
+        XCTAssertNotNil(still, "this phone carries on with the fresh session")
+        XCTAssertNil(ada.store.problem)
+        try await Task.sleep(for: .milliseconds(1300))
+        do {
+            _ = try await service.signIn(identifier: ada.email, password: ada.password)
+            XCTFail("the old password must stop working")
+        } catch {
+            XCTAssertEqual(error as? AuthError, .invalidCredentials)
+        }
+        _ = try await service.signIn(identifier: ada.email, password: newPassword)
+
+        // Block, then unblock: the chat comes back with what was said before.
+        let person = try XCTUnwrap(back)
+        await bob.store.startChat(with: person)
+        await bob.store.sendNow("hello Ada", in: "dm:\(person.userId)")
+        await eventually("the request reaches Ada") { ada.store.requests.count == 1 }
+        let request = try XCTUnwrap(ada.store.requests.first)
+        await ada.store.block(request.id)
+        let blocked = await ada.store.blockedPeople()
+        XCTAssertEqual(blocked.map(\.name), ["Bob Brown"])
+        XCTAssertTrue(ada.store.conversations.isEmpty)
+        await ada.store.unblock(request.id)
+        let none = await ada.store.blockedPeople()
+        XCTAssertTrue(none.isEmpty)
+        XCTAssertEqual(ada.store.conversation(request.id)?.messages.map(\.text), ["hello Ada"], "unblocking restores the messages")
+
+        await ada.session.signOut()
+        await bob.session.signOut()
+    }
+
     private func converse(_ ada: Phone, _ bob: Phone) async throws {
 
         // An hour later: Ada's access token has expired. Two searches at once refresh it ONCE (a refresh

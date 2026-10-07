@@ -19,7 +19,7 @@ mod client_tests;
 mod testing;
 
 pub use client::{find_user, lookup_user_by_email, DeviceInfo, FoundUser, SyncReport};
-pub use store::{ConversationSummary, LimeStore, MemberInfo, MessageItem, StoreError};
+pub use store::{BlockedPerson, ConversationSummary, KeyInfo, LimeStore, MemberInfo, MessageItem, StoreError};
 pub use transport::{HeaderPair, Transport, TransportError, TransportResponse};
 
 uniffi::setup_scaffolding!();

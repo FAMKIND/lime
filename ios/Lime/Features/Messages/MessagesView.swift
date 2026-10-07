@@ -5,6 +5,7 @@ struct MessagesView: View {
     @Environment(AccountSession.self) private var session
     @State private var showAbout = false
     @State private var showNewMessage = false
+    @State private var showSettings = false
 
     var body: some View {
         Group {
@@ -16,8 +17,12 @@ struct MessagesView: View {
         }
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showNewMessage) { NewMessageSheet() }
+        .sheet(isPresented: $showSettings) { SettingsView() }
         #if DEBUG
-        .task { if store.demoSheet != nil { showNewMessage = true } }
+        .task {
+            if store.demoSheet == "settings" { showSettings = true }
+            else if store.demoSheet != nil { showNewMessage = true }
+        }
         #endif
     }
 
@@ -40,7 +45,9 @@ struct MessagesView: View {
                     Image("LimeLogo").renderingMode(.original).resizable().scaledToFit()
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
+                        #if DEBUG
                         .onLongPressGesture(minimumDuration: 0.6) { showAbout = true }
+                        #endif
                 }
                 .accessibilityLabel("Lime menu")
                 .accessibilityHint("Press and hold for About Lime")
@@ -48,8 +55,9 @@ struct MessagesView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { store.comingSoon("Search") } label: { Image(systemName: "magnifyingglass") }
                     .accessibilityLabel("Search")
-                Button { store.comingSoon("Your profile") } label: { AvatarView(person: session.mePerson, size: 30) }
-                    .accessibilityLabel("Your profile")
+                Button { showSettings = true } label: { AvatarView(person: session.mePerson, size: 30) }
+                    .accessibilityLabel("Settings")
+                    .accessibilityIdentifier("settings-button")
             }
         }
     }
@@ -62,7 +70,7 @@ struct MessagesView: View {
             list(top: 76, bottom: 170)
         }
         .overlay(alignment: .top) { TopFade() }
-        .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }) }
+        .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }, onSettings: { showSettings = true }) }
         .overlay(alignment: .bottomTrailing) { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) }
         .overlay(alignment: .bottom) { DockBar().padding(.bottom, 8) }
         .toolbar(.hidden, for: .navigationBar)
@@ -255,6 +263,7 @@ private struct TopControls: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
     let onAbout: () -> Void
+    let onSettings: () -> Void
 
     var body: some View {
         HStack {
@@ -267,7 +276,9 @@ private struct TopControls: View {
             }
             .accessibilityLabel("Lime menu")
             .accessibilityHint("Press and hold for About Lime")
+            #if DEBUG
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in onAbout() })
+            #endif
             Spacer()
             HStack(spacing: 12) {
                 Button { store.comingSoon("Search") } label: {
@@ -277,10 +288,11 @@ private struct TopControls: View {
                         .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Search")
-                Button { store.comingSoon("Your profile") } label: {
+                Button(action: onSettings) {
                     AvatarView(person: session.mePerson, size: 36)
                 }
-                .accessibilityLabel("Your profile")
+                .accessibilityLabel("Settings")
+                .accessibilityIdentifier("settings-button")
             }
             .padding(.horizontal, 8).padding(.vertical, 2)
             .limeGlass()

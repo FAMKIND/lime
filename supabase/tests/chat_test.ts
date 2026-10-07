@@ -41,7 +41,7 @@ Deno.test("users-find: an exact username or email gives public fields only; noth
     assertEquals(byEmail.body.user_id, bob.id);
     assertEquals(byEmail.body.school, "Bay School");
     assertEquals(byEmail.body.is_self, false);
-    assertEquals(Object.keys(byEmail.body).sort(), ["display_name", "is_self", "school", "user_id", "username"], "public fields only, no email");
+    assertEquals(Object.keys(byEmail.body).sort(), ["about_emoji", "about_text", "display_name", "is_self", "school", "user_id", "username"], "public fields only, no email");
 
     // No partial matches, no listing.
     assertEquals((await call("users-find", alice.token, { query: username.slice(0, 6) })).status, 404);
@@ -84,7 +84,7 @@ Deno.test("profile-get of another person: public fields only; hidden shows the n
     assertEquals(seen.status, 200);
     assertEquals(seen.body.profile.display_name, "Bob B");
     assertEquals(seen.body.profile.school, "Bay School");
-    assertEquals(Object.keys(seen.body.profile).sort(), ["display_name", "school", "user_id", "username"], "never an email or phone");
+    assertEquals(Object.keys(seen.body.profile).sort(), ["about_emoji", "about_text", "display_name", "school", "user_id", "username"], "never an email or phone");
 
     const masked = await call("profile-get", alice.token, { user_id: hidden.id });
     assertEquals(masked.body.profile.display_name, "Hidden H");

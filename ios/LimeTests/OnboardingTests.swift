@@ -103,7 +103,7 @@ final class OnboardingModelTests: XCTestCase {
         XCTAssertTrue(model.canSubmitProfile)
         await model.submitProfile()
         XCTAssertEqual(completed.count, 1)
-        XCTAssertEqual(completed.first?.1, Profile(displayName: "Ada Lovelace", username: "ada.l", school: "Analytical Academy"))
+        XCTAssertEqual(completed.first?.1, Profile(displayName: "Ada Lovelace", username: "ada.l", school: "Analytical Academy", maskedEmail: "t•••@example.invalid"))
     }
 
     func testCodesOfSixToEightDigitsAreAccepted() {

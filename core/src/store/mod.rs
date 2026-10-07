@@ -130,6 +130,24 @@ pub struct ConversationSummary {
     pub members: Vec<MemberInfo>,
 }
 
+/// Someone you blocked: they can be unblocked, which brings their conversation back.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BlockedPerson {
+    pub conversation_id: String,
+    pub name: String,
+    pub tone: u32,
+}
+
+/// What Settings shows about this device's keys: when they were made, and a short fingerprint of the
+/// account's master public key (read-only; comparing it is for a later brief).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct KeyInfo {
+    /// Five groups of four hex digits, e.g. `A1B2 C3D4 E5F6 0718 293A`.
+    pub fingerprint: String,
+    /// Milliseconds since the Unix epoch.
+    pub created_at: i64,
+}
+
 /// The encrypted local store. Thread-safe: one connection behind a mutex.
 #[derive(uniffi::Object)]
 pub struct LimeStore {
@@ -301,6 +319,66 @@ impl LimeStore {
         )
         .map_err(db_err)?;
         Ok(())
+    }
+
+    /// The people you blocked, by name.
+    pub fn list_blocked(&self) -> Result<Vec<BlockedPerson>, StoreError> {
+        let conn = self.lock();
+        let mut statement = conn
+            .prepare(
+                "SELECT c.id, COALESCE(p.name, c.title), COALESCE(p.tone, 0)
+                 FROM conversations c LEFT JOIN people p ON 'dm:' || p.id = c.id
+                 WHERE c.request_state = 'blocked' ORDER BY c.title, c.id",
+            )
+            .map_err(db_err)?;
+        let rows = statement
+            .query_map([], |r| {
+                Ok(BlockedPerson {
+                    conversation_id: r.get(0)?,
+                    name: r.get(1)?,
+                    tone: r.get(2)?,
+                })
+            })
+            .map_err(db_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db_err)?;
+        Ok(rows)
+    }
+
+    /// Unblocks someone: their conversation comes back (what was stored before the block shows
+    /// again, and new messages are kept).
+    pub fn unblock(&self, conversation_id: String) -> Result<(), StoreError> {
+        let conn = self.lock();
+        let changed = conn
+            .execute(
+                "UPDATE conversations SET request_state = 'accepted' WHERE id = ?1 AND request_state = 'blocked'",
+                params![conversation_id],
+            )
+            .map_err(db_err)?;
+        if changed == 0 {
+            return Err(StoreError::NotFound);
+        }
+        Ok(())
+    }
+
+    /// When this device's keys were made, and a short fingerprint of the account's master key.
+    pub fn key_info(&self) -> Result<Option<KeyInfo>, StoreError> {
+        let conn = self.lock();
+        let Some(state) = account::load_account(&conn, &self.pickle_key)? else {
+            return Ok(None);
+        };
+        let created: Option<i64> = conn
+            .query_row("SELECT created_at FROM account WHERE id = 1", [], |r| r.get(0))
+            .map_err(db_err)?;
+        use sha2::{Digest, Sha256};
+        let master = vodozemac::base64_decode(state.master_key()).map_err(|_| StoreError::BadMessage)?;
+        let digest = Sha256::digest(&master);
+        let hex: Vec<String> = digest[..10].iter().map(|b| format!("{b:02X}")).collect();
+        let fingerprint = hex.chunks(2).map(|pair| pair.concat()).collect::<Vec<_>>().join(" ");
+        Ok(Some(KeyInfo {
+            fingerprint,
+            created_at: created.unwrap_or(0),
+        }))
     }
 
     /// Marks a conversation as read.

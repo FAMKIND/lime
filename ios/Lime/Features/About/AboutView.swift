@@ -105,7 +105,7 @@ struct AboutView: View {
             .accessibilityIdentifier("sign-out-confirm")
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Signing out removes your chats and keys from this phone. Sign in again to use Lime here.")
+            Text(SignOutCopy.warning)
         }
         .task {
             // Off the main thread: real key generation and encryption.

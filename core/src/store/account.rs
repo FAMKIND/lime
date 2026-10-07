@@ -57,8 +57,8 @@ pub(crate) fn save_account(
     let olm = state.account.pickle().encrypt(pickle_key);
     let master = vodozemac::base64_encode(state.master.to_bytes().as_slice());
     conn.execute(
-        "INSERT INTO account (id, olm_pickle, master_secret, device_id, user_id, registered, hlc_wall, hlc_counter)
-         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO account (id, olm_pickle, master_secret, device_id, user_id, registered, hlc_wall, hlc_counter, created_at)
+         VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, CAST(strftime('%s', 'now') AS INTEGER) * 1000)
          ON CONFLICT (id) DO UPDATE SET olm_pickle = ?1, master_secret = ?2, device_id = ?3,
            user_id = ?4, registered = ?5",
         // The clock is moved only by tick_hlc / observe_hlc (atomically), never from a stale copy.

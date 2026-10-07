@@ -58,15 +58,28 @@ actor FakeAuthService: AuthService {
         return tokens()
     }
 
+    func startPasswordChange(current: String, tokens: AuthTokens) async throws {
+        guard current == Self.password else { throw AuthError.invalidCredentials }
+        attempts = 0
+    }
+
+    func finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens) async throws -> AuthTokens {
+        try check(code)
+        guard newPassword.count >= 10 else { throw AuthError.weakPassword }
+        return tokens
+    }
+
     func saveProfile(_ draft: ProfileDraft, tokens: AuthTokens) async throws -> Profile {
         if draft.username?.lowercased() == "taken" { throw AuthError.usernameTaken }
-        let saved = Profile(displayName: draft.displayName, username: draft.username, school: draft.school)
+        let saved = Profile(displayName: draft.displayName, username: draft.username, school: draft.school,
+                            aboutEmoji: draft.aboutEmoji, aboutText: draft.aboutText, hideFromSearch: draft.hideFromSearch ?? false,
+                            maskedEmail: "t•••@example.invalid")
         profile = saved
         return saved
     }
 
     func loadProfile(tokens: AuthTokens) async throws -> Profile? {
-        profile ?? (tokens.userID == "new-user" ? nil : Profile(displayName: "Test Teacher", username: "teacher", school: nil))
+        profile ?? (tokens.userID == "new-user" ? nil : Profile(displayName: "Test Teacher", username: "teacher", school: nil, maskedEmail: "t•••@example.invalid"))
     }
 
     func refresh(_ tokens: AuthTokens) async throws -> AuthTokens { tokens }

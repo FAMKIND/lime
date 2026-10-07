@@ -22,6 +22,9 @@ protocol AuthService: Sendable {
     func startReset(identifier: String) async throws
     func finishReset(identifier: String, code: String, newPassword: String) async throws -> AuthTokens
 
+    // Change the password from Settings: the current one (an emailed code follows), then the code and the new one.
+    func startPasswordChange(current: String, tokens: AuthTokens) async throws
+    func finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens) async throws -> AuthTokens
     func saveProfile(_ draft: ProfileDraft, tokens: AuthTokens) async throws -> Profile
     func loadProfile(tokens: AuthTokens) async throws -> Profile?
 

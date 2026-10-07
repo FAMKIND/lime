@@ -179,7 +179,7 @@ final class ConversationStore {
         if isDemo {
             try? await Task.sleep(for: .milliseconds(300))
             return query.lowercased().contains("nobody") ? nil
-                : FoundUser(userId: "grace", displayName: "Grace Hopper", username: "grace.h", school: "Naval Academy", isSelf: false)
+                : FoundUser(userId: "grace", displayName: "Grace Hopper", username: "grace.h", school: "Naval Academy", aboutEmoji: "⚓", aboutText: "Debugging since 1947", isSelf: false)
         }
         #endif
         if link == nil, let registrar { await registrar() }
@@ -220,6 +220,39 @@ final class ConversationStore {
         guard let core else { return }
         try? await Task.detached(priority: .userInitiated) { try core.blockSender(conversationId: id) }.value
         await reload()
+    }
+
+    // MARK: Settings: blocked people and this device's keys
+
+    /// The people you blocked, for Settings.
+    func blockedPeople() async -> [BlockedPerson] {
+        #if DEBUG
+        if isDemo { return demoBlocked }
+        #endif
+        guard let core else { return [] }
+        return (try? await Task.detached(priority: .userInitiated) { try core.listBlocked() }.value) ?? []
+    }
+
+    /// Unblocks someone: their conversation, and what was stored before the block, comes back.
+    func unblock(_ id: Conversation.ID) async {
+        #if DEBUG
+        if isDemo {
+            demoBlocked.removeAll { $0.conversationId == id }
+            return
+        }
+        #endif
+        guard let core else { return }
+        try? await Task.detached(priority: .userInitiated) { try core.unblock(conversationId: id) }.value
+        await reload()
+    }
+
+    /// When this phone's keys were made, and a short fingerprint of the account's key.
+    func keyInfo() async -> KeyInfo? {
+        #if DEBUG
+        if isDemo { return KeyInfo(fingerprint: "A1B2 C3D4 E5F6 0718 293A", createdAt: Int64(Date().addingTimeInterval(-86_400 * 3).timeIntervalSince1970 * 1000)) }
+        #endif
+        guard let core else { return nil }
+        return try? await Task.detached(priority: .userInitiated) { try core.keyInfo() }.value ?? nil
     }
 
     /// The person accepts the other's new security key; held-back messages are read and queued ones go.
@@ -385,6 +418,7 @@ final class ConversationStore {
             ]),
         ]
         isLoaded = true
+        demoBlocked = [BlockedPerson(conversationId: "dm:pat", name: "Pat Doe", tone: UInt32(AvatarTone.tone(for: "pat")))]
         switch screen {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
@@ -395,12 +429,22 @@ final class ConversationStore {
             path.append("dm:sam")
         case "session-ended": problem = .sessionEnded
         case "new-message", "new-message-found": demoSheet = screen
-        default: break
+        default:
+            // "settings", "settings/profile", "settings/profile/edit-about", "settings/privacy/blocked", ...
+            if let screen, screen.hasPrefix("settings") {
+                demoSheet = "settings"
+                demoSettingsRoute = screen.split(separator: "/").dropFirst().map(String.init)
+            }
         }
     }
 
+    /// Debug demo: where Settings opens (route names, e.g. ["profile", "edit-about"]).
+    private(set) var demoSettingsRoute: [String] = []
+
     /// Debug demo: a screen that opens as a sheet.
     private(set) var demoSheet: String?
+    /// Debug demo: people "blocked" for the Settings screens.
+    private(set) var demoBlocked: [BlockedPerson] = []
 
     private func demoSend(_ text: String, in id: Conversation.ID) {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }

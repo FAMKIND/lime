@@ -528,3 +528,55 @@ fn server_answers_map_to_distinct_errors() {
     let result = crate::find_user(transport.clone(), String::new(), "bob".into());
     assert!(matches!(result, Err(StoreError::Unauthorized)), "{result:?}");
 }
+
+// ---------------------------------------------------------------- LIME-98: blocked people, key info
+
+#[test]
+fn blocking_then_unblocking_brings_the_conversation_and_its_messages_back() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    server
+        .state
+        .lock()
+        .unwrap()
+        .profiles
+        .insert("alice".into(), ("Alice A".into(), None));
+    say(&alice, &bob, &transport, "before the block");
+    sync(&bob, &transport);
+    let id = conversation(&bob, &alice).unwrap().id;
+    assert!(bob.store.list_blocked().unwrap().is_empty());
+
+    bob.store.block_sender(id.clone()).unwrap();
+    let blocked = bob.store.list_blocked().unwrap();
+    assert_eq!(blocked.len(), 1);
+    assert_eq!((blocked[0].conversation_id.as_str(), blocked[0].name.as_str()), (id.as_str(), "Alice A"));
+    assert!(conversation(&bob, &alice).is_none());
+    say(&alice, &bob, &transport, "while blocked");
+    sync(&bob, &transport);
+
+    // Unblocked: the earlier message shows again, the one sent meanwhile was never kept, new ones arrive.
+    bob.store.unblock(id.clone()).unwrap();
+    assert!(bob.store.list_blocked().unwrap().is_empty());
+    assert_eq!(texts(&bob, &alice), vec!["before the block"]);
+    say(&alice, &bob, &transport, "after");
+    sync(&bob, &transport);
+    assert_eq!(texts(&bob, &alice), vec!["before the block", "after"]);
+    assert!(bob.store.unblock(id).is_err(), "only a blocked conversation can be unblocked");
+}
+
+#[test]
+fn key_info_gives_a_stable_short_fingerprint_and_the_day_the_keys_were_made() {
+    let server = FakeServer::new();
+    let (alice, _) = party(&server, "alice", 1);
+    let before = crate::store::now_ms();
+    let info = alice.store.key_info().unwrap().expect("the account exists once the device registered");
+    let again = alice.store.key_info().unwrap().unwrap();
+    assert_eq!(info, again, "the same every time");
+    let groups: Vec<&str> = info.fingerprint.split(' ').collect();
+    assert_eq!(groups.len(), 5);
+    assert!(groups.iter().all(|g| g.len() == 4 && g.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase())));
+    assert!(info.created_at > 0 && info.created_at <= before, "made before now, after the epoch");
+    let (bob, _) = party(&server, "bob", 2);
+    assert_ne!(bob.store.key_info().unwrap().unwrap().fingerprint, info.fingerprint, "each account has its own");
+}

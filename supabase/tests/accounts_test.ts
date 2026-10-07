@@ -84,7 +84,7 @@ Deno.test("sign-up: email, emailed code, password, profile, then a device can re
 
     // The profile (name, optional username and school), then the device.
     const profile = await call("profile-set", tokens.access_token, { display_name: "  Ada Lovelace  ", username: "@Ada.L", school: "Analytical Academy" });
-    assertEquals(profile.body, { user_id: tokens.user_id, display_name: "Ada Lovelace", username: "Ada.L", school: "Analytical Academy", hide_from_search: false });
+    assertEquals(profile.body, { user_id: tokens.user_id, display_name: "Ada Lovelace", username: "Ada.L", school: "Analytical Academy", about_emoji: null, about_text: null, hide_from_search: false });
     assertEquals((await call("profile-get", tokens.access_token, {})).body.profile.username, "Ada.L");
     // Once the account has a profile, this route cannot change its password again.
     assertEquals((await call("signup-set-password", tokens.access_token, { password: PASSWORD + "x" })).status, 409);

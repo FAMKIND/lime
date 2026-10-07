@@ -95,6 +95,10 @@ const MIGRATIONS: &[&str] = &[
          message_id TEXT NOT NULL
      );
      CREATE INDEX message_deliveries_by_message ON message_deliveries (message_id);",
+    // 6: when this device's keys were made (Settings shows it). An account made before this version
+    // gets the day it was upgraded: the exact earlier time was never recorded.
+    "ALTER TABLE account ADD COLUMN created_at INTEGER;
+     UPDATE account SET created_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000;",
 ];
 
 /// The schema version this build writes.

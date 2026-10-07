@@ -114,6 +114,10 @@ struct NewMessageSheet: View {
                         if let detail = Self.detail(person) {
                             Text(detail).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                         }
+                        if let about = Self.about(person) {
+                            Text(about).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                                .accessibilityIdentifier("find-result-about")
+                        }
                     }
                     Spacer(minLength: 0)
                 }
@@ -146,6 +150,12 @@ struct NewMessageSheet: View {
     nonisolated static func detail(_ person: FoundUser) -> String? {
         let parts = [person.username.map { "@\($0)" }, person.school].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// The About line, when they wrote one ("👋 Happy to help").
+    nonisolated static func about(_ person: FoundUser) -> String? {
+        let parts = [person.aboutEmoji, person.aboutText].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 
     private func find() {

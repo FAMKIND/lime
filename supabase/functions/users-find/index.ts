@@ -33,7 +33,7 @@ Deno.serve(handler(async (req) => {
   if (!userId) throw notFound;
 
   const { data: profile, error } = await admin().from("profiles")
-    .select("user_id, display_name, username, school, hide_from_search").eq("user_id", userId).maybeSingle();
+    .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search").eq("user_id", userId).maybeSingle();
   if (error) throw new HttpError(500, "internal");
   if (!profile || (profile.hide_from_search && userId !== me)) throw notFound;
   return json({
@@ -41,6 +41,8 @@ Deno.serve(handler(async (req) => {
     display_name: profile.display_name,
     username: profile.username,
     school: profile.school,
+    about_emoji: profile.about_emoji,
+    about_text: profile.about_text,
     is_self: userId === me,
   });
 }));

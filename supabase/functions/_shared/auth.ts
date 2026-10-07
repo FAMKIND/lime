@@ -136,3 +136,11 @@ export async function sendCode(email: string, createUser: boolean): Promise<void
   }
   throw new HttpError(502, "email_failed", "We could not send the code. Try again in a moment.");
 }
+
+/** Counts what a person sees as characters (an emoji with a skin tone is one), not UTF-16 units. */
+export function graphemeCount(text: string): number {
+  return Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)).length;
+}
+
+export const MAX_NAME_LENGTH = 40;
+export const MAX_ABOUT_LENGTH = 140;

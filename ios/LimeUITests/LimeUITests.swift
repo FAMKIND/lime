@@ -118,6 +118,207 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["problem-sign-in"].exists)
     }
 
+    // MARK: Settings (LIME-98)
+
+    private func openSettings(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.otherElements["settings-root"].waitForExistence(timeout: 5) || app.buttons["settings-profile"].waitForExistence(timeout: 5))
+    }
+
+    func testTheAvatarOpensSettingsWithTheRowsOfTheDesign() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        for id in ["settings-profile", "settings-account", "settings-privacy", "settings-devices", "settings-notifications", "settings-customize", "settings-about"] {
+            XCTAssertTrue(app.buttons[id].exists, id)
+        }
+        XCTAssertEqual(app.staticTexts["settings-card-name"].label, "Test Teacher")
+        XCTAssertFalse(app.descendants(matching: .any)["settings-donate"].exists, "no donate link is configured, so the row is hidden")
+        app.buttons["settings-close"].tap()
+        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
+    }
+
+    func testTheDonateRowAppearsWhenALinkIsConfigured() {
+        let app = demoApp()
+        app.launchArguments += ["-lime-donate-url", "https://example.com/donate"]
+        app.launch()
+        openSettings(app)
+        XCTAssertTrue(app.descendants(matching: .any)["settings-donate"].waitForExistence(timeout: 5))
+    }
+
+    func testEditingAboutWithAPresetThenSavingShowsItOnTheProfileCard() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-profile"].tap()
+        app.buttons["profile-about"].tap()
+        XCTAssertTrue(app.staticTexts["editor-title"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["editor-title"].label, "About (140)")
+        XCTAssertFalse(app.buttons["editor-save"].isEnabled, "the check is dimmed until there is a change")
+        app.buttons["preset-Planning lessons"].tap()
+        XCTAssertEqual(app.staticTexts["editor-title"].label, "About (123)", "the counter counts the emoji and the 16 words down: 140 - 17")
+        XCTAssertTrue(app.buttons["editor-save"].isEnabled)
+        app.buttons["editor-save"].tap()
+        XCTAssertTrue(app.buttons["profile-about"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["profile-about"].label.contains("Planning lessons"))
+        // And on the card in Settings.
+        goBack(app)
+        XCTAssertTrue(app.staticTexts["settings-card-about"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["settings-card-about"].label, "📚 Planning lessons")
+    }
+
+    func testTypingInAboutCountsDownAndAnOverlongLineCannotBeSaved() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-profile"].tap()
+        app.buttons["profile-about"].tap()
+        let field = app.textFields["editor-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Hello")
+        XCTAssertEqual(app.staticTexts["editor-title"].label, "About (135)")
+        XCTAssertTrue(app.buttons["editor-clear"].exists)
+        app.buttons["editor-clear"].tap()
+        XCTAssertEqual(app.staticTexts["editor-title"].label, "About (140)")
+        XCTAssertFalse(app.buttons["editor-save"].isEnabled)
+        app.buttons["editor-close"].tap()
+        XCTAssertTrue(app.buttons["profile-about"].waitForExistence(timeout: 5))
+    }
+
+    func testATakenUsernameIsReportedInTheEditor() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-profile"].tap()
+        app.buttons["profile-username"].tap()
+        let field = app.textFields["editor-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.clearAndType("taken")
+        app.buttons["editor-save"].tap()
+        XCTAssertTrue(app.staticTexts["editor-error"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["editor-error"].label, "That username is taken. Try another.")
+    }
+
+    func testTheNameCannotBeEmpty() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-profile"].tap()
+        app.buttons["profile-name"].tap()
+        let field = app.textFields["editor-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.clearAndType("x")
+        XCTAssertTrue(app.buttons["editor-save"].isEnabled)
+        app.buttons["editor-clear"].tap()
+        XCTAssertFalse(app.buttons["editor-save"].isEnabled)
+        XCTAssertEqual(app.staticTexts["editor-error"].label, "Your name can't be empty.")
+    }
+
+    func testTheAppearanceChoiceSurvivesARelaunch() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-customize"].tap()
+        XCTAssertTrue(app.buttons["appearance-dark"].waitForExistence(timeout: 5))
+        app.buttons["appearance-dark"].tap()
+        XCTAssertTrue(app.buttons["appearance-dark"].isSelected)
+        app.terminate()
+
+        let again = demoApp()
+        again.launch()
+        openSettings(again)
+        again.buttons["settings-customize"].tap()
+        XCTAssertTrue(again.buttons["appearance-dark"].waitForExistence(timeout: 5))
+        XCTAssertTrue(again.buttons["appearance-dark"].isSelected, "Dark is still chosen after a relaunch")
+        again.buttons["appearance-system"].tap() // leave the simulator as it was
+    }
+
+    func testAcknowledgementsListTheSQLCipherNotice() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-about"].tap()
+        XCTAssertTrue(app.buttons["about-acknowledgements"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["about-version"].label.contains("Core"))
+        app.buttons["about-acknowledgements"].tap()
+        let notice = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Zetetic'")).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 10), "the SQLCipher / Zetetic notice is on the screen")
+    }
+
+    func testBlockedPeopleCanBeUnblocked() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-privacy"].tap()
+        app.buttons["privacy-blocked"].tap()
+        let unblock = app.buttons["unblock-dm:pat"]
+        XCTAssertTrue(unblock.waitForExistence(timeout: 5), "Pat Doe is blocked in the demo")
+        unblock.tap()
+        XCTAssertTrue(app.staticTexts["blocked-empty"].waitForExistence(timeout: 5))
+    }
+
+    func testSafetyNumbersAndLinkedDevicesAreReadOnly() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-privacy"].tap()
+        app.buttons["privacy-keys"].tap()
+        XCTAssertTrue(app.staticTexts["keys-fingerprint"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["keys-fingerprint"].label, "A1B2 C3D4 E5F6 0718 293A")
+        XCTAssertTrue(app.staticTexts["keys-date"].label.hasPrefix("Your key was set on"))
+        goBack(app); goBack(app)
+        app.buttons["settings-devices"].tap()
+        XCTAssertTrue(app.staticTexts["devices-this"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["devices-this"].label, "This iPhone")
+        XCTAssertTrue(app.staticTexts["devices-note"].label.contains("coming soon"))
+    }
+
+    func testChangingThePasswordWithTheStandInBackend() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-account"].tap()
+        XCTAssertEqual(app.staticTexts["account-email"].label, "t•••@example.invalid")
+        app.buttons["account-change-password"].tap()
+        XCTAssertTrue(app.secureTextFields["pw-current"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["pw-send"].isEnabled)
+        typeSecure("not the password", "pw-current", app)
+        typeSecure("a brand new password", "pw-new", app)
+        typeSecure("a brand new password", "pw-confirm", app)
+        XCTAssertTrue(app.buttons["pw-send"].isEnabled)
+        app.buttons["pw-send"].tap()
+        XCTAssertTrue(app.staticTexts["pw-error"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["pw-error"].label, "That isn't your current password.")
+
+        let current = app.secureTextFields["pw-current"]
+        current.tap()
+        current.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "not the password".count))
+        current.typeText("correct horse battery")
+        app.buttons["pw-send"].tap()
+        let code = app.textFields["pw-code"]
+        XCTAssertTrue(code.waitForExistence(timeout: 5))
+        code.tap(); code.typeText("123456")
+        app.buttons["pw-verify"].tap()
+        XCTAssertTrue(app.staticTexts["pw-done"].waitForExistence(timeout: 5))
+    }
+
+    func testSigningOutAsksFirstAndSaysWhatItRemoves() {
+        let app = demoApp()
+        app.launch()
+        openSettings(app)
+        app.buttons["settings-account"].tap()
+        app.buttons["account-sign-out"].tap()
+        XCTAssertTrue(app.buttons["account-sign-out-confirm"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Signing out removes your messages and keys from this iPhone. Your contacts will see that your security key changed."].exists)
+    }
+
+    private func typeSecure(_ text: String, _ id: String, _ app: XCUIApplication) {
+        let field = app.secureTextFields[id]
+        field.tap()
+        field.typeText(text)
+    }
+
     func testAMessageShowsSendingThenSent() {
         let app = demoApp()
         app.launch()

@@ -94,7 +94,8 @@ final class OnboardingModel {
     }
 
     var canSubmitProfile: Bool {
-        guard !isBusy, !displayName.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        let name = displayName.trimmingCharacters(in: .whitespaces)
+        guard !isBusy, !name.isEmpty, name.count <= Profile.maxNameLength else { return false }
         let handle = typedUsername
         return handle.isEmpty || Self.usernameError(handle) == nil
     }

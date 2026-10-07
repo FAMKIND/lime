@@ -90,9 +90,9 @@ final class ChatTests: XCTestCase {
     }
 
     func testAFoundPersonShowsUsernameAndSchool() {
-        let person = FoundUser(userId: "u", displayName: "Grace Hopper", username: "grace.h", school: "Naval Academy", isSelf: false)
+        let person = FoundUser(userId: "u", displayName: "Grace Hopper", username: "grace.h", school: "Naval Academy", aboutEmoji: nil, aboutText: nil, isSelf: false)
         XCTAssertEqual(NewMessageSheet.detail(person), "@grace.h · Naval Academy")
-        XCTAssertNil(NewMessageSheet.detail(FoundUser(userId: "u", displayName: "G", username: nil, school: "", isSelf: false)))
+        XCTAssertNil(NewMessageSheet.detail(FoundUser(userId: "u", displayName: "G", username: nil, school: "", aboutEmoji: nil, aboutText: nil, isSelf: false)))
     }
 
     // MARK: Avatars
@@ -170,6 +170,8 @@ final class ChatTests: XCTestCase {
         func setInitialPassword(_ password: String, tokens: AuthTokens) async throws -> AuthTokens { throw unused }
         func startReset(identifier: String) async throws { throw unused }
         func finishReset(identifier: String, code: String, newPassword: String) async throws -> AuthTokens { throw unused }
+        func startPasswordChange(current: String, tokens: AuthTokens) async throws { throw unused }
+        func finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens) async throws -> AuthTokens { throw unused }
         func saveProfile(_ draft: ProfileDraft, tokens: AuthTokens) async throws -> Profile { throw unused }
         func loadProfile(tokens: AuthTokens) async throws -> Profile? { nil }
         func signOut(tokens: AuthTokens) async {}

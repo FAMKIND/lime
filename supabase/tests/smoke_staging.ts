@@ -75,7 +75,15 @@ try {
     const stranger = await listen(alice.token);
     assert(!stranger.joined && stranger.nudge === null, "another user cannot join someone elses channel");
     assertEquals((await call("undelivered-take", alice.token, {})).body.hashes, [], "no notices for a sender nothing happened to");
-    console.log("staging chat checks passed: find, public profile, private nudge, undelivered notices");
+
+    // Settings (LIME-98): the About line is public, and hiding from search is honoured.
+    const about = await call("profile-set", bob.token, { display_name: "Smoke Test", about_emoji: "👋", about_text: "Happy to help", hide_from_search: false });
+    assertEquals(about.status, 200, JSON.stringify(about.body));
+    assertEquals((await call("users-find", alice.token, { query: bob.email })).body.about_text, "Happy to help");
+    assertEquals((await call("profile-set", bob.token, { display_name: "Smoke Test", about_text: "Happy to help", hide_from_search: true })).status, 200);
+    assertEquals((await call("users-find", alice.token, { query: bob.email })).status, 404, "hidden from search");
+    assertEquals((await call("password-change-start", bob.token, { current_password: "not the password" })).status, 401, "a wrong current password is refused (and nothing is emailed)");
+    console.log("staging chat checks passed: find, public profile, private nudge, undelivered notices, About, hide from search");
   } finally {
     await deleteUser(passwordOnly);
   }

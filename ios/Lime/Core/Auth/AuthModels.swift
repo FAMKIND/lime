@@ -33,12 +33,47 @@ struct Profile: Equatable, Sendable {
     var displayName: String
     var username: String?
     var school: String?
+    /// The About line: an optional leading emoji, then a few words (140 characters in all).
+    var aboutEmoji: String?
+    var aboutText: String?
+    /// "Hide me from search": nobody finds you by username or email.
+    var hideFromSearch: Bool = false
+    /// Your own address, masked ("s•••@famkind.com"), for the Account screen. Not editable.
+    var maskedEmail: String?
+
+    static let maxNameLength = 40
+    static let maxAboutLength = 140
+
+    /// The About line as one string for a list or a card ("👋 Happy to help"), or nil when empty.
+    var about: String? {
+        let parts = [aboutEmoji, aboutText].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
 }
 
 struct ProfileDraft: Equatable, Sendable {
     var displayName: String
     var username: String?
     var school: String?
+    var aboutEmoji: String?
+    var aboutText: String?
+    var hideFromSearch: Bool?
+
+    init(displayName: String, username: String? = nil, school: String? = nil, aboutEmoji: String? = nil,
+         aboutText: String? = nil, hideFromSearch: Bool? = nil) {
+        self.displayName = displayName
+        self.username = username
+        self.school = school
+        self.aboutEmoji = aboutEmoji
+        self.aboutText = aboutText
+        self.hideFromSearch = hideFromSearch
+    }
+
+    /// Every editable field as it is now: an editor changes one and sends all (the server replaces the profile).
+    init(_ profile: Profile) {
+        self.init(displayName: profile.displayName, username: profile.username, school: profile.school,
+                  aboutEmoji: profile.aboutEmoji, aboutText: profile.aboutText, hideFromSearch: profile.hideFromSearch)
+    }
 }
 
 /// Everything that can go wrong, in the words the screens show.

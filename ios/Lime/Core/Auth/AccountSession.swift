@@ -62,8 +62,9 @@ final class AccountSession {
         }
         if arguments.contains("-lime-skip-sign-in") {
             // UI tests: signed in, without a backend.
-            profile = Profile(displayName: "Test Teacher", username: "teacher", school: nil)
+            profile = Profile(displayName: "Test Teacher", username: "teacher", school: nil, maskedEmail: "t•••@example.invalid")
             maskedEmail = "t•••@example.invalid"
+            tokens = AuthTokens(accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: Date().addingTimeInterval(86_400), userID: "test-user")
             await store.bootstrap(arguments: arguments)
             if arguments.contains("-lime-load-sample-chats") { await store.loadSampleChats() }
             if arguments.contains("-lime-demo-chat") { store.loadDemo(screen: arguments.firstIndex(of: "-lime-demo-screen").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }) }
@@ -93,7 +94,7 @@ final class AccountSession {
         await store.bootstrap(arguments: arguments)
         phase = .signedIn
         await registerDevice()
-        if profile == nil, let loaded = try? await auth.loadProfile(tokens: saved) { setProfile(loaded) }
+        if let loaded = try? await auth.loadProfile(tokens: saved) { setProfile(loaded) }
     }
 
     // MARK: Signing in
@@ -184,6 +185,9 @@ final class AccountSession {
     }
 
     #if DEBUG
+    /// Tests: the current tokens (after a refresh if one was due).
+    func debugTokens() async throws -> AuthTokens { try await currentTokens() }
+
     /// Tests: pretend the access token's hour is up, so the next call really refreshes it.
     func debugExpireAccessToken() {
         tokens?.expiresAt = Date().addingTimeInterval(-60)
@@ -225,6 +229,40 @@ final class AccountSession {
         phase = .signedOut
     }
 
+    // MARK: Settings: editing the profile and the password
+
+    /// Saves the whole profile (an editor changes one field and sends all of them). Throws the
+    /// server's reason, e.g. `AuthError.usernameTaken`.
+    func updateProfile(_ draft: ProfileDraft) async throws {
+        guard let auth else { throw AuthError.network }
+        let saved = try await auth.saveProfile(draft, tokens: try await currentTokens())
+        var kept = saved
+        kept.maskedEmail = saved.maskedEmail ?? profile?.maskedEmail
+        setProfile(kept)
+    }
+
+    /// Step one of changing the password: the current one is checked and a code is emailed.
+    func startPasswordChange(current: String) async throws {
+        guard let auth else { throw AuthError.network }
+        try await auth.startPasswordChange(current: current, tokens: try await currentTokens())
+    }
+
+    /// Step two: the code and the new password. The server ends the account's other sessions and
+    /// returns a fresh one that has passed both steps; this phone carries on with it.
+    func finishPasswordChange(code: String, newPassword: String) async throws {
+        guard let auth else { throw AuthError.network }
+        let fresh = try await auth.finishPasswordChange(code: code, newPassword: newPassword, tokens: try await currentTokens())
+        tokens = fresh
+        try? SessionKeychain.save(fresh, service: sessionService)
+    }
+
+    /// The tokens, refreshed first when they are about to expire.
+    private func currentTokens() async throws -> AuthTokens {
+        _ = try await accessToken()
+        guard let tokens else { throw AuthError.notVerified }
+        return tokens
+    }
+
     // MARK: Profile (not secret: a name for the About sheet)
 
     private func setProfile(_ profile: Profile) {
@@ -243,7 +281,18 @@ final class AccountSession {
         var displayName: String
         var username: String?
         var school: String?
-        init(_ profile: Profile) { displayName = profile.displayName; username = profile.username; school = profile.school }
-        var profile: Profile { Profile(displayName: displayName, username: username, school: school) }
+        var aboutEmoji: String?
+        var aboutText: String?
+        var hideFromSearch: Bool?
+        var maskedEmail: String?
+        init(_ profile: Profile) {
+            displayName = profile.displayName; username = profile.username; school = profile.school
+            aboutEmoji = profile.aboutEmoji; aboutText = profile.aboutText
+            hideFromSearch = profile.hideFromSearch; maskedEmail = profile.maskedEmail
+        }
+        var profile: Profile {
+            Profile(displayName: displayName, username: username, school: school, aboutEmoji: aboutEmoji, aboutText: aboutText,
+                    hideFromSearch: hideFromSearch ?? false, maskedEmail: maskedEmail)
+        }
     }
 }

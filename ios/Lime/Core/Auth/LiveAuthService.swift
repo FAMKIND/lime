@@ -70,10 +70,24 @@ final class LiveAuthService: AuthService, @unchecked Sendable {
         return try tokens(from: result.json)
     }
 
+    func startPasswordChange(current: String, tokens: AuthTokens) async throws {
+        let result = try await function("password-change-start", ["current_password": current], token: tokens.accessToken)
+        guard result.status == 200 else { throw error(for: result) }
+    }
+
+    func finishPasswordChange(code: String, newPassword: String, tokens: AuthTokens) async throws -> AuthTokens {
+        let result = try await function("password-change-verify", ["code": code, "new_password": newPassword], token: tokens.accessToken)
+        guard result.status == 200 else { throw error(for: result) }
+        return try self.tokens(from: result.json)
+    }
+
     func saveProfile(_ draft: ProfileDraft, tokens: AuthTokens) async throws -> Profile {
         var body: [String: Any] = ["display_name": draft.displayName]
         if let username = draft.username { body["username"] = username }
         if let school = draft.school { body["school"] = school }
+        if let emoji = draft.aboutEmoji { body["about_emoji"] = emoji }
+        if let text = draft.aboutText { body["about_text"] = text }
+        if let hide = draft.hideFromSearch { body["hide_from_search"] = hide }
         let result = try await function("profile-set", body, token: tokens.accessToken)
         guard result.status == 200 else { throw error(for: result) }
         return profile(from: result.json) ?? Profile(displayName: draft.displayName, username: draft.username, school: draft.school)
@@ -83,7 +97,9 @@ final class LiveAuthService: AuthService, @unchecked Sendable {
         let result = try await function("profile-get", [:], token: tokens.accessToken)
         guard result.status == 200 else { throw error(for: result) }
         guard let profile = result.json["profile"] as? [String: Any] else { return nil }
-        return self.profile(from: profile)
+        var loaded = self.profile(from: profile)
+        loaded?.maskedEmail = result.json["masked_email"] as? String
+        return loaded
     }
 
     /// Supabase Auth's own refresh. The session (and so its verified state) is the same afterwards.
@@ -144,7 +160,9 @@ final class LiveAuthService: AuthService, @unchecked Sendable {
 
     private func profile(from json: [String: Any]) -> Profile? {
         guard let name = json["display_name"] as? String else { return nil }
-        return Profile(displayName: name, username: json["username"] as? String, school: json["school"] as? String)
+        return Profile(displayName: name, username: json["username"] as? String, school: json["school"] as? String,
+                       aboutEmoji: json["about_emoji"] as? String, aboutText: json["about_text"] as? String,
+                       hideFromSearch: json["hide_from_search"] as? Bool ?? false)
     }
 
     /// Turns the server's `{ error, message }` into one of the app's errors.
