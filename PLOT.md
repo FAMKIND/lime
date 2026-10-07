@@ -114,6 +114,22 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**⚠ Incident (2026-10-07):** the user pasted the `lime-notify` Resend key into **tend's chat** (inside the `read -s` command line), so the key is in tend's transcript. Tend set it as the staging secret anyway.
+- **The user is told to rotate it:** create a new Resend key, delete the old one, and set it from the **Terminal app** (not a chat). **Done (2026-10-07):** the new key was set via the Terminal ("Finished supabase secrets set"). The user confirms the old key was deleted in Resend.
+- **Lesson for plot:**
+  - Secret-entry commands must say **"run in the Terminal app, not tend"**, and use the simplest form: `read -s KEY`, then paste on the next line.
+  - Never embed a prompt string that the user might replace with the secret.
+  - Tend should refuse to act on secrets pasted into its chat and tell the user to rotate them.
+
+**Update: LIME-95-fix landed as `3c42366`** (pushed and verified).
+- **The real root cause:** **sign-out wipes the keys**, so every re-sign-in brought a new master key, the server refused it (409 `master_key_mismatch`), and the app swallowed the error.
+- **The fix:** option 1 + (a)(b)(c). Also truthful errors, single-flight token refresh, and avatar colours from the user id (the old code used a per-launch random `hashValue`).
+- 30 server / 49 Rust / 71 iOS tests pass; 0 warnings; staging smoke passes.
+- **(a) needs a function secret** `LIME_NOTIFY_RESEND_API_KEY` (the user sets it; plot advised a **separate** Resend key `lime-notify`, entered via `read -s` so it stays out of shell history).
+- **⚠ Tend's own product decisions to revisit (flagged to the user):**
+  1. **one active phone per account** (registering a second revokes the first), which conflicts with Linked Devices / multi-device (DESIGN-01 §2). It's acceptable as interim policy until QR device linking; **record it in `api-v2.md` as interim**.
+  2. **sign-out wipes the keys**, so every sign-out/in shows contacts "security key changed". **Candidate:** a Signal-like distinction between "sign out (keep keys on this phone, re-verify to resume)" and "delete account data from this phone". Decide with the device-linking brief.
+
 **Update: LIME-95 landed as `d2686f3`** (pushed and verified; no project ref).
 - **New message** (exact username/email), the identified-Olm DM, live receive via a **private** Realtime channel (tend found and fixed a public-channel metadata leak), Requests (Accept/Block, local), atomic HLC, `check-warnings.sh` (clean builds for a device + simulator).
 - 27 server / 46 Rust / 64+13 iOS tests pass; local + staging e2e pass.
@@ -182,6 +198,47 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - approve `supabase login` in the browser when tend asks.
 
 **Update: LIME-90-fix landed as `9d18cad`** (pushed and verified). 33 iOS tests pass. Tend set `xcodeVersion: "2700"` + `STRING_CATALOG_GENERATE_SYMBOLS`; the user is to report whether the Xcode "recommended settings" warning is gone.
+
+### DESIGN-04 (noted, plot, 2026-10-07): New Message / New Group, adapted from Signal's pattern
+**The user loves Signal's pattern** (5 screenshots, 2026-10-07). **Privacy note:** the screenshots contain the user's phone number; never copy it into files.
+
+**Signal's pattern:**
+- a sheet titled "New Message" with a close ✕;
+- a card of actions: **New Group**, **Find by Username**, **Find by Phone Number**;
+- an **A–Z list of people with an index rail**;
+- a floating glass **search field** at the bottom ("Name, username, or number");
+- **New Group** = multi-select (checkmarks) with **removable chips** at the top, "N Members", and **Next**;
+- Find by Phone shows "Searching…", then "**Invite to Signal**" if they're not a user.
+
+**Lime's adaptation (no contact-book upload, per DESIGN-01 §5):**
+- **The list = teachers you already have a conversation with or accepted** (from the local store), A–Z with an index rail. It's empty-state friendly ("Find teachers by username or email").
+- **Actions:**
+  - **New Group** (needs Megolm/groups; that brief);
+  - **Find by Username**;
+  - **Find by Email**;
+  - **Find by Phone** appears only once phone sign-in is funded (S1 = A).
+- **Bottom search:** filters the local list as you type, and on submit does an **exact** server match on username/email (no partial directory search yet).
+- **Not found → "Invite a teacher":** the iOS share sheet with an invite link (`joinlime.org`/`limechat.org`, later). The server never sends SMS or email invites itself.
+- **New Group:** multi-select + chips → Next → the group name (+ optional photo) → Create.
+
+**Added (the user, 2026-10-07): invite + QR code** ("they make bringing teachers into our community seamless"). From 6 more Signal screenshots, which contain **third parties' names and phone numbers: never copy them anywhere**.
+- **Invite a teacher:** a "More → Invite teachers to Lime" row at the end of the list, and the "Invite a teacher" empty-state card.
+  - **Plot's privacy choice:** use Apple's **system contact picker** (`CNContactPickerViewController`). The user picks one or more people in Apple's own UI, and **Lime receives only the chosen entries, with no Contacts permission prompt and no access to the whole address book.** Signal asks for full Contacts access; Lime doesn't need it.
+  - The choice of **Messages / Mail / Share…** opens the iOS composer **from the teacher's own phone** (`MFMessageComposeViewController` / `MFMailComposeViewController`), prefilled: "Join me on Lime, a private messenger made for teachers: <link>". **Lime's servers never send invites and never see who was invited.**
+  - **The invite link** = a personal link to the inviter (e.g. `limechat.org/u/<username>`). On install, it can open straight to "Message <inviter>".
+  - **Universal links need the paid Apple account** (Associated Domains) + a small file on limechat.org. Before then, the link opens a web page with App Store/TestFlight instructions.
+- **QR code:**
+  - **"My QR code"** in Profile/Settings, plus a **"Scan QR Code"** button on Find by Username (as in Signal).
+  - **The QR encodes the personal link plus the person's identity key fingerprint.** Scanning opens their profile → **Message**, and **marks them verified in person** (the optional verification in DESIGN-01 §2).
+  - **A mesh bonus:** because the QR carries the keys, **two teachers who scan each other can start an encrypted conversation offline**, which is exactly the DESIGN-01 §4 path ("someone you meet and scan in person").
+  - The camera permission text: "Lime uses the camera to scan a teacher's QR code." (Photos/video for chat later.)
+- **Usernames:** Lime keeps unique usernames, with **no Signal-style ".123" discriminator** (it already enforces uniqueness).
+- **"Note to Self"** (seen in Signal) was not requested; it's a candidate for later.
+
+**Where it goes:**
+- **New Message v2** (the list, the search, the find-by screens, invite, QR) is folded into the **groups brief (LIME-97)**, because it shares the multi-select.
+- **QR-based offline first contact** lands with mesh v1.
+- A small interim polish may come earlier if the user asks.
 
 ### DESIGN-03 (draft, plot, 2026-10-06): native sign-up and sign-in (for LIME-94), adapted from Signal
 **The user's ask:** "remove the coming-soon Google and Apple sign-in; keep sign-in by phone number, username or email; take the best of Signal's sign-in". They shared 11 screenshots of Signal's onboarding.
@@ -1319,7 +1376,228 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-95-fix → `tend` (lime-aa) (next): the user's phone can't search or receive; inconsistent avatar colours
+### DESIGN-05 (plot, 2026-10-07): "the basics": settings, search, formatting, threads, notifications
+**The user's ask (2026-10-07), while the two-phone gate of LIME-95-fix waits for Jean's phone:** "fill out the basics of the app: search, settings, chat formatting, chat reply threads, notifications (including a notification chime)".
+
+**The execution order:**
+1. **LIME-98** Settings;
+2. **LIME-99** Search;
+3. **LIME-100** Formatting;
+4. **LIME-101** Reply threads;
+5. **LIME-102** Notifications;
+6. then LIME-96 (sealed), LIME-97 (groups + New Message v2 + invite/QR).
+
+**The design sources:** `docs/design/mobile/` 04 (format menu; thread summary "3 replies · Last reply …"), 05 (Settings), 06 (Profile); plus the frozen web app's behaviour for threads/formatting.
+
+**Plot's technical decisions (made here, no user input needed):**
+- **The wire format for formatted text = a Markdown subset** inside the encrypted payload (CommonMark: `**bold**`, `*italic*`, `~~strike~~`, `__underline__` (a Lime extension), inline `` `code` ``, fenced code blocks, `-`/`1.` lists, links). It's portable to Android and the web; the renderer allow-lists only these. There is **no HTML on the wire**, and **no alignment/indent in messages** (the web's align menu is not carried over).
+- **Threads = Slack-style, as in design 04:**
+  - a reply carries `thread_root` (the root message id) inside the encrypted payload;
+  - the root shows "N replies · Last reply <time>" with replier avatars;
+  - tapping it opens a Thread screen with its own composer.
+  - Ordering per `api-v2.md` §5. A quote-reply (swipe-to-reply) is later.
+- **Search is on-device only** (E2EE): SQLCipher FTS5 over decrypted message text, in the encrypted DB. Nothing is sent to the server.
+- **Notifications in two stages:**
+  - **now (LIME-102):** local notifications when a message arrives while the app is backgrounded but still running, the in-app chime + banner while it's open, the notification settings, and the chime sound;
+  - **later (with the paid Apple account):** APNs remote push with a Notification Service Extension that decrypts on the device (content-free push, per `api-v2.md`).
+
+**Decisions put to the user (2026-10-07):**
+- **N1 the chime sound:**
+  - **A.** The user/a designer supplies a short sound (≤ 2 s; WAV/AIFF/CAF), placed at `ios/Lime/Resources/Sounds/`;
+  - **B.** Tend synthesises a gentle 2-note placeholder chime (CC0, generated in code), replaceable later.
+  - **Lean B now, A later.**
+- **N2 the notification preview default:**
+  - **A.** Name + message text (decrypted on the device only; Apple never sees it);
+  - **B.** Name only;
+  - **C.** "New message" only.
+
+  Every option is user-changeable in Settings. **Lean A**, with the toggle.
+
+### LIME-98 → `tend` (lime-aa) (next): Settings (design 05/06): profile, account, privacy, blocked, customize, about/acknowledgements
+**What it does:** the iOS Settings screen, per `docs/design/mobile/05-settings.png` and `06-profile.png`, replacing the Debug-only About sheet as the main place for account things.
+
+**Capabilities assumed:** edit files, `cargo`, the Supabase CLI (deploy functions without `config push`), XcodeGen, `xcodebuild`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):** designs 05/06; `AboutView`, `AccountSession`, the profile functions, `ConversationStore` (blocked state); `docs/release-checklist.md`. If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **The entry:** tapping the **avatar pill** (top right of Messages) opens Settings as a sheet (the glass ✕), as in design 05. Long-press-logo About stays for Debug only.
+2. **Settings rows** (glass grouped cards):
+   1. **Profile card** (avatar, display name, `@username`) → **Profile** (design 06): edit the name, username (the same uniqueness rules), school, and a "Hide me from search" toggle. Saved via the profile functions.
+   2. **Account:** the email (masked display); **Change password** (current + new, min 10, then an emailed code); **Sign out**.
+   3. **Privacy:**
+      - **Blocked** (list; **Unblock**);
+      - **Safety numbers / keys** (shows "Your key was set on <date>" + a short fingerprint; read-only for now);
+      - **Linked Devices** (design 05): shows **"This iPhone"** only, with a note: "Using Lime on more than one device is coming soon." (One active phone per account is the interim policy, LIME-95-fix.)
+   4. **Notifications:** a placeholder row "Coming next" (LIME-102 fills it).
+   5. **Customize** (design 05): **Appearance** (System / Light / Dark), stored locally and applied app-wide.
+   6. **Donate to lime** (design 05): opens the donate URL **if configured**; otherwise the row is hidden. (The web's `LIME_DONATE_URL` is not set yet.)
+   7. **About:**
+      - the versions (app + core);
+      - **Acknowledgements** (the open-source licences from `core/THIRD_PARTY.md`, **including the SQLCipher/Zetetic notice**, which closes that `release-checklist.md` item);
+      - Terms and Privacy links (placeholders to `https://limechat.org/terms` / `/privacy`).
+3. **Amendment (the user, 2026-10-07; Signal screenshots of "About"): the Profile edit screens follow Signal's editor pattern.**
+   - **One field per sheet:** a glass ✕ at top left; the title centred; a round **✓ save** at top right in the **accent `#a3e18a`** with the dark ink, shown as dimmed glass until there's a valid change (Lime's version of Signal's blue ✓).
+   - The field sits in a large glass pill with a clear (ⓧ) button; **the keyboard's return key is ✓ (save)**.
+   - **Edit Name:** the display name (required, 1–40 characters).
+   - **About** (a new profile field): a short status line with an **optional leading emoji**:
+     - the emoji button at the left of the field opens the emoji picker;
+     - **max 140 characters**, and the title shows the remaining count when ≤ 140, as in Signal ("About (128)");
+     - placeholder: "Write a few words about yourself…";
+     - **below the field, a list of tap-to-fill presets** (teacher-flavoured): 👋 Happy to help · 📚 Planning lessons · 🍎 In class · ☕ Coffee lover · 📝 Grading · 🔕 Taking a break · 🔒 Encrypted.
+     - The About line shows on the Profile card in Settings, in New message results, and in the chat details.
+   - **Server:** add `about_emoji` + `about_text` to `profiles`, readable through the same public-profile rules as the display name and school. **Note in `api-v2.md`:** it's a public profile field and the server can see it (like the name).
+   - Apply the same ✕/✓ editor pattern to **Username** and **School**.
+4. **Sign-out semantics stay as LIME-95-fix for now,** with the confirmation copy: "Signing out removes your messages and keys from this iPhone. Your contacts will see that your security key changed."
+
+**Out of scope:** notification settings (LIME-102), real multi-device linking, recovery key, profile photos (later), account deletion (later; note it in `release-checklist.md`: the App Store requires in-app account deletion before release).
+
+**Phase 3: verification.**
+- Server, Rust and iOS tests pass on the three simulators; `ios/check-warnings.sh` reports 0 warnings.
+- **New tests:** the About editor (the emoji, the 140 limit and counter, a preset fills it, ✓ is disabled until changed, saves, shows on the Profile card and in New message results); edit the profile (the name and username uniqueness errors); hide-from-search is honoured by `users-find`; block → unblock restores message display; the appearance persists across a relaunch; the change-password flow (local stack); the Donate row is hidden when the URL is unset.
+- Screenshots (light and dark, 375pt): Settings, Profile, Account, Privacy/Blocked, Customize, Acknowledgements.
+
+**Gate (the user, on the iPhone):**
+- tap your avatar → Settings looks like design 05;
+- edit your name and school;
+- switch to Dark;
+- see Acknowledgements;
+- the Blocked list is empty, or shows anyone you blocked.
+
+**Record:** a `## LIME-98` entry in `TEND.md`; update `docs/release-checklist.md` (acknowledgements done; account deletion required before release). Commit: `feat(ios): Settings (profile, account, privacy, blocked, customize, about)`, trailer `Brief: LIME-98`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-99 → `tend` (lime-aa) (after LIME-98): on-device search (Messages list + in-chat find)
+**What it does:** private search that runs entirely on the phone.
+
+**Capabilities assumed / Phase 0:** as in LIME-98.
+
+**Phase 1: survey (read only):** the core store schema and migrations; the Messages header search button; the Chat header search icon; SQLCipher's FTS5 availability in the current build. If FTS5 isn't compiled in, report how to enable it and its size impact before proceeding.
+
+**Phase 2: the change.**
+1. **Core:**
+   - an FTS5 index over decrypted message text (inside the SQLCipher DB, so it is encrypted at rest), maintained on insert/edit/delete;
+   - a migration that back-fills existing messages;
+   - the FFI `search_messages(query, conversation_id: Option, limit) -> Vec<SearchHit { conversation_id, message_id, snippet, time }>`, prefix-matching, case- and diacritic-insensitive;
+   - `search_conversations(query)` over titles and participant names.
+2. **Messages search** (the search button in the header): an iOS search field. The results show **Chats** (title/name matches) then **Messages** (snippets with the match highlighted). Tapping a message opens the chat **scrolled to that message**, highlighted briefly.
+3. **In-chat find** (the chat header 🔍): the field in the header plus **"3 of 12"** with up/down to step through matches in this chat.
+4. **Nothing leaves the device** (assert in a test that `search_*` makes no transport calls).
+
+**Out of scope:** server/directory search (remains exact username/email in New message), searching attachments.
+
+**Phase 3: verification.**
+- `cargo test` (FTS ranking, prefix, diacritics, back-fill, delete removes it from the index, **the encrypted DB file contains no plaintext of an indexed word**);
+- the iOS tests + UI tests (search → open at the message; in-chat stepping);
+- 0 warnings;
+- screenshots.
+
+**Gate (the user):**
+- search a word from a chat → it finds it → opens at the message;
+- inside a chat, 🔍 steps through matches.
+
+**Record:** a `## LIME-99` entry in `TEND.md`. Commit: `feat: on-device encrypted search (chats, messages, find in chat)`, trailer `Brief: LIME-99`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-100 → `tend` (lime-aa) (after LIME-99): message formatting (design 04), Markdown subset on the wire
+**What it does:** rich text in messages, per `docs/design/mobile/04-format-menu.png`, carried as the DESIGN-05 Markdown subset inside the encrypted payload.
+
+**Capabilities assumed / Phase 0:** as in LIME-98.
+
+**Phase 1: survey (read only):** `Model/MessageFormat.swift` (it may already partially exist), the composer in `ChatView`, design 04, and the frozen web composer's toolbar for behaviour cues. If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **The format** (`docs/api-v2.md` §11 + a short `docs/message-format.md`):
+   - the subset is exactly: bold, italic, underline (`__x__`, a Lime extension), strikethrough, inline code, fenced code block, bulleted and numbered lists (one nesting level), links (http/https/mailto only).
+   - **Everything else renders as plain text.** Max 64 KB per message.
+2. **The core:** a parser/renderer-neutral validator (it rejects nothing; it downgrades unknown syntax to text) and a plain-text fallback for search and notification previews (strip the markup).
+3. **The iOS composer, matching design 04:**
+   - a toolbar of `+`, emoji, **Aa** (a menu: Bold, Italic, Underline, Strikethrough), bulleted list, numbered list, link, code;
+   - mic and send on the right.
+   - **Selecting text** shows a small glass B/I/U/S pill above the system edit menu (the web LIME-86-fix lesson).
+   - Live (WYSIWYG) editing: the user sees formatting, not asterisks.
+   - **Return = a new line;** send = the arrow.
+   - **Link:** a sheet with a URL (+ text when there's no selection).
+4. **The bubble rendering:** a native attributed text. Code blocks are monospaced with horizontal scroll. Links are tappable, with a confirmation for non-https URLs. Own and other bubbles keep their colours and contrast.
+
+**Out of scope:** mentions, emoji reactions (later), attachments.
+
+**Phase 3: verification.**
+- `cargo test` (round-trips, unknown syntax downgraded, link scheme allow-list, the size limit);
+- the iOS unit tests (Markdown ↔ attributed string both ways for every feature);
+- UI tests (bold via the Aa menu; the selection pill; a list; a code block mid-message; a link);
+- the local e2e: a formatted message renders identically on the receiver;
+- 0 warnings;
+- screenshots vs design 04.
+
+**Gate (the user):**
+- format a message with bold, a list and a code block → send → it looks right;
+- select text → the B/I/U/S pill.
+
+**Record:** a `## LIME-100` entry in `TEND.md`. Commit: `feat: message formatting (Markdown subset, encrypted), composer per design 04`, trailer `Brief: LIME-100`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-101 → `tend` (lime-aa) (after LIME-100): reply threads (Slack-style, design 04)
+**What it does:** reply in a thread to any message, per design 04's "N replies · Last reply …" summary.
+
+**Capabilities assumed / Phase 0:** as in LIME-98.
+
+**Phase 1: survey (read only):** the core message model and ordering (HLC + parents); `ChatView`; the frozen web thread behaviour (`TEND.md` LIME-17/18 entries) for cues. If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Protocol:**
+   - `thread_root: message_id | null` inside the encrypted message payload (not visible to the server);
+   - replies inherit the root's conversation.
+   - Document it in `api-v2.md` (the payload fields).
+2. **Core:** the thread queries (`list_thread(root_id)`, the root's reply count, the last-reply time, the replier ids); unread-in-thread counts; search hits inside threads (LIME-99) open the thread.
+3. **iOS:**
+   - **long-press a message → "Reply in thread";**
+   - the root bubble shows "N replies · Last reply <time>" with up to 3 replier avatars (design 04);
+   - tapping opens the **Thread screen** (the system nav push: the root at the top, then the replies, then its own composer with formatting);
+   - new replies arrive live.
+   - Replies don't appear in the main chat timeline (Slack-style).
+
+**Out of scope:** "also send to chat", quote-reply, thread notifications (LIME-102 adds those).
+
+**Phase 3: verification.**
+- `cargo test` (thread queries, ordering, counts);
+- the iOS tests + UI tests (reply → the summary updates → open the thread → reply live);
+- the local two-account e2e;
+- 0 warnings;
+- screenshots.
+
+**Gate (the user):** reply in a thread from one phone; the other phone shows "1 reply", opens the thread, replies back.
+
+**Record:** a `## LIME-101` entry in `TEND.md`. Commit: `feat: reply threads (encrypted thread_root, summary, thread screen)`, trailer `Brief: LIME-101`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-102 → `tend` (lime-aa) (after LIME-101): notifications, stage 1 (local + in-app chime; APNs later)
+**DECIDED (user, 2026-10-07):**
+- **N1 = A:** the user/a designer supplies the chime sound.
+- **N2 = A:** name + message text by default (decrypted on the device), changeable in Settings.
+
+**Prerequisite for LIME-102:**
+- the user provides the chime file (≤ 2 s; WAV/AIFF/CAF; mono is fine; they must own the rights).
+- **If it isn't provided when LIME-102 starts, tend stops and asks.** It must not synthesise a placeholder (the user chose A).
+- Tend converts it to `lime-chime.caf` (linear PCM or IMA4, ≤ 30 s as Apple requires) at `ios/Lime/Resources/Sounds/`.
+
+**Drafted as an outline; finalise before sending.**
+- **The chime:** the user's sound file (N1 = A), converted to `lime-chime.caf`.
+- **While the app is open:**
+  - a new message in another chat shows an in-app glass banner + the chime (respecting the silent switch via the system sound APIs);
+  - nothing plays in the chat you're viewing (a subtle tick instead).
+- **While backgrounded but alive:** a local notification (`UNUserNotificationCenter`) with the preview per **N2 = A (name + message; the stripped plain text from LIME-100)**, the custom sound, grouped by conversation (`threadIdentifier`), a tap opening the chat/thread; the badge count = unread chats.
+- **Permissions:** a pre-prompt screen explaining why (DESIGN-03's later "permissions explainer"), then the system prompt; and respect "Not now".
+- **Settings → Notifications:** On/Off, Preview (name + message / name only / "New message"), Sound (Lime chime / Default / None), per-chat **Mute** (1 h / 8 h / 1 week / Always).
+- **Stage 2 (a later brief; needs the paid Apple account):** APNs + the Notification Service Extension that decrypts on the device; the server sends content-free pushes; push tokens per device.
+
+### LIME-95-fix → `tend` (lime-aa) (landed as `3c42366`): the user's phone can't search or receive; inconsistent avatar colours
 **What the user saw (2026-10-07, two real iPhones on staging):**
 - **Jean's iPhone (newly installed, signed up fresh):** finds `@shem` and sends "Hi Shem" → "Sent".
 - **Shem's iPhone (13 mini; account created during the 8-digit-OTP period; signed in earlier):**
@@ -1327,7 +1605,17 @@ If anything contradicts this brief, stop and ask the user.
   - **Jean's message never appears** (no Request).
 - **Avatar colours differ:** "SR" is purple in Jean's search result but yellow in Jean's chat header.
 
-**Plot's hypothesis (unverified):**
+**Tend's diagnosis (relayed 2026-10-07):** Shem's phone has **fresh keys whose master key differs from the one fixed at the account's first registration** (trust on first use; `api-v2.md` §11). So the device can't register, and every verified call fails.
+- **Tend asked the user how a phone with fresh keys regains an existing account.**
+- **Plot recommended option 1, with three additions:**
+  - **"Verified sign-in resets keys"**, Signal-style re-registration: password + emailed code may replace the master key; the old devices are revoked; contacts who pinned the old key see **"Shem's security key changed"** and must tap Accept before messages flow.
+  - **Additions:**
+    - (a) **email the account** whenever its master key is replaced ("A new phone signed in and replaced your Lime keys. If this wasn't you, reset your password.");
+    - (b) messages waiting for the old devices are discarded, and **the sender sees them as "Not delivered"** where possible;
+    - (c) **this is temporary policy**: once the recovery key (D5) exists, a **registration lock** requires the recovery key to replace the master key (Signal's model).
+- **Pending the user's answer.**
+
+**Plot's hypothesis (superseded by the diagnosis above):**
 - Shem's phone's session is in a bad server-side state, e.g. a session never marked verified in `auth_proofs`, a device registered under an older schema/flow, or a session/token rejected after refresh.
 - So **every authenticated function returns 401/403**, and the app maps it to a "connection" message.
 - `sync` fails the same way, so nothing is fetched.
