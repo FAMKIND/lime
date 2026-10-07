@@ -114,6 +114,17 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**Update: LIME-101 landed as `9193306`** (pushed and verified).
+- Threads: `thread_root` is encrypted in the payload, one level deep; a summary row with avatars + an accent unread dot; a thread screen with a shared composer; live.
+- Link green vs underline: every pair is ≥ 4.5:1.
+- 87 Rust tests pass + iOS on 3 simulators; 0 warnings.
+- **Plot's review:** good. **On the own bubble (dark mode `#8ECF73`), the deep-green link is hard to tell from the black text** (hue only). Offered the ↗ glyph there; the user decides (would go into 101b).
+- The thread screen uses the system nav bar rather than the glass header (minor; could align later).
+
+**MILESTONE (2026-10-07): Shem's and Jean's real iPhones exchanged E2EE messages through staging** (the user's screenshots: "Hey love" / "it works" / "True it does work!"). **The LIME-95-fix gate has passed.**
+- **A design principle the user set:** **the accent green only for the single primary action per screen;** secondary/active states use a warm neutral; the text selection is the system blue.
+- **LIME-101b is drafted** (that polish + New Message v2 for 1:1). Tend is mid-LIME-101 (uncommitted work in core).
+
 **Update: LIME-100 landed as `376b7d0`** (pushed and verified).
 - The Markdown subset with **one grammar in LimeCore** (parse/write/normalise/plain); normalised on send and on receive; a 30,000-byte limit on the written form.
 - The keyboard-docked capsule toolbar.
@@ -1633,7 +1644,70 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-102 → `tend` (lime-aa) (after LIME-101): notifications, stage 1 (local + in-app chime; APNs later)
+### LIME-101b → `tend` (lime-aa) (after LIME-101 lands; tend is mid-101 now): colour hierarchy polish, word-level find highlight, New Message v2 (1:1)
+**What it does:** the user's review of LIME-99/100 on real phones (2026-10-07).
+- **Milestone:** the screenshots show **Shem's and Jean's iPhones chatting end to end** ("it works" / "True it does work!"), so **the LIME-95-fix two-phone gate has passed.**
+- **The principle the user set:** **the accent green is reserved for the one primary action on a screen** (send, Find, Next, Continue). Secondary/active states use a **warm neutral**.
+
+**Capabilities assumed:** edit files, XcodeGen, `xcodebuild`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- the theme tokens;
+- the composer (the Aa active state, the selection);
+- the in-chat find (the highlight);
+- `NewMessageSheet`;
+- `ConversationStore` (known people);
+- DESIGN-04 in `PLOT.md`.
+
+If anything contradicts this brief, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Text selection = the system default blue.** Remove any app-wide tint that makes the selection, the caret and the selection handles green (in the composer, the editors and the search fields). The accent stays on buttons only.
+2. **The format toolbar's active states → a warm neutral:**
+   - **Aa** while the toolbar is open, and the pressed B/I/U/S/etc., use a **warm neutral fill** (a token, e.g. `surface.pressed`; ≥ 3:1 against the bar, ink ≥ 4.5:1), not green;
+   - **only the send button is green.**
+3. **Find highlights the matched words, not the bubble:**
+   - in-chat find draws a highlight behind **each matched word** in the bubbles (a soft warm-yellow/neutral background, readable in both bubble colours, light and dark);
+   - **the current match** is stronger than the others;
+   - **remove the bubble outline.**
+   - Messages-search results keep the bold words; opening one highlights the words in the chat the same way.
+4. **New Message v2, 1:1 only** (DESIGN-04; groups/invite/QR stay in LIME-97):
+   - **A sheet titled "New Message"** with a glass ✕.
+   - **A card of actions:** **Find by Username**, **Find by Email**. **New Group** is shown dimmed with "Coming soon"; Find by Phone is hidden (S1 = A).
+   - **An A–Z list of known teachers** (anyone you have a conversation with, accepted), with avatars, names and an `@` badge, plus **an index rail** on the right. Tap → open or start the DM.
+   - **A floating glass search field at the bottom** ("Name, username or email"):
+     - filters the list live;
+     - on submit, does the **exact** server lookup for a username/email;
+     - a match appears as a **row** (avatar, name, `@username · school`), and tapping the row starts the chat;
+     - **there is no separate "Message" button**, so nothing competes with the primary action.
+   - **Find by Username / Find by Email** are pushed screens: ‹ back, a centred title, a **Next** button top right (accent, dimmed until valid), and one field. Next → the result row → tap to message. "No teacher found" otherwise.
+   - **The empty state** (no known teachers yet): "Find teachers by their username or email."
+   - Remove the old sheet (the big Find button plus the Message card).
+
+**Out of scope:** groups, invite, QR, the phone lookup, partial directory search.
+
+**Phase 3: verification.**
+- iOS unit + UI tests on the three simulators; `ios/check-warnings.sh` reports 0 warnings.
+- **New tests:**
+  - the selection tint is the system default;
+  - the Aa active and pressed states aren't the accent colour (a token check);
+  - find highlights ranges inside a bubble with no outline;
+  - New Message: the list sorted A–Z with the index jump; live filter; an exact lookup by username and by email; the empty state; Find by Username's Next is disabled until input.
+- Screenshots (light and dark, 375pt): the composer with selected text and the toolbar; find with a word highlight; New Message (list); Find by Username.
+
+**Gate (the user, on the iPhone):**
+- selected text is blue;
+- the Aa and pressed format buttons are warm grey, and only send is green;
+- find highlights just the word;
+- New Message shows your teachers A–Z with search at the bottom, and Find by Username works.
+
+**Record:** a `## LIME-101b` entry in `TEND.md`. Commit: `polish(ios): accent only for primary actions, word-level find highlight, New Message v2`, trailer `Brief: LIME-101b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-102 → `tend` (lime-aa) (after LIME-101b): notifications, stage 1 (local + in-app chime; APNs later)
 **DECIDED (user, 2026-10-07):**
 - **N1 = A:** the user/a designer supplies the chime sound.
 - **N2 = A:** name + message text by default (decrypted on the device), changeable in Settings.
