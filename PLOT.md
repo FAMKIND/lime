@@ -114,6 +114,17 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**Update: LIME-100 landed as `376b7d0`** (pushed and verified).
+- The Markdown subset with **one grammar in LimeCore** (parse/write/normalise/plain); normalised on send and on receive; a 30,000-byte limit on the written form.
+- The keyboard-docked capsule toolbar.
+- 81 Rust / 114 iOS tests pass; fuzzed with 4,000 hostile inputs; 0 warnings.
+- **Plot's review of the screenshots:** good. **One issue:** **links and underlined text look identical** (both just underlined in the text colour; e.g. "the policy" link vs "Almost" underline). **Proposed polish:** links in the accent ink with a subtle tint/underline style distinct from `__underline__`; ask the user.
+- **Known limits:**
+  - no indent key for nested lists;
+  - Return twice doesn't leave a code block;
+  - **an old literal `*` may render as italics** (old plain messages); acceptable pre-launch.
+- Next: LIME-101.
+
 **Update: LIME-99 landed as `5050a5c`** (pushed and verified).
 - FTS5 inside SQLCipher (already compiled in; no size impact). Prefix, accent-insensitive.
 - Messages search + in-chat find ("N of M").
@@ -1595,6 +1606,16 @@ If anything contradicts this brief, stop and ask the user.
    - new replies arrive live.
    - Replies don't appear in the main chat timeline (Slack-style).
 
+4. **Folded in from the LIME-100 review (the user, 2026-10-07): links must look different from underlined text.** Today both render as text-colour underline.
+   - **Links:**
+     - a dedicated **link colour token per bubble surface** (neutral bubble, own bubble; light and dark), from Lime's green family: a **deep green** that keeps **≥ 4.5:1** contrast on that surface (compute it; on the dark-mode own bubble `#8ECF73`, pick whatever green or ink-plus-style passes);
+     - plus an underline;
+     - **tapping shows the pressed state.**
+   - **`__underline__`** keeps the **text colour** with a plain underline.
+   - If a surface can't fit a distinct ≥ 4.5:1 green, use the ink colour with a **link glyph (↗) after the link text** instead, and say which surfaces needed it.
+   - The same token applies in the composer while editing.
+   - Unit-test every contrast pair. Add a screenshot showing a link and an underline side by side in each bubble type, light and dark.
+
 **Out of scope:** "also send to chat", quote-reply, thread notifications (LIME-102 adds those).
 
 **Phase 3: verification.**
@@ -1604,7 +1625,9 @@ If anything contradicts this brief, stop and ask the user.
 - 0 warnings;
 - screenshots.
 
-**Gate (the user):** reply in a thread from one phone; the other phone shows "1 reply", opens the thread, replies back.
+**Gate (the user):**
+- reply in a thread from one phone; the other phone shows "1 reply", opens the thread, replies back;
+- **links are green and clearly different from underlined text** in both bubble types, light and dark.
 
 **Record:** a `## LIME-101` entry in `TEND.md`. Commit: `feat: reply threads (encrypted thread_root, summary, thread screen)`, trailer `Brief: LIME-101`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
