@@ -114,6 +114,16 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**Update: LIME-101b landed as `6c49400`** (pushed and verified).
+- System-blue selection, a warm-neutral pressed state (3.4:1), word-level find highlights, New Message v2 (A–Z, index rail, bottom search, exact lookup, Find by Username/Email screens).
+- 136 unit + 47 UI tests pass; 0 warnings.
+- **Open small asks for the user:**
+  - an @ badge on list rows (needs usernames stored locally; core);
+  - the unread dot green vs neutral (plot's lean: keep green; it's status and small);
+  - the ↗ on own-bubble links (from the 101 review, still unanswered).
+- **Tend kept answering timed-out background wait loops:** harmless noise.
+- **LIME-102 is blocked on the user's chime file** (`ios/Lime/Resources/Sounds/` doesn't exist yet).
+
 **Update: LIME-101 landed as `9193306`** (pushed and verified).
 - Threads: `thread_root` is encrypted in the payload, one level deep; a summary row with avatars + an accent unread dot; a thread screen with a shared composer; live.
 - Link green vs underline: every pair is ≥ 4.5:1.
@@ -1712,7 +1722,13 @@ If anything contradicts this brief, stop and ask the user.
 - **N1 = A:** the user/a designer supplies the chime sound.
 - **N2 = A:** name + message text by default (decrypted on the device), changeable in Settings.
 
-**Prerequisite for LIME-102:**
+**Amendment (the user, 2026-10-07): go ahead WITHOUT the chime file.**
+- Build everything except the custom sound.
+- **The Sound setting offers "Default" (the iOS system sound) and "None" for now.** The in-app arrival sound uses the system default.
+- **Leave a single, documented hook** (`ios/Lime/Resources/Sounds/`, a README note naming `lime-chime.caf` and the conversion command) so adding the user's file later is a 1-line change that adds "Lime chime" as an option and makes it the default.
+- **Don't synthesise or bundle any placeholder sound.**
+
+**(Superseded) Prerequisite for LIME-102:**
 - the user provides the chime file (≤ 2 s; WAV/AIFF/CAF; mono is fine; they must own the rights).
 - **If it isn't provided when LIME-102 starts, tend stops and asks.** It must not synthesise a placeholder (the user chose A).
 - Tend converts it to `lime-chime.caf` (linear PCM or IMA4, ≤ 30 s as Apple requires) at `ios/Lime/Resources/Sounds/`.
