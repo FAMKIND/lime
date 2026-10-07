@@ -125,3 +125,10 @@ Debug builds only (launch arguments): `-lime-skip-sign-in` (signed in with no ba
 - A phone that signs in with no keys (after signing out, or a new phone) **replaces the account's keys**; a contact is asked to **Accept new key** in the chat before messages move again, and a message that was waiting for the old phone says **Not delivered. Tap to resend**. See `docs/api-v2.md` section 11.
 - Avatar colours come from the user id alone (`AvatarTone`), the same everywhere and on every phone.
 - `-lime-demo-screen key-change` / `session-ended` open those states in the in-memory demo.
+
+## Search (LIME-99)
+
+- **Messages:** the magnifier in the header opens search: one field, then **Chats** (a name or title that matches) and **Messages** (the words in context, matched words in bold). Matching is by word prefix and ignores case and accents ("cafe" finds "Café"). Tap a message to open its chat scrolled to it, with the message outlined for a moment.
+- **In a chat:** the magnifier in the chat header opens a find bar: "3 of 12" with up (older) and down (newer) arrows and Done. It starts at the newest match.
+- **It never leaves the phone.** The search runs in LimeCore over an FTS5 index inside the encrypted database; no search function takes a network transport, and a test checks that searching makes no request. The screen says so.
+- `-lime-demo-screen search | search-name | chat-focus | chat-find` open these states in the in-memory demo.

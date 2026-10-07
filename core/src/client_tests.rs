@@ -580,3 +580,31 @@ fn key_info_gives_a_stable_short_fingerprint_and_the_day_the_keys_were_made() {
     let (bob, _) = party(&server, "bob", 2);
     assert_ne!(bob.store.key_info().unwrap().unwrap().fingerprint, info.fingerprint, "each account has its own");
 }
+
+// ---------------------------------------------------------------- LIME-99: search stays on the device
+
+#[test]
+fn searching_never_calls_the_server() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    server.state.lock().unwrap().profiles.insert("alice".into(), ("Alice A".into(), None));
+    say(&alice, &bob, &transport, "the field trip is on friday");
+    sync(&bob, &transport);
+    say(&alice, &bob, &transport, "friday again");
+    sync(&bob, &transport);
+
+    let before = server.state.lock().unwrap().calls;
+    let hits = bob.store.search_messages("friday".into(), None, 20).unwrap();
+    assert_eq!(hits.len(), 2, "both received messages are searchable");
+    assert_eq!(bob.store.search_messages("trip".into(), Some(format!("dm:{}", alice.user)), 20).unwrap().len(), 1);
+    assert_eq!(bob.store.search_conversations("alice".into()).unwrap().len(), 1, "found by the name from her profile");
+    let mine = alice.store.search_messages("friday".into(), None, 20).unwrap();
+    assert_eq!(mine.len(), 2);
+    assert!(mine.iter().all(|h| h.from_me));
+    assert_eq!(
+        server.state.lock().unwrap().calls,
+        before,
+        "search made no request: it reads only the local database"
+    );
+}

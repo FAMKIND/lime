@@ -81,3 +81,7 @@ The simulator build is Apple-silicon only (`aarch64-apple-ios-sim`); the iOS pro
 ## Licences
 
 See [`THIRD_PARTY.md`](./THIRD_PARTY.md).
+
+## Search (LIME-99)
+
+`search_messages(query, conversation_id?, limit)` and `search_conversations(query)` read only the local database; neither takes a transport. Messages are indexed in an **FTS5** table (`message_fts`, migration 7) inside the SQLCipher file, kept in step by triggers on insert, edit and delete and filled from existing messages by the migration. The tokenizer is `unicode61` with `remove_diacritics 2`, so matching is case- and accent-insensitive; every typed word is a prefix and all must match; punctuation is dropped before the query is built, so typing cannot produce FTS syntax. Results across chats are best match first, then newest; inside one chat they are oldest first (for stepping). A snippet marks matched words with U+E000 and U+E001. Blocked conversations are never searched. FTS5 was already compiled into the bundled SQLCipher (`libsqlite3-sys` sets `SQLITE_ENABLE_FTS5`), so nothing was added to the build; `PRAGMA temp_store = MEMORY` keeps temporary tables off disk. Conversations are found through a throwaway in-memory FTS table of titles and people's names.

@@ -2,10 +2,22 @@ import SwiftUI
 
 struct ChatView: View {
     let conversationID: Conversation.ID
+    /// Opened from a search result: scroll to this message and highlight it for a moment.
+    var focusMessageID: String? = nil
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
     @State private var confirmingBlock = false
+    // In-chat find (the header's magnifier): the matches, which one is current, and where to scroll.
+    @State private var finding = false
+    @State private var findQuery = ""
+    @State private var findHits: [MessageHit] = []
+    @State private var findIndex = 0
+    @State private var highlightedID: String?
+    @State private var scrollRequest: ScrollRequest?
+    @FocusState private var findFocused: Bool
+
+    struct ScrollRequest: Equatable { let id: String; let token = UUID() }
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -29,12 +41,14 @@ struct ChatView: View {
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
         }
         .safeAreaBar(edge: .bottom) { bottomBar(conversation) }
+        .safeAreaInset(edge: .top) { if finding { findBar }  }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { titlePill(conversation) }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { store.comingSoon("Search in chat") } label: { Image(systemName: "magnifyingglass") }
+                Button { startFinding() } label: { Image(systemName: "magnifyingglass") }
                     .accessibilityLabel("Search in chat")
+                    .accessibilityIdentifier("chat-search-button")
                 Button { store.comingSoon("Call") } label: { Image(systemName: "phone") }
                     .accessibilityLabel("Call")
                 Button { store.comingSoon("More") } label: { Image(systemName: "ellipsis") }
@@ -52,6 +66,7 @@ struct ChatView: View {
         }
         .overlay(alignment: .top) { TopFade() }
         .overlay(alignment: .top) { header(conversation) }
+        .overlay(alignment: .top) { if finding { findBar.padding(.top, 62) } }
         .safeAreaInset(edge: .bottom) { bottomBar(conversation) }
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
@@ -78,6 +93,7 @@ struct ChatView: View {
                                           showAvatar: showAvatar,
                                           showName: showAvatar && conversation.isGroup,
                                           showState: message.isOwn && (message.state != .sent || message.id == lastOwnID),
+                                          highlighted: highlightedID == message.id,
                                           onRetry: { Task { await store.resend(message.id) } })
                                 .padding(.bottom, 8)
                         }
@@ -92,6 +108,25 @@ struct ChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
             .refreshable { await store.syncNow() }
+            .onChange(of: scrollRequest) { _, request in
+                guard let request else { return }
+                withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(request.id, anchor: .center) }
+            }
+            #if DEBUG
+            .task {
+                // Screenshots: open with the find bar already typed.
+                if let typed = store.demoQuery, focusMessageID == nil { startFinding(); findQuery = typed }
+            }
+            #endif
+            .task {
+                // Opened from a search result: land on the message, highlight it, then let it fade.
+                guard let focusMessageID else { return }
+                try? await Task.sleep(for: .milliseconds(250))
+                highlightedID = focusMessageID
+                scrollRequest = ScrollRequest(id: focusMessageID)
+                try? await Task.sleep(for: .seconds(4))
+                if highlightedID == focusMessageID && !finding { withAnimation { highlightedID = nil } }
+            }
             .onChange(of: conversation.messages.count) {
                 withAnimation { proxy.scrollTo("bottom") }
                 // A message that arrives while the chat is open is read.
@@ -122,6 +157,80 @@ struct ChatView: View {
         .accessibilityIdentifier("chat-title")
     }
 
+    // MARK: Find in this chat
+
+    private func startFinding() {
+        finding = true
+        findFocused = true
+    }
+
+    private func stopFinding() {
+        finding = false
+        findQuery = ""
+        findHits = []
+        highlightedID = nil
+    }
+
+    private func step(by delta: Int) {
+        let next = findIndex + delta
+        guard findHits.indices.contains(next) else { return }
+        findIndex = next
+        show(findHits[next])
+    }
+
+    private func show(_ hit: MessageHit) {
+        highlightedID = hit.messageID
+        scrollRequest = ScrollRequest(id: hit.messageID)
+    }
+
+    /// The field, "3 of 12", the arrows (up is older) and Done.
+    private var findBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.textSecondary)
+            TextField("Find in chat", text: $findQuery)
+                .font(Theme.body)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($findFocused)
+                .accessibilityIdentifier("find-field")
+                .task(id: findQuery) {
+                    let wanted = findQuery
+                    guard !wanted.trimmingCharacters(in: .whitespaces).isEmpty else { findHits = []; highlightedID = nil; return }
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    let hits = await store.findInChat(wanted, in: conversationID)
+                    guard !Task.isCancelled else { return }
+                    findHits = hits
+                    findIndex = max(hits.count - 1, 0) // start at the newest match
+                    if let last = hits.last { show(last) } else { highlightedID = nil }
+                }
+            Text(findStatus)
+                .font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                .accessibilityIdentifier("find-count")
+            Button { step(by: -1) } label: { Image(systemName: "chevron.up").frame(width: 32, height: 36) }
+                .disabled(findIndex <= 0 || findHits.isEmpty)
+                .accessibilityLabel("Previous match").accessibilityIdentifier("find-up")
+            Button { step(by: 1) } label: { Image(systemName: "chevron.down").frame(width: 32, height: 36) }
+                .disabled(findIndex >= findHits.count - 1 || findHits.isEmpty)
+                .accessibilityLabel("Next match").accessibilityIdentifier("find-down")
+            Button("Done") { stopFinding() }
+                .font(Theme.secondary.weight(.semibold))
+                .accessibilityIdentifier("find-done")
+        }
+        .foregroundStyle(Theme.text)
+        .padding(.horizontal, 14).frame(minHeight: 48)
+        .limeGlass(in: Capsule())
+        .padding(.horizontal, 12).padding(.vertical, 4)
+    }
+
+    /// "3 of 12", "No matches", or nothing before anything is typed.
+    private var findStatus: String {
+        if findQuery.trimmingCharacters(in: .whitespaces).isEmpty { return "" }
+        if findHits.isEmpty { return "No matches" }
+        return "\(findIndex + 1) of \(findHits.count)"
+    }
+
     // MARK: Header
 
     private func header(_ conversation: Conversation) -> some View {
@@ -144,7 +253,11 @@ struct ChatView: View {
             Spacer(minLength: 0)
 
             HStack(spacing: 0) {
-                glassIcon("magnifyingglass", label: "Search in chat")
+                Button { startFinding() } label: {
+                    Image(systemName: "magnifyingglass").font(.system(size: 18)).foregroundStyle(Theme.text).frame(width: 44, height: 48)
+                }
+                .accessibilityLabel("Search in chat")
+                .accessibilityIdentifier("chat-search-button")
                 glassIcon("phone", label: "Call")
                 glassIcon("ellipsis", label: "More")
             }
@@ -296,6 +409,8 @@ struct MessageBubble: View {
     let showName: Bool
     /// Own messages say "Sending…" or "Sent" (the last one always; others only while unsettled).
     var showState: Bool = false
+    /// The message a search or find landed on.
+    var highlighted: Bool = false
     var onRetry: () -> Void = {}
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 36
 
@@ -322,7 +437,16 @@ struct MessageBubble: View {
                         RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
                             .strokeBorder(message.isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5)
                     )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
+                            .strokeBorder(Theme.accent, lineWidth: highlighted ? 3 : 0)
+                    )
+                    .animation(.easeInOut(duration: 0.2), value: highlighted)
                     .accessibilityIdentifier(message.isOwn ? "own-bubble" : "other-bubble")
+                    .overlay(alignment: .topLeading) {
+                        // For assistive tools and UI tests: which message a search or find landed on.
+                        if highlighted { Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("match-marker-\(message.id)") }
+                    }
                 HStack(spacing: 4) {
                     Text(MessageFormat.clock(message.date))
                     if showState {

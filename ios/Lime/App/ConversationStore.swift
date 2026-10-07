@@ -7,7 +7,7 @@ struct BackendLink: Sendable {
 }
 
 /// Where the navigation stack can be sent besides a chat.
-enum MessagesRoute: Hashable { case requests }
+enum MessagesRoute: Hashable { case requests, search }
 
 /// The app's view of its conversations. The data lives in LimeCore's encrypted local store; every
 /// store call runs off the main thread and the UI updates here, on the main actor. Once the phone is
@@ -222,6 +222,44 @@ final class ConversationStore {
         await reload()
     }
 
+    // MARK: Search (on this phone only: nothing here touches the network)
+
+    /// Chats whose name or title match, then messages whose text does.
+    func search(_ query: String) async -> SearchResults {
+        #if DEBUG
+        if isDemo { return demoSearch(query) }
+        #endif
+        guard let core else { return SearchResults() }
+        let found = try? await Task.detached(priority: .userInitiated) {
+            (try core.searchConversations(query: query), try core.searchMessages(query: query, conversationId: nil, limit: 60))
+        }.value
+        guard let (chatMatches, hits) = found else { return SearchResults() }
+        let byID = Dictionary(uniqueKeysWithValues: conversations.map { ($0.id, $0) })
+        return SearchResults(
+            chats: chatMatches.compactMap { byID[$0.conversationId] },
+            messages: hits.map { hit in
+                MessageHit(messageID: hit.messageId, conversationID: hit.conversationId,
+                           conversationTitle: byID[hit.conversationId]?.title ?? "", marked: hit.snippet,
+                           date: Date(timeIntervalSince1970: Double(hit.time) / 1000), fromMe: hit.fromMe)
+            })
+    }
+
+    /// The matches inside one chat, oldest first (for "3 of 12" and the up and down arrows).
+    func findInChat(_ query: String, in id: Conversation.ID) async -> [MessageHit] {
+        #if DEBUG
+        if isDemo { return demoSearch(query, only: id).messages }
+        #endif
+        guard let core else { return [] }
+        let title = conversation(id)?.title ?? ""
+        let hits = (try? await Task.detached(priority: .userInitiated) {
+            try core.searchMessages(query: query, conversationId: id, limit: 500)
+        }.value) ?? []
+        return hits.map {
+            MessageHit(messageID: $0.messageId, conversationID: $0.conversationId, conversationTitle: title, marked: $0.snippet,
+                       date: Date(timeIntervalSince1970: Double($0.time) / 1000), fromMe: $0.fromMe)
+        }
+    }
+
     // MARK: Settings: blocked people and this device's keys
 
     /// The people you blocked, for Settings.
@@ -407,6 +445,7 @@ final class ConversationStore {
         let now = Date()
         let ada = Person(id: "ada", name: "Ada Lovelace")
         let sam = Person(id: "sam", name: "Sam Park")
+        let lee = Person(id: "lee", name: "Lee Wong")
         conversations = [
             Conversation(id: "dm:ada", title: ada.name, members: [ada], messages: [
                 Message(id: "d1", senderID: "ada", text: "Hello! Do you have the field trip forms?", date: now.addingTimeInterval(-600)),
@@ -415,6 +454,14 @@ final class ConversationStore {
                 Message(id: "s1", senderID: "sam", text: "Are you coming to the staff meeting?", date: now.addingTimeInterval(-3600)),
                 Message(id: "s2", senderID: nil, text: "Yes, see you there", date: now.addingTimeInterval(-3000), state: .sent),
                 Message(id: "s3", senderID: nil, text: "Bringing the new schedule", date: now.addingTimeInterval(-60), state: .sending),
+            ]),
+            Conversation(id: "dm:lee", title: lee.name, members: [lee], messages: [
+                Message(id: "l1", senderID: "lee", text: "Can we plan the fractions lesson together?", date: now.addingTimeInterval(-90_000)),
+                Message(id: "l2", senderID: nil, text: "Yes! I'll draft the lesson outline tonight", date: now.addingTimeInterval(-89_000), state: .sent),
+                Message(id: "l3", senderID: "lee", text: "Great. Should the lesson start with a warm-up?", date: now.addingTimeInterval(-88_000)),
+                Message(id: "l4", senderID: nil, text: "A short one, five minutes", date: now.addingTimeInterval(-87_000), state: .sent),
+                Message(id: "l5", senderID: "lee", text: "Perfect. Lesson plans are due Friday", date: now.addingTimeInterval(-86_000)),
+                Message(id: "l6", senderID: nil, text: "I'll send the lesson plan over in the morning", date: now.addingTimeInterval(-85_000), state: .sent),
             ]),
         ]
         isLoaded = true
@@ -428,6 +475,10 @@ final class ConversationStore {
             conversations[1].messages[1].state = .undelivered
             path.append("dm:sam")
         case "session-ended": problem = .sessionEnded
+        case "search": demoQuery = "lesson"; path.append(MessagesRoute.search)
+        case "search-name": demoQuery = "lee"; path.append(MessagesRoute.search)
+        case "chat-focus": path.append(ChatTarget(conversationID: "dm:lee", messageID: "l3"))
+        case "chat-find": demoQuery = "lesson"; path.append("dm:lee")
         case "new-message", "new-message-found": demoSheet = screen
         default:
             // "settings", "settings/profile", "settings/profile/edit-about", "settings/privacy/blocked", ...
@@ -440,6 +491,9 @@ final class ConversationStore {
 
     /// Debug demo: where Settings opens (route names, e.g. ["profile", "edit-about"]).
     private(set) var demoSettingsRoute: [String] = []
+
+    /// Debug demo: a search or find that is already typed (for screenshots).
+    private(set) var demoQuery: String?
 
     /// Debug demo: a screen that opens as a sheet.
     private(set) var demoSheet: String?
@@ -457,6 +511,26 @@ final class ConversationStore {
                 conversations[c].messages[m].state = .sent
             }
         }
+    }
+
+    /// The demo's search: the same word matching, over the in-memory conversations.
+    private func demoSearch(_ query: String, only id: String? = nil) -> SearchResults {
+        var results = SearchResults()
+        guard !SearchText.words(query).isEmpty else { return results }
+        for conversation in conversations where !conversation.isRequest || id != nil {
+            if id == nil && SearchText.matches(([conversation.title] + conversation.members.map(\.name)).joined(separator: " "), query: query) {
+                results.chats.append(conversation)
+            }
+            guard id == nil || id == conversation.id else { continue }
+            for message in conversation.messages where SearchText.matches(message.text, query: query) {
+                results.messages.append(MessageHit(
+                    messageID: message.id, conversationID: conversation.id, conversationTitle: conversation.title,
+                    marked: SearchText.mark(message.text, query: query), date: message.date, fromMe: message.isOwn))
+            }
+        }
+        results.messages.sort { $0.date < $1.date }
+        if id == nil { results.messages.reverse() }
+        return results
     }
 
     private func demoResend(_ messageID: String) {

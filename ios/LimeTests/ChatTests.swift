@@ -72,12 +72,12 @@ final class ChatTests: XCTestCase {
         let store = ConversationStore()
         store.loadDemo()
         XCTAssertEqual(store.requests.map(\.id), ["dm:ada"])
-        XCTAssertEqual(store.chats.map(\.id), ["dm:sam"])
+        XCTAssertEqual(store.chats.map(\.id), ["dm:sam", "dm:lee"])
         await store.accept("dm:ada")
         XCTAssertTrue(store.requests.isEmpty)
-        XCTAssertEqual(Set(store.chats.map(\.id)), ["dm:ada", "dm:sam"])
+        XCTAssertEqual(Set(store.chats.map(\.id)), ["dm:ada", "dm:sam", "dm:lee"])
         await store.block("dm:ada")
-        XCTAssertEqual(store.chats.map(\.id), ["dm:sam"])
+        XCTAssertEqual(store.chats.map(\.id), ["dm:sam", "dm:lee"])
     }
 
     @MainActor

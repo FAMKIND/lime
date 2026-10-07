@@ -24,6 +24,8 @@ pub(crate) struct ServerState {
     pub emails: HashMap<String, String>,
     /// user id to (display name, username)
     pub profiles: HashMap<String, (String, Option<String>)>,
+    /// How many requests have been made to this server (a test of "nothing leaves the device").
+    pub calls: usize,
     /// Make every `send` fail with a 500 while true.
     pub fail_sends: bool,
     /// sender user to hashes of identified items that were deleted undelivered
@@ -107,6 +109,7 @@ impl Transport for FakeServer {
                 .to_owned()
         };
         let mut state = self.state.lock().unwrap();
+        state.calls += 1;
 
         match function.as_str() {
             "devices-register" => {

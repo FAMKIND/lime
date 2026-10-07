@@ -118,6 +118,89 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["problem-sign-in"].exists)
     }
 
+    // MARK: Search (LIME-99)
+
+    func testSearchFindsAChatAndAMessageAndOpensTheChatAtTheMessage() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["messages-search-button"].waitForExistence(timeout: 10))
+        app.buttons["messages-search-button"].tap()
+        XCTAssertTrue(app.staticTexts["search-hint"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["search-hint"].exists)
+        let field = app.textFields["search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("lee")
+        XCTAssertTrue(app.buttons["search-chat-dm:lee"].waitForExistence(timeout: 5), "a chat found by name")
+
+        app.buttons["search-clear"].tap()
+        field.typeText("lesson")
+        let hit = app.buttons["search-message-l3"]
+        XCTAssertTrue(hit.waitForExistence(timeout: 5), "messages found by a word in them")
+        XCTAssertTrue(hit.label.contains("Lee Wong"))
+        hit.tap()
+        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(title.label.contains("Lee Wong"))
+        XCTAssertTrue(app.otherElements["match-marker-l3"].waitForExistence(timeout: 5), "the chat opens at the message and highlights it")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'warm-up'")).firstMatch.exists, "and that message is on screen")
+    }
+
+    func testSearchSaysWhenNothingMatches() {
+        let app = demoApp()
+        app.launch()
+        app.buttons["messages-search-button"].tap()
+        let field = app.textFields["search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("zebra")
+        XCTAssertTrue(app.staticTexts["search-none"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["search-none"].label, "No results for “zebra”")
+        app.buttons["search-back"].tap()
+        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
+    }
+
+    func testFindInChatStepsThroughTheMatches() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["conversation-row-dm:lee"].waitForExistence(timeout: 10))
+        app.buttons["conversation-row-dm:lee"].tap()
+        XCTAssertTrue(app.buttons["chat-search-button"].waitForExistence(timeout: 5))
+        app.buttons["chat-search-button"].tap()
+        let field = app.textFields["find-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("lesson")
+        let count = app.staticTexts["find-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5))
+        expectation(for: NSPredicate(format: "label == '5 of 5'"), evaluatedWith: count)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["find-down"].isEnabled, "already at the newest")
+        app.buttons["find-up"].tap()
+        expectation(for: NSPredicate(format: "label == '4 of 5'"), evaluatedWith: count)
+        waitForExpectations(timeout: 5)
+        app.buttons["find-up"].tap(); app.buttons["find-up"].tap(); app.buttons["find-up"].tap()
+        expectation(for: NSPredicate(format: "label == '1 of 5'"), evaluatedWith: count)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["find-up"].isEnabled, "already at the oldest")
+        app.buttons["find-down"].tap()
+        expectation(for: NSPredicate(format: "label == '2 of 5'"), evaluatedWith: count)
+        waitForExpectations(timeout: 5)
+
+        app.buttons["find-done"].tap()
+        XCTAssertTrue(app.staticTexts["find-count"].waitForNonExistence(timeout: 5), "Done closes the find bar")
+    }
+
+    func testFindInChatSaysWhenThereAreNoMatches() {
+        let app = demoApp()
+        app.launch()
+        app.buttons["conversation-row-dm:lee"].tap()
+        app.buttons["chat-search-button"].tap()
+        let field = app.textFields["find-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("zebra")
+        XCTAssertTrue(app.staticTexts["find-count"].waitForExistence(timeout: 5))
+        expectation(for: NSPredicate(format: "label == 'No matches'"), evaluatedWith: app.staticTexts["find-count"])
+        waitForExpectations(timeout: 5)
+    }
+
     // MARK: Settings (LIME-98)
 
     private func openSettings(_ app: XCUIApplication) {

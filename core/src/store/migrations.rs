@@ -99,6 +99,27 @@ const MIGRATIONS: &[&str] = &[
     // gets the day it was upgraded: the exact earlier time was never recorded.
     "ALTER TABLE account ADD COLUMN created_at INTEGER;
      UPDATE account SET created_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000;",
+    // 7: on-device search (LIME-99). An FTS5 index over message text, inside this encrypted database
+    // (so it is encrypted at rest like everything else), kept in step by triggers on insert, edit and
+    // delete, and filled from the messages already here. unicode61 with remove_diacritics makes it
+    // case- and diacritic-insensitive. The text is stored twice (here and in `messages`): a few
+    // kilobytes per hundred messages, for a search that never leaves the phone.
+    "CREATE VIRTUAL TABLE message_fts USING fts5(
+         body,
+         message_id UNINDEXED,
+         conversation_id UNINDEXED,
+         tokenize = 'unicode61 remove_diacritics 2'
+     );
+     INSERT INTO message_fts (body, message_id, conversation_id) SELECT body, id, conversation_id FROM messages;
+     CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
+         INSERT INTO message_fts (body, message_id, conversation_id) VALUES (new.body, new.id, new.conversation_id);
+     END;
+     CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
+         DELETE FROM message_fts WHERE message_id = old.id;
+     END;
+     CREATE TRIGGER messages_fts_update AFTER UPDATE OF body, conversation_id ON messages BEGIN
+         UPDATE message_fts SET body = new.body, conversation_id = new.conversation_id WHERE message_id = old.id;
+     END;",
 ];
 
 /// The schema version this build writes.

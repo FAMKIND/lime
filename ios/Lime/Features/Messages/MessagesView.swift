@@ -53,8 +53,9 @@ struct MessagesView: View {
                 .accessibilityHint("Press and hold for About Lime")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { store.comingSoon("Search") } label: { Image(systemName: "magnifyingglass") }
+                Button { store.path.append(MessagesRoute.search) } label: { Image(systemName: "magnifyingglass") }
                     .accessibilityLabel("Search")
+                    .accessibilityIdentifier("messages-search-button")
                 Button { showSettings = true } label: { AvatarView(person: session.mePerson, size: 30) }
                     .accessibilityLabel("Settings")
                     .accessibilityIdentifier("settings-button")
@@ -281,13 +282,14 @@ private struct TopControls: View {
             #endif
             Spacer()
             HStack(spacing: 12) {
-                Button { store.comingSoon("Search") } label: {
+                Button { store.path.append(MessagesRoute.search) } label: {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(Theme.text)
                         .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Search")
+                .accessibilityIdentifier("messages-search-button")
                 Button(action: onSettings) {
                     AvatarView(person: session.mePerson, size: 36)
                 }

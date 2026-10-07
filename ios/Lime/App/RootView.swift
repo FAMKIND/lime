@@ -34,8 +34,14 @@ private struct SignedInView: View {
                 .navigationDestination(for: Conversation.ID.self) { id in
                     ChatView(conversationID: id)
                 }
-                .navigationDestination(for: MessagesRoute.self) { _ in
-                    RequestsView()
+                .navigationDestination(for: ChatTarget.self) { target in
+                    ChatView(conversationID: target.conversationID, focusMessageID: target.messageID)
+                }
+                .navigationDestination(for: MessagesRoute.self) { route in
+                    switch route {
+                    case .requests: RequestsView()
+                    case .search: MessageSearchScreen()
+                    }
                 }
         }
         .tint(Theme.text)

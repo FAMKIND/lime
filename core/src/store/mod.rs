@@ -13,7 +13,10 @@ pub(crate) mod account;
 mod migrations;
 pub(crate) mod order;
 pub(crate) mod pending;
+pub(crate) mod search;
 mod sample;
+#[cfg(test)]
+mod search_tests;
 #[cfg(test)]
 mod tests;
 
@@ -493,7 +496,8 @@ impl LimeStore {
             return Err(StoreError::EncryptionUnavailable);
         }
 
-        conn.execute_batch("PRAGMA foreign_keys = ON;")
+        // Nothing, not even a temporary search table, is written to a file outside the encrypted database.
+        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;")
             .map_err(db_err)?;
         migrations::run(&conn)?;
         Ok(Self {
