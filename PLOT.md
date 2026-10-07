@@ -114,6 +114,17 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**Update: LIME-94-fix landed as `8d21e18`** (pushed and verified; no project ref).
+- **Root cause:** staging sent 8-digit OTPs while the app and `code-verify` took exactly 6. The user set staging to 6; the code now accepts 6–8.
+- **Also fixed:** the sign-up resend for unconfirmed accounts (a migration; local `enable_confirmations` on); send failures and rate limits are surfaced; stale errors are cleared.
+- **The visuals:** Next in the accent green; the welcome screen with the new `lime-logo.svg` (committed), no grey circle, "Connect All Teachers" / "A secure messenger made for teachers." Plot reviewed the screenshots: good.
+- `supabase/check-staging-settings.sh` compares `otp_length` and `enable_confirmations` (read-only).
+- **Remaining: the user's real-email gate on the phone** (tend can't read the inbox).
+- **After it passes:** LIME-95 (New message + the first phone↔simulator chat).
+- **Xcode GUI shows 2 warnings** in `OnboardingScreens` that tend's `xcodebuild` runs missed: "Cannot use generic class 'Autoconnect'" and "Cannot use enum 'Publishers' in a property declaration member of a type not marked…" (probably availability/`@MainActor`/Sendable around `Timer.publish(...).autoconnect()` for the resend countdown).
+  - They're warnings only and don't block running.
+  - **Fold into the next brief:** fix them (e.g. replace the `Timer` publisher with a `.task` loop or `TimelineView`). Also, the "no warnings" check must match what Xcode shows (build for a device destination too, or parse all warnings, not just the Lime target's compile).
+
 **Update: LIME-94 landed as `461110e`** (pushed and verified; no project ref in HEAD).
 - **2FA is enforced by the Edge Functions** with per-session records of both checks, since Supabase Auth can't require both.
 - `identify` replaces `username-resolve`.
@@ -1297,7 +1308,73 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-94-fix → `tend` (lime-aa) (next): emailed codes are rejected on staging; stale error messages
+### LIME-95 → `tend` (lime-aa) (after the user's LIME-94-fix phone gate): New message and the first real 1:1 encrypted chat (iPhone ↔ simulator)
+**What it does:** makes Lime useful between two real accounts:
+- **New message** finds a teacher by **exact username or email**, opens a DM, and sends **end-to-end encrypted** messages.
+- The other device receives them **live while the app is open**.
+- Replies flow back. Both sides persist across restarts.
+
+**The gate:** the user's iPhone (`shem@`) and the simulator (`jean@`) chat with each other through staging. It also cleans up the Xcode warnings that tend's checks missed.
+
+**Plot's scope decisions (no new decisions for the user):**
+- **Identified Olm sends only**, as in LIME-93/94; **sealed sends and delivery keys are LIME-96**.
+- Because of that, **every first message from a new person lands in Requests**, per `api-v2.md` §4 + D7. The minimum UI for this brief:
+  - a **"Requests" row** at the top of Messages when any exist;
+  - opening one shows the messages plus **Accept** / **Block**;
+  - **Accept** moves it into Messages;
+  - **Block** hides it and stops showing that sender's messages locally.
+  - The server-side block (delivery-key rotation) comes with LIME-96.
+- **Live delivery while open:** subscribe to the device's Realtime channel (`device:<id>`, the "new items" nudge only), then sync. **Also sync on app foreground and on pull-to-refresh.** There is no push yet.
+- **Message ordering:** use `hlc` + `parents[]` per `api-v2.md` §5 for display order.
+- **DM display names:** the other person's profile display name via an authenticated `profile-get` for other users, which returns **public fields only** (display name, username, school, `hide_from_search` respected); never email or phone.
+- **Search** (in New message): exact username **or** exact email (reuse `identify`/`users-lookup` rules; never list or partial-match yet). "No teacher found with that username or email" otherwise.
+- **Delivery states in the bubble:** "Sending…" → "Sent" (server accepted). No read receipts yet.
+
+**Capabilities assumed:** edit files, `cargo`, the Supabase CLI, deploy functions/migrations to staging **without `config push`**, XcodeGen, `xcodebuild`, commit, push. Stop and ask the user if anything needs a dashboard change or a paid plan.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):** `docs/api-v2.md` (§§3–5, 7, 11), `core/` (the client, the store, `pending_inbound`), `supabase/functions/` (`send`, the mailbox, `profile-get`, `identify`, `users-lookup`), `ios/` (Messages, Chat, the empty-state cards, the onboarding timer). Find the two Xcode warnings in `OnboardingScreens` ("Cannot use generic class 'Autoconnect'…", "Cannot use enum 'Publishers'…") and **why tend's previous "no warnings" checks missed them**. If anything contradicts `api-v2.md`, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Server:**
+   - a public-profile read for other users (public fields only; rate-limited);
+   - **confirm Realtime nudges work on staging** for a device channel, and the client may only subscribe to **its own** channel (Realtime authorisation);
+   - tests; deploy.
+2. **Core:**
+   - `start_dm(...)` / `send_text(...)` reuse the identified Olm path;
+   - `sync` assigns received messages to the DM with the sender, and marks **new senders as requests** (a `request_state` on the conversation: `pending` / `accepted` / `blocked`);
+   - `accept_request` / `block_sender` (local);
+   - HLC + parents ordering;
+   - tests for ordering, requests, blocking (a blocked sender's new messages stay hidden) and `pending_inbound` interplay.
+3. **iOS:**
+   - the **New message** card and the "+" button open a sheet: one field (username or email) → Find → the person's name and school → **Message**.
+   - **Chat** sends real messages; the bubble state goes Sending… → Sent.
+   - **Live receive** via Realtime while in the foreground; sync on foreground and on pull-to-refresh.
+   - **Requests** row and screen (Accept / Block).
+   - The "Invite a teacher" card stays "Coming next".
+   - **Fix the two warnings** (e.g. replace the `Timer` publisher with a `.task` countdown loop).
+4. **Warnings check:** the verification must catch what the Xcode GUI shows. Build **for a device destination and a simulator**, and fail on **any** warning in Lime's own sources (excluding the generated UniFFI code), including Swift 6 concurrency/availability diagnostics.
+
+**Out of scope:** sealed sends/delivery keys (LIME-96), groups/Megolm, push/APNs, attachments, typing/read receipts, partial-name directory search, contacts, Android, `public/`, `server/`.
+
+**Phase 3: verification.**
+- `./supabase/test.sh`, `cargo test` (+ integration local and staging), clippy, iOS tests on the three simulators: all pass; **0 warnings** by the stricter check.
+- **The two-simulator e2e** (local stack): A finds B by username → sends → B sees it **in Requests** live → Accept → B replies → A receives it live → restart both → the history persists in order. Block test: B blocks A; A's next message is not shown to B.
+- **Staging e2e** with two throwaway accounts (create/delete via the admin API; respect the 30s email interval; never read real inboxes).
+- Screenshots: New message sheet, Requests, a chat with Sending/Sent, light and dark at 375pt.
+- No secrets in git.
+
+**Gate (the user):**
+- Sign in on the **iPhone as shem@** and on the **simulator as jean@**. Tend explains how to sign the simulator in, since Jean's codes go to the jean@ inbox.
+- From the iPhone, **New message → Jean's username → send "hello"**: it appears on the simulator **within a few seconds** under Requests → Accept → reply → the reply appears on the iPhone.
+- Close and reopen both: the chat is still there.
+
+**Record:** a `## LIME-95` entry in `TEND.md`. Commit: `feat: New message, requests, live encrypted 1:1 chat (identified Olm), warning-clean build`, trailer `Brief: LIME-95`, plus the attribution trailer. **Push.** Stop for the user's check. No /loop wakeups.
+
+---
+
+### LIME-94-fix → `tend` (lime-aa) (landed as `8d21e18`): emailed codes are rejected on staging; stale error messages
 **What it does:** fixes the LIME-94 gate failure (the user's iPhone, 2026-10-06).
 - **Sign-up works.**
 - **But entering the emailed code fails** with "That code is not right. N tries left" during **sign-in** and **forgot password**.
