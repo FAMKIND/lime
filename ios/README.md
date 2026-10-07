@@ -118,3 +118,10 @@ Debug builds only (launch arguments): `-lime-skip-sign-in` (signed in with no ba
 - `./ios/check-warnings.sh`: builds everything (app and both test targets) **from clean**, for a **simulator and a device** destination (unsigned), and fails on **any** warning in Lime's own sources (not the generated UniFFI file). An incremental `xcodebuild` only prints warnings for files it recompiled, so use this, not a quick build, to say "no warnings".
 - `./ios/run-e2e-local.sh`: the real app code against the local stack, including two phones chatting live (the Realtime nudge), accepting, restarting and blocking.
 - `./ios/run-e2e-staging.sh`: the same two-phone conversation against staging with two throwaway accounts made and deleted through the admin API (no email, no inbox). The service key stays in that process's memory.
+
+## When something goes wrong (LIME-95-fix)
+
+- Messages says **why** Lime cannot reach the server, in true words: "Your session has ended. Please sign in again." (with a **Sign in** button; the chats and keys stay on the phone, so signing in again as the same person loses nothing), "You're offline", "Too many requests", or "Lime's server had a problem". "Check your connection" is only for a real connection failure. Debug builds log each request's method, path and HTTP status (no query, body or token) under the `app.lime` / `network` category in Console.app.
+- A phone that signs in with no keys (after signing out, or a new phone) **replaces the account's keys**; a contact is asked to **Accept new key** in the chat before messages move again, and a message that was waiting for the old phone says **Not delivered. Tap to resend**. See `docs/api-v2.md` section 11.
+- Avatar colours come from the user id alone (`AvatarTone`), the same everywhere and on every phone.
+- `-lime-demo-screen key-change` / `session-ended` open those states in the in-memory demo.

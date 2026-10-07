@@ -143,6 +143,10 @@ final class LocalBackendE2ETests: XCTestCase {
         let store: ConversationStore
         let session: AccountSession
         let location: StorageBootstrap.Location
+        /// How to sign this account in again (a new phone, or this one after signing out).
+        let email: String
+        let password: String
+        let userID: String
     }
 
     private func makePhone(_ stack: Stack, name: String) async throws -> Phone {
@@ -156,7 +160,7 @@ final class LocalBackendE2ETests: XCTestCase {
         let verified = try await service.setInitialPassword("a long enough password", tokens: codeOnly)
         let profile = try await service.saveProfile(ProfileDraft(displayName: name, username: username, school: "Test School"), tokens: verified)
 
-        return try await signIn(stack, service: service, tokens: verified, profile: profile, name: name, username: username)
+        return try await signIn(stack, service: service, tokens: verified, profile: profile, name: name, username: username, email: address, password: "a long enough password")
     }
 
     /// A throwaway account made through the admin API (the staging run): no email is involved. The
@@ -194,7 +198,7 @@ final class LocalBackendE2ETests: XCTestCase {
                               body: ["user_id": id, "display_name": name, "username": username, "school": "Test School"])
         let tokens = AuthTokens(accessToken: access, refreshToken: refresh, expiresAt: Date().addingTimeInterval(3000), userID: id)
         let profile = Profile(displayName: name, username: username, school: "Test School")
-        return try await signIn(stack, service: LiveAuthService(config: stack.config), tokens: tokens, profile: profile, name: name, username: username)
+        return try await signIn(stack, service: LiveAuthService(config: stack.config), tokens: tokens, profile: profile, name: name, username: username, email: email, password: password)
     }
 
     private nonisolated static func deleteUser(_ id: String, base: URL, key: String) async {
@@ -211,7 +215,7 @@ final class LocalBackendE2ETests: XCTestCase {
         return try XCTUnwrap(Data(base64Encoded: part))
     }
 
-    private func signIn(_ stack: Stack, service: LiveAuthService, tokens: AuthTokens, profile: Profile, name: String, username: String) async throws -> Phone {
+    private func signIn(_ stack: Stack, service: LiveAuthService, tokens: AuthTokens, profile: Profile, name: String, username: String, email: String, password: String) async throws -> Phone {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("lime-e2e-\(UUID().uuidString)", isDirectory: true)
         let location = StorageBootstrap.Location(directory: directory, keychainService: "app.lime.tests.chat.\(UUID().uuidString)")
         let sessionService = "app.lime.tests.chat.session.\(UUID().uuidString)"
@@ -225,7 +229,39 @@ final class LocalBackendE2ETests: XCTestCase {
         let session = AccountSession(auth: service, config: stack.config, store: store, sessionService: sessionService, defaults: suite)
         await session.completeSignIn(tokens: tokens, profile: profile)
         XCTAssertTrue(session.deviceRegistered, "\(name)'s device registered")
-        return Phone(name: name, username: username, store: store, session: session, location: location)
+        return Phone(name: name, username: username, store: store, session: session, location: location, email: email, password: password, userID: tokens.userID)
+    }
+
+    /// The account signs in again on a phone with NO keys (this one after signing out, or a new one):
+    /// its first registration there has new keys, so the server replaces the account's keys.
+    private func signInAgain(_ stack: Stack, _ old: Phone) async throws -> Phone {
+        let service = LiveAuthService(config: stack.config)
+        let profile = Profile(displayName: old.name, username: old.username, school: "Test School")
+        if let key = stack.serviceKey {
+            func post(_ path: String, key: String, body: [String: Any]) async throws -> [String: Any] {
+                var request = URLRequest(url: URL(string: stack.config.url.absoluteString + path)!)
+                request.httpMethod = "POST"
+                request.setValue(key, forHTTPHeaderField: "apikey")
+                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                let (data, _) = try await URLSession.shared.data(for: request)
+                return (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            }
+            let session = try await post("/auth/v1/token?grant_type=password", key: stack.config.apiKey, body: ["email": old.email, "password": old.password])
+            let access = try XCTUnwrap(session["access_token"] as? String)
+            let claims = try XCTUnwrap(try JSONSerialization.jsonObject(with: Self.jwtClaims(access)) as? [String: Any])
+            _ = try await post("/rest/v1/auth_proofs", key: key, body: ["session_id": try XCTUnwrap(claims["session_id"] as? String), "user_id": old.userID, "password_ok": true, "code_ok": true])
+            let tokens = AuthTokens(accessToken: access, refreshToken: try XCTUnwrap(session["refresh_token"] as? String), expiresAt: Date().addingTimeInterval(3000), userID: old.userID)
+            return try await signIn(stack, service: service, tokens: tokens, profile: profile, name: old.name, username: old.username, email: old.email, password: old.password)
+        }
+        try await Task.sleep(for: .milliseconds(1300)) // Auth sends at most one email a second to an address
+        let started = Date().addingTimeInterval(-2)
+        let step = try await service.signIn(identifier: old.email, password: old.password)
+        let code = try await emailedCode(stack, to: old.email, since: started)
+        try await service.verifySignInCode(code, tokens: step.tokens)
+        return try await signIn(stack, service: service, tokens: step.tokens, profile: profile, name: old.name, username: old.username, email: old.email, password: old.password)
     }
 
     /// Waits (polling the main actor) until `condition` holds.
@@ -264,7 +300,78 @@ final class LocalBackendE2ETests: XCTestCase {
         try await converse(ada, bob)
     }
 
+    /// Bob signs out (the phone forgets its keys) while Ada writes to him, then signs in again: new
+    /// keys replace his old ones, Ada hears her message was not delivered, accepts his new key and
+    /// resends, and they chat again. Runs locally (mail catcher) or on staging (admin API).
+    private func replacingKeys(_ stack: Stack) async throws {
+        let ada = stack.serviceKey != nil ? try await makeAdminPhone(stack, name: "Ada Lovelace") : try await makePhone(stack, name: "Ada Lovelace")
+        if stack.serviceKey == nil { try await Task.sleep(for: .milliseconds(1100)) }
+        var bob = stack.serviceKey != nil ? try await makeAdminPhone(stack, name: "Bob Brown") : try await makePhone(stack, name: "Bob Brown")
+
+        let found = try await ada.store.find("@\(bob.username)")
+        let person = try XCTUnwrap(found)
+        await ada.store.startChat(with: person)
+        let chat = "dm:\(person.userId)"
+        await ada.store.sendNow("hello Bob", in: chat)
+        await eventually("Bob gets the request") { bob.store.requests.count == 1 }
+        await bob.store.accept(try XCTUnwrap(bob.store.requests.first).id)
+
+        // Bob signs out (his keys are wiped). Ada writes; the server holds it for his old phone.
+        await bob.session.signOut()
+        await ada.store.sendNow("while you are away", in: chat)
+        XCTAssertEqual(ada.store.conversation(chat)?.messages.last?.state, .sent)
+
+        // Bob signs in again: a phone with new keys. The server replaces his keys.
+        bob = try await signInAgain(stack, bob)
+        XCTAssertTrue(bob.session.deviceRegistered, "a signed-in phone with new keys registers instead of being locked out")
+        XCTAssertNil(bob.store.problem)
+
+        // Ada hears that the message waiting for his old phone was never delivered.
+        await ada.store.syncNow()
+        XCTAssertEqual(ada.store.conversation(chat)?.messages.map(\.state), [.sent, .undelivered])
+
+        // Resending meets his new key: she is asked to accept it, does, and it goes.
+        let lost = try XCTUnwrap(ada.store.conversation(chat)?.messages.last)
+        await ada.store.resend(lost.id)
+        XCTAssertEqual(ada.store.conversation(chat)?.keyChangePending, true, "the chat asks to accept the new key")
+        await ada.store.trustKey(chat)
+        XCTAssertEqual(ada.store.conversation(chat)?.keyChangePending, false)
+        await eventually("Ada's resent message reaches Bob's new phone") { bob.store.requests.count == 1 }
+        XCTAssertEqual(bob.store.requests.first?.messages.map(\.text), ["while you are away"])
+        XCTAssertEqual(ada.store.conversation(chat)?.messages.last?.state, .sent)
+
+        // Bob accepts, replies; Ada (who accepted his new key) receives it live.
+        await bob.store.accept(try XCTUnwrap(bob.store.requests.first).id)
+        await bob.store.sendNow("I'm back", in: "dm:\(ada.userID)")
+        await eventually("Bob's reply reaches Ada live") { ada.store.conversation(chat)?.messages.last?.text == "I'm back" }
+
+        await ada.session.signOut()
+        await bob.session.signOut()
+    }
+
+    func testAPhoneWithNewKeysReplacesTheAccountKeysLocally() async throws {
+        let stack = try stack()
+        guard stack.mail != nil, stack.serviceKey == nil else { throw XCTSkip("The local run (mail catcher, no admin key).") }
+        try await replacingKeys(stack)
+    }
+
+    func testAPhoneWithNewKeysReplacesTheAccountKeysOnStaging() async throws {
+        let stack = try stack()
+        guard stack.serviceKey != nil else { throw XCTSkip("The staging run (./ios/run-e2e-staging.sh).") }
+        try await replacingKeys(stack)
+    }
+
     private func converse(_ ada: Phone, _ bob: Phone) async throws {
+
+        // An hour later: Ada's access token has expired. Two searches at once refresh it ONCE (a refresh
+        // token is single-use) and both work, on the same verified session.
+        ada.session.debugExpireAccessToken()
+        async let early = ada.store.find(String(bob.username.prefix(5)))
+        async let earlier = ada.store.find(String(bob.username.prefix(6)))
+        _ = try await (early, earlier)
+        XCTAssertNil(ada.store.problem, "a refreshed session is a working session")
+        await ada.store.syncNow()
+        XCTAssertNil(ada.store.problem)
 
         // Ada finds Bob by his exact username (and not by part of it), then writes.
         let missing = try await ada.store.find(String(bob.username.prefix(5)))

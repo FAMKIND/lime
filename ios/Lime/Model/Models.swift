@@ -14,11 +14,18 @@ struct Person: Identifiable, Hashable, Sendable {
 
 /// Where one of my messages has got to. A received message is `.received`.
 enum DeliveryState: String, Hashable, Sendable {
-    case sending, sent, failed, received
+    case sending, sent, failed, undelivered, received
 
     /// LimeCore's `local_state`; the older local-only states count as sent.
     init(localState: String) {
         self = DeliveryState(rawValue: localState) ?? .sent
+    }
+}
+
+extension Person {
+    /// A person's colour comes from their user id alone, the same on every screen and every phone.
+    init(id: String, name: String) {
+        self.init(id: id, name: name, tone: AvatarTone.tone(for: id))
     }
 }
 
@@ -42,6 +49,8 @@ struct Conversation: Identifiable, Hashable, Sendable {
     var unread: Int = 0
     /// A stranger's first message: it waits in Requests until accepted or blocked.
     var isRequest: Bool = false
+    /// The other person's security key changed: accept it to keep chatting.
+    var keyChangePending: Bool = false
 
     var isGroup: Bool { members.count > 1 }
     var subtitle: String { isGroup ? "\(members.count + 1) members" : "" }
@@ -65,6 +74,17 @@ extension Conversation {
             members: summary.members.map { Person(id: $0.id, name: $0.name, tone: Int($0.tone)) },
             messages: messages.map(Message.init),
             isPinned: summary.isPinned, unread: Int(summary.unread),
-            isRequest: summary.requestState == "pending")
+            isRequest: summary.requestState == "pending", keyChangePending: summary.keyChangePending)
+    }
+}
+
+/// The one place a person's avatar colour is worked out: from their user id, with the same rule
+/// LimeCore uses when it names a conversation's people (so a search result, a chat header, Messages
+/// and Requests all agree, on every phone). `String.hashValue` would not do: Swift randomises it per launch.
+enum AvatarTone {
+    nonisolated static func tone(for id: String) -> Int {
+        var hash: UInt32 = 0
+        for byte in id.utf8 { hash = hash &* 31 &+ UInt32(byte) }
+        return Int(hash % 8)
     }
 }

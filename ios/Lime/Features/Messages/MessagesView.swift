@@ -73,6 +73,7 @@ struct MessagesView: View {
     private func list(top: CGFloat, bottom: CGFloat) -> some View {
         ScrollView {
             LazyVStack(spacing: 0) {
+                if let problem = store.problem { ProblemBanner(problem: problem) }
                 if store.showsRecoveryNotice { RecoveryNotice() }
                 if !store.requests.isEmpty { RequestsRow(count: store.requests.count) }
                 if store.isLoaded && store.chats.isEmpty && store.requests.isEmpty {
@@ -105,6 +106,38 @@ struct MessagesView: View {
         }
         .accessibilityLabel("New message")
         .accessibilityIdentifier("new-message-button")
+    }
+}
+
+/// Why Lime cannot reach the server right now, in true words. A session that ended asks the person to
+/// sign in again (their chats and keys stay on the phone).
+private struct ProblemBanner: View {
+    @Environment(AccountSession.self) private var session
+    let problem: ConnectionProblem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(problem.message)
+                .font(Theme.secondary)
+                .foregroundStyle(Theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("problem-message")
+            if problem.needsSignIn {
+                Button { Task { await session.endSession() } } label: {
+                    Text("Sign in").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                        .padding(.horizontal, 18).frame(minHeight: 40)
+                        .background(Theme.accent, in: Capsule())
+                }
+                .accessibilityIdentifier("problem-sign-in")
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("problem-banner")
     }
 }
 

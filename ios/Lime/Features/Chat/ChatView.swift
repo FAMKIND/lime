@@ -78,7 +78,7 @@ struct ChatView: View {
                                           showAvatar: showAvatar,
                                           showName: showAvatar && conversation.isGroup,
                                           showState: message.isOwn && (message.state != .sent || message.id == lastOwnID),
-                                          onRetry: { Task { await store.deliverNow() } })
+                                          onRetry: { Task { await store.resend(message.id) } })
                                 .padding(.bottom, 8)
                         }
                     }
@@ -169,7 +169,31 @@ struct ChatView: View {
 
     @ViewBuilder
     private func bottomBar(_ conversation: Conversation) -> some View {
-        if conversation.isRequest { requestBar(conversation) } else { composer(conversation) }
+        VStack(spacing: 8) {
+            if conversation.keyChangePending { keyChangeBar(conversation) }
+            if conversation.isRequest { requestBar(conversation) } else { composer(conversation) }
+        }
+    }
+
+    /// The other person's security key changed (usually a new phone): nothing moves until it is accepted.
+    private func keyChangeBar(_ conversation: Conversation) -> some View {
+        VStack(spacing: 10) {
+            Text("\(conversation.title)'s security key changed. This usually means they signed in on a new phone. Accept it to keep chatting.")
+                .font(Theme.secondary)
+                .foregroundStyle(Theme.text)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("key-change-note")
+            Button { Task { await store.trustKey(conversation.id) } } label: {
+                Text("Accept new key").font(Theme.title).foregroundStyle(Theme.accentInk)
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .background(Theme.accent, in: Capsule())
+            }
+            .accessibilityIdentifier("key-change-accept")
+        }
+        .padding(16)
+        .limeGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 12)
     }
 
     private func requestBar(_ conversation: Conversation) -> some View {
@@ -309,6 +333,10 @@ struct MessageBubble: View {
                             Button("· Not sent. Tap to retry", action: onRetry)
                                 .foregroundStyle(Color.red)
                                 .accessibilityIdentifier("delivery-failed")
+                        case .undelivered:
+                            Button("· Not delivered. Tap to resend", action: onRetry)
+                                .foregroundStyle(Color.red)
+                                .accessibilityIdentifier("delivery-undelivered")
                         case .received: EmptyView()
                         }
                     }

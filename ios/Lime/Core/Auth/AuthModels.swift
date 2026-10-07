@@ -55,6 +55,8 @@ enum AuthError: Error, Equatable, Sendable {
     case rateLimited
     case emailFailed
     case network
+    /// The server answered with a 5xx: it, not the phone's connection, is the problem.
+    case unavailable
     case notVerified
     case server(String)
 
@@ -72,6 +74,7 @@ enum AuthError: Error, Equatable, Sendable {
         case .rateLimited: "Too many tries. Wait a moment and try again."
         case .emailFailed: "We couldn't send the code. Try again in a moment."
         case .network: "Couldn't reach Lime. Check your connection and try again."
+        case .unavailable: "Lime's server had a problem. Try again in a moment."
         case .notVerified: "Finish signing in first."
         case .server(let message): message
         }

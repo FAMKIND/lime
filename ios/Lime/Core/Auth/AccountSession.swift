@@ -22,8 +22,12 @@ final class AccountSession {
     private let store: ConversationStore
     private var tokens: AuthTokens?
     private var nudges: RealtimeNudges?
+    private var refreshing: Task<AuthTokens, Error>?
+    private var isRegistering = false
 
     private static let profileKey = "lime.profile"
+    /// Whose chats and keys are on this phone, so signing in again as the same person keeps them.
+    private static let ownerKey = "lime.owner"
     private let sessionService: String
     private let defaults: UserDefaults
 
@@ -34,13 +38,15 @@ final class AccountSession {
         self.store = store
         self.sessionService = sessionService
         self.defaults = defaults
+        store.registrar = { [weak self] in await self?.registerDevice() }
     }
 
     var hasBackend: Bool { auth != nil }
 
     /// The signed-in person as an avatar (initials from their name).
     var mePerson: Person {
-        Person(id: "me", name: profile?.displayName ?? SampleData.me.name, tone: SampleData.me.tone)
+        // Coloured from the user id, like every other place this person appears.
+        Person(id: tokens?.userID ?? "me", name: profile?.displayName ?? SampleData.me.name)
     }
 
     // MARK: Launch
@@ -74,8 +80,8 @@ final class AccountSession {
                 saved = try await auth.refresh(saved)
                 try? SessionKeychain.save(saved, service: sessionService)
             }
-        } catch AuthError.network {
-            // Offline: carry on with what we have; the next call refreshes.
+        } catch AuthError.network, AuthError.unavailable {
+            // Offline, or the server is down: carry on with what we have; the next call refreshes.
         } catch {
             // The session ended on the server (signed out elsewhere, or revoked).
             SessionKeychain.clear(service: sessionService)
@@ -94,6 +100,9 @@ final class AccountSession {
 
     /// Both steps passed (and the profile exists): keep the session and register this device.
     func completeSignIn(tokens: AuthTokens, profile: Profile?, maskedEmail: String? = nil) async {
+        // Someone else's chats and keys are never kept for a different account.
+        if let owner = defaults.string(forKey: Self.ownerKey), owner != tokens.userID { store.wipe() }
+        defaults.set(tokens.userID, forKey: Self.ownerKey)
         self.tokens = tokens
         self.maskedEmail = maskedEmail
         try? SessionKeychain.save(tokens, service: sessionService)
@@ -105,15 +114,20 @@ final class AccountSession {
 
     /// The core registers this device once both factors have passed.
     func registerDevice() async {
-        guard let config, tokens != nil, let token = try? await accessToken() else { return }
-        let transport = URLSessionTransport(baseURL: config.url, apiKey: config.apiKey)
-        guard let device = try? await store.registerDevice(transport: transport, token: token) else {
+        guard let config, tokens != nil, !isRegistering, !deviceRegistered else { return }
+        isRegistering = true
+        defer { isRegistering = false }
+        do {
+            let token = try await accessToken()
+            let transport = URLSessionTransport(baseURL: config.url, apiKey: config.apiKey)
+            let device = try await store.registerDevice(transport: transport, token: token)
+            deviceRegistered = true
+            userID = device.userId
+            await goLive(device: device, transport: transport, config: config)
+        } catch {
             deviceRegistered = false
-            return
+            store.report(ConnectionProblem.from(error))
         }
-        deviceRegistered = true
-        userID = device.userId
-        await goLive(device: device, transport: transport, config: config)
     }
 
     /// Registered: deliver and fetch for real, and listen for the "new items" nudge while the app is open.
@@ -150,16 +164,31 @@ final class AccountSession {
         await nudges?.stop()
     }
 
-    /// A valid access token, refreshed first when it is about to expire.
+    /// A valid access token, refreshed first when it is about to expire. Calls that arrive together
+    /// share one refresh (a refresh token is single-use, so two at once could lose the session).
     func accessToken() async throws -> String {
-        guard var current = tokens else { throw AuthError.notVerified }
-        if current.isExpiring(), let auth {
-            current = try await auth.refresh(current)
-            tokens = current
-            try? SessionKeychain.save(current, service: sessionService)
+        guard let current = tokens else { throw AuthError.notVerified }
+        guard current.isExpiring(), let auth else { return current.accessToken }
+        let task = refreshing ?? Task { try await auth.refresh(current) }
+        refreshing = task
+        do {
+            let fresh = try await task.value
+            refreshing = nil
+            tokens = fresh
+            try? SessionKeychain.save(fresh, service: sessionService)
+            return fresh.accessToken
+        } catch {
+            refreshing = nil
+            throw error
         }
-        return current.accessToken
     }
+
+    #if DEBUG
+    /// Tests: pretend the access token's hour is up, so the next call really refreshes it.
+    func debugExpireAccessToken() {
+        tokens?.expiresAt = Date().addingTimeInterval(-60)
+    }
+    #endif
 
     // MARK: Signing out
 
@@ -170,12 +199,28 @@ final class AccountSession {
         if let auth, let tokens { await auth.signOut(tokens: tokens) }
         SessionKeychain.clear(service: sessionService)
         defaults.removeObject(forKey: Self.profileKey)
+        defaults.removeObject(forKey: Self.ownerKey)
         store.wipe()
         tokens = nil
         profile = nil
         maskedEmail = nil
         deviceRegistered = false
         userID = nil
+        onboardingGeneration += 1
+        phase = .signedOut
+    }
+
+    /// The server no longer accepts this session. Unlike signing out, this keeps the chats and keys on
+    /// the phone: signing in again as the same person picks them up where they were.
+    func endSession() async {
+        await nudges?.stop()
+        nudges = nil
+        SessionKeychain.clear(service: sessionService)
+        store.disconnect()
+        tokens = nil
+        deviceRegistered = false
+        userID = nil
+        maskedEmail = nil
         onboardingGeneration += 1
         phase = .signedOut
     }

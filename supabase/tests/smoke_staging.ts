@@ -74,7 +74,8 @@ try {
     assert(owner.joined && owner.nudge !== null, "the device's owner joins its private channel and is nudged");
     const stranger = await listen(alice.token);
     assert(!stranger.joined && stranger.nudge === null, "another user cannot join someone elses channel");
-    console.log("staging chat checks passed: find, public profile, private nudge");
+    assertEquals((await call("undelivered-take", alice.token, {})).body.hashes, [], "no notices for a sender nothing happened to");
+    console.log("staging chat checks passed: find, public profile, private nudge, undelivered notices");
   } finally {
     await deleteUser(passwordOnly);
   }

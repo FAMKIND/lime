@@ -147,3 +147,94 @@ Deno.test("Realtime: the nudge is on a private channel only the device's owner c
     }
   });
 });
+
+// ---------------------------------------------------------------- LIME-95-fix: replacing an account's keys
+
+import { keysReplacedNotice, sendNotice } from "../functions/_shared/notify.ts";
+import { sha256Bytes } from "./helpers.ts";
+
+const hex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+Deno.test("a verified session with new keys replaces the account's keys: old devices revoked, mail removed, senders told", opts, async () => {
+  await withUsers(2, async ([owner, sender]) => {
+    const oldMaster = await newMasterKey();
+    const oldDevice = await registerDevice(owner, oldMaster);
+    const accessKey = await setAccessKey(owner);
+
+    // Two items wait for the old device: one identified (from `sender`), one sealed (no known sender).
+    const identified = ciphertext(80);
+    const sealed = ciphertext(90);
+    assertEquals((await call("send", sender.token, { ciphertext: identified, recipients: [{ to_device: oldDevice.deviceId, access: { identified: true } }] })).status, 200);
+    assertEquals((await call("send", null, { ciphertext: sealed, recipients: [{ to_device: oldDevice.deviceId, access: { sealed: accessKey } }] })).status, 200);
+    assertEquals((await call("mailbox-fetch", owner.token, { device_id: oldDevice.deviceId, after: 0 })).body.items.length, 2);
+
+    // A phone with brand-new keys registers from the same verified session.
+    const newMaster = await newMasterKey();
+    const newDevice = await registerDevice(owner, newMaster);
+    assertNotEquals(newDevice.deviceId, oldDevice.deviceId);
+
+    // Only the new device is listed, under the new master key.
+    const listed = await call("users-devices", sender.token, { user_id: owner.id });
+    assertEquals(listed.body.master_key, newMaster.publicKey);
+    assertEquals(listed.body.devices.map((d: { device_id: string }) => d.device_id), [newDevice.deviceId]);
+
+    // The old device is refused everywhere, and nothing can be sent to it.
+    assertEquals((await call("mailbox-fetch", owner.token, { device_id: oldDevice.deviceId, after: 0 })).status, 403);
+    assertEquals((await call("send", sender.token, { ciphertext: ciphertext(70), recipients: [{ to_device: oldDevice.deviceId, access: { identified: true } }] })).status, 404);
+    // Its waiting mail is gone (nobody holds the keys to read it).
+    const { data: left } = await admin.from("mailbox_items").select("cursor").eq("to_device", oldDevice.deviceId);
+    assertEquals(left?.length, 0);
+
+    // The identified sender is told which of its messages were never delivered (by hash); the sealed
+    // sender cannot be told. The notice is handed over once.
+    const told = await call("undelivered-take", sender.token, {});
+    assertEquals(told.status, 200);
+    const expected = hex(await sha256Bytes(Uint8Array.from(atob(identified), (c) => c.charCodeAt(0))));
+    assertEquals(told.body.hashes, [expected]);
+    assertEquals((await call("undelivered-take", sender.token, {})).body.hashes, []);
+    assertEquals((await call("undelivered-take", owner.token, {})).body.hashes, [], "the owner is not a sender here");
+    assertEquals((await call("undelivered-take", null, {})).status, 401);
+  });
+});
+
+Deno.test("a second device with the SAME master key is added without any reset", opts, async () => {
+  await withUsers(1, async ([owner]) => {
+    const master = await newMasterKey();
+    const first = await registerDevice(owner, master);
+    const second = await registerDevice(owner, master);
+    const { data } = await admin.from("devices").select("device_id, revoked_at").eq("user_id", owner.id);
+    assertEquals(data?.length, 2);
+    assert(data?.every((d) => d.revoked_at === null), "neither is revoked");
+    assertEquals((await call("mailbox-fetch", owner.token, { device_id: first.deviceId, after: 0 })).status, 200);
+    assertEquals((await call("mailbox-fetch", owner.token, { device_id: second.deviceId, after: 0 })).status, 200);
+  });
+});
+
+Deno.test("the keys-replaced notice reads as asked and goes out only when a mail key is configured", opts, async () => {
+  const notice = keysReplacedNotice(new Date("2026-10-07T05:00:00Z"));
+  assertEquals(notice.subject, "A new phone signed in to Lime");
+  assert(notice.text.startsWith("A new phone signed in and replaced your Lime keys. If this wasn't you, reset your password."));
+
+  Deno.env.delete("LIME_NOTIFY_RESEND_API_KEY");
+  assertEquals(await sendNotice("someone@example.invalid", notice), false, "no key: nothing is sent, nothing fails");
+
+  const received: { auth: string | null; body: Record<string, unknown> }[] = [];
+  const server = Deno.serve({ port: 0, onListen: () => {} }, async (req) => {
+    received.push({ auth: req.headers.get("authorization"), body: await req.json() });
+    return new Response("{}", { status: 200 });
+  });
+  try {
+    Deno.env.set("LIME_NOTIFY_RESEND_API_KEY", "test-key");
+    Deno.env.set("LIME_NOTIFY_URL", `http://127.0.0.1:${server.addr.port}/emails`);
+    assertEquals(await sendNotice("someone@example.invalid", notice), true);
+    assertEquals(received.length, 1);
+    assertEquals(received[0].auth, "Bearer test-key");
+    assertEquals(received[0].body.to, ["someone@example.invalid"]);
+    assertEquals(received[0].body.subject, "A new phone signed in to Lime");
+    assertEquals(typeof received[0].body.from, "string");
+  } finally {
+    Deno.env.delete("LIME_NOTIFY_RESEND_API_KEY");
+    Deno.env.delete("LIME_NOTIFY_URL");
+    await server.shutdown();
+  }
+});

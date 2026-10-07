@@ -89,7 +89,7 @@ final class LiveAuthService: AuthService, @unchecked Sendable {
     /// Supabase Auth's own refresh. The session (and so its verified state) is the same afterwards.
     func refresh(_ tokens: AuthTokens) async throws -> AuthTokens {
         let result = try await post(path: "/auth/v1/token?grant_type=refresh_token", body: ["refresh_token": tokens.refreshToken], token: nil)
-        guard result.status == 200 else { throw result.status >= 500 ? AuthError.network : AuthError.notVerified }
+        guard result.status == 200 else { throw result.status >= 500 ? AuthError.unavailable : AuthError.notVerified }
         var json = result.json
         json["user_id"] = (result.json["user"] as? [String: Any])?["id"] as? String ?? tokens.userID
         return try self.tokens(from: json)
@@ -122,9 +122,15 @@ final class LiveAuthService: AuthService, @unchecked Sendable {
         do {
             let (data, response) = try await session.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            #if DEBUG
+            NetworkLog.record(method: "POST", path: path, status: status)
+            #endif
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
             return Reply(status: status, json: json)
         } catch {
+            #if DEBUG
+            NetworkLog.record(method: "POST", path: path, status: 0)
+            #endif
             throw AuthError.network
         }
     }
@@ -158,7 +164,7 @@ final class LiveAuthService: AuthService, @unchecked Sendable {
         case (429, _): return .rateLimited
         case (_, "email_failed"): return .emailFailed
         case (403, "not_verified"), (401, _): return .notVerified
-        case (500...599, _): return .network
+        case (500...599, _): return .unavailable
         default: return .server(message.isEmpty ? "Something went wrong." : message)
         }
     }

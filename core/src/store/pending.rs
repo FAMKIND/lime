@@ -21,6 +21,9 @@ pub(crate) struct PendingRow {
     pub sender_user: Option<String>,
     pub identified: bool,
     pub ciphertext: String,
+    /// Set when the item was decrypted but held back for a changed key.
+    pub plaintext: Option<Vec<u8>>,
+    pub peer_identity: Option<String>,
 }
 
 pub(crate) struct Fetched {
@@ -55,7 +58,7 @@ pub(crate) fn insert_all(
 pub(crate) fn retryable(conn: &Connection) -> Result<Vec<PendingRow>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT id, sender_user, identified, ciphertext FROM pending_inbound
+            "SELECT id, sender_user, identified, ciphertext, plaintext, peer_identity FROM pending_inbound
              WHERE reason NOT IN (?1, ?2) ORDER BY cursor",
         )
         .map_err(db_err)?;
@@ -66,6 +69,8 @@ pub(crate) fn retryable(conn: &Connection) -> Result<Vec<PendingRow>, StoreError
                 sender_user: r.get(1)?,
                 identified: r.get(2)?,
                 ciphertext: r.get(3)?,
+                plaintext: r.get(4)?,
+                peer_identity: r.get(5)?,
             })
         })
         .map_err(db_err)?
@@ -90,6 +95,21 @@ pub(crate) fn keep(
     conn.execute(
         "UPDATE pending_inbound SET reason = ?2, attempts = attempts + 1, last_attempt = ?3 WHERE id = ?1",
         params![id, reason, now_ms],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+/// Keeps what an item decrypted to, so it can be read once its sender's key is accepted.
+pub(crate) fn stash_plaintext(
+    conn: &Connection,
+    id: i64,
+    plaintext: &[u8],
+    peer_identity: &str,
+) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE pending_inbound SET plaintext = ?2, peer_identity = ?3 WHERE id = ?1",
+        params![id, plaintext, peer_identity],
     )
     .map_err(db_err)?;
     Ok(())

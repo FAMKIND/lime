@@ -37,7 +37,15 @@ final class URLSessionTransport: Transport, @unchecked Sendable {
         task.resume()
         done.wait()
 
-        guard result.2 == nil, let http = result.1 as? HTTPURLResponse else { throw TransportError.Failed }
+        guard result.2 == nil, let http = result.1 as? HTTPURLResponse else {
+            #if DEBUG
+            NetworkLog.record(method: method, path: path, status: 0)
+            #endif
+            throw TransportError.Failed
+        }
+        #if DEBUG
+        NetworkLog.record(method: method, path: path, status: http.statusCode)
+        #endif
         return TransportResponse(status: UInt16(clamping: http.statusCode), body: result.0 ?? Data())
     }
 }

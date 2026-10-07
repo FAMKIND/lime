@@ -35,8 +35,12 @@ final class ConversationStore {
     private var link: BackendLink?
     private var isSyncing = false
     private var syncAgain = false
-    /// Set when the last send or sync could not reach the server.
-    private(set) var isOffline = false
+    /// Why the last call to the server failed, in true words; nil once one succeeds. A session that
+    /// ended asks the person to sign in again (their chats and keys stay on the phone meanwhile).
+    private(set) var problem: ConnectionProblem?
+    /// Registers this device when it is not connected yet (set by the account session), so a phone
+    /// that was offline at launch, or whose first attempt failed, connects on the next sync.
+    var registrar: (@MainActor () async -> Void)?
     #if DEBUG
     /// Debug builds only (`-lime-demo-chat`): made-up conversations that live in memory, for screenshots and UI tests.
     private(set) var isDemo = false
@@ -108,6 +112,19 @@ final class ConversationStore {
     /// The phone is registered: from now on sends are delivered and the mailbox is fetched.
     func connect(_ link: BackendLink) {
         self.link = link
+        problem = nil
+    }
+
+    /// The session ended on this phone: stop talking to the server but keep the chats and keys, so
+    /// signing in again as the same person loses nothing.
+    func disconnect() {
+        link = nil
+        path = NavigationPath()
+    }
+
+    /// Records why a call failed (and shows it on Messages).
+    func report(_ failure: ConnectionProblem) {
+        problem = failure
     }
 
     var isConnected: Bool { link != nil }
@@ -115,6 +132,7 @@ final class ConversationStore {
     /// Delivers what is waiting to be sent, then fetches the mailbox and refreshes the list. Calls
     /// that arrive while one is running are folded into one more round afterwards.
     func syncNow() async {
+        if link == nil, let registrar { await registrar() }
         guard let core, let link else { return }
         if isSyncing { syncAgain = true; return }
         isSyncing = true
@@ -130,9 +148,9 @@ final class ConversationStore {
                 _ = try await Task.detached(priority: .userInitiated) {
                     try core.sync(transport: link.transport, authToken: token)
                 }.value
-                isOffline = false
+                problem = nil
             } catch {
-                isOffline = true
+                problem = ConnectionProblem.from(error)
             }
             await reload()
         } while syncAgain
@@ -146,9 +164,10 @@ final class ConversationStore {
             _ = try await Task.detached(priority: .userInitiated) {
                 try core.deliverQueued(transport: link.transport, authToken: token)
             }.value
-            isOffline = false
+            problem = nil
         } catch {
-            isOffline = true
+            // A key change is shown in the chat itself; everything else on Messages.
+            if case StoreError.KeyMismatch = error {} else { problem = ConnectionProblem.from(error) }
         }
         await reload()
     }
@@ -163,6 +182,7 @@ final class ConversationStore {
                 : FoundUser(userId: "grace", displayName: "Grace Hopper", username: "grace.h", school: "Naval Academy", isSelf: false)
         }
         #endif
+        if link == nil, let registrar { await registrar() }
         guard let link else { throw AuthError.network }
         let token = try await link.token()
         return try await Task.detached(priority: .userInitiated) {
@@ -202,6 +222,31 @@ final class ConversationStore {
         await reload()
     }
 
+    /// The person accepts the other's new security key; held-back messages are read and queued ones go.
+    func trustKey(_ id: Conversation.ID) async {
+        #if DEBUG
+        if isDemo {
+            if let index = conversations.firstIndex(where: { $0.id == id }) { conversations[index].keyChangePending = false }
+            return
+        }
+        #endif
+        guard let core else { return }
+        try? await Task.detached(priority: .userInitiated) { try core.trustNewKey(conversationId: id) }.value
+        await reload()
+        await syncNow()
+    }
+
+    /// Sends a message again (one that failed, or that was never delivered).
+    func resend(_ messageID: String) async {
+        #if DEBUG
+        if isDemo { demoResend(messageID); return }
+        #endif
+        guard let core else { return }
+        try? await Task.detached(priority: .userInitiated) { try core.retryMessage(messageId: messageID) }.value
+        await reload()
+        await deliverNow()
+    }
+
     /// The chat is open: its unread count goes to zero.
     func markRead(_ id: Conversation.ID) async {
         guard let index = conversations.firstIndex(where: { $0.id == id }), conversations[index].unread > 0 else { return }
@@ -226,6 +271,7 @@ final class ConversationStore {
     func wipe() {
         core = nil
         link = nil
+        problem = nil
         path = NavigationPath()
         databasePath = nil
         conversations = []
@@ -326,8 +372,8 @@ final class ConversationStore {
     func loadDemo(screen: String? = nil) {
         isDemo = true
         let now = Date()
-        let ada = Person(id: "ada", name: "Ada Lovelace", tone: 2)
-        let sam = Person(id: "sam", name: "Sam Park", tone: 5)
+        let ada = Person(id: "ada", name: "Ada Lovelace")
+        let sam = Person(id: "sam", name: "Sam Park")
         conversations = [
             Conversation(id: "dm:ada", title: ada.name, members: [ada], messages: [
                 Message(id: "d1", senderID: "ada", text: "Hello! Do you have the field trip forms?", date: now.addingTimeInterval(-600)),
@@ -343,6 +389,11 @@ final class ConversationStore {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
+        case "key-change":
+            conversations[1].keyChangePending = true
+            conversations[1].messages[1].state = .undelivered
+            path.append("dm:sam")
+        case "session-ended": problem = .sessionEnded
         case "new-message", "new-message-found": demoSheet = screen
         default: break
         }
@@ -364,6 +415,17 @@ final class ConversationStore {
         }
     }
 
+    private func demoResend(_ messageID: String) {
+        for c in conversations.indices {
+            guard let m = conversations[c].messages.firstIndex(where: { $0.id == messageID }) else { continue }
+            conversations[c].messages[m].state = .sending
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                conversations[c].messages[m].state = .sent
+            }
+        }
+    }
+
     private func demoSetRequest(_ id: Conversation.ID, accepted: Bool) {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         if accepted { conversations[index].isRequest = false } else { conversations.remove(at: index) }
@@ -372,7 +434,7 @@ final class ConversationStore {
     private func demoStartChat(_ person: FoundUser) {
         let id = "dm:\(person.userId)"
         if !conversations.contains(where: { $0.id == id }) {
-            let who = Person(id: person.userId, name: person.displayName, tone: 3)
+            let who = Person(id: person.userId, name: person.displayName)
             conversations.insert(Conversation(id: id, title: who.name, members: [who], messages: []), at: 0)
         }
         path.append(id)

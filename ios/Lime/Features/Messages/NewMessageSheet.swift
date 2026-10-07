@@ -107,7 +107,7 @@ struct NewMessageSheet: View {
         case .found(let person):
             VStack(spacing: 16) {
                 HStack(spacing: 14) {
-                    AvatarView(person: Person(id: person.userId, name: person.displayName, tone: abs(person.userId.hashValue) % 8), size: 56)
+                    AvatarView(person: Person(id: person.userId, name: person.displayName), size: 56)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(person.displayName).font(Theme.title).foregroundStyle(Theme.text)
                             .accessibilityIdentifier("find-result-name")
@@ -154,10 +154,10 @@ struct NewMessageSheet: View {
         Task {
             do {
                 if let person = try await store.find(text) { state = .found(person) } else { state = .nobody }
-            } catch StoreError.RateLimited {
-                state = .problem("Too many searches. Wait a minute and try again.")
             } catch {
-                state = .problem("Couldn't search. Check your connection and try again.")
+                let problem = ConnectionProblem.from(error)
+                store.report(problem)
+                state = .problem(problem.message)
             }
         }
     }

@@ -428,3 +428,103 @@ fn a_reply_that_names_a_missing_parent_still_shows_and_the_order_survives_a_rest
 fn _path(p: &Party) -> String {
     p._dir.path().join("lime.db").to_string_lossy().into_owned()
 }
+
+// ---------------------------------------------------------------- LIME-95-fix: a phone with new keys
+
+/// Bob signs in again on a phone whose keys were wiped: same account, brand-new keys.
+fn bob_with_new_keys(server: &Arc<FakeServer>) -> (Party, Arc<dyn Transport>) {
+    party(server, "bob", 9)
+}
+
+#[test]
+fn replacing_an_accounts_keys_marks_waiting_messages_not_delivered_and_asks_to_accept_the_new_key() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "first");
+    sync(&bob, &transport);
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    // A second message is still waiting for Bob's old device when his keys are replaced.
+    say(&alice, &bob, &transport, "never read");
+    assert_eq!(server.mailbox_len(&bob.device), 1);
+
+    let (bob2, _) = bob_with_new_keys(&server);
+    assert_ne!(bob2.device, bob.device);
+    assert_eq!(server.mailbox_len(&bob.device), 0, "the old device's mail is gone");
+
+    // Alice's next sync learns that message was not delivered; the first one, which Bob read, is untouched.
+    sync(&alice, &transport);
+    assert_eq!(
+        states(&alice, &bob2),
+        vec![("first".into(), "sent".into()), ("never read".into(), "undelivered".into())]
+    );
+
+    // Sending to Bob now meets a key she has not accepted: nothing moves, and the chat says why.
+    let id = format!("dm:{}", bob2.user);
+    alice.store.queue_text(id.clone(), "are you there?".into()).unwrap();
+    assert!(matches!(
+        alice.store.deliver_queued(transport.clone(), alice.token.clone()),
+        Err(crate::StoreError::KeyMismatch)
+    ));
+    assert!(conversation(&alice, &bob2).unwrap().key_change_pending);
+    assert_eq!(sync(&bob2, &transport).received, 0);
+
+    // She accepts the new key, resends the undelivered one, and both reach Bob's new phone.
+    alice.store.trust_new_key(id.clone()).unwrap();
+    assert!(!conversation(&alice, &bob2).unwrap().key_change_pending);
+    let undelivered = alice
+        .store
+        .list_messages(id.clone())
+        .unwrap()
+        .into_iter()
+        .find(|m| m.local_state == "undelivered")
+        .unwrap();
+    alice.store.retry_message(undelivered.id).unwrap();
+    assert_eq!(alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap(), 2);
+    assert_eq!(sync(&bob2, &transport).received, 2);
+    let mut got = texts(&bob2, &alice);
+    got.sort();
+    assert_eq!(got, vec!["are you there?", "never read"]);
+}
+
+#[test]
+fn a_message_from_a_changed_key_waits_until_it_is_accepted_and_then_reads() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "hello");
+    sync(&bob, &transport);
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    say(&bob, &alice, &transport, "hi");
+    sync(&alice, &transport);
+
+    // Bob's phone is replaced; Alice never heard of the new key, but his first message to her is a pre-key one.
+    let (bob2, _) = bob_with_new_keys(&server);
+    bob2.store.start_dm(alice.user.clone(), "Alice".into()).unwrap();
+    // (Bob's new phone has not pinned Alice's key before, so sending works.)
+    say(&bob2, &alice, &transport, "new phone, who dis");
+    let report = sync(&alice, &transport);
+    assert_eq!((report.received, report.pending), (0, 1), "held back, not lost");
+    assert_eq!(texts(&alice, &bob2), vec!["hello".to_string(), "hi".to_string()]);
+    assert!(conversation(&alice, &bob2).unwrap().key_change_pending);
+
+    // Accepting the key reads it (the session was kept, so the spent one-time key does not matter).
+    alice.store.trust_new_key(format!("dm:{}", bob2.user)).unwrap();
+    let after = sync(&alice, &transport);
+    assert_eq!((after.received, after.pending), (1, 0));
+    assert_eq!(texts(&alice, &bob2), vec!["hello", "hi", "new phone, who dis"]);
+    assert!(!conversation(&alice, &bob2).unwrap().key_change_pending);
+}
+
+#[test]
+fn server_answers_map_to_distinct_errors() {
+    use crate::StoreError;
+    // The core's own mapping, as the app relies on it to tell the truth.
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let bad_token = "tok-";
+    let _ = (&alice, bad_token);
+    // No token at all: the fake answers 401, which the core calls Unauthorized, not "network".
+    let result = crate::find_user(transport.clone(), String::new(), "bob".into());
+    assert!(matches!(result, Err(StoreError::Unauthorized)), "{result:?}");
+}

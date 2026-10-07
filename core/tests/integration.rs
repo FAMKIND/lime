@@ -529,3 +529,52 @@ fn find_request_accept_reply_and_block_through_the_real_server() {
     assert_eq!((report.received, report.pending), (0, 0));
     assert!(bob_store.list_conversations().unwrap().is_empty());
 }
+
+#[test]
+fn a_phone_with_new_keys_replaces_the_account_keys_and_contacts_accept_the_change() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let alice = admin.create_account();
+    let bob = admin.create_account();
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in [&alice, &bob] {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let (alice_store, bob_store) = (store(&dir, "alice.db", 1), store(&dir, "bob.db", 2));
+    alice_store.register_device(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.register_device(transport.clone(), bob.token.clone()).unwrap();
+
+    // Alice writes to Bob; it waits for his device. Then his keys are replaced (a phone with new keys).
+    let chat = alice_store.start_dm(bob.id.clone(), "Bob".into()).unwrap();
+    alice_store.queue_text(chat.clone(), "waiting for the old phone".into()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let bob_new = store(&dir, "bob2.db", 3);
+    bob_new.register_device(transport.clone(), bob.token.clone()).expect("a verified session may replace the keys");
+    assert!(
+        bob_store.sync(transport.clone(), bob.token.clone()).is_err(),
+        "the old phone is refused: it was replaced"
+    );
+    assert!(matches!(
+        bob_store.sync(transport.clone(), bob.token.clone()),
+        Err(lime_core::StoreError::Unauthorized)
+    ));
+
+    // Alice is told the message was not delivered (the server and the core hash the same bytes).
+    alice_store.sync(transport.clone(), alice.token.clone()).unwrap();
+    let states: Vec<String> = alice_store.list_messages(chat.clone()).unwrap().into_iter().map(|m| m.local_state).collect();
+    assert_eq!(states, vec!["undelivered"]);
+
+    // Bob's key changed: she must accept it, then resend, and the new phone receives it.
+    alice_store.queue_text(chat.clone(), "hello new phone".into()).unwrap();
+    assert!(matches!(
+        alice_store.deliver_queued(transport.clone(), alice.token.clone()),
+        Err(lime_core::StoreError::KeyMismatch)
+    ));
+    assert!(alice_store.list_conversations().unwrap()[0].key_change_pending);
+    alice_store.trust_new_key(chat.clone()).unwrap();
+    let old = alice_store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.local_state == "undelivered").unwrap();
+    alice_store.retry_message(old.id).unwrap();
+    assert_eq!(alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap(), 2);
+    assert_eq!(bob_new.sync(transport.clone(), bob.token.clone()).unwrap().received, 2);
+}

@@ -81,6 +81,20 @@ const MIGRATIONS: &[&str] = &[
     // not stored). `parents` is the JSON list of op ids the sender had seen (api-v2.md section 5).
     "ALTER TABLE conversations ADD COLUMN request_state TEXT NOT NULL DEFAULT 'accepted';
      ALTER TABLE messages ADD COLUMN parents TEXT;",
+    // 5: key changes and delivery notices (LIME-95-fix). `new_master_key` is a different master key
+    // a person has been seen with since we pinned theirs: nothing from or to them moves until the
+    // person accepts it. `message_deliveries` remembers the hash of each ciphertext we sent, so a
+    // later \"not delivered\" notice from the server can be matched to the message.
+    "ALTER TABLE peers ADD COLUMN new_master_key TEXT;
+     -- An item held back for a changed key was already decrypted (a message cannot be decrypted
+     -- twice), so its plaintext waits here, inside the encrypted database, until the key is accepted.
+     ALTER TABLE pending_inbound ADD COLUMN plaintext BLOB;
+     ALTER TABLE pending_inbound ADD COLUMN peer_identity TEXT;
+     CREATE TABLE message_deliveries (
+         hash       TEXT PRIMARY KEY NOT NULL,   -- hex SHA-256 of the outer ciphertext, as the server hashes it
+         message_id TEXT NOT NULL
+     );
+     CREATE INDEX message_deliveries_by_message ON message_deliveries (message_id);",
 ];
 
 /// The schema version this build writes.

@@ -291,6 +291,7 @@ impl LimeStore {
         if received > 0 {
             self.refresh_names(&transport, &auth_token);
         }
+        self.take_undelivered(&transport, &auth_token);
         let waiting = self.with_conn(pending::count)?;
         Ok(SyncReport {
             received,
@@ -464,6 +465,7 @@ impl LimeStore {
 
         // 4. One Olm ciphertext per recipient device, each sent identified.
         let mut updated = Vec::new();
+        let mut hashes = Vec::new();
         for (device, mut session) in sessions {
             let encrypted = session
                 .encrypt(&inner)
@@ -471,6 +473,7 @@ impl LimeStore {
             let (kind, bytes) = encrypted.to_parts();
             let mut wire = vec![kind as u8];
             wire.extend_from_slice(&bytes);
+            hashes.push(hex_sha256(&wire));
             let (status, _) = call(
                 transport,
                 Some(token),
@@ -498,8 +501,39 @@ impl LimeStore {
                     now,
                 )?;
             }
+            for hash in &hashes {
+                conn.execute(
+                    "INSERT OR REPLACE INTO message_deliveries (hash, message_id) VALUES (?1, ?2)",
+                    params![hash, message.id],
+                )
+                .map_err(db_err)?;
+            }
             save_account(conn, &self.pickle_key, state)
         })
+    }
+
+    /// Asks the server which identified messages of mine were never delivered (the recipient's
+    /// devices were replaced, or they expired) and marks them. Best effort.
+    fn take_undelivered(&self, transport: &Arc<dyn Transport>, token: &str) {
+        let Ok((200, body)) = call(transport, Some(token), "undelivered-take", &json!({})) else {
+            return;
+        };
+        let Some(hashes) = body.get("hashes").and_then(Value::as_array) else {
+            return;
+        };
+        for hash in hashes.iter().filter_map(Value::as_str) {
+            let _ = self.with_conn(|conn| {
+                conn.execute(
+                    "UPDATE messages SET local_state = 'undelivered'
+                     WHERE local_state = 'sent' AND id = (SELECT message_id FROM message_deliveries WHERE hash = ?1)",
+                    params![hash],
+                )
+                .map_err(db_err)?;
+                conn.execute("DELETE FROM message_deliveries WHERE hash = ?1", params![hash])
+                    .map_err(db_err)?;
+                Ok(())
+            });
+        }
     }
 
     /// Fills in the profile name of people we only know by id (best effort, a few per sync).
@@ -584,7 +618,13 @@ impl LimeStore {
             .get("master_key")
             .and_then(Value::as_str)
             .ok_or(StoreError::NoRecipientKeys)?;
-        self.with_conn(|conn| pin_master_key(conn, user_id, master))?;
+        self.with_conn(|conn| match pin_master_key(conn, user_id, master) {
+            Err(StoreError::KeyMismatch) => {
+                record_key_change(conn, user_id, master)?;
+                Err(StoreError::KeyMismatch)
+            }
+            other => other,
+        })?;
         let mut devices = Vec::new();
         for entry in body
             .get("devices")
@@ -714,6 +754,10 @@ impl LimeStore {
 
         // Decrypt with an existing session, or (for a pre-key message) start one.
         let decrypted = 'decrypt: {
+            // Held back earlier for a changed key: it is already decrypted.
+            if let (Some(plain), Some(identity)) = (&row.plaintext, &row.peer_identity) {
+                break 'decrypt Some((plain.clone(), None, identity.clone()));
+            }
             for mut stored in sessions {
                 let fits = match &message {
                     OlmMessage::PreKey(pre_key) => {
@@ -725,7 +769,7 @@ impl LimeStore {
                     continue;
                 }
                 if let Ok(plaintext) = stored.session.decrypt(&message) {
-                    break 'decrypt Some((plaintext, stored.session, stored.peer_identity_key));
+                    break 'decrypt Some((plaintext, Some(stored.session), stored.peer_identity_key));
                 }
             }
             let OlmMessage::PreKey(pre_key) = &message else {
@@ -740,7 +784,7 @@ impl LimeStore {
                 Ok(created) => {
                     // The one-time key it used is gone from the account now: save that.
                     self.save(state)?;
-                    Some((created.plaintext, created.session, identity.to_base64()))
+                    Some((created.plaintext, Some(created.session), identity.to_base64()))
                 }
                 Err(_) => {
                     return Ok(Outcome::Keep(pending::DECRYPT_FAILED));
@@ -778,10 +822,15 @@ impl LimeStore {
 
         let parents = json!(inner.op.parents).to_string();
         let stored = self.with_conn(|conn| {
+            // The session is kept even when the key is not trusted: a pre-key message cannot be read a
+            // second time (its one-time key is spent), and it must be readable once the key is accepted.
+            if let Some(session) = &session {
+                save_session(conn, &self.pickle_key, &sender, &cert.device_id, &peer_identity, session, now)?;
+            }
             if pin_master_key(conn, &sender, &cert.master_key) == Err(StoreError::KeyMismatch) {
+                record_key_change(conn, &sender, &cert.master_key)?;
                 return Ok(None);
             }
-            save_session(conn, &self.pickle_key, &sender, &cert.device_id, &peer_identity, &session, now)?;
             let conversation = format!("dm:{sender}");
             let blocked = conn
                 .query_row(
@@ -817,6 +866,7 @@ impl LimeStore {
             Ok(Some(inserted > 0))
         })?;
         let Some(inserted) = stored else {
+            self.with_conn(|conn| pending::stash_plaintext(conn, row.id, &plaintext, &peer_identity))?;
             return Ok(Outcome::Keep(pending::KEY_MISMATCH));
         };
         self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
@@ -836,6 +886,22 @@ enum Outcome {
     Duplicate,
     /// It stays, for this reason.
     Keep(&'static str),
+}
+
+/// Remembers that `user_id` now presents a different master key than the one we pinned.
+fn record_key_change(conn: &Connection, user_id: &str, new_master_key: &str) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE peers SET new_master_key = ?2 WHERE user_id = ?1",
+        params![user_id, new_master_key],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+/// Lower-case hex SHA-256, the way the server writes a ciphertext hash.
+fn hex_sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// A message of mine waiting to be sent.
@@ -984,6 +1050,8 @@ fn call(
 fn check(status: u16) -> Result<(), StoreError> {
     match status {
         200..=299 => Ok(()),
+        401 | 403 => Err(StoreError::Unauthorized),
+        429 => Err(StoreError::RateLimited),
         500..=599 => Err(StoreError::Unavailable),
         _ => Err(StoreError::Rejected),
     }

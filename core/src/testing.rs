@@ -4,6 +4,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use sha2::Digest;
+
 use serde_json::{json, Value};
 
 use crate::transport::{HeaderPair, Transport, TransportError, TransportResponse};
@@ -24,6 +26,8 @@ pub(crate) struct ServerState {
     pub profiles: HashMap<String, (String, Option<String>)>,
     /// Make every `send` fail with a 500 while true.
     pub fail_sends: bool,
+    /// sender user to hashes of identified items that were deleted undelivered
+    pub undelivered: HashMap<String, Vec<String>>,
 }
 
 #[derive(Default)]
@@ -108,6 +112,29 @@ impl Transport for FakeServer {
             "devices-register" => {
                 let (device, identity, signing) =
                     (text("device_id"), text("identity_key"), text("signing_key"));
+                // A different master key from a verified session replaces the account's keys: the old
+                // devices go, with their waiting mail (identified senders are told by hash).
+                if state.masters.get(&user).is_some_and(|m| *m != text("master_key")) {
+                    let old: Vec<String> = state
+                        .devices
+                        .iter()
+                        .filter(|(_, d)| d.0 == user)
+                        .map(|(id, _)| id.clone())
+                        .collect();
+                    for id in &old {
+                        let gone: Vec<_> = state.mailbox.iter().filter(|m| &m.1 == id).cloned().collect();
+                        for item in gone {
+                            if let (true, Some(sender)) = (item.3, item.4.clone()) {
+                                let wire = vodozemac::base64_decode(&item.2).unwrap();
+                                let hash = sha2::Sha256::digest(&wire).iter().map(|b| format!("{b:02x}")).collect();
+                                state.undelivered.entry(sender).or_default().push(hash);
+                            }
+                        }
+                        state.mailbox.retain(|m| &m.1 != id);
+                        state.devices.remove(id);
+                        state.one_time_keys.remove(id);
+                    }
+                }
                 state.masters.insert(user.clone(), text("master_key"));
                 state.devices.insert(
                     device.clone(),
@@ -231,6 +258,10 @@ impl Transport for FakeServer {
                     Some(id) => respond(200, json!({ "user_id": id })),
                     None => respond(404, json!({ "error": "not_found" })),
                 }
+            }
+            "undelivered-take" => {
+                let hashes = state.undelivered.remove(&user).unwrap_or_default();
+                respond(200, json!({ "hashes": hashes }))
             }
             "users-find" => {
                 let query = text("query").to_lowercase();

@@ -71,3 +71,16 @@ The scripts never print the secrets. `deploy-staging.sh` writes the project URL 
 - `profile-get { user_id }`: another person's public fields (a name only when they hid from search). 120 a minute per user (`LIME_RATE_PROFILE_PER_MIN`).
 - The Realtime "new items" nudge is a **private** channel (`device:<id>`); a policy on `realtime.messages` (migration `20261006160000`) lets only the device's owner, on a fully signed-in session, join it. A client must set its access token before it joins.
 - **After adding a new function directory, restart the local stack** (`supabase stop && supabase start`): the local Edge runtime only learns about a new function folder at start. `./supabase/test.sh` restarts the runtime, which is enough for edits to existing functions.
+
+## Replacing an account's keys, and the notice email (LIME-95-fix)
+
+A fully verified session that registers a device with a **different master key** replaces the account's keys (old devices revoked, their unfetched mail removed, senders told by hash through `undelivered-take`): see `docs/api-v2.md` section 11. This is temporary policy until the recovery key exists.
+
+The account's owner is emailed ("A new phone signed in and replaced your Lime keys. If this wasn't you, reset your password."). It needs a Resend key as a **function secret**, which only you can set (I never read your Resend key):
+
+```
+supabase secrets set LIME_NOTIFY_RESEND_API_KEY=re_xxxxxxxx --project-ref <ref>
+# optional: supabase secrets set LIME_NOTIFY_FROM="Lime <no-reply@send.limechat.org>" --project-ref <ref>
+```
+
+The sending domain must be verified in Resend (it already is for the sign-in codes). Until the secret is set, no email is sent and nothing fails.

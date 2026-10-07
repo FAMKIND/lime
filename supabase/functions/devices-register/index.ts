@@ -4,10 +4,15 @@
 // The signed message (decided in LIME-92, docs/api-v2.md section 11):
 //   "lime-device-v1\n" + device_id + "\n" + identity_key + "\n" + signing_key
 // as UTF-8, with the key strings exactly as sent, signed by the user's Ed25519 master key.
+//
+// The first registration fixes the account's master key. A LATER registration with a different master
+// key (a phone whose keys were wiped) from a verified session replaces the account's keys: see the
+// comment where it happens, and docs/api-v2.md section 11 (LIME-95-fix).
 
 import { admin, config, rateLimit, requireUser } from "../_shared/db.ts";
 import { fromBase64, isUuid, verifyEd25519 } from "../_shared/bytes.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
+import { keysReplacedNotice, sendNotice } from "../_shared/notify.ts";
 
 function key32(value: unknown, name: string): string {
   try {
@@ -42,6 +47,7 @@ Deno.serve(handler(async (req) => {
   }
 
   const db = admin();
+  let keysReset = false;
   // The first registration fixes the account's master key. Two devices registering at once must not
   // race, so insert-if-absent, then read back and compare.
   {
@@ -54,8 +60,18 @@ Deno.serve(handler(async (req) => {
       throw new HttpError(500, "internal");
     }
     const { data: master } = await db.from("master_keys").select("public_key").eq("user_id", userId).maybeSingle();
-    if (!master || master.public_key !== masterKey) {
-      throw new HttpError(409, "master_key_mismatch", "This account already has a different master key.");
+    if (!master) throw new HttpError(500, "internal");
+    if (master.public_key !== masterKey) {
+      // A phone with new keys (a fresh install, or a sign-out that wiped the old ones). The session is
+      // verified (a password AND an emailed code, `requireUser`), so it may replace the account's keys:
+      // the old devices are revoked and their unreadable mail removed (migration 20261007000000).
+      // Contacts that remembered the old master key must accept the change.
+      const { error: resetError } = await db.rpc("reset_account_keys", { p_user: userId, p_master: masterKey });
+      if (resetError) {
+        console.error("reset_account_keys failed", resetError.code);
+        throw new HttpError(500, "internal");
+      }
+      keysReset = true;
     }
   }
 
@@ -78,6 +94,12 @@ Deno.serve(handler(async (req) => {
     }
   }
 
+  if (keysReset) {
+    // Tell the account's owner (best effort: a failed send never blocks the registration).
+    const { data: owner } = await db.auth.admin.getUserById(userId);
+    if (owner?.user?.email) await sendNotice(owner.user.email, keysReplacedNotice());
+  }
+
   const { data: remaining } = await db.rpc("remaining_one_time_keys", { p_device: deviceId });
-  return json({ device_id: deviceId, user_id: userId, remaining_one_time_keys: remaining ?? 0 }, existing ? 200 : 201);
+  return json({ device_id: deviceId, user_id: userId, remaining_one_time_keys: remaining ?? 0, keys_reset: keysReset }, existing ? 200 : 201);
 }));

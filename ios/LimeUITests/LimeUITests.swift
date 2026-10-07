@@ -95,6 +95,29 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(title.label.contains("Grace Hopper"))
     }
 
+    func testAChangedKeyAsksToBeAcceptedAndANotDeliveredMessageCanBeResent() {
+        let app = demoApp()
+        app.launchArguments += ["-lime-demo-screen", "key-change"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["key-change-note"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["key-change-note"].label.contains("security key changed"))
+        XCTAssertTrue(app.buttons["delivery-undelivered"].exists, "the message that never arrived says so")
+        app.buttons["key-change-accept"].tap()
+        XCTAssertTrue(app.staticTexts["key-change-note"].waitForNonExistence(timeout: 5), "accepted: the notice goes")
+        app.buttons["delivery-undelivered"].tap()
+        XCTAssertTrue(app.staticTexts["delivery-sent"].waitForExistence(timeout: 8) || app.staticTexts["delivery-sending"].exists, "resending puts it on its way")
+        XCTAssertFalse(app.buttons["delivery-undelivered"].exists)
+    }
+
+    func testAnEndedSessionSaysSoAndOffersSignIn() {
+        let app = demoApp()
+        app.launchArguments += ["-lime-demo-screen", "session-ended"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["problem-message"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["problem-message"].label, "Your session has ended. Please sign in again.")
+        XCTAssertTrue(app.buttons["problem-sign-in"].exists)
+    }
+
     func testAMessageShowsSendingThenSent() {
         let app = demoApp()
         app.launch()

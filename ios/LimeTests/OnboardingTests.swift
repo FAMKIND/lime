@@ -401,6 +401,8 @@ final class LiveAuthServiceTests: XCTestCase {
             (403, ["error": "not_verified"], .notVerified),
             (502, ["error": "email_failed"], .emailFailed),
             (400, ["error": "weak_password"], .weakPassword),
+            (500, ["error": "internal"], .unavailable),
+            (503, [:], .unavailable),
         ]
         for (status, body, expected) in cases {
             reply(status, body)

@@ -60,6 +60,9 @@ pub enum StoreError {
     KeyMismatch,
     /// The server says too many requests (a 429): try again shortly.
     RateLimited,
+    /// The server does not accept this session (a 401 or 403): it ended, was never fully verified,
+    /// or this device was replaced. The person must sign in again.
+    Unauthorized,
 }
 
 impl std::fmt::Display for StoreError {
@@ -80,6 +83,7 @@ impl std::fmt::Display for StoreError {
             StoreError::NoRecipientKeys => "the recipient has no keys to send to",
             StoreError::KeyMismatch => "a person's master key changed",
             StoreError::RateLimited => "too many requests; try again shortly",
+            StoreError::Unauthorized => "the session ended; sign in again",
         };
         f.write_str(text)
     }
@@ -119,6 +123,8 @@ pub struct ConversationSummary {
     /// `pending` (a stranger's first message, waiting in Requests) or `accepted`. Blocked
     /// conversations are not listed.
     pub request_state: String,
+    /// The other person's security key changed since we pinned it: accept it to keep chatting.
+    pub key_change_pending: bool,
     pub last_message: Option<MessageItem>,
     /// The other people (never me), in a stable order.
     pub members: Vec<MemberInfo>,
@@ -187,7 +193,8 @@ impl LimeStore {
         let conn = self.lock();
         let mut statement = conn
             .prepare(
-                "SELECT c.id, c.title, c.is_group, c.is_pinned, c.unread, c.request_state
+                "SELECT c.id, c.title, c.is_group, c.is_pinned, c.unread, c.request_state,
+                        EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NOT NULL)
                  FROM conversations c
                  WHERE c.request_state != 'blocked'
                  ORDER BY c.is_pinned DESC,
@@ -205,6 +212,7 @@ impl LimeStore {
                     r.get::<_, bool>(3)?,
                     r.get::<_, u32>(4)?,
                     r.get::<_, String>(5)?,
+                    r.get::<_, bool>(6)?,
                 ))
             })
             .map_err(db_err)?
@@ -212,7 +220,7 @@ impl LimeStore {
             .map_err(db_err)?;
 
         let mut summaries = Vec::with_capacity(rows.len());
-        for (id, title, is_group, is_pinned, unread, request_state) in rows {
+        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending) in rows {
             summaries.push(ConversationSummary {
                 last_message: last_message(&conn, &id)?,
                 members: members_of(&conn, &id)?,
@@ -222,6 +230,7 @@ impl LimeStore {
                 is_pinned,
                 unread,
                 request_state,
+                key_change_pending,
             });
         }
         Ok(summaries)
@@ -261,6 +270,37 @@ impl LimeStore {
     /// (The server-side block, rotating the delivery key, comes with sealed sends.)
     pub fn block_sender(&self, conversation_id: String) -> Result<(), StoreError> {
         self.set_request_state(&conversation_id, "blocked")
+    }
+
+    /// Accepts the other person's new security key (they signed in on a new phone): their messages
+    /// that were held back are read, and messages to them can be sent again.
+    pub fn trust_new_key(&self, conversation_id: String) -> Result<(), StoreError> {
+        let peer = conversation_id.strip_prefix("dm:").ok_or(StoreError::NotFound)?;
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE peers SET master_key = new_master_key, new_master_key = NULL
+             WHERE user_id = ?1 AND new_master_key IS NOT NULL",
+            params![peer],
+        )
+        .map_err(db_err)?;
+        conn.execute(
+            "UPDATE pending_inbound SET reason = 'new' WHERE sender_user = ?1 AND reason = 'key_mismatch'",
+            params![peer],
+        )
+        .map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Queues a message that was not sent or not delivered to go out again (same message, same place).
+    pub fn retry_message(&self, message_id: String) -> Result<(), StoreError> {
+        let conn = self.lock();
+        conn.execute(
+            "UPDATE messages SET local_state = 'sending'
+             WHERE id = ?1 AND sender_id = ?2 AND local_state IN ('failed', 'undelivered')",
+            params![message_id, ME_ID],
+        )
+        .map_err(db_err)?;
+        Ok(())
     }
 
     /// Marks a conversation as read.

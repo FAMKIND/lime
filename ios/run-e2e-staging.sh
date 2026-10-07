@@ -26,4 +26,4 @@ export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 TEST_RUNNER_LIME_E2E_API_URL="https://$SUPABASE_PROJECT_REF.supabase.co" TEST_RUNNER_LIME_E2E_ANON_KEY="$ANON" \
   TEST_RUNNER_LIME_E2E_SERVICE_KEY="$SERVICE" \
   xcodebuild test -scheme Lime -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
-  -only-testing:LimeTests/LocalBackendE2ETests/testTwoPhonesChatLiveOnStaging 2>&1 | grep -E "error:|Test Case|TEST (SUCCEEDED|FAILED)|Timed out|XCTAssert|skipped"
+  -only-testing:LimeTests/LocalBackendE2ETests/testTwoPhonesChatLiveOnStaging -only-testing:LimeTests/LocalBackendE2ETests/testAPhoneWithNewKeysReplacesTheAccountKeysOnStaging 2>&1 | grep -E "error:|Test Case|TEST (SUCCEEDED|FAILED)|Timed out|XCTAssert|skipped"
