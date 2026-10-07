@@ -114,6 +114,13 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**Update: LIME-98 landed as `aa1c6b7`** (pushed and verified; no project ref).
+- Settings per design 05, the Signal-style ✕/✓ editors, About (emoji + 140 + presets), Account/password change, Privacy (Blocked, safety numbers), Customize, About + generated acknowledgements (105 libs; the SQLCipher notice closes that checklist item).
+- 36 server / 51 Rust / 85 iOS tests pass; 0 warnings. Plot reviewed the screenshots: good.
+- **Watch:** a one-off transient `register_device` failure on staging (it passed on retry). If it recurs, open a brief.
+- **Deviations accepted:** Linked Devices is top-level (as in design 05); no chat details yet; the key date shows the upgrade day for older accounts.
+- Next: LIME-99 (drafted).
+
 **⚠ Incident (2026-10-07):** the user pasted the `lime-notify` Resend key into **tend's chat** (inside the `read -s` command line), so the key is in tend's transcript. Tend set it as the staging secret anyway.
 - **The user is told to rotate it:** create a new Resend key, delete the old one, and set it from the **Terminal app** (not a chat). **Done (2026-10-07):** the new key was set via the Terminal ("Finished supabase secrets set"). The user confirms the old key was deleted in Resend.
 - **Lesson for plot:**
