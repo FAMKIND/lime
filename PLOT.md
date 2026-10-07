@@ -114,6 +114,15 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**Update: LIME-99 landed as `5050a5c`** (pushed and verified).
+- FTS5 inside SQLCipher (already compiled in; no size impact). Prefix, accent-insensitive.
+- Messages search + in-chat find ("N of M").
+- Tests prove no plaintext in the DB file and no network calls. 63 Rust / 90 iOS tests pass; 0 warnings.
+- **Plot's review of the screenshots:** good. **Polish candidates (only if the user minds):**
+  - the find bar floats over the messages, so text shows through behind it (busy);
+  - the whole bubble is outlined rather than the matched words highlighted.
+- Next: LIME-100.
+
 **Update: LIME-98 landed as `aa1c6b7`** (pushed and verified; no project ref).
 - Settings per design 05, the Signal-style ✕/✓ editors, About (emoji + 140 + presets), Account/password change, Privacy (Blocked, safety numbers), Customize, About + generated acknowledgements (105 libs; the SQLCipher notice closes that checklist item).
 - 36 server / 51 Rust / 85 iOS tests pass; 0 warnings. Plot reviewed the screenshots: good.
@@ -1529,6 +1538,23 @@ If anything contradicts this brief, stop and ask the user.
    - Live (WYSIWYG) editing: the user sees formatting, not asterisks.
    - **Return = a new line;** send = the arrow.
    - **Link:** a sheet with a URL (+ text when there's no selection).
+3b. **Amendment (the user, 2026-10-07): the formatting toolbar docks above the keyboard,** modelled on the user's examples (Notion's and Gmail's iOS editors). **The screenshots contain personal emails and names; never copy them.**
+   - **This replaces** the "pill above the system edit menu" in item 3 and the toolbar's Aa popover.
+   - **A floating glass capsule sits directly above the keyboard** (a keyboard accessory; it moves with the keyboard and is never covered by the system Cut/Copy/Paste callout). It is **horizontally scrollable** when the items don't fit (Notion style).
+   - **The items, in order:** **B**, *I*, U, ~~S~~, link, code `</>`, bulleted list, numbered list.
+     - Each shows its **pressed state** for the current selection/caret (like Gmail's).
+     - Unavailable items are dimmed (e.g. link with no selection still opens the link sheet).
+   - **At the right end, a separate round glass button:** **✕** (Gmail style) closes the toolbar and returns to the normal composer row (`+`, emoji, **Aa**, mic, send).
+   - **When it appears:**
+     1. automatically **whenever text is selected** in the composer;
+     2. when the user taps **Aa** in the composer row (it stays until ✕ or send).
+   - **Text colour and highlight (seen in Gmail) are NOT included.** The Markdown subset has no colour, and they'd break cross-platform rendering and the plain-text previews. The user may ask for them later as a separate decision.
+   - The UI tests must cover:
+     - selecting text shows the toolbar;
+     - B toggles the pressed state and bold;
+     - the toolbar scrolls at 375pt;
+     - ✕ restores the composer row;
+     - Aa opens it with no selection.
 4. **The bubble rendering:** a native attributed text. Code blocks are monospaced with horizontal scroll. Links are tappable, with a confirmation for non-https URLs. Own and other bubbles keep their colours and contrast.
 
 **Out of scope:** mentions, emoji reactions (later), attachments.
@@ -1543,7 +1569,7 @@ If anything contradicts this brief, stop and ask the user.
 
 **Gate (the user):**
 - format a message with bold, a list and a code block → send → it looks right;
-- select text → the B/I/U/S pill.
+- select text → **the formatting capsule appears above the keyboard** (Notion/Gmail style), scrolls if needed, and ✕ closes it.
 
 **Record:** a `## LIME-100` entry in `TEND.md`. Commit: `feat: message formatting (Markdown subset, encrypted), composer per design 04`, trailer `Brief: LIME-100`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
