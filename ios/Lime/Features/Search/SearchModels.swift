@@ -22,6 +22,8 @@ struct MessageHit: Identifiable, Equatable, Sendable {
 struct ChatTarget: Hashable {
     let conversationID: String
     let messageID: String
+    /// The words searched for, highlighted when the chat opens.
+    var words: [String] = []
 }
 
 struct SearchResults: Equatable, Sendable {

@@ -594,7 +594,17 @@ final class ConversationStore {
                 Message(id: "f4", senderID: nil, text: "My steps:\n\n1. copy the forms\n2. sign them\n  - **both** sides\n3. hand them in", date: now.addingTimeInterval(-600), state: .sent),
             ])]
             path.append("dm:fmt")
-        case "new-message", "new-message-found": demoSheet = screen
+        case "new-message", "new-message-found", "new-message-filter", "new-message-empty", "find-username", "find-username-found":
+            demoSheet = screen
+            if screen == "new-message-empty" {
+                conversations = []
+            } else {
+                // A longer list of teachers, so the A–Z sections and the rail have something to show.
+                for name in ["Ben Okafor", "Chloe Diaz", "Maya Singh", "Noah Bell", "Priya Nair", "Zoe Adler", "Éloïse Martin", "Lena Ito"] {
+                    let who = Person(id: name.lowercased().replacingOccurrences(of: " ", with: "."), name: name)
+                    conversations.append(Conversation(id: "dm:\(who.id)", title: name, members: [who], messages: []))
+                }
+            }
         default:
             // "settings", "settings/profile", "settings/profile/edit-about", "settings/privacy/blocked", ...
             if let screen, screen.hasPrefix("settings") {

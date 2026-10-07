@@ -151,6 +151,7 @@ struct FieldEditorSheet: View {
                 .autocorrectionDisabled(model.field == .username)
                 .submitLabel(.done)
                 .focused($focused)
+                .selectionTint()
                 .onSubmit { if model.canSave { save() } }
                 .accessibilityIdentifier("editor-field")
             if !model.text.isEmpty {

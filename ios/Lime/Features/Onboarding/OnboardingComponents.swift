@@ -99,6 +99,7 @@ struct OnboardingField: View {
                 }
             }
             .textContentType(contentType)
+            .selectionTint()
             .submitLabel(submit)
             .onSubmit(onSubmit)
             .font(Theme.body)

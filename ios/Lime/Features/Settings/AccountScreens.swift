@@ -81,6 +81,7 @@ struct ChangePasswordScreen: View {
                 SettingsFootnote(text: "We emailed you a code. Enter it to finish changing your password.")
                 TextField("Code", text: $model.code)
                     .keyboardType(.numberPad).textContentType(.oneTimeCode)
+                    .selectionTint()
                     .font(.system(.title3, design: .monospaced, weight: .semibold))
                     .padding(.horizontal, 18).frame(minHeight: 56)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

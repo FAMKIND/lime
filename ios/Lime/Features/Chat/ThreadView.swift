@@ -58,7 +58,7 @@ struct ThreadView: View {
         .task {
             await store.openThread(target.rootID)
             await store.markThreadRead(target.rootID, in: target.conversationID)
-            // Opened from a search hit: land on that reply and outline it for a moment.
+            // Opened from a search hit: land on that reply and highlight it for a moment.
             if let focus = target.focusMessageID {
                 try? await Task.sleep(for: .milliseconds(300))
                 highlightedID = focus
@@ -82,6 +82,7 @@ struct ThreadView: View {
                       showName: false,
                       showState: message.isOwn && message.state != .sent,
                       highlighted: highlightedID == message.id,
+                      findWords: highlightedID == target.focusMessageID ? target.words : [],
                       onRetry: { Task { await store.resend(message.id) } })
             .padding(.bottom, 8)
     }

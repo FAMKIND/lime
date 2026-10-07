@@ -167,6 +167,14 @@ final class ComposerTextView: UITextView {
     static let plainTypingAttributes: [NSAttributedString.Key: Any] = [.font: ComposerDocument.baseFont(), .foregroundColor: UIColor.label]
     private var accessory: UIView?
 
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        // The caret, the selection and its handles are the system's blue, never the accent.
+        tintColor = Theme.selectionUIColor
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
     override func paste(_ sender: Any?) {
         guard let string = UIPasteboard.general.string else { return }
         insertText(string) // plain text only: no one else's styling comes along

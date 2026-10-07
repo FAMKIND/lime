@@ -4,6 +4,8 @@ struct ChatView: View {
     let conversationID: Conversation.ID
     /// Opened from a search result: scroll to this message and highlight it for a moment.
     var focusMessageID: String? = nil
+    /// The words of the search that led here: highlighted in the chat like find does.
+    var focusWords: [String] = []
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var composerModel = RichComposerModel()
@@ -16,6 +18,12 @@ struct ChatView: View {
     @State private var highlightedID: String?
     @State private var scrollRequest: ScrollRequest?
     @FocusState private var findFocused: Bool
+
+    /// What to highlight in the bubbles: the typed find words, or the search that opened this chat (until it fades).
+    private var highlightWords: [String] {
+        if finding { return SearchText.words(findQuery) }
+        return highlightedID == focusMessageID ? focusWords : []
+    }
 
     struct ScrollRequest: Equatable { let id: String; let token = UUID() }
 
@@ -93,6 +101,7 @@ struct ChatView: View {
                                           showName: showAvatar && conversation.isGroup,
                                           showState: message.isOwn && (message.state != .sent || message.id == lastOwnID),
                                           highlighted: highlightedID == message.id,
+                                          findWords: highlightWords,
                                           onRetry: { Task { await store.resend(message.id) } },
                                           onReply: conversation.isRequest ? nil : { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) },
                                           onOpenThread: { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) })
@@ -207,6 +216,7 @@ struct ChatView: View {
                 .autocorrectionDisabled()
                 .submitLabel(.search)
                 .focused($findFocused)
+                .selectionTint()
                 .accessibilityIdentifier("find-field")
                 .task(id: findQuery) {
                     let wanted = findQuery
@@ -380,6 +390,8 @@ struct MessageBubble: View {
     var showState: Bool = false
     /// The message a search or find landed on.
     var highlighted: Bool = false
+    /// The words find (or a search result) is looking for: highlighted inside the bubble.
+    var findWords: [String] = []
     var onRetry: () -> Void = {}
     /// "Reply in thread" (long-press), and tapping the "N replies" row under a message that has them.
     var onReply: (() -> Void)? = nil
@@ -401,17 +413,14 @@ struct MessageBubble: View {
                         .foregroundStyle(Theme.text)
                 }
                 FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
-                                     link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString)
+                                     link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString,
+                                     find: findWords.isEmpty ? nil : FindStyle(words: findWords, current: highlighted))
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(message.isOwn ? Theme.ownBubble : Theme.bubbleOther,
                                 in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
                             .strokeBorder(message.isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
-                            .strokeBorder(Theme.accent, lineWidth: highlighted ? 3 : 0)
                     )
                     .animation(.easeInOut(duration: 0.2), value: highlighted)
                     .accessibilityIdentifier(message.isOwn ? "own-bubble" : "other-bubble")

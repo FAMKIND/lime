@@ -40,13 +40,13 @@ struct FormattingToolbar: View {
             Text(text)
                 .font(id == "fmt-bold" ? .system(size: 18, weight: .bold) : font)
                 .underline(underline).strikethrough(strike)
-                .foregroundStyle(on ? Theme.accentInk : Theme.text)
+                .foregroundStyle(Theme.text)
         }
     }
 
     private func symbol(_ name: String, on: Bool, id: String, label: String, action: @escaping () -> Void) -> some View {
         item(on: on, id: id, label: label, action: action) {
-            Image(systemName: name).font(.system(size: 17)).foregroundStyle(on ? Theme.accentInk : Theme.text)
+            Image(systemName: name).font(.system(size: 17)).foregroundStyle(Theme.text)
         }
     }
 
@@ -54,7 +54,7 @@ struct FormattingToolbar: View {
         Button(action: action) {
             content()
                 .frame(width: 42, height: 38)
-                .background(on ? Theme.accent : Color.clear, in: Capsule())
+                .background(on ? Theme.pressed : Color.clear, in: Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -87,11 +87,13 @@ struct LinkSheet: View {
             TextField("Address (https://…)", text: $address)
                 .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 .focused($focused)
+                .selectionTint()
                 .padding(.horizontal, 16).frame(minHeight: 52)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .accessibilityIdentifier("link-url")
             if !request.hasSelection {
                 TextField("Text to show (optional)", text: $text)
+                    .selectionTint()
                     .padding(.horizontal, 16).frame(minHeight: 52)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .accessibilityIdentifier("link-text")

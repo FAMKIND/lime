@@ -24,6 +24,12 @@ enum Theme {
         /// Links: a green that keeps 4.5:1 contrast on the surface it sits on (see ThemeTests).
         static let linkOther = "LinkOther"
         static let linkOwn = "LinkOwn"
+        /// A warm neutral for active and pressed states (the formatting toolbar). The accent is only for the primary action.
+        static let pressed = "Pressed"
+        /// Find: every matched word, the current one, and the ink on both (fixed, so it reads on any bubble).
+        static let findMatch = "FindMatch"
+        static let findCurrent = "FindCurrent"
+        static let findInk = "FindInk"
     }
 
     static func color(_ name: String) -> Color {
@@ -47,6 +53,14 @@ enum Theme {
     static let linkOther = color(Name.linkOther)
     /// A link in my own bubble.
     static let linkOwn = color(Name.linkOwn)
+    static let pressed = color(Name.pressed)
+    static let findMatch = color(Name.findMatch)
+    static let findCurrent = color(Name.findCurrent)
+    static let findInk = color(Name.findInk)
+
+    /// The selection, the caret and its handles: the system's own blue, never the accent.
+    static let selectionUIColor = UIColor.systemBlue
+    static let selection = Color(uiColor: selectionUIColor)
 
     /// Resolves an asset colour for a given appearance (used by the contrast tests).
     static func uiColor(_ name: String, dark: Bool) -> UIColor {
@@ -77,4 +91,9 @@ enum Theme {
         let light = ui(avatarLight[i]), dark = ui(avatarDark[i])
         return Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
     }
+}
+
+extension View {
+    /// Text fields show the system's blue selection and caret, whatever tint the screen around them has.
+    func selectionTint() -> some View { tint(Theme.selection) }
 }

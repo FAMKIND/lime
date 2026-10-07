@@ -74,6 +74,7 @@ struct ThreadTarget: Hashable {
     let conversationID: String
     let rootID: String
     var focusMessageID: String? = nil
+    var words: [String] = []
 }
 
 struct Conversation: Identifiable, Hashable, Sendable {

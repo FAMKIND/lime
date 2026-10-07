@@ -62,6 +62,7 @@ struct MessageSearchScreen: View {
                     .autocorrectionDisabled()
                     .submitLabel(.search)
                     .focused($focused)
+                    .selectionTint()
                     .accessibilityIdentifier("search-field")
                 if !query.isEmpty {
                     Button { query = "" } label: {
@@ -112,12 +113,12 @@ struct MessageSearchScreen: View {
                 sectionTitle("Messages")
                 ForEach(results.messages) { hit in
                     if let root = hit.threadRoot {
-                        NavigationLink(value: ThreadTarget(conversationID: hit.conversationID, rootID: root, focusMessageID: hit.messageID)) { messageRow(hit) }
+                        NavigationLink(value: ThreadTarget(conversationID: hit.conversationID, rootID: root, focusMessageID: hit.messageID, words: SearchText.words(query))) { messageRow(hit) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("search-message-\(hit.messageID)")
                             .accessibilityLabel("\(hit.conversationTitle), in a thread: \(SearchText.plain(hit.marked))")
                     } else {
-                        NavigationLink(value: ChatTarget(conversationID: hit.conversationID, messageID: hit.messageID)) { messageRow(hit) }
+                        NavigationLink(value: ChatTarget(conversationID: hit.conversationID, messageID: hit.messageID, words: SearchText.words(query))) { messageRow(hit) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("search-message-\(hit.messageID)")
                             .accessibilityLabel("\(hit.conversationTitle): \(SearchText.plain(hit.marked))")

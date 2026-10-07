@@ -71,28 +71,109 @@ final class LimeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["conversation-row-dm:ada"].exists)
     }
 
-    func testNewMessageFindsAPersonAndOpensTheChat() {
-        let app = demoApp()
-        app.launch()
+    // MARK: New Message (LIME-101b)
+
+    private func openNewMessage(_ app: XCUIApplication) {
         XCTAssertTrue(app.buttons["new-message-button"].waitForExistence(timeout: 10))
         app.buttons["new-message-button"].tap()
+        XCTAssertTrue(app.textFields["new-message-field"].waitForExistence(timeout: 5))
+    }
+
+    func testNewMessageListsTeachersAToZAndTheRailJumps() {
+        let app = threadApp("new-message")
+        app.launch()
+        XCTAssertTrue(app.textFields["new-message-field"].waitForExistence(timeout: 10), "the sheet opens with the search at the bottom")
+        XCTAssertTrue(app.buttons["action-username"].exists)
+        XCTAssertTrue(app.buttons["action-email"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["action-new-group"].exists, "New Group is shown")
+        XCTAssertTrue(app.staticTexts["Coming soon"].exists, "but dimmed, as coming soon")
+        XCTAssertFalse(app.descendants(matching: .any)["action-phone"].exists, "no phone lookup")
+        let headers = app.staticTexts.matching(NSPredicate(format: "label IN %@", ["B", "C", "E", "L", "M", "N", "P", "S", "Z"]))
+        XCTAssertGreaterThanOrEqual(headers.count, 3, "letter headers")
+        XCTAssertTrue(app.buttons["known-dm:lee"].exists)
+        XCTAssertFalse(app.buttons["known-dm:ada"].exists, "a stranger's request is not a known teacher")
+        XCTAssertLessThan(app.buttons["known-dm:ben.okafor"].frame.minY, app.buttons["known-dm:sam"].frame.minY, "B comes before S")
+        XCTAssertTrue(app.descendants(matching: .any)["index-rail"].exists)
+        app.descendants(matching: .any)["index-Z"].tap()
+        XCTAssertTrue(app.buttons["known-dm:zoe.adler"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["known-dm:zoe.adler"].isHittable, "the rail jumped to Z")
+    }
+
+    func testTypingFiltersTheTeachersAndTheActionsStepAside() {
+        let app = threadApp("new-message")
+        app.launch()
         let field = app.textFields["new-message-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["find-button"].isEnabled, "nothing to find yet")
-        field.typeText("nobody.here")
-        app.buttons["find-button"].tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("lee")
+        XCTAssertTrue(app.buttons["known-dm:lee"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["known-dm:sam"].exists)
+        XCTAssertFalse(app.buttons["action-username"].exists)
+    }
+
+    func testTheSearchSubmitLooksUpAnExactUsernameAndTappingTheRowStartsTheChat() {
+        let app = demoApp()
+        app.launch()
+        openNewMessage(app)
+        let field = app.textFields["new-message-field"]
+        field.tap()
+        field.typeText("nobody.here\n")
         XCTAssertTrue(app.staticTexts["find-result-none"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["find-result-none"].label, "No teacher found with that username or email.")
-
+        app.buttons["new-message-clear"].tap()
         field.tap()
-        field.clearAndType("grace.h")
-        app.buttons["find-button"].tap()
-        XCTAssertTrue(app.staticTexts["find-result-name"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["find-result-name"].label, "Grace Hopper")
-        app.buttons["message-button"].tap()
+        field.typeText("grace.h\n")
+        let row = app.buttons["find-result-row"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.label.contains("Grace Hopper"), row.label)
+        XCTAssertTrue(row.label.contains("@grace.h · Naval Academy"), row.label)
+        XCTAssertFalse(app.buttons["message-button"].exists, "no separate Message button")
+        row.tap()
         let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertTrue(title.label.contains("Grace Hopper"))
+    }
+
+    func testFindByUsernameNextWaitsForInputThenShowsTheTeacher() {
+        let app = demoApp()
+        app.launch()
+        openNewMessage(app)
+        app.buttons["action-username"].tap()
+        let next = app.buttons["find-next"]
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        XCTAssertFalse(next.isEnabled, "Next is off until there is input")
+        let field = app.textFields["find-by-field"]
+        field.typeText("gr")
+        XCTAssertFalse(next.isEnabled, "still not a whole username")
+        field.typeText("ace.h")
+        XCTAssertTrue(next.isEnabled)
+        next.tap()
+        let row = app.buttons["find-result-row"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch.waitForExistence(timeout: 5))
+    }
+
+    func testFindByEmailSaysWhenNoTeacherIsFoundAndBackReturnsToTheList() {
+        let app = demoApp()
+        app.launch()
+        openNewMessage(app)
+        app.buttons["action-email"].tap()
+        let field = app.textFields["find-by-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("nobody@school.org")
+        app.buttons["find-next"].tap()
+        XCTAssertTrue(app.staticTexts["find-result-none"].waitForExistence(timeout: 5))
+        app.buttons["find-back"].tap()
+        XCTAssertTrue(app.buttons["action-username"].waitForExistence(timeout: 5))
+    }
+
+    func testNewMessageWithNoTeachersYetSaysHowToFindSome() {
+        let app = threadApp("new-message-empty")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["new-message-empty"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["new-message-empty"].label, "Find teachers by their username or email.")
+        XCTAssertFalse(app.descendants(matching: .any)["index-rail"].exists, "no rail when there is nobody to jump to")
     }
 
     func testAChangedKeyAsksToBeAcceptedAndANotDeliveredMessageCanBeResent() {

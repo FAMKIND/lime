@@ -10,24 +10,26 @@ struct FormattedMessageText: View {
     let link: Color
     /// The link that was just tapped, shown pressed for a moment.
     var pressed: String? = nil
+    /// Words to highlight (in-chat find, or a message opened from search).
+    var find: FindStyle? = nil
 
     var body: some View {
         let blocks = MessageRender.blocks(markdown)
         if blocks.count == 1, case .paragraph(let spans) = blocks[0] {
             // The common case, one paragraph, is a single piece of text.
-            Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+            Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                     switch block {
                     case .paragraph(let spans):
-                        Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+                        Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                     case .list(let items):
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(Array(MessageRender.numbered(items).enumerated()), id: \.offset) { _, row in
                                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                                     Text(row.marker).font(Theme.body).foregroundStyle(ink).frame(minWidth: 14, alignment: .trailing)
-                                    Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+                                    Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed, find: find)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                                 }
                                 .padding(.leading, CGFloat(row.item.level) * 18)
                             }
@@ -47,6 +49,13 @@ struct FormattedMessageText: View {
             .accessibilityElement(children: .contain)
         }
     }
+}
+
+/// Which words to highlight in a bubble, and whether this is the message find is on.
+struct FindStyle: Equatable {
+    /// Typed words, folded (see `SearchText.words`).
+    let words: [String]
+    let current: Bool
 }
 
 /// The pure parts of drawing (so they can be tested without a screen).
@@ -84,7 +93,7 @@ enum MessageRender {
 
     /// One run of text with its styles. A link is its own green plus an underline (and a tint while pressed);
     /// `__underline__` is the text colour with a plain underline.
-    static func attributed(_ spans: [Span], ink: Color, link linkColor: Color, pressed: String? = nil) -> AttributedString {
+    static func attributed(_ spans: [Span], ink: Color, link linkColor: Color, pressed: String? = nil, find: FindStyle? = nil) -> AttributedString {
         var result = AttributedString()
         for span in spans {
             var piece = AttributedString(span.text)
@@ -104,7 +113,32 @@ enum MessageRender {
             }
             result.append(piece)
         }
+        if let find { highlight(&result, find) }
         return result
+    }
+
+    /// A highlight behind each word that starts with a typed word (the same rule the search uses), the
+    /// current match stronger. The ink is fixed so the words read on any bubble, light or dark.
+    static func highlight(_ text: inout AttributedString, _ find: FindStyle) {
+        let wanted = find.words
+        guard !wanted.isEmpty else { return }
+        let plain = String(text.characters)
+        var start: String.Index?
+        var spans: [Range<String.Index>] = []
+        for index in plain.indices {
+            let isWord = plain[index].isLetter || plain[index].isNumber
+            if isWord, start == nil { start = index }
+            if !isWord, let from = start { spans.append(from..<index); start = nil }
+        }
+        if let from = start { spans.append(from..<plain.endIndex) }
+        for span in spans {
+            let word = plain[span].folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            guard wanted.contains(where: { word.hasPrefix($0) }) else { continue }
+            let lower = text.characters.index(text.startIndex, offsetBy: plain.distance(from: plain.startIndex, to: span.lowerBound))
+            let upper = text.characters.index(text.startIndex, offsetBy: plain.distance(from: plain.startIndex, to: span.upperBound))
+            text[lower..<upper].backgroundColor = find.current ? Theme.findCurrent : Theme.findMatch
+            text[lower..<upper].foregroundColor = Theme.findInk
+        }
     }
 
     /// Only these links open without asking (anything else, http and mailto here, asks first).

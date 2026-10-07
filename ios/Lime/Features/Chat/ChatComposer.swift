@@ -23,9 +23,9 @@ struct ChatComposer: View {
                 button("plus", label: "Add attachment", id: "composer-plus") { store.comingSoon("Attachments") }
                 button("face.smiling", label: "Emoji", id: "composer-emoji") { pickingEmoji = true }
                 Button { model.toggleToolbar() } label: {
-                    Text("Aa").font(.system(size: 17, weight: .medium)).foregroundStyle(model.toolbarVisible ? Theme.accentInk : Theme.text)
+                    Text("Aa").font(.system(size: 17, weight: .medium)).foregroundStyle(Theme.text)
                         .frame(width: 44, height: 40)
-                        .background(model.toolbarVisible ? Theme.accent : Color.clear, in: Capsule())
+                        .background(model.toolbarVisible ? Theme.pressed : Color.clear, in: Capsule())
                 }
                 .accessibilityLabel("Formatting").accessibilityIdentifier("composer-aa")
                 .accessibilityAddTraits(model.toolbarVisible ? [.isSelected] : [])
