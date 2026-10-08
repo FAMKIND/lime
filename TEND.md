@@ -4269,3 +4269,23 @@ Under the frames: what will be native in the build (`navigator.share`; a native 
 - Both phones: built for the device with `-allowProvisioningUpdates`, installed, and Lime launches on Shem's phone.
 
 **For the user (the field test).** Follow `docs/spike-ble-test-plan.md`: Jean's phone may need Settings → General → VPN & Device Management → Trust the developer first; a free developer build expires after 7 days. After the last scenario, **Share all → AirDrop** the logs from both phones to the Mac and tell tend the folder; tend writes `docs/spike-ble.md` (Phase 4). Things the field test may show that I could not: whether the service is found at all in the background, whether the overflow-area advertisement is discoverable, whether L2CAP works unpaired and unencrypted (it is published without encryption so that no pairing prompt interrupts the test), and the real throughput.
+
+### LIME-103: known bug, found in the field test (2026-10-08): "Share all" shows a blank share sheet
+
+**What happened.** On both phones, Nearby test → Share all (and sharing a single run) opens an iOS share sheet that shows only the Lime logo, with no AirDrop, no apps and no actions, so the logs cannot be exported from the app. **Workaround used:** the logs were copied straight from the app's data container with `xcrun devicectl device copy from --device <udid> --domain-type appDataContainer --domain-identifier com.famkind.lime --source Documents/nearby-logs --destination <dir>` (phone connected and unlocked). A's nine runs are in `~/Downloads/ble-logs/A/`; B's go in `~/Downloads/ble-logs/B/`.
+
+**Cause: not yet investigated.** The share sheet is a `UIActivityViewController` wrapped in a SwiftUI `.sheet` (`ShareSheet` in `NearbyTestScreen.swift`) over a navigation stack that is itself in a sheet, given file URLs in `Documents/nearby-logs/` with the `.jsonl` extension. Candidates to try, none verified: present the controller from UIKit instead of inside a SwiftUI sheet; use `ShareLink`; share copies in the temporary directory; give the files a type iOS knows (`.json` / `.txt`) or share the text. Fix it in a later commit with the analysis; it only affects the Debug-only spike screen.
+
+### LIME-103, Phase 4: the analysis (committed; the field test's results are in `docs/spike-ble.md`)
+
+**What was done.** Read the 19 logs (A: 9, B: 10) with a new script, `ios/analyze-ble-logs.py <folder> [--timeline]`, and wrote `docs/spike-ble.md`: the setup, a results table per scenario, throughput, what iOS allowed and blocked, what was not tested, the next test, battery, and a recommendation for mesh v1 with flags for the planner (nothing decided). The raw logs stay in `~/Downloads/ble-logs/{A,B}/` (not committed). The results sheet's claims were checked against the logs; the logs and the sheet agree, with these corrections and additions:
+- **Scenario 8 was not a real test of a send to a quit app.** A's last send was before B was swiped away, so "nothing received while quit" is trivially true. The logs do show that after the quit A could connect to B's phone but found no Lime service, so the conclusion stands on indirect evidence; re-test it properly (the doc's next-test list).
+- **Receiver-idle time was short.** In scenarios 2 and 4 the data reached B 10 to 30 seconds after B left the app, not after a minute or more, so **delivery to a phone idle in the background for a long time is still unproven**; links did stay up for 4 to 8 minutes with apps backgrounded or locked.
+- **State restoration was never exercised** (the `restore_*` events are same-process manager re-creations; the "relaunched" run was the person opening the app).
+
+**Two bugs in the spike code, found by the analysis (not fixed; the brief ended at the analysis; fix before any re-run):**
+1. **The log overwrites durations.** `NearbyLog.record` writes the epoch under `ms`, replacing the `ms` duration passed by `send_done`, `recv_done` and `recv_dup`. The kbit/s fields are right, so throughput was recovered from them, but **duplicate arrivals' timings are lost**. Rename the duration key (`durMs`).
+2. **Blank share sheet** (above).
+Also suggested for the re-run: send the greeting again whenever a link re-forms (it is once per remote per run now), so a reconnect triggers data without a tap.
+
+**Next (for the planner):** the doc proposes LIME-103b (queued sending with no taps, a long-idle receiver, a system-ended app, scenario 8 done properly, a screens-off battery hour). The user suggested the first of these.
