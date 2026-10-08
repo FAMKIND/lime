@@ -96,6 +96,8 @@ struct Conversation: Identifiable, Hashable, Sendable {
     var isRequest: Bool = false
     /// The other person's security key changed: accept it to keep chatting.
     var keyChangePending: Bool = false
+    /// Their key was confirmed in person (a scanned QR code matched).
+    var verified: Bool = false
     /// A group chat (even one with a single other person left).
     var isGroupChat: Bool = false
     /// A group's emoji avatar.
@@ -124,7 +126,7 @@ extension Conversation {
             members: summary.members.map { Person(id: $0.id, name: $0.name, tone: Int($0.tone)) },
             messages: messages.map(Message.init),
             isPinned: summary.isPinned, unread: Int(summary.unread),
-            isRequest: summary.requestState == "pending", keyChangePending: summary.keyChangePending,
+            isRequest: summary.requestState == "pending", keyChangePending: summary.keyChangePending, verified: summary.verified,
             isGroupChat: summary.isGroup, emoji: summary.groupEmoji)
     }
 }

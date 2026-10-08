@@ -21,7 +21,7 @@ mod testing;
 
 pub use format::{Block, ListItem, Span};
 pub use client::groups::{GroupDetails, GroupMemberInfo};
-pub use client::{find_user, lookup_user_by_email, DeviceInfo, FoundUser, SyncReport};
+pub use client::{find_user, lookup_user_by_email, DeviceInfo, FoundUser, SyncReport, Verification};
 pub use store::search::{ConversationMatch, SearchHit};
 pub use store::threads::ThreadSummary;
 pub use store::{BlockedPerson, ConversationSummary, KeyInfo, LimeStore, MemberInfo, MessageItem, StoreError};

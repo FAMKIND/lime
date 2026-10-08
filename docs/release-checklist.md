@@ -12,3 +12,10 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **Donate link.** The "Donate to lime" row in Settings is hidden until `LIME_DONATE_URL` (an https address) is set when the project is generated (`LIME_DONATE_URL=https://… ./ios/generate.sh`).
 - [ ] **Lime's notification chime.** Settings → Notifications → Sound offers Default and None only. When the sound file exists (at most 2 s, rights owned), follow `ios/Lime/Resources/Sounds/README.md` to add `lime-chime.caf` and make it the default.
 - [ ] **Push notifications (stage 2).** Needs the paid Apple account: APNs, push tokens per device, content-free pushes from the server, and a notification service extension that decrypts on the device. Until then alerts only arrive while Lime is open or has just been in use.
+
+## Invite links and QR codes (LIME-97b)
+
+- [ ] **Host `invite-site/`** (Cloudflare Pages or Codeberg Pages) and point `limechat.org/u/*` at it in deSEC; steps in `invite-site/README.md`. Until then the invite text's link shows nothing.
+- [ ] **Camera string** (`NSCameraUsageDescription`): "Lime uses the camera to scan a teacher's QR code." Already in `ios/project.yml`; re-check it in the App Store privacy answers (the camera is used only to scan QR codes; nothing is recorded or uploaded).
+- [ ] **No Contacts permission** is requested (Apple's contact picker runs out of process); keep it that way, and answer "Contacts: not collected" in the privacy labels.
+- [ ] **Universal links** for `limechat.org/u/*` (Associated Domains + `apple-app-site-association` in `invite-site/`) once the paid Apple account exists.

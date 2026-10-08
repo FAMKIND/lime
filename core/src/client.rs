@@ -403,6 +403,67 @@ pub fn find_user(
     }))
 }
 
+/// What comparing a scanned QR code with the key the server holds for that person found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum Verification {
+    /// The QR code's fingerprint is the server's key for them: now marked verified in person.
+    Verified,
+    /// The QR code and the server disagree: do not trust this person on the strength of the scan.
+    Mismatch,
+    /// The key matches the QR code but differs from the one remembered for them (a new phone):
+    /// the usual key-change screen applies first.
+    KeyChanged,
+}
+
+#[uniffi::export]
+impl LimeStore {
+    /// Compares the fingerprint from a QR code scanned in person with the master key the server
+    /// serves for `user_id`. On a match the person is marked "verified in person".
+    pub fn verify_in_person(
+        &self,
+        transport: Arc<dyn Transport>,
+        auth_token: String,
+        user_id: String,
+        fingerprint: String,
+    ) -> Result<Verification, StoreError> {
+        let (status, body) = call(&transport, Some(&auth_token), "users-devices", &json!({ "user_id": user_id }))?;
+        check(status)?;
+        let master = body.get("master_key").and_then(Value::as_str).ok_or(StoreError::NoRecipientKeys)?;
+        let served = crate::keys::fingerprint_of(master).ok_or(StoreError::BadMessage)?;
+        let wanted = crate::keys::normalize_fingerprint(&fingerprint);
+        if wanted.len() != 20 || wanted != crate::keys::normalize_fingerprint(&served) {
+            return Ok(Verification::Mismatch);
+        }
+        self.with_conn(|conn| match pin_master_key(conn, &user_id, master) {
+            Err(StoreError::KeyMismatch) => {
+                record_key_change(conn, &user_id, master)?;
+                Ok(Verification::KeyChanged)
+            }
+            Err(other) => Err(other),
+            Ok(()) => {
+                conn.execute(
+                    "UPDATE peers SET verified_at = ?2 WHERE user_id = ?1",
+                    params![user_id, now_ms()],
+                )
+                .map_err(db_err)?;
+                Ok(Verification::Verified)
+            }
+        })
+    }
+
+    /// True when this person's current key was confirmed in person.
+    pub fn is_verified(&self, user_id: String) -> Result<bool, StoreError> {
+        self.with_conn(|conn| {
+            conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM peers WHERE user_id = ?1 AND verified_at IS NOT NULL AND new_master_key IS NULL)",
+                params![user_id],
+                |r| r.get(0),
+            )
+            .map_err(db_err)
+        })
+    }
+}
+
 // ---------------------------------------------------------------- internals
 
 #[derive(Clone)]

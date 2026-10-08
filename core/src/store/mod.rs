@@ -136,6 +136,8 @@ pub struct ConversationSummary {
     pub members: Vec<MemberInfo>,
     /// A group's emoji avatar, if it has one.
     pub group_emoji: Option<String>,
+    /// The other person's key was confirmed in person against their QR code (one-to-one chats).
+    pub verified: bool,
 }
 
 /// Someone you blocked: they can be unblocked, which brings their conversation back.
@@ -221,7 +223,8 @@ impl LimeStore {
             .prepare(
                 "SELECT c.id, c.title, c.is_group, c.is_pinned, c.unread, c.request_state,
                         EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NOT NULL),
-                        c.group_emoji
+                        c.group_emoji,
+                        EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.verified_at IS NOT NULL AND p.new_master_key IS NULL)
                  FROM conversations c
                  WHERE c.request_state NOT IN ('blocked', 'left')
                  ORDER BY c.is_pinned DESC,
@@ -241,6 +244,7 @@ impl LimeStore {
                     r.get::<_, String>(5)?,
                     r.get::<_, bool>(6)?,
                     r.get::<_, Option<String>>(7)?,
+                    r.get::<_, bool>(8)?,
                 ))
             })
             .map_err(db_err)?
@@ -248,7 +252,7 @@ impl LimeStore {
             .map_err(db_err)?;
 
         let mut summaries = Vec::with_capacity(rows.len());
-        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji) in rows {
+        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji, verified) in rows {
             summaries.push(ConversationSummary {
                 last_message: last_message(&conn, &id)?,
                 members: members_of(&conn, &id)?,
@@ -260,6 +264,7 @@ impl LimeStore {
                 request_state,
                 key_change_pending,
                 group_emoji,
+                verified,
             });
         }
         Ok(summaries)
@@ -343,7 +348,7 @@ impl LimeStore {
         let peer = conversation_id.strip_prefix("dm:").ok_or(StoreError::NotFound)?;
         let conn = self.lock();
         conn.execute(
-            "UPDATE peers SET master_key = new_master_key, new_master_key = NULL
+            "UPDATE peers SET master_key = new_master_key, new_master_key = NULL, verified_at = NULL
              WHERE user_id = ?1 AND new_master_key IS NOT NULL",
             params![peer],
         )
@@ -423,11 +428,7 @@ impl LimeStore {
         let created: Option<i64> = conn
             .query_row("SELECT created_at FROM account WHERE id = 1", [], |r| r.get(0))
             .map_err(db_err)?;
-        use sha2::{Digest, Sha256};
-        let master = vodozemac::base64_decode(state.master_key()).map_err(|_| StoreError::BadMessage)?;
-        let digest = Sha256::digest(&master);
-        let hex: Vec<String> = digest[..10].iter().map(|b| format!("{b:02X}")).collect();
-        let fingerprint = hex.chunks(2).map(|pair| pair.concat()).collect::<Vec<_>>().join(" ");
+        let fingerprint = crate::keys::fingerprint_of(&state.master_key()).ok_or(StoreError::BadMessage)?;
         Ok(Some(KeyInfo {
             fingerprint,
             created_at: created.unwrap_or(0),

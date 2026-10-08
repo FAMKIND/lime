@@ -114,7 +114,9 @@ struct NewMessageSheet: View {
     @State private var query = ""
     @State private var lookup = TeacherLookup()
     @State private var route = NavigationPath()
+    @State private var inviting = false
     @FocusState private var focused: Bool
+    @Environment(AccountSession.self) private var session
 
     private var known: [KnownTeacher] { KnownTeachers.from(store.conversations) }
     private var sections: [KnownTeachers.Section] { KnownTeachers.sections(known, filter: query) }
@@ -146,10 +148,12 @@ struct NewMessageSheet: View {
         .tint(Theme.text)
         .presentationDetents([.large])
         .presentationBackground(Theme.canvas)
+        .inviteFlow(start: $inviting, username: session.profile?.username)
         #if DEBUG
         .task {
             // Screenshots and UI tests: open already at a lookup.
             switch store.demoSheet {
+            case "scan": route.append(LookupKind.username)
             case "new-message-found": query = "grace.h"; await lookup.run("grace.h", store: store)
             case "new-message-filter": query = "l"
             case "find-username", "find-username-found": route.append(LookupKind.username)
@@ -184,12 +188,22 @@ struct NewMessageSheet: View {
                                         .accessibilityIdentifier("known-\(teacher.id)")
                                 }
                             }
+                            if typed.isEmpty && !known.isEmpty {
+                                Text("More")
+                                    .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                                    .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 4)
+                                    .accessibilityAddTraits(.isHeader)
+                                actionRow("person.crop.circle.badge.plus", "Invite teachers to Lime", id: "action-invite") { inviting = true }
+                                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                    .padding(.horizontal, 16).padding(.bottom, 12)
+                            }
                             if typed.isEmpty && known.isEmpty {
                                 Text("Find teachers by their username or email.")
                                     .font(Theme.body).foregroundStyle(Theme.textSecondary)
                                     .multilineTextAlignment(.center)
                                     .frame(maxWidth: .infinity).padding(.top, 28).padding(.horizontal, 32)
                                     .accessibilityIdentifier("new-message-empty")
+                                InviteCard { inviting = true }
                             } else if !typed.isEmpty && sections.isEmpty && lookup.state == .idle {
                                 Text(lookupKind == nil ? "No one you message matches. Search for a whole username or email to find someone new."
                                                        : "No one you message matches. Press search to look up “\(typed)”.")
@@ -483,6 +497,7 @@ struct FindByScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var lookup = TeacherLookup()
+    @State private var scanning = false
     @FocusState private var focused: Bool
 
     private var canNext: Bool { kind.accepts(text) && lookup.state != .searching }
@@ -515,6 +530,20 @@ struct FindByScreen: View {
                 .accessibilityIdentifier("find-by-field")
                 .onSubmit { if canNext { next() } }
                 .onChange(of: text) { _, _ in if lookup.state != .searching { lookup.reset() } }
+            if kind == .username {
+                Button { focused = false; scanning = true } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "qrcode.viewfinder").font(.system(size: 18)).frame(width: 28)
+                        Text("Scan QR Code").font(Theme.body)
+                        Spacer()
+                    }
+                    .foregroundStyle(Theme.text).padding(.horizontal, 18).frame(minHeight: 56).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, 16).padding(.top, 12)
+                .accessibilityIdentifier("find-scan-qr")
+            }
             switch lookup.state {
             case .idle: EmptyView()
             case .searching:
@@ -529,9 +558,11 @@ struct FindByScreen: View {
         .background(Theme.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
-        .onAppear { focused = true }
+        .onAppear { focused = !scanning }
+        .navigationDestination(isPresented: $scanning) { ScanQRScreen(closeSheet: closeSheet) }
         #if DEBUG
         .task {
+            if store.demoSheet == "scan", kind == .username { scanning = true }
             if store.demoSheet == "find-username-found", kind == .username { text = "grace.h"; await lookup.run("grace.h", store: store) }
             if store.demoSheet == "find-username", kind == .username { text = "gr" }
         }

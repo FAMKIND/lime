@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Join me on Lime</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #fbfaf5; --card: #ffffff; --text: #1d2a14; --muted: #5d6b50; --accent: #b7e04a; --ink: #1d2a14; --line: #e3e6d8; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #11160d; --card: #1b2214; --text: #f1f5e8; --muted: #a8b59a; --accent: #b7e04a; --ink: #11160d; --line: #2c3621; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--text);
+         font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+  main { width: 100%; max-width: 440px; background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 32px 24px; text-align: center; }
+  h1 { font-size: 26px; line-height: 1.2; margin: 0 0 10px; }
+  p { margin: 0 0 14px; color: var(--muted); }
+  .lime { width: 56px; height: 56px; border-radius: 16px; background: var(--accent); margin: 0 auto 18px; display: grid; place-items: center; font-size: 30px; }
+  .step { text-align: left; background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin: 18px 0 0; color: var(--text); }
+  .step b { display: block; margin-bottom: 4px; }
+  small { display: block; margin-top: 22px; color: var(--muted); font-size: 14px; }
+  .who { color: var(--text); font-weight: 600; word-break: break-word; }
+</style>
+</head>
+<body>
+<main>
+  <div class="lime" aria-hidden="true">🍋</div>
+  <h1 id="title">Join me on Lime</h1>
+  <p>Lime is a private messenger made for teachers. Messages are end-to-end encrypted, so only you and the people you message can read them.</p>
+  <div class="step">
+    <b>Lime is coming soon</b>
+    The iPhone app is in testing and will be on the App Store and TestFlight soon. When it is, you will find <span id="handle" class="who">your colleague</span> by username inside Lime.
+  </div>
+  <small>This page does not track you and sends nothing anywhere.</small>
+</main>
+<script>
+  // The invite link is limechat.org/u/<username>[?k=<key fingerprint>]. Only the username is shown, as text;
+  // the fingerprint is for the Lime app and is never read here.
+  (function () {
+    var parts = location.pathname.split("/").filter(Boolean);
+    var name = parts[0] === "u" && parts[1] ? decodeURIComponent(parts[1]) : "";
+    if (/^[A-Za-z0-9._]{3,20}$/.test(name)) {
+      document.getElementById("title").textContent = "@" + name + " invited you to Lime";
+      document.getElementById("handle").textContent = "@" + name;
+    }
+  })();
+</script>
+</body>
+</html>

@@ -211,6 +211,12 @@ struct ChatView: View {
                         .font(Theme.caption)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
+                } else if conversation.verified {
+                    Label("Verified in person", systemImage: "checkmark.seal.fill")
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("chat-verified")
                 }
             }
         }

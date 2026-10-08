@@ -176,6 +176,59 @@ final class LimeUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["index-rail"].exists, "no rail when there is nobody to jump to")
     }
 
+    func testNewMessageOffersToInviteTeachersWhetherOrNotYouHaveAnyYet() {
+        let empty = threadApp("new-message-empty")
+        empty.launch()
+        XCTAssertTrue(empty.buttons["invite-card-button"].waitForExistence(timeout: 10), "the empty state offers an invite card")
+        empty.terminate()
+
+        let app = threadApp("new-message")
+        app.launch()
+        let list = app.scrollViews["new-message-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        // On a small screen the row is below the fold: scroll to it.
+        for _ in 0..<6 where !app.buttons["action-invite"].exists { list.swipeUp() }
+        XCTAssertTrue(app.buttons["action-invite"].exists, "More → Invite teachers to Lime")
+        XCTAssertEqual(app.buttons["action-invite"].label, "Invite teachers to Lime")
+    }
+
+    func testScanningATeachersCodeThatMatchesTheirKeyMarksThemVerifiedInPerson() {
+        let app = threadApp("scan-verified")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["scan-verified"].waitForExistence(timeout: 10), "Verified in person")
+        XCTAssertEqual(app.staticTexts["scan-result-name"].label, "Grace Hopper")
+        XCTAssertTrue(app.buttons["scan-message"].exists)
+    }
+
+    func testScanningACodeThatDoesNotMatchWarnsAndDoesNotVerify() {
+        let app = threadApp("scan-mismatch")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["scan-mismatch"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["scan-mismatch"].label.contains("doesn't match"))
+        XCTAssertFalse(app.staticTexts["scan-verified"].exists)
+    }
+
+    func testFindByUsernameOffersScanQRCode() {
+        let app = threadApp("find-username")
+        app.launch()
+        XCTAssertTrue(app.buttons["find-scan-qr"].waitForExistence(timeout: 10))
+    }
+
+    func testAVerifiedChatSaysSoInItsHeader() {
+        let app = threadApp("chat-verified")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["chat-verified"].waitForExistence(timeout: 10))
+    }
+
+    func testProfileHasMyQRCode() {
+        let app = threadApp("settings/profile")
+        app.launch()
+        XCTAssertTrue(app.buttons["profile-my-qr"].waitForExistence(timeout: 10))
+        app.buttons["profile-my-qr"].tap()
+        XCTAssertTrue(app.images["my-qr-image"].waitForExistence(timeout: 5) || app.staticTexts["my-qr-unavailable"].exists)
+        XCTAssertTrue(app.staticTexts["my-qr-fingerprint"].exists || app.staticTexts["my-qr-unavailable"].exists)
+    }
+
     func testAChangedKeyAsksToBeAcceptedAndANotDeliveredMessageCanBeResent() {
         let app = demoApp()
         app.launchArguments += ["-lime-demo-screen", "key-change"]

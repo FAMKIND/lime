@@ -225,6 +225,9 @@ const MIGRATIONS: &[&str] = &[
          pickle       TEXT NOT NULL
      );
      ALTER TABLE conversations ADD COLUMN group_emoji TEXT;",
+    // 13: \"verified in person\" (LIME-97b): when this person's pinned master key was confirmed against a
+    // QR code scanned in person. Cleared when a different key is accepted.
+    "ALTER TABLE peers ADD COLUMN verified_at INTEGER;",
 ];
 
 /// The schema version this build writes.

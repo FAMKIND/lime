@@ -25,6 +25,10 @@ struct ProfileSettingsScreen: View {
             }
             SettingsFootnote(text: "Teachers can find you with your optional username, so you don't have to give out your email.")
             SettingsCard {
+                SettingsRow(symbol: "qrcode", title: "My QR Code", route: .myQR, id: "profile-my-qr", showsDivider: false)
+            }
+            SettingsFootnote(text: "Show it to a teacher you're with. When they scan it, they know it's really you.")
+            SettingsCard {
                 Toggle(isOn: Binding(get: { profile.hideFromSearch }, set: { setHidden($0) })) {
                     Text("Hide me from search").font(Theme.body).foregroundStyle(Theme.text)
                 }

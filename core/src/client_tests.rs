@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -1379,4 +1379,56 @@ fn a_group_is_limited_to_a_hundred_people_and_a_name_to_fifty_characters() {
     assert!(alice.store.create_group("x".repeat(51), None, vec!["u1".into()]).is_err());
     assert!(alice.store.create_group("  ".into(), None, vec!["u1".into()]).is_err());
     assert!(alice.store.create_group("Fine".into(), None, vec![]).is_err(), "a group needs another person");
+}
+
+// ---------------------------------------------------------------- LIME-97b: verified in person
+
+#[test]
+fn a_scanned_fingerprint_that_matches_marks_the_person_verified_and_a_wrong_one_does_not() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let theirs = bob.store.key_info().unwrap().unwrap().fingerprint;
+    let ask = |fingerprint: &str| {
+        alice.store.verify_in_person(transport.clone(), alice.token.clone(), bob.user.clone(), fingerprint.to_owned()).unwrap()
+    };
+
+    // Someone else's code, a short one and nonsense never verify.
+    let others = alice.store.key_info().unwrap().unwrap().fingerprint;
+    assert_eq!(ask(&others), crate::Verification::Mismatch);
+    assert_eq!(ask("A1B2"), crate::Verification::Mismatch);
+    assert_eq!(ask(""), crate::Verification::Mismatch);
+    assert!(!alice.store.is_verified(bob.user.clone()).unwrap());
+
+    // Bob's own code does, however it was typed or scanned (spacing and case do not matter).
+    assert_eq!(ask(&theirs.to_lowercase().replace(' ', "")), crate::Verification::Verified);
+    assert!(alice.store.is_verified(bob.user.clone()).unwrap());
+
+    // The chat shows it, and it survives more messages.
+    say(&alice, &bob, &transport, "hello");
+    assert!(conversation(&alice, &bob).unwrap().verified);
+}
+
+#[test]
+fn a_new_key_for_a_verified_person_must_be_accepted_and_is_no_longer_verified() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "hi");
+    let theirs = bob.store.key_info().unwrap().unwrap().fingerprint;
+    assert_eq!(
+        alice.store.verify_in_person(transport.clone(), alice.token.clone(), bob.user.clone(), theirs).unwrap(),
+        crate::Verification::Verified
+    );
+
+    let (bob2, _) = bob_with_new_keys(&server);
+    let new_code = bob2.store.key_info().unwrap().unwrap().fingerprint;
+    // Scanning the new phone's code does not skip the key-change check.
+    assert_eq!(
+        alice.store.verify_in_person(transport.clone(), alice.token.clone(), bob2.user.clone(), new_code).unwrap(),
+        crate::Verification::KeyChanged
+    );
+    assert!(!conversation(&alice, &bob2).unwrap().verified, "not verified while the key change waits");
+    alice.store.trust_new_key(format!("dm:{}", bob2.user)).unwrap();
+    assert!(!conversation(&alice, &bob2).unwrap().verified, "accepting a new key clears the old verification");
 }

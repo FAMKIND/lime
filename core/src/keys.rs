@@ -72,3 +72,18 @@ impl AccountState {
         }
     }
 }
+
+/// A short, comparable fingerprint of a master public key (base64): the first ten bytes of its
+/// SHA-256, as five groups of four hex digits (`A1B2 C3D4 E5F6 0718 293A`).
+pub(crate) fn fingerprint_of(master_key_b64: &str) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let master = vodozemac::base64_decode(master_key_b64).ok()?;
+    let digest = Sha256::digest(&master);
+    let hex: Vec<String> = digest[..10].iter().map(|b| format!("{b:02X}")).collect();
+    Some(hex.chunks(2).map(|pair| pair.concat()).collect::<Vec<_>>().join(" "))
+}
+
+/// Digits only, upper case: how two fingerprints are compared (spaces and case do not matter).
+pub(crate) fn normalize_fingerprint(text: &str) -> String {
+    text.chars().filter(char::is_ascii_hexdigit).map(|c| c.to_ascii_uppercase()).collect()
+}

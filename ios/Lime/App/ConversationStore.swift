@@ -213,6 +213,33 @@ final class ConversationStore {
         Task { await deliverNow() }
     }
 
+    /// Compares a scanned QR code's fingerprint with the key the server holds for `userId`; a match marks
+    /// them "Verified in person" (kept on this phone).
+    func verifyInPerson(userId: String, fingerprint: String) async throws -> ScanVerdict {
+        #if DEBUG
+        if isDemo {
+            let matches = QRPayload.compact(fingerprint) == ConversationStore.demoGraceFingerprint
+            if matches, let index = conversations.firstIndex(where: { $0.id == "dm:\(userId)" }) { conversations[index].verified = true }
+            return matches ? .verified : .mismatch
+        }
+        #endif
+        if link == nil, let registrar { await registrar() }
+        guard let core, let link else { throw AuthError.network }
+        let token = try await link.token()
+        let result = try await Task.detached(priority: .userInitiated) {
+            try core.verifyInPerson(transport: link.transport, authToken: token, userId: userId, fingerprint: fingerprint)
+        }.value
+        await reload()
+        switch result {
+        case .verified: return .verified
+        case .mismatch: return .mismatch
+        case .keyChanged: return .keyChanged
+        }
+    }
+
+    /// The code the demo person "Grace" shows (Debug builds only).
+    static let demoGraceFingerprint = "1111222233334444AAAA"
+
     func accept(_ id: Conversation.ID) async {
         #if DEBUG
         if isDemo { demoSetRequest(id, accepted: true); return }
@@ -674,6 +701,17 @@ final class ConversationStore {
                 path.append(id)
             }
             if screen == "group-details" { path.append(id); path.append(GroupTarget(conversationID: id)) }
+        case "scan-verified", "scan-mismatch":
+            loadDemoTeachers()
+            demoSheet = "scan"
+            let key = screen == "scan-verified" ? Self.demoGraceFingerprint : "0000111122223333FFFF"
+            demoScanCode = "https://limechat.org/u/grace.h?k=\(key)"
+        case "chat-verified":
+            let grace = Person(id: "grace", name: "Grace Hopper")
+            conversations = [Conversation(id: "dm:grace", title: grace.name, members: [grace], messages: [
+                Message(id: "v1", senderID: "grace", text: "Great to meet you in person!", date: Date().addingTimeInterval(-300)),
+            ], verified: true)]
+            path.append("dm:grace")
         case "new-message", "new-message-found", "new-message-filter", "new-message-empty", "find-username", "find-username-found":
             demoSheet = screen
             if screen == "new-message-empty" {
@@ -707,6 +745,8 @@ final class ConversationStore {
 
     /// Debug demo: a screen that opens as a sheet.
     private(set) var demoSheet: String?
+    /// Debug demo: a QR code's text that the scan screen reads as soon as it opens.
+    private(set) var demoScanCode: String?
     /// Debug demo: the groups made in the demo (name, emoji, people and roles), by conversation id.
     var demoGroups: [String: DemoGroup] = [:]
     /// Debug demo: people "blocked" for the Settings screens.
