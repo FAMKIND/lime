@@ -1719,7 +1719,36 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-97 → `tend` (lime-aa) (after LIME-96): group chats (Megolm, client-managed group state) + New Group
+### LIME-96-fix → `tend` (lime-aa) (next): Signal-style silent fallback, so a blocked sender gets no hint
+**The user's decision (2026-10-08): B.** On a **sealed send refused with 403**:
+- **automatically retry once as identified, silently**;
+- **show "Sent"** (never "Not delivered" for this case);
+- **stop using sealed for that contact** until they share a new key.
+
+The result: a blocked person learns nothing, and a contact who changed phones still gets the message (landing normally, as an accepted contact).
+
+**Capabilities / Phase 0:** as in LIME-96. Commit `PLOT.md` first, unedited.
+
+**Phase 1:** survey the LIME-96 send/403 path, the bubble states and the tests.
+
+**Phase 2:**
+- Implement the above. **Remove the one-tap identified resend UI for this case.**
+- "Not delivered" remains only for genuine failures (the identified retry itself failing, network errors after the retries).
+- Docs: `api-v2.md` §4 (the 403 rule as built); `architecture.md` §5 (the note: the fallback message reveals the sender to the server, once).
+
+**Verification:**
+- `cargo test` + the local and staging e2e: block → the blocked person's next message reads **"Sent"**, is stored identified, and **is not shown** on the blocker's phone;
+- **a re-keyed (new phone) contact receives the fallback normally;**
+- unblock → sealed resumes after the key share;
+- the iOS tests; 0 warnings.
+
+**Gate:** Jean blocks Shem → Shem's message reads "Sent", and Jean doesn't see it; unblock → normal.
+
+**Record:** `## LIME-96-fix`. Commit: `fix: silent identified fallback on sealed refusal (no block hint)`, trailer `Brief: LIME-96-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-97 → `tend` (lime-aa) (after LIME-96-fix): group chats (Megolm, client-managed group state) + New Group
 **What it does:** real end-to-end encrypted group chats per `docs/api-v2.md` §§3, 5–6 and `architecture.md` §3: Megolm sessions, encrypted client-managed group state (the server never learns groups, names or members), New Group creation from the New Message sheet (DESIGN-04), and group details.
 
 **Capabilities assumed:** edit files, `cargo`, the Supabase CLI (deploy without `config push`), XcodeGen, `xcodebuild`, commit, push.
@@ -1847,6 +1876,19 @@ If anything contradicts `api-v2.md`, stop and ask the user.
    - **Pickups are not failures.**
    - **Tend installs on both phones in Phase 3** (the user plugs each in when asked) and ends with a 6-step setup the user can follow at bedtime.
 
+- **LIME-96 landed as `55062b3`** (pushed and verified; no server change).
+  - Delivery keys (hash only on the server), encrypted control-op sharing (on accept / start chat / unblock / key-change accept / after rotation; the migration queues it for already-accepted chats);
+  - sealed sends for contacts, verified by an admin query that the server stores no sender;
+  - a sealed 403 → "Not delivered" + a one-tap identified resend;
+  - block = rotate + re-share to the others.
+  - 96 Rust / 36 server / 175+55 iOS tests pass; 0 warnings.
+  - **Accepted trade-off:** sealed messages to a replaced phone still read "Sent" (the server can't notify an anonymous sender); the next send shows "Not delivered".
+  - **Plot's flag to the user (a privacy nuance):** "Not delivered" after a block **hints to the blocked person that they were blocked** (or that the contact changed phones). Signal shows blocked messages as sent.
+    - **Lean:** on a sealed 403, **silently retry identified once** and show "Sent" (no hint; still no loss for a genuine phone change).
+    - The cost: that one message reveals the sender to the server.
+    - **DECIDED: B (the user, 2026-10-08). LIME-96-fix is drafted.**
+  - **The phones still have the spike builds.** The LIME-96 build must be installed; **the Debug build still includes the Nearby/Auto test**, so tonight's 103c works with it, and reinstalling resets the 7-day expiry.
+- **LIME-103c is scheduled for tonight (2026-10-08)**, the user's choice: the same setup, with the sender's "Keep the screen on" unticked and both phones locked. **Tend is on LIME-96 meanwhile.**
 - **The analysis landed as `aa6f5d1`.**
   - 87/89 were delivered first try (median 0.5 s); 2 were re-sent by the queue after link drops (~95 s late).
   - **39 link drops in 6.3 h (~6/h)**; iOS reconnected each time. The resumable/ack design is confirmed as necessary.
