@@ -114,6 +114,53 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
   - **Still open:** whether "LimeChat" is the official brand/App Store name (plot's lean).
 - **(Superseded) DECIDED (user, 2026-10-06):** `send.famkind.com` for now; **switch to a Lime domain later, before TestFlight**. Add "choose and register a Lime domain; move the email sender" to `docs/release-checklist.md` in the next brief that touches it.
 
+**Update: LIME-103 analysis landed as `010d040`** (`docs/spike-ble.md`; `ios/analyze-ble-logs.py`; raw logs in the user's `~/Downloads/ble-logs/`). **Field test 2026-10-07/08: Shem's 13 mini + Jean's 12 mini, 8 scenarios, ~85 min.**
+- **Proven:**
+  - discovery in ~1 s; no pairing prompt; delivery both ways with no internet;
+  - delivery to a backgrounded/locked phone **10–30 s after it left the app**, with the link held 4–8 min;
+  - L2CAP is ~4–5× faster than GATT (32 KB ≈ 1.3 s);
+  - it works through a wall at about −83 dBm;
+  - free provisioning is enough;
+  - a force-quit app is unreachable;
+  - links drop ~every 20 min with ~1 s reconnects;
+  - 81/81 signatures were valid.
+- **Unproven:**
+  - delivery to a **long-idle** backgrounded phone (iOS suspension);
+  - iOS relaunching via state restoration;
+  - battery with screens off.
+- **Plot's decisions on tend's §8 flags:**
+  1. **Mesh v1 transport = GATT to meet + L2CAP to move data** (GATT fallback), one link per pair, resumable per-envelope acks. Accepted.
+  2. **No bitchat wire compatibility.** Lime's mesh only carries Lime's sealed envelopes to Lime users, so interop has no user value. "Borrow from bitchat" means *ideas* (public-domain code patterns), not its wire format. Update `architecture.md` §7 in the next docs touch.
+  3. **Split `architecture.md` §7's open question into "force-quit (a hard no)" and "long-idle background (unproven)".** **The product must not promise "works with the app closed" until LIME-103b proves the long-idle case.** The user's D3 requirement ("open AND closed") stands as the goal.
+  4. **UX for mesh v1:** a Bluetooth permission explainer, a visible "Nearby" status, and a gentle "swiping Lime away stops nearby delivery" note.
+- **LIME-103b (the follow-up spike), proposed by tend:**
+  - queued sends without taps;
+  - long-idle receivers (15/30/60 min);
+  - a system-terminated app;
+  - scenario 8 redone;
+  - a screens-off battery hour.
+  - **Fix first:** the log `ms` key collision and the blank "Share all" sheet.
+  - **Scheduling:** needs Jean's phone again for ~2 h; **the free builds expire ~2026-10-14** (installed 10-07).
+- **The user (2026-10-08): a 2-hour test isn't realistic (3 kids).** Plot reshaped LIME-103b into an **unattended overnight "leave it on the table" test** (~5 minutes of the user's time).
+- **The order agreed:**
+  1. **LIME-103b build** (quick, so it's ready);
+  2. **LIME-96 sealed;**
+  3. **LIME-97 groups** ("complete the app experience");
+  4. the user runs the overnight test the next night;
+  5. then mesh v1.
+- **(Superseded) Order proposed to the user:**
+  - LIME-96 (sealed sends; no hardware needed) now;
+  - **LIME-103b** whenever Jean is available (before mesh v1);
+  - then LIME-97 groups, then mesh v1.
+
+**Update: LIME-103 (the build stage) landed as `be3633a`** (pushed and verified).
+- **The Debug-only Nearby test** (GATT + L2CAP, state restoration, signed random blobs, JSONL logs, share).
+- **Free provisioning works** for the Bluetooth background modes (Info.plist keys, not entitlements).
+- `ios/check-release-no-bluetooth.sh` proves Release has none of it.
+- Installed on **Shem's 13 mini and Jean's 12 mini**.
+- **Deviation (accepted):** a throwaway Ed25519 key, not the device key (avoids adding a general sign-anything FFI to the shipped core).
+- **Waiting on the user's ~90-minute field test** (`docs/spike-ble-test-plan.md`), then Phase 4 analysis → `docs/spike-ble.md`.
+
 **Update: LIME-102 landed as `e81933d`** (pushed and verified).
 - In-app glass banner + system sound; local notifications for the short background window; previews (N2 = A; requests never show text; "Replied in a thread"); Settings → Notifications; per-chat mute; a permission explainer.
 - **No chime** (Default/None; the hook is in `ios/Lime/Resources/Sounds/README.md`).
@@ -1672,7 +1719,228 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-103 → `tend` (lime-aa) (next): the Bluetooth spike: can two iPhones find each other and pass encrypted blobs with no internet?
+### LIME-97 → `tend` (lime-aa) (after LIME-96): group chats (Megolm, client-managed group state) + New Group
+**What it does:** real end-to-end encrypted group chats per `docs/api-v2.md` §§3, 5–6 and `architecture.md` §3: Megolm sessions, encrypted client-managed group state (the server never learns groups, names or members), New Group creation from the New Message sheet (DESIGN-04), and group details.
+
+**Capabilities assumed:** edit files, `cargo`, the Supabase CLI (deploy without `config push`), XcodeGen, `xcodebuild`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- `api-v2.md` §§3, 5–6 (the group ops; the authority + conflict rules; Megolm rotation);
+- vodozemac's Megolm API;
+- the core (sessions, ordering, sealed sends from LIME-96, threads, search);
+- the iOS New Message sheet + chat header;
+- DESIGN-04.
+
+If anything contradicts `api-v2.md`, stop and ask the user.
+
+**Phase 2: the change.**
+1. **Group state (core):**
+   - the encrypted, signed ops `group.create / add / remove / leave / rename / set_role`, sent to every member device over Olm (sealed where a delivery key is held);
+   - ordered by HLC + parents;
+   - **every client enforces the authority rules** (the owner/admins add, remove and rename; a member may leave);
+   - the deterministic conflict rules from `api-v2.md` §5 (a concurrent remove beats an add; rename by `(hlc, op_id)`; owner succession).
+2. **Messages:**
+   - **one Megolm outbound session per sending device per group**, its key shared to each member device via Olm;
+   - **rotate on any membership change, every 100 messages, or every 7 days**;
+   - receivers hold inbound sessions;
+   - a message arriving before its session key waits in `pending_inbound` and decrypts when the key arrives.
+   - **The fan-out send uses one shared ciphertext + per-device recipients** (the server's batch shape).
+   - Threads and formatting work in groups too.
+3. **iOS:**
+   - **New Group** (the row in New Message, now enabled): a multi-select of known teachers with **removable chips** + "N Members" + **Next** (accent) → **group name** (required, ≤ 50) + an optional emoji/initials avatar → **Create**.
+   - **The group chat:** the avatar stack + "N members" header; sender names + avatars on bubbles (existing).
+   - **Group details** (tap the header): the name (rename if allowed), the member list with roles, **Add members** (owner/admin), **Remove** (owner/admin), **Leave group**.
+   - **System lines in the timeline:** "Jean added Lee", "Rae renamed the group…".
+   - **Requests:** an invite from a non-contact creates the group in Requests until accepted.
+4. **Limits:** max 100 members (the PD-call target; document it).
+5. **Docs:** `api-v2.md` §11 (the group op payloads, Megolm rotation as built), `architecture.md` §3.
+
+**Out of scope:** invite links/QR (LIME-97b), group calls, admin transfer UI beyond the succession rule, group photos (emoji/initials only), push.
+
+**Phase 3: verification.**
+- `cargo test` + integration (local and staging), clippy, iOS tests on the three simulators; 0 warnings.
+- **New tests:**
+  - create a group of 3 and all receive it;
+  - Megolm decrypts for all members;
+  - **a removed member can't decrypt messages after removal** (rotation);
+  - a late joiner can't read history from before joining;
+  - concurrent add/remove resolves the same on every device;
+  - only admins can rename (a non-admin rename is ignored by others);
+  - leave;
+  - a message before its key → pending → it decrypts when the key arrives;
+  - **a server-side check: no table holds group names or member lists** (an admin query in the test only).
+- **A 3-account local e2e:** create, chat, add, remove, rename, leave.
+- **Staging e2e** with throwaway accounts.
+
+**Gate (the user, two phones + simulator):**
+- Shem creates "Grade 4 Team" with Jean (+ the simulator account if handy);
+- both see it; chat; rename; remove/add;
+- Jean leaves and sees no new messages.
+
+**Record:** a `## LIME-97` entry in `TEND.md`. Commit: `feat: E2EE group chats (Megolm, client-managed group state), New Group, group details`, trailer `Brief: LIME-97`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-97b → `tend` (lime-aa) (after LIME-97): invite teachers + QR codes (DESIGN-04)
+**What it does:** DESIGN-04's invite and QR features.
+
+**Phase 0:** commit `PLOT.md` unedited. **Phase 1:** survey DESIGN-04, the profile/key code, and the New Message sheet; stop and ask the user on any conflict.
+
+**Phase 2:**
+1. **Invite:** a "More → Invite teachers to Lime" row and the empty-state card.
+   - Apple's **system contact picker** (no Contacts permission; only the picked entries are seen).
+   - Then Messages / Mail / Share sheet from the teacher's own phone, prefilled: "Join me on Lime, a private messenger made for teachers: https://limechat.org/u/<username>".
+   - **Lime's servers never send invites or learn who was invited.**
+2. **The invite link page:** a minimal static page for `limechat.org/u/<username>` explaining how to get Lime (TestFlight/App Store "coming soon"), hosted for free (Cloudflare Pages / Codeberg Pages). **Tend gives the user the steps to point the DNS (in deSEC) and doesn't create accounts for them.**
+   - Universal links come later (the paid account).
+3. **QR:**
+   - **My QR code** in Settings/Profile, encoding the invite link **plus the identity-key fingerprint**;
+   - **Scan QR Code** on Find by Username (the camera permission text: "Lime uses the camera to scan a teacher's QR code.");
+   - scanning opens their profile → Message;
+   - **if the fingerprint matches the server's key, mark them "Verified in person"** (a badge in their profile/chat);
+   - a mismatch shows a warning.
+4. **Note:** QR-based *offline* first contact comes with mesh v1.
+
+**Verification:**
+- the tests (the QR encode/decode round-trip, the fingerprint match/mismatch, the invite text);
+- 0 warnings;
+- screenshots.
+
+**Gate:** invite someone from Messages (check the prefilled text); show your QR; Jean scans it → "Verified in person".
+
+**Record:** `## LIME-97b`. Commit: `feat: invite teachers (system picker, own-device sending), QR codes with in-person verification`, trailer `Brief: LIME-97b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-103b → `tend` (lime-aa) (build now, field test tomorrow): the "leave it on the table" Bluetooth test (≈ 5 minutes of the user's time)
+**Why it's shaped this way:** the user (3 kids) can't do a 2-hour hands-on session. **The test must run unattended:** two phones on a table, set up in ~2 minutes, read back the next morning. **That's actually the best way to answer the open question** (long-idle background delivery and screens-off battery), because an overnight run covers 15 min, 1 h and many hours at once.
+
+**Capabilities / Phase 0:** as in LIME-103. Commit `PLOT.md` first, unedited.
+
+**Phase 1: survey (read only):** the LIME-103 spike code and `docs/spike-ble.md` §5.
+
+**Phase 2: the change (Debug only, in the Nearby test).**
+1. **Fix the two LIME-103 bugs:**
+   - the `ms` key collision (separate `duration_ms` from the timestamp);
+   - **the blank "Share all" sheet** (pass the log files as file URLs / an activity item provider; verify on a real device during the field test).
+   - **Also add a fallback:** the logs are readable via `xcrun devicectl` from the app container, documented in `ios/README.md`.
+2. **"Auto test" mode: one big button per phone, two roles:**
+   - **Sender (phone A):** after Start, **queues and sends automatically**, with no taps. One signed 4 KB blob **every 5 minutes**, plus one 32 KB blob every 30 minutes, for up to 12 hours.
+     - It keeps trying while backgrounded/locked, and holds a queue of unsent blobs that it delivers when a link exists (a real store-and-forward behaviour).
+     - It logs each attempt and result.
+   - **Receiver (phone B):** Start, then the user locks it and leaves it. It logs each arrival with the time since the screen locked, and the battery every 15 minutes (the screen is off).
+   - **A morning summary card** on both phones: "Sent 96 · delivered 94 · longest gap 11 min · first miss after 2 h 10 m · battery 100 → 81%". It's readable at a glance, with no log reading needed.
+3. **A 2-minute force-quit check** (to redo scenario 8 properly): a "Force-quit check" role. B starts it, **then** the user swipes Lime away, and A keeps sending for 2 minutes. When B is reopened, it reports whether anything arrived while it was quit (expected: no) and whether A saw B's Lime service disappear.
+4. **`docs/spike-ble-test-plan-2.md`, at most 10 lines, plain words:**
+   1. charge both phones; plug both in, or note it: **unplugged is better for the battery reading; plugged is fine if needed**;
+   2. Nearby test → Auto test → Sender on A, Receiver on B;
+   3. lock both phones, put them ≤ 2 m apart, go to bed;
+   4. in the morning: read the summary cards (screenshot both);
+   5. optional 2-minute force-quit check.
+
+5. **Amendment (the user, 2026-10-08): running TONIGHT, not tomorrow.**
+   - **Jean will pick up phone B now and then (the flashlight, maybe other apps), leaving Lime in the background, not force-quit.**
+   - The receiver must **log the phase changes** (unlock/lock, foreground/background, other app in front) so the summary separates "delivered while locked and idle" from "delivered during a pickup".
+   - The summary card adds: **"longest idle stretch with no pickups: X h Y m, delivered N of M in it"**.
+   - **Pickups are not failures.**
+   - **Tend installs on both phones in Phase 3** (the user plugs each in when asked) and ends with a 6-step setup the user can follow at bedtime.
+
+**Out of scope:** the mesh protocol, multi-hop, Release builds.
+
+**Phase 3: verification.**
+- Unit tests for the queue, the summary maths and the log keys;
+- the simulators don't crash; 0 warnings;
+- Release still has no Bluetooth (`ios/check-release-no-bluetooth.sh`);
+- build to both phones if connected (**reinstalling also resets the 7-day expiry**).
+
+**Phase 4 (after the user's screenshots and/or logs):** update `docs/spike-ble.md` with:
+- the long-idle results (delivery over time while locked; the first miss; the gaps);
+- screens-off battery per hour;
+- the force-quit result;
+- a final recommendation on what the product can promise for "app closed".
+
+**Gate (the user):**
+- tomorrow night: start the Auto test on both phones (~2 minutes);
+- in the morning: screenshot both summary cards and send them.
+
+**Record:** `## LIME-103b` in `TEND.md`. Commits: `spike(ios): unattended Bluetooth auto test, share fix`, later `docs: Bluetooth long-idle results`. Trailer `Brief: LIME-103b` plus the attribution trailer. **Push.** Stop after each. No /loop wakeups.
+
+---
+
+### LIME-96 → `tend` (lime-aa) (next): sealed sender for accepted contacts; server-side block via delivery-key rotation
+**What it does:** turns on the blind mailbox's main privacy property (`docs/api-v2.md` §§3–4; D8 = B).
+- **Messages to people who have accepted you are sent sealed**, so the server learns the recipient device but **not the sender**.
+- **Strangers' first messages stay identified** (Requests).
+- **Block now works on the server too**, by rotating your delivery key.
+
+The server's sealed path already exists (LIME-92: `send` with `{ sealed: access_key }`, `delivery-access-set`, all-or-nothing 403).
+
+**Capabilities assumed:** edit files, `cargo`, the Supabase CLI (deploy functions/migrations **without `config push`**), XcodeGen, `xcodebuild`, commit, push.
+
+**Phase 0:** commit `PLOT.md` as on disk, unedited (`chore: update PLOT.md`, plus the attribution trailer).
+
+**Phase 1: survey (read only):**
+- `docs/api-v2.md` §§3–4, 11 (the delivery key, `access_key = HKDF-SHA256(delivery_key, "lime-access-v1")`, 16 B; the server stores SHA-256);
+- `core/` (client, store, `pending_inbound`, the sealed-item handling, request state, block);
+- `supabase/functions/send` + `delivery-access-set`;
+- the LIME-95/95-fix accept/block flows.
+
+If anything contradicts `api-v2.md`, **stop and ask the user**.
+
+**Phase 2: the change.**
+1. **Delivery key lifecycle (core):**
+   - On registration, create a random 32-byte delivery key (in the SQLCipher store) and upload its access hash via `delivery-access-set`.
+   - **Re-key after a master-key replacement** (LIME-95-fix): a new device means a new delivery key.
+2. **Sharing it (an encrypted control op over the existing Olm channel):**
+   - when you **Accept** a request, and when **you** start a chat with someone (you're implicitly accepting them), send them a `delivery_key.share { key }` control op;
+   - store contacts' delivery keys locally;
+   - **never display or log keys.**
+3. **Sending:**
+   - **with a contact's delivery key:** use **sealed** (no JWT on the request; `access = { sealed: access_key }`). The inner envelope carries `sender_user`, `sender_device` and a `sender_cert` (the device key signed by the master key) per `api-v2.md` §3.
+   - **without one:** use identified (as today).
+   - **If a sealed send gets 403** (the recipient rotated the key: blocked you, or re-keyed): don't retry identified automatically. **Mark the message "Not delivered"**; fall back to identified only if the recipient is not blocking (unknown to the sender, so: one identified retry, which lands in their Requests if they re-keyed for a new device, or is dropped server-side if blocked). **Plot's call:** one identified retry, no more. Document it.
+4. **Receiving sealed:**
+   - process the sealed items held in `pending_inbound` (from LIME-94);
+   - decrypt with Olm;
+   - **verify `sender_cert` against the sender's pinned master key** (the key-changed flow from LIME-95-fix applies);
+   - only then attribute the sender.
+   - A sealed item that fails verification stays in `pending_inbound` with its reason. It is never shown.
+5. **Block = rotate:**
+   - **Block** creates a new delivery key, uploads its hash and **re-shares it with every accepted, non-blocked contact.**
+   - The blocked person's sealed sends now fail with 403. Their identified sends still reach the server but are hidden locally (as today).
+   - **Unblock** shares the current key with them again.
+6. **App:** no visible change, except a Debug-only About row "Sealed contacts: N".
+   - Message bubbles are unchanged.
+   - Not delivered uses the existing state.
+7. **Docs:** `api-v2.md` §§3–4 + §11 (the control-op format, the 403 retry rule, re-key triggers); `architecture.md` §5 (sealed is now live for contacts).
+
+**Out of scope:** groups/Megolm (LIME-97), hiding recipient sets, padding/timing defences, push.
+
+**Phase 3: verification.**
+- `./supabase/test.sh`, `cargo test` (+ integration local and staging), clippy, iOS tests on the three simulators; `ios/check-warnings.sh` reports 0 warnings.
+- **New tests:**
+  - after Accept, both sides hold each other's delivery keys and **subsequent sends are sealed**;
+  - **a server-side check that a sealed item stored has no sender user id** (an admin query in the test only);
+  - a tampered `sender_cert` → rejected, not shown;
+  - Block → the blocked person's sealed send gets 403 → "Not delivered";
+  - non-blocked contacts still deliver sealed after the rotation;
+  - Unblock restores;
+  - a master-key replacement re-keys and re-shares;
+  - a stranger's first message stays identified and lands in Requests.
+- **Staging e2e** with two throwaway accounts (create/delete via the admin API).
+
+**Gate (the user, both phones):**
+- Shem ↔ Jean keep chatting normally (now sealed; nothing looks different);
+- **Jean blocks Shem → Shem's next message shows "Not delivered";**
+- Jean unblocks → messages flow again.
+
+**Record:** a `## LIME-96` entry in `TEND.md`. Commit: `feat: sealed sender for accepted contacts; block rotates the delivery key`, trailer `Brief: LIME-96`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-103 → `tend` (lime-aa) (landed: build `be3633a`, analysis `010d040`): the Bluetooth spike: can two iPhones find each other and pass encrypted blobs with no internet?
 **What it does:** a **throwaway, Debug-only experiment** that measures what iOS really allows for Bluetooth LE between two Lime phones, open, backgrounded and locked, **before** the mesh is designed in detail (`architecture.md` §7, DESIGN-01 §4).
 - **The output is evidence**: `docs/spike-ble.md` with measured numbers and a recommendation. **The spike code is not the product**; it lives behind `#if DEBUG` and is deleted or replaced by mesh v1.
 
