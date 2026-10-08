@@ -178,31 +178,26 @@ impl LimeStore {
         let queued = self.with_conn(queued_messages)?;
         let mut sent = 0;
         for message in queued {
-            // A contact who refused our sealed sends (they rotated their key) is not tried again until they
-            // share a new one: the message is "Not delivered", and one tap sends it identified (once).
+            // Sealed when the contact shared their key and has not refused it; identified otherwise.
             let contact = self.with_conn(|conn| delivery::contact_key(conn, &message.peer))?;
-            if !message.identified_once && matches!(contact, Some((_, true))) {
-                self.with_conn(|conn| set_undelivered(conn, &message.id))?;
-                continue;
+            let sealed_key = contact.and_then(|(key, denied)| (!denied).then_some(key));
+            let mut outcome = self.deliver_one(&transport, &auth_token, &mut state, &me, &message, sealed_key);
+            if matches!(outcome, Err(SendError::Denied)) {
+                // The contact's delivery key is no longer the one we hold (they blocked us, or replaced their
+                // keys). Like Signal, say nothing: stop using sealed for them until they share a new key, send
+                // this message identified straight away (once), and show "Sent". A person who blocked us learns
+                // nothing, and one who changed phones still gets it.
+                self.with_conn(|conn| delivery::mark_denied(conn, &message.peer))?;
+                outcome = self.deliver_one(&transport, &auth_token, &mut state, &me, &message, None);
             }
-            match self.deliver_one(&transport, &auth_token, &mut state, &me, &message, contact.map(|(key, _)| key)) {
+            match outcome {
                 Ok(()) => {
-                    self.with_conn(|conn| {
-                        conn.execute("UPDATE messages SET identified_once = 0, sealed_denied = 0 WHERE id = ?1", params![message.id]).map_err(db_err)?;
-                        set_state(conn, &message.id, "sent")
-                    })?;
+                    self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
                     sent += 1;
                 }
-                Err(SendError::Denied) => {
-                    // The recipient's delivery key changed (they blocked us, or replaced their keys).
-                    self.with_conn(|conn| {
-                        delivery::mark_denied(conn, &message.peer)?;
-                        set_undelivered(conn, &message.id)
-                    })?;
-                }
-                Err(SendError::Store(error)) => {
+                Err(error) => {
                     self.with_conn(|conn| set_state(conn, &message.id, "failed"))?;
-                    return Err(error);
+                    return Err(error.into_store());
                 }
             }
         }
@@ -512,9 +507,7 @@ impl LimeStore {
             sig: String::new(),
         };
         op.sig = state.account.sign(op.signing_bytes()).to_base64();
-        // `identified_once`: the person tapped "Not delivered", so this one goes identified.
-        let key = if message.identified_once { None } else { contact_key };
-        let hashes = self.send_op(transport, token, state, me, recipient, op, key.as_deref())?;
+        let hashes = self.send_op(transport, token, state, me, recipient, op, contact_key.as_deref())?;
         self.with_conn(|conn| {
             for hash in &hashes {
                 conn.execute(
@@ -1272,14 +1265,12 @@ struct Queued {
     hlc: String,
     parents: Vec<String>,
     thread_root: Option<String>,
-    /// The person tapped "Not delivered": send this one identified, once.
-    identified_once: bool,
 }
 
 fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT id, conversation_id, body, hlc, parents, thread_root, identified_once FROM messages
+            "SELECT id, conversation_id, body, hlc, parents, thread_root FROM messages
              WHERE sender_id = ?1 AND local_state IN ('sending', 'failed') AND op_id IS NOT NULL AND hlc IS NOT NULL
              ORDER BY hlc, id",
         )
@@ -1295,23 +1286,12 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
                 hlc: r.get(3)?,
                 parents: parents.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default(),
                 thread_root: r.get(5)?,
-                identified_once: r.get(6)?,
             })
         })
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
     Ok(rows.into_iter().filter(|q| !q.peer.is_empty()).collect())
-}
-
-/// A sealed send was refused: "Not delivered", and the next tap sends it identified (once).
-fn set_undelivered(conn: &Connection, id: &str) -> Result<(), StoreError> {
-    conn.execute(
-        "UPDATE messages SET local_state = 'undelivered', sealed_denied = 1 WHERE id = ?1",
-        params![id],
-    )
-    .map_err(db_err)?;
-    Ok(())
 }
 
 fn set_state(conn: &Connection, id: &str, state: &str) -> Result<(), StoreError> {

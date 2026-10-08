@@ -30,10 +30,25 @@ struct ChatView: View {
 
     var body: some View {
         if let conversation = store.conversation(conversationID) {
-            if #available(iOS 26, *) {
-                nativeContent(conversation)
-            } else {
-                legacyContent(conversation)
+            Group {
+                if #available(iOS 26, *) {
+                    nativeContent(conversation)
+                } else {
+                    legacyContent(conversation)
+                }
+            }
+            // One confirmation for both ways in: the request bar's Block and the ⋯ menu's "Block <Name>".
+            .confirmationDialog("Block \(conversation.title)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
+                Button("Block", role: .destructive) {
+                    Task {
+                        await store.block(conversation.id)
+                        store.path = NavigationPath()
+                    }
+                }
+                .accessibilityIdentifier("request-block-confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Their new messages won't be shown on this phone.")
             }
         }
     }
@@ -314,6 +329,12 @@ struct ChatView: View {
                 } label: { Label("Mute notifications", systemImage: "bell.slash") }
                 .accessibilityIdentifier("chat-mute")
             }
+            // Blocking someone you already chat with (the request bar's Block is only for strangers).
+            Divider()
+            Button(role: .destructive) { confirmingBlock = true } label: {
+                Label("Block \(conversation.title)", systemImage: "hand.raised")
+            }
+            .accessibilityIdentifier("chat-block")
         } label: { label() }
         .accessibilityLabel("More")
         .accessibilityIdentifier("chat-more")
@@ -386,18 +407,6 @@ struct ChatView: View {
         .limeGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
-        .confirmationDialog("Block \(conversation.title)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
-            Button("Block", role: .destructive) {
-                Task {
-                    await store.block(conversation.id)
-                    store.path = NavigationPath()
-                }
-            }
-            .accessibilityIdentifier("request-block-confirm")
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Their new messages won't be shown on this phone.")
-        }
     }
 
     // MARK: Composer

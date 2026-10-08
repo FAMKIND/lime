@@ -355,9 +355,7 @@ impl LimeStore {
     pub fn retry_message(&self, message_id: String) -> Result<(), StoreError> {
         let conn = self.lock();
         conn.execute(
-            "UPDATE messages SET local_state = 'sending',
-                    identified_once = CASE WHEN local_state = 'undelivered' THEN sealed_denied ELSE identified_once END,
-                    sealed_denied = 0
+            "UPDATE messages SET local_state = 'sending'
              WHERE id = ?1 AND sender_id = ?2 AND local_state IN ('failed', 'undelivered')",
             params![message_id, ME_ID],
         )

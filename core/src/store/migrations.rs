@@ -172,6 +172,10 @@ const MIGRATIONS: &[&str] = &[
      -- Chats that were accepted before this version have not been given my delivery key: queue them all.
      INSERT OR IGNORE INTO share_queue (peer_user_id, queued_at)
          SELECT substr(id, 4), 0 FROM conversations WHERE id LIKE 'dm:%' AND request_state = 'accepted';",
+    // 11: LIME-96-fix. A sealed send the server refuses is now sent identified at once, silently (and shows
+    // \"Sent\"), so the two columns migration 10 added for a one-tap resend are not needed.
+    "ALTER TABLE messages DROP COLUMN sealed_denied;
+     ALTER TABLE messages DROP COLUMN identified_once;",
 ];
 
 /// The schema version this build writes.

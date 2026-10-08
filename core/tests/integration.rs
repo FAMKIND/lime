@@ -644,14 +644,19 @@ fn sealed_sender_through_the_real_server_and_a_block_that_rotates_the_key() {
     assert_eq!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received, 1);
     assert_eq!(texts(&bob_store, &chat_with_alice), vec!["hello Bob", "hi Alice", "sealed to Bob"]);
 
-    // Bob blocks Alice: his key rotates, so Alice's next sealed send is refused: Not delivered.
+    // Bob blocks Alice: his key rotates, so Alice's next sealed send is refused by the server. The app says
+    // nothing: it sends the message identified at once and shows "Sent" (a blocked person learns nothing).
     bob_store.block_sender(chat_with_alice.clone()).unwrap();
     bob_store.deliver_queued(transport.clone(), bob.token.clone()).unwrap(); // puts the new key's hash on the server
     alice_store.queue_text(chat_with_bob.clone(), "are you there?".into()).unwrap();
     alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
     let state = |text: &str| alice_store.list_messages(chat_with_bob.clone()).unwrap().into_iter().find(|m| m.text == text).unwrap().local_state;
-    assert_eq!(state("are you there?"), "undelivered");
-    assert!(admin.mailbox_senders(&bob_device).is_empty(), "nothing reached Bob's mailbox");
+    assert_eq!(state("are you there?"), "sent", "never \"Not delivered\" for a refused sealed send");
+    assert_eq!(admin.mailbox_senders(&bob_device), vec![(true, Some(alice.id.clone()))], "stored identified (the fallback names its sender, once)");
+    assert_eq!(alice_store.sealed_contact_count().unwrap(), 0, "no more sealed sends until Bob shares a new key");
+    // Bob reads and hides it: the blocker never sees it.
+    assert_eq!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received, 0);
+    assert!(bob_store.list_conversations().unwrap().is_empty());
 
     // Bob unblocks her: she is given the new key and sealed sends work again.
     bob_store.unblock(chat_with_alice.clone()).unwrap();

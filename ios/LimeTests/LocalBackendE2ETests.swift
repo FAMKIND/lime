@@ -341,18 +341,15 @@ final class LocalBackendE2ETests: XCTestCase {
         XCTAssertEqual(ada.store.conversation(chat)?.messages.map(\.state), [.sent, .sent])
 
         // Ada writes again and meets his new key: she is asked to accept it, does. The delivery key she held for Bob
-        // died with his old phone, so the sealed send is refused: "Not delivered". One tap sends it identified.
+        // died with his old phone, so the server refuses her sealed send; the app sends it identified at once, silently:
+        // it reads "Sent" and reaches his new phone (in Requests: it has no history).
         await ada.store.sendNow("are you there?", in: chat)
         XCTAssertEqual(ada.store.conversation(chat)?.keyChangePending, true, "the chat asks to accept the new key")
         await ada.store.trustKey(chat)
         XCTAssertEqual(ada.store.conversation(chat)?.keyChangePending, false)
-        let stuck = try XCTUnwrap(ada.store.conversation(chat)?.messages.last)
-        XCTAssertEqual(stuck.text, "are you there?")
-        XCTAssertEqual(stuck.state, .undelivered)
-        await ada.store.resend(stuck.id)
-        await eventually("Ada's resent message reaches Bob's new phone") { bob.store.requests.count == 1 }
+        await eventually("Ada's message reaches Bob's new phone") { bob.store.requests.count == 1 }
         XCTAssertEqual(bob.store.requests.first?.messages.map(\.text), ["are you there?"])
-        XCTAssertEqual(ada.store.conversation(chat)?.messages.last?.state, .sent)
+        XCTAssertEqual(ada.store.conversation(chat)?.messages.last?.state, .sent, "no \"Not delivered\": the fallback is silent")
 
         // Bob accepts, replies; Ada (who accepted his new key) receives it live.
         await bob.store.accept(try XCTUnwrap(bob.store.requests.first).id)
@@ -675,26 +672,21 @@ final class LocalBackendE2ETests: XCTestCase {
         XCTAssertEqual(adaHolds, 1)
         XCTAssertEqual(bobHolds, 1)
 
-        // Bob blocks Ada: his delivery key rotates, so her next (sealed) message is refused by the server:
-        // "Not delivered". Bob never sees it.
+        // Bob blocks Ada: his delivery key rotates, so her next (sealed) message is refused by the server. The app
+        // says nothing: it sends the message identified at once and shows "Sent". Bob never sees it.
         await bob.store.block(request.id)
         await bob.store.deliverNow() // the new key's hash reaches the server
         XCTAssertTrue(bob.store.conversations.isEmpty)
         await ada.store.sendNow("are you there?", in: adaChat)
-        XCTAssertEqual(ada.store.conversation(adaChat)?.messages.last?.state, .undelivered)
+        XCTAssertEqual(ada.store.conversation(adaChat)?.messages.last?.state, .sent, "a blocked person is not told")
         try await Task.sleep(for: .seconds(2)) // long enough for the nudge and a sync
         await bob.store.syncNow()
         XCTAssertTrue(bob.store.conversations.isEmpty, "a blocked sender's messages stay hidden")
         let refused = await ada.store.sealedContactCount()
-        XCTAssertEqual(refused, 0, "Ada's key for Bob was refused")
+        XCTAssertEqual(refused, 0, "Ada's key for Bob was refused: no more sealed sends until he shares a new one")
 
-        // Bob unblocks her: she is given the new key (live), tapping "Not delivered" sends it once identified,
-        // and what she writes next is sealed again.
+        // Bob unblocks her: she is given the new key (live), and what she writes next is sealed again.
         await bob.store.unblock(request.id)
-        await ada.store.syncNow()
-        let stuck = try XCTUnwrap(ada.store.conversation(adaChat)?.messages.last)
-        await ada.store.resend(stuck.id)
-        await eventually("the tapped message reaches Bob, now unblocked") { texts(bob, request.id).contains("are you there?") }
         var held = await ada.store.sealedContactCount()
         for _ in 0..<20 where held == 0 {
             try await Task.sleep(for: .milliseconds(500))

@@ -783,7 +783,12 @@ final class ConversationStore {
 
     private func demoSetRequest(_ id: Conversation.ID, accepted: Bool) {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        if accepted { conversations[index].isRequest = false } else { conversations.remove(at: index) }
+        if accepted {
+            conversations[index].isRequest = false
+        } else {
+            let gone = conversations.remove(at: index)
+            demoBlocked.append(BlockedPerson(conversationId: gone.id, name: gone.title, tone: UInt32(gone.members.first?.tone ?? 0)))
+        }
     }
 
     private func demoStartChat(_ person: FoundUser) {

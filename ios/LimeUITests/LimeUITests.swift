@@ -667,6 +667,28 @@ final class LimeUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["sealed-contacts"].label, "Sealed contacts: 2", "the demo has two")
     }
 
+    func testAnAcceptedChatCanBeBlockedFromTheMenuAndShowsUnderBlocked() {
+        let app = notifApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
+        app.buttons["conversation-row-dm:sam"].tap()
+        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 5))
+        app.buttons["chat-more"].tap()
+        XCTAssertTrue(app.buttons["chat-block"].waitForExistence(timeout: 3), "the menu offers Block")
+        XCTAssertEqual(app.buttons["chat-block"].label, "Block Sam Park")
+        app.buttons["chat-block"].tap()
+        let confirm = app.buttons.matching(identifier: "request-block-confirm").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "blocking asks first")
+        XCTAssertTrue(app.staticTexts["Their new messages won't be shown on this phone."].exists)
+        confirm.tap()
+        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5), "back on Messages")
+        XCTAssertFalse(app.buttons["conversation-row-dm:sam"].exists)
+        app.buttons["settings-button"].tap()
+        app.buttons["settings-privacy"].tap()
+        app.buttons["privacy-blocked"].tap()
+        XCTAssertTrue(app.staticTexts["Sam Park"].waitForExistence(timeout: 5), "listed under Blocked, with Unblock")
+    }
+
     // MARK: Settings (LIME-98)
 
     private func openSettings(_ app: XCUIApplication) {

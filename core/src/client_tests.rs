@@ -970,7 +970,7 @@ fn a_sealed_item_that_claims_to_be_someone_else_is_not_shown_and_is_no_key_chang
 }
 
 #[test]
-fn a_block_rotates_the_key_the_blocked_sealed_send_is_refused_and_the_others_still_deliver() {
+fn a_block_rotates_the_key_the_blocked_send_falls_back_silently_and_the_others_still_deliver() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);
     let (bob, _) = party(&server, "bob", 2);
@@ -992,42 +992,33 @@ fn a_block_rotates_the_key_the_blocked_sealed_send_is_refused_and_the_others_sti
     assert_eq!(new_hash, Some(expected_hash(&alice.store.test_delivery_key())));
     assert_eq!(sync(&carol, &transport).received, 0, "the share is not a message");
 
-    // Bob (holding the old key) is refused: his message is "Not delivered".
+    // Bob (holding the old key) is refused by the server, and the app says nothing: his message goes identified
+    // straight away and reads "Sent". A blocked person learns nothing.
     let sent = bob.store.send_text_identified(transport.clone(), bob.token.clone(), alice.user.clone(), "are you there?".to_string());
     assert!(sent.is_ok());
     let state_of = |p: &Party, text: &str| p.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().find(|m| m.text == text).unwrap().local_state;
-    assert_eq!(state_of(&bob, "are you there?"), "undelivered");
-    assert_eq!(mailbox_of(&server, &alice.device).len(), 0, "nothing reached Alice's mailbox");
-    // While refused, no further sealed send is even tried: the next message is Not delivered too.
-    let calls = server.state.lock().unwrap().calls;
+    assert_eq!(state_of(&bob, "are you there?"), "sent", "never \"Not delivered\" for this");
+    assert_eq!(mailbox_of(&server, &alice.device), vec![(true, Some("bob".to_string()))], "stored identified");
+    assert_eq!(bob.store.sealed_contact_count().unwrap(), 0, "no more sealed sends to Alice until she shares a new key");
+    // No sealed attempt is repeated: the next message is simply sent identified.
     let _ = bob.store.send_text_identified(transport.clone(), bob.token.clone(), alice.user.clone(), "second".to_string());
-    assert_eq!(state_of(&bob, "second"), "undelivered");
-    assert!(server.state.lock().unwrap().calls - calls < 8, "no repeated sealed attempts");
+    assert_eq!(state_of(&bob, "second"), "sent");
+    assert!(mailbox_of(&server, &alice.device).iter().all(|m| m.0), "both identified");
 
     // Carol holds the new key: her sealed message still delivers.
     say(&carol, &alice, &transport, "still here");
     assert_eq!(sync(&alice, &transport).received, 1);
     assert_eq!(texts(&alice, &carol).last().unwrap(), "still here");
 
-    // One tap on "Not delivered" sends that message identified, once. Alice (who blocked him) hides it.
-    let first = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().find(|m| m.text == "are you there?").unwrap();
-    bob.store.retry_message(first.id.clone()).unwrap();
-    bob.store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
-    assert_eq!(state_of(&bob, "are you there?"), "sent");
-    assert_eq!(mailbox_of(&server, &alice.device).first().map(|m| m.0), Some(true), "identified");
+    // Alice (who blocked him) reads and hides what Bob sent.
     sync(&alice, &transport);
     assert!(alice.store.list_conversations().unwrap().iter().all(|c| c.id != format!("dm:{}", bob.user)), "hidden for the blocker");
 
-    // Alice unblocks Bob: he is given the current key, and sealed sends work again.
+    // Alice unblocks Bob: he is given the current key, and sealed sends resume.
     alice.store.unblock(format!("dm:{}", bob.user)).unwrap();
     alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
     sync(&bob, &transport);
-    let second = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().find(|m| m.text == "second").unwrap();
-    bob.store.retry_message(second.id).unwrap();
-    bob.store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
-    assert_eq!(state_of(&bob, "second"), "sent", "the tapped one goes identified, once");
-    sync(&alice, &transport);
-    // A new message now goes sealed: the unblock gave Bob the current key.
+    assert_eq!(bob.store.sealed_contact_count().unwrap(), 1, "Bob holds Alice's new key");
     say(&bob, &alice, &transport, "third");
     let item = mailbox_of(&server, &alice.device);
     assert!(item.iter().any(|m| !m.0 && m.1.is_none()), "sealed again after the unblock");
@@ -1036,7 +1027,7 @@ fn a_block_rotates_the_key_the_blocked_sealed_send_is_refused_and_the_others_sti
 }
 
 #[test]
-fn a_new_phone_gets_a_new_delivery_key_and_old_keys_are_refused() {
+fn a_new_phone_gets_a_new_delivery_key_and_the_old_key_falls_back_to_identified() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);
     let (bob, _) = party(&server, "bob", 2);
@@ -1049,8 +1040,8 @@ fn a_new_phone_gets_a_new_delivery_key_and_old_keys_are_refused() {
     assert_eq!(new, Some(expected_hash(&bob2.store.test_delivery_key())));
     assert_eq!(bob2.store.sealed_contact_count().unwrap(), 0, "the new phone holds nobody's key yet");
 
-    // Alice accepts Bob's new key; the key she held for Bob is no longer his, so her sealed send is refused
-    // ("Not delivered"), and tapping it sends it identified, which lands in the new phone's Requests.
+    // Alice accepts Bob's new key; the key she held for Bob is no longer his, so the server refuses her sealed send,
+    // and the app silently sends it identified: it reads "Sent" and reaches his new phone.
     // (Her first try meets the new key and waits for her to accept it, as in LIME-95-fix.)
     let first = alice.store.send_text_identified(transport.clone(), alice.token.clone(), bob2.user.clone(), "welcome back".to_string());
     assert!(first.is_err());
@@ -1060,12 +1051,10 @@ fn a_new_phone_gets_a_new_delivery_key_and_old_keys_are_refused() {
     alice.store.retry_message(mine.id.clone()).unwrap();
     alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
     let mine = alice.store.list_messages(format!("dm:{}", bob2.user)).unwrap().into_iter().find(|m| m.text == "welcome back").unwrap();
-    assert_eq!(mine.local_state, "undelivered", "her old key for Bob is refused: Not delivered");
-    alice.store.retry_message(mine.id).unwrap();
-    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(mine.local_state, "sent", "no \"Not delivered\": the fallback is silent");
     let report = sync(&bob2, &transport);
     assert!(report.received >= 1);
-    assert!(texts(&bob2, &alice).contains(&"welcome back".to_string()));
+    assert!(texts(&bob2, &alice).contains(&"welcome back".to_string()), "the new phone gets it (in Requests: it has no history)");
     assert_eq!(bob2.store.sealed_contact_count().unwrap(), 1, "Alice's share reached the new phone");
 }
 
@@ -1083,7 +1072,6 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             ALTER TABLE messages DROP COLUMN sealed_denied; ALTER TABLE messages DROP COLUMN identified_once;
              PRAGMA user_version = 9;",
         )
         .unwrap();
