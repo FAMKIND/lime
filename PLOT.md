@@ -1733,6 +1733,11 @@ If anything contradicts this brief, stop and ask the user.
 - **Follow-ups to queue later:** a "make admin" UI; auto-rejoin after a phone replacement (with device linking).
 - Awaiting the user's gate (two phones + the simulator or a third device with a plus-address account).
 
+**STANDING RULE (the user, 2026-10-08): iOS verification is tiered, to save time.**
+- **Each brief:** the full unit + UI suite on **one** simulator (the iPhone 13 mini, 375pt), plus **only the new or changed UI tests** on the SE (iOS 18.3) and the 18 Pro; `check-warnings.sh`; `check-release-no-bluetooth.sh`; the server/core/e2e tests as relevant.
+- **The full three-simulator matrix only:** before TestFlight, at the end of a chain, or when a brief changes layout broadly.
+- This applies to every brief from LIME-98b on; the briefs' "three simulators" wording is overridden by this rule.
+
 **The user's gate on LIME-97: "groups look great".**
 
 **Update: LIME-97b landed as `f7a0dc2`** (pushed and verified).
