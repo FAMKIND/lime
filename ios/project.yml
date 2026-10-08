@@ -45,6 +45,11 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+      configs:
+        # LIME-103 (the Bluetooth field test): Bluetooth and its background modes exist in Debug builds only.
+        Debug:
+          INFOPLIST_FILE: Config/Info-Debug.plist
+          INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Lime uses Bluetooth to pass messages between nearby teachers when there's no internet."
   LimeTests:
     type: bundle.unit-test
     platform: iOS

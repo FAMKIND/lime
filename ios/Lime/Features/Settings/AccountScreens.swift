@@ -282,6 +282,9 @@ struct CustomizeScreen: View {
 struct AboutScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var showDeveloper = false
+    #if DEBUG
+    @State private var showNearby = false
+    #endif
 
     private var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?" }
 
@@ -298,6 +301,11 @@ struct AboutScreen: View {
                     Spacer()
                 }
                 .padding(18)
+                #if DEBUG
+                .contentShape(Rectangle())
+                // LIME-103: a long press on the logo row opens the Bluetooth field test (Debug builds only).
+                .onLongPressGesture(minimumDuration: 1.0) { showNearby = true }
+                #endif
             }
             SettingsCard {
                 SettingsRow(symbol: "doc.text", title: "Acknowledgements", route: .acknowledgements, id: "about-acknowledgements")
@@ -322,6 +330,7 @@ struct AboutScreen: View {
         }
         #if DEBUG
         .sheet(isPresented: $showDeveloper) { AboutView() }
+        .sheet(isPresented: $showNearby) { NearbyTestScreen() }
         #endif
     }
 }

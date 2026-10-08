@@ -20,6 +20,9 @@ struct LimeApp: App {
         let coordinator = Self.makeNotifications()
         store.notifications = coordinator
         coordinator.onOpen = { [weak store] conversation, thread in store?.openFromNotification(conversation, thread: thread) }
+        #if DEBUG
+        NearbyTest.resumeIfNeeded() // iOS may relaunch the app for Bluetooth (LIME-103 field test)
+        #endif
         _store = State(initialValue: store)
         _notifications = State(initialValue: coordinator)
         _session = State(initialValue: AccountSession(auth: auth, config: config, store: store))

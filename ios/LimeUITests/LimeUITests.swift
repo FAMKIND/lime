@@ -616,6 +616,25 @@ final class LimeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["incoming-banner"].exists)
     }
 
+    // MARK: Bluetooth field test (LIME-103, Debug builds only)
+
+    func testTheNearbyTestOpensFromAboutAndStartsAndStopsWithoutBluetooth() {
+        let app = notifApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        app.buttons["settings-about"].tap()
+        let version = app.staticTexts["about-version"]
+        XCTAssertTrue(version.waitForExistence(timeout: 5))
+        version.press(forDuration: 1.6)
+        XCTAssertTrue(app.textFields["nearby-label"].waitForExistence(timeout: 5), "a long press on the logo row opens the test")
+        app.buttons["nearby-start"].tap()
+        XCTAssertTrue(app.buttons["Stop"].waitForExistence(timeout: 5), "it starts even where Bluetooth is not available (a simulator)")
+        app.buttons["Stop"].tap()
+        XCTAssertTrue(app.buttons["Start"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["nearby-share-all"].exists, "the run's log is kept and can be shared")
+    }
+
     // MARK: Settings (LIME-98)
 
     private func openSettings(_ app: XCUIApplication) {
