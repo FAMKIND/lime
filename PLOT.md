@@ -1847,6 +1847,29 @@ If anything contradicts `api-v2.md`, stop and ask the user.
    - **Pickups are not failures.**
    - **Tend installs on both phones in Phase 3** (the user plugs each in when asked) and ends with a 6-step setup the user can follow at bedtime.
 
+- **The analysis landed as `aa6f5d1`.**
+  - 87/89 were delivered first try (median 0.5 s); 2 were re-sent by the queue after link drops (~95 s late).
+  - **39 link drops in 6.3 h (~6/h)**; iOS reconnected each time. The resumable/ack design is confirmed as necessary.
+  - **What Lime can say:**
+    - **it receives while locked/backgrounded if not swiped away;**
+    - **swiping away stops nearby delivery;**
+    - **it must NOT yet claim** sleeping-to-sleeping relay.
+  - B's own raw log wasn't copied (optional: plug in Jean's phone).
+  - **Next spike, LIME-103c (no new build):** the same overnight run with "Keep the screen on" **off** on the sender (both asleep). It can run any night before the builds expire (~10-15).
+- **OVERNIGHT RESULT (2026-10-08 07:16): the long-idle question is answered: YES.**
+  - **Sender A** (awake, plugged in): 88 created/sent/delivered, longest gap 6 min, no misses.
+  - **Receiver B** (Jean's, locked, unplugged):
+    - **received 89/89**, no misses, longest gap 5 min;
+    - **longest untouched idle stretch 4 h 7 m, with 57/57 delivered in it**;
+    - all idle time 6.3 h, with 88/88 delivered; 4 pickups;
+    - **87 arrivals while locked**, 2 with another app in front, 0 with Lime in front;
+    - **battery 85% → 75% over ~7.4 h (≈ 1.4%/h)**.
+  - **Implication:** a locked, long-idle receiver with Lime backgrounded (not force-quit) keeps receiving over BLE for hours at a modest battery cost.
+  - **Still open:** both phones asleep/locked (sender also suspended), which the real mesh needs; force-quit (not run); state restoration after a system kill.
+  - Phase 4 has been sent to tend.
+- **The overnight run STARTED (the user, 2026-10-08, ~01:00).** The user will send both morning summary screenshots; then send tend Phase 4.
+- **Status (2026-10-08 00:48):** the build is installed on both phones. **Tend's deviation (accepted): A (the sender) stays awake + plugged in all night**, so the test isolates **B's long-idle receive** (a locked A would suspend and confound it). The setup is in `docs/spike-ble-test-plan-2.md`. The overnight run starts tonight; tend commits once its simulator suites finish.
+
 **Out of scope:** the mesh protocol, multi-hop, Release builds.
 
 **Phase 3: verification.**
