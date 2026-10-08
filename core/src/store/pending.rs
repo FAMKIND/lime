@@ -10,7 +10,6 @@ use super::{db_err, StoreError};
 pub(crate) const NEW: &str = "new";
 pub(crate) const NO_SESSION: &str = "no_session";
 pub(crate) const DECRYPT_FAILED: &str = "decrypt_failed";
-pub(crate) const SEALED_UNSUPPORTED: &str = "sealed_unsupported";
 /// Terminal: it will never become a message (a bad signature, a malformed op), but it is kept.
 pub(crate) const INVALID: &str = "invalid";
 pub(crate) const KEY_MISMATCH: &str = "key_mismatch";

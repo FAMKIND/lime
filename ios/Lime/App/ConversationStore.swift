@@ -209,6 +209,8 @@ final class ConversationStore {
         }.value
         await reload()
         if let id { path.append(id) }
+        // A chat you start gives them your delivery key (so they can send you sealed messages).
+        Task { await deliverNow() }
     }
 
     func accept(_ id: Conversation.ID) async {
@@ -218,6 +220,8 @@ final class ConversationStore {
         guard let core else { return }
         try? await Task.detached(priority: .userInitiated) { try core.acceptRequest(conversationId: id) }.value
         await reload()
+        // Accepting sends them your delivery key, so their later messages can be sealed.
+        Task { await deliverNow() }
     }
 
     /// Blocks the sender: the conversation disappears and its new messages are not kept.
@@ -228,6 +232,8 @@ final class ConversationStore {
         guard let core else { return }
         try? await Task.detached(priority: .userInitiated) { try core.blockSender(conversationId: id) }.value
         await reload()
+        // Blocking rotates your delivery key: the server has to learn the new one, and your other contacts get it.
+        Task { await deliverNow() }
     }
 
     // MARK: Search (on this phone only: nothing here touches the network)
@@ -290,6 +296,16 @@ final class ConversationStore {
         guard let core else { return }
         try? await Task.detached(priority: .userInitiated) { try core.unblock(conversationId: id) }.value
         await reload()
+        Task { await deliverNow() }
+    }
+
+    /// How many contacts can be sent to sealed (Debug-only row in About).
+    func sealedContactCount() async -> Int {
+        #if DEBUG
+        if isDemo { return 2 }
+        #endif
+        guard let core else { return 0 }
+        return Int((try? await Task.detached(priority: .userInitiated) { try core.sealedContactCount() }.value) ?? 0)
     }
 
     /// When this phone's keys were made, and a short fingerprint of the account's key.

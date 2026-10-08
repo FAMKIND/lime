@@ -139,6 +139,31 @@ pub(crate) fn load_sessions(
         .collect()
 }
 
+/// Every Olm session with the person it belongs to (a sealed item does not say who sent it).
+pub(crate) fn load_all_sessions(
+    conn: &Connection,
+    pickle_key: &[u8; 32],
+) -> Result<Vec<(String, StoredSession)>, StoreError> {
+    let mut statement = conn
+        .prepare(
+            "SELECT peer_user_id, peer_identity_key, session_pickle FROM olm_sessions ORDER BY updated_at DESC",
+        )
+        .map_err(db_err)?;
+    let rows = statement
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    rows.into_iter()
+        .map(|(user, peer_identity_key, pickle)| {
+            let session = Session::from_pickle(
+                SessionPickle::from_encrypted(&pickle, pickle_key).map_err(|_| StoreError::BadMessage)?,
+            );
+            Ok((user, StoredSession { peer_identity_key, session }))
+        })
+        .collect()
+}
+
 pub(crate) fn save_session(
     conn: &Connection,
     pickle_key: &[u8; 32],

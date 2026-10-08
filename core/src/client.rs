@@ -2,9 +2,10 @@
 //! sync (fetch, decrypt, store, acknowledge). The protocol lives here; the network is the
 //! platform's [`Transport`]. Auth tokens are passed in per call and never stored.
 //!
-//! Scope of LIME-93: identified 1:1 sends only, Olm only. No Megolm, sealed sends, delivery keys,
-//! groups or Requests yet. The op's `payload` is a plain `{ "text": ... }` inside the Olm
-//! ciphertext until Megolm lands.
+//! Scope so far: 1:1 chats over Olm (no Megolm or groups yet), with message requests, key changes,
+//! threads and, since LIME-96, **sealed sender** for contacts who shared their delivery key with us
+//! (`store::delivery`). The op's `payload` is a plain `{ "text": ... }` inside the Olm ciphertext
+//! until Megolm lands.
 
 use std::sync::Arc;
 
@@ -16,8 +17,9 @@ use vodozemac::Curve25519PublicKey;
 use crate::keys::AccountState;
 use crate::protocol::{dm_conversation_id, Hlc, Op, SealedInner, SenderCert};
 use crate::store::account::{
-    load_account, load_sessions, observe_hlc, pin_master_key, save_account, save_session, tick_hlc,
+    load_account, load_all_sessions, load_sessions, observe_hlc, pin_master_key, save_account, save_session, tick_hlc,
 };
+use crate::store::delivery;
 use crate::store::order;
 use crate::store::pending::{self, Fetched, PendingRow};
 use crate::store::{db_err, new_id, now_ms, LimeStore, MessageItem, StoreError, ME_ID};
@@ -28,6 +30,30 @@ const POOL_SIZE: usize = 50;
 const POOL_LOW: u32 = 20;
 /// A text message must fit in a 64 KB mailbox item once wrapped and encrypted.
 const MAX_TEXT_BYTES: usize = 30_000;
+/// The control op that gives a contact my delivery key (`api-v2.md` section 4).
+const DELIVERY_KEY_SHARE: &str = "delivery_key.share";
+
+/// Why one send did not go through.
+enum SendError {
+    /// A sealed send was refused (403): the recipient's delivery key is not the one we hold.
+    Denied,
+    Store(StoreError),
+}
+
+impl From<StoreError> for SendError {
+    fn from(error: StoreError) -> Self {
+        SendError::Store(error)
+    }
+}
+
+impl SendError {
+    fn into_store(self) -> StoreError {
+        match self {
+            SendError::Denied => StoreError::Rejected,
+            SendError::Store(error) => error,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct DeviceInfo {
@@ -93,6 +119,9 @@ impl LimeStore {
             remaining =
                 self.top_up_one_time_keys(&transport, &auth_token, &mut state, remaining)?;
         }
+        // The delivery key (made here the first time) and its hash on the server. If this fails now it is
+        // tried again before the next send.
+        let _ = self.ensure_delivery_access(&transport, &auth_token);
         Ok(DeviceInfo {
             device_id: state.device_id.clone(),
             user_id,
@@ -141,15 +170,37 @@ impl LimeStore {
             .clone()
             .filter(|_| state.registered)
             .ok_or(StoreError::NotRegistered)?;
+        // My delivery key's hash has to be on the server before anyone is given the key: then the people
+        // who hold it can send sealed. Both are best effort here; they are tried again next time.
+        if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
+            self.deliver_shares(&transport, &auth_token, &mut state, &me);
+        }
         let queued = self.with_conn(queued_messages)?;
         let mut sent = 0;
         for message in queued {
-            match self.deliver_one(&transport, &auth_token, &mut state, &me, &message) {
+            // A contact who refused our sealed sends (they rotated their key) is not tried again until they
+            // share a new one: the message is "Not delivered", and one tap sends it identified (once).
+            let contact = self.with_conn(|conn| delivery::contact_key(conn, &message.peer))?;
+            if !message.identified_once && matches!(contact, Some((_, true))) {
+                self.with_conn(|conn| set_undelivered(conn, &message.id))?;
+                continue;
+            }
+            match self.deliver_one(&transport, &auth_token, &mut state, &me, &message, contact.map(|(key, _)| key)) {
                 Ok(()) => {
-                    self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
+                    self.with_conn(|conn| {
+                        conn.execute("UPDATE messages SET identified_once = 0, sealed_denied = 0 WHERE id = ?1", params![message.id]).map_err(db_err)?;
+                        set_state(conn, &message.id, "sent")
+                    })?;
                     sent += 1;
                 }
-                Err(error) => {
+                Err(SendError::Denied) => {
+                    // The recipient's delivery key changed (they blocked us, or replaced their keys).
+                    self.with_conn(|conn| {
+                        delivery::mark_denied(conn, &message.peer)?;
+                        set_undelivered(conn, &message.id)
+                    })?;
+                }
+                Err(SendError::Store(error)) => {
                     self.with_conn(|conn| set_state(conn, &message.id, "failed"))?;
                     return Err(error);
                 }
@@ -251,6 +302,10 @@ impl LimeStore {
             }
         }
 
+        // The delivery key's hash may still be waiting to go up (a block rotated it): send it, then the shares.
+        if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
+            self.deliver_shares(&transport, &auth_token, &mut state, &me);
+        }
         // Turn what is waiting into messages (and retry what failed before). A new session can make
         // an earlier item readable, so go round again while anything makes progress.
         let received = self.retry_pending(&mut state, &me)?;
@@ -431,7 +486,8 @@ impl LimeStore {
         Ok(state)
     }
 
-    /// Sends one queued message to every device of its recipient.
+    /// Sends one queued message to every device of its recipient: sealed when the recipient shared their
+    /// delivery key with us (`contact_key`), identified otherwise.
     fn deliver_one(
         &self,
         transport: &Arc<dyn Transport>,
@@ -439,8 +495,54 @@ impl LimeStore {
         state: &mut AccountState,
         me: &str,
         message: &Queued,
-    ) -> Result<(), StoreError> {
+        contact_key: Option<Vec<u8>>,
+    ) -> Result<(), SendError> {
         let recipient = message.peer.as_str();
+        let mut op = Op {
+            op_id: message.id.clone(),
+            op_type: "message.send".into(),
+            conversation_id: dm_conversation_id(me, recipient),
+            hlc: message.hlc.clone(),
+            parents: message.parents.clone(),
+            // `thread_root` is part of the encrypted payload: the server never sees which message a reply answers.
+            payload: match &message.thread_root {
+                Some(root) => json!({ "text": message.text, "thread_root": root }),
+                None => json!({ "text": message.text }),
+            },
+            sig: String::new(),
+        };
+        op.sig = state.account.sign(op.signing_bytes()).to_base64();
+        // `identified_once`: the person tapped "Not delivered", so this one goes identified.
+        let key = if message.identified_once { None } else { contact_key };
+        let hashes = self.send_op(transport, token, state, me, recipient, op, key.as_deref())?;
+        self.with_conn(|conn| {
+            for hash in &hashes {
+                conn.execute(
+                    "INSERT OR REPLACE INTO message_deliveries (hash, message_id) VALUES (?1, ?2)",
+                    params![hash, message.id],
+                )
+                .map_err(db_err)?;
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    /// Wraps a signed op with this device's certificate, encrypts it for each of the recipient's devices
+    /// and sends it: **sealed** (no user token; `access` is the access key made from the recipient's
+    /// delivery key) when `delivery_key` is given, **identified** otherwise. Returns the hashes of what was
+    /// sent. A sealed send the server refuses (403) is `SendError::Denied`: the recipient rotated their key.
+    #[allow(clippy::too_many_arguments)] // the call's context (network, caller, keys) and the op
+    fn send_op(
+        &self,
+        transport: &Arc<dyn Transport>,
+        token: &str,
+        state: &mut AccountState,
+        me: &str,
+        recipient: &str,
+        op: Op,
+        delivery_key: Option<&[u8]>,
+    ) -> Result<Vec<String>, SendError> {
         // 1. The recipient's devices, each vouched for by their master key.
         let devices = self.recipient_devices(transport, token, recipient)?;
 
@@ -476,25 +578,10 @@ impl LimeStore {
             }
         }
         if sessions.is_empty() {
-            return Err(StoreError::NoRecipientKeys);
+            return Err(StoreError::NoRecipientKeys.into());
         }
 
-        // 3. The signed op (the id, clock and parents were fixed when it was queued), wrapped with
-        // this device's certificate.
-        let mut op = Op {
-            op_id: message.id.clone(),
-            op_type: "message.send".into(),
-            conversation_id: dm_conversation_id(me, recipient),
-            hlc: message.hlc.clone(),
-            parents: message.parents.clone(),
-            // `thread_root` is part of the encrypted payload: the server never sees which message a reply answers.
-            payload: match &message.thread_root {
-                Some(root) => json!({ "text": message.text, "thread_root": root }),
-                None => json!({ "text": message.text }),
-            },
-            sig: String::new(),
-        };
-        op.sig = state.account.sign(op.signing_bytes()).to_base64();
+        // 3. The signed op, wrapped with this device's certificate.
         let inner = SealedInner {
             sender_user: me.to_owned(),
             sender_device: state.device_id.clone(),
@@ -503,7 +590,7 @@ impl LimeStore {
         }
         .to_bytes();
 
-        // 4. One Olm ciphertext per recipient device, each sent identified.
+        // 4. One Olm ciphertext per recipient device.
         let mut updated = Vec::new();
         let mut hashes = Vec::new();
         for (device, mut session) in sessions {
@@ -514,15 +601,30 @@ impl LimeStore {
             let mut wire = vec![kind as u8];
             wire.extend_from_slice(&bytes);
             hashes.push(hex_sha256(&wire));
-            let (status, _) = call(
-                transport,
-                Some(token),
-                "send",
-                &json!({
-                    "ciphertext": vodozemac::base64_encode(&wire),
-                    "recipients": [{ "to_device": device.device_id, "access": { "identified": true } }],
-                }),
-            )?;
+            let (status, _) = match delivery_key {
+                // Sealed: no Authorization header at all, so the request carries nothing about the sender.
+                Some(key) => call(
+                    transport,
+                    None,
+                    "send",
+                    &json!({
+                        "ciphertext": vodozemac::base64_encode(&wire),
+                        "recipients": [{ "to_device": device.device_id, "access": { "sealed": delivery::access_key_b64(key) } }],
+                    }),
+                )?,
+                None => call(
+                    transport,
+                    Some(token),
+                    "send",
+                    &json!({
+                        "ciphertext": vodozemac::base64_encode(&wire),
+                        "recipients": [{ "to_device": device.device_id, "access": { "identified": true } }],
+                    }),
+                )?,
+            };
+            if delivery_key.is_some() && status == 403 {
+                return Err(SendError::Denied);
+            }
             check(status)?;
             updated.push((device, session));
         }
@@ -541,15 +643,83 @@ impl LimeStore {
                     now,
                 )?;
             }
-            for hash in &hashes {
-                conn.execute(
-                    "INSERT OR REPLACE INTO message_deliveries (hash, message_id) VALUES (?1, ?2)",
-                    params![hash, message.id],
-                )
-                .map_err(db_err)?;
-            }
             save_account(conn, &self.pickle_key, state)
-        })
+        })?;
+        Ok(hashes)
+    }
+
+    // ------------------------------------------------------------ the delivery key
+
+    /// Puts the hash of my delivery key on the server if it is not there (the first time, or after a block
+    /// rotated it).
+    fn ensure_delivery_access(&self, transport: &Arc<dyn Transport>, token: &str) -> Result<(), StoreError> {
+        let (key, uploaded) = self.with_conn(|conn| delivery::current(conn, now_ms()))?;
+        if uploaded {
+            return Ok(());
+        }
+        let (status, _) = call(
+            transport,
+            Some(token),
+            "delivery-access-set",
+            &json!({ "access_key_hash": delivery::access_hash_b64(&key) }),
+        )?;
+        check(status)?;
+        self.with_conn(|conn| delivery::mark_uploaded(conn, &key))
+    }
+
+    /// Sends my current delivery key to everyone queued (Accept, a chat I started, Unblock, a rotation).
+    /// Errors leave the person queued; a message is never held up by this.
+    fn deliver_shares(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
+        let Ok(peers) = self.with_conn(delivery::queued_shares) else { return };
+        for peer in peers {
+            match self.share_key_with(transport, token, state, me, &peer) {
+                Ok(()) => {
+                    let _ = self.with_conn(|conn| {
+                        delivery::dequeue_share(conn, &peer)?;
+                        delivery::mark_shared(conn, &peer, now_ms())
+                    });
+                }
+                // Their keys changed (a key change waits to be accepted), or they cannot be reached right
+                // now: keep them queued and carry on with the next person.
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// One `delivery_key.share` op to one person, an ordinary encrypted op over the same Olm sessions.
+    /// Sealed when they gave us their key (and it was not refused), identified otherwise.
+    fn share_key_with(
+        &self,
+        transport: &Arc<dyn Transport>,
+        token: &str,
+        state: &mut AccountState,
+        me: &str,
+        peer: &str,
+    ) -> Result<(), StoreError> {
+        let now = now_ms();
+        let (key, _) = self.with_conn(|conn| delivery::current(conn, now))?;
+        let contact = self.with_conn(|conn| delivery::contact_key(conn, peer))?;
+        let sealed_with = contact.filter(|(_, denied)| !denied).map(|(k, _)| k);
+        let (hlc, parents) = self.with_conn(|conn| Ok((tick_hlc(conn, now)?, Vec::<String>::new())))?;
+        let mut op = Op {
+            op_id: new_id(),
+            op_type: DELIVERY_KEY_SHARE.into(),
+            conversation_id: dm_conversation_id(me, peer),
+            hlc: hlc.render(),
+            parents,
+            payload: json!({ "key": vodozemac::base64_encode(&key) }),
+            sig: String::new(),
+        };
+        op.sig = state.account.sign(op.signing_bytes()).to_base64();
+        match self.send_op(transport, token, state, me, peer, op.clone(), sealed_with.as_deref()) {
+            Ok(_) => Ok(()),
+            // Our sealed send was refused: they rotated. Tell them identified (the key is for them).
+            Err(SendError::Denied) => {
+                self.with_conn(|conn| delivery::mark_denied(conn, peer))?;
+                self.send_op(transport, token, state, me, peer, op, None).map(|_| ()).map_err(SendError::into_store)
+            }
+            Err(SendError::Store(error)) => Err(error),
+        }
     }
 
     /// Asks the server which identified messages of mine were never delivered (the recipient's
@@ -763,22 +933,29 @@ impl LimeStore {
     }
 
     /// Decrypts, verifies and stores one waiting item, or says why it stays waiting.
+    ///
+    /// An **identified** item names its sender (the server vouches for it). A **sealed** item does not: the
+    /// sender is whoever the decrypted envelope says, and that is believed only when it can be checked: the
+    /// envelope's device certificate must chain to the master key **already pinned** for that person (a
+    /// sealed message from someone we have not exchanged messages with, or with a different master key, is
+    /// kept as invalid and never shown). A person whose keys changed first writes identified, which goes
+    /// through the key-change flow.
     fn process_item(
         &self,
         state: &mut AccountState,
         me: &str,
         row: &PendingRow,
     ) -> Result<Outcome, StoreError> {
-        // Only identified items are understood here (sealed sends are not built yet): keep them.
-        if !row.identified {
-            return Ok(Outcome::Keep(pending::SEALED_UNSUPPORTED));
-        }
-        let Some(sender) = row.sender_user.clone() else {
-            return Ok(Outcome::Keep(pending::INVALID));
+        let sealed = !row.identified;
+        // Identified: who the server says. Sealed: unknown until the envelope is decrypted.
+        let known_sender: Option<String> = if sealed {
+            None
+        } else {
+            match row.sender_user.clone() {
+                Some(sender) if sender != me => Some(sender),
+                _ => return Ok(Outcome::Keep(pending::INVALID)),
+            }
         };
-        if sender == me {
-            return Ok(Outcome::Keep(pending::INVALID));
-        }
         let Ok(wire) = vodozemac::base64_decode(&row.ciphertext) else {
             return Ok(Outcome::Keep(pending::INVALID));
         };
@@ -790,15 +967,24 @@ impl LimeStore {
         };
 
         let now = now_ms();
-        let sessions = self.with_conn(|conn| load_sessions(conn, &self.pickle_key, &sender))?;
+        // The sessions that could have made this item: the sender's, or (sealed) everyone's.
+        let sessions: Vec<(String, crate::store::account::StoredSession)> = match &known_sender {
+            Some(sender) => self
+                .with_conn(|conn| load_sessions(conn, &self.pickle_key, sender))?
+                .into_iter()
+                .map(|s| (sender.clone(), s))
+                .collect(),
+            None => self.with_conn(|conn| load_all_sessions(conn, &self.pickle_key))?,
+        };
 
         // Decrypt with an existing session, or (for a pre-key message) start one.
+        let mut session_owner: Option<String> = known_sender.clone();
         let decrypted = 'decrypt: {
             // Held back earlier for a changed key: it is already decrypted.
             if let (Some(plain), Some(identity)) = (&row.plaintext, &row.peer_identity) {
                 break 'decrypt Some((plain.clone(), None, identity.clone()));
             }
-            for mut stored in sessions {
+            for (owner, mut stored) in sessions {
                 let fits = match &message {
                     OlmMessage::PreKey(pre_key) => {
                         stored.session.session_id() == pre_key.session_id()
@@ -809,6 +995,7 @@ impl LimeStore {
                     continue;
                 }
                 if let Ok(plaintext) = stored.session.decrypt(&message) {
+                    session_owner = Some(owner);
                     break 'decrypt Some((plaintext, Some(stored.session), stored.peer_identity_key));
                 }
             }
@@ -842,13 +1029,23 @@ impl LimeStore {
             return Ok(Outcome::Keep(pending::INVALID));
         };
         let cert = &inner.sender_cert;
-        let valid = inner.sender_user == sender
+        // The sender: the server's word (identified), or the envelope's (sealed, checked below).
+        let sender = known_sender.clone().unwrap_or_else(|| inner.sender_user.clone());
+        let is_control = inner.op.op_type == DELIVERY_KEY_SHARE;
+        let valid = sender != me
+            && inner.sender_user == sender
             && inner.sender_device == cert.device_id
             && cert.identity_key == peer_identity
             && cert.verify()
             && inner.op.verify(&cert.signing_key)
-            && inner.op.op_type == "message.send"
-            && inner.op.conversation_id == dm_conversation_id(&sender, me);
+            && (inner.op.op_type == "message.send" || is_control)
+            && inner.op.conversation_id == dm_conversation_id(&sender, me)
+            // A sealed item decrypted by someone's existing session is that person's.
+            && (!sealed || session_owner.as_ref().is_none_or(|owner| *owner == sender));
+        let control_key = is_control
+            .then(|| inner.op.payload.get("key").and_then(Value::as_str).and_then(|k| vodozemac::base64_decode(k).ok()))
+            .flatten()
+            .filter(|k| k.len() == 32);
         let text = inner
             .op
             .payload
@@ -856,13 +1053,30 @@ impl LimeStore {
             .and_then(Value::as_str)
             .map(str::to_owned);
         let remote_hlc = Hlc::parse(&inner.op.hlc);
-        let (true, Some(text), Some(remote_hlc)) = (valid, text, remote_hlc) else {
+        let Some(remote_hlc) = remote_hlc.filter(|_| valid) else {
             return Ok(Outcome::Keep(pending::INVALID));
         };
+        if is_control && control_key.is_none() {
+            return Ok(Outcome::Keep(pending::INVALID));
+        }
+        if !is_control && text.is_none() {
+            return Ok(Outcome::Keep(pending::INVALID));
+        }
+        if sealed {
+            // Only a person we already know, with the master key we pinned for them.
+            let pinned: Option<String> = self.with_conn(|conn| {
+                conn.query_row("SELECT master_key FROM peers WHERE user_id = ?1", params![sender], |r| r.get(0))
+                    .optional()
+                    .map_err(db_err)
+            })?;
+            if pinned.as_deref() != Some(cert.master_key.as_str()) {
+                return Ok(Outcome::Keep(pending::INVALID));
+            }
+        }
 
         // Whatever the sender wrote, what is kept is the one written form (and its plain words).
-        let text = crate::format::normalise(&text);
-        if text.is_empty() {
+        let text = crate::format::normalise(&text.unwrap_or_default());
+        if !is_control && text.is_empty() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
         let plain = crate::format::plain_text(&text);
@@ -885,6 +1099,11 @@ impl LimeStore {
                 record_key_change(conn, &sender, &cert.master_key)?;
                 return Ok(None);
             }
+            if let Some(key) = &control_key {
+                // A contact's delivery key: kept for sealed sends to them. No conversation, nothing shown.
+                delivery::store_contact_key(conn, &sender, key, now)?;
+                return Ok(Some(Stored::Control));
+            }
             let conversation = format!("dm:{sender}");
             let blocked = conn
                 .query_row(
@@ -897,7 +1116,7 @@ impl LimeStore {
                 .unwrap_or(false);
             if blocked {
                 // Read (so the session keeps in step) but never stored or shown.
-                return Ok(Some(false));
+                return Ok(Some(Stored::Message(false)));
             }
             // A person we did not start a chat with is a request until accepted.
             ensure_dm_as(conn, &sender, None, "pending")?;
@@ -930,18 +1149,78 @@ impl LimeStore {
                     .map_err(db_err)?;
                 }
             }
-            Ok(Some(inserted > 0))
+            Ok(Some(Stored::Message(inserted > 0)))
         })?;
-        let Some(inserted) = stored else {
+        let Some(stored) = stored else {
             self.with_conn(|conn| pending::stash_plaintext(conn, row.id, &plaintext, &peer_identity))?;
             return Ok(Outcome::Keep(pending::KEY_MISMATCH));
         };
         self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
-        Ok(if inserted {
-            Outcome::Stored
-        } else {
-            Outcome::Duplicate
+        Ok(match stored {
+            Stored::Message(true) => Outcome::Stored,
+            Stored::Message(false) => Outcome::Duplicate,
+            // A control op is done with and is not a message.
+            Stored::Control => Outcome::Duplicate,
         })
+    }
+}
+
+/// What storing an item did.
+enum Stored {
+    Message(bool),
+    Control,
+}
+
+#[cfg(test)]
+impl LimeStore {
+    /// Tests only: a sealed item made by this store for `to_user`'s existing session, with `mutate` applied to the
+    /// envelope after it is signed (a tampered certificate, a false sender). Returns the base64 wire text.
+    pub(crate) fn test_forge_sealed(
+        &self,
+        to_user: &str,
+        text: &str,
+        mutate: impl FnOnce(&mut SealedInner),
+    ) -> String {
+        let state = self.load_or_create_account().unwrap();
+        let me = state.user_id.clone().unwrap();
+        let hlc = self.with_conn(|conn| tick_hlc(conn, now_ms())).unwrap();
+        let mut op = Op {
+            op_id: new_id(),
+            op_type: "message.send".into(),
+            conversation_id: dm_conversation_id(&me, to_user),
+            hlc: hlc.render(),
+            parents: vec![],
+            payload: json!({ "text": text }),
+            sig: String::new(),
+        };
+        op.sig = state.account.sign(op.signing_bytes()).to_base64();
+        let mut inner = SealedInner {
+            sender_user: me,
+            sender_device: state.device_id.clone(),
+            sender_cert: state.cert(),
+            op,
+        };
+        mutate(&mut inner);
+        let mut stored = self
+            .with_conn(|conn| load_sessions(conn, &self.pickle_key, to_user))
+            .unwrap()
+            .into_iter()
+            .next()
+            .expect("a session with the recipient");
+        let (kind, bytes) = stored.session.encrypt(inner.to_bytes()).unwrap().to_parts();
+        let mut wire = vec![kind as u8];
+        wire.extend_from_slice(&bytes);
+        vodozemac::base64_encode(&wire)
+    }
+
+    /// Tests only: this store's delivery key (to compute what the server should hold).
+    pub(crate) fn test_delivery_key(&self) -> Vec<u8> {
+        self.with_conn(|conn| delivery::current(conn, now_ms())).unwrap().0
+    }
+
+    /// Tests only: who is waiting to be sent my delivery key.
+    pub(crate) fn test_queued_shares(&self) -> Vec<String> {
+        self.with_conn(delivery::queued_shares).unwrap()
     }
 }
 
@@ -993,12 +1272,14 @@ struct Queued {
     hlc: String,
     parents: Vec<String>,
     thread_root: Option<String>,
+    /// The person tapped "Not delivered": send this one identified, once.
+    identified_once: bool,
 }
 
 fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT id, conversation_id, body, hlc, parents, thread_root FROM messages
+            "SELECT id, conversation_id, body, hlc, parents, thread_root, identified_once FROM messages
              WHERE sender_id = ?1 AND local_state IN ('sending', 'failed') AND op_id IS NOT NULL AND hlc IS NOT NULL
              ORDER BY hlc, id",
         )
@@ -1014,12 +1295,23 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
                 hlc: r.get(3)?,
                 parents: parents.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default(),
                 thread_root: r.get(5)?,
+                identified_once: r.get(6)?,
             })
         })
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
     Ok(rows.into_iter().filter(|q| !q.peer.is_empty()).collect())
+}
+
+/// A sealed send was refused: "Not delivered", and the next tap sends it identified (once).
+fn set_undelivered(conn: &Connection, id: &str) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE messages SET local_state = 'undelivered', sealed_denied = 1 WHERE id = ?1",
+        params![id],
+    )
+    .map_err(db_err)?;
+    Ok(())
 }
 
 fn set_state(conn: &Connection, id: &str, state: &str) -> Result<(), StoreError> {

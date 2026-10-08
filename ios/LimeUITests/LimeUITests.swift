@@ -655,6 +655,18 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["auto-status"].label.hasPrefix("Not running") || app.buttons["Start as Receiver"].waitForExistence(timeout: 5))
     }
 
+    func testTheDeveloperAboutShowsHowManyContactsAreSealed() {
+        let app = notifApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        app.buttons["settings-about"].tap()
+        XCTAssertTrue(app.buttons["about-developer"].waitForExistence(timeout: 5))
+        app.buttons["about-developer"].tap()
+        XCTAssertTrue(app.staticTexts["sealed-contacts"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["sealed-contacts"].label, "Sealed contacts: 2", "the demo has two")
+    }
+
     // MARK: Settings (LIME-98)
 
     private func openSettings(_ app: XCUIApplication) {

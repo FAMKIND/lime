@@ -30,6 +30,11 @@ pub(crate) struct ServerState {
     pub fail_sends: bool,
     /// sender user to hashes of identified items that were deleted undelivered
     pub undelivered: HashMap<String, Vec<String>>,
+    /// user to SHA-256(access_key) (hex): what `delivery-access-set` stored
+    pub delivery_access: HashMap<String, String>,
+    /// How many `send` requests carried an Authorization header, and how many did not (sealed).
+    pub sends_with_token: usize,
+    pub sends_without_token: usize,
 }
 
 #[derive(Default)]
@@ -99,9 +104,11 @@ impl Transport for FakeServer {
             .find(|h| h.name == "authorization")
             .and_then(|h| h.value.strip_prefix("Bearer tok-"))
             .map(str::to_owned);
-        let Some(user) = user else {
+        // A sealed `send` carries no token (the server learns nothing about the sender).
+        if user.is_none() && function != "send" {
             return respond(401, json!({ "error": "unauthorized" }));
-        };
+        }
+        let user = user.unwrap_or_default();
         let text = |key: &str| {
             body.get(key)
                 .and_then(Value::as_str)
@@ -209,19 +216,49 @@ impl Transport for FakeServer {
                     .and_then(Value::as_array)
                     .cloned()
                     .unwrap_or_default();
+                if user.is_empty() { state.sends_without_token += 1 } else { state.sends_with_token += 1 }
+                // All or nothing: check every recipient's access before storing anything.
+                for r in &recipients {
+                    let identified = r["access"]["identified"].as_bool() == Some(true);
+                    if identified {
+                        if user.is_empty() {
+                            return respond(401, json!({ "error": "unauthorized" }));
+                        }
+                        continue;
+                    }
+                    let device = r["to_device"].as_str().unwrap_or_default();
+                    let owner = state.devices.get(device).map(|d| d.0.clone());
+                    let presented = r["access"]["sealed"].as_str().and_then(|k| vodozemac::base64_decode(k).ok());
+                    let hash: Option<String> = presented
+                        .filter(|k| k.len() == 16)
+                        .map(|k| sha2::Sha256::digest(&k).iter().map(|b| format!("{b:02x}")).collect());
+                    let stored = owner.and_then(|o| state.delivery_access.get(&o).cloned());
+                    if hash.is_none() || hash != stored {
+                        return respond(403, json!({ "error": "access_denied" }));
+                    }
+                }
                 for r in recipients {
                     let device = r["to_device"].as_str().unwrap().to_owned();
+                    let identified = r["access"]["identified"].as_bool() == Some(true);
                     state.next_cursor += 1;
                     let cursor = state.next_cursor;
                     state.mailbox.push((
                         cursor,
                         device,
                         ciphertext.clone(),
-                        true,
-                        Some(user.clone()),
+                        identified,
+                        identified.then(|| user.clone()),
                     ));
                 }
                 respond(200, json!({ "stored": 1, "duplicates": 0 }))
+            }
+            "delivery-access-set" => {
+                let hash = vodozemac::base64_decode(text("access_key_hash")).unwrap_or_default();
+                if hash.len() != 32 {
+                    return respond(400, json!({ "error": "bad_request" }));
+                }
+                state.delivery_access.insert(user.clone(), hash.iter().map(|b| format!("{b:02x}")).collect());
+                respond(200, json!({ "ok": true }))
             }
             "mailbox-fetch" => {
                 let device = text("device_id");

@@ -10,6 +10,7 @@
 //! parents. See `docs/architecture.md` section 6.
 
 pub(crate) mod account;
+pub(crate) mod delivery;
 mod migrations;
 pub(crate) mod order;
 pub(crate) mod pending;
@@ -278,20 +279,55 @@ impl LimeStore {
             params![id],
         )
         .map_err(db_err)?;
+        // A chat you start is implicitly accepting them: they get your delivery key (once), so they can
+        // send you sealed messages.
+        if !delivery::is_shared(&tx, &user_id)? {
+            delivery::queue_share(&tx, &user_id, now_ms())?;
+        }
         tx.commit().map_err(db_err)?;
         Ok(id)
     }
 
-    /// Accepts a request: the conversation moves into Messages. (Sharing your delivery key with
-    /// them, so later messages can be sealed, comes with sealed sends.)
+    /// Accepts a request: the conversation moves into Messages, and they are sent your delivery key
+    /// (so their later messages can be sealed). The key goes out with the next delivery.
     pub fn accept_request(&self, conversation_id: String) -> Result<(), StoreError> {
-        self.set_request_state(&conversation_id, "accepted")
+        self.set_request_state(&conversation_id, "accepted")?;
+        if let Some(peer) = conversation_id.strip_prefix("dm:") {
+            let conn = self.lock();
+            if !delivery::is_shared(&conn, peer)? {
+                delivery::queue_share(&conn, peer, now_ms())?;
+            }
+        }
+        Ok(())
     }
 
-    /// Blocks a sender: the conversation is hidden and their new messages are not stored here.
-    /// (The server-side block, rotating the delivery key, comes with sealed sends.)
+    /// Blocks a sender: the conversation is hidden and their new messages are not stored here. If they
+    /// had your delivery key, **it is rotated** (a new key; the server learns its hash with the next
+    /// delivery) and the new key is queued for every accepted contact except them, so their sealed sends
+    /// are refused by the server. Someone who never had the key needs no rotation.
     pub fn block_sender(&self, conversation_id: String) -> Result<(), StoreError> {
-        self.set_request_state(&conversation_id, "blocked")
+        self.set_request_state(&conversation_id, "blocked")?;
+        let Some(peer) = conversation_id.strip_prefix("dm:") else { return Ok(()) };
+        let conn = self.lock();
+        delivery::dequeue_share(&conn, peer)?;
+        if delivery::unshare(&conn, peer)? {
+            let now = now_ms();
+            delivery::rotate(&conn, now)?;
+            delivery::forget_all_shared(&conn)?;
+            for other in delivery::accepted_peers(&conn)? {
+                if other != peer {
+                    delivery::queue_share(&conn, &other, now)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// How many contacts can be sent to sealed (they shared their delivery key and have not refused it).
+    /// For a Debug-only row in About.
+    pub fn sealed_contact_count(&self) -> Result<u32, StoreError> {
+        let conn = self.lock();
+        delivery::sealed_contact_count(&conn)
     }
 
     /// Accepts the other person's new security key (they signed in on a new phone): their messages
@@ -310,6 +346,8 @@ impl LimeStore {
             params![peer],
         )
         .map_err(db_err)?;
+        // Their new phone has none of what the old one held: give it my delivery key.
+        delivery::queue_share(&conn, peer, now_ms())?;
         Ok(())
     }
 
@@ -317,7 +355,9 @@ impl LimeStore {
     pub fn retry_message(&self, message_id: String) -> Result<(), StoreError> {
         let conn = self.lock();
         conn.execute(
-            "UPDATE messages SET local_state = 'sending'
+            "UPDATE messages SET local_state = 'sending',
+                    identified_once = CASE WHEN local_state = 'undelivered' THEN sealed_denied ELSE identified_once END,
+                    sealed_denied = 0
              WHERE id = ?1 AND sender_id = ?2 AND local_state IN ('failed', 'undelivered')",
             params![message_id, ME_ID],
         )
@@ -361,6 +401,10 @@ impl LimeStore {
             .map_err(db_err)?;
         if changed == 0 {
             return Err(StoreError::NotFound);
+        }
+        // They no longer have to be shut out: give them the current key again.
+        if let Some(peer) = conversation_id.strip_prefix("dm:") {
+            delivery::queue_share(&conn, peer, now_ms())?;
         }
         Ok(())
     }

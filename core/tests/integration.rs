@@ -162,6 +162,23 @@ impl Admin {
             .call();
     }
 
+    /// What the server stores about each waiting item of a device: whether it is identified, and the sender
+    /// it recorded (test only: needs the service key). A sealed item must have none.
+    fn mailbox_senders(&self, device_id: &str) -> Vec<(bool, Option<String>)> {
+        let rows = self.json(
+            self.with_service_key(ureq::get(&format!(
+                "{}/rest/v1/mailbox_items?select=identified,sender_user&to_device=eq.{device_id}&order=cursor",
+                self.base
+            ))),
+            None,
+        );
+        rows.as_array()
+            .expect("rows")
+            .iter()
+            .map(|row| (row["identified"].as_bool().unwrap(), row["sender_user"].as_str().map(str::to_owned)))
+            .collect()
+    }
+
     /// The raw mailbox rows of a device, as the server holds them (test only: needs the service key).
     fn raw_mailbox(&self, device_id: &str) -> Vec<Vec<u8>> {
         let rows = self.json(
@@ -577,4 +594,72 @@ fn a_phone_with_new_keys_replaces_the_account_keys_and_contacts_accept_the_chang
     alice_store.retry_message(old.id).unwrap();
     assert_eq!(alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap(), 2);
     assert_eq!(bob_new.sync(transport.clone(), bob.token.clone()).unwrap().received, 2);
+}
+
+#[test]
+fn sealed_sender_through_the_real_server_and_a_block_that_rotates_the_key() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let alice = admin.create_account();
+    let bob = admin.create_account();
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in [&alice, &bob] {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(&alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(&bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (alice_store, bob_store) = (store(&dir, "alice.db", 1), store(&dir, "bob.db", 2));
+    let alice_device = alice_store.register_device(transport.clone(), alice.token.clone()).unwrap().device_id;
+    let bob_device = bob_store.register_device(transport.clone(), bob.token.clone()).unwrap().device_id;
+    let texts = |store: &lime_core::LimeStore, chat: &str| -> Vec<String> {
+        store.list_messages(chat.to_owned()).unwrap().into_iter().map(|m| m.text).collect()
+    };
+
+    // A stranger's first message is identified: the server records who sent it, and it lands in Requests.
+    let chat_with_bob = alice_store.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    alice_store.queue_text(chat_with_bob.clone(), "hello Bob".into()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert!(admin.mailbox_senders(&bob_device).iter().all(|(identified, sender)| *identified && sender.as_deref() == Some(alice.id.as_str())));
+    assert_eq!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received, 1);
+    let chat_with_alice = bob_store.list_conversations().unwrap().remove(0).id;
+    assert_eq!(bob_store.list_conversations().unwrap()[0].request_state, "pending");
+
+    // Bob accepts: Alice's delivery key and his own are exchanged, so what follows is sealed. The server's
+    // copy of a sealed item has no sender at all.
+    bob_store.accept_request(chat_with_alice.clone()).unwrap();
+    bob_store.queue_text(chat_with_alice.clone(), "hi Alice".into()).unwrap();
+    bob_store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    let to_alice = admin.mailbox_senders(&alice_device);
+    assert!(!to_alice.is_empty());
+    assert!(to_alice.iter().all(|(identified, sender)| !identified && sender.is_none()), "sealed: no sender stored");
+    assert_eq!(alice_store.sync(transport.clone(), alice.token.clone()).unwrap().received, 1);
+    assert_eq!(alice_store.sealed_contact_count().unwrap(), 1);
+    assert_eq!(bob_store.sealed_contact_count().unwrap(), 1);
+    alice_store.queue_text(chat_with_bob.clone(), "sealed to Bob".into()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let to_bob = admin.mailbox_senders(&bob_device);
+    assert!(to_bob.iter().all(|(identified, sender)| !identified && sender.is_none()), "sealed: no sender stored");
+    assert_eq!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received, 1);
+    assert_eq!(texts(&bob_store, &chat_with_alice), vec!["hello Bob", "hi Alice", "sealed to Bob"]);
+
+    // Bob blocks Alice: his key rotates, so Alice's next sealed send is refused: Not delivered.
+    bob_store.block_sender(chat_with_alice.clone()).unwrap();
+    bob_store.deliver_queued(transport.clone(), bob.token.clone()).unwrap(); // puts the new key's hash on the server
+    alice_store.queue_text(chat_with_bob.clone(), "are you there?".into()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let state = |text: &str| alice_store.list_messages(chat_with_bob.clone()).unwrap().into_iter().find(|m| m.text == text).unwrap().local_state;
+    assert_eq!(state("are you there?"), "undelivered");
+    assert!(admin.mailbox_senders(&bob_device).is_empty(), "nothing reached Bob's mailbox");
+
+    // Bob unblocks her: she is given the new key and sealed sends work again.
+    bob_store.unblock(chat_with_alice.clone()).unwrap();
+    bob_store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    alice_store.sync(transport.clone(), alice.token.clone()).unwrap();
+    alice_store.queue_text(chat_with_bob.clone(), "back again".into()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(state("back again"), "sent");
+    assert!(admin.mailbox_senders(&bob_device).iter().all(|(identified, sender)| !identified && sender.is_none()));
+    assert!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received >= 1);
 }

@@ -154,19 +154,17 @@ fn an_unreadable_item_is_kept_and_read_once_the_session_exists() {
 }
 
 #[test]
-fn a_sealed_item_is_kept_not_lost() {
+fn a_sealed_item_that_cannot_be_read_is_kept_and_never_shown() {
     let server = FakeServer::new();
     let (bob, transport) = party(&server, "bob", 2);
     server.inject(&bob.device, "c2VhbGVkIGl0ZW0", false, None);
     let report = sync(&bob, &transport);
     assert_eq!((report.received, report.pending), (0, 1));
     assert_eq!(server.mailbox_len(&bob.device), 0);
-    assert_eq!(
-        pending_rows(&bob),
-        vec![("sealed_unsupported".to_string(), 1, false)]
-    );
-    // It stays across syncs (until sealed messages can be read).
+    assert_eq!(pending_rows(&bob), vec![("invalid".to_string(), 1, false)]);
+    // It stays across syncs, and nothing was made of it.
     assert_eq!(sync(&bob, &transport).pending, 1);
+    assert!(bob.store.list_conversations().unwrap().is_empty());
 }
 
 #[test]
@@ -504,7 +502,8 @@ fn a_message_from_a_changed_key_waits_until_it_is_accepted_and_then_reads() {
     // (Bob's new phone has not pinned Alice's key before, so sending works.)
     say(&bob2, &alice, &transport, "new phone, who dis");
     let report = sync(&alice, &transport);
-    assert_eq!((report.received, report.pending), (0, 1), "held back, not lost");
+    // Two items wait: the message, and the delivery-key share the new phone sent when it started the chat.
+    assert_eq!((report.received, report.pending), (0, 2), "held back, not lost");
     assert_eq!(texts(&alice, &bob2), vec!["hello".to_string(), "hi".to_string()]);
     assert!(conversation(&alice, &bob2).unwrap().key_change_pending);
 
@@ -836,4 +835,261 @@ fn a_search_hit_in_a_reply_names_its_thread_and_in_chat_find_skips_replies() {
     let in_chat = alice.store.search_messages("fractions".into(), Some(format!("dm:{}", bob.user)), 10).unwrap();
     assert_eq!(in_chat.len(), 1, "in-chat find steps through the timeline, where replies are not");
     assert!(in_chat[0].thread_root.is_none());
+}
+
+// ---------------------------------------------------------------- sealed sender (LIME-96)
+
+use sha2::{Digest, Sha256};
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// What the fake server should hold for a user whose delivery key is `key`: SHA-256(HKDF access key), hex.
+fn expected_hash(key: &[u8]) -> String {
+    hex(&Sha256::digest(crate::store::delivery::access_key(key)))
+}
+
+/// Alice starts the chat, Bob accepts: both hold each other's delivery keys afterwards.
+fn befriend(alice: &Party, bob: &Party, transport: &Arc<dyn Transport>) {
+    alice.store.start_dm(bob.user.clone(), bob.user.clone()).unwrap();
+    say(alice, bob, transport, "hello");
+    sync(bob, transport);
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    say(bob, alice, transport, "hi, I accepted");
+    sync(alice, transport);
+}
+
+fn mailbox_of(server: &Arc<FakeServer>, device: &str) -> Vec<(bool, Option<String>)> {
+    server.state.lock().unwrap().mailbox.iter().filter(|m| m.1 == device).map(|m| (m.3, m.4.clone())).collect()
+}
+
+#[test]
+fn the_delivery_key_is_made_once_and_only_its_hash_goes_to_the_server() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let key = alice.store.test_delivery_key();
+    assert_eq!(key.len(), 32);
+    let held = server.state.lock().unwrap().delivery_access.get("alice").cloned();
+    assert_eq!(held, Some(expected_hash(&key)), "the server holds SHA-256(HKDF(key)), not the key");
+    assert_ne!(held, Some(hex(&key)));
+    // Registering again changes nothing.
+    alice.store.register_device(transport, alice.token.clone()).unwrap();
+    assert_eq!(alice.store.test_delivery_key(), key);
+    assert_eq!(server.state.lock().unwrap().delivery_access.get("alice").cloned(), held);
+}
+
+#[test]
+fn a_strangers_first_message_stays_identified_and_lands_in_requests() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "hello, we have not met");
+    let items = mailbox_of(&server, &bob.device);
+    assert_eq!(items, vec![(true, Some("alice".to_string()))], "identified: the server sees who sent it");
+    assert_eq!(sync(&bob, &transport).received, 1);
+    assert!(conversation(&bob, &alice).unwrap().request_state == "pending");
+}
+
+#[test]
+fn after_accept_both_sides_hold_each_others_keys_and_later_sends_are_sealed() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    assert_eq!(alice.store.sealed_contact_count().unwrap(), 1, "Alice holds Bob's key");
+    assert_eq!(bob.store.sealed_contact_count().unwrap(), 1, "Bob holds Alice's key");
+
+    let before = server.state.lock().unwrap().sends_without_token;
+    say(&alice, &bob, &transport, "now this is sealed");
+    say(&bob, &alice, &transport, "and so is this");
+    assert!(server.state.lock().unwrap().sends_without_token >= before + 2, "sent with no token");
+    // The server's copy of a sealed item has no sender at all.
+    for device in [&alice.device, &bob.device] {
+        for (identified, sender) in mailbox_of(&server, device) {
+            assert!(!identified && sender.is_none(), "a sealed item stores no sender");
+        }
+    }
+    assert_eq!(sync(&bob, &transport).received, 1);
+    assert_eq!(sync(&alice, &transport).received, 1);
+    assert!(texts(&bob, &alice).contains(&"now this is sealed".to_string()));
+    assert!(texts(&alice, &bob).contains(&"and so is this".to_string()));
+    // The delivery-key shares were not messages: nothing extra is shown.
+    assert_eq!(texts(&bob, &alice), vec!["hello", "hi, I accepted", "now this is sealed", "and so is this"], "only the messages are shown");
+    assert_eq!(conversation(&bob, &alice).unwrap().unread, 2, "the share did not count as unread");
+}
+
+#[test]
+fn a_tampered_sender_certificate_is_not_shown() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let shown_before = texts(&bob, &alice);
+    // Alice's device key no longer chains to her master key.
+    let wire = alice.store.test_forge_sealed(&bob.user, "forged", |inner| {
+        let mut signature = inner.sender_cert.master_signature.clone().into_bytes();
+        signature[3] = if signature[3] == b'A' { b'B' } else { b'A' };
+        inner.sender_cert.master_signature = String::from_utf8(signature).unwrap();
+    });
+    server.inject(&bob.device, &wire, false, None);
+    let report = sync(&bob, &transport);
+    assert_eq!(report.received, 0);
+    assert_eq!(texts(&bob, &alice), shown_before, "never shown");
+    assert_eq!(pending_rows(&bob).last().map(|r| r.0.clone()), Some("invalid".to_string()), "kept, with its reason");
+}
+
+#[test]
+fn a_sealed_item_that_claims_to_be_someone_else_is_not_shown_and_is_no_key_change() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (mallory, _) = party(&server, "mallory", 3);
+    befriend(&alice, &bob, &transport);
+    // Mallory writes to Bob (identified; a stranger), so she has a session with him; then she forges a sealed
+    // message that says it is from Alice, with her own certificate.
+    say(&mallory, &bob, &transport, "hello, a stranger");
+    sync(&bob, &transport);
+    let shown_before = texts(&bob, &alice);
+    let wire = mallory.store.test_forge_sealed(&bob.user, "I am Alice", |inner| {
+        inner.sender_user = "alice".into();
+        inner.op.conversation_id = crate::protocol::dm_conversation_id("alice", "bob");
+    });
+    server.inject(&bob.device, &wire, false, None);
+    sync(&bob, &transport);
+    assert_eq!(texts(&bob, &alice), shown_before, "Alice's chat is untouched");
+    assert!(!conversation(&bob, &alice).unwrap().key_change_pending, "a forgery cannot raise a false key-change prompt");
+    // And a sealed message from someone Bob has no pinned key for is never shown either (here Bob forgets
+    // Mallory's key, so she is unknown to him).
+    bob.store.lock().execute("DELETE FROM peers WHERE user_id = 'mallory'", []).unwrap();
+    let stranger = mallory.store.test_forge_sealed(&bob.user, "sealed from a stranger", |_| {});
+    server.inject(&bob.device, &stranger, false, None);
+    sync(&bob, &transport);
+    assert!(texts(&bob, &mallory).iter().all(|t| t != "sealed from a stranger"));
+    assert!(pending_rows(&bob).iter().any(|r| r.0 == "invalid"));
+}
+
+#[test]
+fn a_block_rotates_the_key_the_blocked_sealed_send_is_refused_and_the_others_still_deliver() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let (dave, _) = party(&server, "dave", 4);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    // Dave is a stranger who wrote to Alice: a pending request.
+    say(&dave, &alice, &transport, "hello from a stranger");
+    sync(&alice, &transport);
+    let old_hash = server.state.lock().unwrap().delivery_access.get("alice").cloned();
+
+    // Alice blocks Bob: a new key, for everyone but Bob (and not for the stranger).
+    alice.store.block_sender(format!("dm:{}", bob.user)).unwrap();
+    assert_eq!(alice.store.test_queued_shares(), vec!["carol".to_string()], "the accepted contacts except Bob");
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let new_hash = server.state.lock().unwrap().delivery_access.get("alice").cloned();
+    assert_ne!(new_hash, old_hash, "the server now holds the hash of the new key");
+    assert_eq!(new_hash, Some(expected_hash(&alice.store.test_delivery_key())));
+    assert_eq!(sync(&carol, &transport).received, 0, "the share is not a message");
+
+    // Bob (holding the old key) is refused: his message is "Not delivered".
+    let sent = bob.store.send_text_identified(transport.clone(), bob.token.clone(), alice.user.clone(), "are you there?".to_string());
+    assert!(sent.is_ok());
+    let state_of = |p: &Party, text: &str| p.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().find(|m| m.text == text).unwrap().local_state;
+    assert_eq!(state_of(&bob, "are you there?"), "undelivered");
+    assert_eq!(mailbox_of(&server, &alice.device).len(), 0, "nothing reached Alice's mailbox");
+    // While refused, no further sealed send is even tried: the next message is Not delivered too.
+    let calls = server.state.lock().unwrap().calls;
+    let _ = bob.store.send_text_identified(transport.clone(), bob.token.clone(), alice.user.clone(), "second".to_string());
+    assert_eq!(state_of(&bob, "second"), "undelivered");
+    assert!(server.state.lock().unwrap().calls - calls < 8, "no repeated sealed attempts");
+
+    // Carol holds the new key: her sealed message still delivers.
+    say(&carol, &alice, &transport, "still here");
+    assert_eq!(sync(&alice, &transport).received, 1);
+    assert_eq!(texts(&alice, &carol).last().unwrap(), "still here");
+
+    // One tap on "Not delivered" sends that message identified, once. Alice (who blocked him) hides it.
+    let first = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().find(|m| m.text == "are you there?").unwrap();
+    bob.store.retry_message(first.id.clone()).unwrap();
+    bob.store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(state_of(&bob, "are you there?"), "sent");
+    assert_eq!(mailbox_of(&server, &alice.device).first().map(|m| m.0), Some(true), "identified");
+    sync(&alice, &transport);
+    assert!(alice.store.list_conversations().unwrap().iter().all(|c| c.id != format!("dm:{}", bob.user)), "hidden for the blocker");
+
+    // Alice unblocks Bob: he is given the current key, and sealed sends work again.
+    alice.store.unblock(format!("dm:{}", bob.user)).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    sync(&bob, &transport);
+    let second = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().find(|m| m.text == "second").unwrap();
+    bob.store.retry_message(second.id).unwrap();
+    bob.store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(state_of(&bob, "second"), "sent", "the tapped one goes identified, once");
+    sync(&alice, &transport);
+    // A new message now goes sealed: the unblock gave Bob the current key.
+    say(&bob, &alice, &transport, "third");
+    let item = mailbox_of(&server, &alice.device);
+    assert!(item.iter().any(|m| !m.0 && m.1.is_none()), "sealed again after the unblock");
+    assert_eq!(sync(&alice, &transport).received, 1, "the sealed one");
+    assert!(texts(&alice, &bob).contains(&"third".to_string()));
+}
+
+#[test]
+fn a_new_phone_gets_a_new_delivery_key_and_old_keys_are_refused() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let old = server.state.lock().unwrap().delivery_access.get("bob").cloned();
+
+    let (bob2, _) = bob_with_new_keys(&server);
+    let new = server.state.lock().unwrap().delivery_access.get("bob").cloned();
+    assert_ne!(old, new, "a new phone means a new delivery key");
+    assert_eq!(new, Some(expected_hash(&bob2.store.test_delivery_key())));
+    assert_eq!(bob2.store.sealed_contact_count().unwrap(), 0, "the new phone holds nobody's key yet");
+
+    // Alice accepts Bob's new key; the key she held for Bob is no longer his, so her sealed send is refused
+    // ("Not delivered"), and tapping it sends it identified, which lands in the new phone's Requests.
+    // (Her first try meets the new key and waits for her to accept it, as in LIME-95-fix.)
+    let first = alice.store.send_text_identified(transport.clone(), alice.token.clone(), bob2.user.clone(), "welcome back".to_string());
+    assert!(first.is_err());
+    alice.store.trust_new_key(format!("dm:{}", bob2.user)).unwrap();
+    assert_eq!(alice.store.test_queued_shares(), vec!["bob".to_string()], "Bob's new phone is given her key");
+    let mine = alice.store.list_messages(format!("dm:{}", bob2.user)).unwrap().into_iter().find(|m| m.text == "welcome back").unwrap();
+    alice.store.retry_message(mine.id.clone()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let mine = alice.store.list_messages(format!("dm:{}", bob2.user)).unwrap().into_iter().find(|m| m.text == "welcome back").unwrap();
+    assert_eq!(mine.local_state, "undelivered", "her old key for Bob is refused: Not delivered");
+    alice.store.retry_message(mine.id).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let report = sync(&bob2, &transport);
+    assert!(report.received >= 1);
+    assert!(texts(&bob2, &alice).contains(&"welcome back".to_string()));
+    assert_eq!(bob2.store.sealed_contact_count().unwrap(), 1, "Alice's share reached the new phone");
+}
+
+#[test]
+fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgrade() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    // An old chat: accepted, with messages, and no delivery keys either way (as the database was at version 9).
+    say(&alice, &bob, &transport, "from before");
+    sync(&bob, &transport);
+    bob.store.accept_request("dm:alice".into()).unwrap();
+    {
+        let conn = alice.store.lock();
+        conn.execute_batch(
+            "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
+             DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
+             ALTER TABLE messages DROP COLUMN sealed_denied; ALTER TABLE messages DROP COLUMN identified_once;
+             PRAGMA user_version = 9;",
+        )
+        .unwrap();
+    }
+    let path = alice._dir.path().join("lime.db").to_string_lossy().into_owned();
+    drop(alice.store);
+    let reopened = LimeStore::open(path, vec![1u8; 32]).unwrap();
+    assert_eq!(reopened.test_queued_shares(), vec!["bob".to_string()], "the accepted chat is queued to be given the key");
 }

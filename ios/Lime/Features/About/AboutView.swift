@@ -19,6 +19,7 @@ struct AboutView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
     @State private var confirmingSignOut = false
+    @State private var sealedContacts = 0
     @Environment(\.dismiss) private var dismiss
 
     #if DEBUG
@@ -80,6 +81,11 @@ struct AboutView: View {
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
                 .accessibilityIdentifier("developer-staging")
+            Text("Sealed contacts: \(sealedContacts)")
+                .font(Theme.caption)
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityIdentifier("sealed-contacts")
+                .task { sealedContacts = await store.sealedContactCount() }
             Button("Load sample chats") { Task { await store.loadSampleChats() } }
                 .font(Theme.secondary.weight(.semibold))
                 .foregroundStyle(Theme.text)

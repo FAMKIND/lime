@@ -141,6 +141,37 @@ const MIGRATIONS: &[&str] = &[
          root_id TEXT PRIMARY KEY NOT NULL,
          unread  INTEGER NOT NULL DEFAULT 0
      );",
+    // 10: sealed sender (LIME-96). `delivery_state` is this account's own delivery key (kept inside the
+    // encrypted database) and whether its hash is on the server; `contact_delivery_keys` are the keys
+    // people shared with us (`denied`: a sealed send to them was refused, so none is tried until they
+    // share a new key); `share_queue` is who still has to be sent my current key; `key_shared` is who
+    // already has it. A message refused sealed becomes \"Not delivered\" (`sealed_denied`), and one tap
+    // on it sends it identified once (`identified_once`).
+    "CREATE TABLE delivery_state (
+         id         INTEGER PRIMARY KEY CHECK (id = 1),
+         key        TEXT NOT NULL,
+         uploaded   INTEGER NOT NULL DEFAULT 0,
+         rotated_at INTEGER NOT NULL
+     );
+     CREATE TABLE contact_delivery_keys (
+         user_id     TEXT PRIMARY KEY NOT NULL,
+         key         TEXT NOT NULL,
+         denied      INTEGER NOT NULL DEFAULT 0,
+         received_at INTEGER NOT NULL
+     );
+     CREATE TABLE share_queue (
+         peer_user_id TEXT PRIMARY KEY NOT NULL,
+         queued_at    INTEGER NOT NULL
+     );
+     CREATE TABLE key_shared (
+         peer_user_id TEXT PRIMARY KEY NOT NULL,
+         shared_at    INTEGER NOT NULL
+     );
+     ALTER TABLE messages ADD COLUMN sealed_denied INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE messages ADD COLUMN identified_once INTEGER NOT NULL DEFAULT 0;
+     -- Chats that were accepted before this version have not been given my delivery key: queue them all.
+     INSERT OR IGNORE INTO share_queue (peer_user_id, queued_at)
+         SELECT substr(id, 4), 0 FROM conversations WHERE id LIKE 'dm:%' AND request_state = 'accepted';",
 ];
 
 /// The schema version this build writes.
