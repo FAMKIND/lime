@@ -124,6 +124,19 @@ Everything is decided on this phone, from messages decrypted on this phone; no s
 - **The chime** is not bundled yet (nothing is synthesised). `Lime/Resources/Sounds/README.md` says exactly how to add `lime-chime.caf` and the one-case change that makes it an option and the default.
 - Code: `Lime/Core/Notifications/` (settings, the pure rules in `NotificationPolicy`, the coordinator and the iOS pieces); the arrivals are spotted in `ConversationStore.reload`. Debug launch arguments: `-lime-notif-denied`, `-lime-notif-undetermined` (the default in demo mode is "allowed"), `-lime-demo-screen notif-banner`, `-lime-demo-screen settings/notifications`.
 
+## Nearby test logs (LIME-103, Debug builds only)
+
+The Bluetooth field test (Settings → About → press and hold the Lime logo) keeps one JSON-lines log per run in the app's `Documents/nearby-logs/`. **Share all** in the app presents the iOS share sheet; if it comes up empty, copy the logs over USB with the phone connected and unlocked:
+
+```sh
+xcrun devicectl device copy from --device <udid> --domain-type appDataContainer \
+  --domain-identifier com.famkind.lime --source Documents/nearby-logs --destination ~/Downloads/ble-logs/A
+xcrun devicectl list devices      # the udid
+ios/analyze-ble-logs.py ~/Downloads/ble-logs      # a timeline and the numbers for docs/spike-ble.md
+```
+
+The unattended overnight test (LIME-103b) is the **Auto test** button on that screen; its plan is `docs/spike-ble-test-plan-2.md`.
+
 ## Checks
 
 - `./ios/check-warnings.sh`: builds everything (app and both test targets) **from clean**, for a **simulator and a device** destination (unsigned), and fails on **any** warning in Lime's own sources (not the generated UniFFI file). An incremental `xcodebuild` only prints warnings for files it recompiled, so use this, not a quick build, to say "no warnings".

@@ -66,6 +66,11 @@ final class NearbyLog {
     func record(_ kind: String, _ fields: [String: Any] = [:]) {
         let now = Date()
         var line = fields
+        // The log's own keys are `t`, `ms` (the epoch, in milliseconds) and `kind`; a field with one of those
+        // names is kept under `x_<name>` instead of overwriting it (LIME-103 lost durations that way).
+        for reserved in ["t", "ms", "kind"] {
+            if let value = line.removeValue(forKey: reserved) { line["x_" + reserved] = value }
+        }
         line["t"] = Self.stamp.string(from: now)
         line["ms"] = Int(now.timeIntervalSince1970 * 1000)
         line["kind"] = kind

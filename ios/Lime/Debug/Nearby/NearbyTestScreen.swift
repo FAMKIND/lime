@@ -6,8 +6,7 @@ import UIKit
 /// sharing the log files. See docs/spike-ble-test-plan.md.
 struct NearbyTestScreen: View {
     @State private var test = NearbyTest.shared
-    @State private var sharing: [URL] = []
-    @State private var showShare = false
+    @State private var showAuto = false
     @State private var runs: [URL] = NearbyLog.savedRuns()
     @Environment(\.dismiss) private var dismiss
 
@@ -49,6 +48,9 @@ struct NearbyTestScreen: View {
                             .buttonStyle(.bordered).tint(Theme.text).disabled(!transport.running)
                             .accessibilityIdentifier("nearby-send-all")
                     }
+                    Button("Auto test (overnight)…") { showAuto = true }
+                        .buttonStyle(.bordered).tint(Theme.text)
+                        .accessibilityIdentifier("nearby-auto-button")
                     Divider()
                     Text("Log").font(Theme.title)
                     LazyVStack(alignment: .leading, spacing: 2) {
@@ -62,11 +64,11 @@ struct NearbyTestScreen: View {
                     HStack {
                         Text("Saved runs (\(runs.count))").font(Theme.title)
                         Spacer()
-                        Button("Share all") { sharing = runs; showShare = !runs.isEmpty }.disabled(runs.isEmpty)
+                        Button("Share all") { NearbyShare.present(runs) }.disabled(runs.isEmpty)
                             .accessibilityIdentifier("nearby-share-all")
                     }
                     ForEach(runs, id: \.self) { url in
-                        Button { sharing = [url]; showShare = true } label: {
+                        Button { NearbyShare.present([url]) } label: {
                             Text(url.lastPathComponent).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.text)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -78,14 +80,9 @@ struct NearbyTestScreen: View {
             .navigationTitle("Nearby test")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
-            .sheet(isPresented: $showShare) { ShareSheet(items: sharing) }
+            .sheet(isPresented: $showAuto) { NearbyAutoScreen() }
         }
     }
 }
 
-private struct ShareSheet: UIViewControllerRepresentable {
-    let items: [URL]
-    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: items, applicationActivities: nil) }
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
-}
 #endif

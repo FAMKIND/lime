@@ -147,6 +147,14 @@ final class NearbyTransport: NSObject {
     var sendOnConnect = true
     /// This run's random tag: lets two links to the same phone be told apart (it identifies nothing).
     let tag: String
+    /// The auto test's hooks: a blob arrived (first copy or duplicate), an ack arrived, the set of links changed,
+    /// and "iOS ran our code because of this Bluetooth event" (for counting wake-ups).
+    @ObservationIgnored var onBlob: ((_ id: String, _ parsed: NearbyBlob.Parsed, _ link: NearbyLink, _ first: Bool, _ durationMs: Int) -> Void)?
+    @ObservationIgnored var onAck: ((_ id: String) -> Void)?
+    @ObservationIgnored var onLinksChanged: (() -> Void)?
+    @ObservationIgnored var onWake: ((_ source: String) -> Void)?
+    /// Send an ack back for every blob received (the auto test's sender counts acks as deliveries).
+    var acknowledgesBlobs = false
 
     @ObservationIgnored private var central: CBCentralManager?
     @ObservationIgnored private var peripheralManager: CBPeripheralManager?
@@ -229,15 +237,33 @@ final class NearbyTransport: NSObject {
     /// Makes a signed random blob and queues it on one link per nearby phone and transport.
     func sendTestBlob(bodySize: Int) {
         let blob = NearbyBlob.make(bodySize: bodySize, key: key)
+        _ = sendPrepared(blob, bodySize: bodySize)
+    }
+
+    /// This phone's throwaway signing key (the auto test signs its ticks with it).
+    var signingKey: Curve25519.Signing.PrivateKey { key }
+
+    /// True when at least one identified link could carry a blob now.
+    var hasSendableLink: Bool { !linksForSending().isEmpty }
+
+    /// Queues an already-signed blob on one link per phone and transport; returns how many links took it (0: no link).
+    @discardableResult
+    func sendPrepared(_ blob: Data, bodySize: Int) -> Int {
         let id = NearbyBlob.id(of: blob)
         seen.insert(id)
         let chosen = linksForSending()
-        guard !chosen.isEmpty else { log.record("send_skipped", ["blob": id, "size": bodySize, "why": "no link"]); return }
+        guard !chosen.isEmpty else { log.record("send_skipped", ["blob": id, "size": bodySize, "why": "no link"]); return 0 }
         let frame = NearbyFrame.encode(.blob, blob)
         for link in chosen {
             link.queue.append(NearbyOutgoing(kind: .blob, blobID: id, data: frame, size: bodySize))
             pump(link)
         }
+        return chosen.count
+    }
+
+    private func sendAck(for id: String, on link: NearbyLink) {
+        link.queue.append(NearbyOutgoing(kind: .ack, blobID: "ack", data: NearbyFrame.encode(.ack, Data(id.utf8)), size: 0))
+        pump(link)
     }
 
     /// One link per remote phone and transport class: the central's write link first, then notify.
@@ -299,7 +325,7 @@ final class NearbyTransport: NSObject {
             sent += 1
             let seconds = max(Date().timeIntervalSince(done.startedAt ?? done.queuedAt), 0.001)
             log.record("send_done", ["blob": done.blobID, "size": done.size, "bytes": done.data.count, "transport": link.transport, "link": link.kind.rawValue,
-                                     "ms": Int(seconds * 1000), "kbps": Int(Double(done.data.count) * 8 / 1000 / seconds)])
+                                     "duration_ms": Int(seconds * 1000), "kbps": Int(Double(done.data.count) * 8 / 1000 / seconds)])
         }
         pump(link)
     }
@@ -312,6 +338,7 @@ final class NearbyTransport: NSObject {
     // MARK: Receiving
 
     func received(_ data: Data, on link: NearbyLink) {
+        onWake?("data")
         for (kind, payload, began) in link.reader.append(data) { handle(kind, payload, began: began, link: link) }
     }
 
@@ -321,11 +348,14 @@ final class NearbyTransport: NSObject {
             let remote = String(decoding: payload, as: UTF8.self)
             link.remoteTag = remote
             log.record("hello", ["remote": remote, "link": link.kind.rawValue])
+            onLinksChanged?()
             if sendOnConnect, !greeted.contains(remote) {
                 greeted.insert(remote)
                 sendTestBlob(bodySize: 200)
                 sendTestBlob(bodySize: 4_096)
             }
+        case .ack:
+            onAck?(String(decoding: payload, as: UTF8.self))
         case .blob:
             let id = NearbyBlob.id(of: payload)
             let now = Date()
@@ -337,16 +367,20 @@ final class NearbyTransport: NSObject {
             }
             if seen.contains(id) {
                 duplicates += 1
-                log.record("recv_dup", ["blob": id, "bytes": payload.count, "transport": link.transport, "ms": ms])
+                log.record("recv_dup", ["blob": id, "bytes": payload.count, "transport": link.transport, "duration_ms": ms])
+                if acknowledgesBlobs { sendAck(for: id, on: link) }
+                onBlob?(id, parsed, link, false, ms)
                 return
             }
             seen.insert(id)
             if parsed.valid { received += 1 } else { invalid += 1 }
             log.record("recv_done", ["blob": id, "size": parsed.bodySize, "bytes": payload.count, "transport": link.transport, "link": link.kind.rawValue,
-                                     "ms": ms, "kbps": Int(Double(payload.count) * 8 / 1000 / max(Double(ms) / 1000, 0.001)),
+                                     "duration_ms": ms, "kbps": Int(Double(payload.count) * 8 / 1000 / max(Double(ms) / 1000, 0.001)),
                                      "signatureOK": parsed.valid, "signer": parsed.signer,
                                      // The phones' clocks are not synchronised: a rough latency only.
                                      "sentToReceivedMs": Int(Int64(now.timeIntervalSince1970 * 1000) - parsed.sentAtMs)])
+            if acknowledgesBlobs { sendAck(for: id, on: link) }
+            onBlob?(id, parsed, link, true, ms)
         }
     }
 
@@ -354,6 +388,7 @@ final class NearbyTransport: NSObject {
         link.streams?.close()
         links.removeAll { $0 === link }
         log.record("link_closed", ["link": link.kind.rawValue, "why": why, "remote": link.remoteTag ?? "?"])
+        onLinksChanged?()
     }
 
     // MARK: Adding links
@@ -398,6 +433,7 @@ extension NearbyTransport: @preconcurrency CBCentralManagerDelegate {
     }
 
     func centralManager(_ manager: CBCentralManager, willRestoreState dict: [String: Any]) {
+        onWake?("restore")
         let restored = (dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral]) ?? []
         log.record("restore_central", ["peripherals": restored.count, "id": Self.centralRestoreID])
         for peripheral in restored {
@@ -407,6 +443,7 @@ extension NearbyTransport: @preconcurrency CBCentralManagerDelegate {
     }
 
     func centralManager(_ manager: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        onWake?("discover")
         let overflow = advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] != nil
         log.record("discovered", ["peer": peripheral.identifier.uuidString.prefix(8).description, "rssi": RSSI.intValue, "overflowAdvert": overflow,
                                   "seconds": Int(Date().timeIntervalSince(runStarted))])
@@ -418,6 +455,7 @@ extension NearbyTransport: @preconcurrency CBCentralManagerDelegate {
     }
 
     func centralManager(_ manager: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        onWake?("connect")
         log.record("connected", ["peer": peripheral.identifier.uuidString.prefix(8).description,
                                  "writeMTU": peripheral.maximumWriteValueLength(for: .withResponse), "reconnects": reconnects[peripheral.identifier] ?? 0])
         peripheral.readRSSI()
@@ -472,6 +510,7 @@ extension NearbyTransport: @preconcurrency CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        onWake?("notified")
         guard let value = characteristic.value else { return }
         if characteristic.uuid == Self.psmUUID, value.count >= 2 {
             let psm = CBL2CAPPSM(value.prefix(2).reduce(UInt16(0)) { ($0 << 8) | UInt16($1) })
@@ -523,6 +562,7 @@ extension NearbyTransport: @preconcurrency CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ manager: CBPeripheralManager, willRestoreState dict: [String: Any]) {
+        onWake?("restore-peripheral")
         let services = (dict[CBPeripheralManagerRestoredStateServicesKey] as? [CBMutableService]) ?? []
         log.record("restore_peripheral", ["services": services.count, "id": Self.peripheralRestoreID,
                                            "advertising": dict[CBPeripheralManagerRestoredStateAdvertisementDataKey] != nil])
@@ -549,6 +589,7 @@ extension NearbyTransport: @preconcurrency CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ manager: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
+        onWake?("subscribed")
         let link = NearbyLink(kind: .gattNotify, label: central.identifier.uuidString.prefix(8).description)
         link.central = central
         link.remoteID = central.identifier
@@ -574,6 +615,7 @@ extension NearbyTransport: @preconcurrency CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ manager: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
+        onWake?("written")
         for request in requests {
             if let value = request.value {
                 // Writes from a central belong to its notify link on our side (the same remote phone).

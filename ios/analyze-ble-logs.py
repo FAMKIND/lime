@@ -20,6 +20,12 @@ def load(root):
             runs[name][side] = events
     return runs
 
+def dur(e):
+    """A transfer's duration in ms: `duration_ms` (LIME-103b logs) or, in LIME-103 logs, worked out from kbit/s
+    (those logs overwrote the duration with the epoch time)."""
+    if "duration_ms" in e: return e["duration_ms"]
+    return round(e["bytes"] * 8 / max(e["kbps"], 1))
+
 def phase_at(events, ms):
     """The app's phase on that phone at time ms: foreground, background or locked."""
     phase = "foreground"
@@ -58,9 +64,9 @@ def main():
             for e in evs:
                 if e["kind"] == "recv_done":
                     ph = phase_at(evs, e["ms"])
-                    print(f"    {side} recv {e['size']:>5} B via {e['transport']:<5} {e['ms']:>5} ms {e['kbps']:>5} kbps sig={e['signatureOK']} while {ph} at +{(e['ms']-t0)/1000:.1f}s")
+                    print(f"    {side} recv {e['size']:>5} B via {e['transport']:<5} {dur(e):>5} ms {e['kbps']:>5} kbps sig={e['signatureOK']} while {ph} at +{(e['ms']-t0)/1000:.1f}s")
                 if e["kind"] == "send_done" and e["size"] in (200, 4096, 32768):
-                    print(f"    {side} sent {e['size']:>5} B via {e['transport']:<5} {e['ms']:>5} ms {e['kbps']:>5} kbps at +{(e['ms']-t0)/1000:.1f}s")
+                    print(f"    {side} sent {e['size']:>5} B via {e['transport']:<5} {dur(e):>5} ms {e['kbps']:>5} kbps at +{(e['ms']-t0)/1000:.1f}s")
         if timeline:
             for side, evs in sides.items():
                 for e in evs:

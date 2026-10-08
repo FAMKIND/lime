@@ -6,10 +6,13 @@ import Foundation
 /// no secret travels: the public key and signature are the only identity, and the key is a throwaway made
 /// for this spike (kept in this phone's settings), not the account's.
 ///
-/// A blob is `public key (32) | signature (64) | sent-at ms (8) | body`; the signature covers sent-at and body.
+/// A blob is `public key (32) | signature (64) | header (20) | body`; the signature covers header and body.
+/// The header is `sent-at ms (8) | the sender's run start ms (8) | tick (4)`: the auto test sends one blob per
+/// 5-minute tick, so a receiver can tell which ticks it missed (a manual blob is tick 0).
 enum NearbyBlob {
     static let sizes = [200, 4_096, 32_768]
-    static let overhead = 32 + 64 + 8
+    static let headerSize = 20
+    static let overhead = 32 + 64 + headerSize
 
     private static let keyName = "lime.nearby.spikeKey"
 
@@ -22,10 +25,14 @@ enum NearbyBlob {
         return key
     }
 
-    static func make(bodySize: Int, key: Curve25519.Signing.PrivateKey, now: Date = Date()) -> Data {
+    static func make(bodySize: Int, key: Curve25519.Signing.PrivateKey, now: Date = Date(), runStart: Date? = nil, tick: UInt32 = 0) -> Data {
         var signed = Data()
-        var sentAt = UInt64(now.timeIntervalSince1970 * 1000).bigEndian
-        withUnsafeBytes(of: &sentAt) { signed.append(contentsOf: $0) }
+        for value in [UInt64(now.timeIntervalSince1970 * 1000), UInt64((runStart ?? now).timeIntervalSince1970 * 1000)] {
+            var big = value.bigEndian
+            withUnsafeBytes(of: &big) { signed.append(contentsOf: $0) }
+        }
+        var tickBig = tick.bigEndian
+        withUnsafeBytes(of: &tickBig) { signed.append(contentsOf: $0) }
         signed.append(Data((0..<bodySize).map { _ in UInt8.random(in: 0...255) }))
         let signature = (try? key.signature(for: signed)) ?? Data(count: 64)
         return key.publicKey.rawRepresentation + signature + signed
@@ -35,6 +42,8 @@ enum NearbyBlob {
         let valid: Bool
         let bodySize: Int
         let sentAtMs: Int64
+        let runStartMs: Int64
+        let tick: UInt32
         /// A short, non-identifying tag of the signer (first 4 bytes of the key's hash).
         let signer: String
     }
@@ -44,8 +53,10 @@ enum NearbyBlob {
         let keyBytes = blob.prefix(32), signature = blob.dropFirst(32).prefix(64), signed = blob.dropFirst(96)
         let valid = (try? Curve25519.Signing.PublicKey(rawRepresentation: keyBytes))
             .map { $0.isValidSignature(signature, for: signed) } ?? false
-        let sentAt = signed.prefix(8).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
-        return Parsed(valid: valid, bodySize: blob.count - overhead, sentAtMs: Int64(bitPattern: sentAt), signer: fingerprint(Data(keyBytes)))
+        let header = Array(signed.prefix(headerSize))
+        func number(_ range: Range<Int>) -> UInt64 { header[range].reduce(UInt64(0)) { ($0 << 8) | UInt64($1) } }
+        return Parsed(valid: valid, bodySize: blob.count - overhead, sentAtMs: Int64(bitPattern: number(0..<8)),
+                      runStartMs: Int64(bitPattern: number(8..<16)), tick: UInt32(number(16..<20)), signer: fingerprint(Data(keyBytes)))
     }
 
     /// The first 8 bytes of the blob's SHA-256, as hex: what de-duplication and the log call the blob.
@@ -56,7 +67,7 @@ enum NearbyBlob {
 
 /// Frames on a byte stream: `length (4, big endian) | type (1) | payload`. The length covers type and payload.
 enum NearbyFrame {
-    enum Kind: UInt8 { case hello = 1, blob = 2 }
+    enum Kind: UInt8 { case hello = 1, blob = 2, ack = 3 }
 
     static func encode(_ kind: Kind, _ payload: Data) -> Data {
         var length = UInt32(payload.count + 1).bigEndian

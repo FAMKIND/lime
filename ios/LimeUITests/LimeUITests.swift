@@ -635,6 +635,26 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["nearby-share-all"].exists, "the run's log is kept and can be shared")
     }
 
+    func testTheAutoTestOpensStartsAsReceiverAndStops() {
+        let app = notifApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        app.buttons["settings-about"].tap()
+        let version = app.staticTexts["about-version"]
+        XCTAssertTrue(version.waitForExistence(timeout: 5))
+        version.press(forDuration: 1.6)
+        XCTAssertTrue(app.buttons["nearby-auto-button"].waitForExistence(timeout: 5))
+        app.buttons["nearby-auto-button"].tap()
+        XCTAssertTrue(app.buttons["auto-start"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["auto-start"].label, "Start as Receiver", "the receiver is the default role")
+        app.buttons["auto-start"].tap()
+        XCTAssertTrue(app.staticTexts["auto-status"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["auto-status"].label.hasPrefix("Receiving"), app.staticTexts["auto-status"].label)
+        app.buttons["auto-start"].tap()
+        XCTAssertTrue(app.staticTexts["auto-status"].label.hasPrefix("Not running") || app.buttons["Start as Receiver"].waitForExistence(timeout: 5))
+    }
+
     // MARK: Settings (LIME-98)
 
     private func openSettings(_ app: XCUIApplication) {
