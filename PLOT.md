@@ -1733,6 +1733,21 @@ If anything contradicts this brief, stop and ask the user.
 - **Follow-ups to queue later:** a "make admin" UI; auto-rejoin after a phone replacement (with device linking).
 - Awaiting the user's gate (two phones + the simulator or a third device with a plus-address account).
 
+**The user's gate on LIME-97: "groups look great".**
+
+**Update: LIME-97b landed as `f7a0dc2`** (pushed and verified).
+- Invite via the system contact picker → Messages/Mail/Share from the teacher's phone; My QR Code; Scan QR (verified in person / mismatch warning / key-change accept).
+- 119 Rust tests pass; iOS UI tests pass on the 18 Pro/13 mini; **the SE full suite was not re-run after the invite-row fix** (re-run it in the next brief).
+- **`invite-site/` (static) is committed but not hosted.**
+- **Plot's call on hosting: DEFER until just before TestFlight.** Nobody can install Lime from a link yet, so the page only says "coming soon".
+  - Note: Cloudflare Pages can't serve the **apex** `limechat.org` while DNS is on deSEC (apex custom domains need a Cloudflare zone; deSEC has no ALIAS/CNAME flattening). `www` via CNAME works.
+  - **Decide at TestFlight time:**
+    - (a) Cloudflare Pages on `www.limechat.org`, and switch `InviteLink.host` to `www`; or
+    - (b) GitHub/Codeberg Pages for the apex via A/AAAA records in deSEC (a `404.html` fallback for `/u/*`).
+
+    Either way, the same site should also host `/privacy` and `/terms` (the release checklist). **Never delete the `send.limechat.org` email records.**
+- The user's gate is pending: invite text, QR verified in person, foreign-code warning.
+
 ### Open decision: profile photos on native (raised 2026-10-08: "why can't we edit our avatar anymore?")
 - **Why it's missing:**
   - the web app had photo upload (LIME-49);
