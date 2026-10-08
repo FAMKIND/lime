@@ -1732,6 +1732,10 @@ The result: a blocked person learns nothing, and a contact who changed phones st
 **Phase 1:** survey the LIME-96 send/403 path, the bubble states and the tests.
 
 **Phase 2:**
+- **Add a way to block an existing contact.** The user asked "how do you block someone?", and plot found that Block **only exists on the Requests bar** (`ChatView` request bar); an accepted chat has no Block.
+  - Add **"Block <Name>"** (destructive, red) at the bottom of the chat's **⋯ menu**, with the same confirmation ("Block <Name>? Their new messages won't be shown on this phone.").
+  - After blocking, return to Messages; the person appears in **Settings → Privacy → Blocked** (with Unblock).
+  - Add a UI test.
 - Implement the above. **Remove the one-tap identified resend UI for this case.**
 - "Not delivered" remains only for genuine failures (the identified retry itself failing, network errors after the retries).
 - Docs: `api-v2.md` §4 (the 403 rule as built); `architecture.md` §5 (the note: the fallback message reveals the sender to the server, once).
