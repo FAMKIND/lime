@@ -176,6 +176,55 @@ const MIGRATIONS: &[&str] = &[
     // \"Sent\"), so the two columns migration 10 added for a one-tap resend are not needed.
     "ALTER TABLE messages DROP COLUMN sealed_denied;
      ALTER TABLE messages DROP COLUMN identified_once;",
+    // 12: group chats (LIME-97). `group_ops` is the log of signed group state ops (with the whole signed envelope,
+    // so the log can be handed to someone newly added); a group's members, name and roles are worked out by
+    // replaying it. `group_members` is that result, kept for quick reads. `group_outbox` is what still has to be
+    // sent to each person. A group message is encrypted with a Megolm session: one outbound session per group
+    // for this device (`group_outbound_sessions`, with who already has its key), and the inbound sessions other
+    // members' devices shared with us (`group_inbound_sessions`, each tied to the device that made it).
+    "CREATE TABLE group_ops (
+         op_id       TEXT PRIMARY KEY NOT NULL,
+         group_id    TEXT NOT NULL,
+         op_type     TEXT NOT NULL,
+         sender_user TEXT NOT NULL,
+         hlc         TEXT NOT NULL,
+         parents     TEXT NOT NULL,
+         payload     TEXT NOT NULL,
+         inner       TEXT NOT NULL,
+         received_at INTEGER NOT NULL
+     );
+     CREATE INDEX group_ops_by_group ON group_ops (group_id);
+     CREATE TABLE group_members (
+         group_id TEXT NOT NULL,
+         user_id  TEXT NOT NULL,
+         role     TEXT NOT NULL,
+         seq      INTEGER NOT NULL,
+         PRIMARY KEY (group_id, user_id)
+     );
+     CREATE TABLE group_outbox (
+         id             INTEGER PRIMARY KEY AUTOINCREMENT,
+         group_id       TEXT NOT NULL,
+         recipient_user TEXT NOT NULL,
+         op_json        TEXT NOT NULL
+     );
+     CREATE TABLE group_outbound_sessions (
+         group_id    TEXT PRIMARY KEY NOT NULL,
+         pickle      TEXT NOT NULL,
+         session_id  TEXT NOT NULL,
+         created_at  INTEGER NOT NULL,
+         messages    INTEGER NOT NULL DEFAULT 0,
+         fingerprint TEXT NOT NULL,
+         rotate      INTEGER NOT NULL DEFAULT 0,
+         shared_with TEXT NOT NULL DEFAULT '[]'
+     );
+     CREATE TABLE group_inbound_sessions (
+         session_id   TEXT PRIMARY KEY NOT NULL,
+         group_id     TEXT NOT NULL,
+         owner_user   TEXT NOT NULL,
+         owner_device TEXT NOT NULL,
+         pickle       TEXT NOT NULL
+     );
+     ALTER TABLE conversations ADD COLUMN group_emoji TEXT;",
 ];
 
 /// The schema version this build writes.

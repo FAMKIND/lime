@@ -434,6 +434,69 @@ final class LocalBackendE2ETests: XCTestCase {
         await bob.session.signOut()
     }
 
+    /// A group of three through the real server and the Realtime nudge: made, chatted in, renamed, someone
+    /// removed (who then reads nothing more), added back, and someone leaving.
+    func testAGroupOfThreeChatsLiveAndTheOwnerManagesIt() async throws {
+        let stack = try stack()
+        guard stack.mail != nil, stack.serviceKey == nil else { throw XCTSkip("The local run (mail catcher, no admin key).") }
+        let ada = try await makePhone(stack, name: "Ada Lovelace")
+        try await Task.sleep(for: .milliseconds(1100))
+        let bob = try await makePhone(stack, name: "Bob Brown")
+        try await Task.sleep(for: .milliseconds(1100))
+        let cy = try await makePhone(stack, name: "Cy Clark")
+        let chatLines = { (phone: Phone, chat: String) -> [String] in
+            phone.store.conversation(chat)?.messages.filter { !$0.isSystem }.map(\.text) ?? []
+        }
+
+        // Ada makes the group: Bob and Cy get it live, in Requests (they do not know her).
+        let made = await ada.store.createGroup(name: "Grade 4 Team", emoji: "🍎", members: [bob.userID, cy.userID])
+        let chat = try XCTUnwrap(made)
+        await eventually("the group reaches Bob and Cy") { bob.store.requests.count == 1 && cy.store.requests.count == 1 }
+        XCTAssertEqual(bob.store.requests.first?.title, "Grade 4 Team")
+        XCTAssertEqual(bob.store.requests.first?.isGroup, true)
+        await bob.store.accept(chat)
+        await cy.store.accept(chat)
+
+        // Talk: one message reaches both; Bob's answer reaches Ada and Cy.
+        await ada.store.sendNow("hello team", in: chat)
+        await eventually("hello reaches Bob and Cy") { chatLines(bob, chat) == ["hello team"] && chatLines(cy, chat) == ["hello team"] }
+        await bob.store.sendNow("hi all", in: chat)
+        await eventually("Bob's reply reaches Ada and Cy") { chatLines(ada, chat) == ["hello team", "hi all"] && chatLines(cy, chat) == ["hello team", "hi all"] }
+        XCTAssertEqual(ada.store.conversation(chat)?.messages.first?.text, "You created the group “Grade 4 Team”", "a system line")
+
+        // Ada renames it: everyone's title follows.
+        let renamed = await ada.store.renameGroup(chat, to: "Fourth Grade")
+        XCTAssertTrue(renamed)
+        await eventually("the new name reaches Bob and Cy") { bob.store.conversation(chat)?.title == "Fourth Grade" && cy.store.conversation(chat)?.title == "Fourth Grade" }
+
+        // Ada removes Cy: Cy's copy is gone, and what Ada says next reaches Bob only.
+        await ada.store.removeFromGroup(chat, user: cy.userID)
+        await eventually("Cy no longer has the group") { cy.store.conversation(chat) == nil }
+        await ada.store.sendNow("after Cy left", in: chat)
+        await eventually("Bob reads it") { chatLines(bob, chat).last == "after Cy left" }
+        try await Task.sleep(for: .seconds(2))
+        await cy.store.syncNow()
+        XCTAssertNil(cy.store.conversation(chat), "nothing more is shown to Cy")
+
+        // Ada adds Cy back: Cy has the group again, reads what is said from now on, not what was said before.
+        await ada.store.addToGroup(chat, users: [cy.userID])
+        await eventually("Cy has the group again") { cy.store.conversation(chat) != nil }
+        await ada.store.sendNow("welcome back", in: chat)
+        await eventually("Cy reads the new message") { chatLines(cy, chat).contains("welcome back") }
+        XCTAssertFalse(chatLines(cy, chat).contains("after Cy left"), "a message from before the return stays unreadable")
+
+        // Bob leaves: his copy goes, and Ada sees a line about it.
+        await bob.store.leaveGroup(chat)
+        XCTAssertNil(bob.store.conversation(chat))
+        await eventually("Ada hears Bob left") { ada.store.conversation(chat)?.messages.contains { $0.isSystem && $0.text.contains("left") } == true }
+        let details = await ada.store.groupDetails(chat)
+        XCTAssertEqual(details?.members.count, 2)
+
+        await ada.session.signOut()
+        await bob.session.signOut()
+        await cy.session.signOut()
+    }
+
     /// Notifications through the real server: a stranger's first message is announced without its words, an
     /// accepted chat's message shows its words, the chat on screen only ticks, a muted chat is silent, a
     /// thread reply says so, and with Lime in the background the announcement is a local notification.

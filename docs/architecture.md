@@ -80,7 +80,7 @@ Each device has its own keys, in the Matrix style.
 - the conversation name and avatar;
 - attachment names, types and sizes.
 
-**Conversations use Megolm** (vodozemac). Each sending device has an outbound session per conversation and shares its key with every member device over Olm. The session rotates on any membership change, every 100 messages, or every 7 days.
+**Conversations use Megolm** (vodozemac). Each sending device has an outbound session per conversation and shares its key with every member device over Olm. The session rotates on any membership change, every 100 messages, or every 7 days. **Built in LIME-97 for groups** (up to 100 people): the group's state is a log of signed ops each phone replays, so the server never learns a group, its name or its members; the exact ops and rules are in [`api-v2.md`](./api-v2.md) section 11.
 
 **Files** are encrypted on the device with a fresh AES key, which travels inside the encrypted message. Storage only ever holds ciphertext.
 

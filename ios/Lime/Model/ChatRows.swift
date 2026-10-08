@@ -6,6 +6,8 @@ struct ChatRow: Identifiable {
     enum Kind {
         case day(String)
         case message(Message, showAvatar: Bool)
+        /// "Jean added Lee": a line about the group, centred.
+        case system(Message)
     }
 
     let id: String
@@ -21,6 +23,11 @@ struct ChatRow: Identifiable {
                 lastSender = nil
             }
             lastDay = message.date
+            if message.isSystem {
+                result.append(ChatRow(id: message.id, kind: .system(message)))
+                lastSender = nil
+                continue
+            }
             let showAvatar = !message.isOwn && lastSender != .some(message.senderID)
             result.append(ChatRow(id: message.id, kind: .message(message, showAvatar: showAvatar)))
             lastSender = .some(message.senderID)

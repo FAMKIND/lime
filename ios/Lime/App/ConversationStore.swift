@@ -443,7 +443,7 @@ final class ConversationStore {
         var candidates: [IncomingMessage] = []
         for conversation in conversations {
             func make(_ message: Message, root: String?) -> IncomingMessage? {
-                guard let sender = message.senderID else { return nil }
+                guard let sender = message.senderID, !message.isSystem else { return nil }
                 return IncomingMessage(
                     id: message.id, conversationID: conversation.id, conversationTitle: conversation.title, senderID: sender,
                     senderName: person(sender, in: conversation)?.name ?? conversation.title,
@@ -665,16 +665,21 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
+        case "group", "group-details", "new-group", "new-group-name":
+            loadDemoTeachers()
+            let id = demoMakeGroup(name: "Grade 4 Team", emoji: "🍎", memberIDs: ["lee", "sam", "priya.nair"], owner: true)
+            demoSheet = screen == "new-group" || screen == "new-group-name" ? screen : nil
+            if screen == "group" {
+                demoAddMessages(to: id, [("lee", "Can we plan the field trip on Friday?"), ("sam", "I can bring the permission forms")])
+                path.append(id)
+            }
+            if screen == "group-details" { path.append(id); path.append(GroupTarget(conversationID: id)) }
         case "new-message", "new-message-found", "new-message-filter", "new-message-empty", "find-username", "find-username-found":
             demoSheet = screen
             if screen == "new-message-empty" {
                 conversations = []
             } else {
-                // A longer list of teachers, so the A–Z sections and the rail have something to show.
-                for name in ["Ben Okafor", "Chloe Diaz", "Maya Singh", "Noah Bell", "Priya Nair", "Zoe Adler", "Éloïse Martin", "Lena Ito"] {
-                    let who = Person(id: name.lowercased().replacingOccurrences(of: " ", with: "."), name: name)
-                    conversations.append(Conversation(id: "dm:\(who.id)", title: name, members: [who], messages: []))
-                }
+                loadDemoTeachers()
             }
         default:
             // "settings", "settings/profile", "settings/profile/edit-about", "settings/privacy/blocked", ...
@@ -702,6 +707,8 @@ final class ConversationStore {
 
     /// Debug demo: a screen that opens as a sheet.
     private(set) var demoSheet: String?
+    /// Debug demo: the groups made in the demo (name, emoji, people and roles), by conversation id.
+    var demoGroups: [String: DemoGroup] = [:]
     /// Debug demo: people "blocked" for the Settings screens.
     private(set) var demoBlocked: [BlockedPerson] = []
 

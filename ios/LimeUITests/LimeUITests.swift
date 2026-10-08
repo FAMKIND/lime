@@ -85,8 +85,8 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.textFields["new-message-field"].waitForExistence(timeout: 10), "the sheet opens with the search at the bottom")
         XCTAssertTrue(app.buttons["action-username"].exists)
         XCTAssertTrue(app.buttons["action-email"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["action-new-group"].exists, "New Group is shown")
-        XCTAssertTrue(app.staticTexts["Coming soon"].exists, "but dimmed, as coming soon")
+        XCTAssertTrue(app.buttons["action-new-group"].exists, "New Group is there, and works (LIME-97)")
+        XCTAssertFalse(app.staticTexts["Coming soon"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["action-phone"].exists, "no phone lookup")
         let headers = app.staticTexts.matching(NSPredicate(format: "label IN %@", ["B", "C", "E", "L", "M", "N", "P", "S", "Z"]))
         XCTAssertGreaterThanOrEqual(headers.count, 3, "letter headers")
@@ -687,6 +687,103 @@ final class LimeUITests: XCTestCase {
         app.buttons["settings-privacy"].tap()
         app.buttons["privacy-blocked"].tap()
         XCTAssertTrue(app.staticTexts["Sam Park"].waitForExistence(timeout: 5), "listed under Blocked, with Unblock")
+    }
+
+    // MARK: Groups (LIME-97)
+
+    func testNewGroupPicksPeopleNamesItAndOpensTheChat() {
+        let app = threadApp("new-message")
+        app.launch()
+        XCTAssertTrue(app.buttons["action-new-group"].waitForExistence(timeout: 10))
+        app.buttons["action-new-group"].tap()
+        let next = app.buttons["group-next"]
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        XCTAssertFalse(next.isEnabled, "Next waits for at least one person")
+        XCTAssertEqual(app.staticTexts["group-count"].label, "1 Member")
+        app.buttons["group-pick-ben.okafor"].tap()
+        app.buttons["group-pick-chloe.diaz"].tap()
+        XCTAssertTrue(app.buttons["group-chip-ben.okafor"].waitForExistence(timeout: 3), "a removable chip")
+        XCTAssertEqual(app.staticTexts["group-count"].label, "3 Members")
+        app.buttons["group-chip-chloe.diaz"].tap()
+        XCTAssertFalse(app.buttons["group-chip-chloe.diaz"].exists, "the chip removes the person")
+        app.buttons["group-pick-chloe.diaz"].tap()
+        XCTAssertTrue(next.isEnabled)
+        next.tap()
+        let create = app.buttons["group-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        XCTAssertFalse(create.isEnabled, "a name is required")
+        let field = app.textFields["group-name-field"]
+        field.typeText("Grade 4 Team")
+        XCTAssertTrue(create.isEnabled)
+        create.tap()
+        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "the new group opens")
+        XCTAssertTrue(title.label.contains("Grade 4 Team"), title.label)
+        XCTAssertTrue(title.label.contains("3 members"), title.label)
+        XCTAssertTrue(app.staticTexts["You created the group “Grade 4 Team”"].waitForExistence(timeout: 3), "a system line")
+    }
+
+    func testAGroupNameIsLimitedToFiftyCharacters() {
+        let app = threadApp("new-group-name")
+        app.launch()
+        let field = app.textFields["group-name-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.typeText(String(repeating: "a", count: 60))
+        expectation(for: NSPredicate(format: "label == '50/50'"), evaluatedWith: app.staticTexts["group-name-count"])
+        waitForExpectations(timeout: 5)
+        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: app.buttons["group-create"])
+        waitForExpectations(timeout: 5)
+    }
+
+    func testAGroupChatShowsNamesOnBubblesAndAMembersHeader() {
+        let app = threadApp("group")
+        app.launch()
+        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertTrue(title.label.contains("Grade 4 Team") && title.label.contains("4 members"), title.label)
+        XCTAssertTrue(app.staticTexts["Lee Wong"].exists || app.staticTexts["lee"].exists, "the sender's name above a group message")
+        XCTAssertTrue(app.staticTexts["You created the group “Grade 4 Team”"].exists)
+    }
+
+    func testGroupDetailsRenameRemoveAddAndLeave() {
+        let app = threadApp("group-details")
+        app.launch()
+        XCTAssertTrue(app.buttons["group-details-name"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["group-details-count"].label, "4 members")
+        // Rename.
+        app.buttons["group-details-name"].tap()
+        let field = app.textFields["group-rename-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.clearAndType("Fourth Grade")
+        XCTAssertEqual(field.value as? String, "Fourth Grade", "the field holds the new name")
+        app.buttons["group-rename-save"].tap()
+        expectation(for: NSPredicate(format: "label CONTAINS 'Fourth Grade'"), evaluatedWith: app.buttons["group-details-name"])
+        waitForExpectations(timeout: 5)
+        // Remove someone (asks first).
+        XCTAssertTrue(app.buttons["group-remove-sam"].exists)
+        app.buttons["group-remove-sam"].tap()
+        let confirm = app.buttons.matching(identifier: "group-remove-confirm").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
+        XCTAssertTrue(app.staticTexts["group-details-count"].waitForExistence(timeout: 3))
+        expectation(for: NSPredicate(format: "label == '3 members'"), evaluatedWith: app.staticTexts["group-details-count"])
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["group-remove-sam"].exists)
+        // Add someone from the teachers you message.
+        app.buttons["group-add"].tap()
+        XCTAssertTrue(app.buttons["group-pick-ben.okafor"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["group-pick-lee"].exists, "people already in the group are not offered")
+        app.buttons["group-pick-ben.okafor"].tap()
+        app.buttons["group-next"].tap()
+        expectation(for: NSPredicate(format: "label == '4 members'"), evaluatedWith: app.staticTexts["group-details-count"])
+        waitForExpectations(timeout: 5)
+        // Leave (asks first), and the group is gone from Messages.
+        app.buttons["group-leave"].tap()
+        let leave = app.buttons.matching(identifier: "group-leave-confirm").firstMatch
+        XCTAssertTrue(leave.waitForExistence(timeout: 3))
+        leave.tap()
+        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-grp:'")).firstMatch.exists)
     }
 
     // MARK: Settings (LIME-98)

@@ -162,6 +162,20 @@ impl Admin {
             .call();
     }
 
+    /// The names of the server's tables (from the REST API's schema), and every row of each as text (test only: needs
+    /// the service key). A table that cannot be read is skipped.
+    fn every_table(&self) -> Vec<(String, String)> {
+        let schema = self.json(self.with_service_key(ureq::get(&format!("{}/rest/v1/", self.base))), None);
+        let mut tables = Vec::new();
+        for name in schema["definitions"].as_object().map(|d| d.keys().cloned().collect::<Vec<_>>()).unwrap_or_default() {
+            let request = self.with_service_key(ureq::get(&format!("{}/rest/v1/{name}?select=*&limit=5000", self.base)));
+            if let Ok(response) = request.call() {
+                tables.push((name, response.into_string().unwrap_or_default()));
+            }
+        }
+        tables
+    }
+
     /// What the server stores about each waiting item of a device: whether it is identified, and the sender
     /// it recorded (test only: needs the service key). A sealed item must have none.
     fn mailbox_senders(&self, device_id: &str) -> Vec<(bool, Option<String>)> {
@@ -667,4 +681,71 @@ fn sealed_sender_through_the_real_server_and_a_block_that_rotates_the_key() {
     assert_eq!(state("back again"), "sent");
     assert!(admin.mailbox_senders(&bob_device).iter().all(|(identified, sender)| !identified && sender.is_none()));
     assert!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received >= 1);
+}
+
+#[test]
+fn a_group_of_three_chats_through_the_real_server_and_the_server_holds_no_group_state() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    for (i, (account, name)) in accounts.iter().zip(["Ann Adams", "Bo Brown", "Cy Clark"]).enumerate() {
+        admin.give_profile(account, name, &format!("g{i}{}", &suffix[..8]));
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let stores: Vec<_> = (0..3).map(|i| store(&dir, &format!("p{i}.db"), 10 + i as u8)).collect();
+    for (s, a) in stores.iter().zip(&accounts) {
+        s.register_device(transport.clone(), a.token.clone()).unwrap();
+    }
+    let sync = |i: usize| stores[i].sync(transport.clone(), accounts[i].token.clone()).unwrap();
+    let deliver = |i: usize| stores[i].deliver_queued(transport.clone(), accounts[i].token.clone()).unwrap();
+    let texts = |i: usize, chat: &str| -> Vec<String> {
+        stores[i].list_messages(chat.to_owned()).unwrap().into_iter().filter(|m| m.local_state != "system").map(|m| m.text).collect()
+    };
+
+    // Ann makes a group (with a name nothing else would contain) with Bo and Cy; all three receive it.
+    let secret_name = format!("Zanzibar{}", &suffix[8..20]);
+    let chat = stores[0].create_group(secret_name.clone(), Some("🍎".into()), vec![accounts[1].id.clone(), accounts[2].id.clone()]).unwrap();
+    deliver(0);
+    sync(1);
+    sync(2);
+    for store in &stores[1..] {
+        let group = store.list_conversations().unwrap().into_iter().find(|c| c.id == chat).expect("the group arrived");
+        assert_eq!((group.title.as_str(), group.is_group, group.members.len()), (secret_name.as_str(), true, 2));
+    }
+
+    // Megolm through the real mailbox: one message, read by both; Bo answers.
+    stores[0].queue_text(chat.clone(), "hello team".into()).unwrap();
+    deliver(0);
+    assert_eq!(sync(1).received, 1);
+    assert_eq!(sync(2).received, 1);
+    stores[1].queue_text(chat.clone(), "hi everyone".into()).unwrap();
+    deliver(1);
+    assert_eq!(sync(0).received, 1);
+    assert_eq!(sync(2).received, 1);
+    assert_eq!(texts(2, &chat), vec!["hello team", "hi everyone"]);
+
+    // Rename, then remove Cy: what Ann says next reaches Bo only.
+    stores[0].rename_group(chat.clone(), format!("{secret_name} Two")).unwrap();
+    stores[0].remove_group_member(chat.clone(), accounts[2].id.clone()).unwrap();
+    stores[0].queue_text(chat.clone(), "only for Bo".into()).unwrap();
+    deliver(0);
+    sync(1);
+    sync(2);
+    assert_eq!(texts(1, &chat), vec!["hello team", "hi everyone", "only for Bo"]);
+    assert_eq!(texts(2, &chat), vec!["hello team", "hi everyone"], "Cy was removed and reads nothing more");
+    assert!(stores[2].list_conversations().unwrap().iter().all(|c| c.id != chat), "gone from Cy's Messages");
+
+    // The server holds no group state: no table has the group's name, and none is about groups or members.
+    let tables = admin.every_table();
+    assert!(!tables.is_empty(), "the admin query found the tables");
+    for (name, rows) in &tables {
+        assert!(!name.contains("group") && !name.contains("member"), "a table about groups: {name}");
+        assert!(!rows.contains(&secret_name), "the group's name is in table {name}");
+        assert!(!rows.contains("hello team") && !rows.contains("only for Bo"), "message text is in table {name}");
+    }
 }

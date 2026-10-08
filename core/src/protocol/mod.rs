@@ -2,6 +2,7 @@
 //! encoded. Pure functions; no network and no storage.
 
 mod canonical;
+pub(crate) mod group;
 mod hlc;
 
 pub(crate) use canonical::canonical_bytes;

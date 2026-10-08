@@ -11,6 +11,7 @@
 
 pub(crate) mod account;
 pub(crate) mod delivery;
+pub(crate) mod groups;
 mod migrations;
 pub(crate) mod order;
 pub(crate) mod pending;
@@ -133,6 +134,8 @@ pub struct ConversationSummary {
     pub last_message: Option<MessageItem>,
     /// The other people (never me), in a stable order.
     pub members: Vec<MemberInfo>,
+    /// A group's emoji avatar, if it has one.
+    pub group_emoji: Option<String>,
 }
 
 /// Someone you blocked: they can be unblocked, which brings their conversation back.
@@ -217,9 +220,10 @@ impl LimeStore {
         let mut statement = conn
             .prepare(
                 "SELECT c.id, c.title, c.is_group, c.is_pinned, c.unread, c.request_state,
-                        EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NOT NULL)
+                        EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NOT NULL),
+                        c.group_emoji
                  FROM conversations c
-                 WHERE c.request_state != 'blocked'
+                 WHERE c.request_state NOT IN ('blocked', 'left')
                  ORDER BY c.is_pinned DESC,
                           COALESCE((SELECT MAX(m.sent_at) FROM messages m
                                     WHERE m.conversation_id = c.id), 0) DESC,
@@ -236,6 +240,7 @@ impl LimeStore {
                     r.get::<_, u32>(4)?,
                     r.get::<_, String>(5)?,
                     r.get::<_, bool>(6)?,
+                    r.get::<_, Option<String>>(7)?,
                 ))
             })
             .map_err(db_err)?
@@ -243,7 +248,7 @@ impl LimeStore {
             .map_err(db_err)?;
 
         let mut summaries = Vec::with_capacity(rows.len());
-        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending) in rows {
+        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji) in rows {
             summaries.push(ConversationSummary {
                 last_message: last_message(&conn, &id)?,
                 members: members_of(&conn, &id)?,
@@ -254,6 +259,7 @@ impl LimeStore {
                 unread,
                 request_state,
                 key_change_pending,
+                group_emoji,
             });
         }
         Ok(summaries)
@@ -262,9 +268,10 @@ impl LimeStore {
     /// A conversation's messages in display order (causal, ties by clock then op id).
     pub fn list_messages(&self, conversation_id: String) -> Result<Vec<MessageItem>, StoreError> {
         let conn = self.lock();
+        let me = my_user_id(&conn);
         Ok(order::load_ordered(&conn, &conversation_id)?
             .into_iter()
-            .map(item_from_row)
+            .map(|row| item_in(&conn, row, &me))
             .collect())
     }
 
@@ -554,6 +561,20 @@ impl LimeStore {
     }
 }
 
+/// This account's user id (empty before registration).
+fn my_user_id(conn: &Connection) -> String {
+    conn.query_row("SELECT user_id FROM account WHERE id = 1", [], |r| r.get::<_, Option<String>>(0)).ok().flatten().unwrap_or_default()
+}
+
+/// A message for the app: a group's system line ("Jean added Lee") is put into words here.
+fn item_in(conn: &Connection, row: order::Row, me: &str) -> MessageItem {
+    let mut item = item_from_row(row);
+    if item.local_state == "system" {
+        item.text = groups::render_system(conn, &item.text, me);
+    }
+    item
+}
+
 pub(crate) fn item_from_row(row: order::Row) -> MessageItem {
     MessageItem {
         id: row.id,
@@ -569,9 +590,10 @@ fn last_message(
     conn: &Connection,
     conversation_id: &str,
 ) -> Result<Option<MessageItem>, StoreError> {
+    let me = my_user_id(conn);
     Ok(order::load_ordered(conn, conversation_id)?
         .pop()
-        .map(item_from_row))
+        .map(|row| item_in(conn, row, &me)))
 }
 
 fn members_of(conn: &Connection, conversation_id: &str) -> Result<Vec<MemberInfo>, StoreError> {

@@ -11,6 +11,7 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var composerModel = RichComposerModel()
     @State private var confirmingBlock = false
+    @State private var confirmingLeave = false
     // In-chat find (the header's magnifier): the matches, which one is current, and where to scroll.
     @State private var finding = false
     @State private var findQuery = ""
@@ -36,6 +37,18 @@ struct ChatView: View {
                 } else {
                     legacyContent(conversation)
                 }
+            }
+            .confirmationDialog("Leave \(conversation.title)?", isPresented: $confirmingLeave, titleVisibility: .visible) {
+                Button("Leave group", role: .destructive) {
+                    Task {
+                        await store.leaveGroup(conversation.id)
+                        store.path = NavigationPath()
+                    }
+                }
+                .accessibilityIdentifier("chat-leave-confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You won't get new messages from this group. Someone can add you back.")
             }
             // One confirmation for both ways in: the request bar's Block and the ⋯ menu's "Block <Name>".
             .confirmationDialog("Block \(conversation.title)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
@@ -99,7 +112,7 @@ struct ChatView: View {
     private func messageScroll(_ conversation: Conversation, top: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                let lastOwnID = conversation.messages.last(where: \.isOwn)?.id
+                let lastOwnID = conversation.messages.last(where: { $0.isOwn && !$0.isSystem })?.id
                 LazyVStack(spacing: 0) {
                     ForEach(ChatRow.rows(for: conversation)) { row in
                         switch row.kind {
@@ -109,6 +122,14 @@ struct ChatView: View {
                                 .foregroundStyle(Theme.textSecondary)
                                 .padding(.vertical, 12)
                                 .accessibilityAddTraits(.isHeader)
+                        case .system(let message):
+                            Text(message.text)
+                                .font(Theme.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.vertical, 6).padding(.horizontal, 24)
+                                .frame(maxWidth: .infinity)
+                                .accessibilityIdentifier("system-line")
                         case .message(let message, let showAvatar):
                             MessageBubble(message: message,
                                           sender: store.person(message.senderID, in: conversation),
@@ -193,7 +214,10 @@ struct ChatView: View {
                 }
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture { if conversation.isGroup && !conversation.isRequest { store.path.append(GroupTarget(conversationID: conversation.id)) } }
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(conversation.isGroup ? .isButton : [])
         .accessibilityIdentifier("chat-title")
     }
 
@@ -329,12 +353,23 @@ struct ChatView: View {
                 } label: { Label("Mute notifications", systemImage: "bell.slash") }
                 .accessibilityIdentifier("chat-mute")
             }
-            // Blocking someone you already chat with (the request bar's Block is only for strangers).
             Divider()
-            Button(role: .destructive) { confirmingBlock = true } label: {
-                Label("Block \(conversation.title)", systemImage: "hand.raised")
+            if conversation.isGroup {
+                Button { store.path.append(GroupTarget(conversationID: conversation.id)) } label: {
+                    Label("Group details", systemImage: "person.2")
+                }
+                .accessibilityIdentifier("chat-group-details")
+                Button(role: .destructive) { confirmingLeave = true } label: {
+                    Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+                .accessibilityIdentifier("chat-leave")
+            } else {
+                // Blocking someone you already chat with (the request bar's Block is only for strangers).
+                Button(role: .destructive) { confirmingBlock = true } label: {
+                    Label("Block \(conversation.title)", systemImage: "hand.raised")
+                }
+                .accessibilityIdentifier("chat-block")
             }
-            .accessibilityIdentifier("chat-block")
         } label: { label() }
         .accessibilityLabel("More")
         .accessibilityIdentifier("chat-more")
@@ -383,7 +418,8 @@ struct ChatView: View {
 
     private func requestBar(_ conversation: Conversation) -> some View {
         VStack(spacing: 12) {
-            Text("\(conversation.title) isn't in your chats yet. Accept to reply.")
+            Text(conversation.isGroup ? "You were added to \(conversation.title) by someone who isn't in your chats yet. Accept to join in."
+                                      : "\(conversation.title) isn't in your chats yet. Accept to reply.")
                 .font(Theme.secondary)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -487,7 +523,7 @@ struct MessageBubble: View {
                             Button("· Not delivered. Tap to resend", action: onRetry)
                                 .foregroundStyle(Color.red)
                                 .accessibilityIdentifier("delivery-undelivered")
-                        case .received: EmptyView()
+                        case .received, .system: EmptyView()
                         }
                     }
                 }

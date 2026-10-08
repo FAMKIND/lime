@@ -15,6 +15,8 @@ struct Person: Identifiable, Hashable, Sendable {
 /// Where one of my messages has got to. A received message is `.received`.
 enum DeliveryState: String, Hashable, Sendable {
     case sending, sent, failed, undelivered, received
+    /// A line of the timeline about the group itself ("Jean added Lee"), not a message.
+    case system
 
     /// LimeCore's `local_state`; the older local-only states count as sent.
     init(localState: String) {
@@ -40,6 +42,7 @@ struct Message: Identifiable, Hashable, Sendable {
     var thread: ThreadInfo?
 
     var isOwn: Bool { senderID == nil }
+    var isSystem: Bool { state == .system }
 }
 
 /// What a message with replies shows under its bubble ("3 replies · Last reply 8:20 AM").
@@ -69,6 +72,11 @@ struct ThreadInfo: Hashable, Sendable {
     var summaryText: String { "\(replyCount) \(replyCount == 1 ? "reply" : "replies") · Last reply \(MessageFormat.listTime(lastReplyAt))" }
 }
 
+/// Where tapping a group's header goes: its details.
+struct GroupTarget: Hashable {
+    let conversationID: String
+}
+
 /// Where tapping a thread (or a search hit inside one) goes: the thread of one message, optionally landing on a reply.
 struct ThreadTarget: Hashable {
     let conversationID: String
@@ -80,7 +88,7 @@ struct ThreadTarget: Hashable {
 struct Conversation: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
-    let members: [Person]
+    var members: [Person]
     var messages: [Message]
     var isPinned: Bool = false
     var unread: Int = 0
@@ -88,8 +96,12 @@ struct Conversation: Identifiable, Hashable, Sendable {
     var isRequest: Bool = false
     /// The other person's security key changed: accept it to keep chatting.
     var keyChangePending: Bool = false
+    /// A group chat (even one with a single other person left).
+    var isGroupChat: Bool = false
+    /// A group's emoji avatar.
+    var emoji: String?
 
-    var isGroup: Bool { members.count > 1 }
+    var isGroup: Bool { isGroupChat || members.count > 1 }
     var subtitle: String { isGroup ? "\(members.count + 1) members" : "" }
     var lastMessage: Message? { messages.last }
 }
@@ -100,7 +112,8 @@ extension Message {
     init(_ item: MessageItem) {
         self.init(id: item.id, senderID: item.senderId, text: item.text,
                   date: Date(timeIntervalSince1970: Double(item.sentAt) / 1000),
-                  state: item.senderId == nil ? DeliveryState(localState: item.localState) : .received)
+                  state: item.localState == "system" ? .system
+                      : (item.senderId == nil ? DeliveryState(localState: item.localState) : .received))
     }
 }
 
@@ -111,7 +124,8 @@ extension Conversation {
             members: summary.members.map { Person(id: $0.id, name: $0.name, tone: Int($0.tone)) },
             messages: messages.map(Message.init),
             isPinned: summary.isPinned, unread: Int(summary.unread),
-            isRequest: summary.requestState == "pending", keyChangePending: summary.keyChangePending)
+            isRequest: summary.requestState == "pending", keyChangePending: summary.keyChangePending,
+            isGroupChat: summary.isGroup, emoji: summary.groupEmoji)
     }
 }
 

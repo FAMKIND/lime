@@ -1071,6 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -1080,4 +1081,302 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
     drop(alice.store);
     let reopened = LimeStore::open(path, vec![1u8; 32]).unwrap();
     assert_eq!(reopened.test_queued_shares(), vec!["bob".to_string()], "the accepted chat is queued to be given the key");
+}
+
+// ---------------------------------------------------------------- group chats (LIME-97)
+
+use crate::protocol::group::Kind;
+
+fn deliver(p: &Party, transport: &Arc<dyn Transport>) {
+    p.store.deliver_queued(transport.clone(), p.token.clone()).unwrap();
+}
+
+fn group_chat(p: &Party) -> Option<crate::ConversationSummary> {
+    p.store.list_conversations().unwrap().into_iter().find(|c| c.id.starts_with("grp:"))
+}
+
+fn say_in(p: &Party, transport: &Arc<dyn Transport>, chat: &str, text: &str) {
+    p.store.queue_text(chat.to_owned(), text.to_owned()).unwrap();
+    deliver(p, transport);
+}
+
+fn group_texts(p: &Party, chat: &str) -> Vec<String> {
+    p.store.list_messages(chat.to_owned()).unwrap().into_iter().filter(|m| m.local_state != "system").map(|m| m.text).collect()
+}
+
+fn names_in(p: &Party, chat: &str) -> Vec<(String, String)> {
+    p.store.group_details(chat.to_owned()).unwrap().members.into_iter().map(|m| (m.user_id, m.role)).collect()
+}
+
+/// Puts a device's waiting items in the reverse order (the cursor numbers stay ascending): out-of-order arrival.
+fn reverse_mailbox(server: &Arc<FakeServer>, device: &str) {
+    let mut state = server.state.lock().unwrap();
+    let slots: Vec<usize> = state.mailbox.iter().enumerate().filter(|(_, m)| m.1 == device).map(|(i, _)| i).collect();
+    let cursors: Vec<i64> = slots.iter().map(|i| state.mailbox[*i].0).collect();
+    let mut items: Vec<_> = slots.iter().map(|i| state.mailbox[*i].clone()).collect();
+    items.reverse();
+    for ((slot, item), cursor) in slots.iter().zip(items).zip(cursors) {
+        state.mailbox[*slot] = (cursor, item.1, item.2, item.3, item.4);
+    }
+}
+
+/// The Megolm items (group messages) waiting for a device.
+fn group_items(server: &Arc<FakeServer>, device: &str) -> Vec<String> {
+    let state = server.state.lock().unwrap();
+    state.mailbox.iter().filter(|m| m.1 == device).map(|m| m.2.clone()).filter(|w| vodozemac::base64_decode(w).map(|b| b[0] == 2).unwrap_or(false)).collect()
+}
+
+/// Alice makes "Grade 4 Team" with Bob and Carol; everyone syncs.
+fn team(server: &Arc<FakeServer>) -> (Party, Party, Party, Arc<dyn Transport>, String) {
+    let (alice, transport) = party(server, "alice", 1);
+    let (bob, _) = party(server, "bob", 2);
+    let (carol, _) = party(server, "carol", 3);
+    let chat = alice.store.create_group("Grade 4 Team".into(), Some("🍎".into()), vec!["bob".into(), "carol".into()]).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    (alice, bob, carol, transport, chat)
+}
+
+#[test]
+fn a_group_of_three_is_created_and_everyone_receives_it() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, _transport, chat) = team(&server);
+    for p in [&bob, &carol] {
+        let group = group_chat(p).expect("the group arrived");
+        assert_eq!((group.id.as_str(), group.title.as_str(), group.is_group), (chat.as_str(), "Grade 4 Team", true));
+        assert_eq!(group.group_emoji.as_deref(), Some("🍎"));
+        assert_eq!(group.members.len(), 2, "the other two (never me)");
+        // Nobody has met Alice: it waits in Requests (a person you do not know made it).
+        assert_eq!(group.request_state, "pending");
+    }
+    let details = alice.store.group_details(chat.clone()).unwrap();
+    assert_eq!((details.name.as_str(), details.my_role.as_str(), details.members.len()), ("Grade 4 Team", "owner", 3));
+    assert!(details.can_rename && details.can_add);
+    assert_eq!(names_in(&bob, &chat), names_in(&alice, &chat), "the same people and roles on every phone");
+    // The timeline says so.
+    let lines: Vec<String> = bob.store.list_messages(chat.clone()).unwrap().into_iter().filter(|m| m.local_state == "system").map(|m| m.text).collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].ends_with("created the group “Grade 4 Team”"), "{}", lines[0]);
+    assert_eq!(alice.store.list_messages(chat.clone()).unwrap()[0].text, "You created the group “Grade 4 Team”");
+    assert_eq!(bob.store.list_conversations().unwrap()[0].unread, 0, "a system line is not unread");
+}
+
+#[test]
+fn an_invite_from_a_contact_goes_straight_into_messages() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    alice.store.create_group("Staff".into(), None, vec!["bob".into(), "carol".into()]).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    assert_eq!(group_chat(&bob).unwrap().request_state, "accepted", "Alice is Bob's contact");
+    assert_eq!(group_chat(&carol).unwrap().request_state, "pending", "Carol does not know Alice");
+    // Accepting moves it into Messages.
+    carol.store.accept_request(group_chat(&carol).unwrap().id).unwrap();
+    assert_eq!(group_chat(&carol).unwrap().request_state, "accepted");
+}
+
+#[test]
+fn megolm_messages_decrypt_for_every_member_and_share_one_ciphertext() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    say_in(&alice, &transport, &chat, "hello team");
+    // One ciphertext, sent to both devices (the server's batch shape).
+    let items: Vec<String> = {
+        let state = server.state.lock().unwrap();
+        state.mailbox.iter().filter(|m| m.1 == bob.device || m.1 == carol.device).filter(|m| vodozemac::base64_decode(&m.2).map(|w| w[0] == 2).unwrap_or(false)).map(|m| m.2.clone()).collect()
+    };
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0], items[1], "the same Megolm ciphertext for both devices");
+    assert_eq!(sync(&bob, &transport).received, 1);
+    assert_eq!(sync(&carol, &transport).received, 1);
+    assert_eq!(group_texts(&bob, &chat), vec!["hello team"]);
+    assert_eq!(group_texts(&carol, &chat), vec!["hello team"]);
+    let from = bob.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.text == "hello team").unwrap();
+    assert_eq!(from.sender_id.as_deref(), Some("alice"));
+    // Bob answers; Alice and Carol read it, and unread counts.
+    say_in(&bob, &transport, &chat, "hi all");
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    assert_eq!(group_texts(&alice, &chat), vec!["hello team", "hi all"]);
+    assert_eq!(group_texts(&carol, &chat), vec!["hello team", "hi all"]);
+    assert_eq!(group_chat(&alice).unwrap().unread, 1);
+}
+
+#[test]
+fn a_removed_member_cannot_read_what_follows() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    say_in(&alice, &transport, &chat, "before");
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    assert_eq!(group_texts(&carol, &chat), vec!["before"]);
+
+    alice.store.remove_group_member(chat.clone(), "carol".into()).unwrap();
+    say_in(&alice, &transport, &chat, "after the removal"); // delivers the remove op first, then a new session
+    // The message after the removal goes to Bob only, under a session Carol was never given.
+    let for_bob = group_items(&server, &bob.device);
+    assert_eq!(for_bob.len(), 1, "one new group message waits for Bob");
+    assert!(group_items(&server, &carol.device).is_empty(), "nothing of it is sent to Carol");
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    assert_eq!(group_texts(&bob, &chat), vec!["before", "after the removal"]);
+    assert!(group_chat(&carol).is_none(), "Carol was removed: the group is gone from her Messages");
+    // Even a copy of that ciphertext in Carol's hands is useless.
+    server.inject(&carol.device, &for_bob[0], false, None);
+    sync(&carol, &transport);
+    assert_eq!(group_texts(&carol, &chat), vec!["before"], "she cannot read the message sent after her removal");
+    assert!(pending_rows(&carol).iter().any(|r| r.0 == "no_session"), "kept unread, for lack of a key");
+    assert_eq!(names_in(&alice, &chat).len(), 2);
+    let lines: Vec<String> = alice.store.list_messages(chat.clone()).unwrap().into_iter().filter(|m| m.local_state == "system").map(|m| m.text).collect();
+    assert!(lines.iter().any(|l| l == "You removed Carol" || l.contains("removed")), "{lines:?}");
+}
+
+#[test]
+fn a_late_joiner_cannot_read_what_was_said_before_joining() {
+    let server = FakeServer::new();
+    let (alice, bob, _carol, transport, chat) = team(&server);
+    let (dave, _) = party(&server, "dave", 4);
+    say_in(&alice, &transport, &chat, "before dave");
+    // Keep a copy of that ciphertext, as an eavesdropper (or the server) could.
+    let old = group_items(&server, &bob.device).pop().expect("the message waiting for Bob");
+    sync(&bob, &transport);
+    alice.store.add_group_members(chat.clone(), vec!["dave".into()]).unwrap();
+    say_in(&alice, &transport, &chat, "after dave");
+    sync(&bob, &transport);
+    sync(&dave, &transport);
+    // Dave has the group (from the history he was given) and reads the new message...
+    assert_eq!(group_chat(&dave).unwrap().title, "Grade 4 Team");
+    assert_eq!(names_in(&dave, &chat), names_in(&alice, &chat), "his state, replayed from the history, is the same");
+    assert_eq!(group_texts(&dave, &chat), vec!["after dave"]);
+    // ...but not the one from before, even given its ciphertext.
+    server.inject(&dave.device, &old, false, None);
+    sync(&dave, &transport);
+    assert_eq!(group_texts(&dave, &chat), vec!["after dave"]);
+    assert_eq!(group_texts(&bob, &chat), vec!["before dave", "after dave"]);
+}
+
+#[test]
+fn every_phone_reaches_the_same_state_whatever_order_the_ops_arrive_in() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    let (dave, _) = party(&server, "dave", 4);
+    // Alice makes several changes before anyone hears of them.
+    alice.store.add_group_members(chat.clone(), vec!["dave".into()]).unwrap();
+    alice.store.rename_group(chat.clone(), "Fourth Grade".into()).unwrap();
+    alice.store.set_group_admin(chat.clone(), "bob".into(), true).unwrap();
+    alice.store.remove_group_member(chat.clone(), "dave".into()).unwrap();
+    deliver(&alice, &transport);
+    // Bob gets them in the order sent; Carol in the reverse order.
+    reverse_mailbox(&server, &carol.device);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    let reference = alice.store.group_details(chat.clone()).unwrap();
+    assert_eq!(reference.name, "Fourth Grade");
+    for p in [&bob, &carol] {
+        let details = p.store.group_details(chat.clone()).unwrap();
+        assert_eq!((details.name.clone(), names_in(p, &chat)), (reference.name.clone(), names_in(&alice, &chat)), "{}", p.user);
+    }
+    assert_eq!(names_in(&carol, &chat).iter().map(|m| m.0.clone()).collect::<Vec<_>>(), vec!["alice", "bob", "carol"], "Dave was added and removed again");
+    let _ = dave;
+}
+
+#[test]
+fn only_admins_rename_and_a_forged_rename_from_a_member_is_ignored_everywhere() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    assert!(bob.store.rename_group(chat.clone(), "Mine".into()).is_err(), "a member may not rename");
+    assert!(!bob.store.group_details(chat.clone()).unwrap().can_rename);
+    // Bob forges one anyway (skipping the check on his own phone): nobody applies it, including Bob's own replay.
+    let state = bob.store.load_or_create_account().unwrap();
+    bob.store.make_group_op(&state, "bob", crate::store::groups::group_id_of(&chat).unwrap(), None, Kind::Rename { name: "Bob's group".into() }).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    for p in [&alice, &bob, &carol] {
+        assert_eq!(p.store.group_details(chat.clone()).unwrap().name, "Grade 4 Team", "{}", p.user);
+    }
+    // The owner makes Bob an admin: now his rename counts, last writer by clock.
+    alice.store.set_group_admin(chat.clone(), "bob".into(), true).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    bob.store.rename_group(chat.clone(), "Fourth Grade".into()).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    for p in [&alice, &bob, &carol] {
+        assert_eq!(p.store.group_details(chat.clone()).unwrap().name, "Fourth Grade", "{}", p.user);
+    }
+    assert_eq!(group_chat(&carol).unwrap().title, "Fourth Grade", "the conversation's title follows");
+}
+
+#[test]
+fn leaving_ends_a_persons_part_in_the_group() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    carol.store.leave_group(chat.clone()).unwrap();
+    deliver(&carol, &transport);
+    sync(&alice, &transport);
+    sync(&bob, &transport);
+    assert!(group_chat(&carol).is_none(), "gone from Carol's Messages");
+    assert_eq!(names_in(&alice, &chat).len(), 2);
+    assert!(alice.store.list_messages(chat.clone()).unwrap().iter().any(|m| m.local_state == "system" && m.text.contains("left")));
+    // What is said afterwards never reaches her, and nothing is shown if a copy does.
+    say_in(&alice, &transport, &chat, "after Carol left");
+    assert_eq!(server.mailbox_len(&carol.device), 0, "nothing is sent to a person who left");
+    sync(&bob, &transport);
+    assert_eq!(group_texts(&bob, &chat), vec!["after Carol left"]);
+    assert!(carol.store.list_conversations().unwrap().is_empty());
+    // The owner leaving hands the group to the oldest member.
+    alice.store.leave_group(chat.clone()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(bob.store.group_details(chat.clone()).unwrap().my_role, "owner");
+}
+
+#[test]
+fn a_message_that_arrives_before_its_key_waits_and_reads_when_the_key_arrives() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let chat = alice.store.create_group("Early".into(), None, vec!["bob".into()]).unwrap();
+    say_in(&alice, &transport, &chat, "ahead of its key"); // delivers the create op, the key, then the message
+    // Put the message first in Bob's mailbox.
+    assert_eq!(server.mailbox_len(&bob.device), 3, "the create op, the session key, the message");
+    reverse_mailbox(&server, &bob.device);
+    let report = sync(&bob, &transport);
+    assert_eq!(report.pending, 0, "everything was read in the end");
+    assert_eq!(group_texts(&bob, &chat), vec!["ahead of its key"]);
+}
+
+#[test]
+fn threads_and_formatting_work_in_a_group() {
+    let server = FakeServer::new();
+    let (alice, bob, _carol, transport, chat) = team(&server);
+    say_in(&alice, &transport, &chat, "Plan for **Friday**");
+    sync(&bob, &transport);
+    let root = bob.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.text.contains("Friday")).unwrap();
+    assert_eq!(root.text, "Plan for **Friday**", "the Markdown arrives as written");
+    bob.store.queue_reply(chat.clone(), root.id.clone(), "I can bring the forms".into()).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    let summaries = alice.store.list_thread_summaries(chat.clone()).unwrap();
+    assert_eq!(summaries.len(), 1);
+    assert_eq!((summaries[0].root_id.as_str(), summaries[0].reply_count), (root.id.as_str(), 1));
+    assert_eq!(group_texts(&alice, &chat), vec!["Plan for **Friday**"], "the reply stays out of the timeline");
+}
+
+#[test]
+fn a_group_is_limited_to_a_hundred_people_and_a_name_to_fifty_characters() {
+    let server = FakeServer::new();
+    let (alice, _) = party(&server, "alice", 1);
+    let many: Vec<String> = (0..100).map(|i| format!("u{i}")).collect();
+    assert!(alice.store.create_group("Big".into(), None, many).is_err(), "100 others plus me is 101");
+    assert!(alice.store.create_group("x".repeat(51), None, vec!["u1".into()]).is_err());
+    assert!(alice.store.create_group("  ".into(), None, vec!["u1".into()]).is_err());
+    assert!(alice.store.create_group("Fine".into(), None, vec![]).is_err(), "a group needs another person");
 }

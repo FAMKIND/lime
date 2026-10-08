@@ -37,6 +37,9 @@ private struct SignedInView: View {
                 .navigationDestination(for: Conversation.ID.self) { id in
                     ChatView(conversationID: id)
                 }
+                .navigationDestination(for: GroupTarget.self) { target in
+                    GroupDetailsView(target: target)
+                }
                 .navigationDestination(for: ThreadTarget.self) { target in
                     ThreadView(target: target)
                 }

@@ -26,6 +26,11 @@ struct ConversationAvatar: View {
     var body: some View {
         if let only = conversation.members.first, !conversation.isGroup {
             AvatarView(person: only, size: size)
+        } else if let emoji = conversation.emoji {
+            Circle().fill(Theme.surface)
+                .frame(width: size, height: size)
+                .overlay(Text(emoji).font(.system(size: size * 0.5)))
+                .accessibilityHidden(true)
         } else {
             let members = conversation.members
             let shown = members.count > 4 ? Array(members.prefix(3)) : Array(members.prefix(4))

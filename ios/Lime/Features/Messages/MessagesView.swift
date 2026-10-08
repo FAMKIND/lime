@@ -318,6 +318,7 @@ struct ConversationRow: View {
 
     private var preview: String {
         guard let last = conversation.lastMessage else { return "" }
+        if last.isSystem { return last.text }
         // The words, without the markup (a list reads as its items).
         let words = messagePlainText(text: last.text).replacingOccurrences(of: "\n", with: " ")
         if conversation.isGroup, let sender = conversation.members.first(where: { $0.id == last.senderID }) {

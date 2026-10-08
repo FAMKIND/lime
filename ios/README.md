@@ -113,6 +113,13 @@ Debug builds only (launch arguments): `-lime-skip-sign-in` (signed in with no ba
 - **Requests:** a message from someone you have not chatted with waits in a **Requests** row at the top of Messages. Open it to read, then **Accept** (it moves into Messages and you can reply) or **Block** (it disappears and that person's new messages are not shown on this phone).
 - **Debug demo:** the launch argument `-lime-demo-chat` (with `-lime-skip-sign-in`) shows made-up conversations in memory (a request, a chat with a message still sending); the UI tests and screenshots use it.
 
+## Group chats (LIME-97)
+
+- **New Group:** New Message → **New Group** (it is now a real row): pick people from the teachers you already message (chips on top, "N Members", a search at the bottom), **Next**, a **group name** (required, at most 50 characters) and an optional emoji, **Create**. Groups are limited to **100 people**. A group made by someone who is not one of your chats waits in **Requests** (Accept or Block); one made by a contact goes straight to Messages.
+- **In the chat:** the header shows the avatar (the emoji, or the people) and "N members"; **tap it** (or ⋯ → Group details) for the details. Sender names and avatars sit on the bubbles; **system lines** ("Jean added Lee", "You renamed the group to “…”") are part of the timeline. Replies in threads, formatting and search work as in 1:1 chats. ⋯ also has **Leave group**.
+- **Group details:** the name (tap to rename if you may), the people with their roles, **Remove** (owner and admins; an admin only removes plain members), **Add members** (owner and admins), **Leave group**.
+- Debug launch arguments for screenshots: `-lime-demo-screen group`, `group-details`, `new-group`, `new-group-name`.
+
 ## Notifications (LIME-102, stage 1: no push yet)
 
 Everything is decided on this phone, from messages decrypted on this phone; no server sees what an alert says.

@@ -30,6 +30,8 @@ const POOL_SIZE: usize = 50;
 const POOL_LOW: u32 = 20;
 /// A text message must fit in a 64 KB mailbox item once wrapped and encrypted.
 const MAX_TEXT_BYTES: usize = 30_000;
+pub(crate) mod groups;
+
 /// The control op that gives a contact my delivery key (`api-v2.md` section 4).
 const DELIVERY_KEY_SHARE: &str = "delivery_key.share";
 
@@ -175,9 +177,24 @@ impl LimeStore {
         if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
             self.deliver_shares(&transport, &auth_token, &mut state, &me);
         }
+        // Group state ops (a new group, someone added or removed...) go out before the messages that follow them.
+        self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
         let queued = self.with_conn(queued_messages)?;
         let mut sent = 0;
         for message in queued {
+            if message.conversation_id.starts_with("grp:") {
+                match self.deliver_group_message(&transport, &auth_token, &mut state, &me, &message) {
+                    Ok(()) => {
+                        self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
+                        sent += 1;
+                    }
+                    Err(error) => {
+                        self.with_conn(|conn| set_state(conn, &message.id, "failed"))?;
+                        return Err(error);
+                    }
+                }
+                continue;
+            }
             // Sealed when the contact shared their key and has not refused it; identified otherwise.
             let contact = self.with_conn(|conn| delivery::contact_key(conn, &message.peer))?;
             let sealed_key = contact.and_then(|(key, denied)| (!denied).then_some(key));
@@ -411,7 +428,7 @@ impl LimeStore {
             return Err(StoreError::Rejected);
         }
         let plain = crate::format::plain_text(body);
-        if conversation_id.strip_prefix("dm:").is_none() {
+        if conversation_id.strip_prefix("dm:").is_none() && crate::store::groups::group_id_of(&conversation_id).is_none() {
             return Err(StoreError::NotFound);
         }
         let state = self.load_or_create_account()?;
@@ -424,7 +441,7 @@ impl LimeStore {
         self.with_conn(|conn| {
             let visible: bool = conn
                 .query_row(
-                    "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state != 'blocked')",
+                    "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state NOT IN ('blocked', 'left'))",
                     params![conversation_id],
                     |r| r.get(0),
                 )
@@ -472,7 +489,7 @@ impl LimeStore {
         self.with_conn(|conn| save_account(conn, &self.pickle_key, state))
     }
 
-    fn load_or_create_account(&self) -> Result<AccountState, StoreError> {
+    pub(crate) fn load_or_create_account(&self) -> Result<AccountState, StoreError> {
         if let Some(state) = self.with_conn(|conn| load_account(conn, &self.pickle_key))? {
             return Ok(state);
         }
@@ -955,6 +972,10 @@ impl LimeStore {
         let Some((kind, rest)) = wire.split_first() else {
             return Ok(Outcome::Keep(pending::INVALID));
         };
+        if *kind == groups::GROUP_WIRE {
+            // A group message: one Megolm ciphertext shared by every member (the first byte tells it from Olm).
+            return self.process_group_message(me, rest, now_ms());
+        }
         let Ok(message) = OlmMessage::from_parts(*kind as usize, rest) else {
             return Ok(Outcome::Keep(pending::INVALID));
         };
@@ -1025,14 +1046,20 @@ impl LimeStore {
         // The sender: the server's word (identified), or the envelope's (sealed, checked below).
         let sender = known_sender.clone().unwrap_or_else(|| inner.sender_user.clone());
         let is_control = inner.op.op_type == DELIVERY_KEY_SHARE;
+        let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
             && inner.sender_user == sender
             && inner.sender_device == cert.device_id
             && cert.identity_key == peer_identity
             && cert.verify()
             && inner.op.verify(&cert.signing_key)
-            && (inner.op.op_type == "message.send" || is_control)
-            && inner.op.conversation_id == dm_conversation_id(&sender, me)
+            && (inner.op.op_type == "message.send" || is_control || is_group_op)
+            && if is_group_op {
+                // A group op belongs to a group conversation, whose id (a create op's own id) is the group's.
+                crate::store::groups::group_id_of(&inner.op.conversation_id).is_some()
+            } else {
+                inner.op.conversation_id == dm_conversation_id(&sender, me)
+            }
             // A sealed item decrypted by someone's existing session is that person's.
             && (!sealed || session_owner.as_ref().is_none_or(|owner| *owner == sender));
         let control_key = is_control
@@ -1052,7 +1079,7 @@ impl LimeStore {
         if is_control && control_key.is_none() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
-        if !is_control && text.is_none() {
+        if !is_control && !is_group_op && text.is_none() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
         if sealed {
@@ -1069,7 +1096,7 @@ impl LimeStore {
 
         // Whatever the sender wrote, what is kept is the one written form (and its plain words).
         let text = crate::format::normalise(&text.unwrap_or_default());
-        if !is_control && text.is_empty() {
+        if !is_control && !is_group_op && text.is_empty() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
         let plain = crate::format::plain_text(&text);
@@ -1092,6 +1119,11 @@ impl LimeStore {
                 record_key_change(conn, &sender, &cert.master_key)?;
                 return Ok(None);
             }
+            if is_group_op {
+                // A group state op, a group's history for someone just added, or a Megolm session key.
+                self.apply_group_op(conn, me, &sender, &inner, cert, now)?;
+                return Ok(Some(Stored::Control));
+            }
             if let Some(key) = &control_key {
                 // A contact's delivery key: kept for sealed sends to them. No conversation, nothing shown.
                 delivery::store_contact_key(conn, &sender, key, now)?;
@@ -1113,36 +1145,11 @@ impl LimeStore {
             }
             // A person we did not start a chat with is a request until accepted.
             ensure_dm_as(conn, &sender, None, "pending")?;
-            // Replying to a reply answers the same root. A root that has not arrived yet is taken as named.
-            let root = match &claimed_root {
-                None => None,
-                Some(id) => Some(resolve_root(conn, &conversation, id)?.unwrap_or_else(|| id.clone())),
-            };
-            // The display time is never in the future (api-v2.md section 5).
-            let shown = remote_hlc.wall.min(now);
-            let inserted = conn
-                .execute(
-                    "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain, thread_root)
-                     VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6, ?7, ?8, ?9)",
-                    params![inner.op.op_id, conversation, sender, text, shown, inner.op.hlc, parents, plain, root],
-                )
-                .map_err(db_err)?;
-            if inserted > 0 {
-                conn.execute(
-                    "UPDATE conversations SET unread = unread + 1 WHERE id = ?1",
-                    params![conversation],
-                )
-                .map_err(db_err)?;
-                if let Some(root) = &root {
-                    conn.execute(
-                        "INSERT INTO thread_state (root_id, unread) VALUES (?1, 1)
-                         ON CONFLICT (root_id) DO UPDATE SET unread = unread + 1",
-                        params![root],
-                    )
-                    .map_err(db_err)?;
-                }
-            }
-            Ok(Some(Stored::Message(inserted > 0)))
+            let inserted = insert_received_message(
+                conn, &conversation, &sender, &inner.op.op_id, &inner.op.hlc, &parents, &text, &plain, claimed_root.as_deref(), now,
+                remote_hlc.wall,
+            )?;
+            Ok(Some(Stored::Message(inserted)))
         })?;
         let Some(stored) = stored else {
             self.with_conn(|conn| pending::stash_plaintext(conn, row.id, &plaintext, &peer_identity))?;
@@ -1156,6 +1163,49 @@ impl LimeStore {
             Stored::Control => Outcome::Duplicate,
         })
     }
+}
+
+/// Stores a message that arrived (1:1 or group) into `conversation`, counting it as unread. A reply names the message
+/// it answers; replying to a reply answers the same root, and a root that has not arrived yet is taken as named.
+/// The display time is never in the future (`api-v2.md` section 5). `true` when it was new.
+#[allow(clippy::too_many_arguments)]
+fn insert_received_message(
+    conn: &Connection,
+    conversation: &str,
+    sender: &str,
+    op_id: &str,
+    hlc: &str,
+    parents: &str,
+    text: &str,
+    plain: &str,
+    claimed_root: Option<&str>,
+    now: i64,
+    remote_wall: i64,
+) -> Result<bool, StoreError> {
+    let root = match claimed_root {
+        None => None,
+        Some(id) => Some(resolve_root(conn, conversation, id)?.unwrap_or_else(|| id.to_owned())),
+    };
+    let shown = remote_wall.min(now);
+    let inserted = conn
+        .execute(
+            "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, op_id, hlc, parents, plain, thread_root)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?1, ?6, ?7, ?8, ?9)",
+            params![op_id, conversation, sender, text, shown, hlc, parents, plain, root],
+        )
+        .map_err(db_err)?;
+    if inserted > 0 {
+        conn.execute("UPDATE conversations SET unread = unread + 1 WHERE id = ?1", params![conversation]).map_err(db_err)?;
+        if let Some(root) = &root {
+            conn.execute(
+                "INSERT INTO thread_state (root_id, unread) VALUES (?1, 1)
+                 ON CONFLICT (root_id) DO UPDATE SET unread = unread + 1",
+                params![root],
+            )
+            .map_err(db_err)?;
+        }
+    }
+    Ok(inserted > 0)
 }
 
 /// What storing an item did.
@@ -1260,6 +1310,9 @@ pub(crate) fn resolve_root(conn: &Connection, conversation_id: &str, id: &str) -
 /// A message of mine waiting to be sent.
 struct Queued {
     id: String,
+    /// The conversation it belongs to (`dm:<user>` or `grp:<group>`).
+    conversation_id: String,
+    /// The other person of a 1:1 chat (empty in a group).
     peer: String,
     text: String,
     hlc: String,
@@ -1282,6 +1335,7 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
             Ok(Queued {
                 id: r.get(0)?,
                 peer: conversation.strip_prefix("dm:").unwrap_or_default().to_owned(),
+                conversation_id: conversation,
                 text: r.get(2)?,
                 hlc: r.get(3)?,
                 parents: parents.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default(),
@@ -1291,7 +1345,7 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
-    Ok(rows.into_iter().filter(|q| !q.peer.is_empty()).collect())
+    Ok(rows.into_iter().filter(|q| !q.peer.is_empty() || q.conversation_id.starts_with("grp:")).collect())
 }
 
 fn set_state(conn: &Connection, id: &str, state: &str) -> Result<(), StoreError> {

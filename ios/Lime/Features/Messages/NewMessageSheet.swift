@@ -113,7 +113,7 @@ struct NewMessageSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var lookup = TeacherLookup()
-    @State private var route: [LookupKind] = []
+    @State private var route = NavigationPath()
     @FocusState private var focused: Bool
 
     private var known: [KnownTeacher] { KnownTeachers.from(store.conversations) }
@@ -134,6 +134,14 @@ struct NewMessageSheet: View {
             home
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: LookupKind.self) { kind in FindByScreen(kind: kind, closeSheet: { dismiss() }) }
+                .navigationDestination(for: NewGroupRoute.self) { step in
+                    switch step {
+                    case .pick:
+                        GroupPickerScreen(mode: .create, onNext: { route.append(NewGroupRoute.name($0)) }, onBack: { route.removeLast() })
+                    case .name(let members):
+                        GroupNameScreen(members: members, onBack: { route.removeLast() }, onCreated: { dismiss() })
+                    }
+                }
         }
         .tint(Theme.text)
         .presentationDetents([.large])
@@ -144,7 +152,9 @@ struct NewMessageSheet: View {
             switch store.demoSheet {
             case "new-message-found": query = "grace.h"; await lookup.run("grace.h", store: store)
             case "new-message-filter": query = "l"
-            case "find-username", "find-username-found": route = [.username]
+            case "find-username", "find-username-found": route.append(LookupKind.username)
+            case "new-group": route.append(NewGroupRoute.pick)
+            case "new-group-name": route.append(NewGroupRoute.pick); route.append(NewGroupRoute.name(["lee", "sam"]))
             default: break
             }
         }
@@ -206,21 +216,11 @@ struct NewMessageSheet: View {
 
     private var actions: some View {
         VStack(spacing: 0) {
-            actionRow("at", "Find by Username", id: "action-username") { route.append(.username) }
+            actionRow("at", "Find by Username", id: "action-username") { route.append(LookupKind.username) }
             Divider().padding(.leading, 56)
-            actionRow("envelope", "Find by Email", id: "action-email") { route.append(.email) }
+            actionRow("envelope", "Find by Email", id: "action-email") { route.append(LookupKind.email) }
             Divider().padding(.leading, 56)
-            HStack(spacing: 14) {
-                Image(systemName: "person.2").font(.system(size: 18)).frame(width: 28)
-                Text("New Group").font(Theme.body)
-                Spacer()
-                Text("Coming soon").font(Theme.caption)
-            }
-            .foregroundStyle(Theme.textSecondary.opacity(0.8))
-            .padding(.horizontal, 18).frame(minHeight: 56)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isStaticText)
-            .accessibilityIdentifier("action-new-group")
+            actionRow("person.2", "New Group", id: "action-new-group") { route.append(NewGroupRoute.pick) }
         }
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)

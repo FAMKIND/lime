@@ -13,6 +13,8 @@ pub(crate) const DECRYPT_FAILED: &str = "decrypt_failed";
 /// Terminal: it will never become a message (a bad signature, a malformed op), but it is kept.
 pub(crate) const INVALID: &str = "invalid";
 pub(crate) const KEY_MISMATCH: &str = "key_mismatch";
+/// A group message whose group (its create op) has not arrived yet.
+pub(crate) const NO_GROUP: &str = "no_group";
 
 #[derive(Debug, Clone)]
 pub(crate) struct PendingRow {
