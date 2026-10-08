@@ -1719,6 +1719,20 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
+**Update: LIME-97 landed as `54c0a43`** (pushed and verified; no server change).
+- Client-managed signed group-op log replayed in HLC order; Megolm with one shared ciphertext; rotation on membership change / 100 messages / 7 days; late joiners can't read history; removed members can't read what follows.
+- **An admin query confirms no server table holds groups, members, group names or message text.**
+- New Group (chips → name + emoji → Create); Group details (rename/remove/add/leave); system lines; groups from non-contacts go to Requests.
+- 117 Rust / 6+6 integration / 176+60 iOS tests pass; 0 warnings.
+- **Known limits, documented:**
+  - a replaced phone must be removed and re-added;
+  - stale sessions persist until a member hears of a removal;
+  - unaccepted key-change members are skipped;
+  - no admin-promotion UI;
+  - emoji-only group photo.
+- **Follow-ups to queue later:** a "make admin" UI; auto-rejoin after a phone replacement (with device linking).
+- Awaiting the user's gate (two phones + the simulator or a third device with a plus-address account).
+
 ### Open decision: profile photos on native (raised 2026-10-08: "why can't we edit our avatar anymore?")
 - **Why it's missing:**
   - the web app had photo upload (LIME-49);
@@ -1729,7 +1743,105 @@ If anything contradicts this brief, stop and ask the user.
   - **P-B. Contacts-only, encrypted (Signal's model):** the photo is encrypted with a **profile key** shared with your accepted contacts (reusing the LIME-96 delivery-key sharing channel); the server stores only ciphertext; **strangers and search results see initials.** *Con:* a bit more work; strangers can't recognise you by face.
   - **Lean: P-B.**
 - **Either way it needs the encrypted blob store** (`api-v2.md` §6 Blobs). **Plan:** one brief, **LIME-98b**, "encrypted blob store + profile photo (crop, camera/library)", after LIME-97. **Chat photo/file attachments** reuse it next (a separate brief).
-- Awaiting the user.
+- **DECIDED (the user, 2026-10-08): A by default, plus a setting for contacts-only, encrypted.**
+  - **Default:** a public photo (any signed-in Lime user who sees your profile, and the server).
+  - **Setting:** Profile → "Who can see my photo": **Everyone on Lime** (default) / **Only my contacts (encrypted)**.
+    - Switching to contacts-only **deletes the public copy from the server** and shares an encrypted copy via the profile key; strangers see initials.
+    - Switching back re-uploads the public copy.
+
+### LIME-98b → `tend` (lime-aa) (after LIME-97/97b): encrypted blob store + profile photos (public by default, contacts-only option)
+**What it does:** builds `api-v2.md` §6 Blobs and native profile photos, per the user's decision above.
+
+**Capabilities assumed:** edit files, `cargo`, the Supabase CLI (migrations, storage buckets and functions **without `config push`**), XcodeGen, `xcodebuild`, commit, push. Stop and ask the user before anything that needs a dashboard change or a paid plan.
+
+**Phase 0:** commit `PLOT.md` unedited. **Phase 1:** survey `api-v2.md` §§2, 6, 11 (blobs, the expiry rules); the LIME-96 key sharing; the profile functions; Supabase Storage limits on the free plan. Stop and ask the user on any conflict.
+
+**Phase 2: the change.**
+1. **The blob store (server):** two Supabase Storage buckets, **private**, reached only through Edge Functions with short-lived signed URLs:
+   - `public-avatars`: plaintext images, readable by any **signed-in** user (never anonymously), writable only by the owner; max 1 MB, JPEG/HEIC re-encoded to JPEG 512 px on the device (strip EXIF/GPS).
+   - `blobs`: **ciphertext only** (AES-256-GCM, a random key per blob; the key travels inside encrypted messages/control ops). It's the general store for later chat attachments.
+   - Quotas per user; tests; deploy.
+2. **The profile key (core):** a random key per account, shared with accepted contacts over the LIME-96 control-op channel (same triggers); it rotates on block, like the delivery key.
+3. **Photos (iOS):**
+   - **Profile → Photo:** take a photo / choose from the library (`PHPicker`; no full library permission) → a circular crop → save. Remove photo.
+   - **"Who can see my photo":** **Everyone on Lime** (the default) / **Only my contacts (encrypted)**, with a one-line explanation of each.
+   - **Where avatars appear:** Messages, chat headers, bubbles, New Message, Requests, Settings. They're cached on the device (in the encrypted store); initials remain the fallback.
+4. **Docs:**
+   - `api-v2.md` (the buckets, the profile key, the visibility rules; **the public photo is visible to the server and to signed-in users**);
+   - `architecture.md` §5;
+   - `docs/release-checklist.md`: **App Store guideline 1.2 (user-generated content) requires a way to report objectionable content/users, plus block, before release.** Public photos make this concrete. Add an item: "Report user/photo" + the moderation process.
+
+**Out of scope:** chat photo/file attachments (the next brief, reusing `blobs`), group photos (could reuse it later), the web.
+
+**Phase 3: verification.**
+- Server tests:
+  - an anonymous user can't read either bucket;
+  - a signed-in user can read a public avatar;
+  - the `blobs` bucket holds only ciphertext (a test uploads a known image through the app path and asserts the stored bytes don't match);
+  - quotas.
+- Core: profile-key sharing/rotation; contacts-only decryption; a stranger can't decrypt.
+- iOS:
+  - pick → crop → save; it shows on the other phone;
+  - switching to contacts-only removes the public copy (a server check) and strangers see initials;
+  - EXIF stripped.
+- 0 warnings; screenshots.
+
+**Gate (the user, both phones):**
+- set a photo → Jean sees it;
+- switch to "Only my contacts" → Jean still sees it; a new stranger account sees initials;
+- remove it → initials.
+
+**Record:** `## LIME-98b`. Commit: `feat: blob store (public avatars + encrypted blobs), profile photos with contacts-only option`, trailer `Brief: LIME-98b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-98c → `tend` (lime-aa) (after LIME-98b): encrypted attachments: photos, videos, files, and voice messages
+**The user's ask (2026-10-08):** "also audio voice recordings and videos sending". It builds on LIME-98b's `blobs` bucket (ciphertext only).
+
+**Plot's decisions (no user input needed; flag anything that hits limits):**
+- **One encrypted attachment pipeline:**
+  - each file is encrypted on the device (AES-256-GCM, a random key + digest per file) and uploaded **chunked and resumable**;
+  - **the key, digest, size, type, duration and a tiny blurred thumbnail travel inside the encrypted message.**
+  - The server sees only ciphertext size and timing.
+- **Cost guardrails (the free plan; the cost principles):**
+  - **compressed on the device:** photos → JPEG/HEIC ≤ 2048 px; **video → H.264/HEVC 720p, max 3 minutes / ~50 MB**; voice → AAC/Opus mono ~24 kbps; files ≤ 50 MB.
+  - **The blob is deleted once every recipient device has downloaded it, or after 30 days**, whichever is first (mailbox-like). Recipients keep their own decrypted copy locally.
+  - Supabase free-plan storage/egress limits go into `docs/release-checklist.md` as a funding trigger.
+- **Voice messages (Signal/WhatsApp style):**
+  - **hold the mic to record** (slide left to cancel, slide up to lock hands-free); release to send;
+  - a waveform bubble with play/pause, a scrubber, the duration and a playback speed (1×/1.5×/2×);
+  - the next voice message auto-plays.
+  - **Dictation stays available via the keyboard's own mic.** The composer mic becomes voice messages (it replaces LIME-86's web-era dictation idea on native).
+- **Videos:** record or pick (`PHPicker`; no full library permission); compressed with progress; inline poster + duration; full-screen player.
+- **Photos:** pick or take; an album grid for multiple photos (up to 10); a full-screen viewer with swipe between photos; save-to-Photos on request.
+- **Files:** the document picker; a file card (name, size, type icon); open with Quick Look / share.
+- **The offline mesh (mesh v1) carries text only at first.** Attachments sync when online. *(A short voice message is ~60 KB; it could ride the mesh later, so flag it in `architecture.md` §7.)*
+- **Privacy:** strip EXIF/GPS from photos/videos by default; the camera/microphone permission texts explain why.
+
+**Capabilities / Phase 0 / Phase 1:** as in LIME-98b. In Phase 1, survey the composer `+` and mic, the `blobs` bucket and the message payload format. Stop and ask the user on any conflict.
+
+**Phase 2: the change.** Build the above in this order:
+1. the pipeline + the server (chunked signed-URL upload/download, delete-after-fetch, 30-day sweep, quotas, tests);
+2. photos;
+3. files;
+4. voice;
+5. video.
+
+**If it grows too large, split it at a clean boundary** (e.g. 98c photos+files, 98d voice+video) and say so.
+
+**Phase 3: verification.**
+- **Encryption:** the stored bytes ≠ the plaintext; a tampered blob fails its digest.
+- **Lifecycle:** delete-after-all-fetched; the 30-day sweep; resume after interrupting an upload.
+- **Compression limits:** a 4-minute video is refused/trimmed with a clear message.
+- **Voice:** the record/cancel/lock gestures (UI tests), playback, and the speed control.
+- **The two-phone e2e** for each type (local + staging).
+- 0 warnings; screenshots.
+
+**Gate (the user, both phones):** send each type to Jean (a photo, an album, a short video, a PDF, a voice message); all arrive and play/open; voice speed works.
+
+**Record:** `## LIME-98c` (+ 98d if split). Commit: `feat: encrypted attachments (photos, video, files, voice messages)`, trailer `Brief: LIME-98c`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
 
 ### LIME-96-fix → `tend` (lime-aa) (landed as `703b6eb`): Signal-style silent fallback, so a blocked sender gets no hint
 **The user's decision (2026-10-08): B.** On a **sealed send refused with 403**:
