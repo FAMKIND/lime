@@ -1719,7 +1719,19 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-96-fix → `tend` (lime-aa) (next): Signal-style silent fallback, so a blocked sender gets no hint
+### Open decision: profile photos on native (raised 2026-10-08: "why can't we edit our avatar anymore?")
+- **Why it's missing:**
+  - the web app had photo upload (LIME-49);
+  - the native LIME-98 deliberately left photos out;
+  - **the native app has no encrypted blob storage yet** (no attachments either).
+- **The decision put to the user:**
+  - **P-A. Public photo:** like the name/school/About; the server stores it and anyone who finds you sees it. *Simple.* *Con:* teachers' faces are visible to strangers and the server, which fits poorly with E2EE and child-safety norms.
+  - **P-B. Contacts-only, encrypted (Signal's model):** the photo is encrypted with a **profile key** shared with your accepted contacts (reusing the LIME-96 delivery-key sharing channel); the server stores only ciphertext; **strangers and search results see initials.** *Con:* a bit more work; strangers can't recognise you by face.
+  - **Lean: P-B.**
+- **Either way it needs the encrypted blob store** (`api-v2.md` §6 Blobs). **Plan:** one brief, **LIME-98b**, "encrypted blob store + profile photo (crop, camera/library)", after LIME-97. **Chat photo/file attachments** reuse it next (a separate brief).
+- Awaiting the user.
+
+### LIME-96-fix → `tend` (lime-aa) (landed as `703b6eb`): Signal-style silent fallback, so a blocked sender gets no hint
 **The user's decision (2026-10-08): B.** On a **sealed send refused with 403**:
 - **automatically retry once as identified, silently**;
 - **show "Sent"** (never "Not delivered" for this case);
@@ -1890,7 +1902,11 @@ If anything contradicts `api-v2.md`, stop and ask the user.
   - **Plot's flag to the user (a privacy nuance):** "Not delivered" after a block **hints to the blocked person that they were blocked** (or that the contact changed phones). Signal shows blocked messages as sent.
     - **Lean:** on a sealed 403, **silently retry identified once** and show "Sent" (no hint; still no loss for a genuine phone change).
     - The cost: that one message reveals the sender to the server.
-    - **DECIDED: B (the user, 2026-10-08). LIME-96-fix is drafted.**
+    - **DECIDED: B (the user, 2026-10-08). LIME-96-fix landed as `703b6eb`.**
+      - Silent identified fallback → "Sent"; a new migration drops the resend columns; **Block <Name> in the chat ⋯ menu**.
+      - 96 Rust / 175+56 iOS tests pass; 0 warnings.
+      - A changed-phone contact receives the fallback as a Request (fresh store), not in the old chat: acceptable.
+      - **The user's gate: "looks good" (2026-10-08). Tend is on LIME-97.**
   - **The phones still have the spike builds.** The LIME-96 build must be installed; **the Debug build still includes the Nearby/Auto test**, so tonight's 103c works with it, and reinstalling resets the 7-day expiry.
 - **LIME-103c is scheduled for tonight (2026-10-08)**, the user's choice: the same setup, with the sender's "Keep the screen on" unticked and both phones locked. **Tend is on LIME-96 meanwhile.**
 - **The analysis landed as `aa6f5d1`.**
