@@ -1762,7 +1762,35 @@ If anything contradicts this brief, stop and ask the user.
 
 **LIME-98b-fix landed as `c63e2d1`** (pushed and verified): a `profile.changed` notice to accepted contacts; pull-to-refresh and chat-open refresh photos (≤ 1/min each); the bad sign-out advice was removed. 128 Rust tests pass; integration 7/7; tiered iOS passed. Awaiting the user's two-phone photo gate. **Next: LIME-98c (attachments + voice).**
 
-### LIME-104 → `tend` (lime-aa) (after LIME-98c): QA round (formatting state, group avatar, Reply wording, Replies screen, search in replies)
+**Update: LIME-98c (photos + files) landed as `888e5c7`** (pushed and verified). Voice + video were split out to **LIME-98d**.
+- 1 MiB-chunk AES-GCM encryption with a resumable upload; the key/digest/2 KB thumbnail live only in the encrypted message; album/viewer/Quick Look.
+- **Blob sweep:** delete 1 h after the last recipient fetches, after 30 days, or after 1 day if the upload never finished; pg_cron every 15 min (`supabase/schedule-sweep.sh`).
+- 47 server / 136 Rust / 8+8 integration tests pass; tiered iOS passed; 0 warnings.
+- **Gaps → fold into LIME-98d:**
+  - **the Replies (thread) composer has no "+"**;
+  - no resumable download;
+  - no progress %.
+
+### LIME-98d → `tend` (lime-aa) (next): voice messages + video (split from 98c), plus the 98c gaps
+- **Build the voice and video parts of the LIME-98c brief exactly as specified there:**
+  - voice: hold the mic to record, slide to cancel/lock, a waveform bubble, 1×/1.5×/2× speed, auto-play the next;
+  - video: record/pick, 720p, max 3 min / ~50 MB, poster + duration, a full-screen player.
+
+  Both use the 98c pipeline.
+- **Also:**
+  1. **add "+" (attachments) to the Replies/thread composer;**
+  2. **resumable downloads** (by chunk);
+  3. **a progress indicator** (a percentage ring) for uploads and downloads.
+- **Phase 0:** commit `PLOT.md` unedited. Survey 98c's pipeline first.
+- **Verification:**
+  - the tiered iOS rule;
+  - the integration e2e (a voice note + a short video through staging; ciphertext only);
+  - UI tests for the record/cancel/lock gestures;
+  - 0 warnings.
+- **Gate:** send Jean a voice message (try 2× speed) and a 30-second video; attach a photo inside a Replies thread.
+- **Record:** `## LIME-98d`. Commit: `feat: voice messages and video; attachments in threads; resumable downloads with progress`, trailer `Brief: LIME-98d`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-104 → `tend` (lime-aa) (after LIME-98d): QA round (formatting state, group avatar, Reply wording, Replies screen, search in replies)
 **The user's QA notes (2026-10-08), while tend is on LIME-98c.**
 
 **Phase 0:** commit `PLOT.md` unedited. **Phase 1:** survey the theme pressed tokens, the format toolbar, the New Group/Group details, the message long-press menu, the thread screen, and the search (Messages search + in-chat find + the thread screen). If anything is ambiguous, **stop and ask the user**, in particular item 1's scope.
@@ -1801,7 +1829,59 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-105 → `tend` (lime-aa) (after LIME-104): message actions: delete, emoji reactions (any emoji), link preview cards
+### LIME-105/106 amendment (the user, 2026-10-08): the full long-press menu, multi-select, Note to Self
+**The long-press menu on a bubble, in this order:**
+1. **an emoji reaction row** (6 quick + "+" for any emoji);
+2. **Reply**;
+3. **Forward**;
+4. **Edit** (own messages only);
+5. **Copy**;
+6. **Select**;
+7. **Delete** (red).
+
+**The split** (keeps each brief reviewable):
+- **LIME-105 = reactions, Reply (already exists; verify the wording), Copy, Edit, Delete, Select (multi-select).**
+- **LIME-106 = Forward, Note to Self, link preview cards** (moved out of 105).
+
+**Edit (plot's decision):**
+- **your own messages, within 24 hours** (the same window as Delete for everyone);
+- an encrypted, signed `message.edit` op;
+- the bubble shows "Edited" (tap to see the previous versions **on your own phone only**? No: **keep only the latest text**; simpler and more private);
+- the search index updates;
+- works in threads.
+
+**Copy:** copies the plain text (the formatting is kept as rich text where the paste target supports it).
+
+**Select (multi-select mode):**
+- every bubble shows a **round selection circle** (left of incoming, right of own);
+- **a bottom bar: 🗑 trash (left) · "N Selected" (centre) · Forward (right)**;
+- a header with **Cancel**.
+- **Trash** asks: **Delete for me**, or **Delete for everyone** (offered only if *all* the selected messages are yours and within 24 h);
+- **Forward** opens the Forward picker (LIME-106; in 105 the button is present but routes to a "Coming next" toast until 106 lands).
+
+### LIME-106 → `tend` (lime-aa) (after LIME-105): Forward, Note to Self, link preview cards
+- **Forward:**
+  - pick one or more **teachers or groups** (the New Message list UI with checkmarks + chips, like New Group) → Send.
+  - Each forward is a **new encrypted message** labelled "Forwarded" (no original sender name, for privacy).
+  - Attachments are re-shared by reference (the same encrypted blob + key travel in the new message; the blob's lifetime extends to the new recipients).
+  - Formatting is preserved.
+  - Up to 5 chats per forward (anti-spam, like WhatsApp).
+- **Note to Self:**
+  - a personal chat with yourself, pinned at the top of **New Message** ("Note to Self", your avatar with a note badge) and searchable;
+  - **stored on your phone only for now** (encrypted at rest; nothing is sent to the server); it syncs to your other devices once device linking exists;
+  - supports everything a chat does (formatting, attachments, threads, edit, delete, search).
+- **Link preview cards:** as specified in LIME-105 below (moved here).
+
+**Gate:**
+- forward a message to two chats;
+- write a Note to Self with a photo, and find it via search;
+- send a link → card.
+
+**Record:** `## LIME-106`. Commit: `feat: forward, Note to Self, link preview cards`, trailer `Brief: LIME-106`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-105 → `tend` (lime-aa) (after LIME-104): message actions (see the amendment above: reactions, Reply, Copy, Edit, Delete, Select; Forward + link cards move to 106)
 **The user's QA notes (2026-10-08):** "in addition to reply, we need ability to delete a message in a chat, thread or reply and give emoji reactions, with the plus to pick any emoji"; "link cards are missing (thumbnails, heading and subheading)". Split from LIME-104 because these need protocol work.
 
 **Plot's decisions:**
