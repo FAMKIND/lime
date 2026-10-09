@@ -154,7 +154,7 @@ struct ChatView: View {
             .linkOpening()
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
-            .refreshable { await store.syncNow() }
+            .refreshable { await store.pullToRefresh() }
             .onChange(of: scrollRequest) { _, request in
                 guard let request else { return }
                 withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(request.id, anchor: .center) }
@@ -192,6 +192,8 @@ struct ChatView: View {
                 Task { await store.markRead(conversationID) }
             }
             .task { await store.markRead(conversationID) }
+            // Opening a chat looks for a new photo of the people in it (at most once a minute each).
+            .task { await store.refreshPhotos(of: store.conversation(conversationID)?.members.map(\.id) ?? []) }
             .onAppear { notifications.viewing = ViewingTarget(conversationID: conversationID) }
             .onDisappear { if notifications.viewing == ViewingTarget(conversationID: conversationID) { notifications.viewing = nil } }
         }

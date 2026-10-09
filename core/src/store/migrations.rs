@@ -256,6 +256,11 @@ const MIGRATIONS: &[&str] = &[
          version    INTEGER NOT NULL,
          checked_at INTEGER NOT NULL
      );",
+    // 15: "my photo changed" notices (LIME-98b-fix): who still has to be told, so their phone refreshes it at once.
+    "CREATE TABLE photo_notices (
+         peer_user_id TEXT PRIMARY KEY NOT NULL,
+         queued_at    INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

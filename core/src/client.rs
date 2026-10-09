@@ -35,6 +35,8 @@ pub(crate) mod photos;
 
 /// The control op that gives a contact my delivery key (`api-v2.md` section 4).
 const DELIVERY_KEY_SHARE: &str = "delivery_key.share";
+/// The control op that tells a contact my profile photo changed, so they refresh it now (LIME-98b-fix).
+const PROFILE_CHANGED: &str = "profile.changed";
 
 /// Why one send did not go through.
 enum SendError {
@@ -178,6 +180,7 @@ impl LimeStore {
         if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
             self.deliver_shares(&transport, &auth_token, &mut state, &me);
             self.refresh_my_photo_if_stale(&transport, &auth_token);
+            self.deliver_photo_notices(&transport, &auth_token, &mut state, &me);
         }
         // Group state ops (a new group, someone added or removed...) go out before the messages that follow them.
         self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
@@ -772,16 +775,33 @@ impl LimeStore {
         let now = now_ms();
         let (key, _) = self.with_conn(|conn| delivery::current(conn, now))?;
         let profile_key = self.with_conn(|conn| crate::store::photos::current_key(conn, now))?;
+        let payload = json!({ "key": vodozemac::base64_encode(&key), "profile_key": vodozemac::base64_encode(&profile_key) });
+        self.send_control_op(transport, token, state, me, peer, DELIVERY_KEY_SHARE, payload)
+    }
+
+    /// A signed control op (never shown as a message) to one person, sealed when we hold their key.
+    #[allow(clippy::too_many_arguments)]
+    fn send_control_op(
+        &self,
+        transport: &Arc<dyn Transport>,
+        token: &str,
+        state: &mut AccountState,
+        me: &str,
+        peer: &str,
+        op_type: &str,
+        payload: Value,
+    ) -> Result<(), StoreError> {
+        let now = now_ms();
         let contact = self.with_conn(|conn| delivery::contact_key(conn, peer))?;
         let sealed_with = contact.filter(|(_, denied)| !denied).map(|(k, _)| k);
         let (hlc, parents) = self.with_conn(|conn| Ok((tick_hlc(conn, now)?, Vec::<String>::new())))?;
         let mut op = Op {
             op_id: new_id(),
-            op_type: DELIVERY_KEY_SHARE.into(),
+            op_type: op_type.into(),
             conversation_id: dm_conversation_id(me, peer),
             hlc: hlc.render(),
             parents,
-            payload: json!({ "key": vodozemac::base64_encode(&key), "profile_key": vodozemac::base64_encode(&profile_key) }),
+            payload,
             sig: String::new(),
         };
         op.sig = state.account.sign(op.signing_bytes()).to_base64();
@@ -793,6 +813,23 @@ impl LimeStore {
                 self.send_op(transport, token, state, me, peer, op, None).map(|_| ()).map_err(SendError::into_store)
             }
             Err(SendError::Store(error)) => Err(error),
+        }
+    }
+
+    /// Tells everyone queued that my photo changed. Errors leave the person queued; nothing waits on this.
+    fn deliver_photo_notices(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
+        let Ok(peers) = self.with_conn(crate::store::photos::queued_notices) else { return };
+        if peers.is_empty() {
+            return;
+        }
+        let version = self.with_conn(crate::store::photos::mine_updated_at).unwrap_or(0);
+        for peer in peers {
+            if self
+                .send_control_op(transport, token, state, me, &peer, PROFILE_CHANGED, json!({ "photo_version": version }))
+                .is_ok()
+            {
+                let _ = self.with_conn(|conn| crate::store::photos::dequeue_notice(conn, &peer));
+            }
         }
     }
 
@@ -1109,7 +1146,9 @@ impl LimeStore {
         let cert = &inner.sender_cert;
         // The sender: the server's word (identified), or the envelope's (sealed, checked below).
         let sender = known_sender.clone().unwrap_or_else(|| inner.sender_user.clone());
-        let is_control = inner.op.op_type == DELIVERY_KEY_SHARE;
+        let is_share = inner.op.op_type == DELIVERY_KEY_SHARE;
+        let is_changed = inner.op.op_type == PROFILE_CHANGED;
+        let is_control = is_share || is_changed;
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
             && inner.sender_user == sender
@@ -1126,12 +1165,12 @@ impl LimeStore {
             }
             // A sealed item decrypted by someone's existing session is that person's.
             && (!sealed || session_owner.as_ref().is_none_or(|owner| *owner == sender));
-        let control_key = is_control
+        let control_key = is_share
             .then(|| inner.op.payload.get("key").and_then(Value::as_str).and_then(|k| vodozemac::base64_decode(k).ok()))
             .flatten()
             .filter(|k| k.len() == 32);
         // The photo key rides along with the delivery key (a contact who shared one before photos has none).
-        let control_profile_key = is_control
+        let control_profile_key = is_share
             .then(|| inner.op.payload.get("profile_key").and_then(Value::as_str).and_then(|k| vodozemac::base64_decode(k).ok()))
             .flatten()
             .filter(|k| k.len() == 32);
@@ -1145,7 +1184,7 @@ impl LimeStore {
         let Some(remote_hlc) = remote_hlc.filter(|_| valid) else {
             return Ok(Outcome::Keep(pending::INVALID));
         };
-        if is_control && control_key.is_none() {
+        if is_share && control_key.is_none() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
         if !is_control && !is_group_op && text.is_none() {
@@ -1191,6 +1230,11 @@ impl LimeStore {
             if is_group_op {
                 // A group state op, a group's history for someone just added, or a Megolm session key.
                 self.apply_group_op(conn, me, &sender, &inner, cert, now)?;
+                return Ok(Some(Stored::Control));
+            }
+            if is_changed {
+                // A contact's photo changed: check it at the next opportunity, ignoring the hourly limit.
+                crate::store::photos::mark_stale(conn, &sender)?;
                 return Ok(Some(Stored::Control));
             }
             if let Some(key) = &control_key {

@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -1583,4 +1583,78 @@ fn a_block_re_uploads_the_contacts_only_photo_under_the_new_key_and_the_blocked_
     assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()), "Bob (given the new key) still sees it");
     refresh(&carol, &transport);
     assert_eq!(carol.store.peer_photo("alice".into()).unwrap(), None, "Carol, blocked, cannot find the new copy");
+}
+
+// ---------------------------------------------------------------- LIME-98b-fix: photo changes reach contacts at once
+
+fn refresh_due(p: &Party, transport: &Arc<dyn Transport>) -> Vec<String> {
+    // The ordinary refresh after a sync: not forced, so the hourly limit applies unless a notice cleared it.
+    p.store.refresh_photos(transport.clone(), p.token.clone(), false).unwrap()
+}
+
+#[test]
+fn a_photo_change_reaches_a_contact_within_one_sync_without_waiting_for_the_hourly_check() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    // Bob has just checked and found no photo (so the hourly limit now applies to Alice).
+    assert!(refresh_due(&bob, &transport).is_empty());
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), None);
+
+    // Alice sets a photo: the next delivery tells Bob, and his next sync + refresh shows it.
+    alice.store.set_my_photo(transport.clone(), alice.token.clone(), photo_bytes()).unwrap();
+    deliver(&alice, &transport);
+    let report = sync(&bob, &transport);
+    assert_eq!(report.received, 0, "a control op is not a message");
+    assert_eq!(refresh_due(&bob, &transport), vec!["alice".to_string()], "checked at once, not in an hour");
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()));
+    assert!(refresh_due(&bob, &transport).is_empty(), "and then the limit applies again");
+
+    // Contacts-only, then removed: each change is noticed the same way.
+    alice.store.set_photo_visibility(transport.clone(), alice.token.clone(), "contacts".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(refresh_due(&bob, &transport), vec!["alice".to_string()], "fetched again (now from the encrypted copy)");
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()));
+    alice.store.remove_my_photo(transport.clone(), alice.token.clone()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(refresh_due(&bob, &transport), vec!["alice".to_string()]);
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), None);
+}
+
+#[test]
+fn a_notice_is_sent_only_to_accepted_contacts_and_a_stranger_gets_none() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    say(&carol, &alice, &transport, "hello, a stranger");
+    sync(&alice, &transport);
+    alice.store.set_my_photo(transport.clone(), alice.token.clone(), photo_bytes()).unwrap();
+    let queued = crate::store::photos::queued_notices(&alice.store.lock()).unwrap();
+    assert_eq!(queued, vec!["bob".to_string()], "only the accepted contact is told");
+    deliver(&alice, &transport);
+    assert!(crate::store::photos::queued_notices(&alice.store.lock()).unwrap().is_empty(), "delivered, so no longer queued");
+}
+
+#[test]
+fn pull_to_refresh_checks_the_people_shown_but_at_most_once_a_minute_each() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let ask = |ids: &[&str]| bob.store.refresh_photos_of(transport.clone(), bob.token.clone(), ids.iter().map(|s| s.to_string()).collect()).unwrap();
+    assert!(ask(&["alice"]).is_empty(), "first check: nothing to see yet");
+    // A photo appears on the server without a notice (say the notice was lost): a second pull within the minute does not look.
+    alice.store.set_my_photo(transport.clone(), alice.token.clone(), photo_bytes()).unwrap();
+    let before = server.state.lock().unwrap().calls;
+    assert!(ask(&["alice"]).is_empty());
+    assert_eq!(server.state.lock().unwrap().calls, before, "no request within a minute of the last check");
+    // After a minute it looks again, and finds it.
+    bob.store.lock().execute("UPDATE photos SET checked_at = checked_at - 61000", []).unwrap();
+    assert_eq!(ask(&["alice"]), vec!["alice".to_string()]);
+    assert_eq!(ask(&["someone-else"]), Vec::<String>::new(), "only the people asked about are checked");
 }

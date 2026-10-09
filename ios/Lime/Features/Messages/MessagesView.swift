@@ -108,7 +108,7 @@ struct MessagesView: View {
             .padding(.bottom, bottom)
         }
         .accessibilityIdentifier("messages-list")
-        .refreshable { await store.syncNow() }
+        .refreshable { await store.pullToRefresh() }
     }
 
     private var newMessageButton: some View {

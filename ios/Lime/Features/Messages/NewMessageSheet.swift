@@ -605,7 +605,7 @@ struct RequestsView: View {
             .padding(.horizontal, 12)
             .padding(.top, 8)
         }
-        .refreshable { await store.syncNow() }
+        .refreshable { await store.pullToRefresh() }
         .background(Theme.canvas.ignoresSafeArea())
         .navigationTitle("Requests")
         .navigationBarTitleDisplayMode(.inline)

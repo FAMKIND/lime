@@ -7,7 +7,7 @@
 //! URLs from Storage) go through the platform's [`Transport`], so the core never opens a socket itself.
 
 use super::*;
-use crate::store::photos::{self, Mine, RECHECK_MS};
+use crate::store::photos::{self, Mine, MIN_GAP_MS, RECHECK_MS};
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MyPhoto {
@@ -59,7 +59,8 @@ impl LimeStore {
             mine.jpeg = Some(jpeg);
             photos::save_mine(conn, &mine, now_ms())
         })?;
-        self.sync_my_photo(&transport, &auth_token)
+        self.sync_my_photo(&transport, &auth_token)?;
+        self.notify_contacts_of_photo_change()
     }
 
     /// Removes my photo everywhere (the server's copy, whichever form it is in, and this phone's).
@@ -69,7 +70,8 @@ impl LimeStore {
             mine.jpeg = None;
             photos::save_mine(conn, &mine, now_ms())
         })?;
-        self.sync_my_photo(&transport, &auth_token)
+        self.sync_my_photo(&transport, &auth_token)?;
+        self.notify_contacts_of_photo_change()
     }
 
     /// Who may see my photo: `everyone` (a public copy) or `contacts` (an encrypted copy; the public one is
@@ -83,18 +85,35 @@ impl LimeStore {
             mine.visibility = visibility;
             photos::save_mine(conn, &mine, now_ms())
         })?;
-        self.sync_my_photo(&transport, &auth_token)
+        self.sync_my_photo(&transport, &auth_token)?;
+        self.notify_contacts_of_photo_change()
     }
 
     /// Fetches the photos of the people in my conversations (each at most hourly unless `force`), and returns
     /// the ids whose photo changed (appeared, changed or went away).
     pub fn refresh_photos(&self, transport: Arc<dyn Transport>, auth_token: String, force: bool) -> Result<Vec<String>, StoreError> {
+        self.refresh_photos_inner(&transport, &auth_token, None, if force { 0 } else { RECHECK_MS })
+    }
+
+    /// Checks these people's photos now (pull-to-refresh, opening a chat), but never one more than once a minute.
+    pub fn refresh_photos_of(&self, transport: Arc<dyn Transport>, auth_token: String, user_ids: Vec<String>) -> Result<Vec<String>, StoreError> {
+        self.refresh_photos_inner(&transport, &auth_token, Some(user_ids), MIN_GAP_MS)
+    }
+}
+
+impl LimeStore {
+    fn refresh_photos_inner(&self, transport: &Arc<dyn Transport>, auth_token: &str, only: Option<Vec<String>>, gap_ms: i64) -> Result<Vec<String>, StoreError> {
+        let transport = transport.clone();
+        let auth_token = auth_token.to_owned();
         let me = self.with_conn(|conn| Ok(crate::store::account::load_account(conn, &self.pickle_key)?.and_then(|s| s.user_id)))?.ok_or(StoreError::NotRegistered)?;
-        let people = self.with_conn(|conn| photos::people_to_check(conn, &me))?;
+        let mut people = self.with_conn(|conn| photos::people_to_check(conn, &me))?;
+        if let Some(only) = only {
+            people.retain(|p| only.contains(p));
+        }
         let mut changed = Vec::new();
         for person in people {
-            let recent = self.with_conn(|conn| photos::cached(conn, &person))?.is_some_and(|c| now_ms() - c.checked_at < RECHECK_MS);
-            if recent && !force {
+            let recent = self.with_conn(|conn| photos::cached(conn, &person))?.is_some_and(|c| now_ms() - c.checked_at < gap_ms);
+            if recent {
                 continue;
             }
             match self.refresh_one(&transport, &auth_token, &person) {
@@ -110,6 +129,14 @@ impl LimeStore {
 }
 
 impl LimeStore {
+    /// Queues "my photo changed" for every accepted contact: their phones refresh it on the next sync.
+    fn notify_contacts_of_photo_change(&self) -> Result<(), StoreError> {
+        self.with_conn(|conn| {
+            let peers = crate::store::delivery::accepted_peers(conn)?;
+            photos::queue_notices(conn, &peers, now_ms())
+        })
+    }
+
     /// Makes the server match my local photo and visibility.
     pub(super) fn sync_my_photo(&self, transport: &Arc<dyn Transport>, token: &str) -> Result<(), StoreError> {
         let mine = self.with_conn(photos::mine)?;

@@ -20,6 +20,8 @@ const ENC_INFO: &[u8] = b"lime-photo-enc-v1";
 const ID_INFO: &[u8] = b"lime-photo-id-v1";
 /// A photo is re-checked at most this often (milliseconds), unless a refresh is forced.
 pub(crate) const RECHECK_MS: i64 = 60 * 60 * 1000;
+/// Pull-to-refresh and opening a chat re-check a person at most this often (milliseconds).
+pub(crate) const MIN_GAP_MS: i64 = 60 * 1000;
 
 // ---------------------------------------------------------------- crypto (pure)
 
@@ -139,6 +141,10 @@ pub(crate) fn mine(conn: &Connection) -> Result<Mine, StoreError> {
     Ok(row.unwrap_or(Mine { jpeg: None, visibility: "everyone".into(), uploaded_key: None }))
 }
 
+pub(crate) fn mine_updated_at(conn: &Connection) -> Result<i64, StoreError> {
+    Ok(conn.query_row("SELECT updated_at FROM my_photo WHERE id = 1", [], |r| r.get(0)).optional().map_err(db_err)?.unwrap_or(0))
+}
+
 pub(crate) fn save_mine(conn: &Connection, mine: &Mine, now_ms: i64) -> Result<(), StoreError> {
     conn.execute(
         "INSERT INTO my_photo (id, jpeg, visibility, uploaded_key, updated_at) VALUES (1, ?1, ?2, ?3, ?4)
@@ -173,6 +179,34 @@ pub(crate) fn save_cached(conn: &Connection, user: &str, bytes: &[u8], source: &
         params![user, bytes, source, version, now_ms],
     )
     .map_err(db_err)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------- telling contacts my photo changed
+
+/// Queues a "my photo changed" notice for each person (an accepted contact).
+pub(crate) fn queue_notices(conn: &Connection, peers: &[String], now_ms: i64) -> Result<(), StoreError> {
+    for peer in peers {
+        conn.execute("INSERT OR IGNORE INTO photo_notices (peer_user_id, queued_at) VALUES (?1, ?2)", params![peer, now_ms])
+            .map_err(db_err)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn queued_notices(conn: &Connection) -> Result<Vec<String>, StoreError> {
+    let mut statement = conn.prepare("SELECT peer_user_id FROM photo_notices ORDER BY queued_at, peer_user_id").map_err(db_err)?;
+    let rows = statement.query_map([], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    Ok(rows)
+}
+
+pub(crate) fn dequeue_notice(conn: &Connection, peer: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM photo_notices WHERE peer_user_id = ?1", params![peer]).map_err(db_err)?;
+    Ok(())
+}
+
+/// Someone told us their photo changed: it is due for a check at once.
+pub(crate) fn mark_stale(conn: &Connection, user: &str) -> Result<(), StoreError> {
+    conn.execute("UPDATE photos SET checked_at = 0 WHERE user_id = ?1", params![user]).map_err(db_err)?;
     Ok(())
 }
 

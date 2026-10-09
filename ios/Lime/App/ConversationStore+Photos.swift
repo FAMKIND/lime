@@ -89,6 +89,26 @@ extension ConversationStore {
         for (id, data) in loaded { cache.set(data, for: id) }
     }
 
+    /// Pull-to-refresh: the messages, then a photo check for everyone shown (each at most once a minute).
+    func pullToRefresh() async {
+        await syncNow()
+        await refreshPhotos(of: Array(Set(conversations.flatMap { $0.members.map(\.id) })))
+    }
+
+    /// Looks for new photos of these people now (not more than once a minute each).
+    func refreshPhotos(of ids: [String]) async {
+        #if DEBUG
+        if isDemo { return }
+        #endif
+        guard !ids.isEmpty, let core, let link, let token = try? await link.token() else { return }
+        let changed = (try? await Task.detached(priority: .utility) {
+            try core.refreshPhotosOf(transport: link.transport, authToken: token, userIds: ids)
+        }.value) ?? []
+        guard !changed.isEmpty else { return }
+        let loaded = await Task.detached(priority: .utility) { changed.map { ($0, (try? core.peerPhoto(userId: $0)) ?? nil) } }.value
+        for (id, data) in loaded { AvatarCache.shared.set(data, for: id) }
+    }
+
     /// Fetches the photos that may have changed (each person at most hourly unless `force`).
     func refreshPhotos(force: Bool = false) async {
         #if DEBUG

@@ -833,6 +833,19 @@ fn profile_photos_through_the_real_server_public_by_default_and_ciphertext_when_
     assert_eq!(carol_store.refresh_photos(transport.clone(), carol.token.clone(), true).unwrap(), vec![alice.id.clone()]);
     assert_eq!(carol_store.peer_photo(alice.id.clone()).unwrap(), None, "a stranger sees initials");
 
+    // A change reaches a contact within one sync, with no hourly wait: Alice switches back to everyone, Bob is told
+    // (a control op, not a message) and his next ordinary refresh shows the change at once.
+    alice_store.set_photo_visibility(transport.clone(), alice.token.clone(), "everyone".into()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received, 0, "a notice is not a message");
+    assert_eq!(bob_store.refresh_photos(transport.clone(), bob.token.clone(), false).unwrap(), vec![alice.id.clone()], "checked at once, not hourly");
+    alice_store.remove_my_photo(transport.clone(), alice.token.clone()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(bob_store.refresh_photos(transport.clone(), bob.token.clone(), false).unwrap(), vec![alice.id.clone()]);
+    assert_eq!(bob_store.peer_photo(alice.id.clone()).unwrap(), None, "the removal reached Bob too");
+    alice_store.set_my_photo(transport.clone(), alice.token.clone(), photo.clone()).unwrap();
+
     // Remove: gone everywhere.
     alice_store.remove_my_photo(transport.clone(), alice.token.clone()).unwrap();
     let left = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/blobs?select=id,owner", admin.base))), None);
