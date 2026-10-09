@@ -239,9 +239,7 @@ struct NewMessageSheet: View {
     private var actions: some View {
         VStack(spacing: 0) {
             actionRow("at", "Find by Username", id: "action-username") { route.append(LookupKind.username) }
-            Divider().padding(.leading, 56)
             actionRow("envelope", "Find by Email", id: "action-email") { route.append(LookupKind.email) }
-            Divider().padding(.leading, 56)
             actionRow("person.2", "New Group", id: "action-new-group") { route.append(NewGroupRoute.pick) }
         }
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))

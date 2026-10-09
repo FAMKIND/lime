@@ -165,12 +165,12 @@ struct ChatView: View {
                                           onShowReactions: { actions.reactors = message },
                                           selection: selection.map { $0.contains(message.id) },
                                           onToggleSelect: { toggleSelection(message.id) })
-                                .padding(.bottom, 8)
+                                .padding(.bottom, 16)
                         }
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 20)
                 .padding(.top, top)
                 .padding(.bottom, 8)
             }
@@ -556,41 +556,21 @@ struct MessageBubble: View {
                 if showAvatar { AvatarView(person: sender, size: avatarSize) }
                 else { Color.clear.frame(width: avatarSize, height: 1) }
             }
-            VStack(alignment: message.isOwn ? .trailing : .leading, spacing: 4) {
+            BubbleColumn(trailing: message.isOwn, spacing: 4) {
                 if showName, let sender {
                     Text(sender.name)
                         .font(Theme.caption.weight(.medium))
                         .foregroundStyle(Theme.text)
                 }
-                // Top to bottom: the bubble (the reaction cluster sits on its top corner), the time line right under it, then the replies.
+                // Top to bottom: the bubble; one footer row (reactions on the leading side, the time and status on the trailing
+                // side, as wide as the bubble); then the replies.
                 content
-                    .overlay(alignment: message.isOwn ? .topLeading : .topTrailing) {
-                        if hasReactions { reactionCluster.offset(x: message.isOwn ? -8 : 8, y: -13) }
-                    }
-                    .padding(.top, hasReactions ? 13 : 0)
-                HStack(spacing: 4) {
-                    Text(MessageFormat.clock(message.date)).accessibilityIdentifier("message-time-\(message.id)")
-                    if message.edited {
-                        Text("· Edited").accessibilityIdentifier("edited-\(message.id)")
-                    }
-                    if showState {
-                        switch message.state {
-                        case .sending: Text("· Sending…").accessibilityIdentifier("delivery-sending")
-                        case .sent: Text("· Sent").accessibilityIdentifier("delivery-sent")
-                        case .failed:
-                            Button("· Not sent. Tap to retry", action: onRetry)
-                                .foregroundStyle(Color.red)
-                                .accessibilityIdentifier("delivery-failed")
-                        case .undelivered:
-                            Button("· Not delivered. Tap to resend", action: onRetry)
-                                .foregroundStyle(Color.red)
-                                .accessibilityIdentifier("delivery-undelivered")
-                        case .received, .system: EmptyView()
-                        }
-                    }
+                HStack(spacing: 6) {
+                    if hasReactions { reactionChips }
+                    Spacer(minLength: 8)
+                    timeStamp
                 }
-                .font(Theme.caption)
-                .foregroundStyle(Theme.textSecondary)
+                .layoutValue(key: BubbleFooterKey.self, value: true)
                 if let thread = message.thread, let onOpenThread {
                     ThreadSummaryRow(messageID: message.id, thread: thread, action: onOpenThread)
                 }
@@ -660,26 +640,120 @@ struct MessageBubble: View {
 
     private var hasReactions: Bool { !message.reactions.isEmpty && !message.deleted }
 
-    /// A small pill on the bubble's top corner (top-left on my messages, top-right on theirs): up to three emoji, and the total if there
-    /// are more reactions than emoji shown. Mine is outlined. Tapping it lists who reacted with what.
-    private var reactionCluster: some View {
-        let shown = Array(message.reactions.prefix(3))
-        let total = message.reactions.reduce(0) { $0 + $1.count }
-        let mine = message.reactions.contains(where: \.mine)
-        return HStack(spacing: 2) {
-            ForEach(shown) { chip in Text(chip.emoji).font(.system(size: 14)) }
-            if total > shown.count { Text("\(total)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text).padding(.leading, 2) }
+    /// The time, "Edited" and the delivery state, on the trailing side of the footer.
+    private var timeStamp: some View {
+        HStack(spacing: 4) {
+            Text(MessageFormat.clock(message.date)).accessibilityIdentifier("message-time-\(message.id)")
+            if message.edited {
+                Text("· Edited").accessibilityIdentifier("edited-\(message.id)")
+            }
+            if showState {
+                switch message.state {
+                case .sending: Text("· Sending…").accessibilityIdentifier("delivery-sending")
+                case .sent: Text("· Sent").accessibilityIdentifier("delivery-sent")
+                case .failed:
+                    Button("· Not sent. Tap to retry", action: onRetry)
+                        .foregroundStyle(Color.red)
+                        .accessibilityIdentifier("delivery-failed")
+                case .undelivered:
+                    Button("· Not delivered. Tap to resend", action: onRetry)
+                        .foregroundStyle(Color.red)
+                        .accessibilityIdentifier("delivery-undelivered")
+                case .received, .system: EmptyView()
+                }
+            }
         }
-        .padding(.horizontal, 7).padding(.vertical, 3)
-        .background(Theme.canvas, in: Capsule())
-        .overlay(Capsule().strokeBorder(mine ? Theme.textSecondary.opacity(0.75) : Theme.bubbleEdge, lineWidth: mine ? 1 : 0.5))
-        .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
-        .contentShape(Capsule())
+        .font(Theme.caption)
+        .foregroundStyle(Theme.textSecondary)
+        .lineLimit(1)
+    }
+
+
+    /// The reactions under the bubble: a soft grey chip each (mine a little deeper), no outline; the first five, then "+N".
+    /// Tapping them lists who reacted with what.
+    private var reactionChips: some View {
+        let shown = Array(message.reactions.prefix(5))
+        let more = message.reactions.count - shown.count
+        let mine = message.reactions.contains(where: \.mine)
+        return HStack(spacing: 4) {
+            ForEach(shown) { chip in
+                HStack(spacing: 3) {
+                    Text(chip.emoji).font(.system(size: 14))
+                    if chip.count > 1 { Text("\(chip.count)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text) }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(chip.mine ? Theme.pressed : Theme.surface, in: Capsule())
+            }
+            if more > 0 {
+                Text("+\(more)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Theme.surface, in: Capsule())
+            }
+        }
+        .fixedSize()
+        .contentShape(Rectangle())
         .onTapGesture { if selection == nil { onShowReactions?() } }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Reactions: " + message.reactions.map { "\($0.emoji) \($0.count)" }.joined(separator: ", ") + (mine ? ", including yours" : ""))
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("reaction-cluster-\(message.id)")
+    }
+}
+
+/// Marks the footer row of a message (reactions and time) inside `BubbleColumn`.
+struct BubbleFooterKey: LayoutValueKey {
+    static let defaultValue = false
+}
+
+/// A message's column: its parts stacked, aligned to the bubble's side. The footer row is exactly as wide as the bubble (or as its
+/// own contents if they need more), so the time sits under the bubble's edge, not at the edge of the screen.
+struct BubbleColumn: Layout {
+    var trailing: Bool
+    var spacing: CGFloat = 4
+
+    private func widths(_ subviews: Subviews, _ proposal: ProposedViewSize) -> (content: CGFloat, footer: CGFloat?) {
+        var content: CGFloat = 0
+        var footer: CGFloat?
+        for view in subviews {
+            if view[BubbleFooterKey.self] {
+                footer = view.sizeThatFits(.unspecified).width
+            } else {
+                content = max(content, view.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil)).width)
+            }
+        }
+        return (content, footer)
+    }
+
+    private func footerWidth(_ w: (content: CGFloat, footer: CGFloat?), _ proposal: ProposedViewSize) -> CGFloat {
+        let wanted = max(w.content, w.footer ?? 0)
+        return min(wanted, proposal.width ?? wanted)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let w = widths(subviews, proposal)
+        let footer = footerWidth(w, proposal)
+        var height: CGFloat = 0
+        var width = max(w.content, footer)
+        for (index, view) in subviews.enumerated() {
+            let isFooter = view[BubbleFooterKey.self]
+            let size = view.sizeThatFits(ProposedViewSize(width: isFooter ? footer : proposal.width, height: nil))
+            height += size.height + (index == 0 ? 0 : spacing)
+            width = max(width, size.width)
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let w = widths(subviews, ProposedViewSize(width: bounds.width, height: nil))
+        let footer = footerWidth(w, ProposedViewSize(width: bounds.width, height: nil))
+        var y = bounds.minY
+        for view in subviews {
+            let isFooter = view[BubbleFooterKey.self]
+            let size = view.sizeThatFits(ProposedViewSize(width: isFooter ? footer : bounds.width, height: nil))
+            let x = trailing ? bounds.maxX - size.width : bounds.minX
+            view.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(width: size.width, height: size.height))
+            y += size.height + spacing
+        }
     }
 }
 

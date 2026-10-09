@@ -666,13 +666,14 @@ final class LimeUITests: XCTestCase {
         app.buttons["react-👍"].tap()
         let cluster = app.descendants(matching: .any)["reaction-cluster-s1"]
         XCTAssertTrue(cluster.waitForExistence(timeout: 5), "a cluster appears on the bubble")
-        // It sits on the bubble's top corner (top-right for someone else's message), and the time line is right under the bubble.
+        // The reactions sit under the bubble on the same row as the time, which is pushed to the trailing side.
         let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'staff meeting'")).firstMatch
-        XCTAssertLessThan(cluster.frame.minY, bubble.frame.minY + 2, "the cluster overlaps the bubble's top edge")
-        XCTAssertGreaterThan(cluster.frame.midX, bubble.frame.midX, "on the right for someone else's bubble")
+        XCTAssertGreaterThanOrEqual(cluster.frame.minY, bubble.frame.maxY - 2, "the reactions are under the bubble")
         let time = app.staticTexts["message-time-s1"]
         XCTAssertTrue(time.exists)
-        XCTAssertLessThan(time.frame.minY - bubble.frame.maxY, 24, "the time line is directly under the bubble")
+        XCTAssertLessThan(abs(time.frame.midY - cluster.frame.midY), 10, "on the same row as the time")
+        XCTAssertLessThan(cluster.frame.maxX, time.frame.minX, "reactions on the leading side, the time on the trailing side")
+        XCTAssertLessThan(time.frame.minY - bubble.frame.maxY, 24, "directly under the bubble")
         // Any emoji, through the +.
         longPress(app, "staff meeting")
         app.buttons["react-more"].tap()
@@ -705,7 +706,7 @@ final class LimeUITests: XCTestCase {
         app.buttons["react-👍"].tap()
         let cluster = app.descendants(matching: .any)["reaction-cluster-a1"]
         XCTAssertTrue(cluster.waitForExistence(timeout: 5), "the cluster sits on the album")
-        XCTAssertLessThan(cluster.frame.minY, image.frame.minY + 2, "on the media's top corner")
+        XCTAssertGreaterThanOrEqual(cluster.frame.minY, image.frame.maxY - 1, "under the media")
         XCTAssertFalse(app.descendants(matching: .any)["attachment-viewer"].exists, "a long-press does not open the viewer")
         // A file card.
         let file = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-file-'")).firstMatch
@@ -719,6 +720,9 @@ final class LimeUITests: XCTestCase {
         image.tap()
         XCTAssertTrue(app.descendants(matching: .any)["attachment-viewer"].waitForExistence(timeout: 5))
         app.buttons["attachment-react"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["viewer-reaction-bar"].waitForExistence(timeout: 5), "a bar of emoji")
+        XCTAssertEqual(app.buttons["viewer-react-😂"].frame.minY, app.buttons["viewer-react-👍"].frame.minY, accuracy: 8, "in one horizontal row")
+        XCTAssertTrue(app.buttons["viewer-react-more"].exists, "with a + for any emoji")
         app.buttons["viewer-react-😂"].tap()
         app.buttons["attachment-viewer-close"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-a1"].label.contains("😂"), "reacting in the viewer reacts to the message")
@@ -838,6 +842,20 @@ final class LimeUITests: XCTestCase {
         if toggle.value as? String == "1" { toggle.tap() }   // off
         XCTAssertEqual(toggle.value as? String, "0")
         toggle.tap()   // back on, so other tests are unaffected
+    }
+
+    func testRepliesHasAContextCardAndTheComposerHasAReplyToStripThatLeaves() {
+        let app = threadApp("thread-open")
+        app.launch()
+        let card = app.descendants(matching: .any)["reply-context-card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "the card under the title")
+        XCTAssertTrue(card.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Replies · '")).firstMatch.exists)
+        XCTAssertTrue(card.staticTexts["reply-context-quote"].label.contains("recess duty"), "a one-line quote of the root")
+        let strip = app.descendants(matching: .any)["reply-context-strip"]
+        XCTAssertTrue(strip.exists, "and Reply to … above the composer")
+        XCTAssertTrue(strip.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Reply to '")).firstMatch.exists)
+        app.buttons["reply-context-close"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["replies-title"].waitForNonExistence(timeout: 6), "the X leaves Replies")
     }
 
     func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {

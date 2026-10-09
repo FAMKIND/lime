@@ -106,7 +106,7 @@ struct MessagesView: View {
                 Button { store.path.append(conversation.id) } label: { ConversationRow(conversation: conversation) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("conversation-row-\(conversation.id)")
-                    .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                     .listRowSeparator(.hidden)
                     // The swiped chat stays highlighted while its mute choices are open.
                     .listRowBackground(muting == conversation.id ? Theme.surface : Color.clear)
@@ -447,7 +447,15 @@ struct ConversationRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 8) {
+            // A column of its own for the unread dot: aligned down the list, never touching the avatar.
+            Color.clear.frame(width: 14, height: avatarSize)
+                .overlay {
+                    if conversation.markedUnread && conversation.unread == 0 {
+                        Circle().fill(Theme.accent).frame(width: 9, height: 9)
+                            .accessibilityIdentifier("unread-dot-\(conversation.id)")
+                    }
+                }
             ConversationAvatar(conversation: conversation, size: avatarSize)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -504,15 +512,7 @@ struct ConversationRow: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 12)
-        // The marked-unread dot sits to the left of the avatar, like Mail and Messages.
-        .overlay(alignment: .topLeading) {
-            if conversation.markedUnread && conversation.unread == 0 {
-                Circle().fill(Theme.accent).frame(width: 9, height: 9)
-                    .offset(x: -3, y: 12 + avatarSize / 2 - 4.5)
-                    .accessibilityIdentifier("unread-dot-\(conversation.id)")
-            }
-        }
+        .padding(.vertical, 15)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.unread > 0 ? ", \(conversation.unread) unread" : (conversation.markedUnread ? ", unread" : ""))")

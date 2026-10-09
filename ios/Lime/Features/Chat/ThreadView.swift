@@ -6,6 +6,7 @@ struct ThreadView: View {
     let target: ThreadTarget
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(ConversationStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
     @State private var composerModel = RichComposerModel()
     @State private var highlightedID: String?
     @State private var scrollRequest: UUID?
@@ -41,7 +42,7 @@ struct ThreadView: View {
                         }
                         Color.clear.frame(height: 1).id("bottom")
                     }
-                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
+                    .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 8)
                 }
                 .accessibilityIdentifier("thread-scroll")
                 .environment(\.chatConversationID, target.conversationID)
@@ -70,6 +71,10 @@ struct ThreadView: View {
                              onDelete: { actions.deleting = messages.filter { selection.contains($0.id) } },
                              onForward: { actions.forwarding = messages.filter { selection.contains($0.id) } })
             } else {
+            VStack(spacing: 0) {
+            if let root = messages.first {
+                ReplyContext(root: root, conversation: conversation, compact: true) { dismiss() }
+            }
             ChatComposer(model: composerModel, onSend: { markdown in
                 Task { await store.sendReply(markdown, root: target.rootID, in: target.conversationID) }
             }, onSendAttachments: { items, caption in
@@ -78,8 +83,14 @@ struct ThreadView: View {
                 Task { await store.sendNow(markdown, preview: preview, in: target.conversationID, replyTo: target.rootID) }
             })
             }
+            }
         }
-        .safeAreaInset(edge: .top) { if finding { findBar } }
+        .safeAreaInset(edge: .top) {
+            VStack(spacing: 0) {
+                if let root = messages.first { ReplyContext(root: root, conversation: conversation, compact: false, onClose: nil) }
+                if finding { findBar }
+            }
+        }
         .navigationTitle("Replies")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
@@ -87,7 +98,6 @@ struct ThreadView: View {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 0) {
                     Text("Replies").font(.system(.headline, design: .default, weight: .semibold)).foregroundStyle(Theme.text)
-                    if let subtitle { Text(subtitle).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1) }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("replies-title")
@@ -119,13 +129,6 @@ struct ThreadView: View {
             store.closeThread(target.rootID)
             if notifications.viewing == ViewingTarget(conversationID: target.conversationID, threadRoot: target.rootID) { notifications.viewing = nil }
         }
-    }
-
-    /// Whose message the replies hang from ("Jean Park", or "You").
-    private var subtitle: String? {
-        guard let root = messages.first else { return nil }
-        if root.isOwn { return "Your message" }
-        return conversation.flatMap { store.person(root.senderID, in: $0)?.name }
     }
 
     // MARK: Find in these replies
@@ -216,6 +219,6 @@ struct ThreadView: View {
                       onShowReactions: { actions.reactors = message },
                       selection: selection.map { $0.contains(message.id) },
                       onToggleSelect: { if var current = selection { if current.contains(message.id) { current.remove(message.id) } else { current.insert(message.id) }; selection = current } })
-            .padding(.bottom, 8)
+            .padding(.bottom, 16)
     }
 }

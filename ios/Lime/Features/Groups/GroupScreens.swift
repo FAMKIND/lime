@@ -366,7 +366,6 @@ struct GroupDetailsView: View {
             .padding(.horizontal, 18).frame(minHeight: 62)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("group-member-\(member.userId)")
-            if !last { Divider().overlay(Theme.hairline).padding(.leading, 76) }
         }
     }
 }

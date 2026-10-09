@@ -488,21 +488,54 @@ struct ViewerReactButton: View {
             ?? store.threads.values.lazy.flatMap { $0 }.first { $0.id == messageID }
     }
 
+    @State private var open = false
+    @State private var picking = false
+
     var body: some View {
         if let message, let conversationID {
-            Menu {
-                ForEach(ConversationStore.quickReactions, id: \.self) { emoji in
-                    let mine = message.reactions.first { $0.emoji == emoji }?.mine ?? false
-                    Button { Task { await store.toggleReaction(emoji, on: message, in: conversationID) } } label: {
-                        Text(mine ? "\(emoji) ✓" : emoji)
-                    }
-                    .accessibilityIdentifier("viewer-react-\(emoji)")
-                }
-            } label: {
+            Button { open.toggle() } label: {
                 Image(systemName: "face.smiling").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                     .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
             }
             .accessibilityLabel("React").accessibilityIdentifier("attachment-react")
+            // The tapback bar: the six quick emoji and "+", in a row (the same as the long-press menu in the chat).
+            .overlay(alignment: .topTrailing) {
+                if open {
+                    HStack(spacing: 2) {
+                        ForEach(ConversationStore.quickReactions, id: \.self) { emoji in
+                            let mine = message.reactions.first { $0.emoji == emoji }?.mine ?? false
+                            Button {
+                                open = false
+                                Task { await store.toggleReaction(emoji, on: message, in: conversationID) }
+                            } label: {
+                                Text(emoji).font(.system(size: 26)).frame(width: 40, height: 40)
+                                    .background(mine ? Color.white.opacity(0.25) : Color.clear, in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(emoji).accessibilityIdentifier("viewer-react-\(emoji)")
+                        }
+                        Button { picking = true } label: {
+                            Image(systemName: "plus").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                                .frame(width: 36, height: 36).background(Color.white.opacity(0.2), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("More emoji").accessibilityIdentifier("viewer-react-more")
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .fixedSize()
+                    .offset(y: 52)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("viewer-reaction-bar")
+                }
+            }
+            .sheet(isPresented: $picking) {
+                EmojiPickerSheet { emoji in
+                    picking = false
+                    open = false
+                    if let emoji { Task { await store.toggleReaction(emoji, on: message, in: conversationID) } }
+                }
+            }
         }
     }
 }
