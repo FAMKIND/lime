@@ -199,7 +199,7 @@ fn existing_messages_are_indexed_by_the_migration() {
             .lock()
             .execute_batch(
                 "DROP TRIGGER messages_fts_insert; DROP TRIGGER messages_fts_delete; DROP TRIGGER messages_fts_update;
-                 DROP TABLE message_fts; DROP INDEX messages_by_thread; DROP TABLE thread_state; DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared; ALTER TABLE messages DROP COLUMN thread_root; ALTER TABLE messages DROP COLUMN plain; PRAGMA user_version = 6;",
+                 DROP TABLE message_fts; DROP INDEX messages_by_thread; DROP TABLE thread_state; DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared; ALTER TABLE messages DROP COLUMN thread_root; ALTER TABLE messages DROP COLUMN plain; PRAGMA user_version = 6;",
             )
             .unwrap();
         say(&store, "c1", "old2", "another about fractions and decimals", 2);

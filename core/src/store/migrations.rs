@@ -228,6 +228,34 @@ const MIGRATIONS: &[&str] = &[
     // 13: \"verified in person\" (LIME-97b): when this person's pinned master key was confirmed against a
     // QR code scanned in person. Cleared when a different key is accepted.
     "ALTER TABLE peers ADD COLUMN verified_at INTEGER;",
+    // 14: profile photos (LIME-98b). `profile_key` is my random photo key, shared with accepted contacts
+    // inside their encrypted chats (with the delivery key) and rotated on a block. `my_photo` is my own
+    // photo (the JPEG, who may see it, and the key the contacts-only copy on the server was made with).
+    // `photos` caches other people's photos in this encrypted file; an empty `bytes` means \"checked, none\".
+    "CREATE TABLE profile_key (
+         id         INTEGER PRIMARY KEY CHECK (id = 1),
+         key        TEXT NOT NULL,
+         rotated_at INTEGER NOT NULL
+     );
+     CREATE TABLE contact_profile_keys (
+         user_id     TEXT PRIMARY KEY NOT NULL,
+         key         TEXT NOT NULL,
+         received_at INTEGER NOT NULL
+     );
+     CREATE TABLE my_photo (
+         id           INTEGER PRIMARY KEY CHECK (id = 1),
+         jpeg         BLOB,
+         visibility   TEXT NOT NULL DEFAULT 'everyone',
+         uploaded_key TEXT,
+         updated_at   INTEGER NOT NULL
+     );
+     CREATE TABLE photos (
+         user_id    TEXT PRIMARY KEY NOT NULL,
+         bytes      BLOB NOT NULL,
+         source     TEXT NOT NULL,
+         version    INTEGER NOT NULL,
+         checked_at INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

@@ -13,7 +13,15 @@ struct ProfileSettingsScreen: View {
 
     var body: some View {
         SettingsPage(title: "Profile") {
-            AvatarView(person: session.mePerson, size: 110).padding(.top, 8)
+            NavigationLink(value: SettingsRoute.photo) {
+                VStack(spacing: 8) {
+                    AvatarView(person: session.mePerson, size: 110)
+                    Text("Edit Photo").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+                }
+            }
+            .buttonStyle(.plain).padding(.top, 8)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("profile-photo")
             SettingsCard {
                 fieldRow("person", profile.displayName.isEmpty ? "Name" : profile.displayName, .name, id: "profile-name")
                 fieldRow("pencil", profile.about ?? "About", .about, id: "profile-about", dim: profile.about == nil)

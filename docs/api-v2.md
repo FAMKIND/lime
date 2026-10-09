@@ -19,7 +19,7 @@ The backend is Supabase (Postgres and Storage). It stores:
 | `master_keys` | The user's public master signing key. |
 | `one_time_keys` | A pool per device. Each key is **claimed once**. |
 | `mailbox_items` | The recipient device, a `cursor` (a bigserial), the outer ciphertext bytes, the size, and the time received. **Deleted when acknowledged.** **Undelivered items expire 30 days after they are received.** |
-| `blobs` | Encrypted attachments: the id, the size, the uploader (for quota) and the expiry. |
+| `blobs` | Encrypted attachments and contacts-only profile photos: the id, the size, the uploader (for quota), the time it was committed and an optional expiry. The bytes are in the private `blobs` Storage bucket and are **ciphertext only**. |
 | `delivery_keys` | Per user, a **hash** of the current delivery-key material (section 4). Never the key itself. |
 | `backups` | Opaque backup blobs, encrypted with the recovery key (D5). |
 
@@ -109,7 +109,12 @@ All are under `/v2` and are implemented as Supabase Edge Functions. This is a li
 
 **Push.** APNs with **no content**. The notification extension fetches the items and decrypts them on the device.
 
-**Blobs.** Upload and download of encrypted files through signed URLs, with the expiry rule from the cost principles (`architecture.md` section 10).
+**Blobs and photos (built in LIME-98b).** Two **private** Storage buckets, reached only through Edge Functions that hand out short-lived (5 minute) signed URLs. There are no Storage policies, so the anon and authenticated roles cannot read, write or list either bucket directly.
+
+- `avatar` (one function, `action` in the body): `put {size}` returns a signed upload URL for my photo (a JPEG, at most 1 MiB; the bucket enforces the size and `image/jpeg`), `commit` checks the upload and publishes it (`profiles.avatar_version`), `get {user_id}` returns a signed download URL and the version for **any signed-in user** (404 when there is none, never anonymous), `visibility {everyone|contacts}` and `remove`. Switching to `contacts` **deletes the public object**. **The public photo is visible to the server and to every signed-in user who asks for it.** Bucket `public-avatars`.
+- `blob` (`action`): `put {blob_id, size, expires_in_days?}`, `commit`, `get`, `delete`. **Ciphertext only**: AES-256-GCM, the key never reaches the server. The id is chosen by the client; whoever knows an id can download that ciphertext, only the owner can replace or delete it. Limits (configuration, not protocol): 25 MiB per blob, 200 MiB and 500 blobs per user, 60 calls per minute. Bucket `blobs`. Chat attachments will reuse it.
+- **Contacts-only photo.** Each account has a random 32-byte **profile key**. It is shared with accepted contacts **inside the same encrypted `delivery_key.share` op** as the delivery key (`"profile_key"`, so the same triggers) and **rotates with the delivery key on a block**. A contacts-only photo is `nonce || AES-256-GCM(jpeg)` under `HKDF(profile key, "lime-photo-enc-v1")`, bound to its blob id, stored as a blob whose **id is `HKDF(profile key, "lime-photo-id-v1")` formatted as a UUID**: a stranger cannot compute it, and a blocked contact (old key) cannot find the re-uploaded copy. Contacts re-check a photo at most hourly (the server learns that a user fetched a blob id, as it already learns who looks up whose keys).
+- **Trade-offs.** A person you message first receives your photo key with your delivery key (before they accept), so they can see a contacts-only photo; a blocked person keeps the copy already on their phone; the expiry job for blobs with `expires_at` is not scheduled yet (profile photos never expire).
 
 **Directory.** Search with an exact match on username, email or phone, as in v1. It respects `hide_from_search`.
 

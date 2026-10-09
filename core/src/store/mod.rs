@@ -14,6 +14,7 @@ pub(crate) mod delivery;
 pub(crate) mod groups;
 mod migrations;
 pub(crate) mod order;
+pub(crate) mod photos;
 pub(crate) mod pending;
 pub(crate) mod search;
 pub(crate) mod threads;
@@ -325,6 +326,9 @@ impl LimeStore {
         if delivery::unshare(&conn, peer)? {
             let now = now_ms();
             delivery::rotate(&conn, now)?;
+            // The photo key is rotated with it: the person just blocked can no longer open my contacts-only photo
+            // (the next delivery re-uploads it under the new key).
+            photos::rotate_key(&conn, now)?;
             delivery::forget_all_shared(&conn)?;
             for other in delivery::accepted_peers(&conn)? {
                 if other != peer {

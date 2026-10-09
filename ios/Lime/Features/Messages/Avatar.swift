@@ -5,6 +5,18 @@ struct AvatarView: View {
     var size: CGFloat = 52
 
     var body: some View {
+        if let photo = AvatarCache.shared.image(for: person.id) {
+            Image(uiImage: photo)
+                .resizable().scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+        } else {
+            initials
+        }
+    }
+
+    private var initials: some View {
         Circle()
             .fill(Theme.avatar(person.tone))
             .frame(width: size, height: size)

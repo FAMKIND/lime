@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -1431,4 +1431,156 @@ fn a_new_key_for_a_verified_person_must_be_accepted_and_is_no_longer_verified() 
     assert!(!conversation(&alice, &bob2).unwrap().verified, "not verified while the key change waits");
     alice.store.trust_new_key(format!("dm:{}", bob2.user)).unwrap();
     assert!(!conversation(&alice, &bob2).unwrap().verified, "accepting a new key clears the old verification");
+}
+
+// ---------------------------------------------------------------- LIME-98b: profile photos
+
+const PHOTO: &[u8] = b"\xff\xd8\xff\xe0 a very recognisable profile photo body, repeated: ";
+
+fn photo_bytes() -> Vec<u8> {
+    PHOTO.repeat(40)
+}
+
+fn profile_key_of(p: &Party) -> Vec<u8> {
+    crate::store::photos::current_key(&p.store.lock(), crate::store::now_ms()).unwrap()
+}
+
+fn refresh(p: &Party, transport: &Arc<dyn Transport>) -> Vec<String> {
+    p.store.refresh_photos(transport.clone(), p.token.clone(), true).unwrap()
+}
+
+#[test]
+fn the_photo_key_travels_with_the_delivery_key_to_contacts_only_and_rotates_on_a_block() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    let first = profile_key_of(&alice);
+    assert_eq!(crate::store::photos::contact_key(&bob.store.lock(), "alice").unwrap(), Some(first.clone()), "Bob holds Alice's key");
+    assert_eq!(crate::store::photos::contact_key(&carol.store.lock(), "alice").unwrap(), Some(first.clone()));
+    assert_eq!(crate::store::photos::contact_key(&alice.store.lock(), "bob").unwrap().map(|k| k.len()), Some(32), "and Alice holds Bob's");
+
+    // Alice blocks Carol: the key is rotated, and only Bob is given the new one.
+    alice.store.block_sender(format!("dm:{}", carol.user)).unwrap();
+    let second = profile_key_of(&alice);
+    assert_ne!(second, first, "a block rotates the photo key");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    assert_eq!(crate::store::photos::contact_key(&bob.store.lock(), "alice").unwrap(), Some(second.clone()), "Bob has the new key");
+    assert_eq!(crate::store::photos::contact_key(&carol.store.lock(), "alice").unwrap(), Some(first), "Carol is left with the old one");
+}
+
+#[test]
+fn a_contacts_only_photo_is_ciphertext_on_the_server_and_only_contacts_can_open_it() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    // Carol only ever got a message from Alice (a request): she has no photo key.
+    say(&alice, &carol, &transport, "hello stranger");
+    sync(&carol, &transport);
+    assert_eq!(crate::store::photos::contact_key(&carol.store.lock(), "alice").unwrap(), None);
+
+    alice.store.set_photo_visibility(transport.clone(), alice.token.clone(), "contacts".into()).unwrap();
+    alice.store.set_my_photo(transport.clone(), alice.token.clone(), photo_bytes()).unwrap();
+
+    // What the server holds: one opaque blob, nothing public, and no byte run of the photo.
+    {
+        let state = server.state.lock().unwrap();
+        assert!(!state.objects.keys().any(|k| k.starts_with("public-avatars/")), "no public copy");
+        let blobs: Vec<_> = state.objects.iter().filter(|(k, _)| k.starts_with("blobs/")).collect();
+        assert_eq!(blobs.len(), 1);
+        assert!(!blobs[0].1.windows(32).any(|w| w == &photo_bytes()[..32]), "the stored bytes are not the photo");
+        assert_ne!(*blobs[0].1, photo_bytes());
+    }
+
+    // Bob (a contact) sees it; Carol (a stranger) and a repeat check see nothing; Alice's own copy is local.
+    assert_eq!(refresh(&bob, &transport), vec!["alice".to_string()]);
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()));
+    assert!(refresh(&carol, &transport).is_empty());
+    assert_eq!(carol.store.peer_photo("alice".into()).unwrap(), None, "a stranger sees initials");
+    assert!(refresh(&bob, &transport).is_empty(), "nothing changed the second time");
+    assert_eq!(alice.store.my_photo().unwrap().jpeg, Some(photo_bytes()));
+
+    // A stranger who somehow learned a wrong key still opens nothing.
+    let wrong = crate::store::delivery::random_key();
+    let id = crate::store::photos::blob_id(&profile_key_of(&alice));
+    let sealed = server.state.lock().unwrap().objects.get(&format!("blobs/{id}")).cloned().unwrap();
+    assert_eq!(crate::store::photos::open(&wrong, &sealed), None);
+}
+
+#[test]
+fn switching_visibility_moves_the_photo_between_the_public_copy_and_the_encrypted_one() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    say(&alice, &carol, &transport, "hello stranger");
+    sync(&carol, &transport);
+
+    // Everyone (the default): a plain JPEG on the server that a stranger can see.
+    alice.store.set_my_photo(transport.clone(), alice.token.clone(), photo_bytes()).unwrap();
+    assert_eq!(server.state.lock().unwrap().objects.get("public-avatars/alice.jpg"), Some(&photo_bytes()));
+    assert!(!server.state.lock().unwrap().objects.keys().any(|k| k.starts_with("blobs/")));
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()));
+
+    // Only my contacts: the public copy is deleted from the server, strangers fall back to initials, Bob still sees it.
+    alice.store.set_photo_visibility(transport.clone(), alice.token.clone(), "contacts".into()).unwrap();
+    assert!(!server.state.lock().unwrap().objects.keys().any(|k| k.starts_with("public-avatars/")), "the public copy is gone");
+    assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/")).count(), 1);
+    assert_eq!(refresh(&carol, &transport), vec!["alice".to_string()], "Carol's photo of Alice went away");
+    assert_eq!(carol.store.peer_photo("alice".into()).unwrap(), None);
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()));
+
+    // Back to everyone: public again, the encrypted blob removed.
+    alice.store.set_photo_visibility(transport.clone(), alice.token.clone(), "everyone".into()).unwrap();
+    assert!(server.state.lock().unwrap().objects.contains_key("public-avatars/alice.jpg"));
+    assert!(!server.state.lock().unwrap().objects.keys().any(|k| k.starts_with("blobs/")), "the encrypted copy is deleted");
+    assert_eq!(refresh(&carol, &transport), vec!["alice".to_string()], "the stranger sees it again");
+
+    // Remove: nothing anywhere.
+    alice.store.remove_my_photo(transport.clone(), alice.token.clone()).unwrap();
+    assert!(server.state.lock().unwrap().objects.is_empty());
+    assert_eq!(alice.store.my_photo().unwrap().jpeg, None);
+    assert_eq!(refresh(&carol, &transport), vec!["alice".to_string()], "and it is gone for her");
+    assert_eq!(carol.store.peer_photo("alice".into()).unwrap(), None);
+}
+
+#[test]
+fn a_block_re_uploads_the_contacts_only_photo_under_the_new_key_and_the_blocked_person_loses_it() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    alice.store.set_photo_visibility(transport.clone(), alice.token.clone(), "contacts".into()).unwrap();
+    alice.store.set_my_photo(transport.clone(), alice.token.clone(), photo_bytes()).unwrap();
+    refresh(&bob, &transport);
+    refresh(&carol, &transport);
+    assert!(bob.store.peer_photo("alice".into()).unwrap().is_some() && carol.store.peer_photo("alice".into()).unwrap().is_some());
+    let old_id = crate::store::photos::blob_id(&profile_key_of(&alice));
+
+    alice.store.block_sender(format!("dm:{}", carol.user)).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    let new_id = crate::store::photos::blob_id(&profile_key_of(&alice));
+    assert_ne!(new_id, old_id);
+    {
+        let state = server.state.lock().unwrap();
+        assert!(state.objects.contains_key(&format!("blobs/{new_id}")), "re-uploaded under the new key");
+        assert!(!state.objects.contains_key(&format!("blobs/{old_id}")), "the old copy is deleted");
+    }
+    refresh(&bob, &transport);
+    assert_eq!(bob.store.peer_photo("alice".into()).unwrap(), Some(photo_bytes()), "Bob (given the new key) still sees it");
+    refresh(&carol, &transport);
+    assert_eq!(carol.store.peer_photo("alice".into()).unwrap(), None, "Carol, blocked, cannot find the new copy");
 }

@@ -14,7 +14,7 @@ Deno.serve(handler(async (req) => {
   const wanted = body.user_id;
   if (wanted === undefined || wanted === me) {
     const { data, error } = await admin().from("profiles")
-      .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search").eq("user_id", me).maybeSingle();
+      .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search, photo_visibility, avatar_version").eq("user_id", me).maybeSingle();
     if (error) throw new HttpError(500, "internal");
     // Your own address, masked, for the Account screen (never anyone else's).
     const { data: owner } = await admin().auth.admin.getUserById(me);

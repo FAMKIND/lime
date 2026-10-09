@@ -31,6 +31,7 @@ const POOL_LOW: u32 = 20;
 /// A text message must fit in a 64 KB mailbox item once wrapped and encrypted.
 const MAX_TEXT_BYTES: usize = 30_000;
 pub(crate) mod groups;
+pub(crate) mod photos;
 
 /// The control op that gives a contact my delivery key (`api-v2.md` section 4).
 const DELIVERY_KEY_SHARE: &str = "delivery_key.share";
@@ -176,6 +177,7 @@ impl LimeStore {
         // who hold it can send sealed. Both are best effort here; they are tried again next time.
         if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
             self.deliver_shares(&transport, &auth_token, &mut state, &me);
+            self.refresh_my_photo_if_stale(&transport, &auth_token);
         }
         // Group state ops (a new group, someone added or removed...) go out before the messages that follow them.
         self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
@@ -769,6 +771,7 @@ impl LimeStore {
     ) -> Result<(), StoreError> {
         let now = now_ms();
         let (key, _) = self.with_conn(|conn| delivery::current(conn, now))?;
+        let profile_key = self.with_conn(|conn| crate::store::photos::current_key(conn, now))?;
         let contact = self.with_conn(|conn| delivery::contact_key(conn, peer))?;
         let sealed_with = contact.filter(|(_, denied)| !denied).map(|(k, _)| k);
         let (hlc, parents) = self.with_conn(|conn| Ok((tick_hlc(conn, now)?, Vec::<String>::new())))?;
@@ -778,7 +781,7 @@ impl LimeStore {
             conversation_id: dm_conversation_id(me, peer),
             hlc: hlc.render(),
             parents,
-            payload: json!({ "key": vodozemac::base64_encode(&key) }),
+            payload: json!({ "key": vodozemac::base64_encode(&key), "profile_key": vodozemac::base64_encode(&profile_key) }),
             sig: String::new(),
         };
         op.sig = state.account.sign(op.signing_bytes()).to_base64();
@@ -1127,6 +1130,11 @@ impl LimeStore {
             .then(|| inner.op.payload.get("key").and_then(Value::as_str).and_then(|k| vodozemac::base64_decode(k).ok()))
             .flatten()
             .filter(|k| k.len() == 32);
+        // The photo key rides along with the delivery key (a contact who shared one before photos has none).
+        let control_profile_key = is_control
+            .then(|| inner.op.payload.get("profile_key").and_then(Value::as_str).and_then(|k| vodozemac::base64_decode(k).ok()))
+            .flatten()
+            .filter(|k| k.len() == 32);
         let text = inner
             .op
             .payload
@@ -1188,6 +1196,9 @@ impl LimeStore {
             if let Some(key) = &control_key {
                 // A contact's delivery key: kept for sealed sends to them. No conversation, nothing shown.
                 delivery::store_contact_key(conn, &sender, key, now)?;
+                if let Some(profile_key) = &control_profile_key {
+                    crate::store::photos::store_contact_key(conn, &sender, profile_key, now)?;
+                }
                 return Ok(Some(Stored::Control));
             }
             let conversation = format!("dm:{sender}");

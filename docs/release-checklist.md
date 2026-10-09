@@ -19,3 +19,10 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **Camera string** (`NSCameraUsageDescription`): "Lime uses the camera to scan a teacher's QR code." Already in `ios/project.yml`; re-check it in the App Store privacy answers (the camera is used only to scan QR codes; nothing is recorded or uploaded).
 - [ ] **No Contacts permission** is requested (Apple's contact picker runs out of process); keep it that way, and answer "Contacts: not collected" in the privacy labels.
 - [ ] **Universal links** for `limechat.org/u/*` (Associated Domains + `apple-app-site-association` in `invite-site/`) once the paid Apple account exists.
+
+## Profile photos and user-generated content (LIME-98b)
+
+- [ ] **Report user / report photo (App Store guideline 1.2).** An app with user-generated content, now including public profile photos that any signed-in user can see, must offer **a way to report objectionable content and users, a way to block abusive users (built, LIME-96), a published way to contact the team, and act on reports within 24 hours.** Add before release: "Report" on a profile and on a chat (it sends the reported messages, decrypted, by the reporter's choice, as `architecture.md` section 5 says), a moderation process (who reads reports, what they can do: remove a public photo, suspend an account), and an abuse contact in Settings → About.
+- [ ] **Public photos in the privacy answers.** Profile photos are "Photos or Videos" the app collects and links to the user when the setting is "Everyone on Lime" (the default); with "Only my contacts" nothing readable is held.
+- [ ] **Camera string** now reads "Lime uses the camera to scan a teacher's QR code and to take your profile photo." The photo library needs no permission (the system picker).
+- [ ] **Storage plan.** The free plan's Storage is 1 GB; a 512 px photo is about 60 KB. Check usage in the dashboard before launch, and schedule a cleanup of expired `blobs` rows before attachments ship.

@@ -43,7 +43,7 @@ Deno.serve(handler(async (req) => {
   };
   if (typeof body.hide_from_search === "boolean") row.hide_from_search = body.hide_from_search;
   const { data, error } = await admin().from("profiles").upsert(row, { onConflict: "user_id" })
-    .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search").single();
+    .select("user_id, display_name, username, school, about_emoji, about_text, hide_from_search, photo_visibility, avatar_version").single();
   if (error) {
     if (error.code === "23505") throw new HttpError(409, "username_taken", "That username is taken. Try another.");
     throw new HttpError(500, "internal");

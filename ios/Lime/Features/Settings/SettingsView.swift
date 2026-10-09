@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Where Settings can go.
 enum SettingsRoute: Hashable {
-    case profile, account, privacy, blocked, keys, devices, notifications, customize, about, acknowledgements, changePassword, myQR
+    case profile, account, privacy, blocked, keys, devices, notifications, customize, about, acknowledgements, changePassword, myQR, photo
 }
 
 /// The words shown before signing out (here and in Account).
@@ -35,6 +35,7 @@ struct SettingsView: View {
                     case .acknowledgements: AcknowledgementsScreen()
                     case .changePassword: ChangePasswordScreen()
                     case .myQR: MyQRScreen()
+                    case .photo: ProfilePhotoScreen()
                     }
                 }
         }
@@ -50,7 +51,7 @@ struct SettingsView: View {
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
             "profile": .profile, "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
-            "notifications": .notifications, "customize": .customize, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR,
+            "notifications": .notifications, "customize": .customize, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "crop": .photo,
         ]
         return names.compactMap { table[$0] }
     }

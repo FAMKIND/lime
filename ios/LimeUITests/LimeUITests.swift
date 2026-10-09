@@ -229,6 +229,34 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["my-qr-fingerprint"].exists || app.staticTexts["my-qr-unavailable"].exists)
     }
 
+    func testProfilePhotoCropSaveAndRemove() {
+        let app = threadApp("settings/profile/crop")
+        app.launch()
+        XCTAssertTrue(app.buttons["photo-crop-save"].waitForExistence(timeout: 10), "the crop screen opens with Save")
+        app.buttons["photo-crop-save"].tap()
+        XCTAssertTrue(app.buttons["photo-remove"].waitForExistence(timeout: 10), "saved: a photo exists, so Remove Photo appears")
+        app.buttons["photo-remove"].tap()
+        XCTAssertTrue(app.buttons["photo-remove"].waitForNonExistence(timeout: 10), "removed")
+        XCTAssertTrue(app.buttons["photo-library"].exists)
+    }
+
+    func testWhoCanSeeMyPhotoOffersEveryoneAndContactsOnlyAndSwitches() {
+        let app = threadApp("settings/profile/photo")
+        app.launch()
+        let everyone = app.buttons["photo-vis-everyone"]
+        let contacts = app.buttons["photo-vis-contacts"]
+        XCTAssertTrue(everyone.waitForExistence(timeout: 10))
+        XCTAssertTrue(everyone.isSelected, "Everyone on Lime is the default")
+        XCTAssertFalse(contacts.isSelected)
+        XCTAssertTrue(contacts.label.contains("Only my contacts (encrypted)"))
+        contacts.tap()
+        XCTAssertTrue(app.buttons["photo-vis-contacts"].waitForExistence(timeout: 5))
+        let selected = NSPredicate(format: "isSelected == true")
+        expectation(for: selected, evaluatedWith: app.buttons["photo-vis-contacts"])
+        waitForExpectations(timeout: 8)
+        XCTAssertFalse(app.buttons["photo-vis-everyone"].isSelected)
+    }
+
     func testAChangedKeyAsksToBeAcceptedAndANotDeliveredMessageCanBeResent() {
         let app = demoApp()
         app.launchArguments += ["-lime-demo-screen", "key-change"]

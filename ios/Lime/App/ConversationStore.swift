@@ -35,7 +35,7 @@ final class ConversationStore {
 
     /// The screens pushed on Messages (chats by id, the Requests list).
     var path = NavigationPath()
-    private var link: BackendLink?
+    private(set) var link: BackendLink?
     /// How the signed-in person is shown (set by the account session): core calls them "me".
     var meProvider: @MainActor () -> Person = { SampleData.me }
     /// The threads that are open on screen: the root message, then its replies. Kept fresh by `reload()`.
@@ -52,6 +52,9 @@ final class ConversationStore {
     #if DEBUG
     /// Debug builds only (`-lime-demo-chat`): made-up conversations that live in memory, for screenshots and UI tests.
     private(set) var isDemo = false
+    /// Debug demo: my photo and who may see it (no server).
+    var demoMyPhoto: Data?
+    var demoPhotoVisibility: PhotoVisibility = .everyone
     #endif
 
     /// Accepted conversations (the Messages list) and strangers' first messages (the Requests list).
@@ -162,6 +165,8 @@ final class ConversationStore {
             }
             await reload()
         } while syncAgain
+        // Other people's photos, at most hourly each; this is off the critical path of the messages.
+        await refreshPhotos()
     }
 
     /// Sends what is queued (a message that failed is retried here).
@@ -403,6 +408,7 @@ final class ConversationStore {
         showsRecoveryNotice = false
         detector.reset()
         notifications?.settings.reset()
+        AvatarCache.shared.reset()
         StorageBootstrap.wipe(at: storageLocation)
     }
 
@@ -443,6 +449,7 @@ final class ConversationStore {
         } catch {
             storageError = "Storage could not be read."
         }
+        await loadCachedPhotos()
         isLoaded = true
     }
 

@@ -17,7 +17,7 @@ const KEY_BYTES: usize = 32;
 pub(crate) const ACCESS_INFO: &[u8] = b"lime-access-v1";
 
 /// A new random delivery key.
-fn random_key() -> Vec<u8> {
+pub(crate) fn random_key() -> Vec<u8> {
     Ed25519SecretKey::new().to_bytes().to_vec()
 }
 

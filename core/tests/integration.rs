@@ -193,6 +193,27 @@ impl Admin {
             .collect()
     }
 
+    /// The bytes of a Storage object, read with the service key (test only), or `None` when it is not there.
+    fn storage_object(&self, bucket: &str, name: &str) -> Option<Vec<u8>> {
+        let request = self.with_service_key(ureq::get(&format!("{}/storage/v1/object/{bucket}/{name}", self.base)));
+        match request.call() {
+            Ok(response) => {
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut response.into_reader(), &mut bytes).unwrap();
+                Some(bytes)
+            }
+            Err(_) => None,
+        }
+    }
+
+    /// The names of the objects in a bucket under a prefix, from Storage's own listing (not a download, which a
+    /// CDN may serve from its cache for a while after a delete).
+    fn storage_names(&self, bucket: &str, prefix: &str) -> Vec<String> {
+        let request = self.with_service_key(ureq::post(&format!("{}/storage/v1/object/list/{bucket}", self.base)));
+        let rows: Value = request.send_json(json!({ "prefix": "", "search": prefix, "limit": 100 })).unwrap().into_json().unwrap();
+        rows.as_array().unwrap().iter().filter_map(|r| r["name"].as_str().map(str::to_owned)).collect()
+    }
+
     /// The raw mailbox rows of a device, as the server holds them (test only: needs the service key).
     fn raw_mailbox(&self, device_id: &str) -> Vec<Vec<u8>> {
         let rows = self.json(
@@ -748,4 +769,72 @@ fn a_group_of_three_chats_through_the_real_server_and_the_server_holds_no_group_
         assert!(!rows.contains(&secret_name), "the group's name is in table {name}");
         assert!(!rows.contains("hello team") && !rows.contains("only for Bo"), "message text is in table {name}");
     }
+}
+
+#[test]
+fn profile_photos_through_the_real_server_public_by_default_and_ciphertext_when_contacts_only() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob, carol] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    for (a, name, tag) in [(alice, "Alice Adams", "al"), (bob, "Bob Brown", "bo"), (carol, "Carol Cruz", "ca")] {
+        admin.give_profile(a, name, &format!("{tag}{}", &suffix[..8]));
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let stores: Vec<_> = (0..3).map(|i| store(&dir, &format!("p{i}.db"), i as u8 + 1)).collect();
+    for (store, account) in stores.iter().zip(&accounts) {
+        store.register_device(transport.clone(), account.token.clone()).unwrap();
+    }
+    let (alice_store, bob_store, carol_store) = (&stores[0], &stores[1], &stores[2]);
+    let photo: Vec<u8> = b"\xff\xd8\xff\xe0 integration photo body, easy to spot: ".repeat(60);
+
+    // Alice and Bob are contacts; Carol is a stranger who wrote to Alice (a request Alice has not accepted, so
+    // Alice has given her neither key).
+    let chat_bob = alice_store.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    alice_store.queue_text(chat_bob, "hello Bob".into()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
+    bob_store.accept_request(format!("dm:{}", alice.id)).unwrap();
+    bob_store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    alice_store.sync(transport.clone(), alice.token.clone()).unwrap();
+    let chat_alice = carol_store.start_dm(alice.id.clone(), "Alice Adams".into()).unwrap();
+    carol_store.queue_text(chat_alice, "hello Alice".into()).unwrap();
+    carol_store.deliver_queued(transport.clone(), carol.token.clone()).unwrap();
+    alice_store.sync(transport.clone(), alice.token.clone()).unwrap();
+
+    // Public by default: a plain JPEG any signed-in user can fetch; the server holds it as is.
+    alice_store.set_my_photo(transport.clone(), alice.token.clone(), photo.clone()).unwrap();
+    assert_eq!(admin.storage_names("public-avatars", &alice.id), vec![format!("{}.jpg", alice.id)]);
+    assert_eq!(admin.storage_object("public-avatars", &format!("{}.jpg", alice.id)), Some(photo.clone()));
+    assert_eq!(carol_store.refresh_photos(transport.clone(), carol.token.clone(), true).unwrap(), vec![alice.id.clone()]);
+    assert_eq!(carol_store.peer_photo(alice.id.clone()).unwrap(), Some(photo.clone()), "a signed-in stranger sees a public photo");
+
+    // Contacts only: the public object is deleted, and what the server keeps is ciphertext.
+    alice_store.set_photo_visibility(transport.clone(), alice.token.clone(), "contacts".into()).unwrap();
+    assert!(admin.storage_names("public-avatars", &alice.id).is_empty(), "the public copy is deleted from the server");
+    let blobs = admin.json(
+        admin.with_service_key(ureq::get(&format!("{}/rest/v1/blobs?select=id,owner,size", admin.base))),
+        None,
+    );
+    let rows: Vec<&Value> = blobs.as_array().unwrap().iter().filter(|r| r["owner"] == alice.id.as_str()).collect();
+    assert_eq!(rows.len(), 1);
+    let stored = admin.storage_object("blobs", rows[0]["id"].as_str().unwrap()).expect("the encrypted blob");
+    assert_ne!(stored, photo);
+    assert!(!stored.windows(40).any(|w| w == &photo[..40]), "the stored bytes do not contain the photo");
+    assert!(stored.len() > photo.len(), "nonce and tag on top of the same length");
+
+    assert_eq!(bob_store.refresh_photos(transport.clone(), bob.token.clone(), true).unwrap(), vec![alice.id.clone()]);
+    assert_eq!(bob_store.peer_photo(alice.id.clone()).unwrap(), Some(photo.clone()), "a contact decrypts it");
+    assert_eq!(carol_store.refresh_photos(transport.clone(), carol.token.clone(), true).unwrap(), vec![alice.id.clone()]);
+    assert_eq!(carol_store.peer_photo(alice.id.clone()).unwrap(), None, "a stranger sees initials");
+
+    // Remove: gone everywhere.
+    alice_store.remove_my_photo(transport.clone(), alice.token.clone()).unwrap();
+    let left = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/blobs?select=id,owner", admin.base))), None);
+    assert!(left.as_array().unwrap().iter().all(|r| r["owner"] != alice.id.as_str()), "no blob row left");
 }

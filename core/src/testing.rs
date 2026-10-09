@@ -35,6 +35,15 @@ pub(crate) struct ServerState {
     /// How many `send` requests carried an Authorization header, and how many did not (sealed).
     pub sends_with_token: usize,
     pub sends_without_token: usize,
+    /// Storage objects by `<bucket>/<name>` (the stand-in for Supabase Storage behind signed URLs).
+    pub objects: HashMap<String, Vec<u8>>,
+    /// user to (public photo version); a photo exists only while it is here and visibility is `everyone`
+    pub avatar_versions: HashMap<String, i64>,
+    /// user to `everyone` or `contacts`
+    pub avatar_visibility: HashMap<String, String>,
+    /// blob id to (owner, committed version)
+    pub blob_rows: HashMap<String, (String, Option<i64>)>,
+    pub clock: i64,
 }
 
 #[derive(Default)]
@@ -92,11 +101,28 @@ fn respond(status: u16, body: Value) -> Result<TransportResponse, TransportError
 impl Transport for FakeServer {
     fn request(
         &self,
-        _method: String,
+        method: String,
         path: String,
         headers: Vec<HeaderPair>,
         body: Vec<u8>,
     ) -> Result<TransportResponse, TransportError> {
+        // A signed Storage URL: no Authorization header, the token is in the URL.
+        if path.starts_with("/storage/") {
+            let clean = path.split('?').next().unwrap_or_default();
+            let object = clean.split("/sign/").nth(1).unwrap_or_default().to_owned();
+            let mut state = self.state.lock().unwrap();
+            return if method == "PUT" && clean.contains("/upload/sign/") {
+                state.objects.insert(object, body);
+                Ok(TransportResponse { status: 200, body: b"{}".to_vec() })
+            } else if method == "GET" && !clean.contains("/upload/") {
+                match state.objects.get(&object) {
+                    Some(bytes) => Ok(TransportResponse { status: 200, body: bytes.clone() }),
+                    None => Ok(TransportResponse { status: 404, body: b"{}".to_vec() }),
+                }
+            } else {
+                Ok(TransportResponse { status: 400, body: b"{}".to_vec() })
+            };
+        }
         let function = path.rsplit('/').next().unwrap_or_default().to_owned();
         let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
         let user = headers
@@ -251,6 +277,78 @@ impl Transport for FakeServer {
                     ));
                 }
                 respond(200, json!({ "stored": 1, "duplicates": 0 }))
+            }
+            "avatar" => {
+                state.clock += 1;
+                let version = state.clock;
+                match body.get("action").and_then(Value::as_str).unwrap_or_default() {
+                    "put" => respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/public-avatars/{user}.jpg?token=t") })),
+                    "commit" => {
+                        if !state.objects.contains_key(&format!("public-avatars/{user}.jpg")) {
+                            return respond(409, json!({ "error": "not_uploaded" }));
+                        }
+                        state.avatar_versions.insert(user.clone(), version);
+                        state.avatar_visibility.insert(user.clone(), "everyone".into());
+                        respond(200, json!({ "version": version }))
+                    }
+                    "get" => {
+                        let who = text("user_id");
+                        let visible = state.avatar_visibility.get(&who).is_none_or(|v| v == "everyone");
+                        match state.avatar_versions.get(&who) {
+                            Some(version) if visible => respond(200, json!({ "url": format!("/storage/v1/object/sign/public-avatars/{who}.jpg?token=t"), "version": version })),
+                            _ => respond(404, json!({ "error": "not_found" })),
+                        }
+                    }
+                    "visibility" => {
+                        let visibility = text("visibility");
+                        if visibility == "contacts" {
+                            state.objects.remove(&format!("public-avatars/{user}.jpg"));
+                            state.avatar_versions.remove(&user);
+                        }
+                        state.avatar_visibility.insert(user.clone(), visibility);
+                        respond(200, json!({ "ok": true }))
+                    }
+                    "remove" => {
+                        state.objects.remove(&format!("public-avatars/{user}.jpg"));
+                        state.avatar_versions.remove(&user);
+                        respond(200, json!({ "ok": true }))
+                    }
+                    _ => respond(400, json!({ "error": "bad_request" })),
+                }
+            }
+            "blob" => {
+                state.clock += 1;
+                let version = state.clock;
+                let id = text("blob_id");
+                match body.get("action").and_then(Value::as_str).unwrap_or_default() {
+                    "put" => {
+                        if state.blob_rows.get(&id).is_some_and(|(owner, _)| *owner != user) {
+                            return respond(409, json!({ "error": "id_taken" }));
+                        }
+                        state.blob_rows.insert(id.clone(), (user.clone(), None));
+                        respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/blobs/{id}?token=t") }))
+                    }
+                    "commit" => {
+                        if !state.objects.contains_key(&format!("blobs/{id}")) {
+                            return respond(409, json!({ "error": "not_uploaded" }));
+                        }
+                        state.blob_rows.insert(id, (user.clone(), Some(version)));
+                        respond(200, json!({ "size": 1 }))
+                    }
+                    "get" => match state.blob_rows.get(&id) {
+                        Some((_, Some(version))) => respond(200, json!({ "url": format!("/storage/v1/object/sign/blobs/{id}?token=t"), "version": version })),
+                        _ => respond(404, json!({ "error": "not_found" })),
+                    },
+                    "delete" => {
+                        if state.blob_rows.get(&id).is_some_and(|(owner, _)| *owner != user) {
+                            return respond(409, json!({ "error": "id_taken" }));
+                        }
+                        state.blob_rows.remove(&id);
+                        state.objects.remove(&format!("blobs/{id}"));
+                        respond(200, json!({ "ok": true }))
+                    }
+                    _ => respond(400, json!({ "error": "bad_request" })),
+                }
             }
             "delivery-access-set" => {
                 let hash = vodozemac::base64_decode(text("access_key_hash")).unwrap_or_default();
