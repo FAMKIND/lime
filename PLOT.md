@@ -2095,7 +2095,67 @@ If anything contradicts this brief, stop and ask the user.
 
 ---
 
-### LIME-105 → `tend` (lime-aa) (after LIME-104): message actions (see the amendment above: reactions, Reply, Copy, Edit, Delete, Select; Forward + link cards move to 106)
+**LIME-105 landed as `55c1f96`** (pushed and verified).
+- The long-press menu (reaction row incl. "+"; Reply / Forward / Edit / Copy / Select / Delete); reactions with chips; Edit for 24 h ("Edited"); Delete for me/everyone (24 h); Copy; Select mode. Forward is a toast until 106.
+- 151 Rust / 11+11 integration tests pass; tiered iOS passed; 0 warnings.
+- **Tend ran 105 before 104-fix** (the order was swapped); 104-fix (7 items) is next.
+
+### LIME-104-fix → `tend` (lime-aa) (NEXT, before 106): in-chat find → reply hit traps navigation
+**The user's bug (2026-10-09, iPhone):**
+- in the Shem↔Jean chat, 🔍 find "FAM" (a word only in a reply) → it opens the Replies screen;
+- **pressing Back keeps re-opening Replies**, and the chat can't be reached again **until the app is force-quit**.
+
+**Likely cause (plot's guess; tend must verify):** the find state (the current match = a reply hit) stays active, so re-showing the chat re-triggers "open Replies for the current match", or the navigation path is rebuilt from the find state on appear.
+
+**Phase 0:** commit `PLOT.md` only (`git add PLOT.md`). **Phase 1:** reproduce in a UI test first (the chat with a reply-only word → find → hit → Back), confirm the cause, and report it.
+
+**Phase 2: the fix.**
+- Opening a reply hit **pushes Replies once**. **Back returns to the chat** with the find bar still open at the same "N of M", and stepping ↑/↓ continues; stepping onto another reply hit pushes Replies again (once).
+- **Done** closes find with no navigation side effects.
+- The same check for Messages search → a reply result → Back → Back (returns to the results, then to Messages).
+- **Never** derive navigation from a persistent find/match state on appear.
+
+**Also folded in (the user's LIME-104 QA, 2026-10-09):**
+1. **The unread dot moves to the LEFT side of the Messages row** (before the avatar, like Apple Mail/Messages), not the right.
+2. **A smaller photo/video thumbnail** in the Messages row preview (about 32–36 pt, the same corner radius family, vertically centred with the preview text).
+3. **Swipe-left → Mute shows its durations in context:** the mute options must clearly belong to the swiped chat.
+   - Present them as a **confirmation dialog/menu anchored to that row** (a popover from the row on iOS 26 / a context menu), **titled with the chat's name**: "Mute **Jean Chung**", with 1 hour / 8 hours / 1 week / Always / Cancel.
+   - Keep the swiped row highlighted until a choice is made.
+   - Never a centred, unlabelled sheet.
+
+4. **Private labels must never wrap the name** (the user's screenshot: "Jean 👑 Queen" pushed "Chung" to a second line in Messages and in Group details).
+   - The **name has priority and stays on one line**; the label is a **small capsule after the name that truncates first** (…), down to just its emoji, or hidden if there's no room.
+   - In tight places (member lists) the label may move under the name as the secondary line.
+   - Never wrap the name because of a label.
+5. **Group details edit affordances:** the photo badge and the name pencil both become **matching light-grey circles with an icon** (photo badge: a camera or pencil icon in a light-grey circle at the avatar's bottom-right; name: a small light-grey circle with a pencil next to the name). **Not green:** green is reserved for the primary action.
+6. **The format toolbar's active/pressed circles must be lighter still** (the user: Aa and B/I/U still compete with the send button). Use roughly **half the current contrast**: a very light warm tint (about 1.2–1.4:1 against the bar). The **pressed state is also indicated by the icon weight/ink** (e.g. the icon in full ink + a faint fill), so it stays perceivable without a heavy fill. Light and dark. Update the token test bounds accordingly.
+
+7. **Pin/Unpin reorders smoothly** (the user's screenshots: two rows briefly drawn on top of each other, cross-fading, before the list settles). Fix:
+   - **Stable row identity:** `ForEach` keyed by the conversation id; never by index or a recomputed struct identity.
+   - **Let the swipe close first,** then apply the reorder **in one `withAnimation(.snappy)`**, so rows **slide** into their new places (a move, not a fade/overlap).
+   - **No opacity transitions** on rows during a reorder.
+   - Pinned rows and the pinned section move as a unit.
+   - **A UI test** captures frames mid-animation and asserts no two rows' frames overlap by more than a few points.
+
+**Verification:**
+- the new UI tests for both paths (in-chat find and Messages search), including a double Back and the swipe-back gesture;
+- a label never wraps the name (a long-label UI test at 375pt); the pressed fill is within the new bounds;
+- the dot is on the left; the thumbnail size is ≤ 36 pt; the mute dialog title contains the chat name;
+- the tiered iOS rule; 0 warnings.
+
+**Gate:**
+- find "FAM" in the Jean chat → Replies → Back → you're in the chat; Back again → Messages;
+- the unread dot is on the left;
+- a smaller thumbnail;
+- swipe → Mute shows "Mute <name>" next to that chat;
+- a long label truncates without wrapping the name;
+- the group photo/name edit icons are light-grey circles;
+- the format active state is lighter, and send is the only strong colour;
+- pinning/unpinning slides the row smoothly to its new place, with no overlap.
+
+**Record:** `## LIME-104-fix`. Commit: `fix(ios): find in replies no longer traps navigation; QA polish (unread dot, thumbnails, mute in context, labels, edit icons, lighter format state)`, trailer `Brief: LIME-104-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-105 → `tend` (lime-aa) (after LIME-104-fix): message actions (see the amendment above: reactions, Reply, Copy, Edit, Delete, Select; Forward + link cards move to 106)
 **The user's QA notes (2026-10-08):** "in addition to reply, we need ability to delete a message in a chat, thread or reply and give emoji reactions, with the plus to pick any emoji"; "link cards are missing (thumbnails, heading and subheading)". Split from LIME-104 because these need protocol work.
 
 **Plot's decisions:**
