@@ -19,6 +19,15 @@ pub struct OutgoingAttachment {
     pub thumb: Vec<u8>,
 }
 
+/// How far a transfer has got.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TransferProgress {
+    /// An upload (otherwise a download).
+    pub upload: bool,
+    pub done: u32,
+    pub total: u32,
+}
+
 /// Text that goes with attachments is shorter, so the whole message stays within one mailbox item.
 const MAX_CAPTION_BYTES: usize = 8_000;
 /// All descriptors together, as JSON, stay under this.
@@ -70,6 +79,15 @@ impl LimeStore {
         self.queue_with(conversation_id, caption, reply_to, prepared)
     }
 
+    /// How far the upload or download of an attachment has got (chunks done and in all), while one is running.
+    pub fn transfer_progress(&self, attachment_id: String) -> Result<Option<TransferProgress>, StoreError> {
+        Ok(self.with_conn(|conn| files::progress(conn, &attachment_id))?.map(|(direction, done, total)| TransferProgress {
+            upload: direction == "up",
+            done: done as u32,
+            total: total as u32,
+        }))
+    }
+
     /// The decrypted file, once this phone has it.
     pub fn attachment_data(&self, attachment_id: String) -> Result<Option<Vec<u8>>, StoreError> {
         self.with_conn(|conn| files::data(conn, &attachment_id))
@@ -93,17 +111,38 @@ impl LimeStore {
         if urls.is_empty() || urls.len() > 60 {
             return Err(StoreError::BadMessage);
         }
-        let mut chunks = Vec::with_capacity(urls.len());
-        for url in urls {
-            let response = transport.request("GET".into(), url.into(), Vec::new(), Vec::new()).map_err(|_: TransportError| StoreError::Network)?;
+        // Chunks already fetched by an interrupted attempt are not fetched again.
+        let total = urls.len();
+        let mut have: std::collections::HashSet<usize> = self.with_conn(|conn| files::held_parts(conn, &descriptor.id))?.into_iter().collect();
+        self.with_conn(|conn| files::set_progress(conn, &descriptor.id, "down", have.len().min(total), total))?;
+        for (index, url) in urls.iter().enumerate() {
+            if have.contains(&index) {
+                continue;
+            }
+            let response = transport.request("GET".into(), (*url).into(), Vec::new(), Vec::new()).map_err(|_: TransportError| StoreError::Network)?;
             check(response.status)?;
-            chunks.push(response.body);
+            have.insert(index);
+            self.with_conn(|conn| {
+                files::save_part(conn, &descriptor.id, index, &response.body)?;
+                files::set_progress(conn, &descriptor.id, "down", have.len(), total)
+            })?;
         }
-        let plaintext = files::open(&descriptor.key, &descriptor.id, &chunks).ok_or(StoreError::BadMessage)?;
-        if plaintext.len() as u64 != descriptor.size || files::digest_hex(&plaintext) != descriptor.digest {
+        let chunks = self.with_conn(|conn| files::parts(conn, &descriptor.id, total))?.ok_or(StoreError::BadMessage)?;
+        let plaintext = files::open(&descriptor.key, &descriptor.id, &chunks);
+        let verified = plaintext.as_ref().filter(|p| p.len() as u64 == descriptor.size && files::digest_hex(p) == descriptor.digest);
+        let Some(plaintext) = verified else {
+            // Something fetched is wrong: forget it all, so a retry starts from the server's copy, and keep nothing.
+            self.with_conn(|conn| {
+                files::drop_parts(conn, &descriptor.id)?;
+                files::clear_progress(conn, &descriptor.id)
+            })?;
             return Err(StoreError::BadMessage);
-        }
-        self.with_conn(|conn| files::set_data(conn, &descriptor.id, &plaintext))
+        };
+        self.with_conn(|conn| {
+            files::drop_parts(conn, &descriptor.id)?;
+            files::clear_progress(conn, &descriptor.id)
+        })?;
+        self.with_conn(|conn| files::set_data(conn, &descriptor.id, plaintext))
     }
 }
 
@@ -123,7 +162,9 @@ impl LimeStore {
             )?;
             check(status)?;
             let urls = body.get("urls").and_then(Value::as_object).ok_or(StoreError::BadMessage)?;
-            for (index, url) in urls {
+            let already = chunks.len().saturating_sub(urls.len());
+            self.with_conn(|conn| files::set_progress(conn, &descriptor.id, "up", already, chunks.len()))?;
+            for (sent, (index, url)) in urls.iter().enumerate() {
                 let n: usize = index.parse().map_err(|_| StoreError::BadMessage)?;
                 let (url, chunk) = (url.as_str().ok_or(StoreError::BadMessage)?, chunks.get(n).ok_or(StoreError::BadMessage)?);
                 let response = transport
@@ -138,9 +179,11 @@ impl LimeStore {
                     )
                     .map_err(|_: TransportError| StoreError::Network)?;
                 check(response.status)?;
+                self.with_conn(|conn| files::set_progress(conn, &descriptor.id, "up", already + sent + 1, chunks.len()))?;
             }
             let (status, _) = call(transport, Some(token), "attachment", &json!({ "action": "commit", "attachment_id": descriptor.id }))?;
             check(status)?;
+            self.with_conn(|conn| files::clear_progress(conn, &descriptor.id))?;
         }
         Ok(())
     }

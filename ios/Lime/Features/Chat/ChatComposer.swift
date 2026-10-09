@@ -14,35 +14,60 @@ struct ChatComposer: View {
     @State private var chooser: Chooser?
     @State private var tooLarge = false
     @State private var choosing = false
+    @State private var recorder = VoiceRecorder()
+    @State private var dragX: CGFloat = 0
+    @State private var released = true
+    @State private var micDenied = false
+    /// 0...1 while a video is being prepared (compressed), else nil.
+    @State private var preparingVideo: Double?
+    @State private var videoProblem: String?
 
-    private enum Chooser: String, Identifiable { case album, camera, files; var id: String { rawValue } }
+    private enum Chooser: String, Identifiable { case album, camera, files, videoLibrary, videoCamera; var id: String { rawValue } }
     private var canSend: Bool { model.canSend || !drafts.isEmpty }
+    private var voiceEnabled: Bool { onSendAttachments != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let fraction = preparingVideo {
+                HStack(spacing: 10) {
+                    ProgressView(value: fraction).tint(Theme.text).frame(width: 90)
+                    Text("Preparing video… \(Int(fraction * 100))%").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.horizontal, 6).padding(.top, 8).accessibilityIdentifier("video-preparing")
+            }
             if !drafts.isEmpty { DraftStrip(drafts: drafts) { draft in drafts.removeAll { $0.id == draft.id } } }
-            ZStack(alignment: .topLeading) {
-                RichComposerField(model: model)
-                    .onAppear { model.hasText = false }
-                if !model.hasText {
-                    Text("Send message…").font(Theme.body).foregroundStyle(Theme.textSecondary)
-                        .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
+            if recorder.isRecording {
+                RecordingBar(recorder: recorder, dragX: dragX)
+            } else {
+                ZStack(alignment: .topLeading) {
+                    RichComposerField(model: model)
+                        .onAppear { model.hasText = false }
+                    if !model.hasText {
+                        Text("Send message…").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                            .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
+                    }
                 }
             }
+            if recorder.phase == .locked {
+                lockedRow
+            } else {
             HStack(spacing: 2) {
-                button("plus", label: "Add attachment", id: "composer-plus") {
-                    if onSendAttachments == nil { store.comingSoon("Attachments") } else { choosing = true }
+                HStack(spacing: 2) {
+                    button("plus", label: "Add attachment", id: "composer-plus") {
+                        if onSendAttachments == nil { store.comingSoon("Attachments") } else { choosing = true }
+                    }
+                    button("face.smiling", label: "Emoji", id: "composer-emoji") { pickingEmoji = true }
+                    Button { model.toggleToolbar() } label: {
+                        Text("Aa").font(.system(size: 17, weight: .medium)).foregroundStyle(Theme.text)
+                            .frame(width: 44, height: 40)
+                            .background(model.toolbarVisible ? Theme.pressed : Color.clear, in: Capsule())
+                    }
+                    .accessibilityLabel("Formatting").accessibilityIdentifier("composer-aa")
+                    .accessibilityAddTraits(model.toolbarVisible ? [.isSelected] : [])
                 }
-                button("face.smiling", label: "Emoji", id: "composer-emoji") { pickingEmoji = true }
-                Button { model.toggleToolbar() } label: {
-                    Text("Aa").font(.system(size: 17, weight: .medium)).foregroundStyle(Theme.text)
-                        .frame(width: 44, height: 40)
-                        .background(model.toolbarVisible ? Theme.pressed : Color.clear, in: Capsule())
-                }
-                .accessibilityLabel("Formatting").accessibilityIdentifier("composer-aa")
-                .accessibilityAddTraits(model.toolbarVisible ? [.isSelected] : [])
+                .opacity(recorder.isRecording ? 0 : 1).allowsHitTesting(!recorder.isRecording)
                 Spacer(minLength: 0)
-                if canSend {
+                if canSend && !recorder.isRecording {
                     Button { send() } label: {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 18, weight: .semibold))
@@ -53,9 +78,12 @@ struct ChatComposer: View {
                     }
                     .accessibilityLabel("Send")
                     .accessibilityIdentifier("send-button")
+                } else if voiceEnabled {
+                    micButton
                 } else {
                     button("mic", label: "Voice message", id: "composer-mic") { store.comingSoon("Voice messages") }
                 }
+            }
             }
         }
         .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 4)
@@ -67,6 +95,8 @@ struct ChatComposer: View {
         .confirmationDialog("Add to your message", isPresented: $choosing, titleVisibility: .visible) {
             Button("Photo Library") { chooser = .album }.accessibilityIdentifier("composer-photo-library")
             if CameraPicker.isAvailable { Button("Take Photo") { chooser = .camera }.accessibilityIdentifier("composer-take-photo") }
+            Button("Choose Video") { chooser = .videoLibrary }.accessibilityIdentifier("composer-video-library")
+            if CameraPicker.isAvailable { Button("Record Video") { chooser = .videoCamera }.accessibilityIdentifier("composer-record-video") }
             Button("Files") { chooser = .files }.accessibilityIdentifier("composer-files")
             Button("Cancel", role: .cancel) {}
         }
@@ -78,12 +108,114 @@ struct ChatComposer: View {
                 CameraPicker(onPick: { image in chooser = nil; add(images: [image]) }, onCancel: { chooser = nil }).ignoresSafeArea()
             case .files:
                 DocumentPicker(onPick: { urls in chooser = nil; add(files: urls) }, onCancel: { chooser = nil }).ignoresSafeArea()
+            case .videoLibrary:
+                VideoLibraryPicker(onPick: { url in chooser = nil; add(video: url) }, onCancel: { chooser = nil }).ignoresSafeArea()
+            case .videoCamera:
+                VideoCameraPicker(onPick: { url in chooser = nil; add(video: url) }, onCancel: { chooser = nil }).ignoresSafeArea()
             }
         }
+        .alert("The microphone is off", isPresented: $micDenied) {
+            Button("Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Turn on the microphone for Lime in Settings to record voice messages.") }
+        .alert("That video can't be sent", isPresented: Binding(get: { videoProblem != nil }, set: { if !$0 { videoProblem = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(videoProblem ?? "") }
         .alert("That file is too large", isPresented: $tooLarge) { Button("OK", role: .cancel) {} } message: { Text("Files can be up to 50 MB.") }
         #if DEBUG
-        .task { if store.demoDrafts { drafts = ChatComposer.demoDrafts } }
+        .task { if store.demoDrafts { drafts = ChatComposer.demoDrafts }; recorder.simulated = store.isDemo }
         #endif
+    }
+
+    // MARK: Voice messages
+
+    /// The mic: hold to record, release to send, slide left to cancel, slide up to lock and go hands-free.
+    private var micButton: some View {
+        Image(systemName: "mic").font(.system(size: 20)).foregroundStyle(recorder.isRecording ? Color.white : Theme.text)
+            .frame(width: 44, height: 40)
+            .background(recorder.isRecording ? Color.red : Color.clear, in: Circle())
+            .scaleEffect(recorder.isRecording ? 1.35 : 1)
+            .overlay(alignment: .top) {
+                if recorder.phase == .recording {
+                    Image(systemName: "lock").font(.system(size: 15)).foregroundStyle(Theme.text)
+                        .frame(width: 34, height: 34).background(Theme.surface, in: Circle())
+                        .offset(y: -64).accessibilityIdentifier("voice-lock-hint")
+                }
+            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if released {
+                        released = false
+                        Task { await beginVoice() }
+                    }
+                    guard recorder.phase == .recording else { return }
+                    dragX = value.translation.width
+                    if value.translation.width < -90 { recorder.cancel(); dragX = 0; Haptics.tick() }
+                    else if value.translation.height < -70 { recorder.lock(); dragX = 0; released = true; Haptics.tick() }   // the mic leaves the row when locked, so its end never comes
+                }
+                .onEnded { _ in
+                    released = true
+                    if recorder.phase == .recording { finishVoice() }
+                    dragX = 0
+                })
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Voice message")
+            .accessibilityHint("Hold to record, release to send")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("composer-mic")
+    }
+
+    private var lockedRow: some View {
+        HStack {
+            Button { recorder.cancel() } label: {
+                Image(systemName: "trash").font(.system(size: 19)).foregroundStyle(Color.red).frame(width: 44, height: 40)
+            }
+            .accessibilityLabel("Delete recording").accessibilityIdentifier("voice-cancel")
+            Spacer()
+            Text("Recording").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Button { finishVoice() } label: {
+                Image(systemName: "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.primaryInk)
+                    .frame(width: 36, height: 36).background(Theme.primary, in: Circle()).frame(width: 44, height: 40)
+            }
+            .accessibilityLabel("Send voice message").accessibilityIdentifier("voice-send")
+        }
+    }
+
+    private func beginVoice() async {
+        guard await recorder.start() else { micDenied = true; released = true; return }
+        // The finger was lifted while the microphone was being allowed: nothing to keep.
+        if released && recorder.phase == .recording { recorder.cancel() }
+        Haptics.tick()
+    }
+
+    /// Stops and sends the voice message (a very short one is dropped).
+    private func finishVoice() {
+        guard let note = recorder.finish(), let onSendAttachments else { return }
+        let voice = OutgoingAttachment(bytes: note.bytes, name: "Voice message.m4a", mime: "audio/mp4", width: nil, height: nil,
+                                       durationMs: UInt32(note.durationMs), thumb: Data(note.waveform))
+        onSendAttachments([voice], "")
+    }
+
+    // MARK: Video
+
+    private func add(video url: URL) {
+        Task {
+            preparingVideo = 0
+            defer { preparingVideo = nil; try? FileManager.default.removeItem(at: url) }
+            #if DEBUG
+            if store.isDemo { preparingVideo = 1; drafts.append(ChatComposer.demoVideoDraft); return }
+            #endif
+            do {
+                let made = try await VideoProcessing.prepare(url) { fraction in Task { @MainActor in preparingVideo = fraction } }
+                drafts.append(DraftAttachment(outgoing: made.item, preview: made.poster))
+            } catch let problem as VideoProcessing.Problem {
+                videoProblem = VideoProcessing.message(for: problem)
+            } catch {
+                videoProblem = VideoProcessing.message(for: .unreadable)
+            }
+        }
     }
 
     private func add(images: [UIImage]) {

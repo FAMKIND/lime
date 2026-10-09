@@ -15,23 +15,47 @@ final class AttachmentImages {
 
 /// Encrypted attachments (LIME-98c): sending, downloading and opening photos and files.
 extension ConversationStore {
-    /// Sends photos or files with an optional caption. In a chat or a group.
-    func sendAttachments(_ items: [OutgoingAttachment], caption: String, in id: Conversation.ID) {
-        Task { await sendAttachmentsNow(items, caption: caption, in: id) }
+    /// Sends photos, files, a voice message or a video with an optional caption. In a chat or a group, or (with `replyTo`, the
+    /// root message) as a reply in its thread.
+    func sendAttachments(_ items: [OutgoingAttachment], caption: String, in id: Conversation.ID, replyTo root: String? = nil) {
+        Task { await sendAttachmentsNow(items, caption: caption, in: id, replyTo: root) }
     }
 
-    func sendAttachmentsNow(_ items: [OutgoingAttachment], caption: String, in id: Conversation.ID) async {
+    func sendAttachmentsNow(_ items: [OutgoingAttachment], caption: String, in id: Conversation.ID, replyTo root: String? = nil) async {
         let text = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         #if DEBUG
-        if isDemo { demoSendAttachments(items, caption: text, in: id); return }
+        if isDemo { demoSendAttachments(items, caption: text, in: id, replyTo: root); return }
         #endif
         guard let core, link != nil else { report(.offline); return }
         let item = try? await Task.detached(priority: .userInitiated) {
-            try core.sendAttachments(conversationId: id, caption: text, items: items, replyTo: nil)
+            try core.sendAttachments(conversationId: id, caption: text, items: items, replyTo: root)
         }.value
-        guard let item, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        conversations[index].messages.append(Message(item))
+        guard let item else { return }
+        if let root {
+            threads[root, default: []].append(Message(item))
+        } else if let index = conversations.firstIndex(where: { $0.id == id }) {
+            conversations[index].messages.append(Message(item))
+        }
         await deliverNow()
+    }
+
+    /// How far an upload or download of an attachment has got (a fraction of its chunks), while one is running.
+    func transferProgress(_ id: String) async -> TransferProgress? {
+        #if DEBUG
+        if isDemo { return demoTransfer[id] }
+        #endif
+        guard let core else { return nil }
+        return (try? await Task.detached(priority: .utility) { try core.transferProgress(attachmentId: id) }.value) ?? nil
+    }
+
+    /// The voice message that follows `id` in its chat and was not sent by me, to play on after it.
+    func nextVoiceMessage(after id: String) -> AttachmentItem? {
+        for conversation in conversations {
+            let voices = conversation.messages.flatMap { message in message.attachments.filter { $0.kind == .audio }.map { (message, $0) } }
+            guard let index = voices.firstIndex(where: { $0.1.id == id }) else { continue }
+            return voices.dropFirst(index + 1).first { !$0.0.isOwn }?.1
+        }
+        return nil
     }
 
     /// The decoded picture of an image attachment, downloading and decrypting it first if this phone does not have it yet.
@@ -77,7 +101,7 @@ extension ConversationStore {
         if isDemo { return }
         #endif
         guard core != nil, link != nil else { return }
-        let wanted = conversations.flatMap { $0.messages.suffix(30) }.flatMap(\.attachments).filter { $0.kind == .image && !$0.downloaded && $0.size < 6_000_000 }.prefix(12)
+        let wanted = conversations.flatMap { $0.messages.suffix(30) }.flatMap(\.attachments).filter { ($0.kind == .image && $0.size < 6_000_000 || $0.kind == .audio && $0.size < 1_000_000) && !$0.downloaded }.prefix(12)
         for item in wanted { _ = await attachmentData(item) }
     }
 
@@ -112,7 +136,22 @@ extension ConversationStore {
         return AttachmentItem(id: id, mime: "image/jpeg", name: name, size: Int64(data.count), width: 1200, height: 900, thumb: AttachmentProcessing.thumbnail(picture), downloaded: true)
     }
 
-    func loadDemoAttachments(draft: Bool) {
+    func demoVoice(seconds: Int) -> AttachmentItem {
+        let id = UUID().uuidString.lowercased()
+        demoAttachmentData[id] = Data(count: 3_000)
+        let wave = Data((0..<64).map { UInt8(40 + 150 * abs(sin(Double($0) / 5))) })
+        return AttachmentItem(id: id, mime: "audio/mp4", name: "Voice message.m4a", size: 3_000, durationMs: seconds * 1000, thumb: wave, downloaded: true)
+    }
+
+    func demoVideo() -> AttachmentItem {
+        let picture = Self.demoPicture(0.5, size: CGSize(width: 640, height: 360))
+        let id = UUID().uuidString.lowercased()
+        demoAttachmentData[id] = Data(count: 3_000)
+        return AttachmentItem(id: id, mime: "video/mp4", name: "Video.mp4", size: 3_000, width: 1280, height: 720, durationMs: 31_000,
+                              thumb: AttachmentProcessing.thumbnail(picture), downloaded: true)
+    }
+
+    func loadDemoAttachments(draft: Bool, screen: String = "attachments") {
         let pat = Person(id: "pat", name: "Pat Rivera")
         let now = Date()
         var album = Message(id: "a1", senderID: "pat", text: "Field trip photos 🎉", date: now.addingTimeInterval(-1_800))
@@ -123,11 +162,26 @@ extension ConversationStore {
         file.attachments = [AttachmentItem(id: pdfID, mime: "application/pdf", name: "Permission slip.pdf", size: 1_250_000, downloaded: true)]
         var mine = Message(id: "a3", senderID: nil, text: "", date: now.addingTimeInterval(-600), state: .sent)
         mine.attachments = [demoAttachment(hue: 0.62, name: "Poster.jpg")]
-        conversations = [Conversation(id: "dm:att", title: pat.name, members: [pat], messages: [album, file, mine])]
+        let media = screen == "attachments-media"
+        var voiceOne = Message(id: "a4", senderID: "pat", text: "", date: now.addingTimeInterval(-500))
+        voiceOne.attachments = [demoVoice(seconds: 6)]
+        var voiceTwo = Message(id: "a5", senderID: "pat", text: "", date: now.addingTimeInterval(-400))
+        voiceTwo.attachments = [demoVoice(seconds: 9)]
+        var clip = Message(id: "a6", senderID: "pat", text: "Our class rehearsal", date: now.addingTimeInterval(-300))
+        clip.attachments = [demoVideo()]
+        // One of mine still going up, three fifths of the way.
+        var going = Message(id: "a7", senderID: nil, text: "", date: now.addingTimeInterval(-60), state: .sending)
+        going.attachments = [demoAttachment(hue: 0.9, name: "Banner.jpg")]
+        demoTransfer[going.attachments[0].id] = TransferProgress(upload: true, done: 3, total: 5)
+        // "attachments" is pictures and a file; "attachments-media" is voice, video and an upload in progress.
+        let messages = media ? [voiceOne, voiceTwo, clip, going] : [album, file, mine]
+        conversations = [Conversation(id: "dm:att", title: pat.name, members: [pat], messages: messages)]
+        VoicePlayer.shared.stop()
+        VoicePlayer.shared.simulated = true
         demoDrafts = draft
     }
 
-    func demoSendAttachments(_ items: [OutgoingAttachment], caption: String, in id: Conversation.ID) {
+    func demoSendAttachments(_ items: [OutgoingAttachment], caption: String, in id: Conversation.ID, replyTo root: String? = nil) {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         var message = Message(id: UUID().uuidString, senderID: nil, text: caption, date: Date(), state: .sending)
         message.attachments = items.map { item in
@@ -136,11 +190,24 @@ extension ConversationStore {
             return AttachmentItem(id: attachmentID, mime: item.mime, name: item.name, size: Int64(item.bytes.count), width: item.width.map(Int.init), height: item.height.map(Int.init),
                                   thumb: item.thumb, downloaded: true)
         }
-        conversations[index].messages.append(message)
+        if let root {
+            demoThreads[root, default: []].append(message)
+            threads[root] = demoThreads[root]
+        } else {
+            conversations[index].messages.append(message)
+        }
     }
 }
 
 extension ChatComposer {
+    /// A prepared video waiting in the composer (the demo has no camera).
+    static var demoVideoDraft: DraftAttachment {
+        let picture = ConversationStore.demoPicture(0.75, size: CGSize(width: 640, height: 360))
+        let item = OutgoingAttachment(bytes: Data(count: 3_000), name: "Video.mp4", mime: "video/mp4", width: 640, height: 360, durationMs: 31_000,
+                                      thumb: AttachmentProcessing.thumbnail(picture))
+        return DraftAttachment(outgoing: item, preview: picture)
+    }
+
     /// Two waiting pictures, for screenshots of the composer with attachments.
     static var demoDrafts: [DraftAttachment] {
         [0.1, 0.45].compactMap { hue in

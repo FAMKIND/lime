@@ -210,6 +210,68 @@ pub(crate) fn set_data(conn: &Connection, attachment_id: &str, bytes: &[u8]) -> 
     Ok(())
 }
 
+// ---------------------------------------------------------------- resumable downloads and progress
+
+pub(crate) fn save_part(conn: &Connection, attachment_id: &str, index: usize, bytes: &[u8]) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT OR REPLACE INTO attachment_parts (attachment_id, idx, bytes) VALUES (?1, ?2, ?3)",
+        params![attachment_id, index as i64, bytes],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+/// The chunk indexes of a download already held.
+pub(crate) fn held_parts(conn: &Connection, attachment_id: &str) -> Result<Vec<usize>, StoreError> {
+    let mut statement = conn.prepare("SELECT idx FROM attachment_parts WHERE attachment_id = ?1").map_err(db_err)?;
+    let rows = statement.query_map(params![attachment_id], |r| r.get::<_, i64>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    Ok(rows.into_iter().map(|i| i as usize).collect())
+}
+
+pub(crate) fn parts(conn: &Connection, attachment_id: &str, total: usize) -> Result<Option<Vec<Vec<u8>>>, StoreError> {
+    let mut out = Vec::with_capacity(total);
+    for index in 0..total {
+        let part: Option<Vec<u8>> = conn
+            .query_row("SELECT bytes FROM attachment_parts WHERE attachment_id = ?1 AND idx = ?2", params![attachment_id, index as i64], |r| r.get(0))
+            .optional()
+            .map_err(db_err)?;
+        match part {
+            Some(bytes) => out.push(bytes),
+            None => return Ok(None),
+        }
+    }
+    Ok(Some(out))
+}
+
+pub(crate) fn drop_parts(conn: &Connection, attachment_id: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM attachment_parts WHERE attachment_id = ?1", params![attachment_id]).map_err(db_err)?;
+    Ok(())
+}
+
+/// How far an upload (`up`) or download (`down`) has got, in chunks.
+pub(crate) fn set_progress(conn: &Connection, attachment_id: &str, direction: &str, done: usize, total: usize) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT INTO transfers (attachment_id, direction, done, total) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (attachment_id) DO UPDATE SET direction = ?2, done = ?3, total = ?4",
+        params![attachment_id, direction, done as i64, total as i64],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn clear_progress(conn: &Connection, attachment_id: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM transfers WHERE attachment_id = ?1", params![attachment_id]).map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn progress(conn: &Connection, attachment_id: &str) -> Result<Option<(String, usize, usize)>, StoreError> {
+    conn.query_row("SELECT direction, done, total FROM transfers WHERE attachment_id = ?1", params![attachment_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize, r.get::<_, i64>(2)? as usize))
+    })
+    .optional()
+    .map_err(db_err)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

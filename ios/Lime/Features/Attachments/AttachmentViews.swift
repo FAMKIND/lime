@@ -14,12 +14,18 @@ struct AttachmentStack: View {
 
     private var images: [AttachmentItem] { message.attachments.filter { $0.kind == .image } }
     private var others: [AttachmentItem] { message.attachments.filter { $0.kind != .image } }
+    /// My own message still going up: its pictures, videos and voice messages show a progress ring.
+    private var uploading: Bool { isOwn && message.state == .sending }
 
     var body: some View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
             if !images.isEmpty { album }
             ForEach(others) { item in
-                FileCard(item: item, isOwn: isOwn) { store.openedFile = item }
+                switch item.kind {
+                case .audio: VoiceBubble(item: item, isOwn: isOwn, uploading: uploading)
+                case .video: VideoTile(item: item, isOwn: isOwn, uploading: uploading)
+                default: FileCard(item: item, isOwn: isOwn, uploading: uploading) { store.openedFile = item }
+                }
             }
         }
     }
@@ -30,7 +36,7 @@ struct AttachmentStack: View {
         if images.count == 1, let only = images.first {
             let aspect = min(max(only.aspect, 0.6), 1.7)
             Button { store.attachmentViewer = AttachmentViewerRequest(items: images, index: 0) } label: {
-                ImageTile(item: only)
+                ImageTile(item: only, uploading: uploading)
                     .frame(width: width, height: width / aspect)
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
@@ -43,7 +49,7 @@ struct AttachmentStack: View {
             LazyVGrid(columns: [GridItem(.fixed(side), spacing: 4), GridItem(.fixed(side), spacing: 4)], spacing: 4) {
                 ForEach(Array(shown.enumerated()), id: \.element.id) { index, item in
                     Button { store.attachmentViewer = AttachmentViewerRequest(items: images, index: index) } label: {
-                        ImageTile(item: item)
+                        ImageTile(item: item, uploading: uploading)
                             .frame(width: side, height: side)
                             .overlay {
                                 if index == 3, images.count > 4 {
@@ -83,6 +89,9 @@ struct AttachmentPresenting: ViewModifier {
             .background(Color.clear.fullScreenCover(item: Binding(get: { store.openedFile }, set: { store.openedFile = $0 })) { item in
                 FileOpener(item: item)
             })
+            .background(Color.clear.fullScreenCover(item: Binding(get: { store.playingVideo }, set: { store.playingVideo = $0 })) { request in
+                VideoPlayerScreen(request: request)
+            })
     }
 }
 
@@ -93,6 +102,7 @@ extension View {
 /// One picture: its tiny blurred preview straight away, then the real one once it is downloaded and decrypted.
 struct ImageTile: View {
     let item: AttachmentItem
+    var uploading = false
     @Environment(ConversationStore.self) private var store
     @State private var full: UIImage?
     @State private var failed = false
@@ -105,7 +115,10 @@ struct ImageTile: View {
             } else if let thumb = UIImage(data: item.thumb) {
                 Image(uiImage: thumb).resizable().scaledToFill().blur(radius: 8).clipped()
             }
-            if full == nil && !failed { ProgressView().tint(Theme.text) }
+            if (full == nil && !failed) || uploading {
+                TransferRing(attachmentID: item.id, active: true, tint: .white).frame(width: 34, height: 34)
+                    .padding(6).background(.black.opacity(0.4), in: Circle())
+            }
             if failed {
                 Image(systemName: "arrow.clockwise").font(.system(size: 20)).foregroundStyle(Theme.text)
                     .padding(10).background(.ultraThinMaterial, in: Circle())
@@ -128,6 +141,7 @@ struct ImageTile: View {
 struct FileCard: View {
     let item: AttachmentItem
     let isOwn: Bool
+    var uploading = false
     let open: () -> Void
 
     var body: some View {
@@ -139,7 +153,8 @@ struct FileCard: View {
                     Text(item.detail).font(Theme.caption).foregroundStyle(isOwn ? Theme.ownBubbleInk.opacity(0.7) : Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
-                if !item.downloaded && !isOwn { Image(systemName: "arrow.down.circle").font(.system(size: 20)) }
+                if uploading { TransferRing(attachmentID: item.id, active: true, tint: isOwn ? Theme.ownBubbleInk : Theme.text).frame(width: 24, height: 24) }
+                else if !item.downloaded && !isOwn { Image(systemName: "arrow.down.circle").font(.system(size: 20)) }
             }
             .foregroundStyle(isOwn ? Theme.ownBubbleInk : Theme.text)
             .padding(.horizontal, 14).padding(.vertical, 10)

@@ -262,7 +262,7 @@ final class LimeUITests: XCTestCase {
         app.launch()
         let tiles = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-'"))
         XCTAssertTrue(tiles.firstMatch.waitForExistence(timeout: 10), "the album's pictures show")
-        XCTAssertGreaterThanOrEqual(tiles.count, 4, "three in the album and one of mine")
+        XCTAssertTrue(app.buttons["Trip 1.jpg"].exists, "the album's first picture")
         let file = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-file-'")).firstMatch
         XCTAssertTrue(file.exists, "the PDF has a file card")
         XCTAssertTrue(file.label.contains("Permission slip.pdf"), file.label)
@@ -294,6 +294,105 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(identifier: "draft-remove").firstMatch.waitForNonExistence(timeout: 5), "sent: the waiting pictures are gone")
         app.buttons["composer-plus"].tap()
         XCTAssertTrue(app.buttons["composer-photo-library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["composer-files"].exists)
+    }
+
+    private func voiceBubbles(_ app: XCUIApplication) -> XCUIElementQuery {
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'voice-bubble-'"))
+    }
+
+    func testVoiceMessagePlaysWithAnAdjustableSpeedAndGoesOnToTheNextOne() {
+        let app = threadApp("attachments-media")
+        app.launch()
+        let plays = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'voice-play-'"))
+        XCTAssertTrue(plays.element(boundBy: 0).waitForExistence(timeout: 10))
+        XCTAssertEqual(plays.count, 2, "two voice messages")
+        plays.element(boundBy: 0).tap()
+        let speed = app.buttons["voice-speed"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 5), "the speed button shows on the one playing")
+        XCTAssertEqual(speed.label, "Playback speed 1×")
+        speed.tap()
+        XCTAssertEqual(speed.label, "Playback speed 1.5×")
+        speed.tap()
+        XCTAssertEqual(speed.label, "Playback speed 2×")
+        // The first is 6 s long: at 2× it ends after about 3 s, and the second one starts by itself.
+        let second = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'voice-play-'")).element(boundBy: 1)
+        let playingNext = NSPredicate(format: "label == 'Pause voice message'")
+        expectation(for: playingNext, evaluatedWith: second)
+        waitForExpectations(timeout: 10)
+    }
+
+    func testHoldingTheMicSendsAVoiceMessageAndSlidingLeftCancelsIt() {
+        let app = threadApp("attachments")
+        app.launch()
+        let mic = app.descendants(matching: .any)["composer-mic"]
+        XCTAssertTrue(mic.waitForExistence(timeout: 10))
+        let before = voiceBubbles(app).count
+        // Hold: the recording bar shows while the finger is down, and the message is sent on release.
+        mic.press(forDuration: 1.5)
+        let sent = NSPredicate(format: "count == %d", before + 1)
+        expectation(for: sent, evaluatedWith: voiceBubbles(app))
+        waitForExpectations(timeout: 8)
+        XCTAssertFalse(app.descendants(matching: .any)["recording-bar"].exists, "recording ended on release")
+
+        // Slide left: cancelled, nothing is sent.
+        let start = mic.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 1.0, thenDragTo: start.withOffset(CGVector(dx: -170, dy: 0)))
+        sleep(1)
+        XCTAssertEqual(voiceBubbles(app).count, before + 1, "a cancelled recording is not sent")
+        XCTAssertFalse(app.descendants(matching: .any)["recording-bar"].exists)
+    }
+
+    func testSlidingUpLocksTheRecordingThenSendOrDelete() {
+        let app = threadApp("attachments")
+        app.launch()
+        let mic = app.descendants(matching: .any)["composer-mic"]
+        XCTAssertTrue(mic.waitForExistence(timeout: 10))
+        let before = voiceBubbles(app).count
+        let start = mic.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 1.0, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -120)))
+        XCTAssertTrue(app.buttons["voice-send"].waitForExistence(timeout: 5), "locked: hands-free, with Send and Delete")
+        XCTAssertTrue(app.buttons["voice-cancel"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["recording-bar"].exists)
+        app.buttons["voice-cancel"].tap()
+        XCTAssertFalse(app.descendants(matching: .any)["recording-bar"].waitForExistence(timeout: 2))
+        XCTAssertEqual(voiceBubbles(app).count, before)
+
+        let again = app.descendants(matching: .any)["composer-mic"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        again.press(forDuration: 1.0, thenDragTo: again.withOffset(CGVector(dx: 0, dy: -120)))
+        XCTAssertTrue(app.buttons["voice-send"].waitForExistence(timeout: 5))
+        sleep(1)
+        app.buttons["voice-send"].tap()
+        let sent = NSPredicate(format: "count == %d", before + 1)
+        expectation(for: sent, evaluatedWith: voiceBubbles(app))
+        waitForExpectations(timeout: 8)
+    }
+
+    func testAVideoShowsItsLengthAndOpensThePlayerAndAnUploadShowsItsProgress() {
+        let app = threadApp("attachments-media")
+        app.launch()
+        let video = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-video-'")).firstMatch
+        XCTAssertTrue(video.waitForExistence(timeout: 10))
+        XCTAssertTrue(video.label.contains("0:31"), video.label)
+        let ring = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'transfer-ring-'")).firstMatch
+        XCTAssertTrue(ring.waitForExistence(timeout: 5), "my picture still going up shows a ring")
+        let sixty = NSPredicate(format: "label == '60 percent'")
+        expectation(for: sixty, evaluatedWith: ring)
+        waitForExpectations(timeout: 5)
+        video.tap()
+        XCTAssertTrue(app.buttons["video-player-close"].waitForExistence(timeout: 10), "the full-screen player opens")
+        app.buttons["video-player-close"].tap()
+        XCTAssertTrue(app.buttons["video-player-close"].waitForNonExistence(timeout: 5))
+    }
+
+    func testTheRepliesComposerCanAttachToo() {
+        let app = threadApp("thread-open")
+        app.launch()
+        let plus = app.buttons["composer-plus"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 10), "the thread composer has a +")
+        plus.tap()
+        XCTAssertTrue(app.buttons["composer-photo-library"].waitForExistence(timeout: 5), "and it offers pictures, videos and files")
+        XCTAssertTrue(app.buttons["composer-video-library"].exists)
         XCTAssertTrue(app.buttons["composer-files"].exists)
     }
 

@@ -33,3 +33,9 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **The sweep must be running in every environment.** `./supabase/schedule-sweep.sh` (local) and `./supabase/schedule-sweep.sh staging`; run it for production too, then check `select * from cron.job where jobname = 'lime-blob-sweep'` and that `net._http_response` shows 200s. A failing sweep leaves files on the server up to their 30-day cap and costs storage, never privacy (everything stored is ciphertext).
 - [ ] **Photo-library add string** (`NSPhotoLibraryAddUsageDescription`): "Lime saves a photo to your library only when you ask it to." The library is read only through the system picker (no permission).
 - [ ] **Reporting attachments** belongs with the guideline 1.2 report flow above: a reported message may carry attachments (decrypted by the reporter's choice).
+
+## Voice messages and video (LIME-98d)
+
+- [ ] **Microphone string** (`NSMicrophoneUsageDescription`): "Lime uses the microphone to record voice messages and the sound of videos you record." The camera string now also covers photos and videos to send. Re-check both in the App Store privacy answers (audio and video are collected only when the person records and sends; nothing is used for anything else).
+- [ ] **Egress.** A 30-second 720p video is roughly 5 to 8 MB and a one-minute voice message about 180 KB: videos dominate the free plan's 5 GB egress, so watch the dashboard (see the attachments item above) and consider a lower default (480p) if usage climbs before launch.
+- [ ] **Hold-to-record on a real iPhone.** The simulator has no microphone or camera, so the record, cancel and lock gestures are tested with a simulated recorder; try them on a real phone before release, with the microphone permission denied as well.

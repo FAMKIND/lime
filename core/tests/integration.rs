@@ -951,3 +951,57 @@ fn chrono_like_ms(text: &str) -> i64 {
     let days = era * 146097 + doe - 719468;
     ((days * 24 + h) * 60 + mi) * 60_000 + s * 1000
 }
+
+#[test]
+fn a_voice_note_and_a_video_travel_as_ciphertext_and_a_download_survives_an_interruption() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (alice_store, bob_store) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    alice_store.register_device(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.register_device(transport.clone(), bob.token.clone()).unwrap();
+
+    let voice: Vec<u8> = b"ftypM4A  a voice note that must not be readable on the server ".repeat(900);
+    let video: Vec<u8> = (0..3_200_000u32).map(|i| (i.wrapping_mul(2246822519) >> 24) as u8).collect();   // four chunks
+    let chat = alice_store.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    let make = |bytes: &Vec<u8>, name: &str, mime: &str, duration: u32, thumb: Vec<u8>| lime_core::OutgoingAttachment {
+        bytes: bytes.clone(), name: name.into(), mime: mime.into(), width: None, height: None, duration_ms: Some(duration), thumb,
+    };
+    alice_store.send_attachments(chat.clone(), "".into(), vec![make(&voice, "Voice message.m4a", "audio/mp4", 12_000, (0..64).collect())], None).unwrap();
+    alice_store.send_attachments(chat.clone(), "".into(), vec![make(&video, "clip.mp4", "video/mp4", 30_000, vec![7; 300])], None).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received, 2);
+
+    let rows = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/attachments?select=id,chunks,owner", admin.base))), None);
+    let mine: Vec<&Value> = rows.as_array().unwrap().iter().filter(|r| r["owner"] == alice.id.as_str()).collect();
+    assert_eq!(mine.len(), 2);
+    for row in &mine {
+        let id = row["id"].as_str().unwrap();
+        for n in 0..row["chunks"].as_u64().unwrap() {
+            let stored = admin.storage_object("blobs", &format!("a/{id}/{n}")).expect("a chunk");
+            assert!(!stored.windows(32).any(|w| w == &voice[..32]), "the server's bytes are not the voice note");
+            assert!(!stored.windows(32).any(|w| w == &video[2000..2032]), "nor the video");
+        }
+    }
+
+    let messages = bob_store.list_messages(format!("dm:{}", alice.id)).unwrap();
+    let infos: Vec<_> = messages.iter().flat_map(|m| m.attachments.clone()).collect();
+    assert_eq!(infos.len(), 2);
+    let (voice_info, video_info) = (infos.iter().find(|i| i.mime == "audio/mp4").unwrap(), infos.iter().find(|i| i.mime == "video/mp4").unwrap());
+    assert_eq!((voice_info.duration_ms, voice_info.thumb.len()), (Some(12_000), 64), "duration and waveform arrive");
+    assert_eq!(video_info.duration_ms, Some(30_000));
+    bob_store.download_attachment(transport.clone(), bob.token.clone(), voice_info.id.clone()).unwrap();
+    assert_eq!(bob_store.attachment_data(voice_info.id.clone()).unwrap(), Some(voice));
+    bob_store.download_attachment(transport.clone(), bob.token.clone(), video_info.id.clone()).unwrap();
+    assert_eq!(bob_store.attachment_data(video_info.id.clone()).unwrap(), Some(video));
+    assert_eq!(bob_store.transfer_progress(video_info.id.clone()).unwrap(), None);
+}

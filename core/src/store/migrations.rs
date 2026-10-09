@@ -280,6 +280,21 @@ const MIGRATIONS: &[&str] = &[
          bytes         BLOB
      );
      CREATE INDEX message_attachments_by_message ON message_attachments (message_id, position);",
+    // 17: resumable downloads and progress (LIME-98d). `attachment_parts` holds the ciphertext chunks already fetched of a
+    // download that was interrupted (each is checked when the file is assembled), and `transfers` how far an upload or
+    // download has got, for the progress ring.
+    "CREATE TABLE attachment_parts (
+         attachment_id TEXT NOT NULL,
+         idx           INTEGER NOT NULL,
+         bytes         BLOB NOT NULL,
+         PRIMARY KEY (attachment_id, idx)
+     );
+     CREATE TABLE transfers (
+         attachment_id TEXT PRIMARY KEY NOT NULL,
+         direction     TEXT NOT NULL,
+         done          INTEGER NOT NULL,
+         total         INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

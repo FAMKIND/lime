@@ -39,7 +39,7 @@ final class ConversationStore {
     /// How the signed-in person is shown (set by the account session): core calls them "me".
     var meProvider: @MainActor () -> Person = { SampleData.me }
     /// The threads that are open on screen: the root message, then its replies. Kept fresh by `reload()`.
-    private(set) var threads: [String: [Message]] = [:]
+    var threads: [String: [Message]] = [:]
     private var openThreadIDs: Set<String> = []
     private var isSyncing = false
     private var syncAgain = false
@@ -56,10 +56,12 @@ final class ConversationStore {
     /// Debug demo: the decrypted bytes of the demo attachments, by id, and whether the composer opens with drafts.
     var demoAttachmentData: [String: Data] = [:]
     var demoDrafts = false
+    var demoTransfer: [String: TransferProgress] = [:]
     #endif
     /// The picture viewer and the file opener that are showing (LIME-98c).
     var attachmentViewer: AttachmentViewerRequest?
     var openedFile: AttachmentItem?
+    var playingVideo: VideoRequest?
     #if DEBUG
     var demoMyPhoto: Data?
     var demoPhotoVisibility: PhotoVisibility = .everyone
@@ -723,8 +725,8 @@ final class ConversationStore {
             demoSheet = "scan"
             let key = screen == "scan-verified" ? Self.demoGraceFingerprint : "0000111122223333FFFF"
             demoScanCode = "https://limechat.org/u/grace.h?k=\(key)"
-        case "attachments", "attachments-draft", "attachment-viewer":
-            loadDemoAttachments(draft: screen == "attachments-draft")
+        case "attachments", "attachments-draft", "attachments-media", "attachment-viewer":
+            loadDemoAttachments(draft: screen == "attachments-draft", screen: screen ?? "attachments")
             path.append("dm:att")
         case "chat-verified":
             let grace = Person(id: "grace", name: "Grace Hopper")
@@ -752,7 +754,7 @@ final class ConversationStore {
     private(set) var demoSettingsRoute: [String] = []
 
     /// Debug demo: the threads (root, then replies) by root id.
-    private(set) var demoThreads: [String: [Message]] = [:]
+    var demoThreads: [String: [Message]] = [:]
 
     /// Debug demo: open the composer with some text selected, so the formatting toolbar is up (for screenshots).
     private(set) var demoCompose = false

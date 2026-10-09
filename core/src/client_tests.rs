@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -1834,4 +1834,97 @@ fn a_group_member_can_send_a_photo_and_every_member_can_download_it() {
     }
     let (_, _, recipients, _, fetchers) = server.state.lock().unwrap().attachments.values().next().cloned().unwrap();
     assert_eq!((recipients, fetchers.len()), (2, 2), "two recipients declared, two fetched");
+}
+
+// ---------------------------------------------------------------- LIME-98d: resumable downloads, progress, voice and video
+
+#[test]
+fn an_interrupted_download_resumes_with_only_the_missing_chunks_and_reports_progress() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let video = crate::OutgoingAttachment {
+        bytes: (0..4_200_000u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect(),   // five chunks
+        name: "clip.mp4".into(),
+        mime: "video/mp4".into(),
+        width: Some(1280),
+        height: Some(720),
+        duration_ms: Some(30_000),
+        thumb: vec![9; 400],
+    };
+    alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![video.clone()], None).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let info = attachment_ids(&bob, &format!("dm:{}", alice.user)).remove(0);
+    assert_eq!((info.mime.as_str(), info.duration_ms, info.width), ("video/mp4", Some(30_000), Some(1280)));
+
+    // The connection drops after two chunks.
+    server.state.lock().unwrap().chunk_downloads = 0;
+    server.state.lock().unwrap().fail_download_after = Some(2);
+    assert!(download(&bob, &transport, &info.id).is_err());
+    let progress = bob.store.transfer_progress(info.id.clone()).unwrap().expect("a transfer is in progress");
+    assert_eq!((progress.upload, progress.done, progress.total), (false, 2, 5));
+    assert_eq!(bob.store.attachment_data(info.id.clone()).unwrap(), None, "nothing is kept until it is whole");
+
+    // Again: only the three missing chunks are fetched.
+    let before = server.state.lock().unwrap().chunk_downloads;
+    download(&bob, &transport, &info.id).unwrap();
+    assert_eq!(server.state.lock().unwrap().chunk_downloads - before, 3);
+    assert_eq!(bob.store.attachment_data(info.id.clone()).unwrap(), Some(video.bytes));
+    assert_eq!(bob.store.transfer_progress(info.id.clone()).unwrap(), None, "finished: no progress row");
+    let parts: i64 = bob.store.lock().query_row("SELECT count(*) FROM attachment_parts", [], |r| r.get(0)).unwrap();
+    assert_eq!(parts, 0, "the held chunks are gone once it is assembled");
+}
+
+#[test]
+fn a_bad_chunk_among_the_held_ones_is_discarded_and_the_retry_starts_over() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let file = pic(6, 2_500_000);
+    alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![file.clone()], None).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let id = attachment_ids(&bob, &format!("dm:{}", alice.user)).remove(0).id;
+    let key = format!("blobs/a/{id}/1");
+    let good = server.state.lock().unwrap().objects.get(&key).cloned().unwrap();
+    let mut bad = good.clone();
+    bad[5] ^= 1;
+    server.state.lock().unwrap().objects.insert(key.clone(), bad);
+    assert_eq!(download(&bob, &transport, &id), Err(crate::StoreError::BadMessage));
+    let parts: i64 = bob.store.lock().query_row("SELECT count(*) FROM attachment_parts", [], |r| r.get(0)).unwrap();
+    assert_eq!(parts, 0, "the doubtful chunks are forgotten");
+    assert_eq!(bob.store.transfer_progress(id.clone()).unwrap(), None);
+    server.state.lock().unwrap().objects.insert(key, good);
+    download(&bob, &transport, &id).unwrap();
+    assert_eq!(bob.store.attachment_data(id).unwrap(), Some(file.bytes));
+}
+
+#[test]
+fn an_upload_reports_progress_and_a_voice_note_carries_its_waveform_and_duration() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let voice = crate::OutgoingAttachment {
+        bytes: vec![3; 90_000],
+        name: "Voice message.m4a".into(),
+        mime: "audio/mp4".into(),
+        width: None,
+        height: None,
+        duration_ms: Some(23_500),
+        thumb: (0..64u8).map(|i| i * 2).collect(),   // the waveform: one byte per bar
+    };
+    let sent = alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![voice.clone()], None).unwrap();
+    assert_eq!(sent.text, "");
+    deliver(&alice, &transport);
+    assert_eq!(alice.store.transfer_progress(sent.attachments[0].id.clone()).unwrap(), None, "the upload is finished");
+    sync(&bob, &transport);
+    let info = attachment_ids(&bob, &format!("dm:{}", alice.user)).remove(0);
+    assert_eq!((info.mime.as_str(), info.duration_ms, info.thumb.len()), ("audio/mp4", Some(23_500), 64));
+    assert_eq!(info.thumb, voice.thumb, "the waveform arrives as sent");
+    download(&bob, &transport, &info.id).unwrap();
+    assert_eq!(bob.store.attachment_data(info.id).unwrap(), Some(voice.bytes));
 }

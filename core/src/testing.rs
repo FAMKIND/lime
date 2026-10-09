@@ -49,6 +49,9 @@ pub(crate) struct ServerState {
     /// Make the next chunk upload fail once (an interrupted upload).
     pub fail_chunk_after: Option<usize>,
     pub chunk_uploads: usize,
+    /// Chunk downloads so far, and make the one after this many fail once (an interrupted download).
+    pub chunk_downloads: usize,
+    pub fail_download_after: Option<usize>,
 }
 
 #[derive(Default)]
@@ -125,6 +128,11 @@ impl Transport for FakeServer {
                 state.objects.insert(object, body);
                 Ok(TransportResponse { status: 200, body: b"{}".to_vec() })
             } else if method == "GET" && !clean.contains("/upload/") {
+                state.chunk_downloads += 1;
+                if state.fail_download_after.is_some_and(|n| state.chunk_downloads > n) {
+                    state.fail_download_after = None;
+                    return Err(TransportError::Failed);
+                }
                 match state.objects.get(&object) {
                     Some(bytes) => Ok(TransportResponse { status: 200, body: bytes.clone() }),
                     None => Ok(TransportResponse { status: 404, body: b"{}".to_vec() }),

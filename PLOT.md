@@ -1790,6 +1790,119 @@ If anything contradicts this brief, stop and ask the user.
 - **Gate:** send Jean a voice message (try 2× speed) and a 30-second video; attach a photo inside a Replies thread.
 - **Record:** `## LIME-98d`. Commit: `feat: voice messages and video; attachments in threads; resumable downloads with progress`, trailer `Brief: LIME-98d`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
+**The user's gate on LIME-98c (2026-10-08): "all media files look good"** (several image sets + files).
+
+### Open thread: positioning (the user asked 2026-10-09: "what makes us stand out vs Signal, bitchat, Telegram, WhatsApp, Messenger?")
+**Plot's answer:**
+- **No single feature is unique;** Lime's edge is the **combination** + **who it's for** + **who owns it**:
+  1. built for and **owned by teachers** (a co-op nonprofit, no ads, never sold);
+  2. **connects teachers across schools/districts** (school apps are walled; general apps have no teacher layer);
+  3. **works when networks fail** (the proven BLE receive while locked; mesh coming);
+  4. **private by design**, Signal-grade (E2EE + a blind mailbox + sealed sender) but with teacher-friendly features (threads, formatting, PD calls);
+  5. **safety for a profession around kids** (no public stranger channels; Requests; block; verified teachers later).
+- **Honest risks:**
+  - the network effect (WhatsApp/Messenger are where people already are);
+  - **Signal could add mesh**;
+  - the edge must deepen through teacher-specific value.
+- **The user (2026-10-09): "love all 1–6; prioritise them."** Plot's proposed priority (awaiting confirmation):
+  - **before TestFlight:**
+    - **(2) work-hours boundaries** (local-only, cheap);
+    - **(1) emergency "I'm safe" mode** (built with or right after mesh v1);
+    - **(6) multilingual-ready** (all strings in String Catalogs now; the first translation, likely Spanish, later);
+  - **around launch:** **(3) verified teacher** (needs a verification method + a process);
+  - **after launch:**
+    - **(5) PD sessions** = group calls (LiveKit, the paid account, CallKit);
+    - **(4) communities** (needs a design pass: discoverability vs the blind server; scale beyond Megolm's comfort → MLS?).
+- **The user's answers (2026-10-09):**
+  1. **Bring back the web prototype's status icons** (LIME-57 series: Slack-style status badges in a cut-out notch at the avatar's bottom right: active, away, busy/DND "z" in Montserrat Bold, offline).
+     - **Plot's privacy design (to confirm):** **a manual status + work-hours status shared only with contacts** via an encrypted control op (like `profile.changed`).
+     - **No live "online now"/"last seen" by default**, since the server would learn activity patterns and contacts could track when teachers are on their phones. **An opt-in later at most.**
+  2. **Work-hours boundaries: yes.**
+     - **Where:** Settings → **Work hours** (a weekly schedule + "after school" quiet hours; notifications held, a gentle auto-reply option later);
+     - a **quick toggle** by tapping your own avatar (set status: Available / Away / Do not disturb / quiet hours until …);
+     - **contacts see the "z" badge** + "Quiet hours until 7:00" in the chat header;
+     - **emergency messages break through** (ties to emergency mode).
+  3. **Languages: the user will choose the first ones** (asked).
+  4. **Verified teacher: start now, while small.** The method is to be chosen (a decision surface was given).
+  5. **PD sessions = the large-session mode on top of calls** (1:1 voice/video + group calls are already planned): 50–100 people, hosts, mute-all, raise hand, screen share, speaker view.
+  6. **Communities (the user's concept):** a **community = a collection of groups**, with:
+     - a **bulletin board for announcements** (admins post; members read/react);
+     - **groups inside it you can browse, join and pin**, each with its own chats and threads.
+
+     It needs a design pass (discoverability vs the blind server; scale).
+- **Communities vs groups (explained to the user):**
+  - groups are invite-only, ≤ 100, everyone sees everything, and the server knows nothing;
+  - communities are larger (hundreds to thousands), **joinable** (open or by approval), contain **several channels** (announcements-only + topics), and have moderation roles.
+  - **The tension:** being discoverable means *something* about the community (at least its name) must be findable, unlike the blind groups. It needs a design decision later.
+- **Moat candidates (the user loves all 1–6):**
+  - **"Verified teacher"** badges;
+  - **work-hours boundaries** (scheduled quiet hours / "after school" mode; teacher burnout is real);
+  - school/district/subject **communities**;
+  - **PD sessions** (50–100-person calls);
+  - **emergency mode** (a school lockdown or disaster: one-tap "I'm safe" broadcast over the mesh to your staff group);
+  - **multilingual** (teachers worldwide).
+
+### DESIGN-06 notes (plot, 2026-10-08): learnings from the bitchat whitepaper for mesh v1
+**Source:** the bitchat `WHITEPAPER.md` (the user asked how Lime compares). Feed this into the mesh v1 design brief.
+
+**Adopt (adapted to Lime):**
+1. **Store-and-forward budgets** (bitchat's courier):
+   - a bounded relay pool with **trust tiers** (accepted contacts get more slots than "any Lime phone", per D6 = A);
+   - **spray-and-wait copy budgets** (start at 4, cap 8, hand half to each courier met);
+   - a per-recipient outbox cap (~100 per peer), a resend cap (~8 tries);
+   - **DECIDED (the user, 2026-10-08): the mesh carry time is 1–2 days** (it replaces DESIGN-01's 72 h). **Implement it as a 48 h maximum,** with relays allowed to drop earlier under storage/battery pressure (oldest/lowest-trust first).
+2. **The TTL policy:** start at 7 hops, **cap to ~5 in dense graphs** (≥ 6 links); relay with **random 10–220 ms jitter**; **dedupe with an LRU seen-set** (~1000 entries, 5 min) keyed on the envelope digest.
+3. **A rotating recipient tag on the air:**
+   - Lime's outer envelope carries `to_device` in the clear (fine for the server, **a leak over BLE**, since anyone nearby could map who's receiving);
+   - **over the mesh, replace it with a daily rotating tag = HMAC(recipient key, UTC day)**, computable only by people who already know the recipient's key.
+4. **Pad every mesh envelope to buckets** (256/512/1024/2048 B, then 4 KiB steps); bitchat pads only some types and admits the size leak.
+5. **Battery:**
+   - RSSI-gated connections;
+   - duty-cycled scanning;
+   - announce backoff (fast when isolated ~4 s, then ~15–30 s jittered when connected);
+   - combine with the LIME-103b evidence (~1.4%/h as a receiver).
+6. **Fragmentation** for the GATT fallback (~470 B fragments, reassembly limits: concurrent assemblies, a 30 s timeout, a size cap). **L2CAP remains the primary path** (our spike: 4–5× faster).
+7. **Media over the mesh:** text-only couriers in v1 (already decided); later small media with an explicit accept and a ≤ 1 MiB cap.
+
+**Avoid (bitchat's own admitted weaknesses):**
+- a **static on-air sender ID** (trackable across places) → **Lime uses rotating ephemeral BLE identities**;
+- **cleartext announcements with nicknames and neighbour lists** (they reveal participants and the local graph) → **Lime announces nothing human-readable and no neighbour lists**;
+- **no forward secrecy for sealed courier mail** → Lime's envelopes are Olm/Megolm ratchet ops, so FS holds over the mesh too. **Offline first contact still needs QR** (DESIGN-04).
+
+**Not for Lime:**
+- **anonymous public/geohash location channels** (a safety risk around schools and minors; it conflicts with the teacher identity model);
+- **a Nostr fallback** (Lime has its own mailbox);
+- a **panic wipe** exists in spirit as the planned "Erase Lime from this phone" (separate from sign-out); keep it on the list.
+
+**Range:**
+- the BLE single-hop range indoors is roughly a room to ~30 m; our test delivered **through a wall at −83 dBm**;
+- **range grows by hops, not by radio power**;
+- iOS doesn't let apps choose BLE Long Range (Coded PHY), so multi-hop density is the lever. Unverified beyond our tests.
+
+### LIME-107 → `tend` (lime-aa) (queued after 106; the user asked "where are files saved? what if they're low on memory?")
+**Facts given to the user:**
+- received files are decrypted, checked and **kept in each phone's encrypted Lime store**;
+- the **server copy is deleted ~1 h after every recipient has downloaded it** (or after 30 days);
+- **so the phones hold the only copies.** If a phone is lost before the recovery backup (D5) exists, its media is gone; the other person's copy remains.
+
+**Brief contents (draft):**
+- **Settings → Storage:**
+  - the total Lime usage, and per-chat usage (largest first);
+  - review and delete media per chat (multi-select);
+  - **"Keep media": Forever / 1 year / 30 days** (auto-delete older local media; the messages stay with a "Media removed" placeholder).
+- **Auto-download:** Photos (Wi-Fi + mobile / Wi-Fi only / never); Video & files (Wi-Fi only by default); voice always.
+  - **When not auto-downloaded:** a tap-to-download placeholder with the size; **"Available until <date>"** because the server deletes it after 30 days (or 1 h after everyone else fetched it, which only counts devices that downloaded).
+- **Low storage:**
+  - check the free space before each download/attachment send;
+  - **below ~500 MB free:** pause auto-downloads, show a gentle banner ("Your iPhone is almost full. Lime paused downloads."), and **never crash or corrupt the DB**: fail the single download cleanly and keep it retryable while the server copy exists.
+  - Test with a simulated full disk.
+- **Never** let iOS purge chat media silently (it's not in Caches); it **is** excluded from iCloud backup (encrypted; recovery comes via D5).
+
+### THE QA INTAKE RULE (the user, 2026-10-08): "I'll keep adding them as I see; you prioritise."**
+- **Plot appends** small UI/QA items to the **current open QA brief (LIME-104)** until it's sent.
+- **Protocol/feature-sized items** go to a feature brief (105/106 or new).
+- **The order now:** 98d → **104 (QA)** → 105 → 106 → **107 (storage)** → mesh v1.
+
 ### LIME-104 → `tend` (lime-aa) (after LIME-98d): QA round (formatting state, group avatar, Reply wording, Replies screen, search in replies)
 **The user's QA notes (2026-10-08), while tend is on LIME-98c.**
 
@@ -1813,6 +1926,20 @@ If anything contradicts this brief, stop and ask the user.
 
 6. **The chat header tool group** (search, phone, ⋯; top right in chats and Replies): **tighter spacing between the three icons** (the hit targets stay ≥ 44pt; reduce the visual gaps/padding so the glass pill is more compact). Check 375pt.
 7. **The ⋯ menu: "Mute Notifications" → "Mute".**
+
+8. **(Added 2026-10-08) The Messages list preview shows the latest activity, including replies.** Today a new reply only bumps the unread counter, and the row keeps showing the last main-timeline message.
+   - The row shows the **most recent message or reply**;
+   - for a reply, prefix it: "↩ Jean: sounds good" (or "Jean replied: …"); in groups, "Name: …";
+   - **the row's time and sort order follow the latest activity**, replies included.
+9. **(Added) Attachment previews in the Messages list:**
+   - the row shows a small type icon + label for attachments: 📷 Photo / 📷 3 Photos, 🎬 Video, 🎤 Voice message (0:12), 📄 File name.pdf; **with the caption if there is one**;
+   - **a tiny thumbnail** at the trailing edge for photos/videos (from the encrypted 2 KB thumbnail; nothing extra is fetched).
+10. **(Added) Swipe actions on Messages rows** (iOS-native `swipeActions`):
+   - **swipe left: Mute** (opens the mute durations) **and Delete** (red; confirms "Delete chat? This removes it from this phone.");
+   - **swipe right: Unread/Read** (toggles; the unread dot) **and Pin/Unpin**.
+   - **Pinned chats sort to the top** with a pin glyph.
+   - **The core needs:** a manual "mark unread" flag, `pinned` (exists: check), delete-chat-for-me (a local clear, like the web's `cleared_at`).
+   - **Groups:** Delete = "Leave and delete" (confirm), or just delete locally if you've already left.
 
 **Verification (the tiered rule):**
 - unit + UI tests for each item (the pressed-state contrast token test; the group photo set/change/remove across 2 accounts in the integration test, with the server holding only ciphertext; menu wording; the title; find hits in replies);
@@ -1866,15 +1993,17 @@ If anything contradicts this brief, stop and ask the user.
   - Attachments are re-shared by reference (the same encrypted blob + key travel in the new message; the blob's lifetime extends to the new recipients).
   - Formatting is preserved.
   - Up to 5 chats per forward (anti-spam, like WhatsApp).
-- **Note to Self:**
-  - a personal chat with yourself, pinned at the top of **New Message** ("Note to Self", your avatar with a note badge) and searchable;
+- **Messaging yourself** (the user, 2026-10-08: **don't call it "Note to Self"; it's just your own name**, like messaging anyone else):
+  - **you appear in New Message as yourself** (your name, your avatar, your @username; no special badge or label), in the normal A–Z list and in search;
+  - the chat's title is your name, and it sits in Messages like any other chat;
+  - searchable;
   - **stored on your phone only for now** (encrypted at rest; nothing is sent to the server); it syncs to your other devices once device linking exists;
   - supports everything a chat does (formatting, attachments, threads, edit, delete, search).
 - **Link preview cards:** as specified in LIME-105 below (moved here).
 
 **Gate:**
 - forward a message to two chats;
-- write a Note to Self with a photo, and find it via search;
+- find **yourself** in New Message, send yourself a message with a photo, and find it via search;
 - send a link → card.
 
 **Record:** `## LIME-106`. Commit: `feat: forward, Note to Self, link preview cards`, trailer `Brief: LIME-106`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.

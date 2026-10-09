@@ -50,9 +50,11 @@ struct ThreadView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            ChatComposer(model: composerModel) { markdown in
+            ChatComposer(model: composerModel, onSend: { markdown in
                 Task { await store.sendReply(markdown, root: target.rootID, in: target.conversationID) }
-            }
+            }, onSendAttachments: { items, caption in
+                store.sendAttachments(items, caption: caption, in: target.conversationID, replyTo: target.rootID)
+            })
         }
         .navigationTitle("Thread")
         .navigationBarTitleDisplayMode(.inline)
