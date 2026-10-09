@@ -9,7 +9,7 @@ final class MessageActionsState {
     var editing: Message?
     var editText = ""
     var picking: Message?
-    var reactors: (message: Message, chip: ReactionChip)?
+    var reactors: Message?
     /// The messages a Delete is about (one from the menu, or the selected ones).
     var deleting: [Message] = []
 }
@@ -44,7 +44,13 @@ struct MessageActionsHost: ViewModifier {
                 }
             }
             .sheet(isPresented: Binding(get: { state.reactors != nil }, set: { if !$0 { state.reactors = nil } })) {
-                if let reactors = state.reactors { ReactorsSheet(chip: reactors.chip) { state.reactors = nil } }
+                if let message = state.reactors {
+                    // Read the live message, so the list is current if someone reacts while it is open.
+                    ReactorsSheet(chips: liveChips(message), mineToggle: { emoji in
+                        state.reactors = nil
+                        Task { await store.toggleReaction(emoji, on: message, in: conversationID) }
+                    }) { state.reactors = nil }
+                }
             }
             .confirmationDialog(deleteTitle, isPresented: Binding(get: { !state.deleting.isEmpty }, set: { if !$0 { state.deleting = [] } }), titleVisibility: .visible) {
                 Button("Delete for me", role: .destructive) { delete(everyone: false) }
@@ -58,6 +64,19 @@ struct MessageActionsHost: ViewModifier {
                 Text(everyoneAllowed ? "“Delete for everyone” replaces \(state.deleting.count == 1 ? "it" : "them") with “This message was deleted” on their phones. Lime can't guarantee it's gone if someone already saw or saved it."
                                      : "This removes \(state.deleting.count == 1 ? "it" : "them") from this phone only.")
             }
+    }
+
+    /// The message's reactions as they are now.
+    private func liveChips(_ message: Message) -> [ReactionChip] {
+        let live = store.conversation(conversationID)?.messages.first { $0.id == message.id }
+            ?? store.threads.values.lazy.flatMap { $0 }.first { $0.id == message.id }
+        return (live ?? message).reactions
+    }
+
+    /// A single picture with no words: Copy puts the picture on the pasteboard.
+    private func copyableImage(_ message: Message) -> AttachmentItem? {
+        guard message.text.isEmpty, message.attachments.count == 1, let only = message.attachments.first, only.kind == .image else { return nil }
+        return only
     }
 
     private var everyoneAllowed: Bool { !state.deleting.isEmpty && state.deleting.allSatisfy { $0.canDeleteForEveryone() } }
@@ -116,15 +135,21 @@ struct MessageActionsHost: ViewModifier {
                     if !message.deleted {
                         row("arrowshape.turn.up.right", "Forward", id: "action-forward") { state.menu = nil; store.comingNext("Forward") }
                     }
-                    if message.canEdit(), !message.deleted {
+                    // On a photo, album, video, voice message or file, Edit changes the caption only (so it needs one).
+                    if message.canEdit(), !message.deleted, message.attachments.isEmpty || !message.text.isEmpty {
                         row("pencil", "Edit", id: "action-edit") {
                             state.menu = nil
                             state.editText = message.text
                             state.editing = message
                         }
                     }
-                    if !message.deleted, !(message.text.isEmpty) {
-                        row("doc.on.doc", "Copy", id: "action-copy") { state.menu = nil; store.copyToPasteboard(message) }
+                    // Copy: the words (a caption included), or the picture when it is a single picture without words.
+                    if !message.deleted, !message.text.isEmpty || copyableImage(message) != nil {
+                        row("doc.on.doc", "Copy", id: "action-copy") {
+                            state.menu = nil
+                            if let single = copyableImage(message) { Task { if let image = await store.image(for: single) { UIPasteboard.general.image = image } } }
+                            else { store.copyToPasteboard(message) }
+                        }
                     }
                     row("checkmark.circle", "Select", id: "action-select") { state.menu = nil; selection = [message.id] }
                     row("trash", "Delete", id: "action-delete", destructive: true, last: true) { state.menu = nil; state.deleting = [message] }
@@ -238,28 +263,54 @@ struct EmojiPickerSheet: View {
     }
 }
 
-/// Who reacted with one emoji.
+/// Every reaction on a message with who reacted; tap your own to remove it.
 struct ReactorsSheet: View {
-    let chip: ReactionChip
+    let chips: [ReactionChip]
+    var mineToggle: (String) -> Void
     var finish: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(chip.emoji).font(.system(size: 34))
-                Text("\(chip.count)").font(Theme.title).foregroundStyle(Theme.textSecondary)
+                Text("Reactions").font(Theme.title).foregroundStyle(Theme.text)
                 Spacer()
                 Button("Done") { finish() }.foregroundStyle(Theme.text).accessibilityIdentifier("reactors-done")
             }
-            ForEach(chip.people, id: \.self) { name in
-                Text(name).font(Theme.body).foregroundStyle(Theme.text).frame(minHeight: 36, alignment: .leading)
-                    .accessibilityIdentifier("reactor-\(name)")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(chips) { chip in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 8) {
+                                Text(chip.emoji).font(.system(size: 30))
+                                Text("\(chip.count)").font(Theme.title).foregroundStyle(Theme.textSecondary)
+                            }
+                            .accessibilityIdentifier("reaction-row-\(chip.emoji)")
+                            ForEach(chip.people, id: \.self) { name in
+                                if chip.mine && name == "You" {
+                                    Button { mineToggle(chip.emoji) } label: {
+                                        HStack {
+                                            Text(name).font(Theme.body).foregroundStyle(Theme.text)
+                                            Spacer()
+                                            Text("Tap to remove").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                                        }
+                                        .frame(minHeight: 36)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("reactor-remove-\(chip.emoji)")
+                                } else {
+                                    Text(name).font(Theme.body).foregroundStyle(Theme.text).frame(minHeight: 36, alignment: .leading)
+                                        .accessibilityIdentifier("reactor-\(name)")
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            Spacer(minLength: 0)
         }
         .padding(20)
         .background(Theme.canvas.ignoresSafeArea())
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 }
 

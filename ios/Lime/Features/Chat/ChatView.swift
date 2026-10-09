@@ -19,6 +19,9 @@ struct ChatView: View {
     @State private var findQuery = ""
     @State private var findHits: [MessageHit] = []
     @State private var findIndex = 0
+    /// The query `findHits` answers. The search task restarts whenever the chat reappears (Back from Replies);
+    /// without this it would search again and open Replies again.
+    @State private var searchedQuery: String?
     @State private var highlightedID: String?
     @State private var scrollRequest: ScrollRequest?
     @FocusState private var findFocused: Bool
@@ -140,6 +143,14 @@ struct ChatView: View {
                                 .padding(.vertical, 6).padding(.horizontal, 24)
                                 .frame(maxWidth: .infinity)
                                 .accessibilityIdentifier("system-line")
+                        case .deletedRun(let count):
+                            Text("\(count) messages deleted")
+                                .font(Theme.caption.italic())
+                                .foregroundStyle(Theme.textSecondary)
+                                .padding(.vertical, 6).padding(.horizontal, 24)
+                                .frame(maxWidth: .infinity)
+                                .padding(.bottom, 2)
+                                .accessibilityIdentifier("deleted-run")
                         case .message(let message, let showAvatar):
                             MessageBubble(message: message,
                                           sender: store.person(message.senderID, in: conversation),
@@ -151,8 +162,7 @@ struct ChatView: View {
                                           onRetry: { Task { await store.resend(message.id) } },
                                           onOpenThread: { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) },
                                           onActions: { actions.menu = message },
-                                          onReact: { emoji in Task { await store.toggleReaction(emoji, on: message, in: conversation.id) } },
-                                          onWhoReacted: { chip in actions.reactors = (message, chip) },
+                                          onShowReactions: { actions.reactors = message },
                                           selection: selection.map { $0.contains(message.id) },
                                           onToggleSelect: { toggleSelection(message.id) })
                                 .padding(.bottom, 8)
@@ -165,6 +175,7 @@ struct ChatView: View {
                 .padding(.bottom, 8)
             }
             .accessibilityIdentifier("chat-scroll")
+            .environment(\.chatConversationID, conversationID)
             .linkOpening()
             .attachmentPresenting()
             .scrollDismissesKeyboard(.interactively)
@@ -261,6 +272,7 @@ struct ChatView: View {
         finding = false
         findQuery = ""
         findHits = []
+        searchedQuery = nil
         highlightedID = nil
     }
 
@@ -295,12 +307,14 @@ struct ChatView: View {
                 .accessibilityIdentifier("find-field")
                 .task(id: findQuery) {
                     let wanted = findQuery
-                    guard !wanted.trimmingCharacters(in: .whitespaces).isEmpty else { findHits = []; highlightedID = nil; return }
+                    guard wanted != searchedQuery else { return }
+                    guard !wanted.trimmingCharacters(in: .whitespaces).isEmpty else { findHits = []; highlightedID = nil; searchedQuery = wanted; return }
                     try? await Task.sleep(for: .milliseconds(150))
                     guard !Task.isCancelled else { return }
                     let hits = await store.findInChat(wanted, in: conversationID)
                     guard !Task.isCancelled else { return }
                     findHits = hits
+                    searchedQuery = wanted
                     findIndex = max(hits.count - 1, 0) // start at the newest match
                     if let last = hits.last { show(last) } else { highlightedID = nil }
                 }
@@ -525,9 +539,8 @@ struct MessageBubble: View {
     var onOpenThread: (() -> Void)? = nil
     /// Long-press: the actions menu (reactions, Reply, Edit, Copy, Select, Delete).
     var onActions: (() -> Void)? = nil
-    /// Tap a reaction chip to toggle my emoji; long-press one to see who reacted.
-    var onReact: ((String) -> Void)? = nil
-    var onWhoReacted: ((ReactionChip) -> Void)? = nil
+    /// Tap the reaction cluster on the bubble's corner: the sheet of who reacted with what.
+    var onShowReactions: (() -> Void)? = nil
     /// Select mode: `nil` outside it, otherwise whether this message is selected; tapping toggles.
     var selection: Bool? = nil
     var onToggleSelect: (() -> Void)? = nil
@@ -548,13 +561,14 @@ struct MessageBubble: View {
                         .font(Theme.caption.weight(.medium))
                         .foregroundStyle(Theme.text)
                 }
+                // Top to bottom: the bubble (the reaction cluster sits on its top corner), the time line right under it, then the replies.
                 content
-                if !message.reactions.isEmpty, !message.deleted { reactionChips }
-                if let thread = message.thread, let onOpenThread {
-                    ThreadSummaryRow(messageID: message.id, thread: thread, action: onOpenThread)
-                }
+                    .overlay(alignment: message.isOwn ? .topLeading : .topTrailing) {
+                        if hasReactions { reactionCluster.offset(x: message.isOwn ? -8 : 8, y: -13) }
+                    }
+                    .padding(.top, hasReactions ? 13 : 0)
                 HStack(spacing: 4) {
-                    Text(MessageFormat.clock(message.date))
+                    Text(MessageFormat.clock(message.date)).accessibilityIdentifier("message-time-\(message.id)")
                     if message.edited {
                         Text("· Edited").accessibilityIdentifier("edited-\(message.id)")
                     }
@@ -576,6 +590,9 @@ struct MessageBubble: View {
                 }
                 .font(Theme.caption)
                 .foregroundStyle(Theme.textSecondary)
+                if let thread = message.thread, let onOpenThread {
+                    ThreadSummaryRow(messageID: message.id, thread: thread, action: onOpenThread)
+                }
             }
             if !message.isOwn { Spacer(minLength: 56) }
             if let selection, message.isOwn { selectionCircle(selection) }
@@ -629,27 +646,32 @@ struct MessageBubble: View {
             }
         }
         .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { onActions?() } }
+        .environment(\.mediaLongPress, selection == nil ? onActions.map { MediaLongPress(messageID: message.id, action: $0) } : nil)
+        .environment(\.mediaSelecting, selection != nil)
     }
 
-    private var reactionChips: some View {
-        HStack(spacing: 6) {
-            ForEach(message.reactions) { chip in
-                HStack(spacing: 4) {
-                    Text(chip.emoji).font(.system(size: 15))
-                    if chip.count > 1 { Text("\(chip.count)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text) }
-                }
-                .padding(.horizontal, 9).padding(.vertical, 4)
-                .background(chip.mine ? Theme.pressed : Theme.surface, in: Capsule())
-                .overlay(Capsule().strokeBorder(chip.mine ? Theme.textSecondary.opacity(0.6) : Color.clear, lineWidth: 1))
-                .contentShape(Capsule())
-                .onTapGesture { if selection == nil { onReact?(chip.emoji) } }
-                .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { onWhoReacted?(chip) } }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(chip.emoji) \(chip.count)\(chip.mine ? ", yours" : "")")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier("reaction-\(message.id)-\(chip.emoji)")
-            }
+    private var hasReactions: Bool { !message.reactions.isEmpty && !message.deleted }
+
+    /// A small pill on the bubble's top corner (top-left on my messages, top-right on theirs): up to three emoji, and the total if there
+    /// are more reactions than emoji shown. Mine is outlined. Tapping it lists who reacted with what.
+    private var reactionCluster: some View {
+        let shown = Array(message.reactions.prefix(3))
+        let total = message.reactions.reduce(0) { $0 + $1.count }
+        let mine = message.reactions.contains(where: \.mine)
+        return HStack(spacing: 2) {
+            ForEach(shown) { chip in Text(chip.emoji).font(.system(size: 14)) }
+            if total > shown.count { Text("\(total)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text).padding(.leading, 2) }
         }
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(Theme.canvas, in: Capsule())
+        .overlay(Capsule().strokeBorder(mine ? Theme.textSecondary.opacity(0.75) : Theme.bubbleEdge, lineWidth: mine ? 1 : 0.5))
+        .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+        .contentShape(Capsule())
+        .onTapGesture { if selection == nil { onShowReactions?() } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Reactions: " + message.reactions.map { "\($0.emoji) \($0.count)" }.joined(separator: ", ") + (mine ? ", including yours" : ""))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("reaction-cluster-\(message.id)")
     }
 }
 

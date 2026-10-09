@@ -11,6 +11,7 @@ struct AttachmentStack: View {
     let message: Message
     let isOwn: Bool
     @Environment(ConversationStore.self) private var store
+    @Environment(\.chatConversationID) private var chatConversationID
 
     private var images: [AttachmentItem] { message.attachments.filter { $0.kind == .image } }
     private var others: [AttachmentItem] { message.attachments.filter { $0.kind != .image } }
@@ -23,7 +24,7 @@ struct AttachmentStack: View {
             ForEach(others) { item in
                 switch item.kind {
                 case .audio: VoiceBubble(item: item, isOwn: isOwn, uploading: uploading)
-                case .video: VideoTile(item: item, isOwn: isOwn, uploading: uploading)
+                case .video: VideoTile(item: item, isOwn: isOwn, uploading: uploading, messageID: message.id, conversationID: chatConversationID)
                 default: FileCard(item: item, isOwn: isOwn, uploading: uploading) { store.openedFile = item }
                 }
             }
@@ -35,12 +36,10 @@ struct AttachmentStack: View {
         let width: CGFloat = 248
         if images.count == 1, let only = images.first {
             let aspect = min(max(only.aspect, 0.6), 1.7)
-            Button { store.attachmentViewer = AttachmentViewerRequest(items: images, index: 0) } label: {
-                ImageTile(item: only, uploading: uploading)
-                    .frame(width: width, height: width / aspect)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            ImageTile(item: only, uploading: uploading)
+                .frame(width: width, height: width / aspect)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .mediaTap { store.attachmentViewer = AttachmentViewerRequest(items: images, index: 0, messageID: message.id, conversationID: chatConversationID) }
             .accessibilityLabel(only.name.isEmpty ? "Photo" : only.name)
             .accessibilityIdentifier("attachment-image-\(only.id)")
         } else {
@@ -48,18 +47,16 @@ struct AttachmentStack: View {
             let side = (width - 4) / 2
             LazyVGrid(columns: [GridItem(.fixed(side), spacing: 4), GridItem(.fixed(side), spacing: 4)], spacing: 4) {
                 ForEach(Array(shown.enumerated()), id: \.element.id) { index, item in
-                    Button { store.attachmentViewer = AttachmentViewerRequest(items: images, index: index) } label: {
-                        ImageTile(item: item, uploading: uploading)
-                            .frame(width: side, height: side)
-                            .overlay {
-                                if index == 3, images.count > 4 {
-                                    Color.black.opacity(0.5)
-                                    Text("+\(images.count - 3)").font(.system(size: 28, weight: .semibold)).foregroundStyle(.white)
-                                }
+                    ImageTile(item: item, uploading: uploading)
+                        .frame(width: side, height: side)
+                        .overlay {
+                            if index == 3, images.count > 4 {
+                                Color.black.opacity(0.5)
+                                Text("+\(images.count - 3)").font(.system(size: 28, weight: .semibold)).foregroundStyle(.white)
                             }
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .mediaTap { store.attachmentViewer = AttachmentViewerRequest(items: images, index: index, messageID: message.id, conversationID: chatConversationID) }
                     .accessibilityLabel(item.name.isEmpty ? "Photo" : item.name)
                     .accessibilityIdentifier("attachment-image-\(item.id)")
                 }
@@ -73,6 +70,9 @@ struct AttachmentStack: View {
 struct AttachmentViewerRequest: Identifiable {
     let items: [AttachmentItem]
     let index: Int
+    /// The message the pictures belong to (an album is one message): the viewer can react to it.
+    var messageID: String?
+    var conversationID: Conversation.ID?
     let id = UUID()
 }
 
@@ -84,7 +84,7 @@ struct AttachmentPresenting: ViewModifier {
     func body(content: Content) -> some View {
         content
             .fullScreenCover(item: Binding(get: { store.attachmentViewer }, set: { store.attachmentViewer = $0 })) { request in
-                AttachmentViewer(items: request.items, start: request.index)
+                AttachmentViewer(items: request.items, start: request.index, messageID: request.messageID, conversationID: request.conversationID)
             }
             .background(Color.clear.fullScreenCover(item: Binding(get: { store.openedFile }, set: { store.openedFile = $0 })) { item in
                 FileOpener(item: item)
@@ -145,8 +145,7 @@ struct FileCard: View {
     let open: () -> Void
 
     var body: some View {
-        Button(action: open) {
-            HStack(spacing: 12) {
+        HStack(spacing: 12) {
                 Image(systemName: symbol).font(.system(size: 26)).frame(width: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name.isEmpty ? "File" : item.name).font(Theme.body).lineLimit(1).truncationMode(.middle)
@@ -161,8 +160,7 @@ struct FileCard: View {
             .frame(width: 248, alignment: .leading)
             .background(isOwn ? Theme.ownBubble : Theme.bubbleOther, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous).strokeBorder(isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5))
-        }
-        .buttonStyle(.plain)
+        .mediaTap(open)
         .accessibilityLabel("\(item.name), \(item.detail)")
         .accessibilityIdentifier("attachment-file-\(item.id)")
     }
@@ -242,6 +240,9 @@ struct QuickLookView: UIViewControllerRepresentable {
 struct AttachmentViewer: View {
     let items: [AttachmentItem]
     @State var start: Int
+    /// The message these pictures belong to: reactions go to the message (an album is one message).
+    var messageID: String?
+    var conversationID: Conversation.ID?
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var page = 0
@@ -270,6 +271,7 @@ struct AttachmentViewer: View {
                         .accessibilityIdentifier("attachment-viewer-count")
                 }
                 Spacer()
+                ViewerReactButton(messageID: messageID, conversationID: conversationID)
                 Button { Task { await save() } } label: {
                     Image(systemName: saved ? "checkmark" : "square.and.arrow.down").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                         .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
@@ -427,5 +429,80 @@ struct DraftStrip: View {
             .padding(.horizontal, 6)
         }
         .accessibilityIdentifier("draft-strip")
+    }
+}
+
+// MARK: Taps and long-presses on media
+
+extension EnvironmentValues {
+    /// The long-press that opens a message's actions menu (a photo, an album, a video, a voice message or a file card is part of the message).
+    @Entry var mediaLongPress: MediaLongPress? = nil
+    /// Select mode: media do not react to taps (the row toggles instead).
+    @Entry var mediaSelecting = false
+    /// The conversation the visible messages are in (so the picture viewer can react to the message).
+    @Entry var chatConversationID: Conversation.ID? = nil
+}
+
+/// The action a long-press on media runs, comparable (by message) so the environment does not refresh needlessly.
+struct MediaLongPress: Equatable {
+    let messageID: String
+    let action: () -> Void
+    static func == (lhs: MediaLongPress, rhs: MediaLongPress) -> Bool { lhs.messageID == rhs.messageID }
+}
+
+/// A tap that opens the media and a long-press that opens the message's actions, like the text bubbles. (A plain `Button` would swallow
+/// the long-press, so media use a tap gesture; it still reads as a button to VoiceOver and tests.)
+struct MediaTap: ViewModifier {
+    let action: () -> Void
+    @Environment(\.mediaLongPress) private var longPress
+    @Environment(\.mediaSelecting) private var selecting
+
+    func body(content: Content) -> some View {
+        if selecting {
+            content.accessibilityElement(children: .ignore)
+        } else {
+            content
+                .contentShape(Rectangle())
+                .onTapGesture(perform: action)
+                .onLongPressGesture(minimumDuration: 0.4) { longPress?.action() }
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+        }
+    }
+}
+
+extension View {
+    func mediaTap(_ action: @escaping () -> Void) -> some View { modifier(MediaTap(action: action)) }
+}
+
+/// A react button in a full-screen viewer (pictures and video): the six quick emoji, applied to the message the media belong to
+/// (an album is one message). Hidden when the viewer was not opened from a message.
+struct ViewerReactButton: View {
+    let messageID: String?
+    let conversationID: Conversation.ID?
+    @Environment(ConversationStore.self) private var store
+
+    private var message: Message? {
+        guard let messageID, let conversationID, let conversation = store.conversation(conversationID) else { return nil }
+        return conversation.messages.first { $0.id == messageID }
+            ?? store.threads.values.lazy.flatMap { $0 }.first { $0.id == messageID }
+    }
+
+    var body: some View {
+        if let message, let conversationID {
+            Menu {
+                ForEach(ConversationStore.quickReactions, id: \.self) { emoji in
+                    let mine = message.reactions.first { $0.emoji == emoji }?.mine ?? false
+                    Button { Task { await store.toggleReaction(emoji, on: message, in: conversationID) } } label: {
+                        Text(mine ? "\(emoji) ✓" : emoji)
+                    }
+                    .accessibilityIdentifier("viewer-react-\(emoji)")
+                }
+            } label: {
+                Image(systemName: "face.smiling").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
+            }
+            .accessibilityLabel("React").accessibilityIdentifier("attachment-react")
+        }
     }
 }

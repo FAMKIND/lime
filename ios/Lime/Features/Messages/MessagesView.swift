@@ -108,7 +108,8 @@ struct MessagesView: View {
                     .accessibilityIdentifier("conversation-row-\(conversation.id)")
                     .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
                     .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                    // The swiped chat stays highlighted while its mute choices are open.
+                    .listRowBackground(muting == conversation.id ? Theme.surface : Color.clear)
                     // Swipe left: Delete and Mute. Swipe right: Unread/Read and Pin/Unpin.
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button { deleting = conversation.id } label: { Label("Delete", systemImage: "trash") }
@@ -126,7 +127,7 @@ struct MessagesView: View {
                             Label(conversation.isUnread ? "Read" : "Unread", systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge")
                         }
                         .tint(.blue).accessibilityIdentifier("swipe-unread-\(conversation.id)")
-                        Button { Task { await store.setPinned(conversation.id, !conversation.isPinned) } } label: {
+                        Button { pinChanged(conversation) } label: {
                             Label(conversation.isPinned ? "Unpin" : "Pin", systemImage: conversation.isPinned ? "pin.slash" : "pin")
                         }
                         .tint(.gray).accessibilityIdentifier("swipe-pin-\(conversation.id)")
@@ -139,7 +140,8 @@ struct MessagesView: View {
         .contentMargins(.bottom, bottom, for: .scrollContent)
         .accessibilityIdentifier("messages-list")
         .refreshable { await store.pullToRefresh() }
-        .confirmationDialog("Mute", isPresented: Binding(get: { muting != nil }, set: { if !$0 { muting = nil } }), titleVisibility: .visible) {
+        .animation(.snappy, value: store.chats.map(\.id))
+        .confirmationDialog(muteTitle, isPresented: Binding(get: { muting != nil }, set: { if !$0 { muting = nil } }), titleVisibility: .visible) {
             ForEach(MuteDuration.allCases) { duration in
                 Button(duration.title) {
                     if let id = muting { notifications.settings.mute(id, for: duration) }
@@ -158,6 +160,17 @@ struct MessagesView: View {
             Button("Cancel", role: .cancel) { deleting = nil }
         } message: {
             Text(deleteMessage)
+        }
+    }
+
+    private var muteTitle: String { "Mute \(muting.flatMap { id in store.chats.first { $0.id == id }?.title } ?? "chat")" }
+
+    /// Pin or unpin: let the swipe close first, then the row slides to its place (the list animates the move; ids are stable).
+    private func pinChanged(_ conversation: Conversation) {
+        let id = conversation.id, pin = !conversation.isPinned
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            await store.setPinned(id, pin)
         }
     }
 
@@ -409,6 +422,9 @@ struct ConversationRow: View {
     @Environment(NotificationCoordinator.self) private var notifications
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 52
 
+    /// The photo or video thumbnail in the preview line (32-36 pt).
+    static let thumbnailSize: CGFloat = 34
+
     private var line: ListPreview { ListPreview.make(conversation) }
     private var preview: String { line.plain }
     private var time: String { MessageFormat.listTime(conversation.lastMessage?.date) }
@@ -417,7 +433,17 @@ struct ConversationRow: View {
     /// A picture or video in the newest message: its tiny thumbnail goes at the trailing edge.
     private var thumbnail: UIImage? {
         guard let item = conversation.lastMessage?.attachments.first(where: { $0.kind == .image || $0.kind == .video }), !item.thumb.isEmpty else { return nil }
-        return UIImage(data: item.thumb)
+        return UIImage(data: item.thumb).map(Self.squareCrop)
+    }
+
+    /// The middle square of a picture, so the thumbnail is exactly square (an image that is cropped by a frame still reports its full width).
+    private static func squareCrop(_ image: UIImage) -> UIImage {
+        let side = min(image.size.width, image.size.height)
+        guard side > 0, image.size.width != image.size.height else { return image }
+        let format = UIGraphicsImageRendererFormat(); format.scale = image.scale
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            image.draw(at: CGPoint(x: (side - image.size.width) / 2, y: (side - image.size.height) / 2))
+        }
     }
 
     var body: some View {
@@ -428,13 +454,11 @@ struct ConversationRow: View {
                     Text(conversation.title)
                         .font(Theme.title)
                         .foregroundStyle(Theme.text)
-                        .lineLimit(2)
+                        .lineLimit(1)
+                        .layoutPriority(2)
+                        .accessibilityIdentifier("row-title-\(conversation.id)")
                     if let label {
-                        Text(label)
-                            .font(Theme.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
-                            .accessibilityIdentifier("row-label-\(conversation.id)")
+                        LabelCapsule(text: label, id: "row-label-\(conversation.id)")
                     }
                     if notifications.settings.isMuted(conversation.id) {
                         Image(systemName: "bell.slash.fill")
@@ -452,6 +476,7 @@ struct ConversationRow: View {
                     Text(time)
                         .font(Theme.secondary)
                         .foregroundStyle(Theme.textSecondary)
+                        .fixedSize()
                 }
                 HStack(alignment: .center, spacing: 8) {
                     previewText
@@ -461,10 +486,10 @@ struct ConversationRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityIdentifier("row-preview-\(conversation.id)")
                     if let thumbnail {
-                        Image(uiImage: thumbnail).resizable().scaledToFill()
-                            .frame(width: 40, height: 40)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .accessibilityHidden(true)
+                        Image(uiImage: thumbnail).resizable().scaledToFit()
+                            .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .accessibilityElement(children: .ignore)
                             .accessibilityIdentifier("row-thumb-\(conversation.id)")
                     }
                     if conversation.unread > 0 {
@@ -474,15 +499,20 @@ struct ConversationRow: View {
                             .frame(minWidth: 22)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Theme.accent, in: Capsule())
-                    } else if conversation.markedUnread {
-                        Circle().fill(Theme.accent).frame(width: 12, height: 12)
-                            .accessibilityIdentifier("unread-dot-\(conversation.id)")
                     }
                 }
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 12)
+        // The marked-unread dot sits to the left of the avatar, like Mail and Messages.
+        .overlay(alignment: .topLeading) {
+            if conversation.markedUnread && conversation.unread == 0 {
+                Circle().fill(Theme.accent).frame(width: 9, height: 9)
+                    .offset(x: -3, y: 12 + avatarSize / 2 - 4.5)
+                    .accessibilityIdentifier("unread-dot-\(conversation.id)")
+            }
+        }
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.unread > 0 ? ", \(conversation.unread) unread" : (conversation.markedUnread ? ", unread" : ""))")

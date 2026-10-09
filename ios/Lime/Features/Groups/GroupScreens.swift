@@ -307,8 +307,10 @@ struct GroupDetailsView: View {
                         }
                     }
                     if details.canRename {
-                        Image(systemName: "pencil").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.accentInk)
-                            .frame(width: 26, height: 26).background(Theme.accent, in: Circle())
+                        Image(systemName: "camera.fill").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text)
+                            .frame(width: 28, height: 28).background(Theme.pressed, in: Circle())
+                            .overlay(Circle().stroke(Theme.canvas, lineWidth: 2))
+                            .accessibilityIdentifier("group-photo-badge")
                     }
                 }
             }
@@ -322,7 +324,11 @@ struct GroupDetailsView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text(details.name).font(.system(.title2, design: .default, weight: .bold)).foregroundStyle(Theme.text)
-                    if details.canRename { Image(systemName: "pencil").font(.system(size: 15)).foregroundStyle(Theme.textSecondary) }
+                    if details.canRename {
+                        Image(systemName: "pencil").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text)
+                            .frame(width: 26, height: 26).background(Theme.pressed, in: Circle())
+                            .accessibilityIdentifier("group-name-pencil")
+                    }
                 }
             }
             .buttonStyle(.plain)
@@ -341,8 +347,8 @@ struct GroupDetailsView: View {
                 AvatarView(person: Person(id: member.userId, name: member.isMe ? "You" : member.name, tone: Int(member.tone)), size: 44)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Text(member.name).font(Theme.body).foregroundStyle(Theme.text)
-                        if let label = member.label { Text(label).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1) }
+                        Text(member.name).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1).layoutPriority(2)
+                        if let label = member.label { LabelCapsule(text: label, id: "member-label-\(member.userId)") }
                     }
                     if member.role != "member" {
                         Text(member.role == "owner" ? "Owner" : "Admin").font(Theme.caption).foregroundStyle(Theme.textSecondary)

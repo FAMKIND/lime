@@ -59,3 +59,31 @@ final class MessageActionsTests: XCTestCase {
         XCTAssertTrue(UIPasteboard.general.contains(pasteboardTypes: ["public.rtf"]), "formatting travels as rich text")
     }
 }
+
+final class DeletedRunTests: XCTestCase {
+    private func conversation(_ deletedFlags: [Bool]) -> Conversation {
+        let now = Date()
+        let messages = deletedFlags.enumerated().map { index, gone -> Message in
+            var m = Message(id: "m\(index)", senderID: "sam", text: gone ? "" : "hello \(index)", date: now.addingTimeInterval(Double(index)))
+            m.deleted = gone
+            return m
+        }
+        return Conversation(id: "dm:sam", title: "Sam", members: [Person(id: "sam", name: "Sam Park")], messages: messages)
+    }
+
+    private func shape(_ rows: [ChatRow]) -> [String] {
+        rows.compactMap {
+            switch $0.kind {
+            case .message(let m, _): return m.deleted ? "deleted" : "message"
+            case .deletedRun(let count): return "run\(count)"
+            default: return nil
+            }
+        }
+    }
+
+    func testTwoOrMoreDeletedInARowBecomeOneLineAndASingleOneStays() {
+        XCTAssertEqual(shape(ChatRow.rows(for: conversation([false, true, true, true, false, true, false]))), ["message", "run3", "message", "deleted", "message"])
+        XCTAssertEqual(shape(ChatRow.rows(for: conversation([true, true]))), ["run2"])
+        XCTAssertEqual(shape(ChatRow.rows(for: conversation([true]))), ["deleted"])
+    }
+}

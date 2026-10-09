@@ -282,17 +282,15 @@ struct VoiceBubble: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Button { Task { await play() } } label: {
-                ZStack {
-                    Circle().fill(isOwn ? Theme.ownBubbleInk.opacity(0.16) : Theme.surface).frame(width: 40, height: 40)
-                    if loading || uploading {
-                        TransferRing(attachmentID: item.id, active: true, tint: ink).frame(width: 28, height: 28)
-                    } else {
-                        Image(systemName: isCurrent && player.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 16)).foregroundStyle(ink)
-                    }
+            ZStack {
+                Circle().fill(isOwn ? Theme.ownBubbleInk.opacity(0.16) : Theme.surface).frame(width: 40, height: 40)
+                if loading || uploading {
+                    TransferRing(attachmentID: item.id, active: true, tint: ink).frame(width: 28, height: 28)
+                } else {
+                    Image(systemName: isCurrent && player.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 16)).foregroundStyle(ink)
                 }
             }
-            .buttonStyle(.plain)
+            .mediaTap { Task { await play() } }
             .accessibilityLabel(isCurrent && player.isPlaying ? "Pause voice message" : "Play voice message")
             .accessibilityIdentifier("voice-play-\(item.id)")
             Waveform(bars: item.thumb, progress: isCurrent ? player.progress : 0, ink: ink)

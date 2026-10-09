@@ -2326,6 +2326,34 @@ fn delete_for_me_removes_it_here_only_and_a_deleted_root_keeps_its_replies() {
 }
 
 #[test]
+fn deleted_replies_leave_the_thread_summary() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let (chat_a, chat_b) = (format!("dm:{}", bob.user), format!("dm:{}", alice.user));
+    let root = alice.store.queue_text(chat_a.clone(), "who can cover recess?".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let one = reply(&bob, &alice, &transport, &root.id, "I can");
+    let two = reply(&bob, &alice, &transport, &root.id, "or maybe not");
+    sync(&alice, &transport);
+    let summary = || alice.store.list_thread_summaries(chat_a.clone()).unwrap();
+    assert_eq!(summary()[0].reply_count, 2);
+
+    bob.store.delete_message_for_everyone(chat_b.clone(), two.id.clone()).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    assert_eq!(summary()[0].reply_count, 1, "a deleted reply is not counted");
+
+    bob.store.delete_message_for_everyone(chat_b.clone(), one.id.clone()).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    assert!(summary().is_empty(), "no live replies: no summary under the message");
+    assert_eq!(alice.store.list_thread(root.id.clone()).unwrap().len(), 3, "Replies still shows the placeholders for context");
+}
+
+#[test]
 fn an_edit_or_delete_that_arrives_before_its_message_waits_for_it() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);

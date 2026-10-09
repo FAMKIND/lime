@@ -91,13 +91,14 @@ struct VideoTile: View {
     let item: AttachmentItem
     let isOwn: Bool
     var uploading = false
+    var messageID: String?
+    var conversationID: Conversation.ID?
     @Environment(ConversationStore.self) private var store
     @State private var opening = false
     @State private var poster: UIImage?
 
     var body: some View {
-        Button { Task { await open() } } label: {
-            ZStack {
+        ZStack {
                 Theme.surface
                 if let poster {
                     Image(uiImage: poster).resizable().scaledToFill()
@@ -118,8 +119,7 @@ struct VideoTile: View {
                     .padding(.horizontal, 7).padding(.vertical, 3).background(.black.opacity(0.5), in: Capsule()).padding(8)
             }
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
+        .mediaTap { Task { await open() } }
         .accessibilityLabel("Video, \(VoiceFormat.clock(Double(item.durationMs ?? 0) / 1000))")
         .accessibilityIdentifier("attachment-video-\(item.id)")
     }
@@ -128,12 +128,14 @@ struct VideoTile: View {
         opening = !item.downloaded
         defer { opening = false }
         guard let url = await store.fileURL(for: item) else { store.report(.offline); return }
-        store.playingVideo = VideoRequest(url: url)
+        store.playingVideo = VideoRequest(url: url, messageID: messageID, conversationID: conversationID)
     }
 }
 
 struct VideoRequest: Identifiable {
     let url: URL
+    var messageID: String?
+    var conversationID: Conversation.ID?
     let id = UUID()
 }
 
@@ -153,6 +155,11 @@ struct VideoPlayerScreen: View {
             }
             .padding(.leading, 16).padding(.top, 8)
             .accessibilityLabel("Close").accessibilityIdentifier("video-player-close")
+            HStack {
+                Spacer()
+                ViewerReactButton(messageID: request.messageID, conversationID: request.conversationID)
+            }
+            .padding(.trailing, 16).padding(.top, 8)
         }
         .onAppear {
             try? AVAudioSession.sharedInstance().setCategory(.playback)

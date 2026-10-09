@@ -41,12 +41,12 @@ final class ColourHierarchyTests: XCTestCase {
         for dark in [false, true] {
             let pressed = Theme.uiColor(Theme.Name.pressed, dark: dark)
             XCTAssertNotEqual(pressed, Theme.uiColor(Theme.Name.accent, dark: dark), "an active format button is not the accent")
-            // LIME-104: subtler than before (it was 3:1 or more), but still visible: at least 1.5:1 on the canvas and on the surface.
+            // LIME-104-fix: lighter still (about half the contrast of before): 1.2 to 1.4:1 on the canvas; the icon weight carries the state.
             let bar = contrast(Theme.Name.pressed, Theme.Name.canvas, dark: dark)
-            XCTAssertGreaterThanOrEqual(bar, 1.5, "the pressed fill against the bar, dark: \(dark): \(String(format: "%.2f", bar))")
-            XCTAssertLessThan(bar, 2.5, "and not as heavy as the old grey circles, dark: \(dark)")
+            XCTAssertGreaterThanOrEqual(bar, 1.2, "the pressed fill against the bar, dark: \(dark): \(String(format: "%.2f", bar))")
+            XCTAssertLessThanOrEqual(bar, 1.4, "and not as heavy as the old grey circles, dark: \(dark)")
             let onSurface = contrast(Theme.Name.pressed, Theme.Name.surface, dark: dark)
-            XCTAssertGreaterThanOrEqual(onSurface, 1.5, "against the surface the composer sits on, dark: \(dark): \(String(format: "%.2f", onSurface))")
+            XCTAssertGreaterThanOrEqual(onSurface, 1.05, "against the surface the composer sits on, dark: \(dark): \(String(format: "%.2f", onSurface))")
             let ink = contrast(Theme.Name.pressed, Theme.Name.text, dark: dark)
             XCTAssertGreaterThanOrEqual(ink, 4.5, "the ink on the pressed fill, dark: \(dark): \(String(format: "%.2f", ink))")
             // warm, not blue-grey: red is not below blue

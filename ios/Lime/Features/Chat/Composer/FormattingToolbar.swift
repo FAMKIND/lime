@@ -52,7 +52,9 @@ struct FormattingToolbar: View {
 
     private func item<Content: View>(on: Bool, id: String, label: String, action: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
         Button(action: action) {
+            // Active is a faint fill and the icon in heavier ink, so it reads without a strong circle.
             content()
+                .fontWeight(on ? .bold : .regular)
                 .frame(width: 42, height: 38)
                 .background(on ? Theme.pressed : Color.clear, in: Capsule())
         }

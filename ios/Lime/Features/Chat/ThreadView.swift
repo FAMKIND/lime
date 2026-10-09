@@ -44,6 +44,7 @@ struct ThreadView: View {
                     .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8)
                 }
                 .accessibilityIdentifier("thread-scroll")
+                .environment(\.chatConversationID, target.conversationID)
                 .scrollDismissesKeyboard(.interactively)
                 .defaultScrollAnchor(.bottom)
                 .linkOpening()
@@ -196,7 +197,7 @@ struct ThreadView: View {
     }
 
     private var replyCountText: String {
-        let n = max(messages.count - 1, 0)
+        let n = messages.dropFirst().filter { !$0.deleted }.count   // a deleted reply keeps its line below, but is not counted
         return n == 0 ? "No replies yet" : "\(n) \(n == 1 ? "reply" : "replies")"
     }
 
@@ -210,8 +211,7 @@ struct ThreadView: View {
                       findWords: finding ? findWords : (highlightedID == target.focusMessageID ? target.words : []),
                       onRetry: { Task { await store.resend(message.id) } },
                       onActions: { actions.menu = message },
-                      onReact: { emoji in Task { await store.toggleReaction(emoji, on: message, in: target.conversationID) } },
-                      onWhoReacted: { chip in actions.reactors = (message, chip) },
+                      onShowReactions: { actions.reactors = message },
                       selection: selection.map { $0.contains(message.id) },
                       onToggleSelect: { if var current = selection { if current.contains(message.id) { current.remove(message.id) } else { current.insert(message.id) }; selection = current } })
             .padding(.bottom, 8)

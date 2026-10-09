@@ -409,11 +409,22 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(pin.waitForExistence(timeout: 5), "Pin is offered on a right swipe")
         XCTAssertTrue(app.buttons["swipe-unread-dm:sam"].exists, "and Unread")
         pin.tap()
+        // The row slides to its place: while it moves, no two rows overlap by more than a few points.
+        for _ in 0..<12 {
+            let frames = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-'")).allElementsBoundByIndex.map(\.frame).filter { $0.height > 0 }.sorted { $0.minY < $1.minY }
+            for (upper, lower) in zip(frames, frames.dropFirst()) {
+                XCTAssertLessThanOrEqual(upper.maxY - lower.minY, 6, "rows do not draw on top of each other while one moves")
+            }
+            Thread.sleep(forTimeInterval: 0.08)
+        }
         XCTAssertTrue(app.descendants(matching: .any)["pinned-dm:sam"].waitForExistence(timeout: 5), "pinned: the pin glyph shows")
         // Swipe right again: mark unread: the dot shows.
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForExistence(timeout: 5), "marked unread: a dot")
+        let dot = app.descendants(matching: .any)["unread-dot-dm:sam"]
+        XCTAssertTrue(dot.waitForExistence(timeout: 5), "marked unread: a dot")
+        XCTAssertLessThan(dot.frame.midX, app.staticTexts["row-title-dm:sam"].frame.minX, "the dot is on the left, before the avatar and name")
+        XCTAssertLessThan(dot.frame.midX, 40)
         // Swipe left: Mute asks for how long; Delete asks to confirm.
         app.buttons["conversation-row-dm:sam"].swipeLeft()
         XCTAssertTrue(app.buttons["swipe-delete-dm:sam"].waitForExistence(timeout: 5))
@@ -424,6 +435,7 @@ final class LimeUITests: XCTestCase {
         }
         app.buttons["swipe-mute-dm:sam"].tap()
         XCTAssertTrue(app.buttons["mute-hour"].waitForExistence(timeout: 5), "the mute durations")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Mute Sam'")).firstMatch.exists, "the dialog is titled with the chat's name")
         app.buttons.matching(identifier: "mute-hour").firstMatch.tap()
         XCTAssertTrue(app.descendants(matching: .any)["muted-dm:sam"].waitForExistence(timeout: 5))
         app.buttons["conversation-row-dm:sam"].swipeLeft()
@@ -445,7 +457,10 @@ final class LimeUITests: XCTestCase {
         let preview = app.descendants(matching: .any)["row-preview-dm:att"]
         XCTAssertTrue(preview.waitForExistence(timeout: 10))
         XCTAssertTrue(preview.label.hasSuffix("Photo"), preview.label)
-        XCTAssertTrue(app.descendants(matching: .any)["row-thumb-dm:att"].exists, "a tiny thumbnail at the trailing edge")
+        let thumb = app.descendants(matching: .any)["row-thumb-dm:att"]
+        XCTAssertTrue(thumb.exists, "a tiny thumbnail at the trailing edge")
+        XCTAssertLessThanOrEqual(thumb.frame.width, 36, "a small thumbnail \(thumb.debugDescription)")
+        XCTAssertGreaterThanOrEqual(thumb.frame.width, 30)
 
         // A reply is the latest activity: "↩ You: …".
         let thread = threadApp("thread-open")
@@ -498,6 +513,18 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(chatField.waitForExistence(timeout: 5))
         chatField.typeText("half")
         XCTAssertTrue(app.descendants(matching: .any)["replies-title"].waitForExistence(timeout: 8), "a hit in a reply opens its Replies screen")
+        // Back returns to the chat and stays there: find still open at the same "N of M", Replies not re-opened.
+        goBack(app)
+        XCTAssertTrue(app.textFields["find-field"].waitForExistence(timeout: 5), "Back lands in the chat with find still open")
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertFalse(app.descendants(matching: .any)["replies-title"].exists, "Back does not re-open Replies")
+        XCTAssertTrue(app.staticTexts["find-count"].label.contains(" of "))
+        // Done closes find with no navigation; Back again reaches Messages.
+        app.buttons["find-done"].tap()
+        XCTAssertFalse(app.textFields["find-field"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["replies-title"].exists)
+        goBack(app)
+        XCTAssertTrue(app.buttons["conversation-row-dm:rae"].waitForExistence(timeout: 5) || app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-'")).firstMatch.exists, "Back again reaches Messages")
     }
 
     func testTheHeaderToolsAreCloserTogetherButStillBigEnoughToTap() {
@@ -544,6 +571,12 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["chat-label"].waitForExistence(timeout: 5), "the label shows in the chat header")
         goBack(app)
         XCTAssertTrue(app.staticTexts["row-label-dm:sam"].waitForExistence(timeout: 5), "and in the Messages list")
+        // LIME-104-fix: the label never wraps the name; the name stays on one line and the label is one line too.
+        let title = app.staticTexts["row-title-dm:sam"]
+        XCTAssertTrue(title.exists)
+        XCTAssertLessThan(title.frame.height, 30, "the name is on one line")
+        XCTAssertLessThan(app.staticTexts["row-label-dm:sam"].frame.height, 26, "the label is one line (it truncates)")
+        XCTAssertLessThanOrEqual(app.staticTexts["row-label-dm:sam"].frame.maxX, app.windows.firstMatch.frame.maxX)
         app.buttons["new-message-button"].tap()
         XCTAssertTrue(app.staticTexts["teacher-label-sam"].waitForExistence(timeout: 5), "and in New Message")
         app.buttons["new-message-cancel"].tap()
@@ -630,20 +663,84 @@ final class LimeUITests: XCTestCase {
         openSam(app)
         longPress(app, "staff meeting")
         app.buttons["react-👍"].tap()
-        let thumbs = app.descendants(matching: .any)["reaction-s1-👍"]
-        XCTAssertTrue(thumbs.waitForExistence(timeout: 5), "a chip appears under the bubble")
+        let cluster = app.descendants(matching: .any)["reaction-cluster-s1"]
+        XCTAssertTrue(cluster.waitForExistence(timeout: 5), "a cluster appears on the bubble")
+        // It sits on the bubble's top corner (top-right for someone else's message), and the time line is right under the bubble.
+        let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'staff meeting'")).firstMatch
+        XCTAssertLessThan(cluster.frame.minY, bubble.frame.minY + 2, "the cluster overlaps the bubble's top edge")
+        XCTAssertGreaterThan(cluster.frame.midX, bubble.frame.midX, "on the right for someone else's bubble")
+        let time = app.staticTexts["message-time-s1"]
+        XCTAssertTrue(time.exists)
+        XCTAssertLessThan(time.frame.minY - bubble.frame.maxY, 24, "the time line is directly under the bubble")
         // Any emoji, through the +.
         longPress(app, "staff meeting")
         app.buttons["react-more"].tap()
         XCTAssertTrue(app.buttons["pick-🎉"].waitForExistence(timeout: 5))
         app.buttons["pick-🎉"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["reaction-s1-🎉"].waitForExistence(timeout: 5))
-        // Tap a chip to take mine off; long-press a chip to see who.
-        app.descendants(matching: .any)["reaction-s1-👍"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["reaction-s1-👍"].waitForNonExistence(timeout: 5), "toggled off")
-        app.descendants(matching: .any)["reaction-s1-🎉"].press(forDuration: 1.0)
-        XCTAssertTrue(app.staticTexts["reactor-You"].waitForExistence(timeout: 5), "who reacted")
-        app.buttons["reactors-done"].tap()
+        XCTAssertTrue(cluster.label.contains("🎉") && cluster.label.contains("👍"), cluster.label)
+        // Tap the cluster: everyone's reactions and who; tap my own to take it off.
+        cluster.tap()
+        XCTAssertTrue(app.staticTexts["reactor-remove-👍"].exists || app.buttons["reactor-remove-👍"].waitForExistence(timeout: 5), "who reacted, with my own removable")
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-row-🎉"].exists)
+        app.buttons["reactor-remove-👍"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-s1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["reaction-cluster-s1"].label.contains("👍"), "toggled off")
+    }
+
+    // MARK: Reactions and the menu on media (LIME-104-fix)
+
+    func testLongPressingAPhotoAlbumAndFileOpensTheMenuAndReactionsShowOnTheMedia() {
+        let app = threadApp("attachments")
+        app.launch()
+        let images = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-'"))
+        XCTAssertTrue(images.firstMatch.waitForExistence(timeout: 10))
+        let image = images.allElementsBoundByIndex.filter { $0.frame.height > 0 }.min { $0.frame.minY < $1.frame.minY }!   // the album's first picture
+        // The album (one message): the same menu as a text bubble, with the reaction row.
+        image.press(forDuration: 1.0)
+        XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForExistence(timeout: 5), "long-press opens the menu on a photo")
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-row"].exists)
+        XCTAssertTrue(app.buttons["action-select"].exists)
+        XCTAssertTrue(app.buttons["action-delete"].exists)
+        app.buttons["react-👍"].tap()
+        let cluster = app.descendants(matching: .any)["reaction-cluster-a1"]
+        XCTAssertTrue(cluster.waitForExistence(timeout: 5), "the cluster sits on the album")
+        XCTAssertLessThan(cluster.frame.minY, image.frame.minY + 2, "on the media's top corner")
+        XCTAssertFalse(app.descendants(matching: .any)["attachment-viewer"].exists, "a long-press does not open the viewer")
+        // A file card.
+        let file = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-file-'")).firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 5))
+        file.press(forDuration: 1.0)
+        XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForExistence(timeout: 5), "and on a file card")
+        app.buttons["react-❤️"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-a2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["file-opener"].exists)
+        // The viewer has a react button for the album.
+        image.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["attachment-viewer"].waitForExistence(timeout: 5))
+        app.buttons["attachment-react"].tap()
+        app.buttons["viewer-react-😂"].tap()
+        app.buttons["attachment-viewer-close"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-a1"].label.contains("😂"), "reacting in the viewer reacts to the message")
+    }
+
+    func testLongPressingAVoiceMessageAndAVideoOpensTheMenuAndReactionsShow() {
+        let app = threadApp("attachments-media")
+        app.launch()
+        let voice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'voice-play-'")).firstMatch
+        XCTAssertTrue(voice.waitForExistence(timeout: 10))
+        voice.press(forDuration: 1.0)
+        XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForExistence(timeout: 5), "long-press opens the menu on a voice message")
+        app.buttons["react-👍"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-a4"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label == 'Pause voice message'")).firstMatch.exists, "a long-press does not start playback")
+        let video = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-video-'")).firstMatch
+        XCTAssertTrue(video.waitForExistence(timeout: 5))
+        video.press(forDuration: 1.0)
+        XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForExistence(timeout: 5), "and on a video")
+        XCTAssertTrue(app.buttons["action-edit"].exists == false, "a video can't be edited here (not mine), and Edit is for a caption only")
+        app.buttons["react-❤️"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-a6"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["video-player"].exists, "a long-press does not open the player")
     }
 
     func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {
@@ -717,7 +814,7 @@ final class LimeUITests: XCTestCase {
         longPress(app, "first half")
         XCTAssertFalse(app.buttons["reply-in-thread"].exists, "you are already in the thread")
         app.buttons["react-❤️"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["reaction-t1a-❤️"].waitForExistence(timeout: 5), "reactions work in Replies")
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-t1a"].waitForExistence(timeout: 5), "reactions work in Replies")
     }
 
     func testAChangedKeyAsksToBeAcceptedAndANotDeliveredMessageCanBeResent() {

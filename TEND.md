@@ -4528,3 +4528,25 @@ Also suggested for the re-run: send the greeting again whenever a link re-forms 
 **Known limit.** A deleted message cannot be unseen by someone who already read or saved it.
 
 **For the user's check (two phones).** (1) Long-press a message: row and order as above. (2) React from both phones; chips and counts match, tap toggles, long-press shows who. (3) Edit your message: "Edited" appears on both, and search finds the new text. (4) Delete for everyone: the other phone shows "This message was deleted". (5) Select two, Copy/Delete; Forward shows the toast.
+
+## LIME-104-fix
+
+**The find-in-replies trap, and the QA polish (committed, awaiting the user's check on two phones).** Phase 0: `PLOT.md` committed (`2df6d9a`). The brief grew while this ran (items 8 to 11 were added to `PLOT.md` mid-session) and all of it is included.
+
+**The bug, confirmed by reading the code (not by guessing).** In the chat's find bar, `.task(id: findQuery)` ran the search and then called `show(last)`. SwiftUI runs a `.task` again whenever the view reappears, so Back from Replies restarted the search, which pushed Replies again. It was a loop from persistent find state, exactly the pattern the brief forbids. **Fix:** the chat remembers which query its hits answer (`searchedQuery`) and the task does nothing when the query is unchanged; Done resets it. Opening a reply hit pushes Replies once; Back returns to the chat with find still open at the same "N of M". The UI test now does find, hit, Back, Done, Back to Messages.
+
+1. **Unread dot on the left** (before the avatar, in the gutter); the count badge stays on the right.
+2. **Thumbnail 34 pt** (was 40), corner radius 6; it is cropped to a true square first because a framed `scaledToFill` image still reports its full width to accessibility.
+3. **Mute in context:** the dialog is titled "Mute <chat name>" and the swiped row stays highlighted while it is open. It is still the iPhone confirmation sheet (an anchored popover only exists on iPad); the title and the highlight are what tie it to the row.
+4. **Private labels never wrap the name:** a shared `LabelCapsule` (small capsule) after a one-line name with layout priority, so the label truncates first. Used in Messages, New Message and Group details.
+5. **Group details edit affordances:** the photo badge (camera) and the name pencil are matching light-grey circles, no green.
+6. **Format state lighter:** `Pressed` is now about 1.3:1 on the canvas (light `#E0DCD0`, dark `#2E332D`); the icon goes bold when active. Token test bounds changed to 1.2 to 1.4.
+7. **Pin/Unpin slides:** the reorder happens 300 ms after the tap (the swipe closes first) and the list animates with `.snappy` keyed on the id order. A UI test samples the row frames for about a second and asserts no overlap above 6 pt.
+8. **Deleted replies leave the summary** (core, `threads.rs`): count, last-reply time and avatars ignore deleted replies, and a thread with none left has no summary. Replies' own header count excludes them; the placeholders stay inside Replies for context. Core test added.
+9. **Reaction cluster on the bubble's top corner** (top-left on mine, top-right on theirs): up to three emoji plus the total if there are more reactions than emoji shown; mine is outlined. The time line is directly under the bubble and the reply summary under that. Tapping the cluster opens a sheet listing every reaction and who, with "Tap to remove" on mine. This replaces the chips under the bubble.
+10. **Runs of two or more deleted messages collapse** into "N messages deleted" (a single one stays as the placeholder). Main chat only.
+11. **Menu and reactions on media:** long-press works on photos, albums, videos, voice messages and file cards. These used `Button`, which swallowed the long-press, so they now use a tap gesture plus a long-press (`mediaTap`; still button-like for VoiceOver and tests, and inert in Select mode so the row toggles). Edit on media needs a caption; Copy copies the caption or a single picture. The full-screen picture viewer and the video player have a react button (the six quick emoji); an album is one message.
+
+**Verification.** `cargo test` 152 pass, clippy clean, real-server integration 11 pass on staging; 0 warnings; Release has no Bluetooth; full unit and UI suite on the iPhone 13 mini passes; the new and changed tests pass on iPhone SE (375 pt) and iPhone 18 Pro.
+
+**Not exercised.** The anchored-to-the-row mute popover is not possible on iPhone (see 3). Reacting inside the video player was built but not driven by a test (the demo video has no real file); the picture viewer's react is.

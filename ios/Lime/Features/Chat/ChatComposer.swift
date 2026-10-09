@@ -58,7 +58,7 @@ struct ChatComposer: View {
                     }
                     button("face.smiling", label: "Emoji", id: "composer-emoji") { pickingEmoji = true }
                     Button { model.toggleToolbar() } label: {
-                        Text("Aa").font(.system(size: 17, weight: .medium)).foregroundStyle(Theme.text)
+                        Text("Aa").font(.system(size: 17, weight: model.toolbarVisible ? .bold : .medium)).foregroundStyle(Theme.text)
                             .frame(width: 44, height: 40)
                             .background(model.toolbarVisible ? Theme.pressed : Color.clear, in: Capsule())
                     }
