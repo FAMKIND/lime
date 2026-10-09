@@ -14,6 +14,7 @@ pub(crate) mod attachments;
 pub(crate) mod delivery;
 pub(crate) mod groups;
 pub(crate) mod labels;
+pub(crate) mod message_ops;
 mod migrations;
 pub(crate) mod order;
 pub(crate) mod photos;
@@ -140,6 +141,12 @@ pub struct MessageItem {
     pub sent_at: i64,
     pub local_state: String,
     pub attachments: Vec<AttachmentInfo>,
+    /// The text was edited (only the latest text is kept).
+    pub edited: bool,
+    /// Deleted for everyone: only its place is kept ("This message was deleted").
+    pub deleted: bool,
+    /// The emoji reactions on it.
+    pub reactions: Vec<message_ops::Reaction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -561,6 +568,9 @@ impl LimeStore {
             sent_at: now_ms(),
             local_state: LOCAL_STATE_SENT_LOCAL.to_string(),
             attachments: Vec::new(),
+            edited: false,
+            deleted: false,
+            reactions: Vec::new(),
         };
         conn.execute(
             "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, plain)
@@ -647,7 +657,7 @@ impl LimeStore {
 }
 
 /// This account's user id (empty before registration).
-fn my_user_id(conn: &Connection) -> String {
+pub(crate) fn my_user_id(conn: &Connection) -> String {
     conn.query_row("SELECT user_id FROM account WHERE id = 1", [], |r| r.get::<_, Option<String>>(0)).ok().flatten().unwrap_or_default()
 }
 
@@ -658,6 +668,7 @@ fn item_in(conn: &Connection, row: order::Row, me: &str) -> MessageItem {
         item.text = groups::render_system(conn, &item.text, me);
     }
     item.attachments = attachment_infos(conn, &item.id);
+    item.reactions = message_ops::reactions_for(conn, &item.id, me);
     item
 }
 
@@ -670,6 +681,9 @@ pub(crate) fn item_from_row(row: order::Row) -> MessageItem {
         sent_at: row.sent_at,
         local_state: row.local_state,
         attachments: Vec::new(),
+        edited: row.edited,
+        deleted: row.deleted,
+        reactions: Vec::new(),
     }
 }
 

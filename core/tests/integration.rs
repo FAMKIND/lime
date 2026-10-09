@@ -1068,3 +1068,55 @@ fn a_group_photo_is_set_changed_and_removed_through_the_real_server_and_only_cip
     assert_eq!(bob_store.group_photo(chat.clone()).unwrap(), None);
     assert_eq!(bob_store.list_conversations().unwrap().into_iter().find(|c| c.id == chat).unwrap().group_emoji.as_deref(), Some("🍎"));
 }
+
+#[test]
+fn reactions_edit_and_delete_for_everyone_through_the_real_server_with_two_accounts() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (alice_store, bob_store) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    alice_store.register_device(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.register_device(transport.clone(), bob.token.clone()).unwrap();
+
+    let chat_a = alice_store.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    let sent = alice_store.queue_text(chat_a.clone(), "the original words".into()).unwrap();
+    let attached = alice_store
+        .send_attachments(chat_a.clone(), "with a file".into(), vec![lime_core::OutgoingAttachment { bytes: vec![5u8; 4000], name: "f.bin".into(), mime: "application/octet-stream".into(), width: None, height: None, duration_ms: None, thumb: vec![] }], None)
+        .unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
+    let chat_b = format!("dm:{}", alice.id);
+    bob_store.accept_request(chat_b.clone()).unwrap();
+    bob_store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    alice_store.sync(transport.clone(), alice.token.clone()).unwrap();
+    let of = |store: &lime_core::LimeStore, chat: &str, id: &str| store.list_messages(chat.to_owned()).unwrap().into_iter().find(|m| m.id == id).unwrap();
+
+    // A reaction from Bob reaches Alice through the real server and is not a message.
+    bob_store.react(chat_b.clone(), sent.id.clone(), "👍".into(), true).unwrap();
+    bob_store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(alice_store.sync(transport.clone(), alice.token.clone()).unwrap().received, 0);
+    assert_eq!(of(&alice_store, &chat_a, &sent.id).reactions.iter().map(|r| r.emoji.as_str()).collect::<Vec<_>>(), vec!["👍"]);
+
+    // An edit, then a delete for everyone (of the message with the file).
+    alice_store.edit_message(chat_a.clone(), sent.id.clone(), "the **edited** words".into()).unwrap();
+    alice_store.delete_message_for_everyone(chat_a.clone(), attached.id.clone()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
+    let edited = of(&bob_store, &chat_b, &sent.id);
+    assert_eq!((edited.text.as_str(), edited.edited, edited.reactions.len()), ("the **edited** words", true, 1));
+    let gone = of(&bob_store, &chat_b, &attached.id);
+    assert!(gone.deleted && gone.text.is_empty() && gone.attachments.is_empty(), "a tombstone on the other phone");
+    assert_eq!(bob_store.search_messages("original".into(), None, 5).unwrap().len(), 0);
+    // The server holds no reaction, edit or delete in the clear: its tables have no such rows.
+    let tables = admin.every_table();
+    assert!(tables.iter().all(|(table, _)| !table.contains("reaction")), "no table of reactions on the server");
+}

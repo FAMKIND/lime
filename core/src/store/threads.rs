@@ -30,7 +30,7 @@ impl LimeStore {
             .prepare(
                 "SELECT r.thread_root, count(*), max(r.sent_at)
                  FROM messages r JOIN messages root ON root.id = r.thread_root AND root.conversation_id = r.conversation_id
-                 WHERE r.conversation_id = ?1 AND r.thread_root IS NOT NULL
+                 WHERE r.conversation_id = ?1 AND r.thread_root IS NOT NULL AND r.hidden = 0
                  GROUP BY r.thread_root",
             )
             .map_err(db_err)?;
@@ -45,7 +45,7 @@ impl LimeStore {
                 .prepare(
                     "SELECT m.sender_id, COALESCE(p.name, m.sender_id), COALESCE(p.tone, 0)
                      FROM messages m LEFT JOIN people p ON p.id = m.sender_id
-                     WHERE m.thread_root = ?1 ORDER BY m.sent_at DESC, m.id DESC",
+                     WHERE m.thread_root = ?1 AND m.hidden = 0 ORDER BY m.sent_at DESC, m.id DESC",
                 )
                 .map_err(db_err)?;
             let mut repliers: Vec<MemberInfo> = Vec::new();
@@ -74,9 +74,11 @@ impl LimeStore {
             return Err(StoreError::NotFound);
         }
         let (root, mut replies): (Vec<_>, Vec<_>) = rows.into_iter().partition(|r| r.id == root_id);
+        let me = super::my_user_id(&conn);
         let with_files = |row| {
             let mut item = item_from_row(row);
             item.attachments = super::attachment_infos(&conn, &item.id);
+            item.reactions = super::message_ops::reactions_for(&conn, &item.id, &me);
             item
         };
         let mut items: Vec<MessageItem> = root.into_iter().map(with_files).collect();

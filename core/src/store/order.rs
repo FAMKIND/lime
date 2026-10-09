@@ -23,6 +23,8 @@ pub(crate) struct Row {
     pub hlc: Option<String>,
     pub parents: Vec<String>,
     pub op_id: Option<String>,
+    pub edited: bool,
+    pub deleted: bool,
 }
 
 impl Row {
@@ -89,8 +91,8 @@ pub(crate) fn load_thread(conn: &Connection, root_id: &str) -> Result<Vec<Row>, 
 fn load(conn: &Connection, condition: &str, key: &str) -> Result<Vec<Row>, StoreError> {
     let mut statement = conn
         .prepare(&format!(
-            "SELECT id, conversation_id, sender_id, body, sent_at, local_state, hlc, parents, op_id
-             FROM messages WHERE {condition}"
+            "SELECT id, conversation_id, sender_id, body, sent_at, local_state, hlc, parents, op_id, edited, deleted
+             FROM messages WHERE ({condition}) AND hidden = 0"
         ))
         .map_err(db_err)?;
     let rows = statement
@@ -108,6 +110,8 @@ fn load(conn: &Connection, condition: &str, key: &str) -> Result<Vec<Row>, Store
                     .and_then(|p| serde_json::from_str(&p).ok())
                     .unwrap_or_default(),
                 op_id: r.get(8)?,
+                edited: r.get(9)?,
+                deleted: r.get(10)?,
             })
         })
         .map_err(db_err)?
@@ -154,6 +158,8 @@ mod tests {
             hlc: Some(hlc.into()),
             parents: parents.iter().map(|p| (*p).to_owned()).collect(),
             op_id: Some(id.into()),
+            edited: false,
+            deleted: false,
         }
     }
 

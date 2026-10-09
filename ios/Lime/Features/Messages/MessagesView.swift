@@ -383,6 +383,7 @@ struct ListPreview: Equatable {
     static func make(_ conversation: Conversation) -> ListPreview {
         guard let last = conversation.lastMessage else { return ListPreview() }
         if last.isSystem { return ListPreview(text: last.text) }
+        if last.deleted { return ListPreview(text: "This message was deleted") }
         var line = ListPreview()
         // Who wrote it: always named for a reply ("↩ Jean: ..."), and in a group.
         let sender = last.isOwn ? "You" : conversation.members.first(where: { $0.id == last.senderID }).map { String($0.name.split(separator: " ").first ?? "") }

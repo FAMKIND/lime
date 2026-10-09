@@ -16,6 +16,8 @@ struct ThreadView: View {
     @State private var findIndex = 0
     @State private var findScroll: String?
     @FocusState private var findFocused: Bool
+    @State private var actions = MessageActionsState()
+    @State private var selection: Set<Message.ID>?
 
     private var messages: [Message] { store.threads[target.rootID] ?? [] }
     private var conversation: Conversation? { store.conversation(target.conversationID) }
@@ -60,12 +62,19 @@ struct ThreadView: View {
                 }
             }
         }
+        .messageActions(actions, conversationID: target.conversationID, inThread: true, selection: $selection)
         .safeAreaInset(edge: .bottom) {
+            if let selection {
+                SelectionBar(count: selection.count,
+                             onDelete: { actions.deleting = messages.filter { selection.contains($0.id) } },
+                             onForward: { store.comingNext("Forward") })
+            } else {
             ChatComposer(model: composerModel, onSend: { markdown in
                 Task { await store.sendReply(markdown, root: target.rootID, in: target.conversationID) }
             }, onSendAttachments: { items, caption in
                 store.sendAttachments(items, caption: caption, in: target.conversationID, replyTo: target.rootID)
             })
+            }
         }
         .safeAreaInset(edge: .top) { if finding { findBar } }
         .navigationTitle("Replies")
@@ -81,9 +90,13 @@ struct ThreadView: View {
                 .accessibilityIdentifier("replies-title")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { startFinding() } label: { ToolIconLabel(symbol: "magnifyingglass") }
-                    .accessibilityLabel("Search in Replies")
-                    .accessibilityIdentifier("replies-search-button")
+                if selection != nil {
+                    Button("Cancel") { selection = nil }.font(Theme.title).foregroundStyle(Theme.text).accessibilityIdentifier("select-cancel")
+                } else {
+                    Button { startFinding() } label: { ToolIconLabel(symbol: "magnifyingglass") }
+                        .accessibilityLabel("Search in Replies")
+                        .accessibilityIdentifier("replies-search-button")
+                }
             }
         }
         .task {
@@ -195,7 +208,12 @@ struct ThreadView: View {
                       showState: message.isOwn && message.state != .sent,
                       highlighted: highlightedID == message.id,
                       findWords: finding ? findWords : (highlightedID == target.focusMessageID ? target.words : []),
-                      onRetry: { Task { await store.resend(message.id) } })
+                      onRetry: { Task { await store.resend(message.id) } },
+                      onActions: { actions.menu = message },
+                      onReact: { emoji in Task { await store.toggleReaction(emoji, on: message, in: target.conversationID) } },
+                      onWhoReacted: { chip in actions.reactors = (message, chip) },
+                      selection: selection.map { $0.contains(message.id) },
+                      onToggleSelect: { if var current = selection { if current.contains(message.id) { current.remove(message.id) } else { current.insert(message.id) }; selection = current } })
             .padding(.bottom, 8)
     }
 }

@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -2146,4 +2146,251 @@ fn find_in_replies_covers_a_chats_threads_and_one_thread() {
     assert_eq!(one.len(), 1);
     assert_eq!(alice.store.search_replies("lunch".into(), chat.clone(), Some(a.id.clone()), 50).unwrap().len(), 1, "the root message is found inside its own thread");
     assert!(alice.store.search_replies("zebra".into(), format!("dm:{}", "other"), None, 50).unwrap().is_empty());
+}
+
+// ---------------------------------------------------------------- LIME-105: reactions, edit, delete
+
+fn item_of(p: &Party, chat: &str, id: &str) -> crate::MessageItem {
+    p.store.list_messages(chat.to_owned()).unwrap().into_iter().find(|m| m.id == id).unwrap_or_else(|| panic!("no message {id}"))
+}
+
+/// Pretends `ms` have passed since a message was written (its stored clock and display time move back).
+fn age(p: &Party, id: &str, ms: i64) {
+    let conn = p.store.lock();
+    let hlc: String = conn.query_row("SELECT hlc FROM messages WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+    let parsed = crate::protocol::Hlc::parse(&hlc).unwrap();
+    let older = crate::protocol::Hlc { wall: parsed.wall - ms, counter: parsed.counter }.render();
+    conn.execute("UPDATE messages SET hlc = ?2, sent_at = sent_at - ?3 WHERE id = ?1", rusqlite::params![id, older, ms]).unwrap();
+}
+
+#[test]
+fn reactions_toggle_and_converge_between_two_phones() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let chat_a = format!("dm:{}", bob.user);
+    let chat_b = format!("dm:{}", alice.user);
+    let sent = alice.store.queue_text(chat_a.clone(), "lunch at noon?".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+
+    // Bob reacts with a quick emoji and another; Alice sees chips with who.
+    let unread_before = conversation(&alice, &bob).unwrap().unread;
+    bob.store.react(chat_b.clone(), sent.id.clone(), "👍".into(), true).unwrap();
+    bob.store.react(chat_b.clone(), sent.id.clone(), "🎉".into(), true).unwrap();
+    assert_eq!(item_of(&bob, &chat_b, &sent.id).reactions.len(), 2, "my own show at once");
+    assert!(item_of(&bob, &chat_b, &sent.id).reactions.iter().all(|r| r.mine && r.people == vec!["You".to_string()]));
+    deliver(&bob, &transport);
+    assert_eq!(sync(&alice, &transport).received, 0, "a reaction is not a message");
+    let on_alice = item_of(&alice, &chat_a, &sent.id).reactions;
+    assert_eq!(on_alice.iter().map(|r| (r.emoji.as_str(), r.count, r.mine)).collect::<Vec<_>>(), vec![("👍", 1, false), ("🎉", 1, false)]);
+    assert_eq!(on_alice[0].people.len(), 1);
+    assert_eq!(conversation(&alice, &bob).unwrap().unread, unread_before, "no unread for a reaction");
+
+    // Alice adds the same emoji (a count of two) and Bob takes his off: both phones agree.
+    alice.store.react(chat_a.clone(), sent.id.clone(), "👍".into(), true).unwrap();
+    bob.store.react(chat_b.clone(), sent.id.clone(), "🎉".into(), false).unwrap();
+    deliver(&alice, &transport);
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    sync(&bob, &transport);
+    for (p, chat) in [(&alice, &chat_a), (&bob, &chat_b)] {
+        let r = item_of(p, chat, &sent.id).reactions;
+        assert_eq!(r.len(), 1, "{}: the removed one is gone", p.user);
+        assert_eq!((r[0].emoji.as_str(), r[0].count), ("👍", 2));
+    }
+    // Words and long text are not reactions.
+    assert!(bob.store.react(chat_b.clone(), sent.id.clone(), "thumbs up".into(), true).is_err());
+    assert!(bob.store.react(chat_b.clone(), sent.id.clone(), "".into(), true).is_err());
+    assert!(bob.store.react(chat_b.clone(), "no-such-message".into(), "👍".into(), true).is_err());
+}
+
+#[test]
+fn an_edit_replaces_the_text_for_both_phones_and_only_the_author_may_within_a_day() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let (chat_a, chat_b) = (format!("dm:{}", bob.user), format!("dm:{}", alice.user));
+    let sent = alice.store.queue_text(chat_a.clone(), "meet at the gym".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+
+    let edited = alice.store.edit_message(chat_a.clone(), sent.id.clone(), "meet at **the library**".into()).unwrap();
+    assert!(edited.edited);
+    assert_eq!(edited.text, "meet at **the library**");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let on_bob = item_of(&bob, &chat_b, &sent.id);
+    assert_eq!((on_bob.text.as_str(), on_bob.edited), ("meet at **the library**", true));
+    // The search index follows the new words, and forgets the old.
+    assert_eq!(bob.store.search_messages("library".into(), None, 10).unwrap().len(), 1);
+    assert_eq!(bob.store.search_messages("gym".into(), None, 10).unwrap().len(), 0);
+    assert_eq!(alice.store.search_messages("gym".into(), None, 10).unwrap().len(), 0);
+
+    // Bob cannot edit Alice's message (here, and a forged op is ignored by Alice).
+    assert!(bob.store.edit_message(chat_b.clone(), sent.id.clone(), "hacked".into()).is_err());
+    let forged = crate::protocol::Op {
+        op_id: "x".into(), op_type: "message.edit".into(), conversation_id: chat_a.clone(), hlc: crate::protocol::Hlc { wall: crate::store::now_ms(), counter: 9 }.render(),
+        parents: vec![], payload: serde_json::json!({ "target": sent.id, "text": "forged" }), sig: String::new(),
+    };
+    crate::store::message_ops::apply(&alice.store.lock(), &bob.user, &chat_a, &forged).unwrap();
+    assert_eq!(item_of(&alice, &chat_a, &sent.id).text, "meet at **the library**", "an edit by someone else changes nothing");
+
+    // After 24 hours there is no editing (the sender's own phone refuses).
+    age(&alice, &sent.id, 25 * 3600 * 1000);
+    assert!(alice.store.edit_message(chat_a.clone(), sent.id.clone(), "too late".into()).is_err());
+    // A message not sent yet is simply rewritten and never shows "edited".
+    let fresh = alice.store.queue_text(chat_a.clone(), "typo".into()).unwrap();
+    let fixed = alice.store.edit_message(chat_a.clone(), fresh.id.clone(), "no typo".into()).unwrap();
+    assert_eq!((fixed.text.as_str(), fixed.edited), ("no typo", false));
+}
+
+#[test]
+fn delete_for_everyone_leaves_a_tombstone_removes_files_and_search_and_respects_the_window_and_the_author() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let (chat_a, chat_b) = (format!("dm:{}", bob.user), format!("dm:{}", alice.user));
+    let with_file = alice.store.send_attachments(chat_a.clone(), "the secret plan".into(), vec![pic(4, 3000)], None).unwrap();
+    let plain = alice.store.queue_text(chat_a.clone(), "an old message".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    download(&bob, &transport, &item_of(&bob, &chat_b, &with_file.id).attachments[0].id).unwrap();
+    assert_eq!(bob.store.search_messages("secret".into(), None, 5).unwrap().len(), 1);
+
+    // Bob cannot delete Alice's message for everyone.
+    assert!(bob.store.delete_message_for_everyone(chat_b.clone(), with_file.id.clone()).is_err());
+    // Alice can, within a day.
+    alice.store.delete_message_for_everyone(chat_a.clone(), with_file.id.clone()).unwrap();
+    let mine = item_of(&alice, &chat_a, &with_file.id);
+    assert!(mine.deleted && mine.text.is_empty() && mine.attachments.is_empty(), "gone here at once");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let theirs = item_of(&bob, &chat_b, &with_file.id);
+    assert!(theirs.deleted && theirs.text.is_empty() && theirs.attachments.is_empty(), "a tombstone: its place stays, its words and files go");
+    assert_eq!(bob.store.search_messages("secret".into(), None, 5).unwrap().len(), 0, "and the search index forgot it");
+    assert_eq!(alice.store.search_messages("secret".into(), None, 5).unwrap().len(), 0);
+    assert!(bob.store.list_messages(chat_b.clone()).unwrap().iter().any(|m| m.id == with_file.id), "it is still in the timeline");
+    assert!(bob.store.react(chat_b.clone(), with_file.id.clone(), "👍".into(), true).is_err(), "no reacting to a deleted message");
+    assert!(alice.store.edit_message(chat_a.clone(), with_file.id.clone(), "x".into()).is_err(), "no editing it");
+
+    // After a day: not allowed on the sender's phone, and a late op from a modified sender is ignored by the receiver.
+    age(&alice, &plain.id, 25 * 3600 * 1000);
+    assert!(alice.store.delete_message_for_everyone(chat_a.clone(), plain.id.clone()).is_err());
+    let late = crate::protocol::Op {
+        op_id: "y".into(), op_type: "message.delete".into(), conversation_id: chat_b.clone(),
+        hlc: crate::protocol::Hlc { wall: crate::store::now_ms() + 26 * 3600 * 1000, counter: 0 }.render(),
+        parents: vec![], payload: serde_json::json!({ "target": plain.id }), sig: String::new(),
+    };
+    crate::store::message_ops::apply(&bob.store.lock(), &alice.user, &chat_b, &late).unwrap();
+    assert!(!item_of(&bob, &chat_b, &plain.id).deleted, "a delete sent more than 24 hours after the message is ignored");
+}
+
+#[test]
+fn delete_for_me_removes_it_here_only_and_a_deleted_root_keeps_its_replies() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let (chat_a, chat_b) = (format!("dm:{}", bob.user), format!("dm:{}", alice.user));
+    let root = alice.store.queue_text(chat_a.clone(), "who can cover recess?".into()).unwrap();
+    let keep = alice.store.queue_text(chat_a.clone(), "keep me".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    reply(&bob, &alice, &transport, &root.id, "I can");
+    sync(&alice, &transport);
+
+    let calls = server.state.lock().unwrap().calls;
+    bob.store.delete_message_for_me(chat_b.clone(), keep.id.clone()).unwrap();
+    assert!(bob.store.list_messages(chat_b.clone()).unwrap().iter().all(|m| m.id != keep.id), "gone from Bob's list");
+    assert_eq!(bob.store.search_messages("keep".into(), None, 5).unwrap().len(), 0);
+    assert_eq!(server.state.lock().unwrap().calls, calls, "nothing was sent");
+    assert!(alice.store.list_messages(chat_a.clone()).unwrap().iter().any(|m| m.id == keep.id), "Alice still has it");
+
+    // Deleting a thread's root for everyone leaves its replies.
+    alice.store.delete_message_for_everyone(chat_a.clone(), root.id.clone()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let thread = bob.store.list_thread(root.id.clone()).unwrap();
+    assert!(thread[0].deleted, "the root says it was deleted");
+    assert_eq!(thread.len(), 2);
+    assert_eq!(thread[1].text, "I can", "the reply stays");
+    // A message not yet sent can be cancelled outright.
+    let unsent = alice.store.queue_text(chat_a.clone(), "never mind".into()).unwrap();
+    alice.store.delete_message_for_everyone(chat_a.clone(), unsent.id.clone()).unwrap();
+    assert!(alice.store.list_messages(chat_a.clone()).unwrap().iter().all(|m| m.id != unsent.id));
+    assert_eq!(alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap(), 0, "nothing was sent");
+}
+
+#[test]
+fn an_edit_or_delete_that_arrives_before_its_message_waits_for_it() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let (chat_a, chat_b) = (format!("dm:{}", bob.user), format!("dm:{}", alice.user));
+    let sent = alice.store.queue_text(chat_a.clone(), "original".into()).unwrap();
+    // Bob gets the edit op before the message (applied directly: the order a flaky network could produce).
+    let at = crate::protocol::Hlc { wall: crate::store::now_ms(), counter: 5 }.render();
+    let edit = crate::protocol::Op {
+        op_id: "e".into(), op_type: "message.edit".into(), conversation_id: chat_b.clone(), hlc: at.clone(), parents: vec![],
+        payload: serde_json::json!({ "target": sent.id, "text": "edited early", "hlc": at }), sig: String::new(),
+    };
+    crate::store::message_ops::apply(&bob.store.lock(), &alice.user, &chat_b, &edit).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let arrived = item_of(&bob, &chat_b, &sent.id);
+    assert_eq!((arrived.text.as_str(), arrived.edited), ("edited early", true), "the edit that got here first was applied when the message came");
+}
+
+#[test]
+fn reactions_edits_and_deletes_work_in_a_group() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    for p in [&bob, &carol] {
+        p.store.accept_request(chat.clone()).unwrap();
+    }
+    deliver(&bob, &transport);
+    deliver(&carol, &transport);
+    for p in [&alice, &bob, &carol] {
+        sync(p, &transport);
+    }
+    let sent = alice.store.queue_text(chat.clone(), "field trip friday".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+
+    bob.store.react(chat.clone(), sent.id.clone(), "❤️".into(), true).unwrap();
+    carol.store.react(chat.clone(), sent.id.clone(), "❤️".into(), true).unwrap();
+    deliver(&bob, &transport);
+    deliver(&carol, &transport);
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    sync(&bob, &transport);
+    for p in [&alice, &bob, &carol] {
+        let r = item_of(p, &chat, &sent.id).reactions;
+        assert_eq!((r.len(), r[0].count), (1, 2), "{}: both hearts", p.user);
+    }
+    assert!(item_of(&alice, &chat, &sent.id).reactions[0].people.len() == 2, "who reacted");
+
+    alice.store.edit_message(chat.clone(), sent.id.clone(), "field trip is monday".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(item_of(&bob, &chat, &sent.id).text, "field trip is monday");
+    assert!(bob.store.edit_message(chat.clone(), sent.id.clone(), "mine now".into()).is_err());
+
+    alice.store.delete_message_for_everyone(chat.clone(), sent.id.clone()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    for p in [&bob, &carol] {
+        assert!(item_of(p, &chat, &sent.id).deleted, "{}", p.user);
+    }
+    // A member cannot delete someone else's message for everyone.
+    let other = bob.store.queue_text(chat.clone(), "bob's note".into()).unwrap();
+    deliver(&bob, &transport);
+    assert!(alice.store.delete_message_for_everyone(chat.clone(), other.id.clone()).is_err());
 }

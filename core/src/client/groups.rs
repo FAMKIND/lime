@@ -413,7 +413,28 @@ impl LimeStore {
         me: &str,
         message: &Queued,
     ) -> Result<(), StoreError> {
-        let group_id = groups::group_id_of(&message.conversation_id).ok_or(StoreError::NotFound)?.to_owned();
+        let op = Op {
+            op_id: message.id.clone(),
+            op_type: "message.send".into(),
+            conversation_id: message.conversation_id.clone(),
+            hlc: message.hlc.clone(),
+            parents: message.parents.clone(),
+            payload: message.payload(),
+            sig: String::new(),
+        };
+        self.send_group_op(transport, token, state, me, op)
+    }
+
+    /// Sends one signed op (a message, an edit, a delete or a reaction) to a group's members under the current Megolm session.
+    pub(super) fn send_group_op(
+        &self,
+        transport: &Arc<dyn Transport>,
+        token: &str,
+        state: &mut AccountState,
+        me: &str,
+        mut op: Op,
+    ) -> Result<(), StoreError> {
+        let group_id = groups::group_id_of(&op.conversation_id).ok_or(StoreError::NotFound)?.to_owned();
         let group = self.with_conn(|conn| groups::state_of(conn, &group_id))?;
         if !group.is_member(me) {
             return Err(StoreError::NotFound);
@@ -431,15 +452,6 @@ impl LimeStore {
         }
         let mut outbound = self.ensure_group_session(transport, token, state, me, &group_id, &others)?;
 
-        let mut op = Op {
-            op_id: message.id.clone(),
-            op_type: "message.send".into(),
-            conversation_id: message.conversation_id.clone(),
-            hlc: message.hlc.clone(),
-            parents: message.parents.clone(),
-            payload: message.payload(),
-            sig: String::new(),
-        };
         op.sig = state.account.sign(op.signing_bytes()).to_base64();
         let inner = SealedInner { sender_user: me.to_owned(), sender_device: state.device_id.clone(), sender_cert: state.cert(), op }.to_bytes();
         let megolm = outbound.session.encrypt(&inner);
@@ -690,8 +702,40 @@ impl LimeStore {
             && inner.sender_user != me
             && cert.verify()
             && inner.op.verify(&cert.signing_key)
-            && inner.op.op_type == "message.send"
+            && (inner.op.op_type == "message.send" || crate::store::message_ops::is_message_op(&inner.op.op_type))
             && inner.op.conversation_id == conversation;
+        if valid && crate::store::message_ops::is_message_op(&inner.op.op_type) {
+            // An edit, a delete or a reaction: checked and applied, never a new message. Only a member of the group may.
+            let Some(remote_hlc) = Hlc::parse(&inner.op.hlc) else { return Ok(Outcome::Keep(pending::INVALID)) };
+            let sender = inner.sender_user.clone();
+            let done = self.with_conn(|conn| {
+                let pinned: Option<String> = conn
+                    .query_row("SELECT master_key FROM peers WHERE user_id = ?1", params![sender], |r| r.get(0))
+                    .optional()
+                    .map_err(db_err)?;
+                if pinned.as_deref() != Some(cert.master_key.as_str()) {
+                    return Ok(false);
+                }
+                let known: Option<String> = conn
+                    .query_row("SELECT request_state FROM conversations WHERE id = ?1", params![conversation], |r| r.get(0))
+                    .optional()
+                    .map_err(db_err)?;
+                let Some(state) = known else { return Ok(false) };
+                if !groups::state_of(conn, &inbound.group_id)?.ever.contains(&sender) {
+                    return Ok(false);
+                }
+                groups::save_inbound(conn, &self.pickle_key, session_id, &inbound)?;
+                if state != "blocked" && state != "left" {
+                    crate::store::message_ops::apply(conn, &sender, &conversation, &inner.op)?;
+                }
+                Ok(true)
+            })?;
+            if !done {
+                return Ok(Outcome::Keep(pending::NO_GROUP));
+            }
+            self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
+            return Ok(Outcome::Duplicate);
+        }
         let text = inner.op.payload.get("text").and_then(Value::as_str).map(crate::format::normalise);
         let attachments = crate::store::attachments::parse_payload(&inner.op.payload);
         let (true, Some(text), Some(attachments), Some(remote_hlc)) = (

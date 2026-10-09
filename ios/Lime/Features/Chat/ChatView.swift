@@ -22,6 +22,9 @@ struct ChatView: View {
     @State private var highlightedID: String?
     @State private var scrollRequest: ScrollRequest?
     @FocusState private var findFocused: Bool
+    // The long-press menu and Select mode (LIME-105).
+    @State private var actions = MessageActionsState()
+    @State private var selection: Set<Message.ID>?
 
     /// What to highlight in the bubbles: the typed find words, or the search that opened this chat (until it fades).
     private var highlightWords: [String] {
@@ -51,6 +54,9 @@ struct ChatView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("You won't get new messages from this group. Someone can add you back.")
+            }
+            .messageActions(actions, conversationID: conversationID, selection: $selection) { message in
+                store.path.append(ThreadTarget(conversationID: conversationID, rootID: message.id))
             }
             .sheet(isPresented: $labelling) {
                 LabelSheet(name: conversation.title, text: $labelText) { saved in
@@ -90,7 +96,9 @@ struct ChatView: View {
         .toolbar {
             ToolbarItem(placement: .principal) { titlePill(conversation) }
             // One item (so one glass pill), with the three icons close together.
-            ToolbarItem(placement: .topBarTrailing) { toolGroup(conversation) }
+            ToolbarItem(placement: .topBarTrailing) {
+                if selection != nil { cancelSelectButton } else { toolGroup(conversation) }
+            }
         }
     }
 
@@ -141,8 +149,12 @@ struct ChatView: View {
                                           highlighted: highlightedID == message.id,
                                           findWords: highlightWords,
                                           onRetry: { Task { await store.resend(message.id) } },
-                                          onReply: conversation.isRequest ? nil : { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) },
-                                          onOpenThread: { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) })
+                                          onOpenThread: { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) },
+                                          onActions: { actions.menu = message },
+                                          onReact: { emoji in Task { await store.toggleReaction(emoji, on: message, in: conversation.id) } },
+                                          onWhoReacted: { chip in actions.reactors = (message, chip) },
+                                          selection: selection.map { $0.contains(message.id) },
+                                          onToggleSelect: { toggleSelection(message.id) })
                                 .padding(.bottom, 8)
                         }
                     }
@@ -339,9 +351,11 @@ struct ChatView: View {
 
             Spacer(minLength: 0)
 
-            toolGroup(conversation)
-                .padding(.horizontal, 2)
-                .limeGlass()
+            Group {
+                if selection != nil { cancelSelectButton } else { toolGroup(conversation) }
+            }
+            .padding(.horizontal, 2)
+            .limeGlass()
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)
@@ -394,6 +408,13 @@ struct ChatView: View {
         .accessibilityIdentifier("chat-more")
     }
 
+    private var cancelSelectButton: some View {
+        Button("Cancel") { selection = nil }
+            .font(Theme.title).foregroundStyle(Theme.text)
+            .padding(.horizontal, 10).frame(minHeight: 44)
+            .accessibilityIdentifier("select-cancel")
+    }
+
     /// Search, call and ⋯ close together: each icon keeps a 44 pt target, and the targets overlap by 6 pt so the icons sit 38 pt apart.
     private func toolGroup(_ conversation: Conversation) -> some View {
         HStack(spacing: -6) {
@@ -415,7 +436,11 @@ struct ChatView: View {
     private func bottomBar(_ conversation: Conversation) -> some View {
         VStack(spacing: 8) {
             if conversation.keyChangePending { keyChangeBar(conversation) }
-            if conversation.isRequest { requestBar(conversation) } else { composer(conversation) }
+            if let selection {
+                SelectionBar(count: selection.count,
+                             onDelete: { actions.deleting = conversation.messages.filter { selection.contains($0.id) } },
+                             onForward: { store.comingNext("Forward") })
+            } else if conversation.isRequest { requestBar(conversation) } else { composer(conversation) }
         }
     }
 
@@ -471,6 +496,12 @@ struct ChatView: View {
 
     // MARK: Composer
 
+    private func toggleSelection(_ id: Message.ID) {
+        guard var current = selection else { return }
+        if current.contains(id) { current.remove(id) } else { current.insert(id) }
+        selection = current
+    }
+
     private func composer(_ conversation: Conversation) -> some View {
         ChatComposer(model: composerModel, onSend: { markdown in store.send(markdown, in: conversation.id) },
                      onSendAttachments: conversation.isRequest ? nil : { items, caption in store.sendAttachments(items, caption: caption, in: conversation.id) })
@@ -490,14 +521,22 @@ struct MessageBubble: View {
     /// The words find (or a search result) is looking for: highlighted inside the bubble.
     var findWords: [String] = []
     var onRetry: () -> Void = {}
-    /// "Reply" (long-press), and tapping the "N replies" row under a message that has them.
-    var onReply: (() -> Void)? = nil
+    /// Tapping the "N replies" row under a message that has them.
     var onOpenThread: (() -> Void)? = nil
+    /// Long-press: the actions menu (reactions, Reply, Edit, Copy, Select, Delete).
+    var onActions: (() -> Void)? = nil
+    /// Tap a reaction chip to toggle my emoji; long-press one to see who reacted.
+    var onReact: ((String) -> Void)? = nil
+    var onWhoReacted: ((ReactionChip) -> Void)? = nil
+    /// Select mode: `nil` outside it, otherwise whether this message is selected; tapping toggles.
+    var selection: Bool? = nil
+    var onToggleSelect: (() -> Void)? = nil
     @Environment(\.pressedLink) private var pressedLink
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 36
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
+            if let selection, !message.isOwn { selectionCircle(selection) }
             if message.isOwn { Spacer(minLength: 56) }
             if !message.isOwn, let sender {
                 if showAvatar { AvatarView(person: sender, size: avatarSize) }
@@ -509,36 +548,16 @@ struct MessageBubble: View {
                         .font(Theme.caption.weight(.medium))
                         .foregroundStyle(Theme.text)
                 }
-                if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
-                if !message.text.isEmpty || message.attachments.isEmpty {
-                FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
-                                     link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString,
-                                     find: findWords.isEmpty ? nil : FindStyle(words: findWords, current: highlighted))
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(message.isOwn ? Theme.ownBubble : Theme.bubbleOther,
-                                in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
-                            .strokeBorder(message.isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5)
-                    )
-                    .animation(.easeInOut(duration: 0.2), value: highlighted)
-                    .accessibilityIdentifier(message.isOwn ? "own-bubble" : "other-bubble")
-                    .contextMenu {
-                        if let onReply, message.state != .sending, message.state != .failed {
-                            Button { onReply() } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
-                                .accessibilityIdentifier("reply-in-thread")
-                        }
-                    }
-                    .overlay(alignment: .topLeading) {
-                        // For assistive tools and UI tests: which message a search or find landed on.
-                        if highlighted { Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("match-marker-\(message.id)") }
-                    }
-                }
+                content
+                if !message.reactions.isEmpty, !message.deleted { reactionChips }
                 if let thread = message.thread, let onOpenThread {
                     ThreadSummaryRow(messageID: message.id, thread: thread, action: onOpenThread)
                 }
                 HStack(spacing: 4) {
                     Text(MessageFormat.clock(message.date))
+                    if message.edited {
+                        Text("· Edited").accessibilityIdentifier("edited-\(message.id)")
+                    }
                     if showState {
                         switch message.state {
                         case .sending: Text("· Sending…").accessibilityIdentifier("delivery-sending")
@@ -559,6 +578,77 @@ struct MessageBubble: View {
                 .foregroundStyle(Theme.textSecondary)
             }
             if !message.isOwn { Spacer(minLength: 56) }
+            if let selection, message.isOwn { selectionCircle(selection) }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { if selection != nil { onToggleSelect?() } }
+        .accessibilityElement(children: selection != nil ? .ignore : .contain)
+        .accessibilityLabel(selection != nil ? "\(message.deleted ? "Deleted message" : messagePlainText(text: message.text))" : "")
+        .accessibilityAddTraits(selection == true ? [.isButton, .isSelected] : (selection == false ? .isButton : []))
+        .accessibilityIdentifier(selection != nil ? "select-row-\(message.id)" : "")
+    }
+
+    private func selectionCircle(_ on: Bool) -> some View {
+        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 24))
+            .foregroundStyle(on ? Theme.text : Theme.textSecondary.opacity(0.7))
+            .frame(width: 32, height: 36)
+            .accessibilityHidden(true)
+    }
+
+    /// The attachments and the text bubble (or the "deleted" notice): the part a long-press opens the menu for.
+    @ViewBuilder
+    private var content: some View {
+        VStack(alignment: message.isOwn ? .trailing : .leading, spacing: 4) {
+            if message.deleted {
+                Text("This message was deleted")
+                    .font(Theme.body.italic()).foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous).strokeBorder(Theme.bubbleEdge, lineWidth: 0.8))
+                    .accessibilityIdentifier("deleted-bubble")
+            } else {
+                if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
+                if !message.text.isEmpty || message.attachments.isEmpty {
+                    FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
+                                         link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString,
+                                         find: findWords.isEmpty ? nil : FindStyle(words: findWords, current: highlighted))
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(message.isOwn ? Theme.ownBubble : Theme.bubbleOther,
+                                    in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous)
+                                .strokeBorder(message.isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5)
+                        )
+                        .animation(.easeInOut(duration: 0.2), value: highlighted)
+                        .accessibilityIdentifier(message.isOwn ? "own-bubble" : "other-bubble")
+                        .overlay(alignment: .topLeading) {
+                            // For assistive tools and UI tests: which message a search or find landed on.
+                            if highlighted { Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("match-marker-\(message.id)") }
+                        }
+                }
+            }
+        }
+        .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { onActions?() } }
+    }
+
+    private var reactionChips: some View {
+        HStack(spacing: 6) {
+            ForEach(message.reactions) { chip in
+                HStack(spacing: 4) {
+                    Text(chip.emoji).font(.system(size: 15))
+                    if chip.count > 1 { Text("\(chip.count)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text) }
+                }
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(chip.mine ? Theme.pressed : Theme.surface, in: Capsule())
+                .overlay(Capsule().strokeBorder(chip.mine ? Theme.textSecondary.opacity(0.6) : Color.clear, lineWidth: 1))
+                .contentShape(Capsule())
+                .onTapGesture { if selection == nil { onReact?(chip.emoji) } }
+                .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { onWhoReacted?(chip) } }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(chip.emoji) \(chip.count)\(chip.mine ? ", yours" : "")")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("reaction-\(message.id)-\(chip.emoji)")
+            }
         }
     }
 }

@@ -86,6 +86,8 @@ Each device has its own keys, in the Matrix style.
 
 **Profile photos** (LIME-98b) are the one place Lime stores a picture on the server, and the person chooses how: **Everyone on Lime** (the default) keeps a plain 512 px JPEG that any *signed-in* user can fetch (never anonymously; the server can see it too), or **Only my contacts (encrypted)** keeps AES-256-GCM ciphertext that only people holding the sender's photo key can open, and **deletes the public copy**. The photo key is shared with accepted contacts inside their encrypted chat, together with the delivery key, and rotates on a block ([`api-v2.md`](./api-v2.md) section 6).
 
+**Message actions** (LIME-105): reactions, edits and deletes are small signed, encrypted ops inside the conversation like any message; the server never sees them or who reacted. Delete for everyone and edit work for the author for 24 hours and cannot unsee a message someone already read or saved. Delete for me is local and sends nothing.
+
 **Link previews** are made by the sender's device. The server never fetches URLs.
 
 **Search** happens on the device only.

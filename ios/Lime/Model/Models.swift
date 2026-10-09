@@ -37,16 +37,38 @@ struct Message: Identifiable, Hashable, Sendable {
     let id: String
     /// `nil` means the message is mine.
     let senderID: String?
-    let text: String
+    var text: String
     let date: Date
     var state: DeliveryState = .received
     /// Pictures and files that came with the message (LIME-98c).
     var attachments: [AttachmentItem] = []
+    /// Its text was edited (only the latest text is kept), or it was deleted for everyone (only its place remains).
+    var edited = false
+    var deleted = false
+    /// The emoji reactions on it.
+    var reactions: [ReactionChip] = []
     /// When other messages reply to this one: how many, the newest, who, and what is unread.
     var thread: ThreadInfo?
 
     var isOwn: Bool { senderID == nil }
+    /// Edit and Delete for everyone are offered on my own sent messages for a day.
+    static let editWindow: TimeInterval = 24 * 3600
+    func canEdit(now: Date = Date()) -> Bool {
+        isOwn && !deleted && (state == .sent || state == .sending || state == .failed) && !isSystem && now.timeIntervalSince(date) <= Self.editWindow
+    }
+    func canDeleteForEveryone(now: Date = Date()) -> Bool {
+        isOwn && !isSystem && now.timeIntervalSince(date) <= Self.editWindow && (state == .sent || state == .sending || state == .failed)
+    }
     var isSystem: Bool { state == .system }
+}
+
+/// One emoji under a message: how many people used it, whether I did, and who.
+struct ReactionChip: Hashable, Sendable, Identifiable {
+    let emoji: String
+    let count: Int
+    let mine: Bool
+    let people: [String]
+    var id: String { emoji }
 }
 
 /// What a message with replies shows under its bubble ("3 replies · Last reply 8:20 AM").
@@ -129,6 +151,9 @@ extension Message {
                   state: item.localState == "system" ? .system
                       : (item.senderId == nil ? DeliveryState(localState: item.localState) : .received))
         attachments = item.attachments.map(AttachmentItem.init)
+        edited = item.edited
+        deleted = item.deleted
+        reactions = item.reactions.map { ReactionChip(emoji: $0.emoji, count: Int($0.count), mine: $0.mine, people: $0.people) }
     }
 }
 

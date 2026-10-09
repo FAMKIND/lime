@@ -45,3 +45,9 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **Group photos and Report.** A group photo is user-generated content inside an encrypted group (the server cannot see it, so the 1.2 report flow depends on the reporter sharing the content): note it in the moderation process.
 - [ ] **Delete chat for me** is local and silent: say so in the help text ("The other person keeps their copy"), and in the privacy answers (nothing about it reaches the server).
 - [ ] **Private labels** live only in the encrypted store: confirm they are excluded from any future backup that leaves the device unless that backup is encrypted with the recovery key (api-v2.md section 2, `backups`).
+
+## Message actions (LIME-105)
+
+- [ ] **Delete for everyone is best effort**: the confirmation says Lime cannot guarantee a message is gone once someone saw or saved it. Keep that wording in the help text and the privacy policy.
+- [ ] **Report flow (guideline 1.2)** should cover edited and deleted messages: a report is made from what the reporter's phone shows; a tombstone has nothing to report, and the reporter's own copy is what counts.
+- [ ] **Reactions send no notification** in v1 (by design); say so in the notification settings text if people ask.

@@ -4511,3 +4511,20 @@ Also suggested for the re-run: send the greeting again whenever a link re-forms 
 **Two things the logs do not explain, stated as such.** (1) **B's log has a 4 h 57 m hole** (it stops at 02:02:08 local, though B was clearly alive and acknowledging at 02:10 and 05:24, and A's link to B stayed up until 06:59:20): the writer writes each line straight to the file, so it is not buffering; cause unknown. (2) **What ended B's process at 06:59:20** (A's link closed with an error 0.4 s before B's relaunch): a crash or iOS ending it are both possible. The doc lists the fixes for the next run (reopen the file on every write, a 5-minute heartbeat, log every launch); **not made here**, because the user asked for no code changes. One more discrepancy to note: both logs say the phones were **unplugged** (A 95% to 90%, B 85%), the user believed they were plugged in.
 
 **Recommendation written into the doc** (as the user expected, and the evidence supports it): a **"Nearby mode"** that keeps Lime awake and says so, an **emergency mode that turns it on**, **catch-up on every wake** (exchange summaries and send everything queued at once), and no timers that rely on a sleeping app. The product must not promise prompt delivery between two locked phones, only delivery when they next meet and one wakes. This goes to the mesh v1 brief; `architecture.md` section 7's open question is flagged in section 8 of the spike doc but **`architecture.md` was not edited** (plot's call).
+
+## LIME-105
+
+**Message actions: the long-press menu, reactions, Edit, Copy, Select, Delete (committed, awaiting the user's check on two phones).** Phase 0: `PLOT.md` and the early communities concept image committed (`6b01cf1`). Link preview cards and real Forward moved to LIME-106 (Forward shows the placeholder toast "Forward: coming next").
+
+1. **Menu, in order:** emoji row (👍 ❤️ 😂 😮 😢 🙏 and "+" for any emoji), Reply, Forward (placeholder), Edit (own, ≤24 h), Copy (plain and rich text), Select, Delete (red). Works in chats, groups and Replies; no Reply inside a thread.
+2. **Reactions** (`reaction.toggle`): chips with counts under the bubble, highlighted if mine, tap toggles, long-press shows who; no notification.
+3. **Edit** (`message.edit`, encrypted and signed): "Edited" label, latest text only, search index follows, author-only, 24 h window checked by the receiver (+10 min skew).
+4. **Delete:** for me (any message, hidden locally) or for everyone (`message.delete`, own ≤24 h, tombstone "This message was deleted"; attachments and reactions purged; thread-root delete keeps replies). Honest text: "Lime can't guarantee it's gone if someone already saw or saved it."
+5. **Select:** round circles, header Cancel, bottom bar trash · "N Selected" · Forward; trash offers Delete for everyone only if all selected are own and ≤24 h.
+6. **Core:** migration 19 (`messages.edited/edit_hlc/deleted/hidden`, `reactions`, `message_op_outbox`, `early_message_ops`); last-writer-wins by HLC; ops arriving before their message are held and applied later; DMs via Olm, groups via Megolm.
+
+**Verification.** `cargo test` 151 pass, clippy clean; real-server integration 11 pass locally and on staging; `check-warnings.sh` 0 warnings; Release has no Bluetooth; full unit (196) + UI suite on the iPhone 13 mini passes; new tests (MessageActionsTests + 5 UI tests) pass on iPhone SE and iPhone 18 Pro. The SE run first caught a timing gap in the Select test (it tapped before the menu had dismissed); fixed in the test only.
+
+**Known limit.** A deleted message cannot be unseen by someone who already read or saved it.
+
+**For the user's check (two phones).** (1) Long-press a message: row and order as above. (2) React from both phones; chips and counts match, tap toggles, long-press shows who. (3) Edit your message: "Edited" appears on both, and search finds the new text. (4) Delete for everyone: the other phone shows "This message was deleted". (5) Select two, Copy/Delete; Forward shows the toast.

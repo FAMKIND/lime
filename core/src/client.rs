@@ -32,6 +32,7 @@ const POOL_LOW: u32 = 20;
 const MAX_TEXT_BYTES: usize = 30_000;
 pub(crate) mod attachments;
 pub(crate) mod groups;
+pub(crate) mod message_ops;
 pub(crate) mod photos;
 
 /// The control op that gives a contact my delivery key (`api-v2.md` section 4).
@@ -232,6 +233,8 @@ impl LimeStore {
                 }
             }
         }
+        // Edits, deletes and reactions go after the messages they are about.
+        self.deliver_message_ops(&transport, &auth_token, &mut state, &me);
         Ok(sent)
     }
 
@@ -564,6 +567,9 @@ impl LimeStore {
                 sent_at: now,
                 local_state: "sending".to_owned(),
                 attachments: crate::store::attachment_infos(conn, &op_id),
+                edited: false,
+                deleted: false,
+                reactions: Vec::new(),
             })
         })
     }
@@ -1171,6 +1177,7 @@ impl LimeStore {
         let is_share = inner.op.op_type == DELIVERY_KEY_SHARE;
         let is_changed = inner.op.op_type == PROFILE_CHANGED;
         let is_control = is_share || is_changed;
+        let is_message_op = crate::store::message_ops::is_message_op(&inner.op.op_type);
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
             && inner.sender_user == sender
@@ -1178,7 +1185,7 @@ impl LimeStore {
             && cert.identity_key == peer_identity
             && cert.verify()
             && inner.op.verify(&cert.signing_key)
-            && (inner.op.op_type == "message.send" || is_control || is_group_op)
+            && (inner.op.op_type == "message.send" || is_control || is_group_op || is_message_op)
             && if is_group_op {
                 // A group op belongs to a group conversation, whose id (a create op's own id) is the group's.
                 crate::store::groups::group_id_of(&inner.op.conversation_id).is_some()
@@ -1213,7 +1220,7 @@ impl LimeStore {
         let Some(attachments) = crate::store::attachments::parse_payload(&inner.op.payload) else {
             return Ok(Outcome::Keep(pending::INVALID));
         };
-        if !is_control && !is_group_op && text.is_none() {
+        if !is_control && !is_group_op && !is_message_op && text.is_none() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
         if sealed {
@@ -1230,7 +1237,7 @@ impl LimeStore {
 
         // Whatever the sender wrote, what is kept is the one written form (and its plain words).
         let text = crate::format::normalise(&text.unwrap_or_default());
-        if !is_control && !is_group_op && text.is_empty() && attachments.is_empty() {
+        if !is_control && !is_group_op && !is_message_op && text.is_empty() && attachments.is_empty() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
         let plain = crate::format::plain_text(&text);
@@ -1256,6 +1263,18 @@ impl LimeStore {
             if is_group_op {
                 // A group state op, a group's history for someone just added, or a Megolm session key.
                 self.apply_group_op(conn, me, &sender, &inner, cert, now)?;
+                return Ok(Some(Stored::Control));
+            }
+            if is_message_op {
+                // An edit, a delete or a reaction by this person, in our one-to-one chat: applied if it is allowed, never a message.
+                let blocked = conn
+                    .query_row("SELECT request_state = 'blocked' FROM conversations WHERE id = ?1", params![format!("dm:{sender}")], |r| r.get::<_, bool>(0))
+                    .optional()
+                    .map_err(db_err)?
+                    .unwrap_or(false);
+                if !blocked {
+                    crate::store::message_ops::apply(conn, &sender, &format!("dm:{sender}"), &inner.op)?;
+                }
                 return Ok(Some(Stored::Control));
             }
             if is_changed {
@@ -1344,6 +1363,8 @@ fn insert_received_message(
     if inserted > 0 {
         // A chat I deleted for myself comes back with its first new message.
         conn.execute("UPDATE conversations SET unread = unread + 1, hidden = 0 WHERE id = ?1", params![conversation]).map_err(db_err)?;
+        // An edit or delete that got here before the message it is about.
+        crate::store::message_ops::apply_waiting(conn, op_id, conversation)?;
         if let Some(root) = &root {
             conn.execute(
                 "INSERT INTO thread_state (root_id, unread) VALUES (?1, 1)

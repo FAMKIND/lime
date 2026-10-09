@@ -590,6 +590,136 @@ final class LimeUITests: XCTestCase {
         app.buttons["group-avatar-cancel"].tap()
     }
 
+    // MARK: LIME-105 (message actions)
+
+    private func openSam(_ app: XCUIApplication) {
+        app.launch()
+        XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
+        app.buttons["conversation-row-dm:sam"].tap()
+    }
+
+    private func longPress(_ app: XCUIApplication, _ text: String) {
+        let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 10), text)
+        bubble.press(forDuration: 1.0)
+        XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForExistence(timeout: 5), "the actions menu opens")
+    }
+
+    func testTheLongPressMenuHasTheReactionRowAndTheActionsInOrder() {
+        let app = demoApp()
+        openSam(app)
+        longPress(app, "staff meeting")   // someone else's message
+        for emoji in ["👍", "❤️", "😂", "😮", "😢", "🙏"] { XCTAssertTrue(app.buttons["react-\(emoji)"].exists, emoji) }
+        XCTAssertTrue(app.buttons["react-more"].exists, "and a + for any emoji")
+        let order = ["reply-in-thread", "action-forward", "action-copy", "action-select", "action-delete"].map { app.buttons[$0] }
+        for button in order { XCTAssertTrue(button.exists, button.identifier) }
+        XCTAssertFalse(app.buttons["action-edit"].exists, "Edit is only for my own messages")
+        let ys = order.map { $0.frame.minY }
+        XCTAssertEqual(ys, ys.sorted(), "Reply, Forward, Copy, Select, Delete from the top")
+        app.buttons["action-forward"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Forward: coming next'")).firstMatch.waitForExistence(timeout: 5), "Forward lands in LIME-106")
+        // My own message offers Edit between Forward and Copy.
+        longPress(app, "Yes, see you there")
+        XCTAssertTrue(app.buttons["action-edit"].exists)
+        XCTAssertLessThan(app.buttons["action-forward"].frame.minY, app.buttons["action-edit"].frame.minY)
+        XCTAssertLessThan(app.buttons["action-edit"].frame.minY, app.buttons["action-copy"].frame.minY)
+    }
+
+    func testReactingWithAQuickEmojiAndAnyEmojiThenTogglingAndSeeingWho() {
+        let app = demoApp()
+        openSam(app)
+        longPress(app, "staff meeting")
+        app.buttons["react-👍"].tap()
+        let thumbs = app.descendants(matching: .any)["reaction-s1-👍"]
+        XCTAssertTrue(thumbs.waitForExistence(timeout: 5), "a chip appears under the bubble")
+        // Any emoji, through the +.
+        longPress(app, "staff meeting")
+        app.buttons["react-more"].tap()
+        XCTAssertTrue(app.buttons["pick-🎉"].waitForExistence(timeout: 5))
+        app.buttons["pick-🎉"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-s1-🎉"].waitForExistence(timeout: 5))
+        // Tap a chip to take mine off; long-press a chip to see who.
+        app.descendants(matching: .any)["reaction-s1-👍"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-s1-👍"].waitForNonExistence(timeout: 5), "toggled off")
+        app.descendants(matching: .any)["reaction-s1-🎉"].press(forDuration: 1.0)
+        XCTAssertTrue(app.staticTexts["reactor-You"].waitForExistence(timeout: 5), "who reacted")
+        app.buttons["reactors-done"].tap()
+    }
+
+    func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {
+        let app = demoApp()
+        openSam(app)
+        longPress(app, "Yes, see you there")
+        app.buttons["action-edit"].tap()
+        let field = app.textViews["edit-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(" at 3")
+        app.buttons["edit-save"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["edited-s2"].waitForExistence(timeout: 5), "marked Edited")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'at 3'")).firstMatch.exists)
+
+        // Someone else's message: only Delete for me. Mine: for me or for everyone, with the honest warning.
+        longPress(app, "staff meeting")
+        app.buttons["action-delete"].tap()
+        let forMe = app.buttons.matching(identifier: "delete-for-me").firstMatch
+        XCTAssertTrue(forMe.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["delete-for-everyone"].exists, "not for someone else's message")
+        forMe.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'staff meeting'")).firstMatch.waitForNonExistence(timeout: 5), "gone from this phone")
+        longPress(app, "at 3")
+        app.buttons["action-delete"].tap()
+        let forEveryone = app.buttons.matching(identifier: "delete-for-everyone").firstMatch
+        XCTAssertTrue(forEveryone.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS \"can't guarantee\"")).firstMatch.exists, "the honest limit is shown")
+        forEveryone.tap()
+        XCTAssertTrue(app.staticTexts["deleted-bubble"].waitForExistence(timeout: 5), "This message was deleted")
+        XCTAssertEqual(app.staticTexts["deleted-bubble"].label, "This message was deleted")
+    }
+
+    func testSelectModeShowsCirclesACountAndABarWithTrashAndForward() {
+        let app = demoApp()
+        openSam(app)
+        longPress(app, "staff meeting")
+        app.buttons["action-select"].tap()
+        XCTAssertTrue(app.buttons["select-cancel"].waitForExistence(timeout: 5), "a Cancel in the header")
+        XCTAssertTrue(app.descendants(matching: .any)["select-bar"].exists)
+        XCTAssertEqual(app.staticTexts["select-count"].label, "1 Selected")
+        app.descendants(matching: .any)["select-row-s2"].tap()
+        XCTAssertEqual(app.staticTexts["select-count"].label, "2 Selected")
+        app.descendants(matching: .any)["select-row-s2"].tap()
+        XCTAssertEqual(app.staticTexts["select-count"].label, "1 Selected", "tapping again deselects")
+        app.buttons["select-forward"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Forward: coming next'")).firstMatch.waitForExistence(timeout: 5))
+        // Cancel leaves Select mode and the composer comes back.
+        app.buttons["select-cancel"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["select-bar"].waitForNonExistence(timeout: 5), "Cancel leaves Select mode")
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 5), "the composer is back")
+        // Select two, including someone else's: Delete offers only "for me", and doing it ends Select mode.
+        longPress(app, "staff meeting")
+        app.buttons["action-select"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["select-count"].waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["select-row-s2"].tap()
+        XCTAssertEqual(app.staticTexts["select-count"].label, "2 Selected")
+        app.buttons["select-trash"].tap()
+        let forMe = app.buttons.matching(identifier: "delete-for-me").firstMatch
+        XCTAssertTrue(forMe.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["delete-for-everyone"].exists, "not offered when a selected message is someone else's")
+        forMe.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["select-bar"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'staff meeting'")).firstMatch.waitForNonExistence(timeout: 5), "both are gone from this phone")
+    }
+
+    func testActionsWorkInRepliesAndThereIsNoReplyThereOrOnADeletedMessage() {
+        let app = threadApp("thread-open")
+        app.launch()
+        longPress(app, "first half")
+        XCTAssertFalse(app.buttons["reply-in-thread"].exists, "you are already in the thread")
+        app.buttons["react-❤️"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["reaction-t1a-❤️"].waitForExistence(timeout: 5), "reactions work in Replies")
+    }
+
     func testAChangedKeyAsksToBeAcceptedAndANotDeliveredMessageCanBeResent() {
         let app = demoApp()
         app.launchArguments += ["-lime-demo-screen", "key-change"]

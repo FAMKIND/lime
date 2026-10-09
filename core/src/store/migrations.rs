@@ -305,6 +305,38 @@ const MIGRATIONS: &[&str] = &[
          user_id TEXT PRIMARY KEY NOT NULL,
          label   TEXT NOT NULL
      );",
+    // 19: message actions (LIME-105). `edited` and `edit_hlc` (the clock of the newest edit), `deleted` (1: deleted for everyone,
+    // a tombstone that keeps its place), `hidden` (1: deleted for me, gone from every list). `reactions` holds each person's
+    // state per emoji (last writer wins by clock). `message_op_outbox` is the edits, deletes and reactions still to be sent;
+    // `early_message_ops` those that arrived before the message they are about.
+    "ALTER TABLE messages ADD COLUMN edited INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE messages ADD COLUMN edit_hlc TEXT;
+     ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+     CREATE TABLE reactions (
+         message_id TEXT NOT NULL,
+         user_id    TEXT NOT NULL,
+         emoji      TEXT NOT NULL,
+         hlc        TEXT NOT NULL,
+         active     INTEGER NOT NULL,
+         PRIMARY KEY (message_id, user_id, emoji)
+     );
+     CREATE INDEX reactions_by_message ON reactions (message_id);
+     CREATE TABLE message_op_outbox (
+         id              TEXT PRIMARY KEY NOT NULL,
+         conversation_id TEXT NOT NULL,
+         op_type         TEXT NOT NULL,
+         payload         TEXT NOT NULL,
+         queued_at       INTEGER NOT NULL
+     );
+     CREATE TABLE early_message_ops (
+         target  TEXT NOT NULL,
+         op_type TEXT NOT NULL,
+         sender  TEXT NOT NULL,
+         hlc     TEXT NOT NULL,
+         payload TEXT NOT NULL,
+         PRIMARY KEY (target, op_type, sender, hlc)
+     );",
 ];
 
 /// The schema version this build writes.
