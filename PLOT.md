@@ -1753,6 +1753,34 @@ If anything contradicts this brief, stop and ask the user.
     Either way, the same site should also host `/privacy` and `/terms` (the release checklist). **Never delete the `send.limechat.org` email records.**
 - The user's gate is pending: invite text, QR verified in person, foreign-code warning.
 
+**Update: LIME-98b landed as `08261a8`** (pushed and verified).
+- Public avatars + ciphertext blobs; a profile key shared alongside the delivery key; contacts-only encrypted photos; edit/crop/remove; visibility setting; EXIF stripped.
+- 41 server / 125 Rust / 7+7 integration tests pass; tiered iOS passed; the SE 97b suite passed (66).
+- **Plot found a UX bug in tend's gate advice:** photos refresh **at most hourly**, and tend suggested Jean "sign out and in, or reinstall" to see changes. **That would wipe Jean's keys** (the LIME-95-fix semantics) and trigger "security key changed" for her contacts.
+  - **LIME-98b-fix is drafted:** a live photo-change notice + pull-to-refresh.
+  - **Also:** the blob expiry cron isn't scheduled yet (fold it into 98c); the CDN cache is ≤ 60 s (unmeasured).
+
+### LIME-98b-fix → `tend` (lime-aa) (next, small): photo changes show up at once
+**Problem:** contacts see a new/removed photo or a visibility change only after a re-check (at most hourly). Tend's workaround (sign out / reinstall) destroys keys. **Never suggest signing out to refresh data.**
+
+**Phase 0:** commit `PLOT.md` unedited. **Phase 1:** survey `refresh_photos`, the delivery-key control op and the pull-to-refresh paths.
+
+**Phase 2:**
+1. When you **set, remove or change the visibility** of your photo, send your accepted contacts a small encrypted control op, `profile.changed { photo_version }` (over the existing channel; sealed where possible). **Receivers refresh that person's photo immediately** (bypassing the hourly limit for that person).
+2. **Pull-to-refresh** on Messages, and opening a chat or profile, forces a photo refresh for the people shown (rate-limited to once per minute per person).
+3. Remove the "sign out/reinstall to see it" advice from `TEND.md`/the docs; add to `core/README.md`: *"Never sign out to refresh data: sign-out deletes keys."*
+
+**Verification:**
+- core + integration (a photo change reaches a contact within one sync);
+- the tiered iOS rule;
+- 0 warnings.
+
+**Gate:** Shem changes his photo → it appears on Jean's phone within seconds (or after a pull-to-refresh).
+
+**Record:** `## LIME-98b-fix`. Commit: `fix: photo changes reach contacts immediately (profile.changed op, pull-to-refresh)`, trailer `Brief: LIME-98b-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
 ### Open decision: profile photos on native (raised 2026-10-08: "why can't we edit our avatar anymore?")
 - **Why it's missing:**
   - the web app had photo upload (LIME-49);
