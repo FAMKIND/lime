@@ -17,6 +17,7 @@ struct SettingsView: View {
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.dismiss) private var dismiss
     @State private var path: [SettingsRoute] = []
+    @State private var confirmingSignOut = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -83,6 +84,14 @@ struct SettingsView: View {
                 SettingsCard {
                     SettingsRow(symbol: "info.circle", title: "About", route: .about, id: "settings-about", showsDivider: false)
                 }
+                // Sign out is easy to find here as well as in Account; it says honestly what it does to this phone's keys.
+                SettingsCard {
+                    Button { confirmingSignOut = true } label: {
+                        SettingsRowLabel(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out", showsDivider: false, destructive: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings-sign-out")
+                }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 32)
@@ -90,6 +99,16 @@ struct SettingsView: View {
         .background(Theme.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .accessibilityIdentifier("settings-root")
+        .confirmationDialog("Sign out of Lime?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
+            Button("Sign out and remove messages from this iPhone", role: .destructive) {
+                dismiss()
+                Task { await session.signOut() }
+            }
+            .accessibilityIdentifier("settings-sign-out-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(SignOutCopy.warning)
+        }
     }
 
     private var header: some View {

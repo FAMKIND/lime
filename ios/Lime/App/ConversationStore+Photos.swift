@@ -77,12 +77,14 @@ extension ConversationStore {
         guard let core else { return }
         let cache = AvatarCache.shared
         let me = meProvider().id
-        let wanted = Set(conversations.flatMap { $0.members.map(\.id) } + [me]).subtracting(cache.known)
+        let wanted = Set(conversations.flatMap { $0.members.map(\.id) } + conversations.filter(\.isGroupChat).map(\.id) + [me]).subtracting(cache.known)
         guard !wanted.isEmpty else { return }
         let loaded = await Task.detached(priority: .utility) { () -> [String: Data?] in
             var out: [String: Data?] = [:]
             for id in wanted {
-                out[id] = id == me ? ((try? core.myPhoto())?.jpeg) : ((try? core.peerPhoto(userId: id)) ?? nil)
+                out[id] = id == me ? ((try? core.myPhoto())?.jpeg)
+                    : id.hasPrefix("grp:") ? ((try? core.groupPhoto(conversationId: id)) ?? nil)
+                    : ((try? core.peerPhoto(userId: id)) ?? nil)
             }
             return out
         }.value

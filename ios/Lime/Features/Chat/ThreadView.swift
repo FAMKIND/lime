@@ -9,6 +9,13 @@ struct ThreadView: View {
     @State private var composerModel = RichComposerModel()
     @State private var highlightedID: String?
     @State private var scrollRequest: UUID?
+    // The Replies screen's own find (its magnifier): the matches in this thread, which one is current.
+    @State private var finding = false
+    @State private var findQuery = ""
+    @State private var findHits: [MessageHit] = []
+    @State private var findIndex = 0
+    @State private var findScroll: String?
+    @FocusState private var findFocused: Bool
 
     private var messages: [Message] { store.threads[target.rootID] ?? [] }
     private var conversation: Conversation? { store.conversation(target.conversationID) }
@@ -20,7 +27,7 @@ struct ThreadView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         if let root = messages.first {
-                            bubble(root, isRoot: true)
+                            bubble(root, isRoot: true).id(root.id)
                             HStack(spacing: 10) {
                                 Text(replyCountText).font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.textSecondary)
                                     .accessibilityIdentifier("thread-count")
@@ -47,6 +54,10 @@ struct ThreadView: View {
                     guard let id = target.focusMessageID else { return }
                     withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
                 }
+                .onChange(of: findScroll) { _, id in
+                    guard let id else { return }
+                    withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
+                }
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -56,9 +67,25 @@ struct ThreadView: View {
                 store.sendAttachments(items, caption: caption, in: target.conversationID, replyTo: target.rootID)
             })
         }
-        .navigationTitle("Thread")
+        .safeAreaInset(edge: .top) { if finding { findBar } }
+        .navigationTitle("Replies")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 0) {
+                    Text("Replies").font(.system(.headline, design: .default, weight: .semibold)).foregroundStyle(Theme.text)
+                    if let subtitle { Text(subtitle).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1) }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("replies-title")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { startFinding() } label: { ToolIconLabel(symbol: "magnifyingglass") }
+                    .accessibilityLabel("Search in Replies")
+                    .accessibilityIdentifier("replies-search-button")
+            }
+        }
         .task {
             await store.openThread(target.rootID)
             await store.markThreadRead(target.rootID, in: target.conversationID)
@@ -78,6 +105,83 @@ struct ThreadView: View {
         }
     }
 
+    /// Whose message the replies hang from ("Jean Park", or "You").
+    private var subtitle: String? {
+        guard let root = messages.first else { return nil }
+        if root.isOwn { return "Your message" }
+        return conversation.flatMap { store.person(root.senderID, in: $0)?.name }
+    }
+
+    // MARK: Find in these replies
+
+    private func startFinding() {
+        finding = true
+        findFocused = true
+    }
+
+    private func stopFinding() {
+        finding = false
+        findQuery = ""
+        findHits = []
+        highlightedID = nil
+    }
+
+    private func step(by delta: Int) {
+        let next = findIndex + delta
+        guard findHits.indices.contains(next) else { return }
+        findIndex = next
+        highlightedID = findHits[next].messageID
+        findScroll = findHits[next].messageID
+    }
+
+    private var findWords: [String] { finding ? SearchText.words(findQuery) : [] }
+
+    private var findStatus: String {
+        if findQuery.trimmingCharacters(in: .whitespaces).isEmpty { return "" }
+        if findHits.isEmpty { return "No matches" }
+        return "\(findIndex + 1) of \(findHits.count)"
+    }
+
+    private var findBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.textSecondary)
+            TextField("Find in replies", text: $findQuery)
+                .font(Theme.body)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($findFocused)
+                .selectionTint()
+                .accessibilityIdentifier("replies-find-field")
+                .task(id: findQuery) {
+                    let wanted = findQuery
+                    guard !wanted.trimmingCharacters(in: .whitespaces).isEmpty else { findHits = []; highlightedID = nil; return }
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    let hits = await store.findInThread(wanted, root: target.rootID, in: target.conversationID)
+                    guard !Task.isCancelled else { return }
+                    findHits = hits
+                    findIndex = max(hits.count - 1, 0)
+                    if let last = hits.last { highlightedID = last.messageID; findScroll = last.messageID } else { highlightedID = nil }
+                }
+            Text(findStatus).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                .accessibilityIdentifier("replies-find-count")
+            Button { step(by: -1) } label: { Image(systemName: "chevron.up").frame(width: 32, height: 36) }
+                .disabled(findIndex <= 0 || findHits.isEmpty)
+                .accessibilityLabel("Previous match").accessibilityIdentifier("replies-find-up")
+            Button { step(by: 1) } label: { Image(systemName: "chevron.down").frame(width: 32, height: 36) }
+                .disabled(findIndex >= findHits.count - 1 || findHits.isEmpty)
+                .accessibilityLabel("Next match").accessibilityIdentifier("replies-find-down")
+            Button("Done") { stopFinding() }
+                .font(Theme.secondary.weight(.semibold))
+                .accessibilityIdentifier("replies-find-done")
+        }
+        .foregroundStyle(Theme.text)
+        .padding(.horizontal, 14).frame(minHeight: 48)
+        .limeGlass(in: Capsule())
+        .padding(.horizontal, 12).padding(.vertical, 4)
+    }
+
     private var replyCountText: String {
         let n = max(messages.count - 1, 0)
         return n == 0 ? "No replies yet" : "\(n) \(n == 1 ? "reply" : "replies")"
@@ -90,7 +194,7 @@ struct ThreadView: View {
                       showName: false,
                       showState: message.isOwn && message.state != .sent,
                       highlighted: highlightedID == message.id,
-                      findWords: highlightedID == target.focusMessageID ? target.words : [],
+                      findWords: finding ? findWords : (highlightedID == target.focusMessageID ? target.words : []),
                       onRetry: { Task { await store.resend(message.id) } })
             .padding(.bottom, 8)
     }

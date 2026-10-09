@@ -38,6 +38,10 @@ struct ConversationAvatar: View {
     var body: some View {
         if let only = conversation.members.first, !conversation.isGroup {
             AvatarView(person: only, size: size)
+        } else if let photo = AvatarCache.shared.image(for: conversation.id) {
+            Image(uiImage: photo).resizable().scaledToFill()
+                .frame(width: size, height: size).clipShape(Circle())
+                .accessibilityHidden(true)
         } else if let emoji = conversation.emoji {
             Circle().fill(Theme.surface)
                 .frame(width: size, height: size)

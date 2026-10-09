@@ -56,6 +56,36 @@ impl Role {
     }
 }
 
+/// A group's photo: an encrypted blob in the `blobs` bucket and the key that opens it. Both travel only inside the group's
+/// signed, encrypted state ops, so the server never sees the picture, the key or which group it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GroupPhoto {
+    pub blob_id: String,
+    pub key: Vec<u8>,
+}
+
+impl GroupPhoto {
+    fn to_json(&self) -> Value {
+        json!({ "id": self.blob_id, "key": vodozemac::base64_encode(&self.key) })
+    }
+
+    fn parse(value: &Value) -> Option<GroupPhoto> {
+        let id = value.get("id")?.as_str()?;
+        let key = vodozemac::base64_decode(value.get("key")?.as_str()?).ok().filter(|k| k.len() == 32)?;
+        let uuid = id.len() == 36 && id.bytes().enumerate().all(|(i, b)| if [8, 13, 18, 23].contains(&i) { b == b'-' } else { b.is_ascii_hexdigit() });
+        uuid.then(|| GroupPhoto { blob_id: id.to_ascii_lowercase(), key })
+    }
+
+    /// The stored form (in the conversation row).
+    pub(crate) fn to_stored(&self) -> String {
+        self.to_json().to_string()
+    }
+
+    pub(crate) fn from_stored(text: &str) -> Option<GroupPhoto> {
+        serde_json::from_str::<Value>(text).ok().and_then(|v| Self::parse(&v))
+    }
+}
+
 /// What a state op does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -64,7 +94,8 @@ pub(crate) enum Kind {
     Remove { user: String },
     Leave,
     Rename { name: String },
-    SetAvatar { emoji: Option<String> },
+    /// An emoji or an encrypted photo (never both); neither clears the avatar.
+    SetAvatar { emoji: Option<String>, photo: Option<GroupPhoto> },
     /// `role` is `Admin` or `Member`.
     SetRole { user: String, role: Role },
 }
@@ -89,7 +120,10 @@ impl Kind {
             Kind::Remove { user } => json!({ "user": user }),
             Kind::Leave => json!({}),
             Kind::Rename { name } => json!({ "name": name }),
-            Kind::SetAvatar { emoji } => json!({ "emoji": emoji }),
+            Kind::SetAvatar { emoji, photo } => match photo {
+                Some(photo) => json!({ "photo": photo.to_json() }),
+                None => json!({ "emoji": emoji }),
+            },
             Kind::SetRole { user, role } => json!({ "user": user, "role": role.as_str() }),
         }
     }
@@ -106,7 +140,14 @@ impl Kind {
             "group.remove" => Kind::Remove { user: text("user")? },
             "group.leave" => Kind::Leave,
             "group.rename" => Kind::Rename { name: text("name")? },
-            "group.set_avatar" => Kind::SetAvatar { emoji: text("emoji") },
+            "group.set_avatar" => {
+                // A photo present but malformed makes the op invalid (it is not quietly read as "no avatar").
+                let photo = match payload.get("photo") {
+                    None | Some(Value::Null) => None,
+                    Some(value) => Some(GroupPhoto::parse(value)?),
+                };
+                Kind::SetAvatar { emoji: if photo.is_some() { None } else { text("emoji") }, photo }
+            }
             "group.set_role" => {
                 let role = Role::parse(&text("role")?).filter(|r| *r != Role::Owner)?;
                 Kind::SetRole { user: text("user")?, role }
@@ -143,6 +184,8 @@ pub(crate) enum Event {
     Left,
     Renamed(String),
     Avatar,
+    /// The group's photo was set or changed.
+    Photo,
     Role(String, Role),
     NewOwner(String),
 }
@@ -160,6 +203,7 @@ pub(crate) struct GroupState {
     pub created: bool,
     pub name: String,
     pub emoji: Option<String>,
+    pub photo: Option<GroupPhoto>,
     pub members: Vec<Member>,
     pub effects: Vec<Effect>,
     /// Everyone who has ever been a member (a message from someone since removed still shows).
@@ -353,9 +397,10 @@ fn pass(group_id: &str, sorted: &[GroupOp], ancestry: &Ancestry, voiding_removes
                 state.name = name.clone();
                 Event::Renamed(name)
             }),
-            Kind::SetAvatar { emoji } if actor_role.is_some_and(Role::can_manage) => {
-                state.emoji = clean_emoji(emoji);
-                Some(Event::Avatar)
+            Kind::SetAvatar { emoji, photo } if actor_role.is_some_and(Role::can_manage) => {
+                state.emoji = if photo.is_some() { None } else { clean_emoji(emoji) };
+                state.photo = photo.clone();
+                Some(if photo.is_some() { Event::Photo } else { Event::Avatar })
             }
             Kind::SetRole { user, role } if actor_role == Some(Role::Owner) => {
                 match state.members.iter_mut().find(|m| m.user == *user && m.role != Role::Owner) {
@@ -522,7 +567,7 @@ mod tests {
             op("x", "ann", 3, &["r"], Kind::Remove { user: "dee".into() }),
             op("n", "bo", 4, &["a"], Kind::Rename { name: "Renamed".into() }),
             op("l", "cy", 5, &["g"], Kind::Leave),
-            op("s", "ann", 6, &["n"], Kind::SetAvatar { emoji: Some("🍎".into()) }),
+            op("s", "ann", 6, &["n"], Kind::SetAvatar { emoji: Some("🍎".into()), photo: None }),
         ];
         let reference = replay("g", &ops);
         // Every rotation and the reverse (a sample of orders, enough to catch an order dependence).
@@ -546,7 +591,7 @@ mod tests {
             Kind::Remove { user: "a".into() },
             Kind::Leave,
             Kind::Rename { name: "N".into() },
-            Kind::SetAvatar { emoji: None },
+            Kind::SetAvatar { emoji: None, photo: None },
             Kind::SetRole { user: "a".into(), role: Role::Admin },
         ] {
             assert_eq!(Kind::parse(kind.op_type(), &kind.payload()), Some(kind.clone()), "{}", kind.op_type());

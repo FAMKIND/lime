@@ -55,7 +55,7 @@ impl LimeStore {
             {
                 let (id, name, tone) = row.map_err(db_err)?;
                 if repliers.len() < 3 && !repliers.iter().any(|m| m.id == id) {
-                    repliers.push(MemberInfo { initials: initials_of(&name), id, name, tone });
+                    repliers.push(MemberInfo { initials: initials_of(&name), id, name, tone, label: None });
                 }
             }
             let unread: u32 = conn

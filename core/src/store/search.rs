@@ -58,6 +58,49 @@ pub(crate) fn fts_query(text: &str) -> Option<String> {
 
 #[uniffi::export]
 impl LimeStore {
+    /// The replies in a chat's threads that match `query`, oldest first (a hit names the thread it is in). With `root`, only that
+    /// thread (its root message and its replies). Used by the chat's find and by the Replies screen's own find.
+    pub fn search_replies(
+        &self,
+        query: String,
+        conversation_id: String,
+        root: Option<String>,
+        limit: u32,
+    ) -> Result<Vec<SearchHit>, StoreError> {
+        let Some(fts) = fts_query(&query) else {
+            return Ok(Vec::new());
+        };
+        let conn = self.lock();
+        let mut statement = conn
+            .prepare(
+                "SELECT message_fts.message_id, message_fts.conversation_id,
+                        snippet(message_fts, 0, char(57344), char(57345), '…', 12),
+                        m.sent_at, m.sender_id, COALESCE(m.thread_root, m.id)
+                 FROM message_fts
+                 JOIN messages m ON m.id = message_fts.message_id
+                 JOIN conversations c ON c.id = message_fts.conversation_id
+                 WHERE message_fts MATCH ?1 AND c.request_state != 'blocked' AND message_fts.conversation_id = ?2
+                   AND ((?3 IS NULL AND m.thread_root IS NOT NULL) OR (?3 IS NOT NULL AND (m.thread_root = ?3 OR m.id = ?3)))
+                 ORDER BY m.sent_at ASC, m.id ASC LIMIT ?4",
+            )
+            .map_err(db_err)?;
+        let hits = statement
+            .query_map(params![fts, conversation_id, root, limit.max(1)], |r| {
+                Ok(SearchHit {
+                    message_id: r.get(0)?,
+                    conversation_id: r.get(1)?,
+                    snippet: r.get(2)?,
+                    time: r.get(3)?,
+                    from_me: r.get::<_, String>(4)? == ME_ID,
+                    thread_root: r.get(5)?,
+                })
+            })
+            .map_err(db_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db_err)?;
+        Ok(hits)
+    }
+
     /// Messages matching `query`, prefix-matched and case- and diacritic-insensitive. In every
     /// conversation (best match first, then newest; a reply in a thread says which thread) or, with
     /// `conversation_id`, in that chat's main timeline (oldest first, so a person can step through
@@ -124,7 +167,10 @@ impl LimeStore {
                         c.title || ' ' || COALESCE((SELECT group_concat(p.name, ' ')
                                                     FROM members m JOIN people p ON p.id = m.person_id
                                                     WHERE m.conversation_id = c.id AND p.id != 'me'), '')
-                 FROM conversations c WHERE c.request_state != 'blocked';",
+                                || ' ' || COALESCE((SELECT group_concat(l.label, ' ')
+                                                    FROM members m JOIN contact_labels l ON l.user_id = m.person_id
+                                                    WHERE m.conversation_id = c.id AND m.person_id != 'me'), '')
+                 FROM conversations c WHERE c.request_state != 'blocked' AND c.hidden = 0;",
         )
         .map_err(db_err)?;
         let mut statement = conn

@@ -22,7 +22,7 @@ extension ConversationStore {
     /// The group's name, avatar, my role and the people in it.
     func groupDetails(_ id: Conversation.ID) async -> GroupDetails? {
         #if DEBUG
-        if isDemo { return demoGroups[id]?.details(id) }
+        if isDemo { return demoGroups[id]?.details(id, hasPhoto: AvatarCache.shared.image(for: id) != nil) }
         #endif
         guard let core else { return nil }
         return try? await Task.detached(priority: .userInitiated) { try core.groupDetails(conversationId: id) }.value
@@ -90,15 +90,17 @@ struct DemoGroup {
     /// user id, name, role
     var people: [(id: String, name: String, role: String)]
 
-    func details(_ conversationID: String) -> GroupDetails {
+    func details(_ conversationID: String, hasPhoto: Bool = false) -> GroupDetails {
         let mine = people.first { $0.id == "me" }?.role ?? "member"
         let manage = mine == "owner" || mine == "admin"
         let members = people.map { person in
             GroupMemberInfo(userId: person.id, name: person.id == "me" ? "You" : person.name, tone: UInt32(AvatarTone.tone(for: person.id)), role: person.role,
                             isMe: person.id == "me",
-                            canRemove: person.id != "me" && person.role != "owner" && (mine == "owner" || (mine == "admin" && person.role == "member")))
+                            canRemove: person.id != "me" && person.role != "owner" && (mine == "owner" || (mine == "admin" && person.role == "member")),
+                            label: nil)
         }
-        return GroupDetails(conversationId: conversationID, name: name, emoji: emoji, myRole: mine, members: members,
+        return GroupDetails(conversationId: conversationID, name: name, emoji: emoji, hasPhoto: hasPhoto,
+                            myRole: mine, members: members,
                             canRename: manage, canAdd: manage && people.count < 100, maxMembers: 100)
     }
 }

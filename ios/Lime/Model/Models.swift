@@ -5,6 +5,8 @@ struct Person: Identifiable, Hashable, Sendable {
     let name: String
     /// Index into the avatar palette (the web app's `--lime-avatar-0…7`).
     let tone: Int
+    /// My private label for this person ("Grade 4 · Lincoln"): shown beside their name, only on this phone.
+    var label: String? = nil
 
     var initials: String {
         let parts = name.split(separator: " ").prefix(2)
@@ -104,10 +106,18 @@ struct Conversation: Identifiable, Hashable, Sendable {
     var isGroupChat: Bool = false
     /// A group's emoji avatar.
     var emoji: String?
+    /// The newest thing in the conversation, a reply in a thread included (the main timeline is `messages`).
+    var latest: Message?
+    /// `latest` is a reply.
+    var latestIsReply = false
+    /// I marked it unread by hand.
+    var markedUnread = false
 
     var isGroup: Bool { isGroupChat || members.count > 1 }
     var subtitle: String { isGroup ? "\(members.count + 1) members" : "" }
-    var lastMessage: Message? { messages.last }
+    var lastMessage: Message? { latest ?? messages.last }
+    /// Shows the unread dot: something new, or marked unread by hand.
+    var isUnread: Bool { unread > 0 || markedUnread }
 }
 
 // MARK: LimeCore records to the app's models
@@ -126,11 +136,12 @@ extension Conversation {
     init(_ summary: ConversationSummary, messages: [MessageItem]) {
         self.init(
             id: summary.id, title: summary.title,
-            members: summary.members.map { Person(id: $0.id, name: $0.name, tone: Int($0.tone)) },
+            members: summary.members.map { Person(id: $0.id, name: $0.name, tone: Int($0.tone), label: $0.label) },
             messages: messages.map(Message.init),
             isPinned: summary.isPinned, unread: Int(summary.unread),
             isRequest: summary.requestState == "pending", keyChangePending: summary.keyChangePending, verified: summary.verified,
-            isGroupChat: summary.isGroup, emoji: summary.groupEmoji)
+            isGroupChat: summary.isGroup, emoji: summary.groupEmoji,
+            latest: summary.lastMessage.map(Message.init), latestIsReply: summary.lastIsReply, markedUnread: summary.markedUnread)
     }
 }
 

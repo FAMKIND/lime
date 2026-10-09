@@ -116,7 +116,7 @@ struct MessageSearchScreen: View {
                         NavigationLink(value: ThreadTarget(conversationID: hit.conversationID, rootID: root, focusMessageID: hit.messageID, words: SearchText.words(query))) { messageRow(hit) }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("search-message-\(hit.messageID)")
-                            .accessibilityLabel("\(hit.conversationTitle), in a thread: \(SearchText.plain(hit.marked))")
+                            .accessibilityLabel("\(hit.conversationTitle), in Replies: \(SearchText.plain(hit.marked))")
                     } else {
                         NavigationLink(value: ChatTarget(conversationID: hit.conversationID, messageID: hit.messageID, words: SearchText.words(query))) { messageRow(hit) }
                             .buttonStyle(.plain)
@@ -133,7 +133,7 @@ struct MessageSearchScreen: View {
             HStack {
                 Text(hit.conversationTitle).font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
                 if hit.threadRoot != nil {
-                    Label("Thread", systemImage: "arrowshape.turn.up.left").labelStyle(.titleAndIcon)
+                    Label("in Replies", systemImage: "arrowshape.turn.up.left").labelStyle(.titleAndIcon)
                         .font(Theme.caption).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 4)

@@ -34,7 +34,7 @@ enum KnownTeachers {
     /// The A–Z sections (with "#" last), names sorted inside each, narrowed to the names the filter matches.
     static func sections(_ teachers: [KnownTeacher], filter: String = "") -> [Section] {
         let wanted = filter.trimmingCharacters(in: .whitespaces)
-        let shown = wanted.isEmpty ? teachers : teachers.filter { SearchText.matches($0.person.name, query: wanted) }
+        let shown = wanted.isEmpty ? teachers : teachers.filter { SearchText.matches($0.person.name + " " + ($0.person.label ?? ""), query: wanted) }
         let grouped = Dictionary(grouping: shown) { letter(for: $0.person.name) }
         let order = (grouped.keys.filter { $0 != "#" }.sorted()) + (grouped["#"] == nil ? [] : ["#"])
         return order.map { key in
@@ -381,6 +381,10 @@ struct TeacherRow: View {
         HStack(spacing: 14) {
             AvatarView(person: person, size: 44)
             Text(person.name).font(Theme.body).foregroundStyle(Theme.text)
+            if let label = person.label {
+                Text(label).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    .accessibilityIdentifier("teacher-label-\(person.id)")
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 20).frame(minHeight: 60)

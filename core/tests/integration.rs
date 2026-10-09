@@ -1005,3 +1005,66 @@ fn a_voice_note_and_a_video_travel_as_ciphertext_and_a_download_survives_an_inte
     assert_eq!(bob_store.attachment_data(video_info.id.clone()).unwrap(), Some(video));
     assert_eq!(bob_store.transfer_progress(video_info.id.clone()).unwrap(), None);
 }
+
+#[test]
+fn a_group_photo_is_set_changed_and_removed_through_the_real_server_and_only_ciphertext_is_stored() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (alice_store, bob_store) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    alice_store.register_device(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.register_device(transport.clone(), bob.token.clone()).unwrap();
+
+    let chat = alice_store.create_group("Grade 4 Team".into(), None, vec![bob.id.clone()]).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
+    bob_store.accept_request(chat.clone()).unwrap();
+
+    let picture = |seed: u8| -> Vec<u8> { (0..30_000u32).map(|i| (i as u8).wrapping_mul(seed).wrapping_add(seed)).collect() };
+    let blobs_of = |owner: &str| -> Vec<String> {
+        let rows = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/blobs?select=id,owner", admin.base))), None);
+        rows.as_array().unwrap().iter().filter(|r| r["owner"] == owner).map(|r| r["id"].as_str().unwrap().to_owned()).collect()
+    };
+
+    let first = picture(3);
+    alice_store.set_group_photo(transport.clone(), alice.token.clone(), chat.clone(), first.clone()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(bob_store.refresh_group_photos(transport.clone(), bob.token.clone()).unwrap(), vec![chat.clone()]);
+    assert_eq!(bob_store.group_photo(chat.clone()).unwrap(), Some(first.clone()), "a member decrypts it");
+    let held = blobs_of(&alice.id);
+    assert_eq!(held.len(), 1);
+    let stored = admin.storage_object("blobs", &held[0]).expect("the encrypted photo");
+    assert_ne!(stored, first);
+    assert!(!stored.windows(32).any(|w| w == &first[500..532]), "the server's bytes are not the picture");
+
+    // Changed: the old blob is deleted and the new one is again ciphertext.
+    let second = picture(7);
+    alice_store.set_group_photo(transport.clone(), alice.token.clone(), chat.clone(), second.clone()).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let after = blobs_of(&alice.id);
+    assert_eq!(after.len(), 1);
+    assert_ne!(after[0], held[0], "the first photo's blob was deleted");
+    assert!(!admin.storage_object("blobs", &after[0]).unwrap().windows(32).any(|w| w == &second[500..532]));
+    bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
+    bob_store.refresh_group_photos(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(bob_store.group_photo(chat.clone()).unwrap(), Some(second));
+
+    // Switched to an emoji, then nothing is left on the server.
+    alice_store.set_group_avatar_emoji(transport.clone(), alice.token.clone(), chat.clone(), Some("🍎".into())).unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert!(blobs_of(&alice.id).is_empty(), "no group photo blob is left on the server");
+    bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
+    bob_store.refresh_group_photos(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(bob_store.group_photo(chat.clone()).unwrap(), None);
+    assert_eq!(bob_store.list_conversations().unwrap().into_iter().find(|c| c.id == chat).unwrap().group_emoji.as_deref(), Some("🍎"));
+}

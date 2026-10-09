@@ -12,6 +12,8 @@ struct ChatView: View {
     @State private var composerModel = RichComposerModel()
     @State private var confirmingBlock = false
     @State private var confirmingLeave = false
+    @State private var labelling = false
+    @State private var labelText = ""
     // In-chat find (the header's magnifier): the matches, which one is current, and where to scroll.
     @State private var finding = false
     @State private var findQuery = ""
@@ -50,6 +52,12 @@ struct ChatView: View {
             } message: {
                 Text("You won't get new messages from this group. Someone can add you back.")
             }
+            .sheet(isPresented: $labelling) {
+                LabelSheet(name: conversation.title, text: $labelText) { saved in
+                    labelling = false
+                    if saved, let person = conversation.members.first { Task { await store.setLabel(labelText, for: person.id) } }
+                }
+            }
             // One confirmation for both ways in: the request bar's Block and the ⋯ menu's "Block <Name>".
             .confirmationDialog("Block \(conversation.title)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
                 Button("Block", role: .destructive) {
@@ -81,14 +89,8 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { titlePill(conversation) }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { startFinding() } label: { Image(systemName: "magnifyingglass") }
-                    .accessibilityLabel("Search in chat")
-                    .accessibilityIdentifier("chat-search-button")
-                Button { store.comingSoon("Call") } label: { Image(systemName: "phone") }
-                    .accessibilityLabel("Call")
-                moreMenu(conversation) { Image(systemName: "ellipsis") }
-            }
+            // One item (so one glass pill), with the three icons close together.
+            ToolbarItem(placement: .topBarTrailing) { toolGroup(conversation) }
         }
     }
 
@@ -214,6 +216,12 @@ struct ChatView: View {
                         .font(Theme.caption)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
+                } else if let label = conversation.members.first?.label {
+                    Text(label)
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("chat-label")
                 } else if conversation.verified {
                     Label("Verified in person", systemImage: "checkmark.seal.fill")
                         .font(Theme.caption)
@@ -252,6 +260,11 @@ struct ChatView: View {
     }
 
     private func show(_ hit: MessageHit) {
+        // A hit in a reply opens that Replies screen, with the words highlighted.
+        if let root = hit.threadRoot {
+            store.path.append(ThreadTarget(conversationID: conversationID, rootID: root, focusMessageID: hit.messageID, words: SearchText.words(findQuery)))
+            return
+        }
         highlightedID = hit.messageID
         scrollRequest = ScrollRequest(id: hit.messageID)
     }
@@ -326,19 +339,9 @@ struct ChatView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 0) {
-                Button { startFinding() } label: {
-                    Image(systemName: "magnifyingglass").font(.system(size: 18)).foregroundStyle(Theme.text).frame(width: 44, height: 48)
-                }
-                .accessibilityLabel("Search in chat")
-                .accessibilityIdentifier("chat-search-button")
-                glassIcon("phone", label: "Call")
-                moreMenu(conversation) {
-                    Image(systemName: "ellipsis").font(.system(size: 18)).foregroundStyle(Theme.text).frame(width: 44, height: 48)
-                }
-            }
-            .padding(.horizontal, 4)
-            .limeGlass()
+            toolGroup(conversation)
+                .padding(.horizontal, 2)
+                .limeGlass()
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)
@@ -359,7 +362,7 @@ struct ChatView: View {
                         Button(duration.title) { settings.mute(conversation.id, for: duration) }
                             .accessibilityIdentifier("mute-\(duration.rawValue)")
                     }
-                } label: { Label("Mute notifications", systemImage: "bell.slash") }
+                } label: { Label("Mute", systemImage: "bell.slash") }
                 .accessibilityIdentifier("chat-mute")
             }
             Divider()
@@ -373,6 +376,13 @@ struct ChatView: View {
                 }
                 .accessibilityIdentifier("chat-leave")
             } else {
+                if let person = conversation.members.first {
+                    Button {
+                        labelText = person.label ?? ""
+                        labelling = true
+                    } label: { Label(person.label == nil ? "Add a label" : "Edit label", systemImage: "tag") }
+                    .accessibilityIdentifier("chat-label-button")
+                }
                 // Blocking someone you already chat with (the request bar's Block is only for strangers).
                 Button(role: .destructive) { confirmingBlock = true } label: {
                     Label("Block \(conversation.title)", systemImage: "hand.raised")
@@ -384,14 +394,19 @@ struct ChatView: View {
         .accessibilityIdentifier("chat-more")
     }
 
-    private func glassIcon(_ symbol: String, label: String) -> some View {
-        Button { store.comingSoon(label) } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 18))
-                .foregroundStyle(Theme.text)
-                .frame(width: 44, height: 48)
+    /// Search, call and ⋯ close together: each icon keeps a 44 pt target, and the targets overlap by 6 pt so the icons sit 38 pt apart.
+    private func toolGroup(_ conversation: Conversation) -> some View {
+        HStack(spacing: -6) {
+            toolIcon("magnifyingglass", label: "Search in chat", id: "chat-search-button") { startFinding() }
+            toolIcon("phone", label: "Call", id: "chat-call-button") { store.comingSoon("Call") }
+            moreMenu(conversation) { ToolIconLabel(symbol: "ellipsis") }
         }
-        .accessibilityLabel(label)
+    }
+
+    private func toolIcon(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { ToolIconLabel(symbol: symbol) }
+            .accessibilityLabel(label)
+            .accessibilityIdentifier(id)
     }
 
     // MARK: Bottom: the composer, or Accept / Block for a request
@@ -475,7 +490,7 @@ struct MessageBubble: View {
     /// The words find (or a search result) is looking for: highlighted inside the bubble.
     var findWords: [String] = []
     var onRetry: () -> Void = {}
-    /// "Reply in thread" (long-press), and tapping the "N replies" row under a message that has them.
+    /// "Reply" (long-press), and tapping the "N replies" row under a message that has them.
     var onReply: (() -> Void)? = nil
     var onOpenThread: (() -> Void)? = nil
     @Environment(\.pressedLink) private var pressedLink
@@ -510,7 +525,7 @@ struct MessageBubble: View {
                     .accessibilityIdentifier(message.isOwn ? "own-bubble" : "other-bubble")
                     .contextMenu {
                         if let onReply, message.state != .sending, message.state != .failed {
-                            Button { onReply() } label: { Label("Reply in thread", systemImage: "arrowshape.turn.up.left") }
+                            Button { onReply() } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
                                 .accessibilityIdentifier("reply-in-thread")
                         }
                     }
@@ -551,4 +566,60 @@ struct MessageBubble: View {
 extension EnvironmentValues {
     /// The link a person just tapped, so its text can show pressed.
     @Entry var pressedLink: URL? = nil
+}
+
+/// An icon of the header's tool group: a full 44 pt target (the group overlaps neighbours by 6 pt to sit closer).
+struct ToolIconLabel: View {
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 18))
+            .foregroundStyle(Theme.text)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
+}
+
+/// "Add a label": my private note beside a person's name ("Grade 4 · Lincoln"). It stays on this phone: it is never sent to the
+/// server or to them.
+struct LabelSheet: View {
+    let name: String
+    @Binding var text: String
+    var finish: (_ saved: Bool) -> Void
+    @FocusState private var focused: Bool
+
+    static let limit = 30
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Button("Cancel") { finish(false) }.foregroundStyle(Theme.text).accessibilityIdentifier("label-cancel")
+                Spacer()
+                Text("Label for \(name)").font(Theme.title).foregroundStyle(Theme.text).lineLimit(1)
+                Spacer()
+                Button("Save") { finish(true) }.font(Theme.title).foregroundStyle(Theme.text).accessibilityIdentifier("label-save")
+            }
+            TextField("Grade 4 · Lincoln", text: Binding(get: { text }, set: { text = String($0.prefix(Self.limit)) }))
+                .font(Theme.body).selectionTint().focused($focused)
+                .padding(.horizontal, 16).frame(minHeight: 52)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .onSubmit { finish(true) }
+                .accessibilityIdentifier("label-field")
+            HStack {
+                Text("Only you see this. It's never sent to Lime's servers or to \(name).").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                Spacer(minLength: 8)
+                Text("\(text.count)/\(Self.limit)").font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("label-count")
+            }
+            if !text.isEmpty {
+                Button(role: .destructive) { text = ""; finish(true) } label: { Text("Remove label").font(Theme.body) }
+                    .accessibilityIdentifier("label-remove")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .background(Theme.canvas.ignoresSafeArea())
+        .presentationDetents([.medium])
+        .onAppear { focused = true }
+    }
 }

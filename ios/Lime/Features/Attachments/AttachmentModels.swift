@@ -52,18 +52,31 @@ enum AttachmentFormat {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
-    /// What a chat list or a notification says for a message that is only attachments ("Photo", "3 photos", "Report.pdf").
+    /// What a chat list or a notification says for a message that is only attachments: "Photo", "3 Photos", "Video",
+    /// "Voice message (0:12)", the file's name, or "3 attachments".
     static func summary(_ items: [AttachmentItem]) -> String? {
         guard let first = items.first else { return nil }
-        if items.allSatisfy({ $0.kind == .image }) { return items.count == 1 ? "Photo" : "\(items.count) photos" }
+        if items.allSatisfy({ $0.kind == .image }) { return items.count == 1 ? "Photo" : "\(items.count) Photos" }
         if items.count == 1 {
             switch first.kind {
             case .video: return "Video"
-            case .audio: return "Voice message"
+            case .audio: return first.durationMs.map { "Voice message (\(VoiceFormat.clock(Double($0) / 1000)))" } ?? "Voice message"
             default: return first.name.isEmpty ? "File" : first.name
             }
         }
         return "\(items.count) attachments"
+    }
+
+    /// The small symbol for a list row's preview of attachments.
+    static func symbol(_ items: [AttachmentItem]) -> String? {
+        guard let first = items.first else { return nil }
+        if items.count > 1 && !items.allSatisfy({ $0.kind == .image }) { return "paperclip" }
+        switch first.kind {
+        case .image: return "camera.fill"
+        case .video: return "video.fill"
+        case .audio: return "mic.fill"
+        case .file: return "doc.fill"
+        }
     }
 }
 

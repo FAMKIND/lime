@@ -13,6 +13,7 @@ pub(crate) mod account;
 pub(crate) mod attachments;
 pub(crate) mod delivery;
 pub(crate) mod groups;
+pub(crate) mod labels;
 mod migrations;
 pub(crate) mod order;
 pub(crate) mod photos;
@@ -107,6 +108,8 @@ pub struct MemberInfo {
     pub initials: String,
     /// An index into the app's avatar palette (0 to 7).
     pub tone: u32,
+    /// My private label for this person (shown only to me), if I gave one.
+    pub label: Option<String>,
 }
 
 /// One attachment of a message, as the app shows it (the key and digest stay in the core).
@@ -158,6 +161,10 @@ pub struct ConversationSummary {
     pub group_emoji: Option<String>,
     /// The other person's key was confirmed in person against their QR code (one-to-one chats).
     pub verified: bool,
+    /// I marked the conversation unread by hand (it shows the unread dot until opened).
+    pub marked_unread: bool,
+    /// `last_message` is a reply in a thread (it is the newest thing in the conversation, replies included).
+    pub last_is_reply: bool,
 }
 
 /// Someone you blocked: they can be unblocked, which brings their conversation back.
@@ -244,9 +251,10 @@ impl LimeStore {
                 "SELECT c.id, c.title, c.is_group, c.is_pinned, c.unread, c.request_state,
                         EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NOT NULL),
                         c.group_emoji,
-                        EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.verified_at IS NOT NULL AND p.new_master_key IS NULL)
+                        EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.verified_at IS NOT NULL AND p.new_master_key IS NULL),
+                        c.marked_unread
                  FROM conversations c
-                 WHERE c.request_state NOT IN ('blocked', 'left')
+                 WHERE c.request_state NOT IN ('blocked', 'left') AND c.hidden = 0
                  ORDER BY c.is_pinned DESC,
                           COALESCE((SELECT MAX(m.sent_at) FROM messages m
                                     WHERE m.conversation_id = c.id), 0) DESC,
@@ -265,6 +273,7 @@ impl LimeStore {
                     r.get::<_, bool>(6)?,
                     r.get::<_, Option<String>>(7)?,
                     r.get::<_, bool>(8)?,
+                    r.get::<_, bool>(9)?,
                 ))
             })
             .map_err(db_err)?
@@ -272,9 +281,11 @@ impl LimeStore {
             .map_err(db_err)?;
 
         let mut summaries = Vec::with_capacity(rows.len());
-        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji, verified) in rows {
+        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji, verified, marked_unread) in rows {
+            let (latest, last_is_reply) = latest_activity(&conn, &id)?;
             summaries.push(ConversationSummary {
-                last_message: last_message(&conn, &id)?,
+                last_message: latest,
+                last_is_reply,
                 members: members_of(&conn, &id)?,
                 id,
                 title,
@@ -285,6 +296,7 @@ impl LimeStore {
                 key_change_pending,
                 group_emoji,
                 verified,
+                marked_unread,
             });
         }
         Ok(summaries)
@@ -458,11 +470,59 @@ impl LimeStore {
         }))
     }
 
+    /// Pins or unpins a conversation (pinned ones sort first).
+    pub fn set_pinned(&self, conversation_id: String, pinned: bool) -> Result<(), StoreError> {
+        let conn = self.lock();
+        let changed = conn.execute("UPDATE conversations SET is_pinned = ?2 WHERE id = ?1", params![conversation_id, pinned]).map_err(db_err)?;
+        if changed == 0 { Err(StoreError::NotFound) } else { Ok(()) }
+    }
+
+    /// Marks a conversation unread by hand (or read again); opening it reads it.
+    pub fn set_marked_unread(&self, conversation_id: String, unread: bool) -> Result<(), StoreError> {
+        let conn = self.lock();
+        let changed = conn.execute("UPDATE conversations SET marked_unread = ?2 WHERE id = ?1", params![conversation_id, unread]).map_err(db_err)?;
+        if changed == 0 { Err(StoreError::NotFound) } else { Ok(()) }
+    }
+
+    /// Deletes a chat for me: its messages and files go from this phone and the chat leaves the list. A new message from the
+    /// other person (or one I start) brings it back, empty. Nothing is told to anyone; for a group I am still in, leave it first.
+    pub fn delete_chat(&self, conversation_id: String) -> Result<(), StoreError> {
+        let mut conn = self.lock();
+        let tx = conn.transaction().map_err(db_err)?;
+        let exists: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)", params![conversation_id], |r| r.get(0)).map_err(db_err)?;
+        if !exists {
+            return Err(StoreError::NotFound);
+        }
+        tx.execute(
+            "DELETE FROM message_attachments WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?1)",
+            params![conversation_id],
+        )
+        .map_err(db_err)?;
+        tx.execute("DELETE FROM message_deliveries WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?1)", params![conversation_id]).map_err(db_err)?;
+        tx.execute("DELETE FROM thread_state WHERE root_id IN (SELECT id FROM messages WHERE conversation_id = ?1)", params![conversation_id]).map_err(db_err)?;
+        tx.execute("DELETE FROM messages WHERE conversation_id = ?1 AND id NOT LIKE 'sys:%'", params![conversation_id]).map_err(db_err)?;
+        tx.execute("DELETE FROM messages WHERE conversation_id = ?1", params![conversation_id]).map_err(db_err)?;
+        tx.execute("UPDATE conversations SET hidden = 1, unread = 0, marked_unread = 0, is_pinned = 0 WHERE id = ?1", params![conversation_id]).map_err(db_err)?;
+        tx.commit().map_err(db_err)
+    }
+
+    /// Gives a person a private label (at most 30 characters), or removes it with `None` or an empty text. Only on this phone.
+    pub fn set_contact_label(&self, user_id: String, label: Option<String>) -> Result<(), StoreError> {
+        let conn = self.lock();
+        labels::set(&conn, &user_id, label.as_deref())
+    }
+
+    /// My private label for a person.
+    pub fn contact_label(&self, user_id: String) -> Result<Option<String>, StoreError> {
+        let conn = self.lock();
+        labels::get(&conn, &user_id)
+    }
+
     /// Marks a conversation as read.
     pub fn mark_read(&self, conversation_id: String) -> Result<(), StoreError> {
         let conn = self.lock();
         conn.execute(
-            "UPDATE conversations SET unread = 0 WHERE id = ?1 AND unread != 0",
+            "UPDATE conversations SET unread = 0, marked_unread = 0 WHERE id = ?1 AND (unread != 0 OR marked_unread != 0)",
             params![conversation_id],
         )
         .map_err(db_err)?;
@@ -625,20 +685,24 @@ pub(crate) fn attachment_infos(conn: &Connection, message_id: &str) -> Vec<Attac
         .collect()
 }
 
-fn last_message(
-    conn: &Connection,
-    conversation_id: &str,
-) -> Result<Option<MessageItem>, StoreError> {
+/// The newest thing in a conversation: its last message or, if a reply is newer, that reply (and `true`).
+fn latest_activity(conn: &Connection, conversation_id: &str) -> Result<(Option<MessageItem>, bool), StoreError> {
     let me = my_user_id(conn);
-    Ok(order::load_ordered(conn, conversation_id)?
-        .pop()
-        .map(|row| item_in(conn, row, &me)))
+    let main = order::load_ordered(conn, conversation_id)?.pop();
+    let reply = order::latest_reply(conn, conversation_id)?;
+    Ok(match (main, reply) {
+        (Some(main), Some(reply)) if reply.sent_at > main.sent_at => (Some(item_in(conn, reply, &me)), true),
+        (Some(main), _) => (Some(item_in(conn, main, &me)), false),
+        (None, Some(reply)) => (Some(item_in(conn, reply, &me)), true),
+        (None, None) => (None, false),
+    })
 }
 
 fn members_of(conn: &Connection, conversation_id: &str) -> Result<Vec<MemberInfo>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT p.id, p.name, p.tone FROM members m JOIN people p ON p.id = m.person_id
+            "SELECT p.id, p.name, p.tone, l.label FROM members m JOIN people p ON p.id = m.person_id
+             LEFT JOIN contact_labels l ON l.user_id = p.id
              WHERE m.conversation_id = ?1 AND p.id != ?2 ORDER BY m.position",
         )
         .map_err(db_err)?;
@@ -650,6 +714,7 @@ fn members_of(conn: &Connection, conversation_id: &str) -> Result<Vec<MemberInfo
                 initials: initials_of(&name),
                 name,
                 tone: r.get(2)?,
+                label: r.get(3)?,
             })
         })
         .map_err(db_err)?

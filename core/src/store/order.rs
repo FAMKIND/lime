@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{db_err, StoreError};
 
@@ -66,6 +66,22 @@ pub(crate) fn load_ordered(conn: &Connection, conversation_id: &str) -> Result<V
 }
 
 /// A thread: the message it hangs from, then its replies, in display order.
+/// The newest reply in any thread of a conversation.
+pub(crate) fn latest_reply(conn: &Connection, conversation_id: &str) -> Result<Option<Row>, StoreError> {
+    let id: Option<String> = conn
+        .query_row(
+            "SELECT id FROM messages WHERE conversation_id = ?1 AND thread_root IS NOT NULL ORDER BY sent_at DESC, id DESC LIMIT 1",
+            [conversation_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
+    match id {
+        Some(id) => Ok(load(conn, "id = ?1", id.as_str())?.pop()),
+        None => Ok(None),
+    }
+}
+
 pub(crate) fn load_thread(conn: &Connection, root_id: &str) -> Result<Vec<Row>, StoreError> {
     load(conn, "(id = ?1 OR thread_root = ?1)", root_id)
 }

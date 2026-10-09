@@ -295,6 +295,16 @@ const MIGRATIONS: &[&str] = &[
          done          INTEGER NOT NULL,
          total         INTEGER NOT NULL
      );",
+    // 18: the QA round (LIME-104). A group's encrypted photo (blob id and key, from its signed `group.set_avatar` op), a manual
+    // \"mark unread\", \"delete chat for me\" (the chat is hidden and its messages gone here; a new message brings it back), and
+    // my private label for a contact (never sent anywhere).
+    "ALTER TABLE conversations ADD COLUMN group_photo TEXT;
+     ALTER TABLE conversations ADD COLUMN marked_unread INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE conversations ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+     CREATE TABLE contact_labels (
+         user_id TEXT PRIMARY KEY NOT NULL,
+         label   TEXT NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

@@ -540,6 +540,7 @@ impl LimeStore {
                 None => None,
                 Some(id) => Some(resolve_root(conn, &conversation_id, id)?.ok_or(StoreError::NotFound)?),
             };
+            conn.execute("UPDATE conversations SET hidden = 0 WHERE id = ?1 AND hidden != 0", params![conversation_id]).map_err(db_err)?;
             let hlc = tick_hlc(conn, now)?;
             let parents = match &root {
                 Some(root) => order::thread_heads(conn, root)?,
@@ -1341,7 +1342,8 @@ fn insert_received_message(
         )
         .map_err(db_err)?;
     if inserted > 0 {
-        conn.execute("UPDATE conversations SET unread = unread + 1 WHERE id = ?1", params![conversation]).map_err(db_err)?;
+        // A chat I deleted for myself comes back with its first new message.
+        conn.execute("UPDATE conversations SET unread = unread + 1, hidden = 0 WHERE id = ?1", params![conversation]).map_err(db_err)?;
         if let Some(root) = &root {
             conn.execute(
                 "INSERT INTO thread_state (root_id, unread) VALUES (?1, 1)
@@ -1573,6 +1575,10 @@ pub(crate) fn ensure_dm_as(
         params![id, shown, state_if_new],
     )
     .map_err(db_err)?;
+    if state_if_new == "accepted" {
+        // Starting a chat I deleted for myself shows it again.
+        conn.execute("UPDATE conversations SET hidden = 0 WHERE id = ?1 AND hidden != 0", params![id]).map_err(db_err)?;
+    }
     if shown != peer {
         set_person_name(conn, peer, shown)?;
     }

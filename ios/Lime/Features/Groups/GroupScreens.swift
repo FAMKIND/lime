@@ -133,6 +133,8 @@ struct GroupNameScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var name = ""
     @State private var emoji = ""
+    @State private var avatarMode: GroupAvatarMode = .emoji
+    @State private var photo: UIImage?
     @State private var making = false
     @FocusState private var focused: Bool
 
@@ -155,20 +157,7 @@ struct GroupNameScreen: View {
             }
             ScrollView {
                 VStack(spacing: 18) {
-                    ZStack {
-                        Circle().fill(Theme.surface).frame(width: 96, height: 96)
-                        if emoji.isEmpty {
-                            Text(initials).font(.system(size: 34, weight: .semibold)).foregroundStyle(Theme.textSecondary)
-                        } else {
-                            Text(emoji).font(.system(size: 48))
-                        }
-                    }
-                    TextField("Emoji (optional)", text: $emoji)
-                        .multilineTextAlignment(.center).font(Theme.body).selectionTint()
-                        .frame(maxWidth: 200).padding(.vertical, 10)
-                        .background(Theme.surface, in: Capsule())
-                        .onChange(of: emoji) { _, value in if let first = value.first(where: { $0.isEmoji }) { emoji = String(first) } else if !value.isEmpty { emoji = "" } }
-                        .accessibilityIdentifier("group-emoji-field")
+                    GroupAvatarEditor(mode: $avatarMode, emoji: $emoji, photo: $photo, fallback: initials)
                     VStack(alignment: .leading, spacing: 6) {
                         // The field never holds more than the limit (the extra characters are dropped as they are typed).
                         TextField("Group name", text: Binding(get: { name }, set: { name = String($0.prefix(Self.limit)) }))
@@ -211,15 +200,13 @@ struct GroupNameScreen: View {
     private func create() {
         making = true
         Task {
-            _ = await store.createGroup(name: cleaned, emoji: emoji.isEmpty ? nil : emoji, members: members)
+            let chosenEmoji = avatarMode == .emoji && !emoji.isEmpty ? emoji : nil
+            let made = await store.createGroup(name: cleaned, emoji: chosenEmoji, members: members)
+            // A photo needs the group to exist first: it is set right after (and goes to the members with the next delivery).
+            if let made, avatarMode == .photo, let photo, let jpeg = PhotoProcessing.jpeg(photo) { _ = await store.setGroupPhoto(jpeg, in: made) }
             onCreated()
         }
     }
-}
-
-private extension Character {
-    /// A character drawn as an emoji (not a plain digit or letter).
-    var isEmoji: Bool { unicodeScalars.first.map { $0.properties.isEmojiPresentation || ($0.properties.isEmoji && $0.value > 0x238C) } ?? false }
 }
 
 // MARK: Group details
@@ -234,6 +221,7 @@ struct GroupDetailsView: View {
     @State private var removing: GroupMemberInfo?
     @State private var leaving = false
     @State private var adding = false
+    @State private var editingAvatar = false
 
     var body: some View {
         SettingsPage(title: "Group details") {
@@ -264,6 +252,12 @@ struct GroupDetailsView: View {
             }
         }
         .task { await refresh() }
+        .sheet(isPresented: $editingAvatar) {
+            GroupAvatarSheet(conversationID: target.conversationID, currentEmoji: details?.emoji, hasPhoto: details?.hasPhoto ?? false) { changed in
+                editingAvatar = false
+                if changed { Task { await refresh() } }
+            }
+        }
         .sheet(isPresented: $renaming) {
             RenameGroupSheet(name: $newName) { saved in
                 renaming = false
@@ -303,9 +297,25 @@ struct GroupDetailsView: View {
 
     private func header(_ details: GroupDetails) -> some View {
         VStack(spacing: 10) {
-            Circle().fill(Theme.surface).frame(width: 88, height: 88)
-                .overlay(Text(details.emoji ?? "👥").font(.system(size: 44)))
-                .accessibilityHidden(true)
+            Button { editingAvatar = true } label: {
+                ZStack(alignment: .bottomTrailing) {
+                    Group {
+                        if let photo = AvatarCache.shared.image(for: target.conversationID) {
+                            Image(uiImage: photo).resizable().scaledToFill().frame(width: 88, height: 88).clipShape(Circle())
+                        } else {
+                            Circle().fill(Theme.surface).frame(width: 88, height: 88).overlay(Text(details.emoji ?? "👥").font(.system(size: 44)))
+                        }
+                    }
+                    if details.canRename {
+                        Image(systemName: "pencil").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.accentInk)
+                            .frame(width: 26, height: 26).background(Theme.accent, in: Circle())
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(!details.canRename)
+            .accessibilityLabel("Group picture")
+            .accessibilityIdentifier("group-details-avatar")
             Button {
                 newName = details.name
                 renaming = true
@@ -330,7 +340,10 @@ struct GroupDetailsView: View {
             HStack(spacing: 14) {
                 AvatarView(person: Person(id: member.userId, name: member.isMe ? "You" : member.name, tone: Int(member.tone)), size: 44)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(member.name).font(Theme.body).foregroundStyle(Theme.text)
+                    HStack(spacing: 6) {
+                        Text(member.name).font(Theme.body).foregroundStyle(Theme.text)
+                        if let label = member.label { Text(label).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1) }
+                    }
                     if member.role != "member" {
                         Text(member.role == "owner" ? "Owner" : "Admin").font(Theme.caption).foregroundStyle(Theme.textSecondary)
                     }

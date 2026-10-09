@@ -39,3 +39,9 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **Microphone string** (`NSMicrophoneUsageDescription`): "Lime uses the microphone to record voice messages and the sound of videos you record." The camera string now also covers photos and videos to send. Re-check both in the App Store privacy answers (audio and video are collected only when the person records and sends; nothing is used for anything else).
 - [ ] **Egress.** A 30-second 720p video is roughly 5 to 8 MB and a one-minute voice message about 180 KB: videos dominate the free plan's 5 GB egress, so watch the dashboard (see the attachments item above) and consider a lower default (480p) if usage climbs before launch.
 - [ ] **Hold-to-record on a real iPhone.** The simulator has no microphone or camera, so the record, cancel and lock gestures are tested with a simulated recorder; try them on a real phone before release, with the microphone permission denied as well.
+
+## The QA round (LIME-104)
+
+- [ ] **Group photos and Report.** A group photo is user-generated content inside an encrypted group (the server cannot see it, so the 1.2 report flow depends on the reporter sharing the content): note it in the moderation process.
+- [ ] **Delete chat for me** is local and silent: say so in the help text ("The other person keeps their copy"), and in the privacy answers (nothing about it reaches the server).
+- [ ] **Private labels** live only in the encrypted store: confirm they are excluded from any future backup that leaves the device unless that backup is encrypted with the recovery key (api-v2.md section 2, `backups`).

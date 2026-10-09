@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -1927,4 +1927,223 @@ fn an_upload_reports_progress_and_a_voice_note_carries_its_waveform_and_duration
     assert_eq!(info.thumb, voice.thumb, "the waveform arrives as sent");
     download(&bob, &transport, &info.id).unwrap();
     assert_eq!(bob.store.attachment_data(info.id).unwrap(), Some(voice.bytes));
+}
+
+// ---------------------------------------------------------------- LIME-104: the QA round
+
+#[test]
+fn a_group_photo_is_set_changed_and_removed_across_accounts_and_the_server_holds_only_ciphertext() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    for p in [&bob, &carol] {
+        p.store.accept_request(chat.clone()).unwrap();
+    }
+    deliver(&bob, &transport);
+    deliver(&carol, &transport);
+    for p in [&alice, &bob, &carol] {
+        sync(p, &transport);
+    }
+    let photo = |seed: u8| (0..40_000u32).map(|i| (i as u8).wrapping_mul(seed).wrapping_add(seed)).collect::<Vec<u8>>();
+    let refresh_groups = |p: &Party| p.store.refresh_group_photos(transport.clone(), p.token.clone()).unwrap();
+
+    // Alice (the owner) sets a photo: members fetch and decrypt it; the server's blob is not the picture.
+    let first = photo(3);
+    alice.store.set_group_photo(transport.clone(), alice.token.clone(), chat.clone(), first.clone()).unwrap();
+    deliver(&alice, &transport);
+    for p in [&bob, &carol] {
+        sync(p, &transport);
+        assert!(p.store.group_details(chat.clone()).unwrap().has_photo);
+        assert_eq!(refresh_groups(p), vec![chat.clone()]);
+        assert_eq!(p.store.group_photo(chat.clone()).unwrap(), Some(first.clone()), "{}", p.user);
+        let lines: Vec<String> = p.store.list_messages(chat.clone()).unwrap().into_iter().filter(|m| m.local_state == "system").map(|m| m.text).collect();
+        assert!(lines.last().unwrap().ends_with("changed the group photo"), "{lines:?}");
+    }
+    assert_eq!(alice.store.group_photo(chat.clone()).unwrap(), Some(first.clone()), "the one who set it has it at once");
+    let first_blob: String = {
+        let state = server.state.lock().unwrap();
+        assert_eq!(state.blob_rows.len(), 1);
+        let (id, _) = state.blob_rows.iter().next().unwrap();
+        let stored = state.objects.get(&format!("blobs/{id}")).unwrap();
+        assert!(!stored.windows(32).any(|w| w == &first[1000..1032]), "the server holds ciphertext");
+        id.clone()
+    };
+    assert!(refresh_groups(&bob).is_empty(), "nothing changed the second time");
+
+    // A plain member may not change it.
+    assert!(bob.store.set_group_photo(transport.clone(), bob.token.clone(), chat.clone(), photo(5)).is_err());
+
+    // Changed: the old blob is deleted from the server and members get the new picture.
+    let second = photo(7);
+    alice.store.set_group_photo(transport.clone(), alice.token.clone(), chat.clone(), second.clone()).unwrap();
+    deliver(&alice, &transport);
+    {
+        let state = server.state.lock().unwrap();
+        assert!(!state.blob_rows.contains_key(&first_blob), "the replaced photo is deleted from the server");
+        assert_eq!(state.blob_rows.len(), 1);
+    }
+    sync(&bob, &transport);
+    assert_eq!(refresh_groups(&bob), vec![chat.clone()]);
+    assert_eq!(bob.store.group_photo(chat.clone()).unwrap(), Some(second));
+
+    // Switched to an emoji: the photo is gone from the server and from the members.
+    alice.store.set_group_avatar_emoji(transport.clone(), alice.token.clone(), chat.clone(), Some("🍎".into())).unwrap();
+    deliver(&alice, &transport);
+    assert!(server.state.lock().unwrap().blob_rows.is_empty(), "no photo blob is left");
+    sync(&bob, &transport);
+    assert_eq!(refresh_groups(&bob), vec![chat.clone()]);
+    assert_eq!(bob.store.group_photo(chat.clone()).unwrap(), None);
+    let summary = bob.store.list_conversations().unwrap().into_iter().find(|c| c.id == chat).unwrap();
+    assert_eq!(summary.group_emoji.as_deref(), Some("🍎"));
+
+    // And back to a photo, then removed altogether.
+    alice.store.set_group_photo(transport.clone(), alice.token.clone(), chat.clone(), photo(9)).unwrap();
+    alice.store.remove_group_photo(transport.clone(), alice.token.clone(), chat.clone()).unwrap();
+    assert!(server.state.lock().unwrap().blob_rows.is_empty());
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    refresh_groups(&bob);
+    assert_eq!(bob.store.group_photo(chat.clone()).unwrap(), None);
+    assert!(!bob.store.group_details(chat.clone()).unwrap().has_photo);
+    assert_eq!(bob.store.list_conversations().unwrap().into_iter().find(|c| c.id == chat).unwrap().group_emoji, None);
+}
+
+#[test]
+fn a_group_photo_op_with_a_malformed_photo_is_not_read_as_clearing_the_avatar() {
+    use crate::protocol::group::Kind;
+    let good = serde_json::json!({ "photo": { "id": uuid::Uuid::new_v4().to_string(), "key": vodozemac::base64_encode([7u8; 32]) } });
+    assert!(Kind::parse("group.set_avatar", &good).is_some());
+    for bad in [
+        serde_json::json!({ "photo": { "id": "not-a-uuid", "key": vodozemac::base64_encode([7u8; 32]) } }),
+        serde_json::json!({ "photo": { "id": uuid::Uuid::new_v4().to_string(), "key": "AAAA" } }),
+        serde_json::json!({ "photo": "x" }),
+    ] {
+        assert!(Kind::parse("group.set_avatar", &bad).is_none(), "{bad}");
+    }
+    assert!(Kind::parse("group.set_avatar", &serde_json::json!({ "emoji": "🍎" })).is_some());
+}
+
+#[test]
+fn the_list_shows_the_latest_activity_replies_included_and_sorts_by_it() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    let to_bob = format!("dm:{}", bob.user);
+    let to_carol = format!("dm:{}", carol.user);
+    let root = alice.store.queue_text(to_bob.clone(), "main message".into()).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    alice.store.queue_text(to_carol.clone(), "hello Carol".into()).unwrap();
+    deliver(&alice, &transport);
+    let list = |p: &Party| p.store.list_conversations().unwrap();
+    assert_eq!(list(&alice)[0].id, to_carol, "newest first");
+    assert!(!list(&alice)[0].last_is_reply);
+
+    // A reply in Bob's thread is now the newest thing: the row shows it, and Bob's chat moves to the top.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let reply = alice.store.queue_reply(to_bob.clone(), root.id.clone(), "a reply".into()).unwrap();
+    let rows = list(&alice);
+    assert_eq!(rows[0].id, to_bob);
+    assert_eq!(rows[0].last_message.as_ref().unwrap().id, reply.id);
+    assert_eq!(rows[0].last_message.as_ref().unwrap().text, "a reply");
+    assert!(rows[0].last_is_reply, "the row says it is a reply");
+    assert!(!rows[1].last_is_reply);
+}
+
+#[test]
+fn pin_mark_unread_and_delete_chat_for_me() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    let (to_bob, to_carol) = (format!("dm:{}", bob.user), format!("dm:{}", carol.user));
+    let ids = |p: &Party| p.store.list_conversations().unwrap().into_iter().map(|c| c.id).collect::<Vec<_>>();
+
+    alice.store.set_pinned(to_bob.clone(), true).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    say(&carol, &alice, &transport, "newer");
+    sync(&alice, &transport);
+    assert_eq!(ids(&alice)[0], to_bob, "pinned sorts first even though Carol's is newer");
+    alice.store.set_pinned(to_bob.clone(), false).unwrap();
+    assert_eq!(ids(&alice)[0], to_carol);
+    assert!(alice.store.set_pinned("dm:nobody".into(), true).is_err());
+
+    // Mark unread by hand; opening it (mark_read) clears it.
+    let marked = |p: &Party, id: &str| p.store.list_conversations().unwrap().into_iter().find(|c| c.id == id).unwrap().marked_unread;
+    alice.store.mark_read(to_bob.clone()).unwrap();
+    assert!(!marked(&alice, &to_bob));
+    alice.store.set_marked_unread(to_bob.clone(), true).unwrap();
+    assert!(marked(&alice, &to_bob));
+    alice.store.mark_read(to_bob.clone()).unwrap();
+    assert!(!marked(&alice, &to_bob));
+
+    // Delete for me: the chat and its messages go from this phone only; the other person is not told.
+    let before = server.state.lock().unwrap().calls;
+    alice.store.delete_chat(to_bob.clone()).unwrap();
+    assert!(!ids(&alice).contains(&to_bob));
+    assert!(alice.store.list_messages(to_bob.clone()).unwrap().is_empty());
+    assert_eq!(server.state.lock().unwrap().calls, before, "nothing is sent");
+    assert!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().len() >= 2, "Bob still has everything");
+    assert!(ids(&alice).contains(&to_carol), "other chats are untouched");
+    // A new message from Bob brings the chat back, empty but for it.
+    say(&bob, &alice, &transport, "back again");
+    sync(&alice, &transport);
+    assert!(ids(&alice).contains(&to_bob));
+    assert_eq!(alice.store.list_messages(to_bob.clone()).unwrap().len(), 1);
+    // Starting a chat I deleted shows it again too.
+    alice.store.delete_chat(to_carol.clone()).unwrap();
+    alice.store.start_dm(carol.user.clone(), "Carol".into()).unwrap();
+    assert!(ids(&alice).contains(&to_carol));
+}
+
+#[test]
+fn a_private_label_shows_beside_the_name_is_searchable_and_never_leaves_the_phone() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let calls = server.state.lock().unwrap().calls;
+    alice.store.set_contact_label(bob.user.clone(), Some("  Grade 4 ·   Lincoln  ".into())).unwrap();
+    assert_eq!(alice.store.contact_label(bob.user.clone()).unwrap().as_deref(), Some("Grade 4 · Lincoln"), "whitespace is tidied");
+    let summary = alice.store.list_conversations().unwrap().into_iter().find(|c| c.id == format!("dm:{}", bob.user)).unwrap();
+    assert_eq!(summary.members[0].label.as_deref(), Some("Grade 4 · Lincoln"));
+    assert_eq!(alice.store.search_conversations("lincoln".into()).unwrap().len(), 1, "found by the label");
+    assert_eq!(alice.store.search_conversations("grade 4".into()).unwrap().len(), 1);
+    assert_eq!(bob.store.search_conversations("lincoln".into()).unwrap().len(), 0, "Bob never learns it");
+    assert_eq!(server.state.lock().unwrap().calls, calls, "nothing went to the server");
+
+    let long = "x".repeat(60);
+    alice.store.set_contact_label(bob.user.clone(), Some(long)).unwrap();
+    assert_eq!(alice.store.contact_label(bob.user.clone()).unwrap().unwrap().chars().count(), 30, "at most 30 characters");
+    alice.store.set_contact_label(bob.user.clone(), Some("   ".into())).unwrap();
+    assert_eq!(alice.store.contact_label(bob.user.clone()).unwrap(), None, "empty removes it");
+    assert_eq!(alice.store.search_conversations("lincoln".into()).unwrap().len(), 0);
+}
+
+#[test]
+fn find_in_replies_covers_a_chats_threads_and_one_thread() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let chat = format!("dm:{}", bob.user);
+    let a = alice.store.queue_text(chat.clone(), "first root about lunch".into()).unwrap();
+    let b = alice.store.queue_text(chat.clone(), "second root".into()).unwrap();
+    alice.store.queue_reply(chat.clone(), a.id.clone(), "the zebra word is only in a reply".into()).unwrap();
+    alice.store.queue_reply(chat.clone(), b.id.clone(), "another zebra here".into()).unwrap();
+    // The chat's own find (main timeline) does not see replies; the replies search sees all of this chat's.
+    assert!(alice.store.search_messages("zebra".into(), Some(chat.clone()), 50).unwrap().is_empty());
+    let all = alice.store.search_replies("zebra".into(), chat.clone(), None, 50).unwrap();
+    assert_eq!(all.len(), 2);
+    assert!(all.iter().all(|h| h.thread_root.is_some()), "each hit names its thread");
+    let roots: Vec<_> = all.iter().map(|h| h.thread_root.clone().unwrap()).collect();
+    assert!(roots.contains(&a.id) && roots.contains(&b.id));
+    // One thread only (its root message counts too).
+    let one = alice.store.search_replies("zebra".into(), chat.clone(), Some(a.id.clone()), 50).unwrap();
+    assert_eq!(one.len(), 1);
+    assert_eq!(alice.store.search_replies("lunch".into(), chat.clone(), Some(a.id.clone()), 50).unwrap().len(), 1, "the root message is found inside its own thread");
+    assert!(alice.store.search_replies("zebra".into(), format!("dm:{}", "other"), None, 50).unwrap().is_empty());
 }

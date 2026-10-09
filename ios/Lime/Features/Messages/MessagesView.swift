@@ -7,6 +7,9 @@ struct MessagesView: View {
     @State private var showAbout = false
     @State private var showNewMessage = false
     @State private var showSettings = false
+    /// The chat a swipe asked about: to mute (it asks for how long) or to delete (it asks to confirm).
+    @State private var muting: Conversation.ID?
+    @State private var deleting: Conversation.ID?
 
     var body: some View {
         Group {
@@ -87,28 +90,83 @@ struct MessagesView: View {
     // MARK: Shared
 
     private func list(top: CGFloat, bottom: CGFloat) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
+        List {
+            Group {
                 if let problem = store.problem { ProblemBanner(problem: problem) }
                 if store.showsRecoveryNotice { RecoveryNotice() }
                 if !store.requests.isEmpty { RequestsRow(count: store.requests.count) }
                 if store.isLoaded && store.chats.isEmpty && store.requests.isEmpty {
                     EmptyChatsView(onNewMessage: { showNewMessage = true })
                 }
-                ForEach(store.chats) { conversation in
-                    NavigationLink(value: conversation.id) {
-                        ConversationRow(conversation: conversation)
-                    }
+            }
+            .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            ForEach(store.chats) { conversation in
+                Button { store.path.append(conversation.id) } label: { ConversationRow(conversation: conversation) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("conversation-row-\(conversation.id)")
-                }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    // Swipe left: Delete and Mute. Swipe right: Unread/Read and Pin/Unpin.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button { deleting = conversation.id } label: { Label("Delete", systemImage: "trash") }
+                            .tint(.red).accessibilityIdentifier("swipe-delete-\(conversation.id)")
+                        if notifications.settings.isMuted(conversation.id) {
+                            Button { notifications.settings.unmute(conversation.id) } label: { Label("Unmute", systemImage: "bell") }
+                                .tint(.orange).accessibilityIdentifier("swipe-unmute-\(conversation.id)")
+                        } else {
+                            Button { muting = conversation.id } label: { Label("Mute", systemImage: "bell.slash") }
+                                .tint(.orange).accessibilityIdentifier("swipe-mute-\(conversation.id)")
+                        }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button { Task { await store.setMarkedUnread(conversation.id, !conversation.isUnread) } } label: {
+                            Label(conversation.isUnread ? "Read" : "Unread", systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge")
+                        }
+                        .tint(.blue).accessibilityIdentifier("swipe-unread-\(conversation.id)")
+                        Button { Task { await store.setPinned(conversation.id, !conversation.isPinned) } } label: {
+                            Label(conversation.isPinned ? "Unpin" : "Pin", systemImage: conversation.isPinned ? "pin.slash" : "pin")
+                        }
+                        .tint(.gray).accessibilityIdentifier("swipe-pin-\(conversation.id)")
+                    }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, top)
-            .padding(.bottom, bottom)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.top, top, for: .scrollContent)
+        .contentMargins(.bottom, bottom, for: .scrollContent)
         .accessibilityIdentifier("messages-list")
         .refreshable { await store.pullToRefresh() }
+        .confirmationDialog("Mute", isPresented: Binding(get: { muting != nil }, set: { if !$0 { muting = nil } }), titleVisibility: .visible) {
+            ForEach(MuteDuration.allCases) { duration in
+                Button(duration.title) {
+                    if let id = muting { notifications.settings.mute(id, for: duration) }
+                    muting = nil
+                }
+                .accessibilityIdentifier("mute-\(duration.rawValue)")
+            }
+            Button("Cancel", role: .cancel) { muting = nil }
+        }
+        .confirmationDialog(deleteTitle, isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+            Button(deleteButton, role: .destructive) {
+                if let id = deleting { Task { await store.deleteChat(id) } }
+                deleting = nil
+            }
+            .accessibilityIdentifier("delete-chat-confirm")
+            Button("Cancel", role: .cancel) { deleting = nil }
+        } message: {
+            Text(deleteMessage)
+        }
+    }
+
+    private var deletingGroup: Bool { deleting.map { $0.hasPrefix("grp:") } ?? false }
+    private var deleteTitle: String { deletingGroup ? "Leave and delete this group?" : "Delete chat?" }
+    private var deleteButton: String { deletingGroup ? "Leave and delete" : "Delete chat" }
+    private var deleteMessage: String {
+        deletingGroup ? "You'll leave the group, and its messages will be removed from this phone."
+                      : "This removes it from this phone. The other person keeps their copy."
     }
 
     private var newMessageButton: some View {
@@ -311,24 +369,55 @@ private struct TopControls: View {
     }
 }
 
+/// What a row of the Messages list says about the newest thing in a conversation (a reply included), in parts so it can be drawn
+/// with a small symbol and tested without a screen.
+struct ListPreview: Equatable {
+    /// "↩ Jean: " (a reply), "Jean: " (a group message), or nothing.
+    var prefix = ""
+    /// A symbol for pictures, video, voice messages and files.
+    var symbol: String?
+    var text = ""
+
+    var plain: String { prefix + text }
+
+    static func make(_ conversation: Conversation) -> ListPreview {
+        guard let last = conversation.lastMessage else { return ListPreview() }
+        if last.isSystem { return ListPreview(text: last.text) }
+        var line = ListPreview()
+        // Who wrote it: always named for a reply ("↩ Jean: ..."), and in a group.
+        let sender = last.isOwn ? "You" : conversation.members.first(where: { $0.id == last.senderID }).map { String($0.name.split(separator: " ").first ?? "") }
+        if conversation.latestIsReply, let sender {
+            line.prefix = "↩ \(sender): "
+        } else if conversation.isGroup, !last.isOwn, let sender {
+            line.prefix = "\(sender): "
+        }
+        // The words, without the markup (a list reads as its items).
+        let words = messagePlainText(text: last.text).replacingOccurrences(of: "\n", with: " ")
+        if let summary = AttachmentFormat.summary(last.attachments) {
+            line.symbol = AttachmentFormat.symbol(last.attachments)
+            line.text = words.isEmpty ? summary : "\(summary) · \(words)"
+        } else {
+            line.text = words
+        }
+        return line
+    }
+}
+
 struct ConversationRow: View {
     let conversation: Conversation
     @Environment(NotificationCoordinator.self) private var notifications
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 52
 
-    private var preview: String {
-        guard let last = conversation.lastMessage else { return "" }
-        if last.isSystem { return last.text }
-        // The words, without the markup (a list reads as its items); a message of only files says what they are.
-        var words = messagePlainText(text: last.text).replacingOccurrences(of: "\n", with: " ")
-        if words.isEmpty, let summary = AttachmentFormat.summary(last.attachments) { words = summary }
-        if conversation.isGroup, let sender = conversation.members.first(where: { $0.id == last.senderID }) {
-            return "\(sender.name.split(separator: " ").first ?? ""): \(words)"
-        }
-        return words
-    }
-
+    private var line: ListPreview { ListPreview.make(conversation) }
+    private var preview: String { line.plain }
     private var time: String { MessageFormat.listTime(conversation.lastMessage?.date) }
+    /// My private label for the person (a one-to-one chat).
+    private var label: String? { conversation.isGroup ? nil : conversation.members.first?.label }
+    /// A picture or video in the newest message: its tiny thumbnail goes at the trailing edge.
+    private var thumbnail: UIImage? {
+        guard let item = conversation.lastMessage?.attachments.first(where: { $0.kind == .image || $0.kind == .video }), !item.thumb.isEmpty else { return nil }
+        return UIImage(data: item.thumb)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -339,6 +428,13 @@ struct ConversationRow: View {
                         .font(Theme.title)
                         .foregroundStyle(Theme.text)
                         .lineLimit(2)
+                    if let label {
+                        Text(label)
+                            .font(Theme.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("row-label-\(conversation.id)")
+                    }
                     if notifications.settings.isMuted(conversation.id) {
                         Image(systemName: "bell.slash.fill")
                             .font(.caption)
@@ -349,19 +445,27 @@ struct ConversationRow: View {
                         Image(systemName: "pin.fill")
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
-                            .accessibilityHidden(true)
+                            .accessibilityIdentifier("pinned-\(conversation.id)")
                     }
                     Spacer(minLength: 4)
                     Text(time)
                         .font(Theme.secondary)
                         .foregroundStyle(Theme.textSecondary)
                 }
-                HStack(alignment: .top, spacing: 8) {
-                    Text(preview)
+                HStack(alignment: .center, spacing: 8) {
+                    previewText
                         .font(Theme.secondary)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("row-preview-\(conversation.id)")
+                    if let thumbnail {
+                        Image(uiImage: thumbnail).resizable().scaledToFill()
+                            .frame(width: 40, height: 40)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .accessibilityHidden(true)
+                            .accessibilityIdentifier("row-thumb-\(conversation.id)")
+                    }
                     if conversation.unread > 0 {
                         Text("\(conversation.unread)")
                             .font(Theme.caption.weight(.semibold))
@@ -369,6 +473,9 @@ struct ConversationRow: View {
                             .frame(minWidth: 22)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Theme.accent, in: Capsule())
+                    } else if conversation.markedUnread {
+                        Circle().fill(Theme.accent).frame(width: 12, height: 12)
+                            .accessibilityIdentifier("unread-dot-\(conversation.id)")
                     }
                 }
             }
@@ -377,7 +484,13 @@ struct ConversationRow: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(conversation.title)\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.unread > 0 ? ", \(conversation.unread) unread" : "")")
+        .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.unread > 0 ? ", \(conversation.unread) unread" : (conversation.markedUnread ? ", unread" : ""))")
         .accessibilityAddTraits(.isButton)
+    }
+
+    /// The preview with its symbol (a camera for a picture, a microphone for a voice message...).
+    private var previewText: Text {
+        if let symbol = line.symbol { return Text("\(line.prefix)\(Image(systemName: symbol)) \(line.text)") }
+        return Text(line.plain)
     }
 }

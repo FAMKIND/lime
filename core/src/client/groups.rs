@@ -13,7 +13,7 @@
 use vodozemac::megolm::{GroupSession, InboundGroupSession, MegolmMessage, SessionConfig as MegolmConfig, SessionKey};
 
 use super::*;
-use crate::protocol::group::{clean_emoji, clean_name, Kind, Role, MAX_MEMBERS};
+use crate::protocol::group::{clean_emoji, clean_name, GroupPhoto, Kind, Role, MAX_MEMBERS};
 use crate::protocol::SenderCert;
 use crate::store::groups;
 
@@ -37,6 +37,8 @@ pub struct GroupMemberInfo {
     pub is_me: bool,
     /// I may remove this person.
     pub can_remove: bool,
+    /// My private label for this person (shown only to me).
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -44,6 +46,8 @@ pub struct GroupDetails {
     pub conversation_id: String,
     pub name: String,
     pub emoji: Option<String>,
+    /// The group has an (encrypted) photo.
+    pub has_photo: bool,
     pub my_role: String,
     pub members: Vec<GroupMemberInfo>,
     pub can_rename: bool,
@@ -90,6 +94,7 @@ impl LimeStore {
                     is_me: user_id == me,
                     can_remove: group.may_remove(&me, &user_id),
                     name: if user_id == me { "You".to_owned() } else { name },
+                    label: crate::store::labels::get(conn, &user_id).ok().flatten(),
                     user_id,
                     tone,
                     role,
@@ -99,6 +104,7 @@ impl LimeStore {
                 conversation_id: conversation_id.clone(),
                 name: group.name.clone(),
                 emoji: group.emoji.clone(),
+                has_photo: group.photo.is_some(),
                 my_role,
                 members,
                 can_rename: group.may_manage(&me),
@@ -155,7 +161,104 @@ impl LimeStore {
         if !before.may_manage(&me) {
             return Err(StoreError::Rejected);
         }
-        self.make_group_op(&state, &me, &group_id, None, Kind::SetAvatar { emoji: clean_emoji(&emoji) })
+        self.make_group_op(&state, &me, &group_id, None, Kind::SetAvatar { emoji: clean_emoji(&emoji), photo: None })
+    }
+
+    /// Sets the group's emoji avatar and deletes the group's encrypted photo from the server if it had one (the owner and
+    /// admins may).
+    pub fn set_group_avatar_emoji(&self, transport: Arc<dyn Transport>, auth_token: String, conversation_id: String, emoji: Option<String>) -> Result<(), StoreError> {
+        let (group_id, _, _) = self.group_context(&conversation_id)?;
+        let old = self.with_conn(|conn| groups::state_of(conn, &group_id))?.photo;
+        self.set_group_emoji(conversation_id.clone(), emoji)?;
+        self.drop_group_photo(&transport, &auth_token, &conversation_id, old);
+        Ok(())
+    }
+
+    /// Sets the group's photo (a JPEG already cropped and shrunk by the app; the owner and admins may). It is encrypted on this
+    /// phone with a new random key and uploaded as an opaque blob; the blob's id and the key go only inside the group's signed,
+    /// encrypted state op, so the server never sees the picture. The group's members fetch and decrypt it.
+    pub fn set_group_photo(&self, transport: Arc<dyn Transport>, auth_token: String, conversation_id: String, jpeg: Vec<u8>) -> Result<(), StoreError> {
+        if jpeg.is_empty() || jpeg.len() > 1024 * 1024 {
+            return Err(StoreError::Rejected);
+        }
+        let (group_id, state, me) = self.group_context(&conversation_id)?;
+        let before = self.with_conn(|conn| groups::state_of(conn, &group_id))?;
+        if !before.may_manage(&me) {
+            return Err(StoreError::Rejected);
+        }
+        let photo = GroupPhoto { blob_id: uuid::Uuid::new_v4().to_string(), key: crate::store::attachments::new_key() };
+        let sealed = crate::store::attachments::seal(&photo.key, &photo.blob_id, &jpeg).remove(0);
+        let (status, body) = call(&transport, Some(&auth_token), "blob", &json!({ "action": "put", "blob_id": photo.blob_id, "size": sealed.len() }))?;
+        check(status)?;
+        let url = body.get("url").and_then(Value::as_str).ok_or(StoreError::BadMessage)?;
+        let response = transport
+            .request("PUT".into(), url.into(), vec![HeaderPair { name: "content-type".into(), value: "application/octet-stream".into() }], sealed)
+            .map_err(|_: TransportError| StoreError::Network)?;
+        check(response.status)?;
+        let (status, _) = call(&transport, Some(&auth_token), "blob", &json!({ "action": "commit", "blob_id": photo.blob_id }))?;
+        check(status)?;
+        self.make_group_op(&state, &me, &group_id, None, Kind::SetAvatar { emoji: None, photo: Some(photo.clone()) })?;
+        // My own copy is the picture I just chose.
+        self.with_conn(|conn| crate::store::photos::save_cached(conn, &conversation_id, &jpeg, &photo.blob_id, 1, now_ms()))?;
+        self.drop_group_photo(&transport, &auth_token, &conversation_id, before.photo);
+        Ok(())
+    }
+
+    /// Removes the group's photo (and its emoji): back to the people's pictures.
+    pub fn remove_group_photo(&self, transport: Arc<dyn Transport>, auth_token: String, conversation_id: String) -> Result<(), StoreError> {
+        self.set_group_avatar_emoji(transport, auth_token, conversation_id.clone(), None)?;
+        self.with_conn(|conn| crate::store::photos::save_cached(conn, &conversation_id, &[], "none", 0, now_ms()))
+    }
+
+    /// The group's photo, once this phone has it.
+    pub fn group_photo(&self, conversation_id: String) -> Result<Option<Vec<u8>>, StoreError> {
+        self.with_conn(|conn| {
+            let current: Option<String> = conn
+                .query_row("SELECT group_photo FROM conversations WHERE id = ?1", params![conversation_id], |r| r.get(0))
+                .optional()
+                .map_err(db_err)?
+                .flatten();
+            let Some(photo) = current.as_deref().and_then(GroupPhoto::from_stored) else { return Ok(None) };
+            Ok(crate::store::photos::cached(conn, &conversation_id)?.filter(|c| c.source == photo.blob_id && !c.bytes.is_empty()).map(|c| c.bytes))
+        })
+    }
+
+    /// Fetches and decrypts the photos of groups whose photo this phone does not have yet (a new photo, a changed one, a group I
+    /// was just added to), and forgets the ones that were removed. Returns the conversations that changed.
+    pub fn refresh_group_photos(&self, transport: Arc<dyn Transport>, auth_token: String) -> Result<Vec<String>, StoreError> {
+        let groups: Vec<(String, Option<String>)> = self.with_conn(|conn| {
+            let mut statement = conn
+                .prepare("SELECT id, group_photo FROM conversations WHERE is_group = 1 AND id LIKE 'grp:%' AND request_state != 'blocked'")
+                .map_err(db_err)?;
+            let rows = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            Ok(rows)
+        })?;
+        let mut changed = Vec::new();
+        for (conversation, stored) in groups {
+            let wanted = stored.as_deref().and_then(GroupPhoto::from_stored);
+            let held = self.with_conn(|conn| crate::store::photos::cached(conn, &conversation))?;
+            let Some(photo) = wanted else {
+                if held.as_ref().is_some_and(|c| !c.bytes.is_empty()) {
+                    self.with_conn(|conn| crate::store::photos::save_cached(conn, &conversation, &[], "none", 0, now_ms()))?;
+                    changed.push(conversation);
+                }
+                continue;
+            };
+            if held.as_ref().is_some_and(|c| c.source == photo.blob_id && !c.bytes.is_empty()) {
+                continue;
+            }
+            let Ok((200, body)) = call(&transport, Some(&auth_token), "blob", &json!({ "action": "get", "blob_id": photo.blob_id })) else { continue };
+            let Some(url) = body.get("url").and_then(Value::as_str) else { continue };
+            let Ok(response) = transport.request("GET".into(), url.into(), Vec::new(), Vec::new()) else { continue };
+            if check(response.status).is_err() {
+                continue;
+            }
+            if let Some(jpeg) = crate::store::attachments::open(&photo.key, &photo.blob_id, &[response.body]) {
+                self.with_conn(|conn| crate::store::photos::save_cached(conn, &conversation, &jpeg, &photo.blob_id, 1, now_ms()))?;
+                changed.push(conversation);
+            }
+        }
+        Ok(changed)
     }
 
     /// Makes someone an admin, or a plain member again (only the owner may).
@@ -648,5 +751,14 @@ impl LimeStore {
             self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
         }
         Ok(outcome)
+    }
+}
+
+impl LimeStore {
+    /// Deletes a replaced or removed group photo from the server (best effort: an orphan only costs ciphertext storage).
+    fn drop_group_photo(&self, transport: &Arc<dyn Transport>, token: &str, _conversation_id: &str, old: Option<GroupPhoto>) {
+        if let Some(old) = old {
+            let _ = call(transport, Some(token), "blob", &json!({ "action": "delete", "blob_id": old.blob_id }));
+        }
     }
 }

@@ -177,6 +177,7 @@ final class ConversationStore {
         } while syncAgain
         // Other people's photos, at most hourly each; this is off the critical path of the messages.
         await refreshPhotos()
+        await refreshGroupPhotos()
         await downloadRecentImages()
     }
 
@@ -308,12 +309,34 @@ final class ConversationStore {
         #endif
         guard let core else { return [] }
         let title = conversation(id)?.title ?? ""
+        // The chat's own timeline and the replies in its threads, in the order they were written.
+        let (main, replies) = await Task.detached(priority: .userInitiated) { () -> ([SearchHit], [SearchHit]) in
+            ((try? core.searchMessages(query: query, conversationId: id, limit: 500)) ?? [],
+             (try? core.searchReplies(query: query, conversationId: id, root: nil, limit: 500)) ?? [])
+        }.value
+        return (main + replies).sorted { $0.time < $1.time }.map {
+            MessageHit(messageID: $0.messageId, conversationID: $0.conversationId, conversationTitle: title, marked: $0.snippet,
+                       date: Date(timeIntervalSince1970: Double($0.time) / 1000), fromMe: $0.fromMe, threadRoot: $0.threadRoot)
+        }
+    }
+
+    /// The matches inside one thread (its root message and its replies), oldest first, for the Replies screen's find.
+    func findInThread(_ query: String, root: String, in id: Conversation.ID) async -> [MessageHit] {
+        #if DEBUG
+        if isDemo {
+            let words = SearchText.words(query)
+            return (threads[root] ?? []).filter { message in words.allSatisfy { message.text.localizedCaseInsensitiveContains($0) } }.map {
+                MessageHit(messageID: $0.id, conversationID: id, conversationTitle: "", marked: $0.text, date: $0.date, fromMe: $0.isOwn, threadRoot: root)
+            }
+        }
+        #endif
+        guard let core else { return [] }
         let hits = (try? await Task.detached(priority: .userInitiated) {
-            try core.searchMessages(query: query, conversationId: id, limit: 500)
+            try core.searchReplies(query: query, conversationId: id, root: root, limit: 500)
         }.value) ?? []
         return hits.map {
-            MessageHit(messageID: $0.messageId, conversationID: $0.conversationId, conversationTitle: title, marked: $0.snippet,
-                       date: Date(timeIntervalSince1970: Double($0.time) / 1000), fromMe: $0.fromMe)
+            MessageHit(messageID: $0.messageId, conversationID: $0.conversationId, conversationTitle: "", marked: $0.snippet,
+                       date: Date(timeIntervalSince1970: Double($0.time) / 1000), fromMe: $0.fromMe, threadRoot: $0.threadRoot)
         }
     }
 
@@ -802,10 +825,11 @@ final class ConversationStore {
                     marked: SearchText.mark(message.text, query: query), date: message.date, fromMe: message.isOwn))
             }
         }
-        if id == nil {
-            // Replies in threads are found too, and open their thread.
+        do {
+            // Replies in threads are found too (in the chat's own find as well), and open their thread.
             for (root, items) in demoThreads {
                 guard let conversation = conversations.first(where: { $0.messages.contains { $0.id == root } }) else { continue }
+                if let id, conversation.id != id { continue }
                 for reply in items.dropFirst() where SearchText.matches(reply.text, query: query) {
                     results.messages.append(MessageHit(
                         messageID: reply.id, conversationID: conversation.id, conversationTitle: conversation.title,
@@ -822,6 +846,10 @@ final class ConversationStore {
         let reply = Message(id: UUID().uuidString, senderID: nil, text: text, date: Date(), state: .sending)
         demoThreads[root, default: []].append(reply)
         threads[root] = demoThreads[root]
+        if let c = conversations.firstIndex(where: { $0.id == conversationID }) {
+            conversations[c].latest = reply
+            conversations[c].latestIsReply = true
+        }
         if let c = conversations.firstIndex(where: { $0.id == conversationID }),
            let m = conversations[c].messages.firstIndex(where: { $0.id == root }) {
             let old = conversations[c].messages[m].thread

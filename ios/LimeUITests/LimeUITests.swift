@@ -66,7 +66,7 @@ final class LimeUITests: XCTestCase {
         let confirm = app.buttons.matching(identifier: "request-block-confirm").firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "blocking asks first")
         confirm.tap()
-        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["requests-row"].exists)
         XCTAssertFalse(app.buttons["conversation-row-dm:ada"].exists)
     }
@@ -396,6 +396,200 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["composer-files"].exists)
     }
 
+    // MARK: LIME-104 (the QA round)
+
+    func testSwipingARowOffersDeleteMuteReadAndPin() {
+        let app = demoApp()
+        app.launch()
+        let row = app.buttons["conversation-row-dm:sam"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        // Swipe right: Pin, then it sorts first and shows a pin.
+        row.swipeRight()
+        let pin = app.buttons["swipe-pin-dm:sam"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 5), "Pin is offered on a right swipe")
+        XCTAssertTrue(app.buttons["swipe-unread-dm:sam"].exists, "and Unread")
+        pin.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["pinned-dm:sam"].waitForExistence(timeout: 5), "pinned: the pin glyph shows")
+        // Swipe right again: mark unread: the dot shows.
+        app.buttons["conversation-row-dm:sam"].swipeRight()
+        app.buttons["swipe-unread-dm:sam"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForExistence(timeout: 5), "marked unread: a dot")
+        // Swipe left: Mute asks for how long; Delete asks to confirm.
+        app.buttons["conversation-row-dm:sam"].swipeLeft()
+        XCTAssertTrue(app.buttons["swipe-delete-dm:sam"].waitForExistence(timeout: 5))
+        // A mute from an earlier run is remembered on this phone: the swipe then offers Unmute, so undo it first.
+        if app.buttons["swipe-unmute-dm:sam"].exists {
+            app.buttons["swipe-unmute-dm:sam"].tap()
+            app.buttons["conversation-row-dm:sam"].swipeLeft()
+        }
+        app.buttons["swipe-mute-dm:sam"].tap()
+        XCTAssertTrue(app.buttons["mute-hour"].waitForExistence(timeout: 5), "the mute durations")
+        app.buttons.matching(identifier: "mute-hour").firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["muted-dm:sam"].waitForExistence(timeout: 5))
+        app.buttons["conversation-row-dm:sam"].swipeLeft()
+        XCTAssertTrue(app.buttons["swipe-unmute-dm:sam"].waitForExistence(timeout: 5), "muted: the swipe now offers Unmute")
+        app.buttons["swipe-unmute-dm:sam"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["muted-dm:sam"].waitForNonExistence(timeout: 5), "unmuted")
+        app.buttons["conversation-row-dm:sam"].swipeLeft()
+        app.buttons["swipe-delete-dm:sam"].tap()
+        XCTAssertTrue(app.buttons.matching(identifier: "delete-chat-confirm").firstMatch.waitForExistence(timeout: 5), "Delete confirms first")
+        app.buttons.matching(identifier: "delete-chat-confirm").firstMatch.tap()
+        XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForNonExistence(timeout: 5), "deleted from this phone")
+    }
+
+    func testARowShowsTheLatestReplyWithAnArrowAndAttachmentsWithASymbolAndThumbnail() {
+        let app = threadApp("attachments")
+        app.launch()
+        XCTAssertTrue(app.buttons["composer-plus"].waitForExistence(timeout: 10))
+        goBack(app)
+        let preview = app.descendants(matching: .any)["row-preview-dm:att"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10))
+        XCTAssertTrue(preview.label.hasSuffix("Photo"), preview.label)
+        XCTAssertTrue(app.descendants(matching: .any)["row-thumb-dm:att"].exists, "a tiny thumbnail at the trailing edge")
+
+        // A reply is the latest activity: "↩ You: …".
+        let thread = threadApp("thread-open")
+        app.terminate()
+        thread.launch()
+        XCTAssertTrue(thread.buttons["composer-plus"].waitForExistence(timeout: 10))
+        let field = thread.textViews.firstMatch
+        field.tap()
+        field.typeText("sounds good")
+        thread.buttons["send-button"].tap()
+        goBack(thread)
+        goBack(thread)
+        let rae = thread.descendants(matching: .any)["row-preview-dm:rae"]
+        XCTAssertTrue(rae.waitForExistence(timeout: 10))
+        XCTAssertEqual(rae.label, "↩ You: sounds good")
+    }
+
+    func testTheLongPressMenuSaysReplyAndTheThreadIsTitledReplies() {
+        let app = threadApp("thread")
+        app.launch()
+        let bubble = app.staticTexts.matching(identifier: "other-bubble").firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 10))
+        bubble.press(forDuration: 1.0)
+        let reply = app.buttons["reply-in-thread"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertEqual(reply.label, "Reply", "not \"Reply in thread\"")
+        reply.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["replies-title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Replies"].exists, "the screen is titled Replies")
+    }
+
+    func testTheRepliesScreenHasItsOwnFindAndTheChatFindOpensAReplyHit() {
+        let app = threadApp("thread-open")
+        app.launch()
+        XCTAssertTrue(app.buttons["replies-search-button"].waitForExistence(timeout: 10))
+        app.buttons["replies-search-button"].tap()
+        let field = app.textFields["replies-find-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("the")
+        let count = app.staticTexts["replies-find-count"]
+        let found = NSPredicate(format: "label CONTAINS ' of '")
+        expectation(for: found, evaluatedWith: count)
+        waitForExpectations(timeout: 5)
+        app.buttons["replies-find-done"].tap()
+        XCTAssertFalse(app.textFields["replies-find-field"].exists)
+        // The chat's find reaches into the replies too: a word only in a reply opens the Replies screen.
+        goBack(app)
+        app.buttons["chat-search-button"].tap()
+        let chatField = app.textFields["find-field"]
+        XCTAssertTrue(chatField.waitForExistence(timeout: 5))
+        chatField.typeText("half")
+        XCTAssertTrue(app.descendants(matching: .any)["replies-title"].waitForExistence(timeout: 8), "a hit in a reply opens its Replies screen")
+    }
+
+    func testTheHeaderToolsAreCloserTogetherButStillBigEnoughToTap() {
+        let app = threadApp("thread")
+        app.launch()
+        let search = app.buttons["chat-search-button"], call = app.buttons["chat-call-button"], more = app.buttons["chat-more"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        XCTAssertTrue(call.exists && more.exists)
+        XCTAssertLessThanOrEqual(call.frame.midX - search.frame.midX, 42, "closer than the old 44 pt")
+        XCTAssertLessThanOrEqual(more.frame.midX - call.frame.midX, 42)
+        // Every target is a full 44 pt wide (they overlap a little, which is how the icons sit closer).
+        for button in [search, call, more] { XCTAssertGreaterThanOrEqual(button.frame.width, 43.5, "a finger target is at least 44 pt wide") }
+        search.tap()
+        XCTAssertTrue(app.textFields["find-field"].waitForExistence(timeout: 5), "Search opens")
+    }
+
+    func testTheMenuSaysMuteAndOffersALabel() {
+        let app = demoApp()
+        app.launch()
+        app.buttons["conversation-row-dm:sam"].tap()
+        app.buttons["chat-more"].tap()
+        // A mute from an earlier test is remembered on this phone: undo it first so the menu offers Mute.
+        if app.buttons["chat-unmute"].waitForExistence(timeout: 2) {
+            app.buttons["chat-unmute"].tap()
+            app.buttons["chat-more"].tap()
+        }
+        let mute = app.buttons["chat-mute"]
+        XCTAssertTrue(mute.waitForExistence(timeout: 5))
+        XCTAssertEqual(mute.label, "Mute", "not \"Mute Notifications\"")
+        XCTAssertTrue(app.buttons["chat-label-button"].waitForExistence(timeout: 5), "Add a label is in the menu")
+    }
+
+    func testAPrivateLabelShowsInTheHeaderTheListAndNewMessageAndCanBeRemoved() {
+        let app = demoApp()
+        app.launch()
+        app.buttons["conversation-row-dm:sam"].tap()
+        app.buttons["chat-more"].tap()
+        app.buttons["chat-label-button"].tap()
+        let field = app.textFields["label-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Grade 4 · Lincoln and a very long extra part")
+        XCTAssertEqual(app.staticTexts["label-count"].label, "30/30", "at most 30 characters")
+        app.buttons["label-save"].tap()
+        XCTAssertTrue(app.staticTexts["chat-label"].waitForExistence(timeout: 5), "the label shows in the chat header")
+        goBack(app)
+        XCTAssertTrue(app.staticTexts["row-label-dm:sam"].waitForExistence(timeout: 5), "and in the Messages list")
+        app.buttons["new-message-button"].tap()
+        XCTAssertTrue(app.staticTexts["teacher-label-sam"].waitForExistence(timeout: 5), "and in New Message")
+        app.buttons["new-message-cancel"].tap()
+        // Remove it.
+        app.buttons["conversation-row-dm:sam"].tap()
+        app.buttons["chat-more"].tap()
+        app.buttons["chat-label-button"].tap()
+        XCTAssertTrue(app.buttons["label-remove"].waitForExistence(timeout: 5))
+        app.buttons["label-remove"].tap()
+        XCTAssertTrue(app.staticTexts["chat-label"].waitForNonExistence(timeout: 5))
+    }
+
+    func testSettingsEndsWithARedSignOutRowThatExplainsWhatItDoes() {
+        let app = threadApp("settings")
+        app.launch()
+        let row = app.buttons["settings-sign-out"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        XCTAssertTrue(app.buttons["settings-sign-out-confirm"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts[SignOutCopyForTests.warning].exists || app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'security key changed'")).firstMatch.exists, "the honest words about keys")
+        let cancel = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Cancel'")).firstMatch
+        if cancel.waitForExistence(timeout: 3) { cancel.tap() } else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap() }   // the dialog is dismissed by tapping outside
+        XCTAssertTrue(app.buttons["settings-sign-out-confirm"].waitForNonExistence(timeout: 5), "cancelled")
+        XCTAssertTrue(row.exists, "still signed in")
+    }
+
+    func testAGroupsPictureCanBeEditedFromItsDetailsAsAnEmojiOrAPhoto() {
+        let app = threadApp("group-details")
+        app.launch()
+        let avatar = app.buttons["group-details-avatar"]
+        XCTAssertTrue(avatar.waitForExistence(timeout: 10))
+        avatar.tap()
+        XCTAssertTrue(app.segmentedControls["group-avatar-mode"].waitForExistence(timeout: 5), "Emoji or Photo")
+        let emoji = app.textFields["group-emoji-field"]
+        XCTAssertTrue(emoji.exists)
+        emoji.tap()
+        emoji.clearAndType("🎓")
+        app.buttons["group-avatar-save"].tap()
+        XCTAssertTrue(avatar.waitForExistence(timeout: 5), "back on the details")
+        // Photo mode offers Choose, Take Photo and (once one is chosen) Remove.
+        avatar.tap()
+        app.segmentedControls["group-avatar-mode"].buttons["Photo"].tap()
+        XCTAssertTrue(app.buttons["group-photo-library"].waitForExistence(timeout: 5))
+        app.buttons["group-avatar-cancel"].tap()
+    }
+
     func testAChangedKeyAsksToBeAcceptedAndANotDeliveredMessageCanBeResent() {
         let app = demoApp()
         app.launchArguments += ["-lime-demo-screen", "key-change"]
@@ -474,8 +668,8 @@ final class LimeUITests: XCTestCase {
         let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'book fair'")).firstMatch
         XCTAssertTrue(bubble.waitForExistence(timeout: 10))
         bubble.press(forDuration: 1.2)
-        let reply = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Reply in thread' OR identifier == 'reply-in-thread'")).firstMatch
-        XCTAssertTrue(reply.waitForExistence(timeout: 5), "the long-press menu has Reply in thread")
+        let reply = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Reply' OR identifier == 'reply-in-thread'")).firstMatch
+        XCTAssertTrue(reply.waitForExistence(timeout: 5), "the long-press menu has Reply")
         reply.tap()
         XCTAssertTrue(app.staticTexts["thread-count"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["thread-count"].label, "No replies yet")
@@ -700,7 +894,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["search-none"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["search-none"].label, "No results for “zebra”")
         app.buttons["search-back"].tap()
-        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
     }
 
     func testFindInChatStepsThroughTheMatches() {
@@ -901,7 +1095,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "blocking asks first")
         XCTAssertTrue(app.staticTexts["Their new messages won't be shown on this phone."].exists)
         confirm.tap()
-        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5), "back on Messages")
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5), "back on Messages")
         XCTAssertFalse(app.buttons["conversation-row-dm:sam"].exists)
         app.buttons["settings-button"].tap()
         app.buttons["settings-privacy"].tap()
@@ -1002,7 +1196,7 @@ final class LimeUITests: XCTestCase {
         let leave = app.buttons.matching(identifier: "group-leave-confirm").firstMatch
         XCTAssertTrue(leave.waitForExistence(timeout: 3))
         leave.tap()
-        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-grp:'")).firstMatch.exists)
     }
 
@@ -1024,7 +1218,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["settings-card-name"].label, "Test Teacher")
         XCTAssertFalse(app.descendants(matching: .any)["settings-donate"].exists, "no donate link is configured, so the row is hidden")
         app.buttons["settings-close"].tap()
-        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
     }
 
     func testTheDonateRowAppearsWhenALinkIsConfigured() {
@@ -1225,7 +1419,7 @@ final class LimeUITests: XCTestCase {
         let app = signedInApp()
         app.launch()
 
-        let list = app.scrollViews["messages-list"]
+        let list = app.descendants(matching: .any)["messages-list"]
         XCTAssertTrue(list.waitForExistence(timeout: 10), "launches into Messages")
 
         let row = app.buttons["conversation-row-c1"]
@@ -1256,7 +1450,7 @@ final class LimeUITests: XCTestCase {
     func testEdgeSwipeGoesBack() {
         let app = signedInApp()
         app.launch()
-        let list = app.scrollViews["messages-list"]
+        let list = app.descendants(matching: .any)["messages-list"]
         XCTAssertTrue(list.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["conversation-row-c2"].waitForExistence(timeout: 10))
         app.buttons["conversation-row-c2"].tap()
@@ -1275,7 +1469,7 @@ final class LimeUITests: XCTestCase {
     func testChatTitleShowsNameAndMembers() {
         let app = signedInApp()
         app.launch()
-        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 10))
         for (row, name, members) in [("c2", "Autumn Reyes", false), ("c4", "Grade 4 Team", true)] {
             XCTAssertTrue(app.buttons["conversation-row-\(row)"].waitForExistence(timeout: 10))
             app.buttons["conversation-row-\(row)"].tap()
@@ -1285,7 +1479,7 @@ final class LimeUITests: XCTestCase {
             XCTAssertEqual(title.label.contains("members"), members, title.label)
             let custom = app.buttons["back-button"]
             (custom.exists ? custom : app.navigationBars.buttons.element(boundBy: 0)).tap()
-            XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
         }
     }
 
@@ -1293,7 +1487,7 @@ final class LimeUITests: XCTestCase {
     func testLongPressLogoShowsSelfTestPassed() {
         let app = signedInApp()
         app.launch()
-        XCTAssertTrue(app.scrollViews["messages-list"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 10))
         app.buttons["Lime menu"].press(forDuration: 1.2)
         let result = app.staticTexts["self-test-result"]
         XCTAssertTrue(result.waitForExistence(timeout: 10), "the About sheet did not appear")
@@ -1462,4 +1656,9 @@ private extension XCUIElement {
         typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
         typeText(text)
     }
+}
+
+/// The sign-out warning (shown by the confirmation), as the app words it.
+enum SignOutCopyForTests {
+    static let warning = "Signing out removes your messages and keys from this iPhone. Your contacts will see that your security key changed."
 }

@@ -16,8 +16,8 @@ final class ThreadTests: XCTestCase {
     func testTheCoresMeBecomesTheSignedInPersonAndOthersKeepTheirColour() {
         let me = Person(id: "my-user-id", name: "Shem Rajoon")
         let others = [
-            MemberInfo(id: "me", name: "Me", initials: "M", tone: 4),
-            MemberInfo(id: "u-lee", name: "Lee Wong", initials: "LW", tone: 2),
+            MemberInfo(id: "me", name: "Me", initials: "M", tone: 4, label: nil),
+            MemberInfo(id: "u-lee", name: "Lee Wong", initials: "LW", tone: 2, label: nil),
         ]
         let info = ThreadInfo(summary(count: 2, repliers: others, unread: 1), me: me)
         XCTAssertEqual(info.repliers.map(\.id), ["my-user-id", "u-lee"], "'me' is shown as the signed-in person")

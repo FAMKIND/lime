@@ -1774,7 +1774,7 @@ If anything contradicts this brief, stop and ask the user.
 **LIME-98d landed as `73b5be0`** (pushed and verified).
 - Voice (hold/cancel/lock, AAC ~24 kbps, a speed cycle, auto-play of the next), video (720p, ≤ 3 min/50 MB, metadata dropped, a full-screen player), "+" and mic in Replies, chunk-resumable downloads, progress rings.
 - 139 Rust / 9+9 integration tests pass; tiered iOS passed (75 UI); 0 warnings.
-- **A real-mic/camera two-phone check is pending.** Next: LIME-104.
+- **The user's gate (2026-10-09): "audio and video works great for v1".** Next: LIME-104.
 
 ### LIME-98d → `tend` (lime-aa) (landed as `73b5be0`): voice messages + video (split from 98c), plus the 98c gaps
 - **Build the voice and video parts of the LIME-98c brief exactly as specified there:**
@@ -1850,6 +1850,19 @@ If anything contradicts this brief, stop and ask the user.
     - (c) **Student privacy:** teaching videos show students, so consent/blur tooling + FERPA/COPPA guidance are required before video "modeling" posts.
     - (d) **Public publishing ≠ E2EE:** a separate privacy model (public by design), with moderation (App Store 1.2).
     - (e) **It's a second product:** validate with a small cohort first.
+- **The communities mock (received 2026-10-09; a wireframe; the user prefers the current design system, but it has good takeaways):**
+  - **Home/discover:**
+    - a "lime ⌃" switcher;
+    - "Search anything" + mic + filters;
+    - a horizontal row of **joined community cards** (image, name, member avatars + count, "✓ Member");
+    - a **masonry feed of posts** from communities (image, caption with @mentions, likes, the community chip);
+  - **A community page:**
+    - a banner + a logo, name, description, members, ✓ Member;
+    - **Bulletin Board** (unread count);
+    - **Starred** groups;
+    - **Groups** list (Announcements, NYC Teachers, Bookclub…) with last-message previews/times/unreads;
+  - **The bottom nav: Link · Jam** (this predates the current link/jam/call dock).
+  - **Takeaways for the communities design pass:** joined cards; a bulletin board pinned at the top; Starred (pinned) groups; the community feed as the bridge into Jam.
 - **Communities vs groups (explained to the user):**
   - groups are invite-only, ≤ 100, everyone sees everything, and the server knows nothing;
   - communities are larger (hundreds to thousands), **joinable** (open or by approval), contain **several channels** (announcements-only + topics), and have moderation roles.
@@ -1918,6 +1931,16 @@ If anything contradicts this brief, stop and ask the user.
   - Test with a simulated full disk.
 - **Never** let iOS purge chat media silently (it's not in Caches); it **is** excluded from iCloud backup (encrypted; recovery comes via D5).
 
+### BUG (the user, 2026-10-09): notifications only appear when the app is open on Jean's phone and the iPad (no badge, banner or lock screen); sometimes on Shem's
+**Plot's diagnosis (expected behaviour, not a regression):**
+- **There is no push yet** (APNs needs the paid Apple account).
+- LIME-102 only shows notifications while Lime is open or **in the short window after leaving it**; after that iOS suspends Lime, and nothing arrives until it's opened.
+- **Shem's phone "sometimes" works because its Auto-Lock is set to Never**, and/or Lime was recently used.
+
+**Fix = APNs (stage 2)** once the paid account exists (**the user's November enrolment**): content-free pushes + a Notification Service Extension that decrypts on the device.
+- **Make it the first brief after enrolment.**
+- **Interim:** QA item 13 (an honest note in Settings → Notifications).
+
 ### THE QA INTAKE RULE (the user, 2026-10-08): "I'll keep adding them as I see; you prioritise."**
 - **Plot appends** small UI/QA items to the **current open QA brief (LIME-104)** until it's sent.
 - **Protocol/feature-sized items** go to a feature brief (105/106 or new).
@@ -1976,6 +1999,7 @@ If anything contradicts this brief, stop and ask the user.
    - **it shows next to their name** in Messages, chat headers, New Message and group member lists;
    - **visible only to you**: stored in the encrypted local store, never sent to the server or to them (it syncs to your own devices once device linking exists);
    - searchable locally.
+13. **(Added 2026-10-09) The honest notification note** in Settings → Notifications: "Until Lime's push service is ready, alerts arrive while Lime is open or recently used." (Remove it when APNs lands.)
 
 **Verification (the tiered rule):**
 - unit + UI tests for each item (the pressed-state contrast token test; the group photo set/change/remove across 2 accounts in the integration test, with the server holding only ciphertext; menu wording; the title; find hits in replies);
@@ -2397,7 +2421,16 @@ If anything contradicts `api-v2.md`, stop and ask the user.
       - A changed-phone contact receives the fallback as a Request (fresh store), not in the old chat: acceptable.
       - **The user's gate: "looks good" (2026-10-08). Tend is on LIME-97.**
   - **The phones still have the spike builds.** The LIME-96 build must be installed; **the Debug build still includes the Nearby/Auto test**, so tonight's 103c works with it, and reinstalling resets the 7-day expiry.
-- **LIME-103c is scheduled for tonight (2026-10-08)**, the user's choice: the same setup, with the sender's "Keep the screen on" unticked and both phones locked. **Tend is on LIME-96 meanwhile.**
+- **LIME-103c STARTED ~02:10, 2026-10-09** (the first attempt showed delivered 0 because Jean's receiver wasn't started; fixed).
+  - **Setup lesson for the briefs/plan:** the receiver must show "Receiving" and the sender must show delivered ≥ 1 **before** locking either phone.
+- **LIME-103c runs night 2026-10-09:**
+  - **both phones asleep AND fully offline** (Airplane Mode + Bluetooth on, Wi-Fi off);
+  - Shem's Auto-Lock set to 30 s;
+  - the sender's "Keep the screen on" unticked;
+  - Jean's phone is the receiver (pickups allowed);
+  - the build stays at 98d `73b5be0`.
+  - Morning: both summary cards → tend's Phase 4 for 103c.
+- **(Superseded) LIME-103c is scheduled for tonight (2026-10-08)**, the user's choice: the same setup, with the sender's "Keep the screen on" unticked and both phones locked. **Tend is on LIME-96 meanwhile.**
 - **The analysis landed as `aa6f5d1`.**
   - 87/89 were delivered first try (median 0.5 s); 2 were re-sent by the queue after link drops (~95 s late).
   - **39 link drops in 6.3 h (~6/h)**; iOS reconnected each time. The resumable/ack design is confirmed as necessary.

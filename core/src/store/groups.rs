@@ -150,6 +150,7 @@ pub(crate) fn rebuild(conn: &Connection, group_id: &str, me: &str, now: i64) -> 
         .optional()
         .map_err(db_err)?;
     let i_am_member = state.is_member(me);
+    let photo = state.photo.as_ref().map(|p| p.to_stored());
     match (existing, i_am_member) {
         (None, true) => {
             // Who brought me in decides whether it waits in Requests: a contact does not.
@@ -171,8 +172,8 @@ pub(crate) fn rebuild(conn: &Connection, group_id: &str, me: &str, now: i64) -> 
                     )
                     .map_err(db_err)?;
             conn.execute(
-                "INSERT INTO conversations (id, title, is_group, is_pinned, unread, request_state, group_emoji) VALUES (?1, ?2, 1, 0, 0, ?3, ?4)",
-                params![conv, state.name, if known { "accepted" } else { "pending" }, state.emoji],
+                "INSERT INTO conversations (id, title, is_group, is_pinned, unread, request_state, group_emoji, group_photo) VALUES (?1, ?2, 1, 0, 0, ?3, ?4, ?5)",
+                params![conv, state.name, if known { "accepted" } else { "pending" }, state.emoji, photo],
             )
             .map_err(db_err)?;
         }
@@ -180,15 +181,15 @@ pub(crate) fn rebuild(conn: &Connection, group_id: &str, me: &str, now: i64) -> 
             // Added back after leaving or being removed: it is a group of mine again.
             let next = if current == "left" { "accepted" } else { current.as_str() };
             conn.execute(
-                "UPDATE conversations SET title = ?2, group_emoji = ?3, request_state = ?4 WHERE id = ?1",
-                params![conv, state.name, state.emoji, next],
+                "UPDATE conversations SET title = ?2, group_emoji = ?3, request_state = ?4, group_photo = ?5 WHERE id = ?1",
+                params![conv, state.name, state.emoji, next, photo],
             )
             .map_err(db_err)?;
         }
         (Some(current), false) if current != "blocked" => {
             conn.execute(
-                "UPDATE conversations SET title = ?2, group_emoji = ?3, request_state = 'left' WHERE id = ?1",
-                params![conv, state.name, state.emoji],
+                "UPDATE conversations SET title = ?2, group_emoji = ?3, request_state = 'left', group_photo = ?4 WHERE id = ?1",
+                params![conv, state.name, state.emoji, photo],
             )
             .map_err(db_err)?;
         }
@@ -237,6 +238,7 @@ fn write_system_lines(conn: &Connection, conv: &str, state: &GroupState, me: &st
             Event::Left => json!({ "e": "left", "by": effect.actor }),
             Event::Renamed(name) => json!({ "e": "renamed", "by": effect.actor, "name": name }),
             Event::Avatar => json!({ "e": "avatar", "by": effect.actor }),
+            Event::Photo => json!({ "e": "photo", "by": effect.actor }),
             Event::Role(user, role) => json!({ "e": "role", "by": effect.actor, "user": user, "role": role.as_str() }),
             Event::NewOwner(user) => json!({ "e": "owner", "by": effect.actor, "user": user }),
         };
@@ -288,6 +290,7 @@ pub(crate) fn render_system(conn: &Connection, body: &str, me_is: &str) -> Strin
         "left" => format!("{by} {}", if you { "left the group" } else { "left" }),
         "renamed" => format!("{by} renamed the group to “{}”", text("name")),
         "avatar" => format!("{by} changed the group picture"),
+        "photo" => format!("{by} changed the group photo"),
         "role" => {
             let who = object(&text("user"));
             if text("role") == "admin" { format!("{by} made {who} an admin") } else { format!("{by} removed {who} as an admin") }

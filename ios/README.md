@@ -185,3 +185,11 @@ The unattended overnight test (LIME-103b) is the **Auto test** button on that sc
 - **My QR code** (Settings → Profile) and **Scan QR Code** (New Message → Find by Username). The camera is only used to read QR codes. The simulator has no camera: Debug builds have a "Paste a code" field on the scan screen, and `-lime-demo-screen scan-verified|scan-mismatch|chat-verified|settings/profile/my-qr` show each state.
 - A matching fingerprint marks the person **Verified in person** (core: `verify_in_person`, migration 13); a mismatch shows a warning and marks nothing.
 - The page behind the invite link is in `invite-site/` (steps to host it and point DNS are in its README).
+
+## The QA round (LIME-104)
+
+- **Messages list:** a native `List`, so it has swipe actions: swipe left for **Delete** (asks "Delete chat?", or "Leave and delete" for a group; this phone only) and **Mute** (asks for how long); swipe right for **Unread/Read** and **Pin/Unpin** (pinned chats sort first with a pin). A row shows the newest activity, **replies included** ("↩ Jean: sounds good"), a small symbol and label for attachments (Photo, 3 Photos, Video, Voice message (0:12), a file's name) with the caption, and a tiny thumbnail for a picture or video.
+- **Replies:** the thread screen is titled "Replies" (the root message's sender under it) and has its own find; the chat's find also searches replies, and a hit in a reply opens its Replies screen with the word highlighted.
+- **Private labels:** the chat's ⋯ menu → "Add a label" (at most 30 characters). It shows beside the name in Messages, the chat header, New Message and group member lists, and is searchable. It never leaves the phone.
+- **Group pictures:** in New Group and in Group details (tap the picture) choose an emoji or a photo, change or remove it. A photo is encrypted (the server never sees it).
+- **Formatting highlight:** the toolbar's active circle uses the `Pressed` colour, now a lighter warm neutral (at least 1.5:1 on the bar, ink 4.5:1; a test holds both).
