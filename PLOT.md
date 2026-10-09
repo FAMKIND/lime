@@ -1771,7 +1771,12 @@ If anything contradicts this brief, stop and ask the user.
   - no resumable download;
   - no progress %.
 
-### LIME-98d → `tend` (lime-aa) (next): voice messages + video (split from 98c), plus the 98c gaps
+**LIME-98d landed as `73b5be0`** (pushed and verified).
+- Voice (hold/cancel/lock, AAC ~24 kbps, a speed cycle, auto-play of the next), video (720p, ≤ 3 min/50 MB, metadata dropped, a full-screen player), "+" and mic in Replies, chunk-resumable downloads, progress rings.
+- 139 Rust / 9+9 integration tests pass; tiered iOS passed (75 UI); 0 warnings.
+- **A real-mic/camera two-phone check is pending.** Next: LIME-104.
+
+### LIME-98d → `tend` (lime-aa) (landed as `73b5be0`): voice messages + video (split from 98c), plus the 98c gaps
 - **Build the voice and video parts of the LIME-98c brief exactly as specified there:**
   - voice: hold the mic to record, slide to cancel/lock, a waveform bubble, 1×/1.5×/2× speed, auto-play the next;
   - video: record/pick, 720p, max 3 min / ~50 MB, poster + duration, a full-screen player.
@@ -1830,6 +1835,21 @@ If anything contradicts this brief, stop and ask the user.
      - **groups inside it you can browse, join and pin**, each with its own chats and threads.
 
      It needs a design pass (discoverability vs the blind server; scale).
+- **Follow-ups (the user, 2026-10-09):**
+  1. Status icons: **yes**, as plot designed (manual + work-hours status, contacts only, encrypted; no live presence by default).
+  2. Work hours: **yes**. Also **make Sign Out more discoverable** (a red "Sign out" row at the bottom of Settings, keeping the honest confirmation about keys).
+  3. **Spanish first.**
+  4. **Instead of formal verification now: a private custom label/nickname per contact**, shown next to their name, visible **only to you** (it's local, encrypted, syncs to your own devices later). **A formal "official teacher" label is deferred** until the team grows.
+  5. Understood (PD = the large mode on calls).
+  6. The user said "example of an early prototype" for communities, **but no image was attached**. Ask for it.
+- **NEW IDEA from the user: JAM reimagined** (it replaces the old Miro-like whiteboard idea). **"Lime's imagination of Substack/Patreon with our values"**: teachers write daily, encourage each other, build community around their expertise, publish as writing + media or podcast (video too), and **optionally monetise**. The user's insight (they were an early designer at Teachers Pay Teachers): **"teachers learn best by watching teachers teach: modeling is pd."**
+  - **Plot's view (given to the user):** strong mission fit and a real differentiator; **sequence it after messaging + communities** (the community bulletin board is a proto-Jam).
+  - **Flags:**
+    - (a) **"Always free" (memory):** Lime takes **0%**; monetisation is teacher-to-teacher only, opt-in; prefer **tips/support** over paywalls (avoid recreating TpT's teachers-charging-teachers dynamic). The user decides.
+    - (b) **Apple IAP rules** for digital subscriptions in an iOS app (research the current US external-link rules) + payouts/taxes (Stripe Connect, 1099-K) → the LLC.
+    - (c) **Student privacy:** teaching videos show students, so consent/blur tooling + FERPA/COPPA guidance are required before video "modeling" posts.
+    - (d) **Public publishing ≠ E2EE:** a separate privacy model (public by design), with moderation (App Store 1.2).
+    - (e) **It's a second product:** validate with a small cohort first.
 - **Communities vs groups (explained to the user):**
   - groups are invite-only, ≤ 100, everyone sees everything, and the server knows nothing;
   - communities are larger (hundreds to thousands), **joinable** (open or by approval), contain **several channels** (announcements-only + topics), and have moderation roles.
@@ -1901,7 +1921,17 @@ If anything contradicts this brief, stop and ask the user.
 ### THE QA INTAKE RULE (the user, 2026-10-08): "I'll keep adding them as I see; you prioritise."**
 - **Plot appends** small UI/QA items to the **current open QA brief (LIME-104)** until it's sent.
 - **Protocol/feature-sized items** go to a feature brief (105/106 or new).
-- **The order now:** 98d → **104 (QA)** → 105 → 106 → **107 (storage)** → mesh v1.
+- **The order now:**
+  1. 98d;
+  2. **104 (QA, now 12 items incl. Sign Out + private labels)**;
+  3. 105;
+  4. 106;
+  5. **107 (storage)**;
+  6. **108 (status badges + work hours)**;
+  7. **109 (localization groundwork + Spanish)**;
+  8. **mesh v1 + emergency "I'm safe" mode**;
+  9. TestFlight prep;
+  10. later: calls → PD sessions, communities, verified-teacher process, Jam.
 
 ### LIME-104 → `tend` (lime-aa) (after LIME-98d): QA round (formatting state, group avatar, Reply wording, Replies screen, search in replies)
 **The user's QA notes (2026-10-08), while tend is on LIME-98c.**
@@ -1940,6 +1970,12 @@ If anything contradicts this brief, stop and ask the user.
    - **Pinned chats sort to the top** with a pin glyph.
    - **The core needs:** a manual "mark unread" flag, `pinned` (exists: check), delete-chat-for-me (a local clear, like the web's `cleared_at`).
    - **Groups:** Delete = "Leave and delete" (confirm), or just delete locally if you've already left.
+11. **(Added 2026-10-09) Sign Out more discoverable:** a **red "Sign out" row at the bottom of Settings** (as well as in Account), keeping the confirmation text about keys.
+12. **(Added 2026-10-09) A private nickname/label per contact:**
+   - in the chat details or the profile sheet: "Add a label" (≤ 30 characters, e.g. "Grade 4 · Lincoln");
+   - **it shows next to their name** in Messages, chat headers, New Message and group member lists;
+   - **visible only to you**: stored in the encrypted local store, never sent to the server or to them (it syncs to your own devices once device linking exists);
+   - searchable locally.
 
 **Verification (the tiered rule):**
 - unit + UI tests for each item (the pressed-state contrast token test; the group photo set/change/remove across 2 accounts in the integration test, with the server holding only ciphertext; menu wording; the title; find hits in replies);
