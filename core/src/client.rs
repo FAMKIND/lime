@@ -30,6 +30,7 @@ const POOL_SIZE: usize = 50;
 const POOL_LOW: u32 = 20;
 /// A text message must fit in a 64 KB mailbox item once wrapped and encrypted.
 const MAX_TEXT_BYTES: usize = 30_000;
+pub(crate) mod attachments;
 pub(crate) mod groups;
 pub(crate) mod photos;
 
@@ -187,6 +188,14 @@ impl LimeStore {
         let queued = self.with_conn(queued_messages)?;
         let mut sent = 0;
         for message in queued {
+            if !message.attachments.is_empty() {
+                // The files go up first (resuming if an earlier try was interrupted); then the message that carries their keys.
+                let recipients = self.attachment_recipients(&message.conversation_id);
+                if let Err(error) = self.upload_message_attachments(&transport, &auth_token, &message, recipients) {
+                    self.with_conn(|conn| set_state(conn, &message.id, "failed"))?;
+                    return Err(error);
+                }
+            }
             if message.conversation_id.starts_with("grp:") {
                 match self.deliver_group_message(&transport, &auth_token, &mut state, &me, &message) {
                     Ok(()) => {
@@ -484,10 +493,21 @@ impl LimeStore {
         text: String,
         reply_to: Option<String>,
     ) -> Result<MessageItem, StoreError> {
+        self.queue_with(conversation_id, text, reply_to, Vec::new())
+    }
+
+    /// Queues a message with optional attachments (each its descriptor and the plaintext, kept here for the sender's own view).
+    pub(crate) fn queue_with(
+        &self,
+        conversation_id: String,
+        text: String,
+        reply_to: Option<String>,
+        files: Vec<(crate::store::attachments::Descriptor, Vec<u8>)>,
+    ) -> Result<MessageItem, StoreError> {
         // What is stored and sent is the one written form: unknown syntax downgraded to text.
         let normalised = crate::format::normalise(&text);
         let body = normalised.as_str();
-        if body.is_empty() {
+        if body.is_empty() && files.is_empty() {
             return Err(StoreError::EmptyMessage);
         }
         if body.len() > MAX_TEXT_BYTES {
@@ -532,13 +552,17 @@ impl LimeStore {
                 params![op_id, conversation_id, ME_ID, body, now, hlc.render(), json!(parents).to_string(), plain, root],
             )
             .map_err(db_err)?;
+            for (position, (descriptor, bytes)) in files.iter().enumerate() {
+                crate::store::attachments::insert(conn, &op_id, position, descriptor, Some(bytes))?;
+            }
             Ok(MessageItem {
-                id: op_id,
+                id: op_id.clone(),
                 conversation_id: conversation_id.clone(),
                 sender_id: None,
                 text: body.to_owned(),
                 sent_at: now,
                 local_state: "sending".to_owned(),
+                attachments: crate::store::attachment_infos(conn, &op_id),
             })
         })
     }
@@ -583,10 +607,7 @@ impl LimeStore {
             hlc: message.hlc.clone(),
             parents: message.parents.clone(),
             // `thread_root` is part of the encrypted payload: the server never sees which message a reply answers.
-            payload: match &message.thread_root {
-                Some(root) => json!({ "text": message.text, "thread_root": root }),
-                None => json!({ "text": message.text }),
-            },
+            payload: message.payload(),
             sig: String::new(),
         };
         op.sig = state.account.sign(op.signing_bytes()).to_base64();
@@ -1187,6 +1208,10 @@ impl LimeStore {
         if is_share && control_key.is_none() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
+        // Attachments ride inside the encrypted payload; one malformed entry makes the whole message invalid.
+        let Some(attachments) = crate::store::attachments::parse_payload(&inner.op.payload) else {
+            return Ok(Outcome::Keep(pending::INVALID));
+        };
         if !is_control && !is_group_op && text.is_none() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
@@ -1204,7 +1229,7 @@ impl LimeStore {
 
         // Whatever the sender wrote, what is kept is the one written form (and its plain words).
         let text = crate::format::normalise(&text.unwrap_or_default());
-        if !is_control && !is_group_op && text.is_empty() {
+        if !is_control && !is_group_op && text.is_empty() && attachments.is_empty() {
             return Ok(Outcome::Keep(pending::INVALID));
         }
         let plain = crate::format::plain_text(&text);
@@ -1265,6 +1290,11 @@ impl LimeStore {
                 conn, &conversation, &sender, &inner.op.op_id, &inner.op.hlc, &parents, &text, &plain, claimed_root.as_deref(), now,
                 remote_hlc.wall,
             )?;
+            if inserted {
+                for (position, descriptor) in attachments.iter().enumerate() {
+                    crate::store::attachments::insert(conn, &inner.op.op_id, position, descriptor, None)?;
+                }
+            }
             Ok(Some(Stored::Message(inserted)))
         })?;
         let Some(stored) = stored else {
@@ -1434,6 +1464,21 @@ struct Queued {
     hlc: String,
     parents: Vec<String>,
     thread_root: Option<String>,
+    attachments: Vec<crate::store::attachments::Descriptor>,
+}
+
+impl Queued {
+    /// The encrypted payload of this message: its text, the thread it answers and its attachments.
+    pub(crate) fn payload(&self) -> Value {
+        let mut payload = json!({ "text": self.text });
+        if let Some(root) = &self.thread_root {
+            payload["thread_root"] = json!(root);
+        }
+        if !self.attachments.is_empty() {
+            payload["attachments"] = crate::store::attachments::payload_value(&self.attachments);
+        }
+        payload
+    }
 }
 
 fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
@@ -1456,11 +1501,16 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
                 hlc: r.get(3)?,
                 parents: parents.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default(),
                 thread_root: r.get(5)?,
+                attachments: Vec::new(),
             })
         })
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
+    let mut rows = rows;
+    for row in &mut rows {
+        row.attachments = crate::store::attachments::for_message(conn, &row.id)?.into_iter().map(|(d, _)| d).collect();
+    }
     Ok(rows.into_iter().filter(|q| !q.peer.is_empty() || q.conversation_id.starts_with("grp:")).collect())
 }
 

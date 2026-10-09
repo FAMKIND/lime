@@ -38,6 +38,8 @@ struct Message: Identifiable, Hashable, Sendable {
     let text: String
     let date: Date
     var state: DeliveryState = .received
+    /// Pictures and files that came with the message (LIME-98c).
+    var attachments: [AttachmentItem] = []
     /// When other messages reply to this one: how many, the newest, who, and what is unread.
     var thread: ThreadInfo?
 
@@ -116,6 +118,7 @@ extension Message {
                   date: Date(timeIntervalSince1970: Double(item.sentAt) / 1000),
                   state: item.localState == "system" ? .system
                       : (item.senderId == nil ? DeliveryState(localState: item.localState) : .received))
+        attachments = item.attachments.map(AttachmentItem.init)
     }
 }
 

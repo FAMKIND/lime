@@ -7,10 +7,20 @@ struct ChatComposer: View {
     @Environment(ConversationStore.self) private var store
     @Bindable var model: RichComposerModel
     let onSend: (String) -> Void
+    /// Sends the waiting pictures and files with the written text as their caption. `nil`: this composer cannot send attachments.
+    var onSendAttachments: (([OutgoingAttachment], String) -> Void)? = nil
     @State private var pickingEmoji = false
+    @State private var drafts: [DraftAttachment] = []
+    @State private var chooser: Chooser?
+    @State private var tooLarge = false
+    @State private var choosing = false
+
+    private enum Chooser: String, Identifiable { case album, camera, files; var id: String { rawValue } }
+    private var canSend: Bool { model.canSend || !drafts.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if !drafts.isEmpty { DraftStrip(drafts: drafts) { draft in drafts.removeAll { $0.id == draft.id } } }
             ZStack(alignment: .topLeading) {
                 RichComposerField(model: model)
                     .onAppear { model.hasText = false }
@@ -20,7 +30,9 @@ struct ChatComposer: View {
                 }
             }
             HStack(spacing: 2) {
-                button("plus", label: "Add attachment", id: "composer-plus") { store.comingSoon("Attachments") }
+                button("plus", label: "Add attachment", id: "composer-plus") {
+                    if onSendAttachments == nil { store.comingSoon("Attachments") } else { choosing = true }
+                }
                 button("face.smiling", label: "Emoji", id: "composer-emoji") { pickingEmoji = true }
                 Button { model.toggleToolbar() } label: {
                     Text("Aa").font(.system(size: 17, weight: .medium)).foregroundStyle(Theme.text)
@@ -30,7 +42,7 @@ struct ChatComposer: View {
                 .accessibilityLabel("Formatting").accessibilityIdentifier("composer-aa")
                 .accessibilityAddTraits(model.toolbarVisible ? [.isSelected] : [])
                 Spacer(minLength: 0)
-                if model.canSend {
+                if canSend {
                     Button { send() } label: {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 18, weight: .semibold))
@@ -52,6 +64,51 @@ struct ChatComposer: View {
         .padding(.bottom, 4)
         .overlay { EmojiKeyboardField(isActive: $pickingEmoji) { model.insertEmoji($0) }.frame(width: 1, height: 1).opacity(0.01) }
         .sheet(item: $model.linkRequest) { request in LinkSheet(request: request, composer: model) }
+        .confirmationDialog("Add to your message", isPresented: $choosing, titleVisibility: .visible) {
+            Button("Photo Library") { chooser = .album }.accessibilityIdentifier("composer-photo-library")
+            if CameraPicker.isAvailable { Button("Take Photo") { chooser = .camera }.accessibilityIdentifier("composer-take-photo") }
+            Button("Files") { chooser = .files }.accessibilityIdentifier("composer-files")
+            Button("Cancel", role: .cancel) {}
+        }
+        .fullScreenCover(item: $chooser) { which in
+            switch which {
+            case .album:
+                AlbumPicker(limit: max(1, AttachmentProcessing.maxPerMessage - drafts.count), onPick: { images in chooser = nil; add(images: images) }, onCancel: { chooser = nil }).ignoresSafeArea()
+            case .camera:
+                CameraPicker(onPick: { image in chooser = nil; add(images: [image]) }, onCancel: { chooser = nil }).ignoresSafeArea()
+            case .files:
+                DocumentPicker(onPick: { urls in chooser = nil; add(files: urls) }, onCancel: { chooser = nil }).ignoresSafeArea()
+            }
+        }
+        .alert("That file is too large", isPresented: $tooLarge) { Button("OK", role: .cancel) {} } message: { Text("Files can be up to 50 MB.") }
+        #if DEBUG
+        .task { if store.demoDrafts { drafts = ChatComposer.demoDrafts } }
+        #endif
+    }
+
+    private func add(images: [UIImage]) {
+        Task {
+            for image in images where drafts.count < AttachmentProcessing.maxPerMessage {
+                let made = await Task.detached(priority: .userInitiated) { () -> (OutgoingAttachment, UIImage)? in
+                    guard let item = AttachmentProcessing.photo(image) else { return nil }
+                    return (item, PhotoProcessing.crop(image, viewport: 128, scale: 1, offset: .zero))
+                }.value
+                if let made { drafts.append(DraftAttachment(outgoing: made.0, preview: made.1)) }
+            }
+        }
+    }
+
+    private func add(files urls: [URL]) {
+        Task {
+            for url in urls where drafts.count < AttachmentProcessing.maxPerMessage {
+                do {
+                    let item = try await Task.detached(priority: .userInitiated) { try AttachmentProcessing.file(at: url) }.value
+                    drafts.append(DraftAttachment(outgoing: item, preview: item.mime.hasPrefix("image/") ? UIImage(data: item.bytes).map { PhotoProcessing.crop($0, viewport: 128, scale: 1, offset: .zero) } : nil))
+                } catch AttachmentProcessing.Problem.tooLarge {
+                    tooLarge = true
+                } catch {}
+            }
+        }
     }
 
     private func button(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
@@ -64,6 +121,12 @@ struct ChatComposer: View {
     /// Sends what is written, as Markdown (LimeCore writes it the one way), and empties the composer.
     private func send() {
         let markdown = model.markdown()
+        if !drafts.isEmpty, let onSendAttachments {
+            onSendAttachments(drafts.map(\.outgoing), markdown)
+            drafts = []
+            model.clear()
+            return
+        }
         guard !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         onSend(markdown)
         model.clear()

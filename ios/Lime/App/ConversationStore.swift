@@ -53,6 +53,14 @@ final class ConversationStore {
     /// Debug builds only (`-lime-demo-chat`): made-up conversations that live in memory, for screenshots and UI tests.
     private(set) var isDemo = false
     /// Debug demo: my photo and who may see it (no server).
+    /// Debug demo: the decrypted bytes of the demo attachments, by id, and whether the composer opens with drafts.
+    var demoAttachmentData: [String: Data] = [:]
+    var demoDrafts = false
+    #endif
+    /// The picture viewer and the file opener that are showing (LIME-98c).
+    var attachmentViewer: AttachmentViewerRequest?
+    var openedFile: AttachmentItem?
+    #if DEBUG
     var demoMyPhoto: Data?
     var demoPhotoVisibility: PhotoVisibility = .everyone
     #endif
@@ -167,6 +175,7 @@ final class ConversationStore {
         } while syncAgain
         // Other people's photos, at most hourly each; this is off the critical path of the messages.
         await refreshPhotos()
+        await downloadRecentImages()
     }
 
     /// Sends what is queued (a message that failed is retried here).
@@ -409,6 +418,7 @@ final class ConversationStore {
         detector.reset()
         notifications?.settings.reset()
         AvatarCache.shared.reset()
+        AttachmentImages.shared.reset()
         StorageBootstrap.wipe(at: storageLocation)
     }
 
@@ -713,6 +723,9 @@ final class ConversationStore {
             demoSheet = "scan"
             let key = screen == "scan-verified" ? Self.demoGraceFingerprint : "0000111122223333FFFF"
             demoScanCode = "https://limechat.org/u/grace.h?k=\(key)"
+        case "attachments", "attachments-draft", "attachment-viewer":
+            loadDemoAttachments(draft: screen == "attachments-draft")
+            path.append("dm:att")
         case "chat-verified":
             let grace = Person(id: "grace", name: "Grace Hopper")
             conversations = [Conversation(id: "dm:grace", title: grace.name, members: [grace], messages: [

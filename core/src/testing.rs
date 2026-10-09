@@ -44,6 +44,11 @@ pub(crate) struct ServerState {
     /// blob id to (owner, committed version)
     pub blob_rows: HashMap<String, (String, Option<i64>)>,
     pub clock: i64,
+    /// attachment id to (owner, chunks, recipients, committed, fetchers)
+    pub attachments: HashMap<String, (String, usize, usize, bool, Vec<String>)>,
+    /// Make the next chunk upload fail once (an interrupted upload).
+    pub fail_chunk_after: Option<usize>,
+    pub chunk_uploads: usize,
 }
 
 #[derive(Default)]
@@ -112,6 +117,11 @@ impl Transport for FakeServer {
             let object = clean.split("/sign/").nth(1).unwrap_or_default().to_owned();
             let mut state = self.state.lock().unwrap();
             return if method == "PUT" && clean.contains("/upload/sign/") {
+                state.chunk_uploads += 1;
+                if state.fail_chunk_after.is_some_and(|n| state.chunk_uploads > n) {
+                    state.fail_chunk_after = None;
+                    return Err(TransportError::Failed);
+                }
                 state.objects.insert(object, body);
                 Ok(TransportResponse { status: 200, body: b"{}".to_vec() })
             } else if method == "GET" && !clean.contains("/upload/") {
@@ -313,6 +323,52 @@ impl Transport for FakeServer {
                         state.avatar_versions.remove(&user);
                         respond(200, json!({ "ok": true }))
                     }
+                    _ => respond(400, json!({ "error": "bad_request" })),
+                }
+            }
+            "attachment" => {
+                let id = text("attachment_id");
+                let chunks_declared = body.get("chunks").and_then(Value::as_u64).unwrap_or(0) as usize;
+                match body.get("action").and_then(Value::as_str).unwrap_or_default() {
+                    "put" => {
+                        let recipients = body.get("recipients").and_then(Value::as_u64).unwrap_or(1) as usize;
+                        let entry = state.attachments.entry(id.clone()).or_insert((user.clone(), chunks_declared, recipients, false, vec![]));
+                        if entry.0 != user {
+                            return respond(409, json!({ "error": "id_taken" }));
+                        }
+                        let chunks = entry.1;
+                        let committed = entry.3;
+                        let mut urls = serde_json::Map::new();
+                        if !committed {
+                            for n in 0..chunks {
+                                if !state.objects.contains_key(&format!("blobs/a/{id}/{n}")) {
+                                    urls.insert(n.to_string(), json!(format!("/storage/v1/object/upload/sign/blobs/a/{id}/{n}?token=t")));
+                                }
+                            }
+                        }
+                        respond(200, json!({ "urls": urls }))
+                    }
+                    "commit" => {
+                        let Some(chunks) = state.attachments.get(&id).map(|a| a.1) else { return respond(404, json!({ "error": "not_found" })) };
+                        if (0..chunks).any(|n| !state.objects.contains_key(&format!("blobs/a/{id}/{n}"))) {
+                            return respond(409, json!({ "error": "not_uploaded" }));
+                        }
+                        state.attachments.get_mut(&id).unwrap().3 = true;
+                        respond(200, json!({ "size": 1 }))
+                    }
+                    "get" => match state.attachments.get(&id).cloned() {
+                        Some((owner, chunks, recipients, true, mut fetchers)) => {
+                            if owner != user && !fetchers.contains(&user) {
+                                fetchers.push(user.clone());
+                                state.attachments.get_mut(&id).unwrap().4 = fetchers.clone();
+                            }
+                            // Everyone has it: the real server deletes it within the hour; the stand-in at once.
+                            let urls: Vec<String> = (0..chunks).map(|n| format!("/storage/v1/object/sign/blobs/a/{id}/{n}?token=t")).collect();
+                            let _ = recipients;
+                            respond(200, json!({ "chunks": chunks, "urls": urls }))
+                        }
+                        _ => respond(404, json!({ "error": "not_found" })),
+                    },
                     _ => respond(400, json!({ "error": "bad_request" })),
                 }
             }

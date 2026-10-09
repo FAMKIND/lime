@@ -26,3 +26,10 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **Public photos in the privacy answers.** Profile photos are "Photos or Videos" the app collects and links to the user when the setting is "Everyone on Lime" (the default); with "Only my contacts" nothing readable is held.
 - [ ] **Camera string** now reads "Lime uses the camera to scan a teacher's QR code and to take your profile photo." The photo library needs no permission (the system picker).
 - [ ] **Storage plan.** The free plan's Storage is 1 GB; a 512 px photo is about 60 KB. Check usage in the dashboard before launch, and schedule a cleanup of expired `blobs` rows before attachments ship.
+
+## Attachments and the free plan (LIME-98c)
+
+- [ ] **Supabase free-plan limits are a funding trigger.** Storage is 1 GB total, 50 MB per file, and egress is 5 GB a month on the free plan. Attachments are deleted an hour after the last recipient fetched them (or after 30 days), so the working set stays small, but a busy week of photos and PDFs could pass 5 GB of egress (one 300 KB photo sent to a 30-person group is about 9 MB of egress). Watch **Storage size and egress** in the dashboard; when either passes about 60 percent of the cap, move to the Pro plan (more storage and egress) before launch, and say so to the funders.
+- [ ] **The sweep must be running in every environment.** `./supabase/schedule-sweep.sh` (local) and `./supabase/schedule-sweep.sh staging`; run it for production too, then check `select * from cron.job where jobname = 'lime-blob-sweep'` and that `net._http_response` shows 200s. A failing sweep leaves files on the server up to their 30-day cap and costs storage, never privacy (everything stored is ciphertext).
+- [ ] **Photo-library add string** (`NSPhotoLibraryAddUsageDescription`): "Lime saves a photo to your library only when you ask it to." The library is read only through the system picker (no permission).
+- [ ] **Reporting attachments** belongs with the guideline 1.2 report flow above: a reported message may carry attachments (decrypted by the reporter's choice).

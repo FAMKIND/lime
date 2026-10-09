@@ -10,6 +10,7 @@
 //! parents. See `docs/architecture.md` section 6.
 
 pub(crate) mod account;
+pub(crate) mod attachments;
 pub(crate) mod delivery;
 pub(crate) mod groups;
 mod migrations;
@@ -108,6 +109,23 @@ pub struct MemberInfo {
     pub tone: u32,
 }
 
+/// One attachment of a message, as the app shows it (the key and digest stay in the core).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AttachmentInfo {
+    pub id: String,
+    pub mime: String,
+    pub name: String,
+    /// Plaintext bytes.
+    pub size: u64,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub duration_ms: Option<u32>,
+    /// A tiny preview image (JPEG), empty when there is none.
+    pub thumb: Vec<u8>,
+    /// This phone holds the decrypted file.
+    pub downloaded: bool,
+}
+
 /// One message. `sender_id` is `None` when the message is mine.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MessageItem {
@@ -118,6 +136,7 @@ pub struct MessageItem {
     /// The display time, in milliseconds since the Unix epoch.
     pub sent_at: i64,
     pub local_state: String,
+    pub attachments: Vec<AttachmentInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -481,6 +500,7 @@ impl LimeStore {
             text: body.to_string(),
             sent_at: now_ms(),
             local_state: LOCAL_STATE_SENT_LOCAL.to_string(),
+            attachments: Vec::new(),
         };
         conn.execute(
             "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, plain)
@@ -577,6 +597,7 @@ fn item_in(conn: &Connection, row: order::Row, me: &str) -> MessageItem {
     if item.local_state == "system" {
         item.text = groups::render_system(conn, &item.text, me);
     }
+    item.attachments = attachment_infos(conn, &item.id);
     item
 }
 
@@ -588,7 +609,20 @@ pub(crate) fn item_from_row(row: order::Row) -> MessageItem {
         text: row.body,
         sent_at: row.sent_at,
         local_state: row.local_state,
+        attachments: Vec::new(),
     }
+}
+
+/// What the app shows of a message's attachments.
+pub(crate) fn attachment_infos(conn: &Connection, message_id: &str) -> Vec<AttachmentInfo> {
+    attachments::for_message(conn, message_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(d, downloaded)| AttachmentInfo {
+            id: d.id, mime: d.mime, name: d.name, size: d.size, width: d.width, height: d.height, duration_ms: d.duration_ms,
+            thumb: d.thumb, downloaded,
+        })
+        .collect()
 }
 
 fn last_message(

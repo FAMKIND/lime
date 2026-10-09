@@ -38,6 +38,7 @@ struct ThreadView: View {
                 .scrollDismissesKeyboard(.interactively)
                 .defaultScrollAnchor(.bottom)
                 .linkOpening()
+                .attachmentPresenting()
                 .onChange(of: messages.count) {
                     withAnimation { proxy.scrollTo("bottom") }
                     Task { await store.markThreadRead(target.rootID, in: target.conversationID) }

@@ -319,8 +319,9 @@ struct ConversationRow: View {
     private var preview: String {
         guard let last = conversation.lastMessage else { return "" }
         if last.isSystem { return last.text }
-        // The words, without the markup (a list reads as its items).
-        let words = messagePlainText(text: last.text).replacingOccurrences(of: "\n", with: " ")
+        // The words, without the markup (a list reads as its items); a message of only files says what they are.
+        var words = messagePlainText(text: last.text).replacingOccurrences(of: "\n", with: " ")
+        if words.isEmpty, let summary = AttachmentFormat.summary(last.attachments) { words = summary }
         if conversation.isGroup, let sender = conversation.members.first(where: { $0.id == last.senderID }) {
             return "\(sender.name.split(separator: " ").first ?? ""): \(words)"
         }

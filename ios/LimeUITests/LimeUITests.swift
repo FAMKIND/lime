@@ -257,6 +257,46 @@ final class LimeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["photo-vis-everyone"].isSelected)
     }
 
+    func testAChatShowsAnAlbumAFileCardAndAPictureAndTheViewerSwipesBetweenPhotos() {
+        let app = threadApp("attachments")
+        app.launch()
+        let tiles = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-'"))
+        XCTAssertTrue(tiles.firstMatch.waitForExistence(timeout: 10), "the album's pictures show")
+        XCTAssertGreaterThanOrEqual(tiles.count, 4, "three in the album and one of mine")
+        let file = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-file-'")).firstMatch
+        XCTAssertTrue(file.exists, "the PDF has a file card")
+        XCTAssertTrue(file.label.contains("Permission slip.pdf"), file.label)
+        XCTAssertTrue(file.label.contains("PDF"), file.label)
+
+        app.buttons["Trip 1.jpg"].tap()
+        XCTAssertTrue(app.buttons["attachment-viewer-close"].waitForExistence(timeout: 5), "the viewer opens")
+        let count = app.descendants(matching: .any)["attachment-viewer-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5))
+        XCTAssertEqual(count.label, "1 of 3")
+        app.swipeLeft()
+        let second = NSPredicate(format: "label == %@", "2 of 3")
+        expectation(for: second, evaluatedWith: count)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.buttons["attachment-save"].exists, "save to Photos is offered, only on request")
+        app.buttons["attachment-viewer-close"].tap()
+        XCTAssertTrue(app.buttons["attachment-viewer-close"].waitForNonExistence(timeout: 5))
+    }
+
+    func testTheComposerPlusOffersLibraryCameraAndFilesAndShowsWaitingPictures() {
+        let app = threadApp("attachments-draft")
+        app.launch()
+        XCTAssertTrue(app.scrollViews["draft-strip"].waitForExistence(timeout: 10) || app.otherElements["draft-strip"].waitForExistence(timeout: 5), "two waiting pictures show above the text")
+        XCTAssertEqual(app.buttons.matching(identifier: "draft-remove").count, 2)
+        app.buttons.matching(identifier: "draft-remove").firstMatch.tap()
+        XCTAssertEqual(app.buttons.matching(identifier: "draft-remove").count, 1, "a picture can be taken back out")
+        XCTAssertTrue(app.buttons["send-button"].exists, "pictures alone are enough to send")
+        app.buttons["send-button"].tap()
+        XCTAssertTrue(app.buttons.matching(identifier: "draft-remove").firstMatch.waitForNonExistence(timeout: 5), "sent: the waiting pictures are gone")
+        app.buttons["composer-plus"].tap()
+        XCTAssertTrue(app.buttons["composer-photo-library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["composer-files"].exists)
+    }
+
     func testAChangedKeyAsksToBeAcceptedAndANotDeliveredMessageCanBeResent() {
         let app = demoApp()
         app.launchArguments += ["-lime-demo-screen", "key-change"]

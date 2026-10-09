@@ -82,7 +82,7 @@ Each device has its own keys, in the Matrix style.
 
 **Conversations use Megolm** (vodozemac). Each sending device has an outbound session per conversation and shares its key with every member device over Olm. The session rotates on any membership change, every 100 messages, or every 7 days. **Built in LIME-97 for groups** (up to 100 people): the group's state is a log of signed ops each phone replays, so the server never learns a group, its name or its members; the exact ops and rules are in [`api-v2.md`](./api-v2.md) section 11.
 
-**Files** are encrypted on the device with a fresh AES key, which travels inside the encrypted message. Storage only ever holds ciphertext.
+**Files** (built in LIME-98c: photos and documents; voice and video follow) are encrypted on the device in chunks with a fresh AES-256-GCM key, which travels with the SHA-256, size, type, name and a tiny thumbnail inside the encrypted message. Storage only ever holds ciphertext, deleted an hour after the last recipient fetched it or after 30 days; recipients keep their own decrypted copy in the encrypted store. Photos are shrunk to 2048 px and stripped of EXIF and GPS on the sender's phone. Details: [`api-v2.md`](./api-v2.md) section 6.
 
 **Profile photos** (LIME-98b) are the one place Lime stores a picture on the server, and the person chooses how: **Everyone on Lime** (the default) keeps a plain 512 px JPEG that any *signed-in* user can fetch (never anonymously; the server can see it too), or **Only my contacts (encrypted)** keeps AES-256-GCM ciphertext that only people holding the sender's photo key can open, and **deletes the public copy**. The photo key is shared with accepted contacts inside their encrypted chat, together with the delivery key, and rotates on a block ([`api-v2.md`](./api-v2.md) section 6).
 
@@ -123,6 +123,8 @@ This section describes the shape of the changes. Endpoint specifications are a l
 - **Client-managed group state fits here:** groups can change while offline, with no server to ask.
 - **The key limit:** starting a new encrypted conversation needs the other person's keys. Offline, a person can message anyone they have already talked to, anyone whose keys the phone cached (the core caches members' keys while online), or someone they meet and scan in person. A stranger they have never connected with needs the internet once.
 - **Open question for the spike:** how well iPhones relay with the app closed (section 11).
+
+**Attachments and the mesh.** Mesh v1 carries text only: attachments need the server's Storage and sync when online. A short voice message is about 60 KB, so it could ride the mesh later (the same encrypted chunk format); flagged for the mesh brief.
 
 ## 8. Discovery and safety (D7 = A)
 

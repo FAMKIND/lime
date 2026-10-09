@@ -851,3 +851,103 @@ fn profile_photos_through_the_real_server_public_by_default_and_ciphertext_when_
     let left = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/blobs?select=id,owner", admin.base))), None);
     assert!(left.as_array().unwrap().iter().all(|r| r["owner"] != alice.id.as_str()), "no blob row left");
 }
+
+#[test]
+fn attachments_through_the_real_server_are_ciphertext_delete_after_the_last_fetch_and_swept_when_expired() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (alice_store, bob_store) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    alice_store.register_device(transport.clone(), alice.token.clone()).unwrap();
+    bob_store.register_device(transport.clone(), bob.token.clone()).unwrap();
+
+    let photo: Vec<u8> = b"\xff\xd8\xff\xe0 a photo that must not be readable on the server ".repeat(400);
+    let document: Vec<u8> = (0..2_300_000u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect();   // three chunks
+    let chat = alice_store.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    alice_store
+        .send_attachments(
+            chat.clone(),
+            "the files".into(),
+            vec![
+                lime_core::OutgoingAttachment { bytes: photo.clone(), name: "photo.jpg".into(), mime: "image/jpeg".into(), width: Some(10), height: Some(10), duration_ms: None, thumb: vec![1; 200] },
+                lime_core::OutgoingAttachment { bytes: document.clone(), name: "plan.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![] },
+            ],
+            None,
+        )
+        .unwrap();
+    alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(bob_store.sync(transport.clone(), bob.token.clone()).unwrap().received, 1);
+
+    // Ciphertext on the server: four chunks, none of them readable, none containing the photo.
+    let rows = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/attachments?select=id,chunks,size,owner,recipients,expires_at", admin.base))), None);
+    let mine: Vec<&Value> = rows.as_array().unwrap().iter().filter(|r| r["owner"] == alice.id.as_str()).collect();
+    assert_eq!(mine.len(), 2);
+    assert!(mine.iter().all(|r| r["recipients"] == 1));
+    for row in &mine {
+        let id = row["id"].as_str().unwrap();
+        for n in 0..row["chunks"].as_u64().unwrap() {
+            let stored = admin.storage_object("blobs", &format!("a/{id}/{n}")).expect("a chunk");
+            assert!(!stored.windows(32).any(|w| w == &photo[..32]), "the server's bytes are not the photo");
+            assert!(!stored.windows(32).any(|w| w == &document[1000..1032]), "nor the document");
+        }
+    }
+
+    // Bob downloads, decrypts and verifies both.
+    let message = bob_store.list_messages(format!("dm:{}", alice.id)).unwrap().into_iter().find(|m| m.text == "the files").unwrap();
+    assert_eq!(message.attachments.len(), 2);
+    for (info, original) in message.attachments.iter().zip([&photo, &document]) {
+        bob_store.download_attachment(transport.clone(), bob.token.clone(), info.id.clone()).unwrap();
+        assert_eq!(bob_store.attachment_data(info.id.clone()).unwrap().as_ref(), Some(original));
+    }
+
+    // Everyone (the one recipient) has fetched: the server now deletes it within the hour.
+    let rows = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/attachments?select=id,owner,expires_at", admin.base))), None);
+    for row in rows.as_array().unwrap().iter().filter(|r| r["owner"] == alice.id.as_str()) {
+        let expires = chrono_like_ms(row["expires_at"].as_str().unwrap());
+        assert!(expires < now_ms() + 3_700_000, "due within the hour once every recipient fetched it");
+    }
+
+    // The sweep (which pg_cron runs every 15 minutes) removes it once it has expired.
+    let secret = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/sweep_target?select=secret", admin.base))), None)[0]["secret"].as_str().expect("the sweep is scheduled (supabase/schedule-sweep.sh)").to_owned();
+    let past = "2000-01-01T00:00:00Z";
+    let ids: Vec<String> = mine.iter().map(|r| r["id"].as_str().unwrap().to_owned()).collect();
+    for id in &ids {
+        let request = admin.with_service_key(ureq::request("PATCH", &format!("{}/rest/v1/attachments?id=eq.{id}", admin.base)));
+        request.send_json(json!({ "expires_at": past })).unwrap();
+    }
+    let sweep = ureq::post(&format!("{}/functions/v1/blob-sweep", admin.base)).set("apikey", &admin.anon_key).set("x-sweep-secret", &secret).send_json(json!({})).unwrap();
+    let swept: Value = sweep.into_json().unwrap();
+    assert!(swept["attachments"].as_u64().unwrap() >= 2, "{swept}");
+    for id in &ids {
+        assert!(admin.storage_names("blobs", id).is_empty() || admin.storage_object("blobs", &format!("a/{id}/0")).is_none(), "its chunks are gone");
+    }
+    assert!(bob_store.download_attachment(transport.clone(), bob.token.clone(), message.attachments[0].id.clone()).is_ok(), "Bob keeps his own decrypted copy");
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
+}
+
+/// Milliseconds since the epoch of a Postgres `timestamptz` like `2026-10-08T22:11:03.123+00:00`.
+fn chrono_like_ms(text: &str) -> i64 {
+    let date = &text[..19];
+    let (y, mo, d) = (date[0..4].parse::<i64>().unwrap(), date[5..7].parse::<i64>().unwrap(), date[8..10].parse::<i64>().unwrap());
+    let (h, mi, s) = (date[11..13].parse::<i64>().unwrap(), date[14..16].parse::<i64>().unwrap(), date[17..19].parse::<i64>().unwrap());
+    // Days from civil (Howard Hinnant's algorithm).
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let doy = (153 * (mo + if mo > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    ((days * 24 + h) * 60 + mi) * 60_000 + s * 1000
+}

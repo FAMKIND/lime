@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -1657,4 +1657,181 @@ fn pull_to_refresh_checks_the_people_shown_but_at_most_once_a_minute_each() {
     bob.store.lock().execute("UPDATE photos SET checked_at = checked_at - 61000", []).unwrap();
     assert_eq!(ask(&["alice"]), vec!["alice".to_string()]);
     assert_eq!(ask(&["someone-else"]), Vec::<String>::new(), "only the people asked about are checked");
+}
+
+// ---------------------------------------------------------------- LIME-98c: encrypted attachments
+
+fn pic(seed: u8, size: usize) -> crate::OutgoingAttachment {
+    crate::OutgoingAttachment {
+        bytes: (0..size).map(|i| (i as u8).wrapping_mul(seed).wrapping_add(seed)).collect(),
+        name: format!("file-{seed}.bin"),
+        mime: "image/jpeg".into(),
+        width: Some(640),
+        height: Some(480),
+        duration_ms: None,
+        thumb: vec![seed; 300],
+    }
+}
+
+fn attachment_ids(p: &Party, chat: &str) -> Vec<crate::AttachmentInfo> {
+    p.store.list_messages(chat.to_owned()).unwrap().into_iter().flat_map(|m| m.attachments).collect()
+}
+
+fn download(p: &Party, transport: &Arc<dyn Transport>, id: &str) -> Result<(), crate::StoreError> {
+    p.store.download_attachment(transport.clone(), p.token.clone(), id.to_owned())
+}
+
+#[test]
+fn an_attachment_is_encrypted_uploaded_in_chunks_and_decrypted_and_verified_by_the_recipient() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let photo = pic(7, 300_000);
+    let file = pic(9, 2_500_000);   // three chunks
+    let chat = format!("dm:{}", bob.user);
+    let sent = alice.store.send_attachments(chat.clone(), "the trip".into(), vec![photo.clone(), file.clone()], None).unwrap();
+    assert_eq!(sent.attachments.len(), 2);
+    assert!(sent.attachments.iter().all(|a| a.downloaded), "the sender holds their own files");
+    deliver(&alice, &transport);
+    assert_eq!(sync(&bob, &transport).received, 1);
+
+    // What the server holds: only ciphertext chunks (4 of them), none containing a run of the plaintext.
+    {
+        let state = server.state.lock().unwrap();
+        let stored: Vec<_> = state.objects.iter().filter(|(k, _)| k.starts_with("blobs/a/")).collect();
+        assert_eq!(stored.len(), 4);
+        for (_, bytes) in &stored {
+            for plain in [&photo.bytes, &file.bytes] {
+                let sample = &plain[1000..1064];
+                assert!(!bytes.windows(64).any(|w| w == sample), "no plaintext run in what the server holds");
+            }
+        }
+    }
+
+    // Bob sees the message with its caption and two attachments he does not hold yet.
+    let message = bob.store.list_messages(chat_with(&bob, &alice)).unwrap().into_iter().find(|m| m.text == "the trip").unwrap();
+    assert_eq!(message.attachments.len(), 2);
+    assert!(message.attachments.iter().all(|a| !a.downloaded));
+    assert_eq!((message.attachments[0].mime.as_str(), message.attachments[0].width, message.attachments[0].thumb.len()), ("image/jpeg", Some(640), 300));
+    assert_eq!(bob.store.attachment_data(message.attachments[0].id.clone()).unwrap(), None);
+    for (info, original) in message.attachments.iter().zip([&photo, &file]) {
+        download(&bob, &transport, &info.id).unwrap();
+        assert_eq!(bob.store.attachment_data(info.id.clone()).unwrap(), Some(original.bytes.clone()));
+    }
+    download(&bob, &transport, &message.attachments[0].id).unwrap();   // already held: a no-op
+    assert!(bob.store.list_messages(chat_with(&bob, &alice)).unwrap().iter().all(|m| m.attachments.iter().all(|a| a.downloaded)));
+}
+
+fn chat_with(_p: &Party, other: &Party) -> String {
+    format!("dm:{}", other.user)
+}
+
+#[test]
+fn a_changed_chunk_or_a_wrong_digest_is_refused_and_nothing_is_kept() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![pic(3, 5000)], None).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let id = attachment_ids(&bob, &format!("dm:{}", alice.user))[0].id.clone();
+
+    // A flipped byte in the stored chunk.
+    let key = format!("blobs/a/{id}/0");
+    let original = server.state.lock().unwrap().objects.get(&key).cloned().unwrap();
+    let mut tampered = original.clone();
+    tampered[10] ^= 1;
+    server.state.lock().unwrap().objects.insert(key.clone(), tampered);
+    assert_eq!(download(&bob, &transport, &id), Err(crate::StoreError::BadMessage));
+    assert_eq!(bob.store.attachment_data(id.clone()).unwrap(), None, "nothing kept");
+
+    // The right ciphertext but a digest in the message that does not match.
+    server.state.lock().unwrap().objects.insert(key, original);
+    bob.store.lock().execute("UPDATE message_attachments SET digest = ?1 WHERE attachment_id = ?2", rusqlite::params!["0".repeat(64), id]).unwrap();
+    assert_eq!(download(&bob, &transport, &id), Err(crate::StoreError::BadMessage));
+    assert_eq!(bob.store.attachment_data(id).unwrap(), None);
+}
+
+#[test]
+fn an_interrupted_upload_resumes_with_only_the_missing_chunks() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let file = pic(5, 4_200_000);   // five chunks
+    let chat = format!("dm:{}", bob.user);
+    let sent = alice.store.send_attachments(chat.clone(), "big".into(), vec![file.clone()], None).unwrap();
+    server.state.lock().unwrap().chunk_uploads = 0;
+    server.state.lock().unwrap().fail_chunk_after = Some(2);   // the third chunk's upload fails
+
+    assert!(alice.store.deliver_queued(transport.clone(), alice.token.clone()).is_err(), "the upload was interrupted");
+    let state_of = |p: &Party| p.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.id == sent.id).unwrap().local_state;
+    assert_eq!(state_of(&alice), "failed", "the message waits, it is not lost");
+    assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/a/")).count(), 2);
+    assert_eq!(sync(&bob, &transport).received, 0, "the message is not sent before its files are up");
+
+    let uploads_before = server.state.lock().unwrap().chunk_uploads;
+    deliver(&alice, &transport);
+    assert_eq!(server.state.lock().unwrap().chunk_uploads - uploads_before, 3, "only the three missing chunks go up");
+    assert_eq!(state_of(&alice), "sent");
+    assert_eq!(sync(&bob, &transport).received, 1);
+    let id = attachment_ids(&bob, &format!("dm:{}", alice.user))[0].id.clone();
+    download(&bob, &transport, &id).unwrap();
+    assert_eq!(bob.store.attachment_data(id).unwrap(), Some(file.bytes));
+}
+
+#[test]
+fn attachment_limits_and_attachment_only_messages() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let chat = format!("dm:{}", bob.user);
+    let send = |caption: &str, items: Vec<crate::OutgoingAttachment>| alice.store.send_attachments(chat.clone(), caption.into(), items, None);
+    assert!(send("", vec![]).is_err(), "nothing to send");
+    assert!(send("", (0..11).map(|i| pic(i + 1, 100)).collect()).is_err(), "at most ten");
+    assert!(send("", (0..10).map(|i| pic(i + 1, 100)).collect()).is_ok(), "ten is fine");
+    let mut bad = pic(1, 100);
+    bad.mime = "notamime".into();
+    assert!(send("", vec![bad]).is_err());
+    let mut empty = pic(1, 100);
+    empty.bytes.clear();
+    assert!(send("", vec![empty]).is_err());
+    let mut fat = pic(1, 100);
+    fat.thumb = vec![0; 3000];
+    assert!(send("", vec![fat]).is_err(), "a thumbnail over 2 KB");
+    assert!(send(&"x".repeat(9000), vec![pic(2, 100)]).is_err(), "a long caption leaves no room");
+    // An attachment with no caption is a message like any other; Bob receives all ten.
+    deliver(&alice, &transport);
+    assert_eq!(sync(&bob, &transport).received, 1);
+    let message = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().find(|m| m.attachments.len() == 10).unwrap();
+    assert_eq!(message.text, "");
+}
+
+#[test]
+fn a_group_member_can_send_a_photo_and_every_member_can_download_it() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    for p in [&bob, &carol] {
+        p.store.accept_request(chat.clone()).unwrap();
+    }
+    deliver(&bob, &transport);
+    deliver(&carol, &transport);
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    sync(&bob, &transport);
+    let photo = pic(4, 20_000);
+    alice.store.send_attachments(chat.clone(), "look".into(), vec![photo.clone()], None).unwrap();
+    deliver(&alice, &transport);
+    for p in [&bob, &carol] {
+        sync(p, &transport);
+        let info = attachment_ids(p, &chat);
+        assert_eq!(info.len(), 1, "{}", p.user);
+        download(p, &transport, &info[0].id).unwrap();
+        assert_eq!(p.store.attachment_data(info[0].id.clone()).unwrap(), Some(photo.bytes.clone()));
+    }
+    let (_, _, recipients, _, fetchers) = server.state.lock().unwrap().attachments.values().next().cloned().unwrap();
+    assert_eq!((recipients, fetchers.len()), (2, 2), "two recipients declared, two fetched");
 }

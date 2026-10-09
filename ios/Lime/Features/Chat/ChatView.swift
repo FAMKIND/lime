@@ -152,6 +152,7 @@ struct ChatView: View {
             }
             .accessibilityIdentifier("chat-scroll")
             .linkOpening()
+            .attachmentPresenting()
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
             .refreshable { await store.pullToRefresh() }
@@ -456,7 +457,8 @@ struct ChatView: View {
     // MARK: Composer
 
     private func composer(_ conversation: Conversation) -> some View {
-        ChatComposer(model: composerModel) { markdown in store.send(markdown, in: conversation.id) }
+        ChatComposer(model: composerModel, onSend: { markdown in store.send(markdown, in: conversation.id) },
+                     onSendAttachments: conversation.isRequest ? nil : { items, caption in store.sendAttachments(items, caption: caption, in: conversation.id) })
     }
 }
 
@@ -492,6 +494,8 @@ struct MessageBubble: View {
                         .font(Theme.caption.weight(.medium))
                         .foregroundStyle(Theme.text)
                 }
+                if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
+                if !message.text.isEmpty || message.attachments.isEmpty {
                 FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
                                      link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString,
                                      find: findWords.isEmpty ? nil : FindStyle(words: findWords, current: highlighted))
@@ -514,6 +518,7 @@ struct MessageBubble: View {
                         // For assistive tools and UI tests: which message a search or find landed on.
                         if highlighted { Color.clear.frame(width: 1, height: 1).accessibilityIdentifier("match-marker-\(message.id)") }
                     }
+                }
                 if let thread = message.thread, let onOpenThread {
                     ThreadSummaryRow(messageID: message.id, thread: thread, action: onOpenThread)
                 }

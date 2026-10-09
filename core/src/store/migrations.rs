@@ -261,6 +261,25 @@ const MIGRATIONS: &[&str] = &[
          peer_user_id TEXT PRIMARY KEY NOT NULL,
          queued_at    INTEGER NOT NULL
      );",
+    // 16: encrypted attachments (LIME-98c). One row per attachment of a message: the key and digest (they travel only
+    // inside the encrypted message), the facts the bubble shows, a tiny thumbnail, and the decrypted bytes once this
+    // phone has them (my own sends hold them from the start). The bytes live in this encrypted file.
+    "CREATE TABLE message_attachments (
+         attachment_id TEXT PRIMARY KEY NOT NULL,
+         message_id    TEXT NOT NULL,
+         position      INTEGER NOT NULL,
+         key           TEXT NOT NULL,
+         digest        TEXT NOT NULL,
+         size          INTEGER NOT NULL,
+         mime          TEXT NOT NULL,
+         name          TEXT NOT NULL,
+         width         INTEGER,
+         height        INTEGER,
+         duration_ms   INTEGER,
+         thumb         BLOB,
+         bytes         BLOB
+     );
+     CREATE INDEX message_attachments_by_message ON message_attachments (message_id, position);",
 ];
 
 /// The schema version this build writes.

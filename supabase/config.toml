@@ -445,3 +445,5 @@ verify_jwt = false
 verify_jwt = false
 [functions.reset-verify]
 verify_jwt = false
+[functions.blob-sweep]
+verify_jwt = false

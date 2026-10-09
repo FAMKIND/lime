@@ -334,10 +334,7 @@ impl LimeStore {
             conversation_id: message.conversation_id.clone(),
             hlc: message.hlc.clone(),
             parents: message.parents.clone(),
-            payload: match &message.thread_root {
-                Some(root) => json!({ "text": message.text, "thread_root": root }),
-                None => json!({ "text": message.text }),
-            },
+            payload: message.payload(),
             sig: String::new(),
         };
         op.sig = state.account.sign(op.signing_bytes()).to_base64();
@@ -593,7 +590,13 @@ impl LimeStore {
             && inner.op.op_type == "message.send"
             && inner.op.conversation_id == conversation;
         let text = inner.op.payload.get("text").and_then(Value::as_str).map(crate::format::normalise);
-        let (true, Some(text), Some(remote_hlc)) = (valid, text.filter(|t| !t.is_empty()), Hlc::parse(&inner.op.hlc)) else {
+        let attachments = crate::store::attachments::parse_payload(&inner.op.payload);
+        let (true, Some(text), Some(attachments), Some(remote_hlc)) = (
+            valid,
+            text.filter(|t| !t.is_empty() || attachments.as_ref().is_some_and(|a| !a.is_empty())),
+            attachments,
+            Hlc::parse(&inner.op.hlc),
+        ) else {
             return Ok(Outcome::Keep(pending::INVALID));
         };
         let plain = crate::format::plain_text(&text);
@@ -634,6 +637,11 @@ impl LimeStore {
             let inserted = insert_received_message(
                 conn, &conversation, &sender, &inner.op.op_id, &inner.op.hlc, &parents, &text, &plain, claimed_root.as_deref(), now, remote_hlc.wall,
             )?;
+            if inserted {
+                for (position, descriptor) in attachments.iter().enumerate() {
+                    crate::store::attachments::insert(conn, &inner.op.op_id, position, descriptor, None)?;
+                }
+            }
             Ok(if inserted { Outcome::Stored } else { Outcome::Duplicate })
         })?;
         if matches!(outcome, Outcome::Stored | Outcome::Duplicate) {

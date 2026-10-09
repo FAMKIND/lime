@@ -1762,6 +1762,88 @@ If anything contradicts this brief, stop and ask the user.
 
 **LIME-98b-fix landed as `c63e2d1`** (pushed and verified): a `profile.changed` notice to accepted contacts; pull-to-refresh and chat-open refresh photos (≤ 1/min each); the bad sign-out advice was removed. 128 Rust tests pass; integration 7/7; tiered iOS passed. Awaiting the user's two-phone photo gate. **Next: LIME-98c (attachments + voice).**
 
+### LIME-104 → `tend` (lime-aa) (after LIME-98c): QA round (formatting state, group avatar, Reply wording, Replies screen, search in replies)
+**The user's QA notes (2026-10-08), while tend is on LIME-98c.**
+
+**Phase 0:** commit `PLOT.md` unedited. **Phase 1:** survey the theme pressed tokens, the format toolbar, the New Group/Group details, the message long-press menu, the thread screen, and the search (Messages search + in-chat find + the thread screen). If anything is ambiguous, **stop and ask the user**, in particular item 1's scope.
+
+**Phase 2:**
+1. **The formatting selected/pressed state is too dark → more subtle.**
+   - Lighten the warm-neutral pressed fill on the format toolbar (Aa and B/I/U/S/link/code/lists): a lighter tint, **still distinguishable** (≥ 1.5:1 against the bar, so it's visible) while the ink stays ≥ 4.5:1. Light and dark.
+   - **Confirmed by the user:** it's the grey active circles behind Aa, B, I… in the format toolbar. Nothing else changes.
+2. **Group avatar = an emoji OR a photo, editable after creation:**
+   - in **New Group** and in **Group details → Edit**, choose **Emoji** or **Photo** (library/camera + circular crop, as for the profile);
+   - **change or remove it any time** (owner/admins, the same rule as rename);
+   - **a group photo is encrypted** (a random key; the blob is in the `blobs` bucket; the key + blob id ride in a signed `group.set_avatar` op inside the group's encrypted state), so the server never sees it;
+   - a system line: "Rae changed the group photo".
+3. **The message long-press menu says "Reply"** (not "Reply in thread").
+4. **The thread screen is titled "Replies"** (with the root message's sender as a subtitle if it fits).
+5. **Search replies:**
+   - **in-chat find** (🔍 in a chat) also matches replies in that chat's threads; a hit in a reply opens the Replies screen with the word highlighted;
+   - **the Replies screen gets its own 🔍 find**;
+   - **Messages search** already indexes replies (LIME-101); verify it and label those results "in Replies".
+
+6. **The chat header tool group** (search, phone, ⋯; top right in chats and Replies): **tighter spacing between the three icons** (the hit targets stay ≥ 44pt; reduce the visual gaps/padding so the glass pill is more compact). Check 375pt.
+7. **The ⋯ menu: "Mute Notifications" → "Mute".**
+
+**Verification (the tiered rule):**
+- unit + UI tests for each item (the pressed-state contrast token test; the group photo set/change/remove across 2 accounts in the integration test, with the server holding only ciphertext; menu wording; the title; find hits in replies);
+- 0 warnings.
+
+**Gate (the user):**
+- the formatting buttons look subtler;
+- set, then change, a group photo, and switch to an emoji;
+- long-press shows "Reply";
+- the thread is titled "Replies";
+- find a word that's only in a reply.
+
+**Record:** `## LIME-104`. Commit: `fix(ios): QA round: subtler format state, group photo/emoji editing, Reply wording, Replies title, search in replies`, trailer `Brief: LIME-104`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
+### LIME-105 → `tend` (lime-aa) (after LIME-104): message actions: delete, emoji reactions (any emoji), link preview cards
+**The user's QA notes (2026-10-08):** "in addition to reply, we need ability to delete a message in a chat, thread or reply and give emoji reactions, with the plus to pick any emoji"; "link cards are missing (thumbnails, heading and subheading)". Split from LIME-104 because these need protocol work.
+
+**Plot's decisions:**
+- **Delete:**
+  - **Delete for me** works on any message;
+  - **Delete for everyone** works on **your own** messages **within 24 hours** of sending (a signed, encrypted `message.delete` op to the conversation's members; their phones replace it with "This message was deleted"; the search index and attachments are purged locally).
+  - **Honest limit, shown in the confirm text:** "Lime can't guarantee it's gone if someone already saw or saved it."
+  - Works in chats, groups and Replies.
+  - For a thread root: the replies stay, under "This message was deleted".
+- **Reactions:**
+  - long-press shows a **quick row of 6 emoji + a "+"** that opens the **full emoji picker** (any emoji, with search);
+  - an encrypted `reaction.toggle` op (one reaction per emoji per person; toggling removes it);
+  - **chips under the bubble** with counts, highlighted if yours; tap a chip to toggle it; long-press a chip to see who reacted.
+  - Works in groups and Replies.
+  - **No notification for reactions** in v1 (only a badge-free update).
+- **Link preview cards:**
+  - **the sender's phone** builds the preview (Apple's LinkPresentation: title, description/subheading, the site name, a thumbnail) **before sending**;
+  - the preview text plus a **thumbnail as an encrypted blob** (the 98c pipeline) travel inside the encrypted message;
+  - **recipients never fetch the URL** (no tracking of readers; DESIGN-01 §3);
+  - the card shows the thumbnail, the title (heading), the description (subheading) and the domain; tap opens the link (the existing https/non-https confirmation).
+  - **The composer shows the card before sending** (removable with ✕).
+  - **Settings → Privacy → "Generate link previews"** (default **on**), with a note: "Creating a preview visits the site from your phone."
+
+**Phase 0:** commit `PLOT.md` unedited. **Phase 1:** survey `api-v2.md` §§3, 11 (the payload/control ops), the 98c attachment pipeline, the message long-press menu, the composer. Stop and ask the user on any conflict.
+
+**Phase 2:** build the above. Document the ops in `api-v2.md` and the privacy notes in `architecture.md` §5.
+
+**Verification (the tiered rule):**
+- core tests (delete-for-everyone within/after 24 h; non-senders can't delete others' messages for everyone; reactions toggle and converge across devices; a preview thumbnail stored as ciphertext);
+- the integration e2e (2 accounts);
+- UI tests (the quick row + full picker; chip toggle; delete for me/everyone; the link card in the composer and in the bubble);
+- 0 warnings.
+
+**Gate (the user, two phones):**
+- react with a quick emoji and with one picked via "+"; Jean sees the chips;
+- delete for everyone → "This message was deleted" on Jean's phone;
+- paste a link → a card with a thumbnail, title and subheading appears before sending and on Jean's phone.
+
+**Record:** `## LIME-105`. Commit: `feat: delete messages, emoji reactions, link preview cards (sender-generated, encrypted)`, trailer `Brief: LIME-105`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+---
+
 ### LIME-98b-fix → `tend` (lime-aa) (landed as `c63e2d1`): photo changes show up at once
 **Problem:** contacts see a new/removed photo or a visibility change only after a re-check (at most hourly). Tend's workaround (sign out / reinstall) destroys keys. **Never suggest signing out to refresh data.**
 

@@ -74,8 +74,13 @@ impl LimeStore {
             return Err(StoreError::NotFound);
         }
         let (root, mut replies): (Vec<_>, Vec<_>) = rows.into_iter().partition(|r| r.id == root_id);
-        let mut items: Vec<MessageItem> = root.into_iter().map(item_from_row).collect();
-        items.extend(replies.drain(..).map(item_from_row));
+        let with_files = |row| {
+            let mut item = item_from_row(row);
+            item.attachments = super::attachment_infos(&conn, &item.id);
+            item
+        };
+        let mut items: Vec<MessageItem> = root.into_iter().map(with_files).collect();
+        items.extend(replies.drain(..).map(with_files));
         Ok(items)
     }
 
