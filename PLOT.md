@@ -1737,6 +1737,10 @@ If anything contradicts this brief, stop and ask the user.
 - **Each brief:** the full unit + UI suite on **one** simulator (the iPhone 13 mini, 375pt), plus **only the new or changed UI tests** on the SE (iOS 18.3) and the 18 Pro; `check-warnings.sh`; `check-release-no-bluetooth.sh`; the server/core/e2e tests as relevant.
 - **The full three-simulator matrix only:** before TestFlight, at the end of a chain, or when a brief changes layout broadly.
 - This applies to every brief from LIME-98b on; the briefs' "three simulators" wording is overridden by this rule.
+- **Addition (2026-10-09; the user asked "why so long?" during LIME-107, at 1 h+):**
+  - **when a test fails, fix it and re-run ONLY that test (`-only-testing`) until it passes; run the full 13 mini suite once, at the end.**
+  - Don't re-run whole suites to check a single fix.
+  - Prefer briefs that are small enough to finish in ~30–45 min.
 
 **The user's gate on LIME-97: "groups look great".**
 
@@ -2018,7 +2022,51 @@ If anything contradicts this brief, stop and ask the user.
 
 **Record:** `## LIME-110`. Commit: `feat: Jam MVP (posts, articles, recordings, follows, likes, comments, moderation)`, trailer `Brief: LIME-110`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
-### LIME-106-fix2 → `tend` (lime-aa) (NEXT, before 107): the forward status bug (item 0 of 106-fix, not yet done)
+**LIME-107 landed as `3a5ec16`** (pushed and verified).
+- **Item 0:** the Kakao-style reply rows (the core now carries the replied-to id); Forward is disabled for gone, never-opened files (a new cheap `info` action, deployed to staging).
+- **Storage:** usage per chat; remove media; Keep media (forever / 1 y / 30 d); auto-download defaults; placeholders with "Available until"; low storage (< 500 MB pauses downloads; < 50 MB refuses before writing).
+- 48 server / 13+13 integration tests pass; tiered iOS passed; 0 warnings.
+- **One UI check was dropped** (the Forward-enabled long-press on the SE/18 Pro is flaky; covered by core tests). Took 1 h 28 m.
+- **Next: LIME-107-qa.**
+
+### LIME-107-qa → `tend` (lime-aa) (right after LIME-107; tend was mid-107 when these arrived): the unread system, row alignment, the message-group footer, the reply summary
+**The user's QA (2026-10-09; screenshots of both phones; portrait + landscape):**
+1. **One coherent unread system** (today the dot and the count badge disagree: e.g. Jean's phone shows a dot on one chat and a count on another).
+   - **Any unread chat shows BOTH:** the left dot **and** the trailing count badge.
+   - **"Marked unread" manually:** the dot only (no number).
+   - **The dock "link" badge = the number of unread chats** and always matches.
+   - The dot, the badge, and bold name/preview text change together when a chat becomes read.
+2. **Row alignment:**
+   - **the avatar's left edge aligns with the logo button's left edge** (the page margin);
+   - **the unread dot hangs in the margin to the left of the avatar** (not a reserved gutter that indents every row);
+   - read rows therefore use the full width.
+   - Check 375 / 402 pt and landscape.
+3. **Landscape:** the "+" button **overlaps the row timestamps** (the user's landscape shot). Keep the floating buttons clear of content (inset the list's trailing edge, or move the FAB), and keep rows a readable width in landscape.
+4. **Each message is one visual unit**, so reactions and the reply summary never look detached, **especially after media**:
+   - **media + caption + footer (reactions … time) + reply summary** are grouped and **aligned to the same edge** (trailing for own, leading for others; after the avatar column in groups);
+   - tight spacing **inside** a message (~4 pt); the larger 16 pt gap only **between** messages.
+   - The footer aligns to the message group's own edges, never wider than the widest element, and the chips start at the group's leading edge.
+   - The same rules for left and right bubbles.
+5. **The reply summary is lighter and shorter:**
+   - **regular weight (not bold)**: "**1 reply · 6:35 PM**" (drop "Last reply"; a date instead of the time if it isn't today);
+   - the replier avatars stay;
+   - **it hugs its content** so it isn't wider than a short bubble, aligned like the footer;
+   - both sides.
+
+**Phase 0:** `git add PLOT.md` only. **Verification:**
+- UI tests (dot + count together and in sync with the dock badge; avatar x == logo x in portrait; the FAB doesn't intersect any row text in landscape; footer/reply aligned to the message group edge after a video; reply summary text regular weight and format);
+- the tiered iOS rule; 0 warnings.
+
+**Gate:**
+- unread chats show a dot + a number, matching the dock badge;
+- read rows align with the logo;
+- landscape has no overlap;
+- reactions/replies look attached to their message (incl. after a video);
+- "1 reply · 6:35 PM" in regular weight.
+
+**Record:** `## LIME-107-qa`. Commit: `fix(ios): coherent unread indicators, row alignment, landscape FAB, message-group footer, lighter reply summary`, trailer `Brief: LIME-107-qa`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-106-fix2 → `tend` (lime-aa) (landed as `edd1071`): the forward status bug (item 0 of 106-fix, not yet done)
 **Do exactly item 0 of LIME-106-fix above** (BUG FIRST + UPDATE + UPDATE 2):
 - forwards with attachments **arrive**, but the **sender stays on "Sending…" or shows a false "Not sent · Tap to retry"**; find out why they never become "Sent" locally, and fix it;
 - **retry on a falsely-failed forward must not send a duplicate** (the user may have a duplicate PDF);
