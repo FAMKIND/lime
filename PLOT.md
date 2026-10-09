@@ -1966,12 +1966,108 @@ If anything contradicts this brief, stop and ask the user.
     5. **the product promise:** "delivered when phones meet and at least one is awake", **never prompt delivery between two locked phones**.
   - The spike series is complete. Next for the mesh: the v1 design brief after 105–109.
 
+**LIME-106-fix landed as `89ef075`** (pushed and verified).
+- Reactions under the bubble in the footer row (chips leading, time trailing; soft grey; 5 + "+N"); a 16 pt row gap; a horizontal emoji row in the viewer; Messages list breathing room + an unread gutter; **no dividers/arrows** (also New Message action rows and Group details members); a chat side margin of 20; the Replies context card + a "Reply to" strip.
+- **⚠ Item 0 (the forward status bug) was NOT addressed:** the report and commit don't mention it (iOS-only, no core change). Tend started before item 0 was added and apparently didn't get the relay. **→ LIME-106-fix2.**
+- **Tend's questions:**
+  - the Messages-list reply rows (the user to confirm (a) or (b));
+  - the **Settings chevrons are still present** (the exception in the brief): ask the user.
+
+### LIME-106-fix2 → `tend` (lime-aa) (NEXT, before 107): the forward status bug (item 0 of 106-fix, not yet done)
+**Do exactly item 0 of LIME-106-fix above** (BUG FIRST + UPDATE + UPDATE 2):
+- forwards with attachments **arrive**, but the **sender stays on "Sending…" or shows a false "Not sent · Tap to retry"**; find out why they never become "Sent" locally, and fix it;
+- **retry on a falsely-failed forward must not send a duplicate** (the user may have a duplicate PDF);
+- verify the swept-blob case (forwarding an attachment older than ~1 h after everyone fetched it) as secondary;
+- **strengthen the real-server integration test** so it checks the **sender's local status = Sent** after a forward with an attachment, and the receiver gets it once.
+
+**Phase 0:** `git add PLOT.md` only. **Verification:** core + integration (local + staging) + the tiered iOS rule; 0 warnings.
+
+**Gate:** forward a photo, an album and a PDF to Jean → each shows "Sent" on your phone within seconds and arrives once.
+
+**Record:** `## LIME-106-fix2`. Commit: `fix: forwarded attachments show Sent; no duplicate on retry`, trailer `Brief: LIME-106-fix2`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### ROADMAP TO APP STORE (the user, 2026-10-09)
+"After status and the major QA bugs, incl. chimes, we'll have a complete app. Then a Jam placeholder ('coming soon', a Substack-like teacher pd community), then calls (audio, video, open source, free), then in-app account deletion, report, limechat.org, then TestFlight. **Core app + a marketing experience to capture interest and build community around the App Store release.**"
+
+**The proposed sequence:**
+1. **LIME-106-fix** (in progress);
+2. **107** storage;
+3. **108** status + work hours;
+4. **the chime** (when the user's sound file arrives);
+5. **LIME-110 Jam placeholder:** the dock's "jam" opens a **coming-soon** screen explaining Jam (a teacher pd community: writing, media, podcasts; "teachers learn by watching teachers") + **"Notify me" / "I want to write on Jam"** interest capture (local opt-in + a mailbox to FAM; **privacy-light**);
+6. **calls:**
+   - **LIME-111:** 1:1 voice + video, **peer-to-peer WebRTC + TURN** (decided), with CallKit UI;
+   - **LIME-112:** group calls on **self-hosted LiveKit** (decided);
+   - **Ringing a closed app needs PushKit = the paid Apple account** → full ringing lands with APNs;
+7. **LIME-113:** **in-app account deletion** (App Store rule 5.1.1(v)) + **Report user/message** (rule 1.2) + an abuse contact/moderation process;
+8. **LIME-114: limechat.org** = the **marketing site** (landing: the mission, the teacher co-op, privacy, offline; a **waitlist/interest form**; the invite pages `/u/<username>`; **/privacy, /terms, /support**). Hosting per the earlier note (www via Cloudflare Pages with a CNAME in deSEC, or GitHub/Codeberg Pages for the apex). **The waitlist store is a privacy decision**: plot's lean is a Supabase table with explicit consent (or Resend Audiences), with a double opt-in;
+9. **APNs push** (the paid account);
+10. **TestFlight.**
+
+**Change (the user, 2026-10-09): no Jam placeholder; build a small Jam MVP instead.** The user shared a composer reference:
+- Cancel / ⋯ / Drafts;
+- "What's on your mind?" with photo/camera/formatting/more;
+- CTA cards **Write an article · Go Live · Record**.
+
+**→ DESIGN-07 (plot, 2026-10-09): Jam MVP decision surface, awaiting the user.**
+- **What Jam is technically:** **public-by-design publishing**, a separate privacy model from E2EE chat. The server stores posts readably so others can read them; **moderation and App Store 1.2 apply in full**.
+- **The proposed MVP** (the reference's look in Lime's design system):
+  - **the Jam tab = a feed** (posts + articles from teachers you follow, plus a "Discover" tab of recent posts);
+  - **the composer**:
+    - "What's on your mind?" + photo/camera/formatting;
+    - Drafts (local);
+    - CTA cards: **Write an article** (long-form editor: title, cover image, the Markdown subset), **Record** (a short video/audio post using the 98d pipeline, ≤ 3 min, the podcast seed), **Go Live** (**"coming soon"** in the MVP: live streaming needs heavy infra; it can piggyback on the LiveKit group calls later);
+  - **a profile page** (posts/articles, follow);
+  - **likes**;
+  - **Report**.
+  - **No money in the MVP.**
+- **Decisions for the user:**
+  - **J1 visibility:**
+    - **A.** Readable by **signed-in Lime teachers only** (lean: safer for teachers; no web scraping);
+    - **B.** Public on the web too (limechat.org/@user; better for growth/SEO, more exposure).
+  - **J2 comments:**
+    - **A.** Likes only in the MVP; comments later (lean: moderation load);
+    - **B.** Comments now.
+  - **J3 student privacy** (lean: required) for any photo/video/audio post: a mandatory check "No students can be identified (faces, names, voices)", plus a guidance link; a posting removes metadata; reported student-privacy posts are hidden pending review.
+  - **J4 moderation:** Report → auto-hide after N reports → a FAM admin review queue (a small admin web page); the user agrees to be the first moderator(s).
+  - **Where it sits in the order:** after 108 + the chime, before calls (as the user listed).
+
+**Open questions put to the user (2026-10-09):**
+- **(a) Mesh v1:** the user decided earlier that **TestFlight waits until offline relaying is included**; the new list omits it. Keep mesh v1 before TestFlight, or move it to after?
+- **(b) Spanish (109):** before TestFlight, or after?
+
 ### LIME-106-fix → `tend` (lime-aa) (NEXT, before 107): reaction layout back to the bottom, the horizontal emoji picker, breathing room, a reply-context header
 **The user's QA (2026-10-09) with screenshots (Lime; Apple Messages list; KakaoTalk reply). The screenshots contain other people's names/messages: never copy them.**
 
 **Phase 0:** `git add PLOT.md` only. **Phase 1:** survey the iOS bubble/footer/reaction code from 104-fix, the image viewer's reaction menu, the Messages list row and the Replies screen. **Reference the web prototype's mobile footer** in `public/css/lime.css` ~7930–7975 (`.lime-message__foot`: one row under the bubble with **reaction chips on the leading side and the time/status stamp pushed to the trailing side** (`margin-left: auto`), wrapping if needed; then the reply summary) and `.lime-reaction` ~5017.
 
 **Phase 2:**
+0. **BUG FIRST (the user, 2026-10-09): a forwarded message never arrived on the receiver's phone.**
+   - **Reproduce with a real two-account test** (the local stack, then staging):
+     - forward a **text** message and a **photo** to (a) a DM and (b) a group, and to a mix of 2 chats in one forward;
+     - assert that each receiver gets a "Forwarded" message.
+   - **Diagnose and report the cause.** Candidates:
+     - the forward written only to the local store (e.g. treated like the self-chat path);
+     - not queued for delivery;
+     - the wrong conversation/recipient set;
+     - the attachment `share` call failing silently so the message is held;
+     - a sealed/identified mismatch.
+   - Fix it.
+   - **The sender must never show "Sent" for something not accepted by the server:** a failed forward shows "Not sent · Tap to retry".
+   - **UPDATE (the user's screenshot, 2:30 PM):**
+     - forwarded **text arrived** (slowly);
+     - a forwarded **album shows "Not sent. Tap to retry"**;
+     - **two forwarded PDFs have been stuck on "Sending…" with a spinner for 17+ minutes** (2:13 → 2:30).
+   - **Plot's leading hypothesis:** **forward-by-reference fails when the original attachment's server copy has already been swept.** LIME-98c deletes it ~1 h after the last recipient fetched it, so `share` on an old attachment hits a missing blob, and the forward stalls or fails.
+   - **The fix to apply if confirmed:** when `share` reports the blob is gone (or near expiry), **re-upload from the sender's local decrypted copy** (a fresh key + upload, the 98c pipeline) and then send.
+     - Never wait indefinitely: a time-boxed attempt, then "Not sent · Tap to retry".
+     - Retry must work.
+     - Also check that a **double forward** (the screenshot shows the same PDF forwarded twice) isn't a duplicate-send bug from a retry.
+   - **UPDATE 2 (the user): everything actually arrived and opens on the receiver's phone.** **The bug is the SENDER's status**, which stays "Sending…" with a spinner, or shows a false "Not sent. Tap to retry", although delivery succeeded.
+     - **So:** find why forwarded messages (with attachments) never transition to "Sent" locally (e.g. the forward path not recording the server's acceptance, a status keyed on the wrong message id after the attachment re-link (migration 20), or the share/upload completion not updating the message), and fix it.
+     - **The swept-blob hypothesis above is now secondary:** verify it anyway with an old attachment, but don't redesign if delivery already works.
+     - **Also make sure "Tap to retry" on a falsely-failed forward doesn't send a duplicate** (the double PDF may be exactly that).
+   - The real-server integration test from LIME-106 apparently didn't cover the receiver side of forward (or passed for the wrong reason). **Strengthen it so it fails on today's bug.**
 1. **Reactions back under the bubble (the user prefers it: "cleaner and more aligned"). This reverses 104-fix item 9's top-corner pill.** The layout, following the web prototype:
    1. the bubble;
    2. **one footer row**: reaction chips (leading) … time · Sent/Edited (trailing), aligned to the bubble's edge;
@@ -1985,7 +2081,7 @@ If anything contradicts this brief, stop and ask the user.
    - **a dedicated left gutter column for the unread dot** (aligned, not touching the avatar);
    - consistent avatar size and spacing;
    - taller rows with comfortable vertical padding;
-   - separators inset from the text column.
+   - **NO divider lines and NO trailing chevrons/arrows** (the user, 2026-10-09: "I don't like the divider lines or the right arrows"). Separate rows by spacing only. This also applies to New Message lists, Group details member lists and Settings-style lists where Lime uses its own rows (keep the system grouped-card style only where already used, without chevrons unless a row pushes a new screen and has no other affordance).
    - Apply the same margin rhythm to the chat screen (bubble side margins, avatar gutter).
 4. **The reply-context component (inspired by KakaoTalk's "Reply to …" quote):**
    - **in the Replies screen header area**, under the nav, a compact glass card: the root author's avatar + **"Replies · <Name>"** + **a one-line quote of the root message** (or its attachment label), like the chat header shows a person;
@@ -1999,9 +2095,11 @@ If anything contradicts this brief, stop and ask the user.
 - 0 warnings.
 
 **Gate:**
+- **forward a text and a photo to Jean (and to a group): they arrive, labelled "Forwarded"**;
+- **forward an OLD photo/album/PDF** (sent more than an hour ago, already downloaded by everyone): it re-uploads and arrives, with nothing stuck on "Sending…";
 - reactions sit under the bubble on the same line as the time, with a soft grey and no outline, and clearly belong to their message;
 - long-press a photo/video → a horizontal emoji bar;
-- the Messages list has more breathing room;
+- the Messages list has more breathing room, with no divider lines and no arrows;
 - Replies shows the "Replies · Name + quote" header and a "Reply to …" strip above the composer.
 
 **Record:** `## LIME-106-fix`. Commit: `fix(ios): reactions under the bubble, horizontal emoji bar, list breathing room, reply-context header`, trailer `Brief: LIME-106-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
