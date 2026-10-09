@@ -1973,6 +1973,51 @@ If anything contradicts this brief, stop and ask the user.
   - the Messages-list reply rows (the user to confirm (a) or (b));
   - the **Settings chevrons are still present** (the exception in the brief): ask the user.
 
+### LIME-110 → `tend` (lime-aa) (after 108 + the chime): the Jam MVP (public-by-design teacher publishing)
+**Per DESIGN-07 + the decisions J1 = A, J2 = B, J3 = required, J4 = ok.** It may be split (110a feed/composer/posts/articles; 110b record/comments/moderation) at a clean boundary; say so.
+
+**Phase 0:** `git add PLOT.md` only. **Phase 1:** survey the dock's jam tab, the 98c/98d media pipeline, the Markdown subset, the profiles, and the Supabase patterns. Note that **Jam is NOT E2EE**: a separate, readable-by-server model, with RLS-enforced visibility. If anything conflicts, **stop and ask the user**.
+
+**Phase 2:**
+1. **Server (new tables + functions; RLS: readable only by signed-in, verified-session users per J1 = A; writable by the owner):**
+   - `jam_posts` (author, kind = post|article|recording, title?, body (the Markdown subset), media refs, created/edited, hidden flag, a student-privacy attestation timestamp);
+   - `jam_follows`, `jam_likes`, `jam_comments` (one level of replies);
+   - `jam_reports` (target post/comment, reporter, reason);
+   - **media in a separate public-to-signed-in bucket `jam-media`**, not the E2EE `blobs` bucket; EXIF stripped on the device.
+   - **Auto-hide** a post/comment after **3 distinct reports** (config).
+   - **A small admin review page** (an Edge Function + a static page, protected by an allow-list of admin user ids: the user and Jean) to list reports and hide/unhide/delete content.
+   - Rate limits.
+2. **iOS:**
+   - **Jam tab = a feed:** "Following" and "Discover" (recent), with cards: author, time, title/excerpt, a media preview, ♥ count, the comment count.
+   - **The composer** (the user's reference, in Lime's style):
+     - Cancel / ⋯ / **Drafts** (local);
+     - "What's on your mind?" + photo / camera / formatting;
+     - CTA cards **Write an article** (a title + cover image + the long-form editor), **Record** (video or audio ≤ 3 min via the 98d pipeline), **Go Live** (a "coming soon" sheet).
+   - **The required student-privacy check** before any media post: "No students can be identified (faces, names or voices)" + a link to guidance (a short in-app page).
+   - **Post detail:** the full article/post, ♥ like, **comments** (newest first, one level of replies), Report on posts and comments.
+   - **Profiles:** a teacher's Jam page (bio = the About, posts, Follow).
+   - **Report:** reasons (student privacy, harassment, spam, other).
+3. **Docs:**
+   - `docs/jam.md` (the privacy model: public to signed-in teachers; not E2EE; moderation);
+   - `architecture.md` (a section on Jam's separate model);
+   - `release-checklist.md` (the moderation process documented; a content policy page on limechat.org).
+
+**Out of scope:** money, live streaming, web visibility, podcasts as feeds, notifications for Jam (later).
+
+**Verification:**
+- server tests (RLS: anon can't read; signed-in can; owner-only edits; auto-hide at 3 reports; the admin allow-list);
+- core/integration (2 accounts: post, follow, like, comment, report, hide);
+- UI tests (composer flows, the privacy check blocks a media post until ticked, Drafts persist);
+- tiered iOS; 0 warnings.
+
+**Gate:**
+- write an article with a cover image → Jean sees it in Following;
+- Jean likes and comments;
+- post a recording (the privacy check is required);
+- report a test post 3 times (3 accounts) → it's hidden → it appears in the admin page.
+
+**Record:** `## LIME-110`. Commit: `feat: Jam MVP (posts, articles, recordings, follows, likes, comments, moderation)`, trailer `Brief: LIME-110`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
 ### LIME-106-fix2 → `tend` (lime-aa) (NEXT, before 107): the forward status bug (item 0 of 106-fix, not yet done)
 **Do exactly item 0 of LIME-106-fix above** (BUG FIRST + UPDATE + UPDATE 2):
 - forwards with attachments **arrive**, but the **sender stays on "Sending…" or shows a false "Not sent · Tap to retry"**; find out why they never become "Sent" locally, and fix it;
@@ -1980,9 +2025,18 @@ If anything contradicts this brief, stop and ask the user.
 - verify the swept-blob case (forwarding an attachment older than ~1 h after everyone fetched it) as secondary;
 - **strengthen the real-server integration test** so it checks the **sender's local status = Sent** after a forward with an attachment, and the receiver gets it once.
 
-**Phase 0:** `git add PLOT.md` only. **Verification:** core + integration (local + staging) + the tiered iOS rule; 0 warnings.
+**Also (the user, 2026-10-09; it replaces the "↩ Jean: …" row preview): the Messages-list row for reply activity uses the Kakao-style reply context, with no ↩ glyph.**
+- The row's preview area shows:
+  - **line 1:** a small quote, with a thin vertical quote bar on the left (secondary colour): "**Reply to <root author>** · <root text, or its attachment label>", one line, truncated;
+  - **line 2:** the reply itself: "<Name>: <reply text>" (in DMs, just the reply text; "You: …" for your own).
+- **Reuse the LIME-106-fix reply-context component** (the same visual language as the Replies header card and the composer strip), scaled for a list row.
+- The row height stays consistent with other rows (2 preview lines).
 
-**Gate:** forward a photo, an album and a PDF to Jean → each shows "Sent" on your phone within seconds and arrives once.
+**Phase 0:** `git add PLOT.md` only. **Verification:** core + integration (local + staging) + the tiered iOS rule (+ a UI test: a reply-activity row shows "Reply to …" with no ↩); 0 warnings.
+
+**Gate:**
+- forward a photo, an album and a PDF to Jean → each shows "Sent" on your phone within seconds and arrives once;
+- a chat with a new reply shows the Kakao-style "Reply to …" quote in the Messages list.
 
 **Record:** `## LIME-106-fix2`. Commit: `fix: forwarded attachments show Sent; no duplicate on retry`, trailer `Brief: LIME-106-fix2`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
@@ -2021,7 +2075,15 @@ If anything contradicts this brief, stop and ask the user.
   - **likes**;
   - **Report**.
   - **No money in the MVP.**
-- **Decisions for the user:**
+- **DECIDED (the user, 2026-10-09):**
+  - **J1 = A** (signed-in Lime teachers only);
+  - **J2 = B (comments now)**;
+  - **J3 = required** (a student-privacy check on media posts);
+  - **J4 = ok** (report → auto-hide → a FAM admin review queue; the user + Jean are the moderators).
+  - Also: **keep the Settings chevrons**. **The Messages-list reply rows get the Kakao-style "Reply to …" quote, with no ↩** (the user changed their mind; in LIME-106-fix2).
+  - **Mesh v1 stays before TestFlight.** The user thought it was already done: plot clarified that the spikes were throwaway tests; **mesh v1 itself must still be built** (with emergency mode).
+  - **Spanish:** not answered. It stays in the queue (109) before TestFlight unless the user says otherwise.
+- **(History) Decisions for the user:**
   - **J1 visibility:**
     - **A.** Readable by **signed-in Lime teachers only** (lean: safer for teachers; no web scraping);
     - **B.** Public on the web too (limechat.org/@user; better for growth/SEO, more exposure).
@@ -2104,7 +2166,16 @@ If anything contradicts this brief, stop and ask the user.
 
 **Record:** `## LIME-106-fix`. Commit: `fix(ios): reactions under the bubble, horizontal emoji bar, list breathing room, reply-context header`, trailer `Brief: LIME-106-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
+**LIME-106-fix2 landed as `edd1071`** (pushed and verified).
+- **The real cause:** forwarding a file whose server copy was swept failed, and **the delivery loop stopped at the first failure**, stalling everything queued behind it ("Sending…").
+- **Fix:** re-upload from the local copy (same id/key); unforwardable items fail alone; retry never duplicates. 158 Rust / 13+13 integration tests pass.
+- **The Kakao-style Messages-row item was NOT built** (no iOS change in the commit). **→ folded into LIME-107 as item 0.**
+- **Remaining limit:** a swept file the forwarder never opened can't be forwarded. **Plot's call: fine**; show Forward disabled for it with "This file is no longer available" (fold into 107).
+
 **LIME-107 run instructions (finalising the draft above):**
+- **Item 0 first (carried over from 106-fix2; not built there):**
+  - **(a)** the Kakao-style "Reply to <author> · <root quote>" line with a quote bar + "<Name>: <reply>" on Messages rows for reply activity (no ↩); spec in LIME-106-fix2;
+  - **(b)** Forward disabled with "This file is no longer available" for swept attachments the user never downloaded.
 - **Phase 0:** `git add PLOT.md` only.
 - **Phase 1:** survey the attachment store, download paths, Settings and core migrations; stop and ask the user on any conflict.
 - **Phase 2:** build the draft's four bullets (Settings → Storage; Keep media; Auto-download incl. "Available until <date>"; low-storage handling incl. a free-space check, the < 500 MB pause banner, clean failures).
