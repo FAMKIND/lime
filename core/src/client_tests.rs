@@ -2486,6 +2486,48 @@ fn my_own_chat_stays_on_this_phone_and_supports_files_search_and_reactions() {
 }
 
 #[test]
+fn a_forward_whose_file_is_gone_re_uploads_it_or_fails_alone_and_a_retry_never_duplicates() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&bob, &carol, &transport);
+    let (to_bob, bob_to_carol) = (format!("dm:{}", bob.user), format!("dm:{}", carol.user));
+    let sent = alice.store.send_attachments(to_bob.clone(), "".into(), vec![pic(4, 5000)], None).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let at_bob = |id: &str| bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().find(|m| m.id == id).unwrap();
+    let state = |chat: &str, id: &str| bob.store.list_messages(chat.to_owned()).unwrap().into_iter().find(|m| m.id == id).unwrap().local_state;
+
+    // The server's copy is swept before Bob (who never downloaded the file) forwards it, and a plain text follows it.
+    server.state.lock().unwrap().attachments.clear();
+    let forwarded = bob.store.forward_messages(vec![at_bob(&sent.id).id], vec![bob_to_carol.clone()]).unwrap();
+    let after = bob.store.queue_text(bob_to_carol.clone(), "and this".into()).unwrap();
+    bob.store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(state(&bob_to_carol, &forwarded[0].id), "failed", "nothing to send it from: that forward fails");
+    assert_eq!(state(&bob_to_carol, &after.id), "sent", "but the message behind it still goes");
+    assert_eq!(sync(&carol, &transport).received, 1);
+
+    // Once Bob holds the file, a retry puts it up again and sends it; Carol gets it once, however often it is delivered.
+    download_from_alice_copy(&bob, &alice, &transport, &sent.attachments[0].id);
+    bob.store.retry_message(forwarded[0].id.clone()).unwrap();
+    bob.store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(state(&bob_to_carol, &forwarded[0].id), "sent");
+    bob.store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(sync(&carol, &transport).received, 1);
+    let got: Vec<_> = carol.store.list_messages(format!("dm:{}", bob.user)).unwrap().into_iter().filter(|m| m.forwarded).collect();
+    assert_eq!(got.len(), 1, "once");
+    download(&carol, &transport, &got[0].attachments[0].id).unwrap();
+}
+
+/// Gives `bob` the bytes of an attachment Alice sent him, as a download would (the stand-in server's copy was cleared).
+fn download_from_alice_copy(bob: &Party, alice: &Party, _transport: &Arc<dyn Transport>, id: &str) {
+    let bytes = alice.store.attachment_data(id.to_owned()).unwrap().unwrap();
+    bob.store.test_set_attachment_data(id, &bytes);
+}
+
+#[test]
 fn an_edit_or_delete_that_arrives_before_its_message_waits_for_it() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);

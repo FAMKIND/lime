@@ -200,6 +200,11 @@ impl LimeStore {
                 let recipients = self.attachment_recipients(&message.conversation_id);
                 if let Err(error) = self.upload_message_attachments(&transport, &auth_token, &message, recipients) {
                     self.with_conn(|conn| set_state(conn, &message.id, "failed"))?;
+                    // A file that is gone for good (nothing to send it from) fails this message only: the ones behind it still go.
+                    // Anything else (no network, a refusal) stops here, as before, and the rest wait in order.
+                    if matches!(error, StoreError::NotFound | StoreError::Rejected) {
+                        continue;
+                    }
                     return Err(error);
                 }
             }
@@ -1448,6 +1453,11 @@ impl LimeStore {
     }
 
     /// Tests only: this store's delivery key (to compute what the server should hold).
+    /// Tests only: this phone now holds an attachment's bytes (as if it had been downloaded).
+    pub(crate) fn test_set_attachment_data(&self, id: &str, bytes: &[u8]) {
+        self.with_conn(|conn| crate::store::attachments::set_data(conn, id, bytes)).unwrap();
+    }
+
     pub(crate) fn test_delivery_key(&self) -> Vec<u8> {
         self.with_conn(|conn| delivery::current(conn, now_ms())).unwrap().0
     }

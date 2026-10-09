@@ -157,45 +157,54 @@ impl LimeStore {
                 // A forward shares the file already on the server (the same encrypted chunks and key) with the new recipients.
                 let (status, _) = call(transport, Some(token), "attachment", &json!({ "action": "share", "attachment_id": descriptor.id, "recipients": recipients.max(1) }))?;
                 if status == 404 {
-                    return Err(StoreError::NotFound);
+                    // The server's copy is gone (everyone had fetched it and an hour passed, or it expired): put it up again from the
+                    // copy this phone holds, under the same id and key, so the forward goes ahead. Without a copy it cannot be forwarded.
+                    self.upload_one(transport, token, descriptor, recipients)?;
+                    continue;
                 }
                 check(status)?;
                 continue;
             }
-            let Some(plaintext) = self.with_conn(|conn| files::data(conn, &descriptor.id))? else { return Err(StoreError::NotFound) };
-            let chunks = files::seal(&descriptor.key, &descriptor.id, &plaintext);
-            let total: usize = chunks.iter().map(Vec::len).sum();
-            let (status, body) = call(
-                transport,
-                Some(token),
-                "attachment",
-                &json!({ "action": "put", "attachment_id": descriptor.id, "size": total, "chunks": chunks.len(), "recipients": recipients.max(1) }),
-            )?;
-            check(status)?;
-            let urls = body.get("urls").and_then(Value::as_object).ok_or(StoreError::BadMessage)?;
-            let already = chunks.len().saturating_sub(urls.len());
-            self.with_conn(|conn| files::set_progress(conn, &descriptor.id, "up", already, chunks.len()))?;
-            for (sent, (index, url)) in urls.iter().enumerate() {
-                let n: usize = index.parse().map_err(|_| StoreError::BadMessage)?;
-                let (url, chunk) = (url.as_str().ok_or(StoreError::BadMessage)?, chunks.get(n).ok_or(StoreError::BadMessage)?);
-                let response = transport
-                    .request(
-                        "PUT".into(),
-                        url.into(),
-                        vec![
-                            HeaderPair { name: "content-type".into(), value: "application/octet-stream".into() },
-                            HeaderPair { name: "cache-control".into(), value: "max-age=60".into() },
-                        ],
-                        chunk.clone(),
-                    )
-                    .map_err(|_: TransportError| StoreError::Network)?;
-                check(response.status)?;
-                self.with_conn(|conn| files::set_progress(conn, &descriptor.id, "up", already + sent + 1, chunks.len()))?;
-            }
-            let (status, _) = call(transport, Some(token), "attachment", &json!({ "action": "commit", "attachment_id": descriptor.id }))?;
-            check(status)?;
-            self.with_conn(|conn| files::clear_progress(conn, &descriptor.id))?;
+            self.upload_one(transport, token, descriptor, recipients)?;
         }
+        Ok(())
+    }
+
+    /// Encrypts and uploads one attachment from the copy this phone holds (resuming if an earlier try was interrupted).
+    fn upload_one(&self, transport: &Arc<dyn Transport>, token: &str, descriptor: &Descriptor, recipients: u32) -> Result<(), StoreError> {
+        let Some(plaintext) = self.with_conn(|conn| files::data(conn, &descriptor.id))? else { return Err(StoreError::NotFound) };
+        let chunks = files::seal(&descriptor.key, &descriptor.id, &plaintext);
+        let total: usize = chunks.iter().map(Vec::len).sum();
+        let (status, body) = call(
+            transport,
+            Some(token),
+            "attachment",
+            &json!({ "action": "put", "attachment_id": descriptor.id, "size": total, "chunks": chunks.len(), "recipients": recipients.max(1) }),
+        )?;
+        check(status)?;
+        let urls = body.get("urls").and_then(Value::as_object).ok_or(StoreError::BadMessage)?;
+        let already = chunks.len().saturating_sub(urls.len());
+        self.with_conn(|conn| files::set_progress(conn, &descriptor.id, "up", already, chunks.len()))?;
+        for (sent, (index, url)) in urls.iter().enumerate() {
+            let n: usize = index.parse().map_err(|_| StoreError::BadMessage)?;
+            let (url, chunk) = (url.as_str().ok_or(StoreError::BadMessage)?, chunks.get(n).ok_or(StoreError::BadMessage)?);
+            let response = transport
+                .request(
+                    "PUT".into(),
+                    url.into(),
+                    vec![
+                        HeaderPair { name: "content-type".into(), value: "application/octet-stream".into() },
+                        HeaderPair { name: "cache-control".into(), value: "max-age=60".into() },
+                    ],
+                    chunk.clone(),
+                )
+                .map_err(|_: TransportError| StoreError::Network)?;
+            check(response.status)?;
+            self.with_conn(|conn| files::set_progress(conn, &descriptor.id, "up", already + sent + 1, chunks.len()))?;
+        }
+        let (status, _) = call(transport, Some(token), "attachment", &json!({ "action": "commit", "attachment_id": descriptor.id }))?;
+        check(status)?;
+        self.with_conn(|conn| files::clear_progress(conn, &descriptor.id))?;
         Ok(())
     }
 

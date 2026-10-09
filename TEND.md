@@ -4581,3 +4581,22 @@ Also suggested for the re-run: send the greeting again whenever a link re-forms 
 **Verification.** 0 warnings; Release has no Bluetooth. iOS per the tiered rule: full unit and UI suite on the iPhone 13 mini; the changed tests on iPhone SE and iPhone 18 Pro. New or changed UI tests: chips under the bubble, on the time's row, leading side; the same under media; the viewer's bar is one row with a "+"; the Replies card and the strip (the X leaves). A chip token test was not added (the no-outline rule is in the code).
 
 **One bug found on the way (mine, fixed).** The new "Reply to …" strip first sat unreachable: a `safeAreaInset` with two siblings lays them on top of each other, so the composer covered the strip and a tap on its X focused the composer instead. They are now in a `VStack`. Verified: the full suite on the iPhone 13 mini and the changed tests on SE and 18 Pro all pass.
+
+## LIME-106-fix2
+
+**Forwards with files now show Sent, and one stuck forward no longer blocks the rest (committed, awaiting the user's check on two phones).** Phase 0: `PLOT.md` committed (`32e365e`). Item 0 of LIME-106-fix was missed when that brief ran; this is exactly that item. Core only; no server change.
+
+**Reproduced first.** A new real-server test (three accounts and a group: Ann sends Bo a PDF and an album; Bo forwards both to Cy's chat and to the group in one go) was written before the fix. The ordinary path **already worked**: Bo's phone says Sent for all four, Cy gets each once labelled Forwarded, a second delivery adds nothing. So the sender-status bug is not in the share-and-send path itself. What did fail was the **swept-file case**, which the brief called secondary.
+
+**Cause.** The server deletes an attachment about an hour after everyone fetched it. Forwarding a file older than that makes `share` answer 404. The forward then marked itself failed ("Not sent. Tap to retry"), and the delivery loop **returned at the first failed message**, so every message behind it, other forwards and plain text included, stayed on "Sending…" for as long as it kept failing. That matches the screenshot: an album "Not sent", two PDFs "Sending…" for 17 minutes, behind it. Nothing here makes a delivered message look unsent; I could not reproduce a falsely failed one and did not find a path for it (a retry sends the same message id, which the receiver already de-duplicates, and the new test checks Cy gets it once however often it is delivered). The "double PDF" is most likely the user forwarding again after the false failure.
+
+**Fix.**
+1. When `share` says the file is gone, the phone **puts it up again from its own decrypted copy**, under the same id and key (so the message's descriptor is unchanged), and then sends. Time-boxed by the usual request timeouts; a failure still reads "Not sent · Tap to retry".
+2. If this phone has no copy either (a received file it never opened, and swept), that one forward fails and **the messages behind it still go**; only a network error or a refusal stops the queue as before.
+3. Retry works and never duplicates.
+
+**Tests.** Real server: the new test above (sent states on the sender, once on the receiver, a chat and a group, a swept file re-uploaded and downloadable by Cy) passes locally and on staging (13 each). Core: `cargo test` **158**, clippy clean; new: a forward whose file is gone and not held fails alone while the text behind it is sent, then after the file is held a retry sends it and Carol has exactly one.
+
+**Not changed, stated.** A forward of a swept file that this phone never downloaded cannot be sent (nothing to send it from). The picture and album still forward fine while the server's copy exists. If you want this covered, opening a file once before forwarding it is enough; I did not make forwarding download first.
+
+**iOS.** No Swift change. The framework was rebuilt; 0 warnings, Release has no Bluetooth; the unit tests and the forward and own-chat UI tests pass on the iPhone 13 mini, SE and 18 Pro (the app side was never the cause).

@@ -1175,3 +1175,84 @@ fn forward_link_card_and_my_own_chat_through_the_real_server() {
     assert_eq!(a.list_messages(own).unwrap().iter().find(|m| m.id == mine.id).unwrap().local_state, "sent");
     assert_eq!(b.sync(transport.clone(), bob.token.clone()).unwrap().received, 0);
 }
+
+#[test]
+fn a_forward_of_files_through_the_real_server_is_sent_on_the_senders_phone_and_arrives_once() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    for (i, (account, name)) in accounts.iter().zip(["Ann Adams", "Bo Brown", "Cy Clark"]).enumerate() {
+        admin.give_profile(account, name, &format!("f{i}{}", &suffix[..8]));
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let stores: Vec<_> = (0..3).map(|i| store(&dir, &format!("p{i}.db"), 20 + i as u8)).collect();
+    for (s, a) in stores.iter().zip(&accounts) {
+        s.register_device(transport.clone(), a.token.clone()).unwrap();
+    }
+    let sync = |i: usize| stores[i].sync(transport.clone(), accounts[i].token.clone()).unwrap();
+    let deliver = |i: usize| stores[i].deliver_queued(transport.clone(), accounts[i].token.clone());
+
+    // Ann, Bo and Cy are in a group; Ann writes to Bo with a PDF and an album, and Bo downloads only the PDF.
+    let group = stores[0].create_group("Forward team".into(), None, vec![accounts[1].id.clone(), accounts[2].id.clone()]).unwrap();
+    deliver(0).unwrap();
+    sync(1);
+    sync(2);
+    let to_bo = stores[0].start_dm(accounts[1].id.clone(), "Bo Brown".into()).unwrap();
+    let pdf: Vec<u8> = (0..1_300_000u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect();
+    let pic = |seed: u8| lime_core::OutgoingAttachment { bytes: vec![seed; 3000], name: format!("{seed}.jpg"), mime: "image/jpeg".into(), width: Some(10), height: Some(10), duration_ms: None, thumb: vec![] };
+    let file = stores[0].send_attachments(to_bo.clone(), "".into(), vec![lime_core::OutgoingAttachment { bytes: pdf.clone(), name: "plan.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![] }], None).unwrap();
+    let album = stores[0].send_attachments(to_bo.clone(), "trip".into(), vec![pic(1), pic(2), pic(3)], None).unwrap();
+    deliver(0).unwrap();
+    sync(1);
+    let from_ann = format!("dm:{}", accounts[0].id);
+    stores[1].accept_request(from_ann.clone()).unwrap();
+    let received: Vec<_> = stores[1].list_messages(from_ann.clone()).unwrap();
+    let (got_file, got_album) = (received.iter().find(|m| m.id == file.id).unwrap(), received.iter().find(|m| m.id == album.id).unwrap());
+    stores[1].download_attachment(transport.clone(), accounts[1].token.clone(), got_file.attachments[0].id.clone()).unwrap();
+
+    // Bo forwards both to Cy (a chat) and to the group in one go.
+    let to_cy = stores[1].start_dm(accounts[2].id.clone(), "Cy Clark".into()).unwrap();
+    let forwarded = stores[1].forward_messages(vec![got_file.id.clone(), got_album.id.clone()], vec![to_cy.clone(), group.clone()]).unwrap();
+    assert_eq!(forwarded.len(), 4);
+    deliver(1).unwrap();
+    let states = |ids: &[String], chat: &str| -> Vec<String> {
+        stores[1].list_messages(chat.to_owned()).unwrap().into_iter().filter(|m| ids.contains(&m.id)).map(|m| m.local_state).collect()
+    };
+    let ids: Vec<String> = forwarded.iter().map(|m| m.id.clone()).collect();
+    assert_eq!(states(&ids, &to_cy), vec!["sent", "sent"], "Bo's phone says Sent for the chat forwards");
+    assert_eq!(states(&ids, &group), vec!["sent", "sent"], "and for the group forwards");
+
+    // Cy gets each once, labelled, and can open the file; a second delivery or sync adds nothing.
+    sync(2);
+    let in_chat: Vec<_> = stores[2].list_messages(format!("dm:{}", accounts[1].id)).unwrap();
+    assert_eq!(in_chat.iter().filter(|m| m.forwarded).count(), 2);
+    let in_group: Vec<_> = stores[2].list_messages(group.clone()).unwrap();
+    assert_eq!(in_group.iter().filter(|m| m.forwarded).count(), 2);
+    let one = in_chat.iter().find(|m| m.forwarded && m.attachments.len() == 1).unwrap();
+    stores[2].download_attachment(transport.clone(), accounts[2].token.clone(), one.attachments[0].id.clone()).unwrap();
+    assert_eq!(stores[2].attachment_data(one.attachments[0].id.clone()).unwrap(), Some(pdf.clone()));
+    deliver(1).unwrap();
+    sync(2);
+    assert_eq!(stores[2].list_messages(format!("dm:{}", accounts[1].id)).unwrap().iter().filter(|m| m.forwarded).count(), 2, "nothing twice");
+
+    // The original file has been swept from the server (everyone fetched it and an hour passed): forwarding it again still works,
+    // from the sender's own decrypted copy, and shows Sent.
+    let rows = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/attachments?select=id,owner", admin.base))), None);
+    for row in rows.as_array().unwrap().iter().filter(|r| r["owner"] == accounts[0].id.as_str()) {
+        let id = row["id"].as_str().unwrap();
+        admin.with_service_key(ureq::request("PATCH", &format!("{}/rest/v1/attachments?id=eq.{id}", admin.base))).send_json(json!({ "expires_at": "2000-01-01T00:00:00Z" })).unwrap();
+    }
+    let secret = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/sweep_target?select=secret", admin.base))), None)[0]["secret"].as_str().expect("the sweep is scheduled").to_owned();
+    ureq::post(&format!("{}/functions/v1/blob-sweep", admin.base)).set("apikey", &admin.anon_key).set("x-sweep-secret", &secret).send_json(json!({})).unwrap();
+    let again = stores[1].forward_messages(vec![got_file.id.clone()], vec![to_cy.clone()]).unwrap();
+    deliver(1).unwrap();
+    assert_eq!(states(&[again[0].id.clone()], &to_cy), vec!["sent"], "a forward of a swept file is re-uploaded from Bo's copy and sent");
+    sync(2);
+    let last = stores[2].list_messages(format!("dm:{}", accounts[1].id)).unwrap().into_iter().rfind(|m| m.forwarded).unwrap();
+    stores[2].download_attachment(transport.clone(), accounts[2].token.clone(), last.attachments[0].id.clone()).unwrap();
+}
