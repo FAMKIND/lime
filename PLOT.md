@@ -1760,7 +1760,9 @@ If anything contradicts this brief, stop and ask the user.
   - **LIME-98b-fix is drafted:** a live photo-change notice + pull-to-refresh.
   - **Also:** the blob expiry cron isn't scheduled yet (fold it into 98c); the CDN cache is ≤ 60 s (unmeasured).
 
-### LIME-98b-fix → `tend` (lime-aa) (next, small): photo changes show up at once
+**LIME-98b-fix landed as `c63e2d1`** (pushed and verified): a `profile.changed` notice to accepted contacts; pull-to-refresh and chat-open refresh photos (≤ 1/min each); the bad sign-out advice was removed. 128 Rust tests pass; integration 7/7; tiered iOS passed. Awaiting the user's two-phone photo gate. **Next: LIME-98c (attachments + voice).**
+
+### LIME-98b-fix → `tend` (lime-aa) (landed as `c63e2d1`): photo changes show up at once
 **Problem:** contacts see a new/removed photo or a visibility change only after a re-check (at most hourly). Tend's workaround (sign out / reinstall) destroys keys. **Never suggest signing out to refresh data.**
 
 **Phase 0:** commit `PLOT.md` unedited. **Phase 1:** survey `refresh_photos`, the delivery-key control op and the pull-to-refresh paths.
