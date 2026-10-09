@@ -138,6 +138,7 @@ struct ChangePasswordScreen: View {
 struct PrivacyScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var blockedCount: Int?
+    @AppStorage(LinkPreviewSetting.key) private var linkPreviews = true
 
     var body: some View {
         SettingsPage(title: "Privacy") {
@@ -145,6 +146,15 @@ struct PrivacyScreen: View {
                 SettingsRow(symbol: "nosign", title: "Blocked", value: blockedCount.map { $0 == 0 ? "None" : "\($0)" }, route: .blocked, id: "privacy-blocked")
                 SettingsRow(symbol: "key.viewfinder", title: "Safety Numbers", route: .keys, id: "privacy-keys", showsDivider: false)
             }
+            SettingsCard {
+                Toggle(isOn: $linkPreviews) {
+                    Text("Generate link previews").font(Theme.body).foregroundStyle(Theme.text)
+                }
+                .tint(Theme.accent)
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                .accessibilityIdentifier("privacy-link-previews")
+            }
+            SettingsFootnote(text: "Creating a preview visits the site from your phone. The people you send it to never visit it: the preview travels inside the encrypted message.")
             SettingsFootnote(text: "Messages are end-to-end encrypted: only you and the person you message can read them.")
         }
         .task { blockedCount = await store.blockedPeople().count }

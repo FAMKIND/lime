@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::store::attachments::{self as files, Descriptor};
+use crate::store::link_preview::OutgoingPreview;
 
 /// A file the app wants to send (already compressed, resized and stripped of metadata by the app).
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -76,7 +77,7 @@ impl LimeStore {
         if files::payload_value(&descriptors).to_string().len() > MAX_DESCRIPTOR_BYTES {
             return Err(StoreError::Rejected);
         }
-        self.queue_with(conversation_id, caption, reply_to, prepared)
+        self.queue_with(conversation_id, caption, reply_to, prepared, QueueExtras::default())
     }
 
     /// How far the upload or download of an attachment has got (chunks done and in all), while one is running.
@@ -150,7 +151,17 @@ impl LimeStore {
     /// Encrypts and uploads every attachment of a queued message, chunk by chunk. Safe to repeat: the server says
     /// which chunks it already has, and the same chunks are computed again, so an interrupted upload resumes.
     pub(super) fn upload_message_attachments(&self, transport: &Arc<dyn Transport>, token: &str, message: &Queued, recipients: u32) -> Result<(), StoreError> {
-        for descriptor in &message.attachments {
+        let preview_image = message.preview.as_ref().and_then(|(_, image)| image.as_ref());
+        for descriptor in message.attachments.iter().chain(preview_image) {
+            if message.forwarded {
+                // A forward shares the file already on the server (the same encrypted chunks and key) with the new recipients.
+                let (status, _) = call(transport, Some(token), "attachment", &json!({ "action": "share", "attachment_id": descriptor.id, "recipients": recipients.max(1) }))?;
+                if status == 404 {
+                    return Err(StoreError::NotFound);
+                }
+                check(status)?;
+                continue;
+            }
             let Some(plaintext) = self.with_conn(|conn| files::data(conn, &descriptor.id))? else { return Err(StoreError::NotFound) };
             let chunks = files::seal(&descriptor.key, &descriptor.id, &plaintext);
             let total: usize = chunks.iter().map(Vec::len).sum();
@@ -197,5 +208,105 @@ impl LimeStore {
             Ok(count.max(1) as u32)
         })
         .unwrap_or(1)
+    }
+}
+
+/// How many chats one forward may go to (anti-spam).
+pub const MAX_FORWARD_TARGETS: usize = 5;
+
+#[uniffi::export]
+impl LimeStore {
+    /// Forwards messages (oldest first) to up to five chats or groups. Each forward is a new message labelled forwarded, with no
+    /// sign of who first wrote it; formatting is kept; files are shared by reference (the same encrypted file), so nothing is
+    /// uploaded again. Deleted, unsent and system messages are skipped. Returns the new messages.
+    pub fn forward_messages(&self, message_ids: Vec<String>, to_conversations: Vec<String>) -> Result<Vec<MessageItem>, StoreError> {
+        if to_conversations.is_empty() || to_conversations.len() > MAX_FORWARD_TARGETS || message_ids.is_empty() || message_ids.len() > 50 {
+            return Err(StoreError::Rejected);
+        }
+        let mut sources = Vec::new();
+        for id in &message_ids {
+            let source = self.with_conn(|conn| {
+                conn.query_row(
+                    "SELECT body, local_state, deleted, hidden, sent_at FROM messages WHERE id = ?1",
+                    params![id],
+                    |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?, r.get::<_, bool>(3)?, r.get::<_, i64>(4)?)),
+                )
+                .optional()
+                .map_err(db_err)
+            })?;
+            let Some((body, state, deleted, hidden, sent_at)) = source else { continue };
+            if deleted || hidden || matches!(state.as_str(), "system" | "sending" | "failed") {
+                continue;
+            }
+            let (files, preview) = self.with_conn(|conn| {
+                let files = files::for_message(conn, id)?;
+                let preview = crate::store::link_preview::meta_of(conn, id)
+                    .map(|meta| (meta, files::preview_of(conn, id).ok().flatten().map(|(d, _)| d)));
+                Ok((files, preview))
+            })?;
+            sources.push((sent_at, id.clone(), body, files, preview));
+        }
+        sources.sort_by_key(|(sent_at, id, ..)| (*sent_at, id.clone()));
+        let mut out = Vec::new();
+        for target in &to_conversations {
+            for (_, _, body, files, preview) in &sources {
+                let extras = QueueExtras {
+                    forwarded: true,
+                    shared: files.iter().map(|(d, _)| d.clone()).collect(),
+                    // The picture is shared like a file: the bytes are copied from the original here.
+                    preview: preview.clone().map(|(meta, image)| (meta, image.map(|d| (d, None)))),
+                };
+                out.push(self.queue_with(target.clone(), body.clone(), None, Vec::new(), extras)?);
+            }
+        }
+        Ok(out)
+    }
+}
+
+#[uniffi::export]
+impl LimeStore {
+    /// Queues a text message with a link card: the sender's phone built the preview (`preview`); its picture is encrypted and
+    /// uploaded like an attachment, so nobody who reads the message visits the link.
+    pub fn queue_text_with_preview(
+        &self,
+        conversation_id: String,
+        text: String,
+        reply_to: Option<String>,
+        preview: OutgoingPreview,
+    ) -> Result<MessageItem, StoreError> {
+        let Some(meta) = crate::store::link_preview::Meta::new(&preview.url, &preview.title, &preview.site) else {
+            return self.queue_with(conversation_id, text, reply_to, Vec::new(), QueueExtras::default());
+        };
+        if preview.image.len() > 200 * 1024 {
+            return Err(StoreError::Rejected);
+        }
+        let image = (!preview.image.is_empty()).then(|| {
+            let descriptor = Descriptor {
+                id: new_id(),
+                key: files::new_key(),
+                digest: files::digest_hex(&preview.image),
+                size: preview.image.len() as u64,
+                mime: "image/jpeg".into(),
+                name: String::new(),
+                width: preview.image_width,
+                height: preview.image_height,
+                duration_ms: None,
+                thumb: Vec::new(),
+            };
+            (descriptor, Some(preview.image.clone()))
+        });
+        self.queue_with(conversation_id, text, reply_to, Vec::new(), QueueExtras { forwarded: false, shared: Vec::new(), preview: Some((meta, image)) })
+    }
+
+    /// Makes sure my own chat exists (it is just a chat with myself, named with my name, kept on this phone only) and returns
+    /// its id. Nothing is sent to the server for it.
+    pub fn ensure_self_chat(&self, name: String) -> Result<String, StoreError> {
+        let me = self.my_user_id_registered()?;
+        self.with_conn(|conn| {
+            let id = crate::client::ensure_dm(conn, &me, Some(&name))?;
+            // A chat I deleted for myself comes back; and never a request.
+            conn.execute("UPDATE conversations SET hidden = 0, request_state = 'accepted' WHERE id = ?1", params![id]).map_err(db_err)?;
+            Ok(id)
+        })
     }
 }

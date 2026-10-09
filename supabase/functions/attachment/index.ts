@@ -3,6 +3,8 @@
 //          (call it again with the same id to resume: it returns only what is missing).
 //   commit { attachment_id }                            -> verifies every chunk is there and not larger than declared.
 //   get    { attachment_id }                            -> { chunks, urls: [signedDownloadUrl] }; counts the caller as a recipient.
+//   share  { attachment_id, recipients }                -> a forward (LIME-106): the same encrypted file for `recipients` more people.
+//                                                          Anyone who knows the id may (it is a capability, like `get`).
 //   delete { attachment_id }                            -> removes it (the sender only).
 // Everything stored is ciphertext. The id is a capability (whoever knows it can fetch the ciphertext, which is useless
 // without the key that travels inside the encrypted message). Deleted once `recipients` different people have fetched
@@ -22,7 +24,7 @@ Deno.serve(handler(async (req) => {
   if (!isUuid(body.attachment_id)) throw new HttpError(400, "bad_request", "attachment_id must be a UUID.");
   const id = (body.attachment_id as string).toLowerCase();
   const { data: row } = await db.from("attachments").select("*").eq("id", id).maybeSingle();
-  if (body.action !== "get" && row && row.owner !== me) throw new HttpError(409, "id_taken", "That id is in use.");
+  if (body.action !== "get" && body.action !== "share" && row && row.owner !== me) throw new HttpError(409, "id_taken", "That id is in use.");
 
   switch (body.action) {
     case "put": {
@@ -83,6 +85,18 @@ Deno.serve(handler(async (req) => {
         }
       }
       return json({ chunks: row.chunks, urls });
+    }
+    case "share": {
+      const extra = body.recipients;
+      if (typeof extra !== "number" || !Number.isInteger(extra) || extra < 1 || extra > 100) throw new HttpError(400, "bad_request", "Bad recipients.");
+      if (!row || !row.committed_at || new Date(row.expires_at).getTime() < Date.now()) throw new HttpError(404, "not_found", "No such attachment.");
+      // More people will fetch it, so it stays: at least a week from now, but never past 30 days after it was uploaded.
+      const week = Date.now() + 7 * 86_400_000;
+      const cap = new Date(row.created_at).getTime() + 30 * 86_400_000;
+      const expires = new Date(Math.min(cap, Math.max(new Date(row.expires_at).getTime(), week))).toISOString();
+      const { error } = await db.from("attachments").update({ recipients: Math.min(100, row.recipients + extra), expires_at: expires }).eq("id", id);
+      if (error) throw new HttpError(500, "internal");
+      return json({ ok: true });
     }
     case "delete": {
       if (row) await removeAttachment(id, row.chunks);

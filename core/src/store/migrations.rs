@@ -337,6 +337,34 @@ const MIGRATIONS: &[&str] = &[
          payload TEXT NOT NULL,
          PRIMARY KEY (target, op_type, sender, hlc)
      );",
+    // 20: forwarding and link previews (LIME-106). A forwarded message says so (`forwarded`); a link preview's words are kept
+    // as JSON (its picture is an attachment of role 'preview'). The same attachment can now be in several messages (a forward
+    // shares the encrypted file by reference), so an attachment row is keyed by message and attachment.
+    "ALTER TABLE messages ADD COLUMN forwarded INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE messages ADD COLUMN link_preview TEXT;
+     CREATE TABLE message_attachments_new (
+         attachment_id TEXT NOT NULL,
+         message_id    TEXT NOT NULL,
+         position      INTEGER NOT NULL,
+         key           TEXT NOT NULL,
+         digest        TEXT NOT NULL,
+         size          INTEGER NOT NULL,
+         mime          TEXT NOT NULL,
+         name          TEXT NOT NULL,
+         width         INTEGER,
+         height        INTEGER,
+         duration_ms   INTEGER,
+         thumb         BLOB,
+         bytes         BLOB,
+         role          TEXT NOT NULL DEFAULT 'file',
+         PRIMARY KEY (message_id, attachment_id)
+     );
+     INSERT INTO message_attachments_new (attachment_id, message_id, position, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes)
+         SELECT attachment_id, message_id, position, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes FROM message_attachments;
+     DROP TABLE message_attachments;
+     ALTER TABLE message_attachments_new RENAME TO message_attachments;
+     CREATE INDEX message_attachments_by_message ON message_attachments (message_id, position);
+     CREATE INDEX message_attachments_by_id ON message_attachments (attachment_id);",
 ];
 
 /// The schema version this build writes.

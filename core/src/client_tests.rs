@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -2351,6 +2351,138 @@ fn deleted_replies_leave_the_thread_summary() {
     sync(&alice, &transport);
     assert!(summary().is_empty(), "no live replies: no summary under the message");
     assert_eq!(alice.store.list_thread(root.id.clone()).unwrap().len(), 3, "Replies still shows the placeholders for context");
+}
+
+// ---------------------------------------------------------------- LIME-106: forward, my own chat, link previews
+
+#[test]
+fn a_forward_is_a_new_labelled_message_that_shares_the_files_by_reference() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    let (to_bob, to_carol) = (format!("dm:{}", bob.user), format!("dm:{}", carol.user));
+    let photo = pic(5, 2_500_000);
+    let sent = alice.store.send_attachments(to_bob.clone(), "the **trip**".into(), vec![photo.clone()], None).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let chunks_on_server = server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/a/")).count();
+
+    // Bob forwards what he received to Carol (he does not know Carol: his own chats only): forward from Alice's side instead.
+    let forwarded = alice.store.forward_messages(vec![sent.id.clone()], vec![to_carol.clone()]).unwrap();
+    assert_eq!(forwarded.len(), 1);
+    assert!(forwarded[0].forwarded && forwarded[0].local_state == "sending");
+    assert_eq!(forwarded[0].text, "the **trip**", "formatting is kept");
+    assert_eq!(forwarded[0].attachments.len(), 1);
+    assert_eq!(forwarded[0].attachments[0].id, sent.attachments[0].id, "the same file, by reference");
+    assert!(forwarded[0].attachments[0].downloaded, "and the bytes are copied here");
+    deliver(&alice, &transport);
+    assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/a/")).count(), chunks_on_server, "nothing was uploaded again");
+
+    assert_eq!(sync(&carol, &transport).received, 1);
+    let got = carol.store.list_messages(format!("dm:{}", alice.user)).unwrap().pop().unwrap();
+    assert!(got.forwarded, "labelled forwarded");
+    assert_eq!(got.text, "the **trip**");
+    download(&carol, &transport, &got.attachments[0].id).unwrap();
+    assert_eq!(carol.store.attachment_data(got.attachments[0].id.clone()).unwrap(), Some(photo.bytes.clone()));
+    // Bob's original is not marked forwarded.
+    assert!(!bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().pop().unwrap().forwarded);
+
+    // Deleting the original for everyone does not take the file from the forward.
+    alice.store.delete_message_for_everyone(to_bob.clone(), sent.id.clone()).unwrap();
+    assert_eq!(alice.store.attachment_data(sent.attachments[0].id.clone()).unwrap(), Some(photo.bytes.clone()), "the forward still holds the file");
+
+    // At most five chats; nothing to forward is refused; a deleted message is skipped.
+    let six: Vec<String> = (0..6).map(|i| format!("dm:x{i}")).collect();
+    assert_eq!(alice.store.forward_messages(vec![sent.id.clone()], six), Err(crate::StoreError::Rejected));
+    assert_eq!(alice.store.forward_messages(vec![], vec![to_carol.clone()]), Err(crate::StoreError::Rejected));
+    assert!(alice.store.forward_messages(vec![sent.id.clone()], vec![to_carol]).unwrap().is_empty(), "a deleted message is not forwarded");
+}
+
+#[test]
+fn a_link_preview_travels_encrypted_and_the_recipient_never_visits_the_link() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let image: Vec<u8> = (0..30_000u32).map(|i| (i * 7 % 251) as u8).collect();
+    let preview = crate::OutgoingPreview {
+        url: "https://example.org/lesson".into(),
+        title: "A lesson plan".into(),
+        site: "example.org".into(),
+        image: image.clone(),
+        image_width: Some(600),
+        image_height: Some(315),
+    };
+    let chat = format!("dm:{}", bob.user);
+    let item = alice.store.queue_text_with_preview(chat.clone(), "see https://example.org/lesson".into(), None, preview).unwrap();
+    let card = item.link_preview.clone().unwrap();
+    assert_eq!((card.title.as_str(), card.site.as_str()), ("A lesson plan", "example.org"));
+    assert!(item.attachments.is_empty(), "the picture is not an album photo");
+    deliver(&alice, &transport);
+    {
+        let state = server.state.lock().unwrap();
+        for (_, bytes) in state.objects.iter().filter(|(k, _)| k.starts_with("blobs/a/")) {
+            assert!(!bytes.windows(64).any(|w| w == &image[1000..1064]), "the server holds only ciphertext");
+        }
+    }
+    sync(&bob, &transport);
+    let got = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().pop().unwrap();
+    let card = got.link_preview.clone().expect("a card");
+    assert_eq!((card.url.as_str(), card.title.as_str()), ("https://example.org/lesson", "A lesson plan"));
+    assert!(got.attachments.is_empty());
+    let picture = card.image.expect("a picture");
+    assert!(!picture.downloaded);
+    download(&bob, &transport, &picture.id).unwrap();
+    assert_eq!(bob.store.attachment_data(picture.id.clone()).unwrap(), Some(image));
+    // A preview with a non-web address is dropped (the message goes as plain text).
+    let plain = alice.store.queue_text_with_preview(chat, "hi".into(), None, crate::OutgoingPreview {
+        url: "javascript:alert(1)".into(), title: "x".into(), site: "y".into(), image: vec![], image_width: None, image_height: None,
+    }).unwrap();
+    assert!(plain.link_preview.is_none());
+}
+
+#[test]
+fn my_own_chat_stays_on_this_phone_and_supports_files_search_and_reactions() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let own = alice.store.ensure_self_chat("Alice Lee".into()).unwrap();
+    assert_eq!(own, format!("dm:{}", alice.user));
+    assert_eq!(alice.store.ensure_self_chat("Alice Lee".into()).unwrap(), own, "one chat, however often it is asked for");
+    let summary = alice.store.list_conversations().unwrap().into_iter().find(|c| c.id == own).unwrap();
+    assert_eq!(summary.title, "Alice Lee");
+    assert_eq!(summary.request_state, "accepted");
+
+    let calls = server.state.lock().unwrap().calls;
+    let note = alice.store.queue_text(own.clone(), "buy **markers** for Friday".into()).unwrap();
+    let with_file = alice.store.send_attachments(own.clone(), "my slides".into(), vec![pic(2, 4000)], None).unwrap();
+    let reply = alice.store.queue_reply(own.clone(), note.id.clone(), "and glue".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    alice.store.react(own.clone(), note.id.clone(), "👍".into(), true).unwrap();
+    alice.store.edit_message(own.clone(), note.id.clone(), "buy markers and tape".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let own_chat_calls_to_bob = server.state.lock().unwrap().calls - calls;
+    assert!(own_chat_calls_to_bob <= 6, "only the usual housekeeping (keys, shares), nothing per message: {own_chat_calls_to_bob}");
+    let messages = alice.store.list_messages(own.clone()).unwrap();
+    assert!(messages.iter().all(|m| m.local_state == "sent"), "sent at once");
+    assert_eq!(messages.iter().find(|m| m.id == note.id).unwrap().text, "buy markers and tape");
+    assert_eq!(messages.iter().find(|m| m.id == note.id).unwrap().reactions.len(), 1);
+    assert!(alice.store.attachment_data(with_file.attachments[0].id.clone()).unwrap().is_some());
+    assert_eq!(alice.store.list_thread(note.id.clone()).unwrap().len(), 2);
+    let _ = reply;
+    // Nothing reached the server or Bob: no mailbox item for him, no upload.
+    assert_eq!(sync(&bob, &transport).received, 0, "Bob receives nothing");
+    assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/a/")).count(), 0, "no file was uploaded");
+    // Searchable, and a message can be forwarded into it.
+    assert!(!alice.store.search_messages("tape".into(), None, 5).unwrap().is_empty());
+    let into_own = alice.store.forward_messages(vec![with_file.id.clone()], vec![own.clone()]).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert!(into_own[0].forwarded);
+    assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/a/")).count(), 0, "still nothing uploaded");
 }
 
 #[test]

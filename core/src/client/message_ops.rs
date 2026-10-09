@@ -26,6 +26,10 @@ impl LimeStore {
         })
     }
 
+    pub(crate) fn my_user_id_registered(&self) -> Result<String, StoreError> {
+        self.my_id()
+    }
+
     fn my_id(&self) -> Result<String, StoreError> {
         let state = self.load_or_create_account()?;
         state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)
@@ -150,6 +154,8 @@ impl LimeStore {
                 let hlc = self.with_conn(|conn| Ok(tick_hlc(conn, now_ms())?.render())).unwrap_or_default();
                 let signed = Op { op_id: op.id.clone(), op_type: op.op_type.clone(), conversation_id: op.conversation_id.clone(), hlc, parents: vec![], payload: op.payload.clone(), sig: String::new() };
                 self.send_group_op(transport, token, state, me, signed).is_ok()
+            } else if op.conversation_id == format!("dm:{me}") {
+                true   // my own chat: nothing to send
             } else if let Some(peer) = op.conversation_id.strip_prefix("dm:") {
                 self.send_control_op(transport, token, state, me, peer, &op.op_type, op.payload.clone()).is_ok()
             } else {

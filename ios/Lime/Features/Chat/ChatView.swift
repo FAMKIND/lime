@@ -403,7 +403,7 @@ struct ChatView: View {
                     Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right")
                 }
                 .accessibilityIdentifier("chat-leave")
-            } else {
+            } else if conversation.id != store.selfChatID {   // nothing to block or label in my own chat
                 if let person = conversation.members.first {
                     Button {
                         labelText = person.label ?? ""
@@ -453,7 +453,7 @@ struct ChatView: View {
             if let selection {
                 SelectionBar(count: selection.count,
                              onDelete: { actions.deleting = conversation.messages.filter { selection.contains($0.id) } },
-                             onForward: { store.comingNext("Forward") })
+                             onForward: { actions.forwarding = conversation.messages.filter { selection.contains($0.id) } })
             } else if conversation.isRequest { requestBar(conversation) } else { composer(conversation) }
         }
     }
@@ -518,7 +518,8 @@ struct ChatView: View {
 
     private func composer(_ conversation: Conversation) -> some View {
         ChatComposer(model: composerModel, onSend: { markdown in store.send(markdown, in: conversation.id) },
-                     onSendAttachments: conversation.isRequest ? nil : { items, caption in store.sendAttachments(items, caption: caption, in: conversation.id) })
+                     onSendAttachments: conversation.isRequest ? nil : { items, caption in store.sendAttachments(items, caption: caption, in: conversation.id) },
+                     onSendPreview: conversation.isRequest ? nil : { markdown, preview in Task { await store.sendNow(markdown, preview: preview, in: conversation.id) } })
     }
 }
 
@@ -624,7 +625,14 @@ struct MessageBubble: View {
                     .overlay(RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous).strokeBorder(Theme.bubbleEdge, lineWidth: 0.8))
                     .accessibilityIdentifier("deleted-bubble")
             } else {
+                if message.forwarded {
+                    Label("Forwarded", systemImage: "arrowshape.turn.up.right")
+                        .font(Theme.caption.italic()).foregroundStyle(Theme.textSecondary)
+                        .labelStyle(.titleAndIcon)
+                        .accessibilityIdentifier("forwarded-\(message.id)")
+                }
                 if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
+                if let preview = message.linkPreview { MessageLinkCard(messageID: message.id, preview: preview, isOwn: message.isOwn) }
                 if !message.text.isEmpty || message.attachments.isEmpty {
                     FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
                                          link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString,

@@ -629,6 +629,16 @@ final class ConversationStore {
         }.value
     }
 
+    /// A short note at the top of the screen ("Forwarded").
+    func showBanner(_ text: String) {
+        banner = text
+        bannerTask?.cancel()
+        bannerTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            if !Task.isCancelled { banner = nil }
+        }
+    }
+
     /// "Coming next": for the entry points whose screens are the next brief's.
     func comingNext(_ what: String) {
         banner = "\(what): coming next"

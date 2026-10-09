@@ -51,3 +51,10 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **Delete for everyone is best effort**: the confirmation says Lime cannot guarantee a message is gone once someone saw or saved it. Keep that wording in the help text and the privacy policy.
 - [ ] **Report flow (guideline 1.2)** should cover edited and deleted messages: a report is made from what the reporter's phone shows; a tombstone has nothing to report, and the reporter's own copy is what counts.
 - [ ] **Reactions send no notification** in v1 (by design); say so in the notification settings text if people ask.
+
+## Forward, link cards and messaging yourself (LIME-106)
+
+- [ ] **Link previews visit the site from the sender's phone** (Settings → Privacy → "Generate link previews", on by default). Say so in the privacy policy; recipients never visit the link.
+- [ ] **A forward extends an attachment's life on the server** (a week at least, never past 30 days from the upload). A message deleted for everyone by its owner removes the shared file for people who had not fetched it yet.
+- [ ] **Messaging yourself stays on the phone**: not backed up, not on other devices until device linking exists. Say so in help text.
+- [ ] **Forwarded labels carry no sender name**; check the report flow still works from a forwarded message.

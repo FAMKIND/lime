@@ -147,14 +147,32 @@ pub(crate) fn open(key: &[u8], id: &str, chunks: &[Vec<u8>]) -> Option<Vec<u8>> 
 
 // ---------------------------------------------------------------- storage
 
+/// Position of a link preview's picture among a message's attachments (after any files).
+pub(crate) const PREVIEW_POSITION: i64 = 1000;
+
 pub(crate) fn insert(conn: &Connection, message_id: &str, position: usize, d: &Descriptor, bytes: Option<&[u8]>) -> Result<(), StoreError> {
+    insert_as(conn, message_id, position as i64, d, bytes, "file")
+}
+
+/// The picture of a message's link preview: an attachment like any other, but not shown in the album.
+pub(crate) fn insert_preview(conn: &Connection, message_id: &str, d: &Descriptor, bytes: Option<&[u8]>) -> Result<(), StoreError> {
+    insert_as(conn, message_id, PREVIEW_POSITION, d, bytes, "preview")
+}
+
+fn insert_as(conn: &Connection, message_id: &str, position: i64, d: &Descriptor, bytes: Option<&[u8]>, role: &str) -> Result<(), StoreError> {
+    // The same file can already be here (a forward shares it): then the bytes are copied, so deleting the first message
+    // never takes the file from the second.
+    let copied: Option<Vec<u8>> = match bytes {
+        Some(_) => None,
+        None => data(conn, &d.id)?,
+    };
     conn.execute(
         "INSERT OR IGNORE INTO message_attachments
-           (attachment_id, message_id, position, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+           (attachment_id, message_id, position, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes, role)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
-            d.id, message_id, position as i64, vodozemac::base64_encode(&d.key), d.digest, d.size as i64, d.mime, d.name,
-            d.width, d.height, d.duration_ms, if d.thumb.is_empty() { None } else { Some(&d.thumb) }, bytes
+            d.id, message_id, position, vodozemac::base64_encode(&d.key), d.digest, d.size as i64, d.mime, d.name,
+            d.width, d.height, d.duration_ms, if d.thumb.is_empty() { None } else { Some(&d.thumb) }, bytes.map(<[u8]>::to_vec).or(copied), role
         ],
     )
     .map_err(db_err)?;
@@ -182,27 +200,39 @@ fn from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(Descriptor, bool)> {
 
 const COLUMNS: &str = "attachment_id, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes IS NOT NULL";
 
-/// A message's attachments in order, with whether this phone holds each one's bytes.
+/// A message's files in order (not its link preview's picture), with whether this phone holds each one's bytes.
 pub(crate) fn for_message(conn: &Connection, message_id: &str) -> Result<Vec<(Descriptor, bool)>, StoreError> {
     let mut statement = conn
-        .prepare(&format!("SELECT {COLUMNS} FROM message_attachments WHERE message_id = ?1 ORDER BY position"))
+        .prepare(&format!("SELECT {COLUMNS} FROM message_attachments WHERE message_id = ?1 AND role = 'file' ORDER BY position"))
         .map_err(db_err)?;
     let rows = statement.query_map(params![message_id], from_row).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
     Ok(rows)
 }
 
-pub(crate) fn get(conn: &Connection, attachment_id: &str) -> Result<Option<(Descriptor, bool)>, StoreError> {
-    conn.query_row(&format!("SELECT {COLUMNS} FROM message_attachments WHERE attachment_id = ?1"), params![attachment_id], from_row)
+/// The picture of a message's link preview, if it has one.
+pub(crate) fn preview_of(conn: &Connection, message_id: &str) -> Result<Option<(Descriptor, bool)>, StoreError> {
+    conn.query_row(&format!("SELECT {COLUMNS} FROM message_attachments WHERE message_id = ?1 AND role = 'preview'"), params![message_id], from_row)
         .optional()
         .map_err(db_err)
 }
 
+/// One attachment by id (it can be in several messages): the row that holds its bytes if any does.
+pub(crate) fn get(conn: &Connection, attachment_id: &str) -> Result<Option<(Descriptor, bool)>, StoreError> {
+    conn.query_row(
+        &format!("SELECT {COLUMNS} FROM message_attachments WHERE attachment_id = ?1 ORDER BY bytes IS NOT NULL DESC LIMIT 1"),
+        params![attachment_id],
+        from_row,
+    )
+    .optional()
+    .map_err(db_err)
+}
+
 pub(crate) fn data(conn: &Connection, attachment_id: &str) -> Result<Option<Vec<u8>>, StoreError> {
-    let bytes: Option<Option<Vec<u8>>> = conn
-        .query_row("SELECT bytes FROM message_attachments WHERE attachment_id = ?1", params![attachment_id], |r| r.get(0))
+    let bytes: Option<Vec<u8>> = conn
+        .query_row("SELECT bytes FROM message_attachments WHERE attachment_id = ?1 AND bytes IS NOT NULL LIMIT 1", params![attachment_id], |r| r.get(0))
         .optional()
         .map_err(db_err)?;
-    Ok(bytes.flatten())
+    Ok(bytes)
 }
 
 pub(crate) fn set_data(conn: &Connection, attachment_id: &str, bytes: &[u8]) -> Result<(), StoreError> {

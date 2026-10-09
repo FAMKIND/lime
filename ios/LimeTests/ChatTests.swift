@@ -48,9 +48,9 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(DeliveryState(localState: "sent"), .sent)
         XCTAssertEqual(DeliveryState(localState: "failed"), .failed)
         XCTAssertEqual(DeliveryState(localState: "sent_local"), .sent, "an older local-only message counts as sent")
-        let mine = Message(MessageItem(id: "1", conversationId: "dm:x", senderId: nil, text: "hi", sentAt: 0, localState: "sending", attachments: [], edited: false, deleted: false, reactions: []))
+        let mine = Message(MessageItem(id: "1", conversationId: "dm:x", senderId: nil, text: "hi", sentAt: 0, localState: "sending", attachments: [], edited: false, deleted: false, reactions: [], forwarded: false, linkPreview: nil))
         XCTAssertEqual(mine.state, .sending)
-        let theirs = Message(MessageItem(id: "2", conversationId: "dm:x", senderId: "x", text: "yo", sentAt: 0, localState: "received", attachments: [], edited: false, deleted: false, reactions: []))
+        let theirs = Message(MessageItem(id: "2", conversationId: "dm:x", senderId: "x", text: "yo", sentAt: 0, localState: "received", attachments: [], edited: false, deleted: false, reactions: [], forwarded: false, linkPreview: nil))
         XCTAssertEqual(theirs.state, .received)
     }
 

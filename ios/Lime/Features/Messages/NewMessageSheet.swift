@@ -118,7 +118,15 @@ struct NewMessageSheet: View {
     @FocusState private var focused: Bool
     @Environment(AccountSession.self) private var session
 
-    private var known: [KnownTeacher] { KnownTeachers.from(store.conversations) }
+    /// The teachers I message, and me: I appear under my own name like anyone else (a chat with myself, kept on this phone).
+    private var known: [KnownTeacher] {
+        var list = KnownTeachers.from(store.conversations)
+        let me = store.meProvider()
+        if !list.contains(where: { $0.id == store.selfChatID }) { list.append(KnownTeacher(id: store.selfChatID, person: me)) }
+        return list
+    }
+    /// The teachers I message besides myself (the empty hint and the A–Z rail are about them).
+    private var others: [KnownTeacher] { known.filter { $0.id != store.selfChatID } }
     private var sections: [KnownTeachers.Section] { KnownTeachers.sections(known, filter: query) }
     private var typed: String { query.trimmingCharacters(in: .whitespaces) }
 
@@ -188,7 +196,7 @@ struct NewMessageSheet: View {
                                         .accessibilityIdentifier("known-\(teacher.id)")
                                 }
                             }
-                            if typed.isEmpty && !known.isEmpty {
+                            if typed.isEmpty && !others.isEmpty {
                                 Text("More")
                                     .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
                                     .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 4)
@@ -197,7 +205,7 @@ struct NewMessageSheet: View {
                                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                                     .padding(.horizontal, 16).padding(.bottom, 12)
                             }
-                            if typed.isEmpty && known.isEmpty {
+                            if typed.isEmpty && others.isEmpty {
                                 Text("Find teachers by their username or email.")
                                     .font(Theme.body).foregroundStyle(Theme.textSecondary)
                                     .multilineTextAlignment(.center)
@@ -212,11 +220,11 @@ struct NewMessageSheet: View {
                                     .accessibilityIdentifier("new-message-no-local")
                             }
                         }
-                        .padding(.trailing, typed.isEmpty && !known.isEmpty ? 24 : 0)
+                        .padding(.trailing, typed.isEmpty && !others.isEmpty ? 24 : 0)
                     }
                     .scrollDismissesKeyboard(.interactively)
                     .accessibilityIdentifier("new-message-list")
-                    if typed.isEmpty, !known.isEmpty {
+                    if typed.isEmpty, !others.isEmpty {
                         IndexRail(available: Set(sections.map(\.letter))) { letter in
                             proxy.scrollTo("section-\(letter)", anchor: .top)
                         }
@@ -307,6 +315,10 @@ struct NewMessageSheet: View {
     }
 
     private func open(_ teacher: KnownTeacher) {
+        if teacher.id == store.selfChatID {
+            Task { await store.openSelfChat(); dismiss() }
+            return
+        }
         store.path.append(teacher.id)
         dismiss()
     }

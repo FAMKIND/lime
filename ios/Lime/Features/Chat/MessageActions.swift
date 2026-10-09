@@ -10,6 +10,8 @@ final class MessageActionsState {
     var editText = ""
     var picking: Message?
     var reactors: Message?
+    /// The messages being forwarded: the picker is open.
+    var forwarding: [Message]?
     /// The messages a Delete is about (one from the menu, or the selected ones).
     var deleting: [Message] = []
 }
@@ -50,6 +52,14 @@ struct MessageActionsHost: ViewModifier {
                         state.reactors = nil
                         Task { await store.toggleReaction(emoji, on: message, in: conversationID) }
                     }) { state.reactors = nil }
+                }
+            }
+            .sheet(isPresented: Binding(get: { state.forwarding != nil }, set: { if !$0 { state.forwarding = nil } })) {
+                if let messages = state.forwarding {
+                    ForwardSheet(messageIDs: messages.map(\.id)) { sent in
+                        state.forwarding = nil
+                        if sent { selection = nil }
+                    }
                 }
             }
             .confirmationDialog(deleteTitle, isPresented: Binding(get: { !state.deleting.isEmpty }, set: { if !$0 { state.deleting = [] } }), titleVisibility: .visible) {
@@ -133,7 +143,7 @@ struct MessageActionsHost: ViewModifier {
                         row("arrowshape.turn.up.left", "Reply", id: "reply-in-thread") { state.menu = nil; onReply(message) }
                     }
                     if !message.deleted {
-                        row("arrowshape.turn.up.right", "Forward", id: "action-forward") { state.menu = nil; store.comingNext("Forward") }
+                        row("arrowshape.turn.up.right", "Forward", id: "action-forward") { state.menu = nil; state.forwarding = [message] }
                     }
                     // On a photo, album, video, voice message or file, Edit changes the caption only (so it needs one).
                     if message.canEdit(), !message.deleted, message.attachments.isEmpty || !message.text.isEmpty {
@@ -343,5 +353,120 @@ struct SelectionBar: View {
         .padding(.horizontal, 12).padding(.bottom, 4)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("select-bar")
+    }
+}
+
+// MARK: Forward
+
+/// Forward: pick up to five chats or groups (checkmarks, with the chosen ones as chips) and send. Each forward is a new message
+/// labelled "Forwarded"; it never names who first wrote it.
+struct ForwardSheet: View {
+    let messageIDs: [Message.ID]
+    var finish: (_ sent: Bool) -> Void
+    @Environment(ConversationStore.self) private var store
+    @State private var query = ""
+    @State private var chosen: [Conversation.ID] = []
+    @State private var sending = false
+    @FocusState private var focused: Bool
+
+    private var chats: [Conversation] {
+        let all = store.forwardTargets
+        let wanted = query.trimmingCharacters(in: .whitespaces)
+        guard !wanted.isEmpty else { return all }
+        return all.filter { SearchText.matches(([$0.title] + $0.members.map(\.name)).joined(separator: " "), query: wanted) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("Cancel") { finish(false) }.foregroundStyle(Theme.text).accessibilityIdentifier("forward-cancel")
+                Spacer()
+                Text("Forward").font(Theme.title).foregroundStyle(Theme.text)
+                Spacer()
+                Button("Send") { send() }
+                    .font(Theme.title).foregroundStyle(chosen.isEmpty ? Theme.textSecondary : Theme.text)
+                    .disabled(chosen.isEmpty || sending)
+                    .accessibilityIdentifier("forward-send")
+            }
+            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 10)
+            if !chosen.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(chosen, id: \.self) { id in
+                            if let chat = store.conversation(id) {
+                                Button { toggle(id) } label: {
+                                    HStack(spacing: 4) {
+                                        Text(chat.title).font(Theme.secondary).lineLimit(1)
+                                        Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
+                                    }
+                                    .foregroundStyle(Theme.text).padding(.horizontal, 10).frame(minHeight: 30)
+                                    .background(Theme.pressed, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Remove \(chat.title)").accessibilityIdentifier("forward-chip-\(id)")
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .padding(.bottom, 8)
+            }
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(chats) { chat in
+                        let on = chosen.contains(chat.id)
+                        Button { toggle(chat.id) } label: {
+                            HStack(spacing: 14) {
+                                ConversationAvatar(conversation: chat, size: 44)
+                                Text(chat.title).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+                                Spacer(minLength: 8)
+                                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 24)).foregroundStyle(on ? Theme.text : Theme.textSecondary.opacity(0.7))
+                            }
+                            .padding(.horizontal, 20).frame(minHeight: 60)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(chat.title)
+                        .accessibilityAddTraits(on ? [.isSelected] : [])
+                        .accessibilityIdentifier("forward-row-\(chat.id)")
+                    }
+                    if chosen.count >= ConversationStore.maxForwardChats {
+                        Text("You can forward to up to \(ConversationStore.maxForwardChats) chats at a time.")
+                            .font(Theme.secondary).foregroundStyle(Theme.textSecondary).padding(20)
+                            .accessibilityIdentifier("forward-limit")
+                    }
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(Theme.textSecondary)
+                TextField("Search chats", text: $query).font(Theme.body).focused($focused).selectionTint()
+                    .accessibilityIdentifier("forward-search")
+            }
+            .padding(.horizontal, 16).frame(minHeight: 48)
+            .limeGlass(in: Capsule())
+            .padding(.horizontal, 16).padding(.vertical, 8)
+        }
+        .background(Theme.canvas.ignoresSafeArea())
+        .presentationDetents([.large])
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("forward-sheet")
+    }
+
+    private func toggle(_ id: Conversation.ID) {
+        if let at = chosen.firstIndex(of: id) { chosen.remove(at: at) }
+        else if chosen.count < ConversationStore.maxForwardChats { chosen.append(id) }
+    }
+
+    private func send() {
+        sending = true
+        let targets = chosen
+        Task {
+            let done = await store.forward(messageIDs, to: targets)
+            sending = false
+            if done { store.showBanner(targets.count == 1 ? "Forwarded" : "Forwarded to \(targets.count) chats") }
+            finish(done)
+        }
     }
 }

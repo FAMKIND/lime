@@ -189,7 +189,13 @@ impl LimeStore {
         let queued = self.with_conn(queued_messages)?;
         let mut sent = 0;
         for message in queued {
-            if !message.attachments.is_empty() {
+            // A message to myself never leaves this phone: it is "sent" the moment it is written.
+            if message.peer == me {
+                self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
+                sent += 1;
+                continue;
+            }
+            if !message.attachments.is_empty() || message.preview.as_ref().is_some_and(|(_, image)| image.is_some()) {
                 // The files go up first (resuming if an earlier try was interrupted); then the message that carries their keys.
                 let recipients = self.attachment_recipients(&message.conversation_id);
                 if let Err(error) = self.upload_message_attachments(&transport, &auth_token, &message, recipients) {
@@ -496,7 +502,7 @@ impl LimeStore {
         text: String,
         reply_to: Option<String>,
     ) -> Result<MessageItem, StoreError> {
-        self.queue_with(conversation_id, text, reply_to, Vec::new())
+        self.queue_with(conversation_id, text, reply_to, Vec::new(), QueueExtras::default())
     }
 
     /// Queues a message with optional attachments (each its descriptor and the plaintext, kept here for the sender's own view).
@@ -506,11 +512,12 @@ impl LimeStore {
         text: String,
         reply_to: Option<String>,
         files: Vec<(crate::store::attachments::Descriptor, Vec<u8>)>,
+        extras: QueueExtras,
     ) -> Result<MessageItem, StoreError> {
         // What is stored and sent is the one written form: unknown syntax downgraded to text.
         let normalised = crate::format::normalise(&text);
         let body = normalised.as_str();
-        if body.is_empty() && files.is_empty() {
+        if body.is_empty() && files.is_empty() && extras.shared.is_empty() {
             return Err(StoreError::EmptyMessage);
         }
         if body.len() > MAX_TEXT_BYTES {
@@ -559,6 +566,18 @@ impl LimeStore {
             for (position, (descriptor, bytes)) in files.iter().enumerate() {
                 crate::store::attachments::insert(conn, &op_id, position, descriptor, Some(bytes))?;
             }
+            for (position, descriptor) in extras.shared.iter().enumerate() {
+                crate::store::attachments::insert(conn, &op_id, position, descriptor, None)?;
+            }
+            if extras.forwarded {
+                crate::store::link_preview::set_forwarded(conn, &op_id)?;
+            }
+            if let Some((meta, image)) = &extras.preview {
+                crate::store::link_preview::store(conn, &op_id, meta)?;
+                if let Some((descriptor, bytes)) = image {
+                    crate::store::attachments::insert_preview(conn, &op_id, descriptor, bytes.as_deref())?;
+                }
+            }
             Ok(MessageItem {
                 id: op_id.clone(),
                 conversation_id: conversation_id.clone(),
@@ -570,6 +589,8 @@ impl LimeStore {
                 edited: false,
                 deleted: false,
                 reactions: Vec::new(),
+                forwarded: extras.forwarded,
+                link_preview: crate::store::link_preview::info(conn, &op_id),
             })
         })
     }
@@ -1314,6 +1335,7 @@ impl LimeStore {
                 for (position, descriptor) in attachments.iter().enumerate() {
                     crate::store::attachments::insert(conn, &inner.op.op_id, position, descriptor, None)?;
                 }
+                crate::store::link_preview::Extras::parse(&inner.op.payload).apply(conn, &inner.op.op_id)?;
             }
             Ok(Some(Stored::Message(inserted)))
         })?;
@@ -1488,6 +1510,23 @@ struct Queued {
     parents: Vec<String>,
     thread_root: Option<String>,
     attachments: Vec<crate::store::attachments::Descriptor>,
+    /// A forward: the files are shared by reference (the same encrypted file), not uploaded again.
+    forwarded: bool,
+    /// The link card's words and picture.
+    preview: Option<(crate::store::link_preview::Meta, Option<crate::store::attachments::Descriptor>)>,
+}
+
+/// A link card to queue: its words and its picture (with the bytes, or `None` when they are copied from an existing copy).
+pub(crate) type PreviewToQueue = (crate::store::link_preview::Meta, Option<(crate::store::attachments::Descriptor, Option<Vec<u8>>)>);
+
+/// What a queued message carries besides its words and files.
+#[derive(Default)]
+pub(crate) struct QueueExtras {
+    pub forwarded: bool,
+    /// Files of a forwarded message: the same attachments, shared by reference.
+    pub shared: Vec<crate::store::attachments::Descriptor>,
+    /// The link card and its picture (with the bytes, or `None` when they are copied from an existing copy).
+    pub preview: Option<PreviewToQueue>,
 }
 
 impl Queued {
@@ -1499,6 +1538,12 @@ impl Queued {
         }
         if !self.attachments.is_empty() {
             payload["attachments"] = crate::store::attachments::payload_value(&self.attachments);
+        }
+        if self.forwarded {
+            payload["forwarded"] = json!(true);
+        }
+        if let Some((meta, image)) = &self.preview {
+            payload["link_preview"] = meta.to_json(image.as_ref());
         }
         payload
     }
@@ -1525,6 +1570,8 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
                 parents: parents.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default(),
                 thread_root: r.get(5)?,
                 attachments: Vec::new(),
+                forwarded: false,
+                preview: None,
             })
         })
         .map_err(db_err)?
@@ -1533,6 +1580,9 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
     let mut rows = rows;
     for row in &mut rows {
         row.attachments = crate::store::attachments::for_message(conn, &row.id)?.into_iter().map(|(d, _)| d).collect();
+        row.forwarded = crate::store::link_preview::is_forwarded(conn, &row.id);
+        row.preview = crate::store::link_preview::meta_of(conn, &row.id)
+            .map(|meta| (meta, crate::store::attachments::preview_of(conn, &row.id).ok().flatten().map(|(d, _)| d)));
     }
     Ok(rows.into_iter().filter(|q| !q.peer.is_empty() || q.conversation_id.starts_with("grp:")).collect())
 }

@@ -119,6 +119,33 @@ Deno.test("delete after the last recipient has fetched it, and the sweep removes
   });
 });
 
+Deno.test("a forward shares the same file with more people: it stays until they have fetched it", opts, async () => {
+  await withUsers(4, async ([me, a, b, c]) => {
+    const id = newId();
+    const started = await call("attachment", me.token, { action: "put", attachment_id: id, size: 400, chunks: 1, recipients: 1 });
+    await put(started.body.urls["0"], randomBytes(400));
+    await call("attachment", me.token, { action: "commit", attachment_id: id });
+    const row = async () => (await admin.from("attachments").select("recipients, expires_at").eq("id", id).single()).data!;
+    await call("attachment", a.token, { action: "get", attachment_id: id });
+    assert(new Date((await row()).expires_at).getTime() < Date.now() + 3_700_000, "everyone (one) has it: due within the hour");
+    // A holder forwards it to two more people: it lives on, and now waits for them too.
+    const shared = await call("attachment", a.token, { action: "share", attachment_id: id, recipients: 2 });
+    assertEquals(shared.status, 200);
+    const after = await row();
+    assertEquals(after.recipients, 3);
+    assert(new Date(after.expires_at).getTime() > Date.now() + 6 * 86_400_000, "kept for about a week more");
+    assert(new Date(after.expires_at).getTime() <= Date.now() + 30 * 86_400_000, "never past 30 days");
+    await call("attachment", b.token, { action: "get", attachment_id: id });
+    assert(new Date((await row()).expires_at).getTime() > Date.now() + 6 * 86_400_000, "two of three: kept");
+    await call("attachment", c.token, { action: "get", attachment_id: id });
+    assert(new Date((await row()).expires_at).getTime() < Date.now() + 3_700_000, "all of them have it: due for deletion");
+    // Not for an unknown file or bad numbers; and only the owner can delete it.
+    assertEquals((await call("attachment", a.token, { action: "share", attachment_id: newId(), recipients: 1 })).status, 404);
+    assertEquals((await call("attachment", a.token, { action: "share", attachment_id: id, recipients: 0 })).status, 400);
+    assertEquals((await call("attachment", a.token, { action: "delete", attachment_id: id })).status, 409);
+  });
+});
+
 Deno.test("an upload never completed is swept after a day, and expired blobs too", opts, async () => {
   await withUsers(1, async ([me]) => {
     const id = newId();

@@ -14,6 +14,8 @@ struct LinkRequest: Identifiable {
 @Observable
 final class RichComposerModel {
     var hasText = false
+    /// What is written, as plain text (the link card looks for an address in it).
+    private(set) var plainText = ""
     var hasSelection = false
     var format = FormattingState()
     /// Opened with Aa: stays until ✕ or send.
@@ -38,6 +40,7 @@ final class RichComposerModel {
         textView.typingAttributes = ComposerTextView.plainTypingAttributes
         pinned = false
         hasText = false
+        plainText = ""
         hasSelection = false
         textView.setToolbar(visible: false, model: self) // do not wait for the next view update
         refresh()
@@ -109,6 +112,7 @@ final class RichComposerModel {
 
     func didEdit() {
         hasText = !(textView?.text.isEmpty ?? true)
+        plainText = textView?.text ?? ""
         refresh()
         textView?.invalidateIntrinsicContentSize()
     }

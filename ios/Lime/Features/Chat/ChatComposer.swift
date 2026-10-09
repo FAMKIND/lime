@@ -9,6 +9,13 @@ struct ChatComposer: View {
     let onSend: (String) -> Void
     /// Sends the waiting pictures and files with the written text as their caption. `nil`: this composer cannot send attachments.
     var onSendAttachments: (([OutgoingAttachment], String) -> Void)? = nil
+    /// Sends the written text with its link card. `nil`: this composer sends no cards.
+    var onSendPreview: ((String, OutgoingPreview) -> Void)? = nil
+    /// Settings → Privacy → "Generate link previews".
+    @AppStorage(LinkPreviewSetting.key) private var previewsOn = true
+    @State private var previewDraft: PreviewDraft?
+    @State private var dismissedURL: URL?
+    @State private var previewTask: Task<Void, Never>?
     @State private var pickingEmoji = false
     @State private var drafts: [DraftAttachment] = []
     @State private var chooser: Chooser?
@@ -36,6 +43,7 @@ struct ChatComposer: View {
                 .padding(.horizontal, 6).padding(.top, 8).accessibilityIdentifier("video-preparing")
             }
             if !drafts.isEmpty { DraftStrip(drafts: drafts) { draft in drafts.removeAll { $0.id == draft.id } } }
+            if let previewDraft { previewCard(previewDraft) }
             if recorder.isRecording {
                 RecordingBar(recorder: recorder, dragX: dragX)
             } else {
@@ -122,6 +130,9 @@ struct ChatComposer: View {
             Button("OK", role: .cancel) {}
         } message: { Text(videoProblem ?? "") }
         .alert("That file is too large", isPresented: $tooLarge) { Button("OK", role: .cancel) {} } message: { Text("Files can be up to 50 MB.") }
+        .onChange(of: model.plainText) { refreshPreview() }
+        .onChange(of: previewsOn) { refreshPreview() }
+        .onChange(of: drafts.count) { refreshPreview() }
         #if DEBUG
         .task { if store.demoDrafts { drafts = ChatComposer.demoDrafts }; recorder.simulated = store.isDemo }
         #endif
@@ -251,8 +262,61 @@ struct ChatComposer: View {
     }
 
     /// Sends what is written, as Markdown (LimeCore writes it the one way), and empties the composer.
+    // MARK: Link card
+
+    private struct PreviewDraft: Equatable {
+        let url: URL
+        let outgoing: OutgoingPreview
+    }
+
+    private func previewCard(_ draft: PreviewDraft) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            LinkCardView(title: draft.outgoing.title, site: draft.outgoing.site, image: UIImage(data: draft.outgoing.image), width: 220)
+            Button { dismissedURL = draft.url; previewDraft = nil } label: {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(Theme.textSecondary)
+                    .frame(width: 36, height: 36)
+            }
+            .accessibilityLabel("Remove link preview").accessibilityIdentifier("preview-remove")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 6).padding(.top, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("preview-draft")
+    }
+
+    /// Looks for an address in what is written and builds its card on this phone (not for a request, not when the setting is off).
+    private func refreshPreview() {
+        previewTask?.cancel()
+        guard previewsOn, onSendPreview != nil, drafts.isEmpty, let url = LinkPreviewMaker.firstURL(in: model.plainText) else {
+            previewDraft = nil
+            if LinkPreviewMaker.firstURL(in: model.plainText) == nil { dismissedURL = nil }
+            return
+        }
+        if url == dismissedURL || previewDraft?.url == url { return }
+        previewDraft = nil
+        previewTask = Task {
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            #if DEBUG
+            let demo = store.isDemo
+            #else
+            let demo = false
+            #endif
+            if let outgoing = await LinkPreviewMaker.make(for: url, demo: demo), !Task.isCancelled {
+                previewDraft = PreviewDraft(url: url, outgoing: outgoing)
+            }
+        }
+    }
+
     private func send() {
         let markdown = model.markdown()
+        if drafts.isEmpty, let previewDraft, let onSendPreview, !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            onSendPreview(markdown, previewDraft.outgoing)
+            self.previewDraft = nil
+            dismissedURL = nil
+            model.clear()
+            return
+        }
         if !drafts.isEmpty, let onSendAttachments {
             onSendAttachments(drafts.map(\.outgoing), markdown)
             drafts = []

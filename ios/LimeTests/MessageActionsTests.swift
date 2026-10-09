@@ -87,3 +87,14 @@ final class DeletedRunTests: XCTestCase {
         XCTAssertEqual(shape(ChatRow.rows(for: conversation([true]))), ["deleted"])
     }
 }
+
+final class LinkPreviewTests: XCTestCase {
+    func testTheFirstWebAddressInWhatIsWrittenIsFound() {
+        XCTAssertEqual(LinkPreviewMaker.firstURL(in: "see https://example.org/a?b=1 and https://other.org")?.absoluteString, "https://example.org/a?b=1")
+        XCTAssertEqual(LinkPreviewMaker.firstURL(in: "http://example.org")?.scheme, "http")
+        XCTAssertNil(LinkPreviewMaker.firstURL(in: "no address here"))
+        XCTAssertNil(LinkPreviewMaker.firstURL(in: "mail me at a@b.org"), "an email address is not a link to preview")
+        XCTAssertNil(LinkPreviewMaker.firstURL(in: ""))
+        XCTAssertEqual(LinkPreviewMaker.host(of: URL(string: "https://www.example.org/x")!), "example.org")
+    }
+}

@@ -21,6 +21,7 @@ pub(crate) mod photos;
 pub(crate) mod pending;
 pub(crate) mod search;
 pub(crate) mod threads;
+pub(crate) mod link_preview;
 mod sample;
 #[cfg(test)]
 mod search_tests;
@@ -147,6 +148,10 @@ pub struct MessageItem {
     pub deleted: bool,
     /// The emoji reactions on it.
     pub reactions: Vec<message_ops::Reaction>,
+    /// Forwarded from another chat (the original sender is never named).
+    pub forwarded: bool,
+    /// The link card it carries, if any.
+    pub link_preview: Option<link_preview::LinkPreview>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -571,6 +576,8 @@ impl LimeStore {
             edited: false,
             deleted: false,
             reactions: Vec::new(),
+            forwarded: false,
+            link_preview: None,
         };
         conn.execute(
             "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, plain)
@@ -669,6 +676,8 @@ fn item_in(conn: &Connection, row: order::Row, me: &str) -> MessageItem {
     }
     item.attachments = attachment_infos(conn, &item.id);
     item.reactions = message_ops::reactions_for(conn, &item.id, me);
+    item.forwarded = link_preview::is_forwarded(conn, &item.id);
+    item.link_preview = link_preview::info(conn, &item.id);
     item
 }
 
@@ -684,6 +693,8 @@ pub(crate) fn item_from_row(row: order::Row) -> MessageItem {
         edited: row.edited,
         deleted: row.deleted,
         reactions: Vec::new(),
+        forwarded: false,
+        link_preview: None,
     }
 }
 

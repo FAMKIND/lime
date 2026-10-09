@@ -47,6 +47,10 @@ struct Message: Identifiable, Hashable, Sendable {
     var deleted = false
     /// The emoji reactions on it.
     var reactions: [ReactionChip] = []
+    /// Forwarded from another chat (the original sender is never shown).
+    var forwarded = false
+    /// The link card it carries (built on the sender's phone).
+    var linkPreview: LinkPreviewItem?
     /// When other messages reply to this one: how many, the newest, who, and what is unread.
     var thread: ThreadInfo?
 
@@ -60,6 +64,14 @@ struct Message: Identifiable, Hashable, Sendable {
         isOwn && !isSystem && now.timeIntervalSince(date) <= Self.editWindow && (state == .sent || state == .sending || state == .failed)
     }
     var isSystem: Bool { state == .system }
+}
+
+/// A link card under a message: the page's title and site, and a picture (an encrypted attachment).
+struct LinkPreviewItem: Hashable, Sendable {
+    let url: String
+    let title: String
+    let site: String
+    var image: AttachmentItem?
 }
 
 /// One emoji under a message: how many people used it, whether I did, and who.
@@ -154,6 +166,8 @@ extension Message {
         edited = item.edited
         deleted = item.deleted
         reactions = item.reactions.map { ReactionChip(emoji: $0.emoji, count: Int($0.count), mine: $0.mine, people: $0.people) }
+        forwarded = item.forwarded
+        linkPreview = item.linkPreview.map { LinkPreviewItem(url: $0.url, title: $0.title, site: $0.site, image: $0.image.map(AttachmentItem.init)) }
     }
 }
 

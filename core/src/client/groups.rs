@@ -788,6 +788,7 @@ impl LimeStore {
                 for (position, descriptor) in attachments.iter().enumerate() {
                     crate::store::attachments::insert(conn, &inner.op.op_id, position, descriptor, None)?;
                 }
+                crate::store::link_preview::Extras::parse(&inner.op.payload).apply(conn, &inner.op.op_id)?;
             }
             Ok(if inserted { Outcome::Stored } else { Outcome::Duplicate })
         })?;

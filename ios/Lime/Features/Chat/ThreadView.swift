@@ -68,12 +68,14 @@ struct ThreadView: View {
             if let selection {
                 SelectionBar(count: selection.count,
                              onDelete: { actions.deleting = messages.filter { selection.contains($0.id) } },
-                             onForward: { store.comingNext("Forward") })
+                             onForward: { actions.forwarding = messages.filter { selection.contains($0.id) } })
             } else {
             ChatComposer(model: composerModel, onSend: { markdown in
                 Task { await store.sendReply(markdown, root: target.rootID, in: target.conversationID) }
             }, onSendAttachments: { items, caption in
                 store.sendAttachments(items, caption: caption, in: target.conversationID, replyTo: target.rootID)
+            }, onSendPreview: { markdown, preview in
+                Task { await store.sendNow(markdown, preview: preview, in: target.conversationID, replyTo: target.rootID) }
             })
             }
         }

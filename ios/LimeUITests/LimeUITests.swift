@@ -650,7 +650,8 @@ final class LimeUITests: XCTestCase {
         let ys = order.map { $0.frame.minY }
         XCTAssertEqual(ys, ys.sorted(), "Reply, Forward, Copy, Select, Delete from the top")
         app.buttons["action-forward"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Forward: coming next'")).firstMatch.waitForExistence(timeout: 5), "Forward lands in LIME-106")
+        XCTAssertTrue(app.descendants(matching: .any)["forward-sheet"].waitForExistence(timeout: 5), "Forward opens the picker")
+        app.buttons["forward-cancel"].tap()
         // My own message offers Edit between Forward and Copy.
         longPress(app, "Yes, see you there")
         XCTAssertTrue(app.buttons["action-edit"].exists)
@@ -743,6 +744,102 @@ final class LimeUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["video-player"].exists, "a long-press does not open the player")
     }
 
+    // MARK: LIME-106: forward, my own chat, link cards
+
+    func testForwardingAMessageToTwoChatsLabelsItForwardedAndSelectModeForwardsToo() {
+        let app = demoApp()
+        openSam(app)
+        longPress(app, "staff meeting")
+        app.buttons["action-forward"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["forward-sheet"].waitForExistence(timeout: 5), "Forward opens the picker")
+        XCTAssertFalse(app.buttons["forward-send"].isEnabled, "nothing chosen yet")
+        app.buttons["forward-row-dm:lee"].tap()
+        app.buttons["forward-row-dm:sam"].tap()
+        XCTAssertTrue(app.buttons["forward-chip-dm:lee"].exists, "the chosen chats show as chips")
+        XCTAssertTrue(app.buttons["forward-send"].isEnabled)
+        app.buttons["forward-send"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Forwarded to 2 chats'")).firstMatch.waitForExistence(timeout: 5))
+        // The other chat has the message, labelled "Forwarded", with no name of who wrote it.
+        goBack(app)
+        app.buttons["conversation-row-dm:lee"].tap()
+        let label = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'forwarded-'")).firstMatch
+        XCTAssertTrue(label.waitForExistence(timeout: 5), "labelled Forwarded")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'staff meeting'")).firstMatch.exists)
+        // Select mode: the bar's Forward opens the same picker.
+        goBack(app)
+        app.buttons["conversation-row-dm:sam"].tap()
+        longPress(app, "staff meeting")
+        app.buttons["action-select"].tap()
+        XCTAssertTrue(app.buttons["select-forward"].waitForExistence(timeout: 5))
+        app.buttons["select-forward"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["forward-sheet"].waitForExistence(timeout: 5))
+        app.buttons["forward-cancel"].tap()
+    }
+
+    func testIAppearInNewMessageUnderMyOwnNameAndCanWriteToMyselfAndFindIt() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["new-message-button"].waitForExistence(timeout: 10))
+        app.buttons["new-message-button"].tap()
+        let me = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'known-' AND label CONTAINS 'Test Teacher'")).firstMatch
+        XCTAssertTrue(me.waitForExistence(timeout: 5), "I am in the list under my own name")
+        XCTAssertTrue(me.label.contains("Test Teacher"), me.label)
+        XCTAssertFalse(me.label.contains("Note to"), "no special label")
+        me.tap()
+        let field = app.textViews.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "my own chat opens")
+        field.tap()
+        field.typeText("remember the markers")
+        app.buttons["send-button"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'remember the markers'")).firstMatch.waitForExistence(timeout: 5))
+        goBack(app)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-' AND label CONTAINS 'Test Teacher'")).firstMatch.waitForExistence(timeout: 5), "it sits in Messages like any chat")
+        app.buttons["messages-search-button"].tap()
+        let search = app.textFields["search-field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.typeText("markers")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'markers'")).firstMatch.waitForExistence(timeout: 8), "searchable")
+    }
+
+    func testALinkShowsACardBeforeSendingAndInTheBubbleAndCanBeRemovedOrSwitchedOff() {
+        let app = demoApp()
+        openSam(app)
+        let field = app.textViews.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("see https://example.org/lessons")
+        let draft = app.descendants(matching: .any)["preview-draft"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 8), "the card shows before sending")
+        XCTAssertTrue(app.staticTexts["link-card-title"].exists)
+        // Remove it with the X: the message goes as plain text.
+        app.buttons["preview-remove"].tap()
+        XCTAssertFalse(app.descendants(matching: .any)["preview-draft"].exists)
+        app.buttons["send-button"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'example.org/lessons'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'link-card-' AND identifier != 'link-card-title' AND identifier != 'link-card-site'")).firstMatch.exists)
+        // A new link, kept: the card is in the bubble.
+        field.tap()
+        field.typeText("and https://example.org/more")
+        XCTAssertTrue(app.descendants(matching: .any)["preview-draft"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["send-button"].waitForExistence(timeout: 5))
+        app.buttons["send-button"].tap()
+        let card = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'link-card-' AND identifier != 'link-card-title' AND identifier != 'link-card-site'")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 8), "the card travels with the message")
+        XCTAssertTrue(card.label.contains("Fractions made visible"), card.label)
+    }
+
+    func testTheLinkPreviewSettingIsInPrivacyAndTurnsCardsOff() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "settings/privacy"]
+        app.launch()
+        let toggle = app.switches["privacy-link-previews"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "Settings → Privacy → Generate link previews")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'visits the site from your phone'")).firstMatch.exists)
+        if toggle.value as? String == "1" { toggle.tap() }   // off
+        XCTAssertEqual(toggle.value as? String, "0")
+        toggle.tap()   // back on, so other tests are unaffected
+    }
+
     func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {
         let app = demoApp()
         openSam(app)
@@ -787,7 +884,8 @@ final class LimeUITests: XCTestCase {
         app.descendants(matching: .any)["select-row-s2"].tap()
         XCTAssertEqual(app.staticTexts["select-count"].label, "1 Selected", "tapping again deselects")
         app.buttons["select-forward"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Forward: coming next'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["forward-sheet"].waitForExistence(timeout: 5), "Forward opens the picker")
+        app.buttons["forward-cancel"].tap()
         // Cancel leaves Select mode and the composer comes back.
         app.buttons["select-cancel"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["select-bar"].waitForNonExistence(timeout: 5), "Cancel leaves Select mode")

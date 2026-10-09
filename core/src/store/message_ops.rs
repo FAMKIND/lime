@@ -177,7 +177,7 @@ fn set_reaction(conn: &Connection, target: &str, user: &str, op: &Op, at: &str) 
 /// A message deleted for everyone: its words and files are gone, its place stays ("This message was deleted"), and
 /// the search index forgets it (the index follows `plain`).
 pub(crate) fn tombstone(conn: &Connection, id: &str) -> Result<(), StoreError> {
-    conn.execute("UPDATE messages SET deleted = 1, body = '', plain = '', edited = 0 WHERE id = ?1", params![id]).map_err(db_err)?;
+    conn.execute("UPDATE messages SET deleted = 1, body = '', plain = '', edited = 0, link_preview = NULL, forwarded = 0 WHERE id = ?1", params![id]).map_err(db_err)?;
     conn.execute("DELETE FROM message_attachments WHERE message_id = ?1", params![id]).map_err(db_err)?;
     conn.execute("DELETE FROM reactions WHERE message_id = ?1", params![id]).map_err(db_err)?;
     Ok(())
@@ -185,7 +185,7 @@ pub(crate) fn tombstone(conn: &Connection, id: &str) -> Result<(), StoreError> {
 
 /// A message deleted for me: gone from every list on this phone, its words and files with it.
 pub(crate) fn hide(conn: &Connection, id: &str) -> Result<(), StoreError> {
-    conn.execute("UPDATE messages SET hidden = 1, body = '', plain = '' WHERE id = ?1", params![id]).map_err(db_err)?;
+    conn.execute("UPDATE messages SET hidden = 1, body = '', plain = '', link_preview = NULL WHERE id = ?1", params![id]).map_err(db_err)?;
     conn.execute("DELETE FROM message_attachments WHERE message_id = ?1", params![id]).map_err(db_err)?;
     conn.execute("DELETE FROM reactions WHERE message_id = ?1", params![id]).map_err(db_err)?;
     Ok(())

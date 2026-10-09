@@ -364,6 +364,13 @@ impl Transport for FakeServer {
                         state.attachments.get_mut(&id).unwrap().3 = true;
                         respond(200, json!({ "size": 1 }))
                     }
+                    "share" => match state.attachments.get_mut(&id) {
+                        Some(entry) if entry.3 => {
+                            entry.2 += body.get("recipients").and_then(Value::as_u64).unwrap_or(1) as usize;
+                            respond(200, json!({ "ok": true }))
+                        }
+                        _ => respond(404, json!({ "error": "not_found" })),
+                    },
                     "get" => match state.attachments.get(&id).cloned() {
                         Some((owner, chunks, recipients, true, mut fetchers)) => {
                             if owner != user && !fetchers.contains(&user) {

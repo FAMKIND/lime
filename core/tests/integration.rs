@@ -1120,3 +1120,58 @@ fn reactions_edit_and_delete_for_everyone_through_the_real_server_with_two_accou
     let tables = admin.every_table();
     assert!(tables.iter().all(|(table, _)| !table.contains("reaction")), "no table of reactions on the server");
 }
+
+#[test]
+fn forward_link_card_and_my_own_chat_through_the_real_server() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob, carol] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    admin.give_profile(carol, "Carol Cruz", &format!("ca{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b, c) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2), store(&dir, "c.db", 3));
+    a.register_device(transport.clone(), alice.token.clone()).unwrap();
+    b.register_device(transport.clone(), bob.token.clone()).unwrap();
+    c.register_device(transport.clone(), carol.token.clone()).unwrap();
+    let to_bob = a.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    let to_carol = a.start_dm(carol.id.clone(), "Carol Cruz".into()).unwrap();
+
+    // A photo to Bob, then forwarded to Carol: the same file on the server, shared (no second upload).
+    let file = lime_core::OutgoingAttachment { bytes: (0..5000u32).map(|i| (i % 253) as u8).collect(), name: "p.jpg".into(), mime: "image/jpeg".into(), width: Some(10), height: Some(10), duration_ms: None, thumb: vec![] };
+    let sent = a.send_attachments(to_bob.clone(), "look".into(), vec![file.clone()], None).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let attachment_rows = || admin.every_table().into_iter().find(|(t, _)| t == "attachments").map(|(_, rows)| serde_json::from_str::<serde_json::Value>(&rows).map(|v| v.as_array().map_or(0, Vec::len)).unwrap_or(0));
+    let before = attachment_rows();
+    a.forward_messages(vec![sent.id.clone()], vec![to_carol.clone()]).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(attachment_rows(), before, "no second attachment row");
+    c.sync(transport.clone(), carol.token.clone()).unwrap();
+    let got = c.list_messages(format!("dm:{}", alice.id)).unwrap().pop().unwrap();
+    assert!(got.forwarded);
+    c.download_attachment(transport.clone(), carol.token.clone(), got.attachments[0].id.clone()).unwrap();
+    assert_eq!(c.attachment_data(got.attachments[0].id.clone()).unwrap(), Some(file.bytes.clone()));
+
+    // A link card: the picture is an encrypted attachment that Bob downloads; he never contacts the site.
+    let card = lime_core::OutgoingPreview { url: "https://example.org/x".into(), title: "A page".into(), site: "example.org".into(), image: vec![9u8; 6000], image_width: Some(60), image_height: Some(30) };
+    a.queue_text_with_preview(to_bob.clone(), "https://example.org/x".into(), None, card).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    b.sync(transport.clone(), bob.token.clone()).unwrap();
+    let message = b.list_messages(format!("dm:{}", alice.id)).unwrap().into_iter().find(|m| m.link_preview.is_some()).unwrap();
+    let picture = message.link_preview.unwrap().image.unwrap();
+    b.download_attachment(transport.clone(), bob.token.clone(), picture.id.clone()).unwrap();
+    assert_eq!(b.attachment_data(picture.id).unwrap(), Some(vec![9u8; 6000]));
+
+    // My own chat: written and "sent" with nothing going to the server.
+    let own = a.ensure_self_chat("Alice Adams".into()).unwrap();
+    let mine = a.queue_text(own.clone(), "remember the field trip forms".into()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(a.list_messages(own).unwrap().iter().find(|m| m.id == mine.id).unwrap().local_state, "sent");
+    assert_eq!(b.sync(transport.clone(), bob.token.clone()).unwrap().received, 0);
+}
