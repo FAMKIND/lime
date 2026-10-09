@@ -2100,7 +2100,16 @@ If anything contradicts this brief, stop and ask the user.
 - 151 Rust / 11+11 integration tests pass; tiered iOS passed; 0 warnings.
 - **Tend ran 105 before 104-fix** (the order was swapped); 104-fix (7 items) is next.
 
-### LIME-104-fix → `tend` (lime-aa) (NEXT, before 106): in-chat find → reply hit traps navigation
+**LIME-104-fix landed as `d0b9884`** (pushed and verified).
+- **The bug's cause:** the find task re-ran on the chat's reappear and re-pushed Replies; now the answered query is remembered.
+- **All 11 items are done.** Notes:
+  - Mute is still a bottom sheet (titled "Mute <name>" + a row highlight), since iPhone has no row-anchored popover;
+  - the reaction pill sits at the bubble's top corner, with the time directly under it;
+  - media long-press works.
+- 152 Rust tests pass; integration + tiered iOS passed; 0 warnings.
+- Awaiting the user's gate. **Next: LIME-106.**
+
+### LIME-104-fix → `tend` (lime-aa) (landed as `d0b9884`): in-chat find → reply hit traps navigation
 **The user's bug (2026-10-09, iPhone):**
 - in the Shem↔Jean chat, 🔍 find "FAM" (a word only in a reply) → it opens the Replies screen;
 - **pressing Back keeps re-opening Replies**, and the chat can't be reached again **until the app is force-quit**.
@@ -2137,8 +2146,28 @@ If anything contradicts this brief, stop and ask the user.
    - Pinned rows and the pinned section move as a unit.
    - **A UI test** captures frames mid-animation and asserts no two rows' frames overlap by more than a few points.
 
+8. **Deleted replies disappear from the reply summary** (the user: a thread whose only reply was deleted still shows "1 reply" with an avatar under the bubble).
+   - The summary's count, last-reply time and replier avatars **ignore deleted replies**;
+   - **if no live replies remain, no summary is shown** under the bubble.
+   - Inside Replies, a deleted reply may keep its "This message was deleted" line (for context), but the header count excludes it.
+9. **Reactions move to the bubble's top corner, Apple Messages style** (the user asked "what do you think?"; **plot decided yes**: cleaner, and it solves the "time pushed under reactions" confusion and "too many reactions"). **The per-message layout becomes:**
+   1. **the reaction cluster overlapping the bubble's top corner** (the top-left for own bubbles; the top-right for others'): a small rounded glass/cream pill with **up to 3 distinct emoji + a count if more** (e.g. "👍❤️😂 5"); your own reaction is subtly outlined;
+   2. **the bubble**;
+   3. **the time line** (time · Sent/Edited), directly under the bubble, **always immediately below it**;
+   4. **the reply summary** under that.
+   - **Tap the cluster** → a sheet listing every reaction with who reacted (tap your own to remove it).
+   - The bubble gets a little top margin when it has reactions, so the cluster never overlaps the bubble above.
+   - **This replaces the chips under the bubble** (and the "lighter chip background" ask is then moot: the cluster is a light glass/cream pill, not a grey fill).
+11. **Reactions (and the full long-press menu) on media messages** (the user, 2026-10-09):
+   - **long-press works on photos, albums, video, voice messages and file cards** exactly as on text bubbles (the reaction row + "+", Reply, Forward, Copy where it makes sense (e.g. a caption or a single image), Select, Delete; Edit applies to the caption only).
+   - **The reaction cluster sits on the media's top corner** the same way.
+   - **In the full-screen viewer:** a react button (or a long-press) for the photo/video shown.
+   - **Album reactions apply to the message** (the album), not to individual photos, in v1.
+10. **(Note)** consecutive "This message was deleted" placeholders are visually heavy (the user's screenshot shows 4 in a row). **Collapse runs of ≥ 2 consecutive deleted placeholders into one line**: "3 messages deleted".
+
 **Verification:**
 - the new UI tests for both paths (in-chat find and Messages search), including a double Back and the swipe-back gesture;
+- the reply summary hides when all replies are deleted; the reaction cluster sits at the top corner (frame check); the time line sits directly under the bubble; the tap-cluster sheet lists who; deleted runs collapse;
 - a label never wraps the name (a long-label UI test at 375pt); the pressed fill is within the new bounds;
 - the dot is on the left; the thumbnail size is ≤ 36 pt; the mute dialog title contains the chat name;
 - the tiered iOS rule; 0 warnings.
@@ -2151,7 +2180,11 @@ If anything contradicts this brief, stop and ask the user.
 - a long label truncates without wrapping the name;
 - the group photo/name edit icons are light-grey circles;
 - the format active state is lighter, and send is the only strong colour;
-- pinning/unpinning slides the row smoothly to its new place, with no overlap.
+- pinning/unpinning slides the row smoothly to its new place, with no overlap;
+- reactions sit on the bubble's top corner, Apple-style, and the time stays right under the bubble;
+- a deleted-only thread shows no "1 reply";
+- runs of deleted messages collapse;
+- long-press a photo, an album, a video and a voice message → react; the cluster shows on the media.
 
 **Record:** `## LIME-104-fix`. Commit: `fix(ios): find in replies no longer traps navigation; QA polish (unread dot, thumbnails, mute in context, labels, edit icons, lighter format state)`, trailer `Brief: LIME-104-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
