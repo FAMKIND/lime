@@ -1941,6 +1941,31 @@ If anything contradicts this brief, stop and ask the user.
 - **Make it the first brief after enrolment.**
 - **Interim:** QA item 13 (an honest note in Settings → Notifications).
 
+**LIME-104 landed (pushed):**
+- **The code is in `cef2bf3` (mis-titled "chore: update PLOT.md"); `8f23116` is an empty commit carrying the proper message + `Brief: LIME-104`.**
+- **Plot's call: keep the history** (no force-push). It's documented here and in `TEND.md`. Lesson for tend: commit `PLOT.md` with `git add PLOT.md` only (never `-A`/`.`) in Phase 0.
+- All 13 items are built (the honest notification note = item 13; tend's report said twelve, so plot to verify at the gate).
+- 145 Rust / 10+10 integration tests pass; tiered iOS passed (84 UI); 0 warnings.
+- **Known:** a removed member keeps the key to the current group photo until it changes; Delete is local only.
+- **The user's concept image `docs/design/concepts/communities-early-concept.png` is untracked**: commit it in the next Phase 0 (a design asset).
+- **Also LIME-103c (both asleep, offline) results were relayed to the user:**
+  - sender delivered 46/68 eventually; the receiver had 23 on time;
+  - gaps up to ~3 h 20 m; bursty delivery.
+  - **Design implications for mesh v1:** a "Nearby mode" (keeps Lime awake); emergency mode enables it; catch-up on wake; honest copy.
+  - **The 103c analysis landed as `65236c5`** (`docs/spike-ble.md` §5b + a script; logs in `~/Downloads/ble-logs-103c/`).
+    - **Both asleep:** the sender suspended for 3 h 14 m, until a BLE discovery woke it (05:24), when 44 queued blobs flushed; then again only at the unlock.
+    - **All 69 delivered, none lost; only 3 on time; median 1 h 10 m late, max 3 h 08 m.**
+    - **The first sighting of an iOS relaunch for Bluetooth:** B's process ended and was relaunched, then received 16 while locked (one observation).
+    - B's log had a 4 h 57 m gap (writer issue; fixes listed for any rerun).
+    - **Both phones were actually unplugged** (per the logs).
+  - **MESH v1 DESIGN RULES (plot, final; for the mesh brief + `architecture.md` §7 update):**
+    1. **Nearby mode** (keeps Lime awake, clearly labelled, with a battery note);
+    2. **emergency mode turns it on**;
+    3. **flush the whole queue on every wake/discovery**;
+    4. **no timers that depend on a suspended app**;
+    5. **the product promise:** "delivered when phones meet and at least one is awake", **never prompt delivery between two locked phones**.
+  - The spike series is complete. Next for the mesh: the v1 design brief after 105–109.
+
 ### THE QA INTAKE RULE (the user, 2026-10-08): "I'll keep adding them as I see; you prioritise."**
 - **Plot appends** small UI/QA items to the **current open QA brief (LIME-104)** until it's sent.
 - **Protocol/feature-sized items** go to a feature brief (105/106 or new).
