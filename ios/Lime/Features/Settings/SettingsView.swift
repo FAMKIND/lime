@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Where Settings can go.
 enum SettingsRoute: Hashable {
-    case profile, account, privacy, blocked, keys, devices, notifications, customize, about, acknowledgements, changePassword, myQR, photo
+    case profile, account, privacy, blocked, keys, devices, notifications, customize, about, acknowledgements, changePassword, myQR, photo, storage
+    case chatMedia(String)
 }
 
 /// The words shown before signing out (here and in Account).
@@ -37,6 +38,8 @@ struct SettingsView: View {
                     case .changePassword: ChangePasswordScreen()
                     case .myQR: MyQRScreen()
                     case .photo: ProfilePhotoScreen()
+                    case .storage: StorageScreen()
+                    case .chatMedia(let id): ChatMediaScreen(conversationID: id)
                     }
                 }
         }
@@ -52,7 +55,7 @@ struct SettingsView: View {
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
             "profile": .profile, "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
-            "notifications": .notifications, "customize": .customize, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "crop": .photo,
+            "notifications": .notifications, "customize": .customize, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "crop": .photo, "storage": .storage,
         ]
         return names.compactMap { table[$0] }
     }
@@ -68,6 +71,7 @@ struct SettingsView: View {
                 SettingsCard {
                     SettingsRow(symbol: "person.crop.circle", title: "Account", route: .account, id: "settings-account")
                     SettingsRow(symbol: "hand.raised", title: "Privacy", route: .privacy, id: "settings-privacy")
+                    SettingsRow(symbol: "internaldrive", title: "Storage", route: .storage, id: "settings-storage")
                     SettingsRow(symbol: "iphone", title: "Linked Devices", route: .devices, id: "settings-devices")
                     if let donate = DonateLink.current {
                         Link(destination: donate) {

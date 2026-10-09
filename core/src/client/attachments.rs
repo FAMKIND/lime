@@ -80,6 +80,17 @@ impl LimeStore {
         self.queue_with(conversation_id, caption, reply_to, prepared, QueueExtras::default())
     }
 
+    /// Whether the server still has an attachment, and until when (milliseconds since the Unix epoch). `None` means it is gone:
+    /// a file nobody downloaded yet that cannot be had any more, so it cannot be fetched or forwarded.
+    pub fn attachment_available_until(&self, transport: Arc<dyn Transport>, auth_token: String, attachment_id: String) -> Result<Option<i64>, StoreError> {
+        let (status, body) = call(&transport, Some(&auth_token), "attachment", &json!({ "action": "info", "attachment_id": attachment_id }))?;
+        if status == 404 {
+            return Ok(None);
+        }
+        check(status)?;
+        Ok(body.get("expires_at").and_then(Value::as_i64))
+    }
+
     /// How far the upload or download of an attachment has got (chunks done and in all), while one is running.
     pub fn transfer_progress(&self, attachment_id: String) -> Result<Option<TransferProgress>, StoreError> {
         Ok(self.with_conn(|conn| files::progress(conn, &attachment_id))?.map(|(direction, done, total)| TransferProgress {
@@ -102,6 +113,9 @@ impl LimeStore {
         };
         if held {
             return Ok(());
+        }
+        if self.with_conn(|conn| Ok(files::is_removed_everywhere(conn, &attachment_id)))? {
+            return Err(StoreError::NotFound);
         }
         let (status, body) = call(&transport, Some(&auth_token), "attachment", &json!({ "action": "get", "attachment_id": descriptor.id }))?;
         if status == 404 {

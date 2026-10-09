@@ -12,6 +12,16 @@ final class MessageActionsState {
     var reactors: Message?
     /// The messages being forwarded: the picker is open.
     var forwarding: [Message]?
+    /// Messages with a file that is gone from the server and was never opened on this phone: they cannot be forwarded.
+    var cannotForward: Set<Message.ID> = []
+
+    /// Opens the Forward picker, unless a file in these messages is no longer available.
+    func requestForward(_ messages: [Message], store: ConversationStore) {
+        Task {
+            if await store.canForward(messages) { forwarding = messages }
+            else { store.showBanner("This file is no longer available.") }
+        }
+    }
     /// The messages a Delete is about (one from the menu, or the selected ones).
     var deleting: [Message] = []
 }
@@ -33,6 +43,11 @@ struct MessageActionsHost: ViewModifier {
                 if let message = state.menu { menu(for: message) }
             }
             .animation(.easeOut(duration: 0.15), value: state.menu?.id)
+            .task(id: state.menu?.id) {
+                // A file that was never opened here and is gone from the server cannot be forwarded: say so in the menu.
+                guard let message = state.menu, !message.attachments.isEmpty, !(await store.canForward([message])) else { return }
+                state.cannotForward.insert(message.id)
+            }
             .sheet(item: Binding(get: { state.editing }, set: { state.editing = $0 })) { message in
                 EditMessageSheet(text: Binding(get: { state.editText }, set: { state.editText = $0 })) { saved in
                     state.editing = nil
@@ -143,7 +158,27 @@ struct MessageActionsHost: ViewModifier {
                         row("arrowshape.turn.up.left", "Reply", id: "reply-in-thread") { state.menu = nil; onReply(message) }
                     }
                     if !message.deleted {
-                        row("arrowshape.turn.up.right", "Forward", id: "action-forward") { state.menu = nil; state.forwarding = [message] }
+                        if state.cannotForward.contains(message.id) {
+                            VStack(spacing: 0) {
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Forward").font(Theme.body)
+                                        Text("This file is no longer available").font(Theme.caption)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "arrowshape.turn.up.right").font(.system(size: 17))
+                                }
+                                .foregroundStyle(Theme.textSecondary)
+                                .padding(.horizontal, 16).frame(minHeight: 48)
+                                Divider().overlay(Theme.hairline)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel("Forward, this file is no longer available")
+                            .accessibilityIdentifier("action-forward-unavailable")
+                        } else {
+                            row("arrowshape.turn.up.right", "Forward", id: "action-forward") { state.menu = nil; state.requestForward([message], store: store) }
+                        }
                     }
                     // On a photo, album, video, voice message or file, Edit changes the caption only (so it needs one).
                     if message.canEdit(), !message.deleted, message.attachments.isEmpty || !message.text.isEmpty {

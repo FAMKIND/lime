@@ -25,10 +25,27 @@ struct AttachmentStack: View {
                 switch item.kind {
                 case .audio: VoiceBubble(item: item, isOwn: isOwn, uploading: uploading)
                 case .video: VideoTile(item: item, isOwn: isOwn, uploading: uploading, messageID: message.id, conversationID: chatConversationID)
-                default: FileCard(item: item, isOwn: isOwn, uploading: uploading) { store.openedFile = item }
+                default: FileCard(item: item, isOwn: isOwn, uploading: uploading) { if !item.removed { store.openedFile = item } }
                 }
             }
         }
+    }
+
+    private func pictureLabel(_ item: AttachmentItem) -> String {
+        let name = item.name.isEmpty ? "Photo" : item.name
+        guard let phrase = store.downloadPhrase(item) else { return name }
+        return item.removed ? "\(name), \(phrase)" : "\(name), tap to download, \(phrase)"
+    }
+
+    /// Opens the viewer; a picture that was not fetched by itself is fetched by the first tap.
+    private func openPicture(_ index: Int) {
+        let item = images[index]
+        if !item.downloaded && !item.removed && !StorageGuard.shared.mayAutoDownload(item) && !store.downloading.contains(item.id) && AttachmentImages.shared.image(item.id) == nil {
+            Task { _ = await store.image(for: item) }
+            return
+        }
+        if item.removed { return }
+        store.attachmentViewer = AttachmentViewerRequest(items: images, index: index, messageID: message.id, conversationID: chatConversationID)
     }
 
     @ViewBuilder
@@ -39,8 +56,8 @@ struct AttachmentStack: View {
             ImageTile(item: only, uploading: uploading)
                 .frame(width: width, height: width / aspect)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .mediaTap { store.attachmentViewer = AttachmentViewerRequest(items: images, index: 0, messageID: message.id, conversationID: chatConversationID) }
-            .accessibilityLabel(only.name.isEmpty ? "Photo" : only.name)
+                .mediaTap { openPicture(0) }
+            .accessibilityLabel(pictureLabel(only))
             .accessibilityIdentifier("attachment-image-\(only.id)")
         } else {
             let shown = Array(images.prefix(4))
@@ -56,8 +73,8 @@ struct AttachmentStack: View {
                             }
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .mediaTap { store.attachmentViewer = AttachmentViewerRequest(items: images, index: index, messageID: message.id, conversationID: chatConversationID) }
-                    .accessibilityLabel(item.name.isEmpty ? "Photo" : item.name)
+                        .mediaTap { openPicture(index) }
+                    .accessibilityLabel(pictureLabel(item))
                     .accessibilityIdentifier("attachment-image-\(item.id)")
                 }
             }
@@ -106,6 +123,8 @@ struct ImageTile: View {
     @Environment(ConversationStore.self) private var store
     @State private var full: UIImage?
     @State private var failed = false
+    /// Not fetched by itself (the settings, or a nearly full phone): a placeholder with its size, to tap.
+    @State private var waiting = false
 
     var body: some View {
         ZStack {
@@ -115,7 +134,11 @@ struct ImageTile: View {
             } else if let thumb = UIImage(data: item.thumb) {
                 Image(uiImage: thumb).resizable().scaledToFill().blur(radius: 8).clipped()
             }
-            if (full == nil && !failed) || uploading {
+            if item.removed {
+                placeholder("photo.slash", "Media removed", detail: nil)
+            } else if waiting && !store.downloading.contains(item.id) {
+                placeholder("arrow.down.circle", "Tap to download", detail: AttachmentFormat.size(item.size))
+            } else if (full == nil && !failed) || uploading {
                 TransferRing(attachmentID: item.id, active: true, tint: .white).frame(width: 34, height: 34)
                     .padding(6).background(.black.opacity(0.4), in: Circle())
             }
@@ -125,13 +148,29 @@ struct ImageTile: View {
             }
         }
         .contentShape(Rectangle())
-        .task(id: item.id) { await load() }
+        .task(id: "\(item.id)-\(item.downloaded)-\(item.removed)") { await load() }
         .accessibilityHidden(true)
+    }
+
+    private func placeholder(_ symbol: String, _ title: String, detail: String?) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: symbol).font(.system(size: 22))
+            Text(title).font(Theme.secondary.weight(.semibold))
+            if let detail { Text(detail).font(Theme.caption) }
+            if !item.removed { AvailabilityText(item: item).font(Theme.caption) }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityIdentifier("download-placeholder-\(item.id)")
     }
 
     private func load() async {
         failed = false
+        waiting = false
         if let cached = AttachmentImages.shared.image(item.id) { full = cached; return }
+        if item.removed { return }
+        if !item.downloaded && !StorageGuard.shared.mayAutoDownload(item) { waiting = true; return }
         full = await store.image(for: item)
         failed = full == nil
     }
@@ -139,6 +178,7 @@ struct ImageTile: View {
 
 /// A file: its icon, name, and kind and size. Tapping it downloads (if needed) and opens it.
 struct FileCard: View {
+    @Environment(ConversationStore.self) private var store
     let item: AttachmentItem
     let isOwn: Bool
     var uploading = false
@@ -149,7 +189,10 @@ struct FileCard: View {
                 Image(systemName: symbol).font(.system(size: 26)).frame(width: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name.isEmpty ? "File" : item.name).font(Theme.body).lineLimit(1).truncationMode(.middle)
-                    Text(item.detail).font(Theme.caption).foregroundStyle(isOwn ? Theme.ownBubbleInk.opacity(0.7) : Theme.textSecondary)
+                    Text(item.removed ? "Media removed" : item.detail).font(Theme.caption).foregroundStyle(isOwn ? Theme.ownBubbleInk.opacity(0.7) : Theme.textSecondary)
+                    if !item.downloaded && !item.removed && !isOwn {
+                        AvailabilityText(item: item).font(Theme.caption).foregroundStyle(isOwn ? Theme.ownBubbleInk.opacity(0.7) : Theme.textSecondary)
+                    }
                 }
                 Spacer(minLength: 0)
                 if uploading { TransferRing(attachmentID: item.id, active: true, tint: isOwn ? Theme.ownBubbleInk : Theme.text).frame(width: 24, height: 24) }
@@ -161,7 +204,7 @@ struct FileCard: View {
             .background(isOwn ? Theme.ownBubble : Theme.bubbleOther, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous).strokeBorder(isOwn ? Color.clear : Theme.bubbleEdge, lineWidth: 0.5))
         .mediaTap(open)
-        .accessibilityLabel("\(item.name), \(item.detail)")
+        .accessibilityLabel(["\(item.name), \(item.detail)", store.downloadPhrase(item).map { $0 == AttachmentFormat.size(item.size) ? "tap to download" : $0.replacingOccurrences(of: AttachmentFormat.size(item.size) + ", ", with: "") }].compactMap { $0 }.joined(separator: ", "))
         .accessibilityIdentifier("attachment-file-\(item.id)")
     }
 
@@ -537,5 +580,28 @@ struct ViewerReactButton: View {
                 }
             }
         }
+    }
+}
+
+/// "Available until Oct 30" under a file that is not on this phone yet (the server keeps it for 30 days, or an hour after everyone
+/// has fetched it), or "No longer available".
+struct AvailabilityText: View {
+    let item: AttachmentItem
+    @Environment(ConversationStore.self) private var store
+    @State private var state: Date??
+
+    // Always a Text (even an empty one), so the task below has a view to run on.
+    private var words: String {
+        switch state {
+        case .none: ""
+        case .some(.none): "No longer available"
+        case .some(.some(let date)): "Available until \(date.formatted(.dateTime.month(.abbreviated).day()))"
+        }
+    }
+
+    var body: some View {
+        Text(words)
+            .accessibilityIdentifier("available-until-\(item.id)")
+            .task(id: item.id) { state = await store.availableUntil(item) }
     }
 }

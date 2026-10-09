@@ -51,6 +51,8 @@ struct Message: Identifiable, Hashable, Sendable {
     var forwarded = false
     /// The link card it carries (built on the sender's phone).
     var linkPreview: LinkPreviewItem?
+    /// For a reply: the message it answers.
+    var threadRoot: String?
     /// When other messages reply to this one: how many, the newest, who, and what is unread.
     var thread: ThreadInfo?
 
@@ -167,6 +169,7 @@ extension Message {
         deleted = item.deleted
         reactions = item.reactions.map { ReactionChip(emoji: $0.emoji, count: Int($0.count), mine: $0.mine, people: $0.people) }
         forwarded = item.forwarded
+        threadRoot = item.threadRoot
         linkPreview = item.linkPreview.map { LinkPreviewItem(url: $0.url, title: $0.title, site: $0.site, image: $0.image.map(AttachmentItem.init)) }
     }
 }

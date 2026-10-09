@@ -462,7 +462,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertLessThanOrEqual(thumb.frame.width, 36, "a small thumbnail \(thumb.debugDescription)")
         XCTAssertGreaterThanOrEqual(thumb.frame.width, 30)
 
-        // A reply is the latest activity: "↩ You: …".
+        // A reply is the latest activity: a quote of what it answers, then "You: …" (no arrow).
         let thread = threadApp("thread-open")
         app.terminate()
         thread.launch()
@@ -475,7 +475,10 @@ final class LimeUITests: XCTestCase {
         goBack(thread)
         let rae = thread.descendants(matching: .any)["row-preview-dm:rae"]
         XCTAssertTrue(rae.waitForExistence(timeout: 10))
-        XCTAssertEqual(rae.label, "↩ You: sounds good")
+        XCTAssertFalse(rae.label.contains("↩"), "no arrow")
+        XCTAssertTrue(rae.label.hasPrefix("Reply to Rae · Who can cover recess duty"), rae.label)
+        XCTAssertTrue(rae.label.hasSuffix("You: sounds good"), rae.label)
+        XCTAssertTrue(thread.descendants(matching: .any)["row-quote-dm:rae"].exists, "the quote line")
     }
 
     func testTheLongPressMenuSaysReplyAndTheThreadIsTitledReplies() {
@@ -856,6 +859,78 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(strip.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Reply to '")).firstMatch.exists)
         app.buttons["reply-context-close"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["replies-title"].waitForNonExistence(timeout: 6), "the X leaves Replies")
+    }
+
+    // MARK: LIME-107: storage
+
+    private func remoteApp(extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "attachments-remote",
+                               "-lime-network", "cellular", "-lime.autoDownload.photos", "wifiOnly"] + extra
+        return app
+    }
+
+    func testStorageShowsUsagePerChatAndRemovesAChatsMediaAndSetsKeepMediaAndAutoDownload() {
+        let app = threadApp("settings/storage")
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["storage-screen"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["storage-total"].exists)
+        XCTAssertTrue(app.staticTexts["storage-media"].exists)
+        let chat = app.buttons["storage-chat-dm:att"]
+        XCTAssertTrue(chat.waitForExistence(timeout: 5), "usage per chat")
+        // Keep media and the automatic downloads are choices that stay chosen.
+        app.buttons["keep-month"].tap()
+        XCTAssertTrue(app.buttons["keep-month"].isSelected)
+        app.buttons["auto-videofiles-never"].tap()
+        XCTAssertTrue(app.buttons["auto-videofiles-never"].isSelected)
+        XCTAssertTrue(app.buttons["auto-photos-wifiAndMobile"].exists)
+        // Back to the defaults for the other tests.
+        app.buttons["auto-videofiles-wifiOnly"].tap()
+        app.buttons["keep-forever"].tap()
+        // One chat's media: pick them all and remove them; the chat leaves the list.
+        chat.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["chat-media-screen"].waitForExistence(timeout: 5))
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'media-row-'"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
+        app.buttons["media-select-all"].tap()
+        app.buttons["media-delete"].tap()
+        app.buttons.matching(identifier: "media-delete-confirm").firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["chat-media-empty"].waitForExistence(timeout: 5), "nothing left on this iPhone for that chat")
+    }
+
+    func testAPhotoThatIsNotDownloadedByTheSettingsShowsItsSizeAndFetchesOnATap() {
+        let app = remoteApp()
+        app.launch()
+        let photo = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND label CONTAINS 'tap to download'")).firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 10), "a tap-to-download placeholder, not a download over mobile data")
+        expectation(for: NSPredicate(format: "label CONTAINS 'available until'"), evaluatedWith: photo)
+        waitForExpectations(timeout: 10)
+        photo.tap()
+        let done = NSPredicate(format: "NOT (label CONTAINS 'tap to download')")
+        expectation(for: done, evaluatedWith: photo)
+        waitForExpectations(timeout: 10)
+        // A picture removed from this phone says so, and a file that is gone says so (and cannot be forwarded).
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Media removed'")).firstMatch.exists)
+        let gone = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-file-' AND label CONTAINS 'gone-slip'")).firstMatch
+        XCTAssertTrue(gone.waitForExistence(timeout: 5))
+        XCTAssertTrue(gone.label.contains("no longer available"), gone.label)
+        gone.press(forDuration: 1.0)
+        XCTAssertTrue(app.descendants(matching: .any)["action-forward-unavailable"].waitForExistence(timeout: 8), "Forward is off with a reason")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.5)).tap()   // the dimmed background closes the menu
+        XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForNonExistence(timeout: 5))
+    }
+
+    func testANearlyFullPhonePausesDownloadsSaysSoAndNeverCrashesOnATap() {
+        let app = remoteApp(extra: ["-lime-free-bytes", "20000000"])
+        app.launch()
+        let photo = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-image-' AND label CONTAINS 'tap to download'")).firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 10), "nothing downloaded by itself")
+        goBack(app)
+        XCTAssertTrue(app.descendants(matching: .any)["low-storage-banner"].waitForExistence(timeout: 5), "Messages says Lime paused downloads")
+        app.buttons["conversation-row-dm:att"].tap()
+        photo.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Not enough space'")).firstMatch.waitForExistence(timeout: 5), "a clean failure with a reason")
+        XCTAssertTrue(photo.exists && photo.label.contains("tap to download"), "and it can be tried again")
     }
 
     func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {

@@ -139,6 +139,11 @@ Deno.test("a forward shares the same file with more people: it stays until they 
     assert(new Date((await row()).expires_at).getTime() > Date.now() + 6 * 86_400_000, "two of three: kept");
     await call("attachment", c.token, { action: "get", attachment_id: id });
     assert(new Date((await row()).expires_at).getTime() < Date.now() + 3_700_000, "all of them have it: due for deletion");
+    // "info" says until when it is there (any signed-in user who knows the id), and 404 for an unknown one.
+    const info = await call("attachment", c.token, { action: "info", attachment_id: id });
+    assertEquals(info.status, 200);
+    assert(info.body.expires_at > 0);
+    assertEquals((await call("attachment", c.token, { action: "info", attachment_id: newId() })).status, 404);
     // Not for an unknown file or bad numbers; and only the owner can delete it.
     assertEquals((await call("attachment", a.token, { action: "share", attachment_id: newId(), recipients: 1 })).status, 404);
     assertEquals((await call("attachment", a.token, { action: "share", attachment_id: id, recipients: 0 })).status, 400);

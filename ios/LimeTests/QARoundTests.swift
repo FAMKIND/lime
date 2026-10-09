@@ -16,10 +16,27 @@ final class QARoundTests: XCTestCase {
                             isGroupChat: group, latest: last, latestIsReply: reply)
     }
 
-    func testAReplyIsShownWithAnArrowAndWhoWroteIt() {
-        XCTAssertEqual(ListPreview.make(chat(last: message("1", from: "jean", "sounds good"), reply: true)).plain, "↩ Jean: sounds good")
-        XCTAssertEqual(ListPreview.make(chat(last: message("1", from: nil, "on it"), reply: true)).plain, "↩ You: on it")
-        XCTAssertEqual(ListPreview.make(chat(group: true, last: message("1", from: "lee", "see you"), reply: true)).plain, "↩ Lee: see you")
+    func testAReplyIsShownAsAQuoteOfWhatItAnswersThenTheReplyWithNoArrow() {
+        func reply(_ from: String?, _ text: String, root: Message, group: Bool = false) -> ListPreview {
+            var last = message("2", from: from, text)
+            last.threadRoot = root.id
+            let jean = Person(id: "jean", name: "Jean Park"), lee = Person(id: "lee", name: "Lee Wong")
+            let c = Conversation(id: group ? "grp:1" : "dm:jean", title: group ? "Team" : "Jean Park", members: group ? [jean, lee] : [jean], messages: [root],
+                                 isGroupChat: group, latest: last, latestIsReply: true)
+            return ListPreview.make(c)
+        }
+        let root = message("r", from: "jean", "Who can cover recess duty on Thursday?")
+        let one = reply("jean", "sounds good", root: root)
+        XCTAssertEqual(one.quote, "Reply to Jean · Who can cover recess duty on Thursday?")
+        XCTAssertEqual(one.plain, "Reply to Jean · Who can cover recess duty on Thursday?\nsounds good", "in a chat, just the reply text")
+        XCTAssertFalse(one.plain.contains("↩"), "no arrow")
+        XCTAssertEqual(reply(nil, "on it", root: root).plain, "Reply to Jean · Who can cover recess duty on Thursday?\nYou: on it")
+        XCTAssertEqual(reply("lee", "see you", root: root, group: true).plain, "Reply to Jean · Who can cover recess duty on Thursday?\nLee: see you")
+        // A root that is mine, or a picture, reads naturally; one not loaded still says it is a reply.
+        XCTAssertEqual(reply("jean", "ok", root: message("m", from: nil, "my plan")).quote, "Reply to You · my plan")
+        XCTAssertEqual(reply("jean", "ok", root: message("p", from: "jean", attachments: [AttachmentItem(id: "p", mime: "image/jpeg", name: "p.jpg", size: 1)])).quote, "Reply to Jean · Photo")
+        var stray = message("2", from: "jean", "hi"); stray.threadRoot = "missing"
+        XCTAssertEqual(ListPreview.make(chat(last: stray, reply: true)).quote, "Reply in a thread")
         // Not a reply: plain in a chat, "Name: " in a group.
         XCTAssertEqual(ListPreview.make(chat(last: message("1", from: "jean", "hello"))).plain, "hello")
         XCTAssertEqual(ListPreview.make(chat(group: true, last: message("1", from: "lee", "hello"))).plain, "Lee: hello")
@@ -38,7 +55,7 @@ final class QARoundTests: XCTestCase {
         let file = ListPreview.make(chat(last: message("1", from: "jean", attachments: [AttachmentItem(id: "f", mime: "application/pdf", name: "Report.pdf", size: 1)])))
         XCTAssertEqual([file.symbol, file.text], ["doc.fill", "Report.pdf"])
         let reply = ListPreview.make(chat(last: message("1", from: "jean", attachments: [photo()]), reply: true))
-        XCTAssertEqual(reply.plain, "↩ Jean: Photo")
+        XCTAssertEqual(reply.text, "Photo")
     }
 
     func testTheNewestThingIsTheLastMessageAndTheDotShowsForAHandMarkedChat() {

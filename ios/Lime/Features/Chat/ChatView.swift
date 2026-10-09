@@ -453,7 +453,7 @@ struct ChatView: View {
             if let selection {
                 SelectionBar(count: selection.count,
                              onDelete: { actions.deleting = conversation.messages.filter { selection.contains($0.id) } },
-                             onForward: { actions.forwarding = conversation.messages.filter { selection.contains($0.id) } })
+                             onForward: { actions.requestForward(conversation.messages.filter { selection.contains($0.id) }, store: store) })
             } else if conversation.isRequest { requestBar(conversation) } else { composer(conversation) }
         }
     }

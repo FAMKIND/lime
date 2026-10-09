@@ -1240,6 +1240,7 @@ fn a_forward_of_files_through_the_real_server_is_sent_on_the_senders_phone_and_a
     sync(2);
     assert_eq!(stores[2].list_messages(format!("dm:{}", accounts[1].id)).unwrap().iter().filter(|m| m.forwarded).count(), 2, "nothing twice");
 
+    assert!(stores[1].attachment_available_until(transport.clone(), accounts[1].token.clone(), got_file.attachments[0].id.clone()).unwrap().is_some(), "still on the server, and until when");
     // The original file has been swept from the server (everyone fetched it and an hour passed): forwarding it again still works,
     // from the sender's own decrypted copy, and shows Sent.
     let rows = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/attachments?select=id,owner", admin.base))), None);
@@ -1249,6 +1250,8 @@ fn a_forward_of_files_through_the_real_server_is_sent_on_the_senders_phone_and_a
     }
     let secret = admin.json(admin.with_service_key(ureq::get(&format!("{}/rest/v1/sweep_target?select=secret", admin.base))), None)[0]["secret"].as_str().expect("the sweep is scheduled").to_owned();
     ureq::post(&format!("{}/functions/v1/blob-sweep", admin.base)).set("apikey", &admin.anon_key).set("x-sweep-secret", &secret).send_json(json!({})).unwrap();
+    let file_id = got_file.attachments[0].id.clone();
+    assert_eq!(stores[1].attachment_available_until(transport.clone(), accounts[1].token.clone(), file_id).unwrap(), None, "the server no longer has it");
     let again = stores[1].forward_messages(vec![got_file.id.clone()], vec![to_cy.clone()]).unwrap();
     deliver(1).unwrap();
     assert_eq!(states(&[again[0].id.clone()], &to_cy), vec!["sent"], "a forward of a swept file is re-uploaded from Bo's copy and sent");

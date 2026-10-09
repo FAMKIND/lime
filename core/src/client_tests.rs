@@ -2527,6 +2527,68 @@ fn download_from_alice_copy(bob: &Party, alice: &Party, _transport: &Arc<dyn Tra
     bob.store.test_set_attachment_data(id, &bytes);
 }
 
+// ---------------------------------------------------------------- LIME-107: storage
+
+#[test]
+fn storage_is_counted_per_chat_media_can_be_removed_and_keep_media_removes_old_files_but_not_messages() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    let (to_bob, to_carol) = (format!("dm:{}", bob.user), format!("dm:{}", carol.user));
+    let big = alice.store.send_attachments(to_bob.clone(), "big".into(), vec![pic(1, 40_000)], None).unwrap();
+    let small = alice.store.send_attachments(to_carol.clone(), "small".into(), vec![pic(2, 5_000)], None).unwrap();
+    alice.store.queue_text(to_carol.clone(), "words stay".into()).unwrap();
+
+    let usage = alice.store.storage_usage().unwrap();
+    assert_eq!(usage.media_bytes, 45_000);
+    assert_eq!((usage.chats[0].conversation_id.as_str(), usage.chats[0].bytes, usage.chats[0].files), (to_bob.as_str(), 40_000, 1), "largest first");
+    assert_eq!(usage.chats[1].bytes, 5_000);
+    assert!(usage.database_bytes > 0);
+    assert_eq!(alice.store.list_media(to_bob.clone()).unwrap().len(), 1);
+
+    // Remove one chat's media by hand: the message stays, its file is gone, it says removed, and it cannot be fetched again.
+    let removed = alice.store.remove_media(vec![crate::MediaRef { message_id: big.id.clone(), attachment_id: big.attachments[0].id.clone() }]).unwrap();
+    assert_eq!(removed, 1);
+    let message = alice.store.list_messages(to_bob.clone()).unwrap().into_iter().find(|m| m.id == big.id).unwrap();
+    assert_eq!(message.text, "big");
+    assert!(message.attachments[0].removed && !message.attachments[0].downloaded);
+    assert_eq!(alice.store.attachment_data(big.attachments[0].id.clone()).unwrap(), None);
+    assert_eq!(download(&alice, &transport, &big.attachments[0].id), Err(crate::StoreError::NotFound), "removed on purpose: not downloaded again");
+    assert_eq!(alice.store.storage_usage().unwrap().media_bytes, 5_000);
+
+    // Keep media: a file older than the limit goes; a newer one and every message stay.
+    assert_eq!(alice.store.remove_media_older_than(30).unwrap(), 0, "nothing is 30 days old yet");
+    alice.store.test_age_messages(60 * 86_400_000);
+    assert_eq!(alice.store.remove_media_older_than(30).unwrap(), 1);
+    let kept = alice.store.list_messages(to_carol.clone()).unwrap();
+    assert!(kept.iter().any(|m| m.text == "small" && m.attachments[0].removed), "the message stays with its file removed");
+    assert!(kept.iter().any(|m| m.text == "words stay"));
+    assert_eq!(alice.store.storage_usage().unwrap().media_bytes, 0);
+    alice.store.compact_storage().unwrap();
+    // A reply says which message it answers (the Messages list quotes it).
+    let reply = alice.store.queue_reply(to_carol.clone(), small.id.clone(), "answer".into()).unwrap();
+    assert_eq!(reply.thread_root.as_deref(), Some(small.id.as_str()));
+    let latest = alice.store.list_conversations().unwrap().into_iter().find(|c| c.id == to_carol).unwrap().last_message.unwrap();
+    assert_eq!(latest.thread_root.as_deref(), Some(small.id.as_str()));
+}
+
+#[test]
+fn availability_says_until_when_a_file_is_on_the_server_and_none_once_it_is_gone() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let sent = alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![pic(3, 2000)], None).unwrap();
+    deliver(&alice, &transport);
+    let id = sent.attachments[0].id.clone();
+    assert!(alice.store.attachment_available_until(transport.clone(), alice.token.clone(), id.clone()).unwrap().is_some());
+    server.state.lock().unwrap().attachments.clear();
+    assert_eq!(alice.store.attachment_available_until(transport.clone(), alice.token.clone(), id).unwrap(), None);
+}
+
 #[test]
 fn an_edit_or_delete_that_arrives_before_its_message_waits_for_it() {
     let server = FakeServer::new();

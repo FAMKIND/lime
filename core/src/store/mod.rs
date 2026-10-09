@@ -22,6 +22,7 @@ pub(crate) mod pending;
 pub(crate) mod search;
 pub(crate) mod threads;
 pub(crate) mod link_preview;
+pub(crate) mod storage;
 mod sample;
 #[cfg(test)]
 mod search_tests;
@@ -129,6 +130,8 @@ pub struct AttachmentInfo {
     pub thumb: Vec<u8>,
     /// This phone holds the decrypted file.
     pub downloaded: bool,
+    /// Removed from this phone on purpose (by hand or by "Keep media"): it cannot be downloaded again.
+    pub removed: bool,
 }
 
 /// One message. `sender_id` is `None` when the message is mine.
@@ -152,6 +155,8 @@ pub struct MessageItem {
     pub forwarded: bool,
     /// The link card it carries, if any.
     pub link_preview: Option<link_preview::LinkPreview>,
+    /// For a reply: the message it answers (the root of its thread).
+    pub thread_root: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -578,6 +583,7 @@ impl LimeStore {
             reactions: Vec::new(),
             forwarded: false,
             link_preview: None,
+            thread_root: None,
         };
         conn.execute(
             "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, plain)
@@ -678,6 +684,7 @@ fn item_in(conn: &Connection, row: order::Row, me: &str) -> MessageItem {
     item.reactions = message_ops::reactions_for(conn, &item.id, me);
     item.forwarded = link_preview::is_forwarded(conn, &item.id);
     item.link_preview = link_preview::info(conn, &item.id);
+    item.thread_root = conn.query_row("SELECT thread_root FROM messages WHERE id = ?1", params![item.id], |r| r.get::<_, Option<String>>(0)).ok().flatten();
     item
 }
 
@@ -695,6 +702,7 @@ pub(crate) fn item_from_row(row: order::Row) -> MessageItem {
         reactions: Vec::new(),
         forwarded: false,
         link_preview: None,
+        thread_root: None,
     }
 }
 
@@ -703,9 +711,12 @@ pub(crate) fn attachment_infos(conn: &Connection, message_id: &str) -> Vec<Attac
     attachments::for_message(conn, message_id)
         .unwrap_or_default()
         .into_iter()
-        .map(|(d, downloaded)| AttachmentInfo {
-            id: d.id, mime: d.mime, name: d.name, size: d.size, width: d.width, height: d.height, duration_ms: d.duration_ms,
-            thumb: d.thumb, downloaded,
+        .map(|(d, downloaded)| {
+            let removed = attachments::is_removed(conn, message_id, &d.id);
+            AttachmentInfo {
+                id: d.id, mime: d.mime, name: d.name, size: d.size, width: d.width, height: d.height, duration_ms: d.duration_ms,
+                thumb: d.thumb, downloaded, removed,
+            }
         })
         .collect()
 }

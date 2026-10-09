@@ -3,6 +3,7 @@
 //          (call it again with the same id to resume: it returns only what is missing).
 //   commit { attachment_id }                            -> verifies every chunk is there and not larger than declared.
 //   get    { attachment_id }                            -> { chunks, urls: [signedDownloadUrl] }; counts the caller as a recipient.
+//   info   { attachment_id }                            -> { expires_at (ms) } while it is there, 404 once it is gone.
 //   share  { attachment_id, recipients }                -> a forward (LIME-106): the same encrypted file for `recipients` more people.
 //                                                          Anyone who knows the id may (it is a capability, like `get`).
 //   delete { attachment_id }                            -> removes it (the sender only).
@@ -24,7 +25,7 @@ Deno.serve(handler(async (req) => {
   if (!isUuid(body.attachment_id)) throw new HttpError(400, "bad_request", "attachment_id must be a UUID.");
   const id = (body.attachment_id as string).toLowerCase();
   const { data: row } = await db.from("attachments").select("*").eq("id", id).maybeSingle();
-  if (body.action !== "get" && body.action !== "share" && row && row.owner !== me) throw new HttpError(409, "id_taken", "That id is in use.");
+  if (body.action !== "get" && body.action !== "share" && body.action !== "info" && row && row.owner !== me) throw new HttpError(409, "id_taken", "That id is in use.");
 
   switch (body.action) {
     case "put": {
@@ -85,6 +86,11 @@ Deno.serve(handler(async (req) => {
         }
       }
       return json({ chunks: row.chunks, urls });
+    }
+    case "info": {
+      // Whether it is still there, and until when (for "Available until ..." and for Forward).
+      if (!row || !row.committed_at || new Date(row.expires_at).getTime() < Date.now()) throw new HttpError(404, "not_found", "No such attachment.");
+      return json({ expires_at: new Date(row.expires_at).getTime() });
     }
     case "share": {
       const extra = body.recipients;

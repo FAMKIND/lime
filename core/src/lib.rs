@@ -26,6 +26,7 @@ pub use client::{find_user, lookup_user_by_email, DeviceInfo, FoundUser, SyncRep
 pub use store::search::{ConversationMatch, SearchHit};
 pub use store::threads::ThreadSummary;
 pub use store::link_preview::{LinkPreview, OutgoingPreview};
+pub use store::storage::{ChatUsage, MediaEntry, MediaRef, StorageUsage};
 pub use store::{AttachmentInfo, BlockedPerson, ConversationSummary, KeyInfo, LimeStore, MemberInfo, MessageItem, StoreError};
 pub use transport::{HeaderPair, Transport, TransportError, TransportResponse};
 

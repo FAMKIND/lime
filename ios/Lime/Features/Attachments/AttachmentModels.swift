@@ -15,6 +15,8 @@ struct AttachmentItem: Identifiable, Hashable, Sendable {
     /// A tiny blurred preview, shown until the picture itself is here.
     let thumb: Data
     var downloaded: Bool
+    /// Removed from this phone on purpose ("Media removed"); it is not fetched again.
+    var removed = false
 
     enum Kind: Sendable { case image, video, audio, file }
 
@@ -44,6 +46,7 @@ struct AttachmentItem: Identifiable, Hashable, Sendable {
     init(_ info: AttachmentInfo) {
         self.init(id: info.id, mime: info.mime, name: info.name, size: Int64(info.size), width: info.width.map(Int.init), height: info.height.map(Int.init),
                   durationMs: info.durationMs.map(Int.init), thumb: info.thumb, downloaded: info.downloaded)
+        removed = info.removed
     }
 }
 

@@ -69,7 +69,7 @@ struct ThreadView: View {
             if let selection {
                 SelectionBar(count: selection.count,
                              onDelete: { actions.deleting = messages.filter { selection.contains($0.id) } },
-                             onForward: { actions.forwarding = messages.filter { selection.contains($0.id) } })
+                             onForward: { actions.requestForward(messages.filter { selection.contains($0.id) }, store: store) })
             } else {
             VStack(spacing: 0) {
             if let root = messages.first {

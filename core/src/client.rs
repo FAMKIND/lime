@@ -596,6 +596,7 @@ impl LimeStore {
                 reactions: Vec::new(),
                 forwarded: extras.forwarded,
                 link_preview: crate::store::link_preview::info(conn, &op_id),
+                thread_root: root.clone(),
             })
         })
     }
@@ -1453,6 +1454,15 @@ impl LimeStore {
     }
 
     /// Tests only: this store's delivery key (to compute what the server should hold).
+    /// Tests only: every message is `ms` older than it was written.
+    pub(crate) fn test_age_messages(&self, ms: i64) {
+        self.with_conn(|conn| {
+            conn.execute("UPDATE messages SET sent_at = sent_at - ?1", params![ms]).map_err(db_err)?;
+            Ok(())
+        })
+        .unwrap();
+    }
+
     /// Tests only: this phone now holds an attachment's bytes (as if it had been downloaded).
     pub(crate) fn test_set_attachment_data(&self, id: &str, bytes: &[u8]) {
         self.with_conn(|conn| crate::store::attachments::set_data(conn, id, bytes)).unwrap();

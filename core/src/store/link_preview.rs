@@ -104,7 +104,7 @@ pub(crate) fn meta_of(conn: &Connection, message_id: &str) -> Option<Meta> {
 pub(crate) fn info(conn: &Connection, message_id: &str) -> Option<LinkPreview> {
     let meta = meta_of(conn, message_id)?;
     let image = attachments::preview_of(conn, message_id).ok().flatten().map(|(d, downloaded)| AttachmentInfo {
-        id: d.id, mime: d.mime, name: d.name, size: d.size, width: d.width, height: d.height, duration_ms: d.duration_ms, thumb: d.thumb, downloaded,
+        id: d.id, mime: d.mime, name: d.name, size: d.size, width: d.width, height: d.height, duration_ms: d.duration_ms, thumb: d.thumb, downloaded, removed: false,
     });
     Some(LinkPreview { url: meta.url, title: meta.title, site: meta.site, image })
 }

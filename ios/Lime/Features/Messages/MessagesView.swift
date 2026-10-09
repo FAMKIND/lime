@@ -93,6 +93,7 @@ struct MessagesView: View {
         List {
             Group {
                 if let problem = store.problem { ProblemBanner(problem: problem) }
+                if store.lowStorage { LowStorageBanner() }
                 if store.showsRecoveryNotice { RecoveryNotice() }
                 if !store.requests.isEmpty { RequestsRow(count: store.requests.count) }
                 if store.isLoaded && store.chats.isEmpty && store.requests.isEmpty {
@@ -385,23 +386,46 @@ private struct TopControls: View {
 /// What a row of the Messages list says about the newest thing in a conversation (a reply included), in parts so it can be drawn
 /// with a small symbol and tested without a screen.
 struct ListPreview: Equatable {
-    /// "↩ Jean: " (a reply), "Jean: " (a group message), or nothing.
+    /// "Jean: " (a group message, or a reply in a group), "You: " (mine in a reply or a group), or nothing.
     var prefix = ""
     /// A symbol for pictures, video, voice messages and files.
     var symbol: String?
     var text = ""
+    /// For reply activity: what it answers, "Reply to Jean · Who can cover recess duty?" (shown above the reply, with a quote bar).
+    var quote: String?
 
-    var plain: String { prefix + text }
+    var plain: String { (quote.map { $0 + "\n" } ?? "") + prefix + text }
+
+    /// "Jean" or "You" for a message, by its first name.
+    private static func name(of message: Message, in conversation: Conversation) -> String? {
+        if message.isOwn { return "You" }
+        return conversation.members.first(where: { $0.id == message.senderID }).map { String($0.name.split(separator: " ").first ?? "") }
+    }
+
+    /// One line about a message: its words, or what its attachments are.
+    static func gist(_ message: Message) -> String {
+        if message.deleted { return "This message was deleted" }
+        let words = messagePlainText(text: message.text).replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+        if !words.isEmpty { return words }
+        return AttachmentFormat.summary(message.attachments) ?? ""
+    }
 
     static func make(_ conversation: Conversation) -> ListPreview {
         guard let last = conversation.lastMessage else { return ListPreview() }
         if last.isSystem { return ListPreview(text: last.text) }
         if last.deleted { return ListPreview(text: "This message was deleted") }
         var line = ListPreview()
-        // Who wrote it: always named for a reply ("↩ Jean: ..."), and in a group.
-        let sender = last.isOwn ? "You" : conversation.members.first(where: { $0.id == last.senderID }).map { String($0.name.split(separator: " ").first ?? "") }
-        if conversation.latestIsReply, let sender {
-            line.prefix = "↩ \(sender): "
+        let sender = name(of: last, in: conversation)
+        if conversation.latestIsReply {
+            // Reply activity reads like a quote: what it answers, then the reply.
+            let root = last.threadRoot.flatMap { id in conversation.messages.first { $0.id == id } }
+            if let root, let author = name(of: root, in: conversation) {
+                let gist = gist(root)
+                line.quote = gist.isEmpty ? "Reply to \(author)" : "Reply to \(author) · \(gist)"
+            } else {
+                line.quote = "Reply in a thread"
+            }
+            if last.isOwn || conversation.isGroup, let sender { line.prefix = "\(sender): " }
         } else if conversation.isGroup, !last.isOwn, let sender {
             line.prefix = "\(sender): "
         }
@@ -487,11 +511,10 @@ struct ConversationRow: View {
                         .fixedSize()
                 }
                 HStack(alignment: .center, spacing: 8) {
-                    previewText
-                        .font(Theme.secondary)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(2)
+                    previewBlock
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(line.plain)
                         .accessibilityIdentifier("row-preview-\(conversation.id)")
                     if let thumbnail {
                         Image(uiImage: thumbnail).resizable().scaledToFit()
@@ -519,9 +542,44 @@ struct ConversationRow: View {
         .accessibilityAddTraits(.isButton)
     }
 
+    /// The preview: for reply activity a quote line (with a bar on its left) over the reply; otherwise up to two lines of the message.
+    @ViewBuilder
+    private var previewBlock: some View {
+        if let quote = line.quote {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .center, spacing: 6) {
+                    RoundedRectangle(cornerRadius: 1, style: .continuous).fill(Theme.textSecondary.opacity(0.5)).frame(width: 2, height: 12)
+                    Text(quote).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        .accessibilityIdentifier("row-quote-\(conversation.id)")
+                }
+                previewText.font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+            }
+        } else {
+            previewText.font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
+        }
+    }
+
     /// The preview with its symbol (a camera for a picture, a microphone for a voice message...).
     private var previewText: Text {
         if let symbol = line.symbol { return Text("\(line.prefix)\(Image(systemName: symbol)) \(line.text)") }
         return Text(line.plain)
+    }
+}
+
+/// Shown when the iPhone is nearly full: Lime stops downloading by itself until there is room again.
+private struct LowStorageBanner: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "externaldrive.badge.exclamationmark").font(.system(size: 18)).foregroundStyle(Theme.text)
+            Text("Your iPhone is almost full. Lime paused downloads.").font(Theme.secondary).foregroundStyle(Theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 8).padding(.bottom, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("low-storage-banner")
     }
 }

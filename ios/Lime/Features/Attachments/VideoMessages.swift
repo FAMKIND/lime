@@ -114,6 +114,19 @@ struct VideoTile: View {
                 }
             }
             .frame(width: 248, height: 248 / min(max(item.aspect, 0.6), 1.8))
+            .overlay(alignment: .bottomLeading) {
+                if item.removed {
+                    Text("Media removed").font(Theme.caption.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 7).padding(.vertical, 3).background(.black.opacity(0.5), in: Capsule()).padding(8)
+                } else if !item.downloaded && !isOwn {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(AttachmentFormat.size(item.size)).font(Theme.caption.weight(.semibold))
+                        AvailabilityText(item: item).font(Theme.caption)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 3).background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous)).padding(8)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 Text(VoiceFormat.clock(Double(item.durationMs ?? 0) / 1000)).font(Theme.caption.weight(.semibold).monospacedDigit()).foregroundStyle(.white)
                     .padding(.horizontal, 7).padding(.vertical, 3).background(.black.opacity(0.5), in: Capsule()).padding(8)
@@ -125,6 +138,7 @@ struct VideoTile: View {
     }
 
     private func open() async {
+        if item.removed { return }
         opening = !item.downloaded
         defer { opening = false }
         guard let url = await store.fileURL(for: item) else { store.report(.offline); return }

@@ -58,3 +58,9 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **A forward extends an attachment's life on the server** (a week at least, never past 30 days from the upload). A message deleted for everyone by its owner removes the shared file for people who had not fetched it yet.
 - [ ] **Messaging yourself stays on the phone**: not backed up, not on other devices until device linking exists. Say so in help text.
 - [ ] **Forwarded labels carry no sender name**; check the report flow still works from a forwarded message.
+
+## Storage (LIME-107)
+
+- [ ] **Say where files live**: received media are kept decrypted in the phone's encrypted Lime store, excluded from iCloud backup; the server's copy goes about an hour after every recipient fetched it (or after 30 days). Until the recovery backup exists, a lost phone loses its media (the other person's copy remains). Put this in help and the privacy policy.
+- [ ] **Keep media** removes files, not messages. Default is Forever.
+- [ ] **Low storage**: below 500 MB free Lime pauses downloads and says so; a download or send that would leave under 50 MB free fails cleanly and can be retried. Test on a nearly full device before TestFlight.

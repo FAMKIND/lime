@@ -364,6 +364,10 @@ impl Transport for FakeServer {
                         state.attachments.get_mut(&id).unwrap().3 = true;
                         respond(200, json!({ "size": 1 }))
                     }
+                    "info" => match state.attachments.get(&id) {
+                        Some(entry) if entry.3 => respond(200, json!({ "expires_at": 4_102_444_800_000i64 })),
+                        _ => respond(404, json!({ "error": "not_found" })),
+                    },
                     "share" => match state.attachments.get_mut(&id) {
                         Some(entry) if entry.3 => {
                             entry.2 += body.get("recipients").and_then(Value::as_u64).unwrap_or(1) as usize;

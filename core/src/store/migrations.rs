@@ -365,6 +365,9 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE message_attachments_new RENAME TO message_attachments;
      CREATE INDEX message_attachments_by_message ON message_attachments (message_id, position);
      CREATE INDEX message_attachments_by_id ON message_attachments (attachment_id);",
+    // 21: storage management (LIME-107). A file removed on this phone (by hand or by "Keep media") keeps its row, so the bubble can say
+    // "Media removed" instead of offering a download that can no longer be had.
+    "ALTER TABLE message_attachments ADD COLUMN removed INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// The schema version this build writes.

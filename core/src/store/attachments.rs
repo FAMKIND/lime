@@ -217,6 +217,22 @@ pub(crate) fn preview_of(conn: &Connection, message_id: &str) -> Result<Option<(
 }
 
 /// One attachment by id (it can be in several messages): the row that holds its bytes if any does.
+pub(crate) fn is_removed(conn: &Connection, message_id: &str, attachment_id: &str) -> bool {
+    conn.query_row("SELECT removed FROM message_attachments WHERE message_id = ?1 AND attachment_id = ?2", params![message_id, attachment_id], |r| r.get::<_, bool>(0))
+        .unwrap_or(false)
+}
+
+/// Removed on this phone on purpose, and no copy held anywhere: it cannot be downloaded again.
+pub(crate) fn is_removed_everywhere(conn: &Connection, attachment_id: &str) -> bool {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM message_attachments WHERE attachment_id = ?1 AND removed = 1)
+            AND NOT EXISTS (SELECT 1 FROM message_attachments WHERE attachment_id = ?1 AND bytes IS NOT NULL)",
+        params![attachment_id],
+        |r| r.get::<_, bool>(0),
+    )
+    .unwrap_or(false)
+}
+
 pub(crate) fn get(conn: &Connection, attachment_id: &str) -> Result<Option<(Descriptor, bool)>, StoreError> {
     conn.query_row(
         &format!("SELECT {COLUMNS} FROM message_attachments WHERE attachment_id = ?1 ORDER BY bytes IS NOT NULL DESC LIMIT 1"),

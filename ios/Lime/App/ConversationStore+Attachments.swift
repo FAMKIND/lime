@@ -27,6 +27,11 @@ extension ConversationStore {
         if isDemo { demoSendAttachments(items, caption: text, in: id, replyTo: root); return }
         #endif
         guard let core, link != nil else { report(.offline); return }
+        guard StorageGuard.shared.allows(items.reduce(0) { $0 + Int64($1.bytes.count) }) else {
+            lowStorage = true
+            showBanner("Not enough space on your iPhone to send this.")
+            return
+        }
         let item = try? await Task.detached(priority: .userInitiated) {
             try core.sendAttachments(conversationId: id, caption: text, items: items, replyTo: root)
         }.value
@@ -70,12 +75,30 @@ extension ConversationStore {
     /// The decrypted bytes of an attachment, downloading them if needed (`nil` when it cannot be had, for example offline).
     func attachmentData(_ item: AttachmentItem) async -> Data? {
         #if DEBUG
-        if isDemo { return demoAttachmentData[item.id] }
+        if isDemo {
+            guard !item.removed, let data = demoAttachmentData[item.id] else { return nil }
+            if !item.downloaded && !StorageGuard.shared.allows(item.size) {
+                lowStorage = true
+                showBanner("Not enough space on your iPhone to download this.")
+                return nil
+            }
+            markDownloaded(item.id)
+            return data
+        }
         #endif
         guard let core else { return nil }
         if let held = try? await Task.detached(priority: .userInitiated, operation: { try core.attachmentData(attachmentId: item.id) }).value { return held }
+        if item.removed { return nil }
+        // Not enough room: say so and stop before writing anything; nothing is lost and it can be tried again.
+        guard StorageGuard.shared.allows(item.size) else {
+            lowStorage = true
+            showBanner("Not enough space on your iPhone to download this.")
+            return nil
+        }
         guard let link, let token = try? await link.token() else { return nil }
         let id = item.id
+        downloading.insert(id)
+        defer { downloading.remove(id) }
         let fetched: Bool = await Task.detached(priority: .userInitiated) {
             (try? core.downloadAttachment(transport: link.transport, authToken: token, attachmentId: id)) != nil
         }.value
@@ -101,7 +124,14 @@ extension ConversationStore {
         if isDemo { return }
         #endif
         guard core != nil, link != nil else { return }
-        let wanted = conversations.flatMap { $0.messages.suffix(30) }.flatMap(\.attachments).filter { ($0.kind == .image && $0.size < 6_000_000 || $0.kind == .audio && $0.size < 1_000_000) && !$0.downloaded }.prefix(12)
+        refreshStorageState()
+        await applyKeepMedia()
+        // Only what the settings allow (pictures, video and files by their own choices, voice always), and nothing when the phone is nearly full.
+        let guardrail = StorageGuard.shared
+        let wanted = conversations.flatMap { $0.messages.suffix(30) }.flatMap(\.attachments)
+            .filter { !$0.downloaded && !$0.removed && guardrail.mayAutoDownload($0) }
+            .filter { $0.kind == .image && $0.size < 6_000_000 || $0.kind == .audio && $0.size < 1_000_000 || ($0.kind == .video || $0.kind == .file) && $0.size < 25_000_000 }
+            .prefix(12)
         for item in wanted { _ = await attachmentData(item) }
     }
 
@@ -174,7 +204,22 @@ extension ConversationStore {
         going.attachments = [demoAttachment(hue: 0.9, name: "Banner.jpg")]
         demoTransfer[going.attachments[0].id] = TransferProgress(upload: true, done: 3, total: 5)
         // "attachments" is pictures and a file; "attachments-media" is voice, video and an upload in progress.
-        let messages = media ? [voiceOne, voiceTwo, clip, going] : [album, file, mine]
+        // "attachments-remote": nothing has been downloaded yet (the settings or a full phone), one file is gone, one was removed.
+        var remote = Message(id: "r1", senderID: "pat", text: "Photos from the trip", date: now.addingTimeInterval(-900))
+        var far = demoAttachment(hue: 0.15, name: "Trip far.jpg")
+        far.downloaded = false
+        remote.attachments = [far]
+        var gonePDF = Message(id: "r2", senderID: "pat", text: "", date: now.addingTimeInterval(-800))
+        gonePDF.attachments = [AttachmentItem(id: UUID().uuidString.lowercased(), mime: "application/pdf", name: "gone-slip.pdf", size: 900_000, downloaded: false)]
+        var removedPhoto = Message(id: "r3", senderID: "pat", text: "", date: now.addingTimeInterval(-700))
+        var oldPic = demoAttachment(hue: 0.75, name: "Old.jpg")
+        oldPic.downloaded = false; oldPic.removed = true
+        removedPhoto.attachments = [oldPic]
+        var farPDF = Message(id: "r4", senderID: "pat", text: "", date: now.addingTimeInterval(-600))
+        let farPDFID = UUID().uuidString.lowercased()
+        demoAttachmentData[farPDFID] = Data("%PDF-1.4 remote".utf8)
+        farPDF.attachments = [AttachmentItem(id: farPDFID, mime: "application/pdf", name: "Schedule.pdf", size: 1_250_000, downloaded: false)]
+        let messages = screen == "attachments-remote" ? [remote, gonePDF, removedPhoto, farPDF] : (media ? [voiceOne, voiceTwo, clip, going] : [album, file, mine])
         conversations = [Conversation(id: "dm:att", title: pat.name, members: [pat], messages: messages)]
         VoicePlayer.shared.stop()
         VoicePlayer.shared.simulated = true

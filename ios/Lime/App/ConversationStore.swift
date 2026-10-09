@@ -22,6 +22,12 @@ final class ConversationStore {
     @ObservationIgnored var notifications: NotificationCoordinator?
     @ObservationIgnored private var detector = ArrivalDetector()
     var banner: String?
+    /// The phone is nearly full: automatic downloads are paused (Messages says so).
+    var lowStorage = false
+    /// Until when the server still has an attachment (`.some(nil)`: it is gone), as asked this session.
+    var availability: [String: Date??] = [:]
+    /// Attachments being downloaded because someone tapped them (their tile shows a ring).
+    var downloading: Set<String> = []
     /// True once the store has opened and the first load has finished.
     private(set) var isLoaded = false
     /// Set when the encrypted store could not be opened (the About sheet reports it).
@@ -448,6 +454,7 @@ final class ConversationStore {
     }
 
     func reload() async {
+        refreshStorageState()
         #if DEBUG
         if isDemo { return }
         #endif
@@ -688,6 +695,7 @@ final class ConversationStore {
             ]),
         ]
         isLoaded = true
+        refreshStorageState()
         demoBlocked = [BlockedPerson(conversationId: "dm:pat", name: "Pat Doe", tone: UInt32(AvatarTone.tone(for: "pat")))]
         switch screen {
         case "requests": path.append(MessagesRoute.requests)
@@ -758,7 +766,7 @@ final class ConversationStore {
             demoSheet = "scan"
             let key = screen == "scan-verified" ? Self.demoGraceFingerprint : "0000111122223333FFFF"
             demoScanCode = "https://limechat.org/u/grace.h?k=\(key)"
-        case "attachments", "attachments-draft", "attachments-media", "attachment-viewer":
+        case "attachments", "attachments-draft", "attachments-media", "attachments-remote", "attachment-viewer":
             loadDemoAttachments(draft: screen == "attachments-draft", screen: screen ?? "attachments")
             path.append("dm:att")
         case "chat-verified":
@@ -776,6 +784,9 @@ final class ConversationStore {
             }
         default:
             // "settings", "settings/profile", "settings/profile/edit-about", "settings/privacy/blocked", ...
+            if let screen, screen.hasPrefix("settings/storage") {
+                loadDemoAttachments(draft: false)
+            }
             if let screen, screen.hasPrefix("settings") {
                 demoSheet = "settings"
                 demoSettingsRoute = screen.split(separator: "/").dropFirst().map(String.init)
@@ -853,7 +864,8 @@ final class ConversationStore {
     }
 
     private func demoReply(_ text: String, root: String, in conversationID: String) {
-        let reply = Message(id: UUID().uuidString, senderID: nil, text: text, date: Date(), state: .sending)
+        var reply = Message(id: UUID().uuidString, senderID: nil, text: text, date: Date(), state: .sending)
+        reply.threadRoot = root
         demoThreads[root, default: []].append(reply)
         threads[root] = demoThreads[root]
         if let c = conversations.firstIndex(where: { $0.id == conversationID }) {
