@@ -140,6 +140,7 @@ xcrun devicectl device copy from --device <udid> --domain-type appDataContainer 
   --domain-identifier com.famkind.lime --source Documents/nearby-logs --destination ~/Downloads/ble-logs/A
 xcrun devicectl list devices      # the udid
 ios/analyze-ble-logs.py ~/Downloads/ble-logs      # a timeline and the numbers for docs/spike-ble.md
+ios/analyze-auto-logs.py A.jsonl B.jsonl ...      # an unattended Auto test (LIME-103b/c): the sender's log, then the receiver's
 ```
 
 The unattended overnight test (LIME-103b) is the **Auto test** button on that screen; its plan is `docs/spike-ble-test-plan-2.md`.
