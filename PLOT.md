@@ -1966,6 +1966,110 @@ If anything contradicts this brief, stop and ask the user.
     5. **the product promise:** "delivered when phones meet and at least one is awake", **never prompt delivery between two locked phones**.
   - The spike series is complete. Next for the mesh: the v1 design brief after 105–109.
 
+### LIME-106-fix → `tend` (lime-aa) (NEXT, before 107): reaction layout back to the bottom, the horizontal emoji picker, breathing room, a reply-context header
+**The user's QA (2026-10-09) with screenshots (Lime; Apple Messages list; KakaoTalk reply). The screenshots contain other people's names/messages: never copy them.**
+
+**Phase 0:** `git add PLOT.md` only. **Phase 1:** survey the iOS bubble/footer/reaction code from 104-fix, the image viewer's reaction menu, the Messages list row and the Replies screen. **Reference the web prototype's mobile footer** in `public/css/lime.css` ~7930–7975 (`.lime-message__foot`: one row under the bubble with **reaction chips on the leading side and the time/status stamp pushed to the trailing side** (`margin-left: auto`), wrapping if needed; then the reply summary) and `.lime-reaction` ~5017.
+
+**Phase 2:**
+1. **Reactions back under the bubble (the user prefers it: "cleaner and more aligned"). This reverses 104-fix item 9's top-corner pill.** The layout, following the web prototype:
+   1. the bubble;
+   2. **one footer row**: reaction chips (leading) … time · Sent/Edited (trailing), aligned to the bubble's edge;
+   3. the reply summary below.
+   - **Chips:** **no outline**, a **soft grey fill only** (a light warm-neutral token, subtle); yours slightly deeper. Emoji + count.
+   - **Too many:** the chip row **scrolls horizontally** within the bubble's width, or shows the first 5 + "+N" opening the who-reacted sheet.
+   - **Spacing:** enough vertical space **between message groups** (≈ 12–16 pt) that a footer clearly belongs to the bubble above it, never crowding the next bubble.
+2. **The reaction picker is a horizontal, scrollable emoji bar** (the Apple/macOS tapback style) everywhere: chat, Replies, **and the photo/album/video viewer** (today the viewer shows a vertical menu list). The 6 quick emoji + "+" (the full picker), in a glass capsule above the long-pressed item. The other actions stay in the menu below it.
+3. **Breathing room, Apple-Messages style, on the Messages list:**
+   - wider side margins;
+   - **a dedicated left gutter column for the unread dot** (aligned, not touching the avatar);
+   - consistent avatar size and spacing;
+   - taller rows with comfortable vertical padding;
+   - separators inset from the text column.
+   - Apply the same margin rhythm to the chat screen (bubble side margins, avatar gutter).
+4. **The reply-context component (inspired by KakaoTalk's "Reply to …" quote):**
+   - **in the Replies screen header area**, under the nav, a compact glass card: the root author's avatar + **"Replies · <Name>"** + **a one-line quote of the root message** (or its attachment label), like the chat header shows a person;
+   - the full root bubble below can then be removed or kept (plot's choice: **keep the root bubble**, and the card is the header summary);
+   - **the same component appears above the composer while replying in a thread**: "Reply to <Name> · <quote>" with an ✕ to leave Replies;
+   - **also used in the Messages list** for reply-activity rows (see the note: **the user to confirm what "messages page" means**; if unclear, build only the Replies-header + composer uses and ask).
+
+**Verification:**
+- the tiered iOS rule;
+- UI tests (chips under the bubble with no outline (a token check); the footer order bubble→reactions/time→replies; a horizontal picker in the viewer; the unread gutter alignment; the reply-context card in Replies);
+- 0 warnings.
+
+**Gate:**
+- reactions sit under the bubble on the same line as the time, with a soft grey and no outline, and clearly belong to their message;
+- long-press a photo/video → a horizontal emoji bar;
+- the Messages list has more breathing room;
+- Replies shows the "Replies · Name + quote" header and a "Reply to …" strip above the composer.
+
+**Record:** `## LIME-106-fix`. Commit: `fix(ios): reactions under the bubble, horizontal emoji bar, list breathing room, reply-context header`, trailer `Brief: LIME-106-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**LIME-107 run instructions (finalising the draft above):**
+- **Phase 0:** `git add PLOT.md` only.
+- **Phase 1:** survey the attachment store, download paths, Settings and core migrations; stop and ask the user on any conflict.
+- **Phase 2:** build the draft's four bullets (Settings → Storage; Keep media; Auto-download incl. "Available until <date>"; low-storage handling incl. a free-space check, the < 500 MB pause banner, clean failures).
+- **Verification:**
+  - core tests (the keep-media sweep keeps messages, removes media; the free-space guard);
+  - a UI test with a simulated full disk (an injected free-space provider);
+  - the tiered iOS rule; 0 warnings.
+- **Gate:** Settings → Storage shows usage per chat; delete one chat's media; set Keep media to 30 days; switch video auto-download to Wi-Fi only and see a tap-to-download placeholder.
+- **Record:** `## LIME-107`. Commit: `feat(ios): storage management, keep-media, auto-download settings, low-storage safety`, trailer `Brief: LIME-107`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-108 → `tend` (lime-aa) (after 107): status badges + work hours
+**What it does:** the user approved (2026-10-09) status icons from the web prototype (LIME-57 series) + work-hours boundaries, with plot's privacy design.
+
+**Phase 0:** `git add PLOT.md` only. **Phase 1:** survey the avatar component, the LIME-102 notification settings/holding, the `profile.changed` control op (98b-fix), and the web prototype's status SVGs in `public/` (the cut-out notch + the Montserrat "z"). Stop and ask the user on any conflict.
+
+**Phase 2:**
+1. **The status model:**
+   - **Available / Away / Do not disturb**, set manually or **automatically by work hours**;
+   - **shared only with accepted contacts** via an encrypted control op `status.changed { state, until }` (sealed where possible);
+   - **no live presence, no "last seen", nothing on the server.**
+2. **The badge:** a small status icon **in a cut-out notch at the avatar's bottom-right**, ported from the web prototype: green dot = available, yellow moon = away, a DND badge with the Montserrat-Bold "z" = do not disturb.
+   - Shown in Messages rows, chat headers, New Message, member lists and Settings.
+   - **No badge for "unknown"** (a contact who hasn't shared one).
+3. **Set your status:** tap **your own avatar** (top right of Messages) → a sheet: Available · Away · Do not disturb · **Quiet until…** (1 h / until tomorrow 7:00 / custom); plus a link to Work hours.
+4. **Settings → Work hours:** a weekly schedule (days + start/end, default Mon–Fri 7:00–15:30).
+   - **Outside work hours:** you're automatically DND; **notifications are held** (delivered silently, with a summary at the start of the next work period).
+   - **Exception:** messages marked **urgent/emergency always break through** (reserve the flag for emergency mode; not sendable by users until the mesh/emergency brief).
+5. **Chat header:** under a contact's name, "Quiet hours until 7:00", or "Do not disturb", when applicable.
+6. **Docs:** `api-v2.md` (the control op; the privacy note: contacts-only, no presence).
+
+**Verification:**
+- core (status op sent only to accepted contacts; expiry of "until");
+- notification holding outside hours (unit, with an injected clock);
+- UI tests (set status; the badge appears on the other account in the integration e2e; the work-hours editor);
+- tiered iOS; 0 warnings.
+
+**Gate:**
+- set DND on your phone → Jean sees the "z" badge and "Do not disturb";
+- set work hours ending in 5 minutes → after that, Jean's message arrives silently, and you get the summary when hours resume (or when you switch to Available).
+
+**Record:** `## LIME-108`. Commit: `feat: status badges (contacts-only) and work hours with held notifications`, trailer `Brief: LIME-108`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-109 → `tend` (lime-aa) (after 108): localization groundwork + Spanish
+**Phase 0:** `git add PLOT.md` only. **Phase 1:** inventory every user-facing string (SwiftUI `Text`, alerts, notifications, the permission strings in Info.plist, the core error messages surfaced to UI).
+
+**Phase 2:**
+1. **Move all strings into Apple String Catalogs** (`Localizable.xcstrings`, `InfoPlist.xcstrings`), with plural rules ("1 reply" / "N replies"), and dates/times via locale formatters.
+2. **Spanish (es) translation** of every string.
+   - **Tend drafts it**, writing **neutral Latin-American Spanish**, teacher-appropriate and using "tú";
+   - **marks each string "needs review"**;
+   - and lists in `docs/localization.md` the strings it's least sure of.
+   - **The user/a native speaker reviews before release** (add this to `docs/release-checklist.md`).
+3. The app follows the iPhone language; no in-app switch in v1.
+4. **The no-hardcoded-strings rule** added to `ios/README.md` + a check script that flags new literal UI strings.
+
+**Verification:**
+- run the app in Spanish (a scheme argument) on the 13 mini: **no English left on the main screens**, no truncation at 375pt (UI tests in `es`), plurals correct;
+- 0 warnings.
+
+**Gate:** set the iPhone language to Español → Lime is in Spanish; skim for anything odd.
+
+**Record:** `## LIME-109`. Commit: `feat(ios): String Catalogs + Spanish translation (draft, needs native review)`, trailer `Brief: LIME-109`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
 ### THE QA INTAKE RULE (the user, 2026-10-08): "I'll keep adding them as I see; you prioritise."**
 - **Plot appends** small UI/QA items to the **current open QA brief (LIME-104)** until it's sent.
 - **Protocol/feature-sized items** go to a feature brief (105/106 or new).
@@ -2099,6 +2203,14 @@ If anything contradicts this brief, stop and ask the user.
 - The long-press menu (reaction row incl. "+"; Reply / Forward / Edit / Copy / Select / Delete); reactions with chips; Edit for 24 h ("Edited"); Delete for me/everyone (24 h); Copy; Select mode. Forward is a toast until 106.
 - 151 Rust / 11+11 integration tests pass; tiered iOS passed; 0 warnings.
 - **Tend ran 105 before 104-fix** (the order was swapped); 104-fix (7 items) is next.
+
+**LIME-106 landed as `e11542b`** (pushed and verified).
+- **Forward:** a picker (≤ 5 chats); "Forwarded" with no author; attachments re-shared by reference (a new `share` call extends the server lifetime; local migration 20).
+- **Messaging yourself:** local-only, never uploaded; no "Note to Self" label (only the commit title says it).
+- **Link cards:** LinkPresentation on the sender; card + image encrypted; recipients never fetch; Settings → Privacy toggle (on). The subheading = the site (LinkPresentation has no description).
+- 157 Rust / 48 server / 12+12 integration tests pass; tiered iOS passed (one transient link-card stall); 0 warnings.
+- Tend deployed the attachment function to staging (needed for integration; fine).
+- **Next:** LIME-107 (storage) → 108 (status + work hours) → 109 (Spanish) → the mesh v1 design brief.
 
 **LIME-104-fix landed as `d0b9884`** (pushed and verified).
 - **The bug's cause:** the find task re-ran on the chat's reappear and re-pushed Replies; now the answered query is remembered.
