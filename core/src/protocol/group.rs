@@ -98,6 +98,8 @@ pub(crate) enum Kind {
     SetAvatar { emoji: Option<String>, photo: Option<GroupPhoto> },
     /// `role` is `Admin` or `Member`.
     SetRole { user: String, role: Role },
+    /// The owner ends the group for everyone: it becomes read-only (LIME-115).
+    Delete,
 }
 
 impl Kind {
@@ -110,6 +112,7 @@ impl Kind {
             Kind::Rename { .. } => "group.rename",
             Kind::SetAvatar { .. } => "group.set_avatar",
             Kind::SetRole { .. } => "group.set_role",
+            Kind::Delete => "group.delete",
         }
     }
 
@@ -125,6 +128,7 @@ impl Kind {
                 None => json!({ "emoji": emoji }),
             },
             Kind::SetRole { user, role } => json!({ "user": user, "role": role.as_str() }),
+            Kind::Delete => json!({}),
         }
     }
 
@@ -148,6 +152,7 @@ impl Kind {
                 };
                 Kind::SetAvatar { emoji: if photo.is_some() { None } else { text("emoji") }, photo }
             }
+            "group.delete" => Kind::Delete,
             "group.set_role" => {
                 let role = Role::parse(&text("role")?).filter(|r| *r != Role::Owner)?;
                 Kind::SetRole { user: text("user")?, role }
@@ -188,6 +193,8 @@ pub(crate) enum Event {
     Photo,
     Role(String, Role),
     NewOwner(String),
+    /// The owner deleted the group.
+    Deleted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,6 +208,8 @@ pub(crate) struct Effect {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct GroupState {
     pub created: bool,
+    /// The owner ended the group: read-only for everyone.
+    pub deleted: bool,
     pub name: String,
     pub emoji: Option<String>,
     pub photo: Option<GroupPhoto>,
@@ -348,7 +357,7 @@ fn pass(group_id: &str, sorted: &[GroupOp], ancestry: &Ancestry, voiding_removes
             state.effects.push(Effect { op_id: op.op_id.clone(), hlc: op.hlc, actor: op.sender.clone(), event: Event::Created { name } });
             continue;
         }
-        if !state.created {
+        if !state.created || state.deleted {
             continue;
         }
         let actor_role = state.role_of(&op.sender);
@@ -401,6 +410,11 @@ fn pass(group_id: &str, sorted: &[GroupOp], ancestry: &Ancestry, voiding_removes
                 state.emoji = if photo.is_some() { None } else { clean_emoji(emoji) };
                 state.photo = photo.clone();
                 Some(if photo.is_some() { Event::Photo } else { Event::Avatar })
+            }
+            // Only the owner ends a group; everyone replays this the same way, so a forged delete from anyone else changes nothing.
+            Kind::Delete if actor_role == Some(Role::Owner) => {
+                state.deleted = true;
+                Some(Event::Deleted)
             }
             Kind::SetRole { user, role } if actor_role == Some(Role::Owner) => {
                 match state.members.iter_mut().find(|m| m.user == *user && m.role != Role::Owner) {

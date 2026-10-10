@@ -984,6 +984,7 @@ final class LimeUITests: XCTestCase {
         let dock = app.staticTexts["dock-badge"]
         XCTAssertTrue(dock.waitForExistence(timeout: 5))
         XCTAssertEqual(dock.label, "1", "the dock counts unread chats")
+        XCTAssertEqual(dock.frame.width, dock.frame.height, accuracy: 1, "a single digit is in a perfect circle")
         // The dot hangs in the margin, left of the avatar, and rows start at the same edge as the logo.
         let dot = app.descendants(matching: .any)["unread-dot-dm:sam"]
         XCTAssertLessThan(dot.frame.maxX, 16, "in the margin")
@@ -1175,6 +1176,63 @@ final class LimeUITests: XCTestCase {
         app.buttons["send-button"].tap()
         let link = app.links.matching(NSPredicate(format: "label CONTAINS[c] 'famkind.com'")).firstMatch
         XCTAssertTrue(link.waitForExistence(timeout: 8), "the address is a tappable link")
+    }
+
+    // MARK: LIME-115: group rows and default names
+
+    func testSwipingAGroupRowOffersMuteLeaveAndDeleteForTheOwnerOrClearForAMember() {
+        let app = threadApp("groups-rows")
+        app.launch()
+        let owned = "conversation-row-grp:demo1", member = "conversation-row-grp:demo2"
+        XCTAssertTrue(app.buttons[owned].waitForExistence(timeout: 10))
+        // The group I own: Mute, Leave, Delete (for everyone).
+        app.buttons[owned].swipeLeft()
+        XCTAssertTrue(app.buttons["swipe-leave-grp:demo1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["swipe-mute-grp:demo1"].exists)
+        XCTAssertTrue(app.buttons["swipe-delete-grp:demo1"].exists)
+        XCTAssertFalse(app.buttons["swipe-clear-grp:demo1"].exists)
+        app.buttons["swipe-delete-grp:demo1"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'for everyone?'")).firstMatch.waitForExistence(timeout: 5))
+        app.buttons.matching(identifier: "group-action-confirm").firstMatch.tap()
+        // It stays in the list, ended and read-only.
+        app.buttons[owned].tap()
+        XCTAssertTrue(app.staticTexts["group-ended-note"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["group-ended-note"].label.contains("deleted this group"), app.staticTexts["group-ended-note"].label)
+        XCTAssertFalse(app.textViews.firstMatch.exists, "no composer in a deleted group")
+        goBack(app)
+        // The group I am only a member of: Mute, Leave, Clear messages (no Delete).
+        app.buttons[member].swipeLeft()
+        XCTAssertTrue(app.buttons["swipe-clear-grp:demo2"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["swipe-leave-grp:demo2"].exists && app.buttons["swipe-mute-grp:demo2"].exists)
+        XCTAssertFalse(app.buttons["swipe-delete-grp:demo2"].exists)
+        app.buttons["swipe-clear-grp:demo2"].tap()
+        app.buttons.matching(identifier: "group-action-confirm").firstMatch.tap()
+        XCTAssertTrue(app.buttons[member].waitForExistence(timeout: 5), "clearing keeps me in the group")
+        // Leaving keeps it listed as read-only too.
+        app.buttons[member].swipeLeft()
+        app.buttons["swipe-leave-grp:demo2"].tap()
+        app.buttons.matching(identifier: "group-action-confirm").firstMatch.tap()
+        app.buttons[member].tap()
+        XCTAssertTrue(app.staticTexts["group-ended-note"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts["group-ended-note"].label, "You left this group.")
+        // A one-to-one chat is unchanged: Mute and Delete only.
+        goBack(app)
+        app.buttons["conversation-row-dm:sam"].swipeLeft()
+        XCTAssertTrue(app.buttons["swipe-delete-dm:sam"].waitForExistence(timeout: 5) && app.buttons["swipe-mute-dm:sam"].exists)
+        XCTAssertFalse(app.buttons["swipe-leave-dm:sam"].exists)
+    }
+
+    func testANewGroupIsNamedFromItsMembersAndCanBeCreatedAtOnce() {
+        let app = threadApp("new-group-name")
+        app.launch()
+        let field = app.textFields["group-name-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertEqual(field.value as? String, "Lee & Sam", "named from the members' first names")
+        XCTAssertTrue(app.buttons["group-create"].isEnabled, "Create works without naming it")
+        app.buttons["group-create"].tap()
+        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 8), "the new group's chat opens")
+        XCTAssertTrue(title.label.contains("Lee & Sam"), title.label)
     }
 
     func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {
@@ -1790,8 +1848,12 @@ final class LimeUITests: XCTestCase {
         next.tap()
         let create = app.buttons["group-create"]
         XCTAssertTrue(create.waitForExistence(timeout: 5))
-        XCTAssertFalse(create.isEnabled, "a name is required")
+        XCTAssertTrue(create.isEnabled, "a name is filled in from the people picked")
         let field = app.textFields["group-name-field"]
+        field.tap()
+        let existing = (field.value as? String) ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count))
+        XCTAssertFalse(create.isEnabled, "but a name is still required")
         field.typeText("Grade 4 Team")
         XCTAssertTrue(create.isEnabled)
         create.tap()
@@ -1861,6 +1923,13 @@ final class LimeUITests: XCTestCase {
         let leave = app.buttons.matching(identifier: "group-leave-confirm").firstMatch
         XCTAssertTrue(leave.waitForExistence(timeout: 3))
         leave.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
+        // The group stays in the list, read-only ("You left"), until it is removed.
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-grp:'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(app.staticTexts["group-ended-note"].waitForExistence(timeout: 5))
+        app.buttons["group-ended-remove"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-grp:'")).firstMatch.exists)
     }

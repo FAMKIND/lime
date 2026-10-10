@@ -271,7 +271,37 @@ impl LimeStore {
         self.make_group_op(&state, &me, &group_id, None, Kind::SetRole { user: user_id, role: if admin { Role::Admin } else { Role::Member } })
     }
 
-    /// Leaves the group. The conversation disappears from Messages and nothing more is shown from it.
+    /// Deletes the group for everyone. Only the owner may: it becomes read-only for every member ("<Owner> deleted this group"),
+    /// each of whom can then remove it from their own list. No new messages are accepted, and this phone's sending session is retired.
+    pub fn delete_group(&self, conversation_id: String) -> Result<(), StoreError> {
+        let (group_id, state, me) = self.group_context(&conversation_id)?;
+        let before = self.with_conn(|conn| groups::state_of(conn, &group_id))?;
+        if before.role_of(&me) != Some(Role::Owner) || before.deleted {
+            return Err(StoreError::Rejected);
+        }
+        self.make_group_op(&state, &me, &group_id, None, Kind::Delete)?;
+        self.with_conn(|conn| groups::delete_outbound(conn, &group_id))
+    }
+
+    /// Clears a conversation's messages from this phone only, and stays in it (for a group: still a member, nothing is sent).
+    pub fn clear_messages(&self, conversation_id: String) -> Result<(), StoreError> {
+        let mut conn = self.lock();
+        let tx = conn.transaction().map_err(db_err)?;
+        let exists: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)", params![conversation_id], |r| r.get(0)).map_err(db_err)?;
+        if !exists {
+            return Err(StoreError::NotFound);
+        }
+        let mine = "(SELECT id FROM messages WHERE conversation_id = ?1 AND local_state != 'system')";
+        tx.execute(&format!("DELETE FROM message_attachments WHERE message_id IN {mine}"), params![conversation_id]).map_err(db_err)?;
+        tx.execute(&format!("DELETE FROM message_deliveries WHERE message_id IN {mine}"), params![conversation_id]).map_err(db_err)?;
+        tx.execute(&format!("DELETE FROM reactions WHERE message_id IN {mine}"), params![conversation_id]).map_err(db_err)?;
+        tx.execute(&format!("DELETE FROM thread_state WHERE root_id IN {mine}"), params![conversation_id]).map_err(db_err)?;
+        tx.execute("DELETE FROM messages WHERE conversation_id = ?1 AND local_state != 'system'", params![conversation_id]).map_err(db_err)?;
+        tx.execute("UPDATE conversations SET unread = 0, marked_unread = 0 WHERE id = ?1", params![conversation_id]).map_err(db_err)?;
+        tx.commit().map_err(db_err)
+    }
+
+    /// Leaves the group. It stays in Messages as "You left", read-only, until I delete it from my list.
     pub fn leave_group(&self, conversation_id: String) -> Result<(), StoreError> {
         let (group_id, state, me) = self.group_context(&conversation_id)?;
         let before = self.with_conn(|conn| groups::state_of(conn, &group_id))?;
@@ -717,7 +747,11 @@ impl LimeStore {
                     return Ok(false);
                 }
                 let known: Option<String> = conn
-                    .query_row("SELECT request_state FROM conversations WHERE id = ?1", params![conversation], |r| r.get(0))
+                    .query_row(
+                        "SELECT CASE WHEN group_ended IS NOT NULL THEN 'left' ELSE request_state END FROM conversations WHERE id = ?1",
+                        params![conversation],
+                        |r| r.get(0),
+                    )
                     .optional()
                     .map_err(db_err)?;
                 let Some(state) = known else { return Ok(false) };
@@ -765,8 +799,13 @@ impl LimeStore {
             if pinned.as_deref() != Some(cert.master_key.as_str()) {
                 return Ok(Outcome::Keep(pending::INVALID));
             }
+            // A group that ended (I left it, or its owner deleted it) takes no more messages.
             let state: Option<String> = conn
-                .query_row("SELECT request_state FROM conversations WHERE id = ?1", params![conversation], |r| r.get(0))
+                .query_row(
+                    "SELECT CASE WHEN group_ended IS NOT NULL THEN 'left' ELSE request_state END FROM conversations WHERE id = ?1",
+                    params![conversation],
+                    |r| r.get(0),
+                )
                 .optional()
                 .map_err(db_err)?;
             let Some(state) = state else {

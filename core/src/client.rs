@@ -544,7 +544,7 @@ impl LimeStore {
         self.with_conn(|conn| {
             let visible: bool = conn
                 .query_row(
-                    "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state NOT IN ('blocked', 'left'))",
+                    "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1 AND request_state NOT IN ('blocked', 'left') AND group_ended IS NULL)",
                     params![conversation_id],
                     |r| r.get(0),
                 )

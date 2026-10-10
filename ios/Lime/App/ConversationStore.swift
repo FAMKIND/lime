@@ -775,6 +775,13 @@ final class ConversationStore {
                 path.append(id)
             }
             if screen == "group-details" { path.append(id); path.append(GroupTarget(conversationID: id)) }
+        case "groups-rows":
+            // Two groups to swipe: one I own and one I am only a member of (next to the demo's one-to-one chats).
+            loadDemoTeachers()
+            let mine = demoMakeGroup(name: "Grade 4 Team", emoji: "🍎", memberIDs: ["lee", "sam"], owner: true)
+            let theirs = demoMakeGroup(name: "Staff Social", emoji: "🎉", memberIDs: ["lee", "priya.nair"], owner: false)
+            demoAddMessages(to: mine, [("lee", "Field trip on Friday?")])
+            demoAddMessages(to: theirs, [("lee", "Pizza at noon")])
         case "scan-verified", "scan-mismatch":
             loadDemoTeachers()
             demoSheet = "scan"

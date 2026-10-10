@@ -187,14 +187,20 @@ pub(crate) fn rebuild(conn: &Connection, group_id: &str, me: &str, now: i64) -> 
             .map_err(db_err)?;
         }
         (Some(current), false) if current != "blocked" => {
+            // Someone else removed me: it leaves my list. I left myself: it stays, read-only ("You left"), until I delete it.
+            let left_myself = state.effects.iter().any(|e| e.event == Event::Left && e.actor == me);
             conn.execute(
-                "UPDATE conversations SET title = ?2, group_emoji = ?3, request_state = 'left', group_photo = ?4 WHERE id = ?1",
-                params![conv, state.name, state.emoji, photo],
+                "UPDATE conversations SET title = ?2, group_emoji = ?3, request_state = ?5, group_photo = ?4 WHERE id = ?1",
+                params![conv, state.name, state.emoji, photo, if left_myself { "accepted" } else { "left" }],
             )
             .map_err(db_err)?;
         }
         _ => {}
     }
+    // Ended: I left it, or its owner deleted it. Either way it is read-only.
+    let left_myself = !i_am_member && state.effects.iter().any(|e| e.event == Event::Left && e.actor == me);
+    let ended = if state.deleted { Some("deleted") } else if left_myself { Some("left") } else { None };
+    conn.execute("UPDATE conversations SET group_ended = ?2 WHERE id = ?1", params![conv, ended]).map_err(db_err)?;
 
     if existing_conversation(conn, &conv)? {
         // The people, in the order they joined (me last).
@@ -241,6 +247,7 @@ fn write_system_lines(conn: &Connection, conv: &str, state: &GroupState, me: &st
             Event::Photo => json!({ "e": "photo", "by": effect.actor }),
             Event::Role(user, role) => json!({ "e": "role", "by": effect.actor, "user": user, "role": role.as_str() }),
             Event::NewOwner(user) => json!({ "e": "owner", "by": effect.actor, "user": user }),
+            Event::Deleted => json!({ "e": "deleted", "by": effect.actor }),
         };
         for user in referenced_users(&effect.event) {
             ensure_person(conn, &user)?;
@@ -288,6 +295,7 @@ pub(crate) fn render_system(conn: &Connection, body: &str, me_is: &str) -> Strin
         }
         "removed" => format!("{by} removed {}", object(&text("user"))),
         "left" => format!("{by} {}", if you { "left the group" } else { "left" }),
+        "deleted" => format!("{by} deleted this group"),
         "renamed" => format!("{by} renamed the group to “{}”", text("name")),
         "avatar" => format!("{by} changed the group picture"),
         "photo" => format!("{by} changed the group photo"),

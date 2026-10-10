@@ -483,7 +483,9 @@ struct ChatView: View {
                 SelectionBar(count: selection.count,
                              onDelete: { actions.deleting = conversation.messages.filter { selection.contains($0.id) } },
                              onForward: { actions.requestForward(conversation.messages.filter { selection.contains($0.id) }, store: store) })
-            } else if conversation.isRequest { requestBar(conversation) } else { composer(conversation) }
+            } else if conversation.isRequest { requestBar(conversation) }
+            else if let ended = conversation.groupEnded { endedBar(conversation, ended) }
+            else { composer(conversation) }
         }
     }
 
@@ -543,6 +545,24 @@ struct ChatView: View {
         guard var current = selection else { return }
         if current.contains(id) { current.remove(id) } else { current.insert(id) }
         selection = current
+    }
+
+    /// A group that ended is read-only: "You left this group" or "<Owner> deleted this group".
+    private func endedBar(_ conversation: Conversation, _ ended: String) -> some View {
+        let words = ended == "left" ? "You left this group." : (conversation.messages.last { $0.isSystem && $0.text.contains("deleted this group") }.map { $0.text + "." } ?? "This group was deleted.")
+        return VStack(spacing: 10) {
+            Text(words).font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                .accessibilityIdentifier("group-ended-note")
+            Button {
+                Task { await store.deleteChat(conversation.id); store.path = NavigationPath() }
+            } label: {
+                Text("Remove from my list").font(Theme.body.weight(.semibold)).foregroundStyle(Color.red).frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .accessibilityIdentifier("group-ended-remove")
+        }
+        .padding(.horizontal, 20).padding(.vertical, 10)
+        .limeGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 16).padding(.bottom, 4)
     }
 
     private func composer(_ conversation: Conversation) -> some View {

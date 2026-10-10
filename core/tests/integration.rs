@@ -1294,3 +1294,53 @@ fn a_status_reaches_an_accepted_contact_through_the_real_server_and_the_server_h
         assert!(!name.contains("status") || !rows.contains("dnd"), "no status in table {name}");
     }
 }
+
+#[test]
+fn an_owner_deletes_a_group_for_everyone_and_a_member_clears_messages_and_stays_through_the_real_server() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    for (i, (account, name)) in accounts.iter().zip(["Ann Adams", "Bo Brown", "Cy Clark"]).enumerate() {
+        admin.give_profile(account, name, &format!("d{i}{}", &suffix[..8]));
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let stores: Vec<_> = (0..3).map(|i| store(&dir, &format!("d{i}.db"), 30 + i as u8)).collect();
+    for (s, a) in stores.iter().zip(&accounts) {
+        s.register_device(transport.clone(), a.token.clone()).unwrap();
+    }
+    let sync = |i: usize| stores[i].sync(transport.clone(), accounts[i].token.clone()).unwrap();
+    let deliver = |i: usize| stores[i].deliver_queued(transport.clone(), accounts[i].token.clone()).unwrap();
+    let chat = stores[0].create_group("Doomed".into(), None, vec![accounts[1].id.clone(), accounts[2].id.clone()]).unwrap();
+    deliver(0);
+    sync(1);
+    sync(2);
+    stores[0].queue_text(chat.clone(), "before".into()).unwrap();
+    deliver(0);
+    sync(1);
+    sync(2);
+
+    // Cy clears the messages and is still in the group; Bo, not the owner, cannot delete it.
+    stores[2].clear_messages(chat.clone()).unwrap();
+    assert!(stores[2].list_messages(chat.clone()).unwrap().iter().all(|m| m.local_state == "system"));
+    assert!(stores[1].delete_group(chat.clone()).is_err());
+    let summary = |i: usize| stores[i].list_conversations().unwrap().into_iter().find(|c| c.id == chat).unwrap();
+    assert_eq!(summary(2).group_ended, None);
+
+    // Ann deletes it: Bo and Cy see it end, and a message sent to it afterwards is refused.
+    stores[0].delete_group(chat.clone()).unwrap();
+    deliver(0);
+    sync(1);
+    sync(2);
+    for i in 0..3 {
+        assert_eq!(summary(i).group_ended.as_deref(), Some("deleted"), "phone {i}");
+    }
+    assert!(stores[1].list_messages(chat.clone()).unwrap().iter().any(|m| m.text.contains("deleted this group")));
+    assert!(stores[1].queue_text(chat.clone(), "anyone?".into()).is_err());
+    stores[1].delete_chat(chat.clone()).unwrap();
+    assert!(stores[1].list_conversations().unwrap().iter().all(|c| c.id != chat), "Bo removes it from his own list");
+}

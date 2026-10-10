@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -1322,7 +1322,11 @@ fn leaving_ends_a_persons_part_in_the_group() {
     deliver(&carol, &transport);
     sync(&alice, &transport);
     sync(&bob, &transport);
-    assert!(group_chat(&carol).is_none(), "gone from Carol's Messages");
+    let left = group_chat(&carol).expect("a group I left stays in my list");
+    assert_eq!((left.group_ended.as_deref(), left.my_role), (Some("left"), None), "read-only: \"You left\"");
+    assert!(carol.store.queue_text(chat.clone(), "still here?".into()).is_err(), "nothing can be sent to it");
+    carol.store.delete_chat(chat.clone()).unwrap();
+    assert!(group_chat(&carol).is_none(), "until I remove it from my list");
     assert_eq!(names_in(&alice, &chat).len(), 2);
     assert!(alice.store.list_messages(chat.clone()).unwrap().iter().any(|m| m.local_state == "system" && m.text.contains("left")));
     // What is said afterwards never reaches her, and nothing is shown if a copy does.
@@ -2704,6 +2708,56 @@ fn a_status_goes_only_to_accepted_contacts_and_is_kept_only_from_them_and_ends_w
     deliver(&alice, &transport);
     sync(&carol, &transport);
     assert_eq!(of(&carol, now), vec![(alice.user.clone(), "dnd".to_owned())]);
+}
+
+#[test]
+fn only_the_owner_deletes_a_group_for_everyone_and_it_becomes_read_only_while_clearing_messages_keeps_me_in() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = team(&server);
+    say_in(&alice, &transport, &chat, "hello team");
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+
+    // A member cannot delete the group; clearing messages only empties this phone and keeps me in.
+    assert!(bob.store.delete_group(chat.clone()).is_err(), "a member cannot delete a group");
+    bob.store.clear_messages(chat.clone()).unwrap();
+    assert!(group_texts(&bob, &chat).is_empty(), "my messages are gone from this phone");
+    let mine = group_chat(&bob).unwrap();
+    assert_eq!((mine.group_ended, mine.my_role.as_deref()), (None, Some("member")), "and I am still in the group");
+    say_in(&alice, &transport, &chat, "after Bob cleared");
+    sync(&bob, &transport);
+    assert_eq!(group_texts(&bob, &chat), vec!["after Bob cleared"], "new messages still arrive");
+
+    // A forged delete from a member changes nothing for anyone.
+    let forged = bob.store.load_or_create_account().unwrap();
+    bob.store.make_group_op(&forged, "bob", crate::store::groups::group_id_of(&chat).unwrap(), None, Kind::Delete).unwrap();
+    deliver(&bob, &transport);
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    for p in [&alice, &bob, &carol] {
+        assert_eq!(group_chat(p).unwrap().group_ended, None, "{}: still a live group", p.user);
+    }
+
+    // The owner deletes it: every member sees it end, read-only, with a system line, and can remove it from their own list.
+    assert_eq!(group_chat(&alice).unwrap().my_role.as_deref(), Some("owner"));
+    alice.store.delete_group(chat.clone()).unwrap();
+    assert!(alice.store.queue_text(chat.clone(), "anyone?".into()).is_err(), "read-only for the owner too");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    for p in [&alice, &bob, &carol] {
+        assert_eq!(group_chat(p).unwrap().group_ended.as_deref(), Some("deleted"), "{}", p.user);
+        assert!(p.store.list_messages(chat.clone()).unwrap().iter().any(|m| m.local_state == "system" && m.text.contains("deleted this group")), "{}", p.user);
+    }
+    let by_you = alice.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.text.contains("deleted this group")).unwrap();
+    assert_eq!(by_you.text, "You deleted this group");
+    assert!(carol.store.queue_text(chat.clone(), "too late".into()).is_err());
+    assert!(carol.store.delete_group(chat.clone()).is_err(), "and only the owner could ever delete it");
+    carol.store.delete_chat(chat.clone()).unwrap();
+    assert!(group_chat(&carol).is_none(), "removed from my own list");
+    // Late news does not bring it back.
+    sync(&carol, &transport);
+    assert!(group_chat(&carol).is_none());
 }
 
 #[test]

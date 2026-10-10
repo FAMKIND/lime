@@ -386,6 +386,8 @@ const MIGRATIONS: &[&str] = &[
          then_until  INTEGER,
          sent_at     INTEGER NOT NULL
      );",
+    // 23: a group can end (LIME-115): I left it ('left'), or its owner deleted it ('deleted'). Read-only either way.
+    "ALTER TABLE conversations ADD COLUMN group_ended TEXT;",
 ];
 
 /// The schema version this build writes.

@@ -43,7 +43,8 @@ extension ConversationStore {
         if isDemo { conversations.removeAll { $0.id == id }; return }
         #endif
         guard let core else { return }
-        if id.hasPrefix("grp:"), conversation(id)?.isRequest == false {
+        // A group that is still going is left first; one that ended (I left it, or the owner deleted it) is just removed from my list.
+        if id.hasPrefix("grp:"), conversation(id)?.isRequest == false, conversation(id)?.groupEnded == nil {
             await leaveGroup(id)
         }
         try? await Task.detached(priority: .userInitiated) { try core.deleteChat(conversationId: id) }.value

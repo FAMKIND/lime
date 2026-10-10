@@ -4706,3 +4706,17 @@ Also suggested for the re-run: send the greeting again whenever a link re-forms 
 
 **One test skipped on one device, stated.** The typed-bare-link UI test is skipped on the iPhone SE (667 pt tall): the new bubble sits behind the keyboard there, so the link is not on screen to find. It passes on the 13 mini and 18 Pro, and the auto-link unit tests cover the rule and the rendered style.
 
+
+## LIME-115
+
+**Group row actions, owner-only Delete group, Clear messages, default group names, round count badges (committed, awaiting the user's check on two phones).** Phase 0: `PLOT.md` committed (`ac7da67`).
+
+1. **Swipe left on a group row:** Mute · Leave · Delete (owner: "Delete <group> for everyone?") or **Clear** (anyone else, "Clear messages in <group>?"); right swipe unchanged. **DM rows:** Mute · Delete, unchanged. **Leave** confirms "Leave <group>?", sends `group.leave`, and **the group stays in the list as read-only "You left this group"** until you remove it ("Remove from my list", or swipe Delete). This changes the earlier behaviour (leaving used to hide the group); being *removed by someone else* still hides it, as before. Core migration 23 (`group_ended`).
+2. **Delete group for everyone** is a new signed, encrypted group op `group.delete`; **only the owner's counts** (replayed identically on every phone; a forged one from a member is ignored, tested). Members see "<Owner> deleted this group" and the group is read-only (no composer, "Remove from my list"); nothing more is accepted or sent in it, and the owner's sending session is retired. Each member removes it from their own list.
+3. **Group details:** a red **Delete group** (owner) or **Clear messages** (everyone else) under Leave.
+4. **Clear messages** empties this phone's copy only and keeps you in the group (new messages still arrive; nothing is sent).
+5. **Default names:** New Group pre-fills from the picked people's first names ("Lee & Sam", "Jean, Lee & Sam", 4 or more "Jean, Lee, Sam +2"), at most 50, editable, **Create is enabled at once**; it follows the members until you type your own name.
+6. **Count badges are round:** a perfect circle for 1 to 9, a capsule with round ends for 10 to 99, "99+" beyond; on Messages rows and the dock.
+
+**Verification.** Core `cargo test` **167** (new: only the owner deletes, a forged delete is ignored, members end up read-only, Clear keeps me in and new messages still arrive; the old "leaving" test updated to the stays-listed behaviour), clippy clean; the real-server 3-account test: **15 pass locally and on staging** (new: delete for everyone, a member's Clear, refused sends). iOS: 0 warnings, Release has no Bluetooth; unit tests for the default names and the badge text; UI tests: swipe actions per row type (owner, member, one-to-one), owner delete shows the read-only group, leaving keeps it listed, Clear keeps me in, the default name with Create at once, the dock badge is a circle; the full suite on the iPhone 13 mini and the changed tests on SE and 18 Pro.
+**Not done:** the "left"/"deleted" states are not shown in Group details (a deleted group's details can still be opened from the list); the 10+ capsule shape is the same code as the circle, covered by the text test rather than a screenshot.

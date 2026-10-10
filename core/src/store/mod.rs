@@ -185,6 +185,10 @@ pub struct ConversationSummary {
     pub verified: bool,
     /// When they were verified in person (milliseconds), if so.
     pub verified_at: Option<i64>,
+    /// A group that ended: `left` (I left it) or `deleted` (its owner did). Read-only either way.
+    pub group_ended: Option<String>,
+    /// My part in a group: `owner`, `admin` or `member` (none for a chat, or once I have left).
+    pub my_role: Option<String>,
     /// I marked the conversation unread by hand (it shows the unread dot until opened).
     pub marked_unread: bool,
     /// `last_message` is a reply in a thread (it is the newest thing in the conversation, replies included).
@@ -277,7 +281,8 @@ impl LimeStore {
                         c.group_emoji,
                         EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.verified_at IS NOT NULL AND p.new_master_key IS NULL),
                         c.marked_unread,
-                        (SELECT p.verified_at FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NULL)
+                        (SELECT p.verified_at FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NULL),
+                        c.group_ended
                  FROM conversations c
                  WHERE c.request_state NOT IN ('blocked', 'left') AND c.hidden = 0
                  ORDER BY c.is_pinned DESC,
@@ -302,15 +307,22 @@ impl LimeStore {
                     r.get::<_, bool>(8)?,
                     r.get::<_, bool>(9)?,
                     r.get::<_, Option<i64>>(10)?,
+                    r.get::<_, Option<String>>(11)?,
                 ))
             })
             .map_err(db_err)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(db_err)?;
 
+        let me_id = my_user_id(&conn);
         let mut summaries = Vec::with_capacity(rows.len());
-        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji, verified, marked_unread, verified_at) in rows {
+        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji, verified, marked_unread, verified_at, group_ended) in rows {
             let (latest, last_is_reply) = latest_activity(&conn, &id)?;
+            let my_role = if is_group && group_ended.as_deref() != Some("left") {
+                groups::group_id_of(&id).and_then(|g| groups::state_of(&conn, g).ok()).and_then(|state| state.role_of(&me_id)).map(|r| r.as_str().to_owned())
+            } else {
+                None
+            };
             // A reaction newer than the last message is the newest thing (no unread, no notification: it only shows in the preview).
             let reaction = message_ops::latest_reaction(&conn, &id, &my_user_id(&conn)).filter(|r| latest.as_ref().is_none_or(|m| r.at > m.sent_at));
             let activity_at = reaction.as_ref().map(|r| r.at).or(latest.as_ref().map(|m| m.sent_at)).unwrap_or(0);
@@ -330,6 +342,8 @@ impl LimeStore {
                 group_emoji,
                 verified,
                 verified_at: verified.then_some(verified_at).flatten(),
+                my_role,
+                group_ended,
                 marked_unread,
             });
         }

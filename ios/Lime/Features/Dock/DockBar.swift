@@ -31,11 +31,7 @@ struct DockBar: View {
                             .font(.system(size: 22))
                             .overlay(alignment: .topTrailing) {
                                 if let badge = item.badge {
-                                    Text("\(badge)")
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(Theme.accentInk)
-                                        .padding(.horizontal, 5).padding(.vertical, 1)
-                                        .background(Theme.accent, in: Capsule())
+                                    CountBadge(count: badge, size: 18, font: .caption2.weight(.semibold))
                                         .offset(x: 12, y: -8)
                                         .accessibilityIdentifier("dock-badge")
                                 }

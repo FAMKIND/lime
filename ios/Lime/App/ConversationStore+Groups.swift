@@ -73,7 +73,7 @@ extension ConversationStore {
     /// Leaves the group: it disappears from Messages and nothing more is shown from it.
     func leaveGroup(_ id: Conversation.ID) async {
         #if DEBUG
-        if isDemo { conversations.removeAll { $0.id == id }; demoGroups[id] = nil; return }
+        if isDemo { demoEnd(id, "left"); return }
         #endif
         guard let core else { return }
         try? await Task.detached(priority: .userInitiated) { try core.leaveGroup(conversationId: id) }.value
@@ -81,6 +81,44 @@ extension ConversationStore {
         Task { await deliverNow() }
     }
 }
+
+extension ConversationStore {
+    /// The owner deletes the group for everyone: it becomes read-only for all of its members.
+    func deleteGroup(_ id: Conversation.ID) async {
+        #if DEBUG
+        if isDemo { demoEnd(id, "deleted"); return }
+        #endif
+        guard let core else { return }
+        try? await Task.detached(priority: .userInitiated) { try core.deleteGroup(conversationId: id) }.value
+        await reload()
+        Task { await deliverNow() }
+    }
+
+    /// Clears the messages from this phone only; in a group, I stay in it.
+    func clearMessages(_ id: Conversation.ID) async {
+        #if DEBUG
+        if isDemo {
+            if let i = conversations.firstIndex(where: { $0.id == id }) { conversations[i].messages.removeAll { !$0.isSystem }; conversations[i].latest = nil; conversations[i].unread = 0 }
+            return
+        }
+        #endif
+        guard let core else { return }
+        try? await Task.detached(priority: .userInitiated) { try core.clearMessages(conversationId: id) }.value
+        await reload()
+    }
+}
+
+#if DEBUG
+extension ConversationStore {
+    /// The demo's version of a group ending ("left" or "deleted").
+    func demoEnd(_ id: Conversation.ID, _ how: String) {
+        guard let i = conversations.firstIndex(where: { $0.id == id }) else { return }
+        conversations[i].groupEnded = how
+        conversations[i].myRole = how == "left" ? nil : conversations[i].myRole
+        conversations[i].messages.append(Message(id: "sys-\(UUID().uuidString)", senderID: nil, text: how == "left" ? "You left the group" : "You deleted this group", date: Date(), state: .system))
+    }
+}
+#endif
 
 #if DEBUG
 /// A group in the demo store (no core): what the details screen shows and the changes edit.
@@ -125,6 +163,7 @@ extension ConversationStore {
         demoGroups[id] = DemoGroup(name: name, emoji: emoji, people: people)
         let others = people.filter { $0.id != "me" }.map { Person(id: $0.id, name: $0.name) }
         var conversation = Conversation(id: id, title: name, members: others, messages: [], isGroupChat: true, emoji: emoji)
+        conversation.myRole = owner ? "owner" : "member"
         conversation.messages.append(Message(id: "sys-\(id)-1", senderID: nil, text: "You created the group “\(name)”", date: Date(), state: .system))
         conversations.insert(conversation, at: 0)
         return id

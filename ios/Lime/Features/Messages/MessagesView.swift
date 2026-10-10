@@ -15,6 +15,7 @@ struct MessagesView: View {
     /// The chat a swipe asked about: to mute (it asks for how long) or to delete (it asks to confirm).
     @State private var muting: Conversation.ID?
     @State private var deleting: Conversation.ID?
+    @State private var groupAction: GroupRowAction?
 
     var body: some View {
         Group {
@@ -132,8 +133,21 @@ struct MessagesView: View {
                     .listRowBackground(muting == conversation.id ? Theme.surface : Color.clear)
                     // Swipe left: Delete and Mute. Swipe right: Unread/Read and Pin/Unpin.
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button { deleting = conversation.id } label: { Label("Delete", systemImage: "trash") }
-                            .tint(.red).accessibilityIdentifier("swipe-delete-\(conversation.id)")
+                        if liveGroup(conversation) {
+                            // A group still going: Mute, Leave, and Delete (owner: for everyone) or Clear messages (anyone else).
+                            if conversation.myRole == "owner" {
+                                Button { groupAction = GroupRowAction(id: conversation.id, kind: .deleteForEveryone) } label: { Label("Delete", systemImage: "trash") }
+                                    .tint(.red).accessibilityIdentifier("swipe-delete-\(conversation.id)")
+                            } else {
+                                Button { groupAction = GroupRowAction(id: conversation.id, kind: .clear) } label: { Label("Clear", systemImage: "eraser") }
+                                    .tint(.red).accessibilityIdentifier("swipe-clear-\(conversation.id)")
+                            }
+                            Button { groupAction = GroupRowAction(id: conversation.id, kind: .leave) } label: { Label("Leave", systemImage: "rectangle.portrait.and.arrow.right") }
+                                .tint(.gray).accessibilityIdentifier("swipe-leave-\(conversation.id)")
+                        } else {
+                            Button { deleting = conversation.id } label: { Label("Delete", systemImage: "trash") }
+                                .tint(.red).accessibilityIdentifier("swipe-delete-\(conversation.id)")
+                        }
                         if notifications.settings.isMuted(conversation.id) {
                             Button { notifications.settings.unmute(conversation.id) } label: { Label("Unmute", systemImage: "bell") }
                                 .tint(.orange).accessibilityIdentifier("swipe-unmute-\(conversation.id)")
@@ -177,6 +191,24 @@ struct MessagesView: View {
             }
             Button("Cancel", role: .cancel) { muting = nil }
         }
+        .confirmationDialog(groupActionTitle, isPresented: Binding(get: { groupAction != nil }, set: { if !$0 { groupAction = nil } }), titleVisibility: .visible) {
+            if let action = groupAction {
+                Button(action.kind.button, role: .destructive) {
+                    Task {
+                        switch action.kind {
+                        case .leave: await store.leaveGroup(action.id)
+                        case .deleteForEveryone: await store.deleteGroup(action.id)
+                        case .clear: await store.clearMessages(action.id)
+                        }
+                    }
+                    groupAction = nil
+                }
+                .accessibilityIdentifier("group-action-confirm")
+            }
+            Button("Cancel", role: .cancel) { groupAction = nil }
+        } message: {
+            Text(groupAction?.kind.message ?? "")
+        }
         .confirmationDialog(deleteTitle, isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button(deleteButton, role: .destructive) {
                 if let id = deleting { Task { await store.deleteChat(id) } }
@@ -200,11 +232,19 @@ struct MessagesView: View {
         }
     }
 
+    /// A group that is still going (not a request, not left or deleted).
+    private func liveGroup(_ conversation: Conversation) -> Bool { conversation.isGroup && !conversation.isRequest && conversation.groupEnded == nil }
+
+    private var groupActionTitle: String {
+        guard let action = groupAction, let chat = store.conversation(action.id) else { return "" }
+        return action.kind.title(chat.title)
+    }
+
     private var deletingGroup: Bool { deleting.map { $0.hasPrefix("grp:") } ?? false }
-    private var deleteTitle: String { deletingGroup ? "Leave and delete this group?" : "Delete chat?" }
-    private var deleteButton: String { deletingGroup ? "Leave and delete" : "Delete chat" }
+    private var deleteTitle: String { deletingGroup ? "Remove this group?" : "Delete chat?" }
+    private var deleteButton: String { deletingGroup ? "Remove group" : "Delete chat" }
     private var deleteMessage: String {
-        deletingGroup ? "You'll leave the group, and its messages will be removed from this phone."
+        deletingGroup ? "It has ended and is read-only. This removes it and its messages from this phone."
                       : "This removes it from this phone. The other person keeps their copy."
     }
 
@@ -565,12 +605,8 @@ struct ConversationRow: View {
                     }
                     // Any unread chat has the dot (left) and, unless it was only marked unread by hand, this number.
                     if conversation.unread > 0 {
-                        Text("\(conversation.unread)")
-                            .font(Theme.caption.weight(.semibold))
-                            .foregroundStyle(Theme.accentInk)
-                            .frame(minWidth: 22)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Theme.accent, in: Capsule())
+                        CountBadge(count: conversation.unread)
+                            .accessibilityIdentifier("count-badge-\(conversation.id)")
                     }
                 }
             }
@@ -644,5 +680,59 @@ extension View {
                 .onChange(of: proxy.safeAreaInsets.leading) { _, value in insets.wrappedValue.0 = value }
                 .onChange(of: proxy.safeAreaInsets.trailing) { _, value in insets.wrappedValue.1 = value }
         })
+    }
+}
+
+/// What a swipe on a group asks to confirm.
+struct GroupRowAction: Equatable {
+    enum Kind: Equatable {
+        case leave, deleteForEveryone, clear
+
+        func title(_ name: String) -> String {
+            switch self {
+            case .leave: "Leave \(name)?"
+            case .deleteForEveryone: "Delete \(name) for everyone?"
+            case .clear: "Clear messages in \(name)?"
+            }
+        }
+
+        var button: String {
+            switch self {
+            case .leave: "Leave group"
+            case .deleteForEveryone: "Delete for everyone"
+            case .clear: "Clear messages"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .leave: "You won't get new messages from this group. It stays in your list as read-only until you delete it."
+            case .deleteForEveryone: "The group ends for every member and becomes read-only. Everyone can still remove it from their own list."
+            case .clear: "This removes the messages from this iPhone only. You stay in the group and keep getting new messages."
+            }
+        }
+    }
+    let id: Conversation.ID
+    let kind: Kind
+}
+
+/// An unread count: a perfect circle for 1 to 9, a capsule with fully round ends for more, "99+" beyond 99. Digits centred.
+struct CountBadge: View {
+    let count: Int
+    var size: CGFloat = 22
+    var font: Font = Theme.caption.weight(.semibold)
+
+    nonisolated static func text(_ count: Int) -> String { count > 99 ? "99+" : "\(count)" }
+
+    var body: some View {
+        let text = Self.text(count)
+        Text(text)
+            .font(font)
+            .foregroundStyle(Theme.accentInk)
+            .lineLimit(1).minimumScaleFactor(0.8)
+            .frame(width: text.count == 1 ? size : nil, height: size)
+            .padding(.horizontal, text.count == 1 ? 0 : 7)
+            .frame(minWidth: size)
+            .background(Theme.accent, in: Capsule())
     }
 }

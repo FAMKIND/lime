@@ -126,12 +126,32 @@ struct GroupPickerScreen: View {
 }
 
 /// The group's name (required, at most 50 characters) and an optional emoji, then Create.
+/// The name a new group starts with, from the first names of the people picked (the person making it is not counted).
+enum GroupNames {
+    static let limit = 50
+
+    static func defaultName(firstNames: [String]) -> String {
+        let names = firstNames.filter { !$0.isEmpty }
+        let text: String
+        switch names.count {
+        case 0: text = "New group"
+        case 1: text = names[0]
+        case 2: text = "\(names[0]) & \(names[1])"
+        case 3: text = "\(names[0]), \(names[1]) & \(names[2])"
+        default: text = "\(names[0]), \(names[1]), \(names[2]) +\(names.count - 3)"
+        }
+        return String(text.prefix(limit))
+    }
+}
+
 struct GroupNameScreen: View {
     let members: [String]
     var onBack: () -> Void
     var onCreated: () -> Void
     @Environment(ConversationStore.self) private var store
     @State private var name = ""
+    /// The name was typed by the person: stop following the members.
+    @State private var edited = false
     @State private var emoji = ""
     @State private var avatarMode: GroupAvatarMode = .emoji
     @State private var photo: UIImage?
@@ -142,6 +162,12 @@ struct GroupNameScreen: View {
     private var cleaned: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var canCreate: Bool { !cleaned.isEmpty && cleaned.count <= Self.limit && !making }
     private var people: [Person] { KnownTeachers.from(store.conversations).map(\.person).filter { members.contains($0.id) } }
+
+    /// The first names of the picked people, in the order they were picked.
+    private var defaultName: String {
+        let byID = Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0) })
+        return GroupNames.defaultName(firstNames: members.compactMap { byID[$0] }.map { $0.name.split(separator: " ").first.map(String.init) ?? $0.name })
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -160,7 +186,7 @@ struct GroupNameScreen: View {
                     GroupAvatarEditor(mode: $avatarMode, emoji: $emoji, photo: $photo, fallback: initials)
                     VStack(alignment: .leading, spacing: 6) {
                         // The field never holds more than the limit (the extra characters are dropped as they are typed).
-                        TextField("Group name", text: Binding(get: { name }, set: { name = String($0.prefix(Self.limit)) }))
+                        TextField("Group name", text: Binding(get: { name }, set: { name = String($0.prefix(Self.limit)); edited = true }))
                             .font(Theme.body).selectionTint().focused($focused)
                             .padding(.horizontal, 16).frame(minHeight: 52)
                             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -186,6 +212,8 @@ struct GroupNameScreen: View {
                 .padding(20)
             }
         }
+        .onAppear { if name.isEmpty && !edited { name = defaultName } }
+        .onChange(of: members) { _, _ in if !edited { name = defaultName } }
         .background(Theme.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { focused = true }
@@ -220,6 +248,8 @@ struct GroupDetailsView: View {
     @State private var newName = ""
     @State private var removing: GroupMemberInfo?
     @State private var leaving = false
+    @State private var deletingForEveryone = false
+    @State private var clearing = false
     @State private var adding = false
     @State private var editingAvatar = false
 
@@ -246,6 +276,19 @@ struct GroupDetailsView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("group-leave")
+                    if details.myRole == "owner" {
+                        Button { deletingForEveryone = true } label: {
+                            SettingsRowLabel(symbol: "trash", title: "Delete group", showsDivider: false, destructive: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("group-delete")
+                    } else {
+                        Button { clearing = true } label: {
+                            SettingsRowLabel(symbol: "eraser", title: "Clear messages", showsDivider: false, destructive: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("group-clear")
+                    }
                 }
             } else {
                 ProgressView().padding(.top, 60)
@@ -281,6 +324,20 @@ struct GroupDetailsView: View {
             .accessibilityIdentifier("group-leave-confirm")
             Button("Cancel", role: .cancel) {}
         } message: { Text("You won't get new messages from this group. Someone can add you back.") }
+        .confirmationDialog("Delete \(details?.name ?? "this group") for everyone?", isPresented: $deletingForEveryone, titleVisibility: .visible) {
+            Button("Delete for everyone", role: .destructive) {
+                Task { await store.deleteGroup(target.conversationID); store.path = NavigationPath() }
+            }
+            .accessibilityIdentifier("group-delete-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { Text(GroupRowAction.Kind.deleteForEveryone.message) }
+        .confirmationDialog("Clear messages in \(details?.name ?? "this group")?", isPresented: $clearing, titleVisibility: .visible) {
+            Button("Clear messages", role: .destructive) {
+                Task { await store.clearMessages(target.conversationID); store.path = NavigationPath() }
+            }
+            .accessibilityIdentifier("group-clear-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { Text(GroupRowAction.Kind.clear.message) }
         .sheet(isPresented: $adding) {
             NavigationStack {
                 GroupPickerScreen(mode: .add(conversationID: target.conversationID, existing: details?.members.map(\.userId) ?? []),
