@@ -4773,3 +4773,13 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **After (same test).** `LIME_FLOOD=2` (a realistic call: offer + one batch): first op fetched **2.6 s** after the start (offer sent at 1.0–1.2 s, one 1 s poll, about 1 s fetch); all sends done 3.6 s; refused 0. `LIME_FLOOD=30` still takes 30 s to send (the lock is unchanged) but B's first fetch is **2.6 s** instead of being queued behind the sends; the app no longer sends 30. An offer → answer exchange is about 1 s send + up to 1 s poll + 1 s fetch each way, so roughly 4 to 5 s end to end on this network: **not under 3 s**; the send cost (2–3 HTTP calls) is what remains and is the next lever.
 
 **Not exercised:** real two-phone calls, real ICE gathering counts on a device (the cap and the maxBundle/tcp-off settings are untested against a real network), the camera path. `cargo test` 171, clippy 0.
+
+
+## LIME-111-fix3 (Phase 1 only: not yet located)
+
+**Phase 1 stopped before the fix, as asked (committed: diagnostics and a repro test, no behaviour change).** Phase 0: `PLOT.md` committed.
+
+- **Server check not done.** Reading staging (`profiles`, `devices`, `mailbox_items` with the service role) was refused by the permission classifier as PII access, so I did not look at which device ids Jean's ops were addressed to, or whether they are still unacked. That is the evidence that separates (a) from (c).
+- **Two-core repro (staging): does not reproduce.** `calls_keep_working_both_ways_after_a_completed_call_and_crossed_calls` plays the 18:08 sequence (offer, answer, a late batch each way, both end at once) and then B → A call ops and a text, then crossed offers, crossed ends and a text A → B. Everything arrives, both directions, with the app's `fetch_call_ops`. So the ordinary protocol path, the 18:08 sequence and crossed calls are not what broke Jean → Shem.
+- **So the cause is still one of (a), (b), (c)**, and what is left is state on Shem's real phone or the server's device list for Shem (a second or stale device row, a re-registration after the install, a replaced session).
+- **Added so the next logs decide it:** each fetch and sync now logs `downloaded D, stored S, pending [reason=count …]` (core: `take_downloaded`, `pending_summary`; counts only), and the app logs `app start: device …xxxx` (last 4 of the device id) to match against the server. If Shem's phone shows `downloaded 0` while Jean sends, it is (a) or (c); if `downloaded` is non-zero and `pending [no_session=…]`/`decrypt_failed`, it is (b).

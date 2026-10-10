@@ -226,6 +226,8 @@ pub struct LimeStore {
     pub(crate) fetch_lock: Mutex<()>,
     /// The longest wait for `protocol_lock` since the app last asked, in ms (call diagnostics).
     pub(crate) lock_wait_ms: std::sync::atomic::AtomicU64,
+    /// Mailbox items downloaded since the app last asked (call diagnostics).
+    pub(crate) downloaded: std::sync::atomic::AtomicU32,
 }
 
 pub(crate) fn db_err(_: rusqlite::Error) -> StoreError {
@@ -707,6 +709,7 @@ impl LimeStore {
             protocol_lock: Mutex::new(()),
             fetch_lock: Mutex::new(()),
             lock_wait_ms: std::sync::atomic::AtomicU64::new(0),
+            downloaded: std::sync::atomic::AtomicU32::new(0),
         })
     }
 }

@@ -324,6 +324,20 @@ impl LimeStore {
         self.retry_pending(&mut state, &me)
     }
 
+    /// Mailbox items downloaded since this was last called (call diagnostics: "downloaded D").
+    pub fn take_downloaded(&self) -> u32 {
+        self.downloaded.swap(0, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// What is waiting in the pending table and why, e.g. `no_session=2 decrypt_failed=1` (empty when nothing waits). Counts only.
+    pub fn pending_summary(&self) -> Result<String, StoreError> {
+        self.with_conn(|conn| {
+            let mut statement = conn.prepare("SELECT reason, COUNT(*) FROM pending_inbound GROUP BY reason ORDER BY reason").map_err(db_err)?;
+            let rows = statement.query_map([], |r| Ok(format!("{}={}", r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            Ok(rows.join(" "))
+        })
+    }
+
     /// The longest wait for the core's lock since this was last called, in milliseconds (call diagnostics).
     pub fn take_lock_wait_ms(&self) -> u64 {
         self.lock_wait_ms.swap(0, std::sync::atomic::Ordering::Relaxed)
@@ -1780,6 +1794,7 @@ impl LimeStore {
                 let now = now_ms();
                 let mut conn = self.lock();
                 pending::insert_all(&mut conn, &fetched, now)?;
+                self.downloaded.fetch_add(fetched.len() as u32, std::sync::atomic::Ordering::Relaxed);
             }
             let (status, _) = call(transport, Some(auth_token), "mailbox-ack", &json!({ "device_id": device_id, "up_to_cursor": highest }))?;
             check(status)?;

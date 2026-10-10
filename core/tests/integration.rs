@@ -1479,3 +1479,85 @@ fn call_signalling_flood_does_not_starve_the_fetch() {
     );
     assert_eq!(refused.load(std::sync::atomic::Ordering::SeqCst), 0, "a send was refused (rate limit?)");
 }
+
+/// LIME-111-fix3, Phase 1: the 18:08 sequence. A calls B, B answers, ICE goes both ways, both hang up at once; then B → A (call ops
+/// and a text) and A → B must still arrive; then both call each other at the same moment (crossed calls).
+#[test]
+fn calls_keep_working_both_ways_after_a_completed_call_and_crossed_calls() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    a.register_device(transport.clone(), alice.token.clone()).unwrap();
+    b.register_device(transport.clone(), bob.token.clone()).unwrap();
+    let chat = a.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    a.queue_text(chat, "hello".into()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    b.sync(transport.clone(), bob.token.clone()).unwrap();
+    b.accept_request(format!("dm:{}", alice.id)).unwrap();
+    b.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    a.sync(transport.clone(), alice.token.clone()).unwrap();
+
+    let sdp = |fp: &str| format!("v=0\r\na=fingerprint:sha-256 {fp}\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=candidate:1 1 udp 2 10.0.0.1 5 typ host\r\n");
+    let send = |from: &LimeStore, token: &str, to: &str, op: &str, payload: Value| from.send_call_signal(transport.clone(), token.to_owned(), to.to_owned(), op.to_owned(), payload.to_string()).unwrap();
+    let ops = |who: &LimeStore, token: &str| -> Vec<String> {
+        // The app's way: the light call fetch.
+        who.fetch_call_ops(transport.clone(), token.to_owned()).unwrap();
+        who.take_call_events().unwrap().into_iter().map(|e| e.op).collect()
+    };
+    let batch = json!({ "call_id": "c1", "candidates": [{ "candidate": "candidate:9 1 udp 2 10.0.0.9 5 typ relay", "sdpMid": "0", "sdpMLineIndex": 0 }] });
+
+    // 1. The 18:08 call: A offers, B answers, a late batch each way, both end together.
+    send(&a, &alice.token, &bob.id, "call.offer", json!({ "call_id": "c1", "video": true, "sdp": sdp("AA:BB"), "fingerprint": "AA:BB" }));
+    assert_eq!(ops(&b, &bob.token), vec!["call.offer"]);
+    send(&b, &bob.token, &alice.id, "call.answer", json!({ "call_id": "c1", "sdp": sdp("CC:DD"), "fingerprint": "CC:DD" }));
+    assert_eq!(ops(&a, &alice.token), vec!["call.answer"]);
+    send(&a, &alice.token, &bob.id, "call.ice", batch.clone());
+    send(&b, &bob.token, &alice.id, "call.ice", batch.clone());
+    assert_eq!(ops(&b, &bob.token), vec!["call.ice"]);
+    assert_eq!(ops(&a, &alice.token), vec!["call.ice"]);
+    std::thread::scope(|scope| {
+        scope.spawn(|| send(&a, &alice.token, &bob.id, "call.end", json!({ "call_id": "c1" })));
+        scope.spawn(|| send(&b, &bob.token, &alice.id, "call.end", json!({ "call_id": "c1" })));
+    });
+    assert_eq!(ops(&b, &bob.token), vec!["call.end"]);
+    assert_eq!(ops(&a, &alice.token), vec!["call.end"]);
+
+    // 2. After it, B → A must arrive: call ops AND a text (the question is whether ordinary messages are hit too).
+    send(&b, &bob.token, &alice.id, "call.offer", json!({ "call_id": "c2", "video": false, "sdp": sdp("EE:FF"), "fingerprint": "EE:FF" }));
+    let reply = b.start_dm(alice.id.clone(), "Alice Adams".into()).unwrap();
+    b.queue_text(reply, "after the call".into()).unwrap();
+    b.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(ops(&a, &alice.token), vec!["call.offer"], "B → A call op after a completed call");
+    a.sync(transport.clone(), alice.token.clone()).unwrap();
+    let has = |who: &LimeStore, peer: &str, text: &str| who.list_messages(format!("dm:{peer}")).unwrap().iter().any(|m| m.text == text);
+    assert!(has(&a, &bob.id, "after the call"), "B → A text after a completed call");
+    send(&a, &alice.token, &bob.id, "call.decline", json!({ "call_id": "c2" }));
+    assert_eq!(ops(&b, &bob.token), vec!["call.decline"]);
+
+    // 3. Crossed calls: both offer within the same moment; every op must still arrive on both sides.
+    std::thread::scope(|scope| {
+        scope.spawn(|| send(&a, &alice.token, &bob.id, "call.offer", json!({ "call_id": "x-a", "video": false, "sdp": sdp("11:11"), "fingerprint": "11:11" })));
+        scope.spawn(|| send(&b, &bob.token, &alice.id, "call.offer", json!({ "call_id": "x-b", "video": false, "sdp": sdp("22:22"), "fingerprint": "22:22" })));
+    });
+    assert_eq!(ops(&a, &alice.token), vec!["call.offer"], "crossed: A receives B's offer");
+    assert_eq!(ops(&b, &bob.token), vec!["call.offer"], "crossed: B receives A's offer");
+    send(&a, &alice.token, &bob.id, "call.end", json!({ "call_id": "x-a" }));
+    send(&b, &bob.token, &alice.id, "call.end", json!({ "call_id": "x-b" }));
+    assert_eq!(ops(&a, &alice.token), vec!["call.end"]);
+    assert_eq!(ops(&b, &bob.token), vec!["call.end"]);
+    // Ordinary messages still flow both ways afterwards.
+    a.queue_text(format!("dm:{}", bob.id), "still there?".into()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    b.sync(transport.clone(), bob.token.clone()).unwrap();
+    assert!(has(&b, &alice.id, "still there?"), "A → B text after crossed calls");
+}

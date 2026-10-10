@@ -100,7 +100,7 @@ final class ConversationStore {
         do {
             let token = try await link.token()
             let found = try await Task.detached(priority: .userInitiated) { try core.fetchCallOps(transport: link.transport, authToken: token) }.value
-            diag.log("fetch ok \(Int(Date().timeIntervalSince(started) * 1000)) ms, \(found) items")
+            diag.log("fetch ok \(Int(Date().timeIntervalSince(started) * 1000)) ms: downloaded \(core.takeDownloaded()), stored \(found), pending [\((try? core.pendingSummary()) ?? "?")]")
         } catch {
             diag.log("fetch failed \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(error)")
         }
@@ -179,9 +179,12 @@ final class ConversationStore {
     /// Registers this device with the backend (idempotent) and tops up its one-time keys.
     func registerDevice(transport: Transport, token: String) async throws -> DeviceInfo {
         guard let core else { throw AuthError.network }
-        return try await Task.detached(priority: .userInitiated) {
+        let info = try await Task.detached(priority: .userInitiated) {
             try core.registerDevice(transport: transport, authToken: token)
         }.value
+        // The last 4 characters, to match this phone against the server's device list.
+        CallDiagnostics.shared.log("app start: device …\(info.deviceId.suffix(4))")
+        return info
     }
 
     /// The phone is registered: from now on sends are delivered and the mailbox is fetched.
@@ -221,9 +224,13 @@ final class ConversationStore {
                 _ = try? await Task.detached(priority: .userInitiated) {
                     try core.deliverQueued(transport: link.transport, authToken: token)
                 }.value
-                _ = try await Task.detached(priority: .userInitiated) {
+                let report = try await Task.detached(priority: .userInitiated) {
                     try core.sync(transport: link.transport, authToken: token)
                 }.value
+                let downloaded = core.takeDownloaded()
+                if downloaded > 0 || report.pending > 0 {
+                    CallDiagnostics.shared.log("sync: downloaded \(downloaded), stored \(report.received), pending [\((try? core.pendingSummary()) ?? "?")]")
+                }
                 problem = nil
             } catch {
                 problem = ConnectionProblem.from(error)
