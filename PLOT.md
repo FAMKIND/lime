@@ -2330,7 +2330,54 @@ If anything contradicts this brief, stop and ask the user.
 - **Ask the user:** is the avatar→sheet→Settings change OK? Does the badge look right?
 - **Next: 102b.** (Tend's report said "LIME-109" by mistake; the user's order is 102b → 111.)
 
-### LIME-102b → `tend` (lime-aa) (after 108): Lime's own sounds: the message chime + the call ringtone
+**LIME-102b landed as `42400c3`** (pushed and verified; the original m4a files are not in git; over the soft cap, mostly test fixes).
+- Sounds: chime (+4.3 dB) / steelpan (quieter; it was already peaking); Lime chime is the default; custom sounds (trim, up to 10, `Library/Sounds`, not uploaded).
+- **CallKit can't use custom call sounds** (bundle-only, per the docs; LIME-111 confirms on a device): a custom call sound plays in Lime's own ringing UI, and the system call screen uses the steelpan.
+- Per-chat sounds are a follow-up.
+- **QA:**
+  - (a) chips ≈ 1.1:1 (the root cause was the format-button grey);
+  - (b) the Replies heading = avatar + "Replies · Name";
+  - (c) the composer no longer hides the newest message (on appear + rotation);
+  - (d) Away is a solid amber disc, and the "z" is bigger.
+- **Next: LIME-111 (calls); the user needs the Hetzner VPS** (blocked on the user's Hetzner setup; Phase 1 stops for it anyway).
+
+### LIME-102b-fix → `tend` (lime-aa) (NEXT, before 111): sound default not applied, the iPad seal under the name, a SwiftUI state warning, bare links
+**The user's report (2026-10-10, iPhone + iPad + Xcode screenshot).**
+
+**Phase 0:** `git add PLOT.md` only. **Time-box: ~45 min.**
+
+**Phase 2:**
+1. **The Lime chime isn't used until the user re-selects it.**
+   - On the phone, sounds only worked after Settings → Notifications → tapping a sound and going back; **on the iPad no chime plays on incoming messages**.
+   - **The likely cause:** the default is only written when the picker is touched, so the code reading the preference gets nil (= none/default) on upgraded installs.
+   - **Fix:** a single source of truth with a **registered default** (`UserDefaults.register` or equivalent) = Lime chime, read by both the in-app banner and the local-notification paths. **A test:** a fresh install and an upgraded install with no stored key both play the Lime chime.
+   - **Also confirm the iPad** receives local notifications/banners at all (permission state on iPad), and **report** the iPad specifics.
+2. **The iPad shows a seal/check badge under "Shem Rajoon"** in a chat header (the user doesn't know why).
+   - **Identify it** (likely the LIME-97b "Verified in person" seal, or the status/label line) and report it.
+   - **Design fix:** the verified seal sits **inline after the name** (a small seal icon, with accessibility label "Verified in person"), **not on its own line**.
+   - **Tapping it** shows a short explanation ("You scanned Shem's QR code in person on <date>").
+   - If it is **not** verification, fix whatever it is.
+3. **The Xcode runtime warning:** "Modifying state during view update, this will cause undefined behavior" at `ProfileScreens.swift` `EmojiKeyboardField.Coordinator.textFieldDidEndEditing` (`parent.isActive = false`).
+   - Defer the state change (e.g. `DispatchQueue.main.async` / a `Task { @MainActor in … }`), and fix the same pattern anywhere else.
+   - **Add runtime-warning checking to the UI test run if feasible** (fail on "Modifying state during view update" in the logs).
+4. **Bare URLs aren't linked:** typed "https://famkind.com" / "HTTPS://famkind.com" render as plain text.
+   - **Auto-link bare http(s) URLs** (case-insensitive scheme) in bubbles with the link style (green, underline, tappable, the same confirmation);
+   - it works in your own chat too;
+   - the link-card generation also triggers for bare URLs when the setting is on (not for your own chat, which is local).
+
+**Verification:**
+- unit/UI tests for each;
+- the Xcode console shows no "Modifying state during view update" during the UI suite;
+- tiered; 0 warnings.
+
+**Gate:**
+- on the iPhone **and the iPad**, the chime plays for incoming messages without touching Settings;
+- the iPad header shows the seal inline (or the badge is explained/fixed);
+- typed links are green and tappable.
+
+**Record:** `## LIME-102b-fix`. Commit: `fix(ios): default sound applied, verified seal inline, state warning, auto-linked URLs`, trailer `Brief: LIME-102b-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-102b → `tend` (lime-aa) (landed as `42400c3`): Lime's own sounds: the message chime + the call ringtone
 **The user provided (2026-10-09), on their Desktop:**
 - `~/Desktop/lime-message-chime.m4a`: **1.2 s**, stereo AAC 44.1 kHz, 18 KB;
 - `~/Desktop/lime-call-steelpan.m4a`: **25.9 s**, stereo AAC 44.1 kHz, 410 KB (a steelpan ringtone, for calls).
