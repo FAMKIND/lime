@@ -2233,6 +2233,50 @@ If anything contradicts this brief, stop and ask the user.
 
 **Record:** `## LIME-107-qa2`. Commit: `fix(ios): reply preview duplicate, reactions in previews, Replies strip removed, landscape width, unread clears on read`, trailer `Brief: LIME-107-qa2`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
+### limechat.org email (the user, 2026-10-10: "start using limechat.org emails, for the app dev account and others")
+**Plot's recommendation:**
+- **add limechat.org as a secondary domain to FAM's existing Google Workspace** (famkind.com already uses Workspace MX), at no extra licence cost:
+  - **personal addresses as aliases** on existing users;
+  - **role addresses as Google Groups** (free).
+- **The privacy-brand alternative:** Proton Mail for Business (paid per user); it can migrate later.
+- **The DNS goes in deSEC:** Google's verification TXT + MX `smtp.google.com` + the apex SPF `v=spf1 include:_spf.google.com ~all` + Google DKIM `google._domainkey` + update the existing `_dmarc` with `rua=mailto:dmarc@limechat.org`.
+  - **This doesn't affect `send.limechat.org`** (Resend uses its own subdomain records).
+- **Addresses:**
+  - **people:** shem@, jean@;
+  - **groups:** hello@ (general/waitlist), support@ (the App Store support URL), privacy@ (the privacy policy, data requests), security@ (`security.txt`, disclosures), safety@ (abuse/reports/moderation; App Store 1.2), accounts@ (**the owner email for service accounts**: Hetzner, Supabase, Resend, deSEC, NameSilo; continuity), dmarc@ (reports).
+- **The Apple Developer Account Holder must be a person:** use **shem@limechat.org** as that Apple ID (or the user's own).
+- **Later:** move the service-account logins from shem@famkind.com to accounts@limechat.org.
+- **UPDATE (2026-10-10):** FAM is **moving off Google Workspace to Nextcloud on a home server** ("email pulling from there").
+  - **Plot's advice:** **don't run the limechat.org mail *server* at home**: residential IPs are blocklisted, port 25 is often blocked, it's down when the home server is, and **accounts@/support@/security@ must be reliable** (they're the recovery inboxes for Apple, Hetzner and Supabase). It's the same lesson as the famkind.com DNS-on-web-server outage.
+  - **Use a hosted, privacy-respecting IMAP provider and read it in Nextcloud Mail:**
+    - **Migadu** (Swiss; priced per domain, not per mailbox; cheap, with unlimited aliases);
+    - or **mailbox.org** (German; per user);
+    - **Proton is a poor fit** with Nextcloud: it needs the Bridge app for IMAP.
+  - **Lean: Migadu.** The same address list; the DNS records come from the provider.
+  - Asked the user what "email pulling" means today (IMAP fetch from a provider vs a self-hosted MTA).
+  - **The answer:** FAM's mail is **cPanel mail on the KnownHost VPS** (the same server that had the 2026-10-06 outage), sent on via Gmail; they're re-pointing it to Nextcloud.
+  - **Plot's advice stands for limechat.org:** host it with a **dedicated mail provider (Migadu)**, separate from the KnownHost web server, so a web-server outage can't take Lime's recovery inboxes down; read it in Nextcloud Mail.
+  - KnownHost cPanel mail for limechat.org is an acceptable no-cost fallback, but it **ties limechat.org mail to that VPS**.
+  - (Note: plot's 2026-10-06 dig showed famkind.com's MX at Google; the setup may be mid-migration.)
+  - **DECIDED (the user, 2026-10-10): Migadu.**
+    - **Plot's plan pick: Micro ($19/year:** unlimited mailboxes/aliases, **20 outgoing/day, 200 incoming/day**, 5 GB; no multi-admin**)** to start; **upgrade to Mini ($90/year:** 100 out/day, 1,000 in, 30 GB, multi-admin**) at TestFlight/launch**, when support@/safety@/hello@ traffic grows or Jean needs admin access.
+    - **Lime's app emails (sign-in codes) don't count:** they go through Resend on `send.limechat.org`.
+    - There's a free trial (no card). **Added to Migadu 2026-10-10** (external nameservers = deSEC; default addresses created; trial until 2026-10-24).
+    - **The DNS to add in deSEC (plot's guidance):**
+      - apex TXT RRset with **two values**: `hosted-email-verify=…` + `v=spf1 include:spf.migadu.com -all`;
+      - apex MX `10 aspmx1.migadu.com.` / `20 aspmx2.migadu.com.`;
+      - CNAMEs `key1/2/3._domainkey` → `keyN.limechat.org._domainkey.migadu.com.`;
+      - **edit** `_dmarc` to `v=DMARC1; p=quarantine; rua=mailto:dmarc@limechat.org` (Resend's mail is DKIM-aligned via `send.limechat.org`);
+      - the optional `autoconfig` CNAME;
+      - **skip** the wildcard MX/SRV.
+      - **⚠ FOUND (2026-10-10):** Migadu reported "Nameservers missing". **Plot confirmed the deSEC zone serves NO apex NS RRset** (NS queries to ns1/ns2 return NODATA), although .org delegates to deSEC correctly.
+        - **Fix:** add NS (subname empty) `ns1.desec.io.` + `ns2.desec.org.` in deSEC.
+        - Resolution still worked (the delegation is fine), but checkers that ask for NS fail, and DNSSEC chains want it too.
+        - **Fixed 2026-10-10** (the user added NS; plot verified that ns1/ns2 now answer).
+        - **shem@limechat.org mailbox created** (2026-10-10). **Jean's mailbox + the aliases are paused:** Migadu requires a card to add more addresses; the user will add it tomorrow.
+        - **Migadu domain ACTIVE (2026-10-10 05:33 UTC): "Happy Mailing!"** Next: create the mailboxes (shem@, jean@) + aliases, then connect Nextcloud Mail; then move the service accounts to accounts@.
+      - **Done in deSEC 2026-10-10 (plot verified via 1.1.1.1):** MX, TXT verify + SPF, key1–3 CNAMEs, Resend intact. The DMARC still showed the old `p=none` publicly (resolver cache, ~1 h TTL). key4/key5 were added by mistake and then removed.
+
 ### Open thread: compliance posture (GDPR, COPPA, FERPA, SOC 2), asked by the user 2026-10-09
 **Plot's assessment (not legal advice):**
 - **Strengths by design:**
@@ -2273,6 +2317,19 @@ If anything contradicts this brief, stop and ask the user.
   - a lawyer review;
   - decide whether EU users are targeted at launch. **DECIDED (2026-10-10): US first.** Stay GDPR-ready (DPAs, export, a policy), but no EU representative or EU-specific work at launch; the App Store availability is the US at first.
 
+**LIME-108 landed as `c58b4cb`** (pushed and verified).
+- **Status:** contacts-only encrypted control op (nothing on the server; a test checks it); badges (green / moon / red "z") in a notch everywhere; header text "Do not disturb / Quiet hours until … / Away".
+- **The own-avatar sheet** now sets status. **Settings moved into that sheet** (it's a row; the avatar no longer opens Settings directly).
+- **Work hours:** off by default; outside hours = DND; notifications are held silently, with one summary at the end.
+- **Limits:**
+  - holding only works while Lime runs (until APNs + the notification extension);
+  - no urgent flag (the mesh/emergency brief);
+  - **the badge is SF Symbols + the rounded-black "z", not the web prototype's SVGs/Montserrat** (the user to judge);
+  - in the header, a private label and a status share one line (only one shows).
+- 166 Rust tests pass; integration passes; tiered iOS; 0 warnings.
+- **Ask the user:** is the avatar→sheet→Settings change OK? Does the badge look right?
+- **Next: 102b.** (Tend's report said "LIME-109" by mistake; the user's order is 102b → 111.)
+
 ### LIME-102b → `tend` (lime-aa) (after 108): Lime's own sounds: the message chime + the call ringtone
 **The user provided (2026-10-09), on their Desktop:**
 - `~/Desktop/lime-message-chime.m4a`: **1.2 s**, stereo AAC 44.1 kHz, 18 KB;
@@ -2310,7 +2367,25 @@ If anything contradicts this brief, stop and ask the user.
 - a UI test that Settings shows "Lime chime" selected by default;
 - tiered; 0 warnings.
 
+**Also folded into 102b (the user's QA, 2026-10-10; tend was mid-108):**
+- **(a) Reaction chips lighter still:** the grey behind the emoji is still too dark. Make the fill **very subtle** (about 1.1–1.2:1 against the canvas, a warm neutral; yours a touch deeper), so **the emoji itself is the clear element**. Light and dark. Update the token test bounds.
+- **(b) The Replies header = the context:**
+  - **remove the separate "Replies · Name + quote" card**;
+  - **put the context in the nav title area instead**, replacing the plain word "Replies": **the root author's avatar + "Replies · <Name>"** (like the chat header's avatar + name), with "N replies" as a small subtitle;
+  - **no quote** (the first bubble already shows the root message).
+- **(c) Landscape in Replies (and chats):** the floating composer **covers the messages** (the user's landscape shot shows the composer over "2 replies"). Give the message list a bottom content inset equal to the composer height + its margin, so the content scrolls clear; the same in portrait if it ever overlaps.
+
+- **(d) Status badge polish (the user, 2026-10-10, after LIME-108):**
+  - ~~the status badge slightly smaller~~ **(withdrawn by the user: keep the current badge size)**;
+  - **on your own avatar in the Messages header, the "Away" badge has a transparent background**: make it **solid**, matching the badges on other avatars (the notch/ring colour = the surface behind);
+  - **the "z" in Do not disturb a tiny bit bigger** within its badge.
+  - Check light and dark, at all avatar sizes.
+
 **Gate:**
+- **(QA)** your own Away badge is solid (the badge size is unchanged); the DND "z" is a touch bigger;
+- **(QA)** emoji chips are subtle with the emoji prominent;
+- **(QA)** Replies' heading shows the avatar + "Replies · Name", with no card;
+- **(QA)** in landscape nothing hides under the composer;
 - a message arrives while Lime is in the background → the Lime chime plays; Settings → Notifications → Sound shows Lime chime;
 - **add your own message sound** from a file, trim it to 2 s, select it → the next message plays it.
 
@@ -2333,7 +2408,11 @@ If anything contradicts this brief, stop and ask the user.
 - **Don't create accounts.**
 
 **DECIDED (the user, 2026-10-09): (a) Lime's own relay (coturn on a small VPS).**
-- **Plot's provider lean: Hetzner Cloud** (open-source-friendly, cheap, a US region Ashburn VA; a **CX22 (2 vCPU / 4 GB), about €4–5/month** for coturn; it can be resized later for LiveKit).
+- **Plot's provider lean: Hetzner Cloud.**
+  - **CORRECTION (2026-10-10):** the cheap CX line is **EU-only**, and plot's "€4–5/month" was an EU price.
+  - **In the US (Ashburn), use CPX11** (2 vCPU / 2 GB / 40 GB). Hetzner's price-adjustment doc lists about **$6.99/month**, but third-party sites quote ~$21 including IPv4, so the **user confirms the price in the console at order time**.
+  - It needs a **primary IPv4** (TURN requires it).
+  - Upgrade to CPX21+ when LiveKit is added.
 - **The user creates the Hetzner account + adds the Mac's SSH public key; tend never creates accounts.**
 - **The Phase 1 stop becomes:**
   - give the user step-by-step VPS creation (Ubuntu LTS, Ashburn, the SSH key, the firewall ports for TURN: 3478 UDP/TCP, 5349 TLS, the relay port range);
