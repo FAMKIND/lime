@@ -388,6 +388,15 @@ const MIGRATIONS: &[&str] = &[
      );",
     // 23: a group can end (LIME-115): I left it ('left'), or its owner deleted it ('deleted'). Read-only either way.
     "ALTER TABLE conversations ADD COLUMN group_ended TEXT;",
+    // 24: incoming call signalling waits here for the app to take it (LIME-111).
+    "CREATE TABLE call_events (
+         id      INTEGER PRIMARY KEY AUTOINCREMENT,
+         peer    TEXT NOT NULL,
+         op      TEXT NOT NULL,
+         call_id TEXT NOT NULL,
+         payload TEXT NOT NULL,
+         at      INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

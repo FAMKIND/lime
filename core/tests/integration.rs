@@ -1344,3 +1344,46 @@ fn an_owner_deletes_a_group_for_everyone_and_a_member_clears_messages_and_stays_
     stores[1].delete_chat(chat.clone()).unwrap();
     assert!(stores[1].list_conversations().unwrap().iter().all(|c| c.id != chat), "Bo removes it from his own list");
 }
+
+#[test]
+fn call_signalling_goes_through_the_real_mailbox_as_sealed_control_ops_and_is_not_a_message() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    a.register_device(transport.clone(), alice.token.clone()).unwrap();
+    b.register_device(transport.clone(), bob.token.clone()).unwrap();
+    let chat = a.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    a.queue_text(chat, "hello".into()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    b.sync(transport.clone(), bob.token.clone()).unwrap();
+    b.accept_request(format!("dm:{}", alice.id)).unwrap();
+    b.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    a.sync(transport.clone(), alice.token.clone()).unwrap();
+
+    let sdp = |fp: &str| format!("v=0\r\na=fingerprint:sha-256 {fp}\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n");
+    let send = |from: &LimeStore, token: &str, to: &str, op: &str, payload: Value| from.send_call_signal(transport.clone(), token.to_owned(), to.to_owned(), op.to_owned(), payload.to_string()).unwrap();
+    send(&a, &alice.token, &bob.id, "call.offer", json!({ "call_id": "c1", "video": true, "sdp": sdp("AA:BB"), "fingerprint": "AA:BB" }));
+    assert_eq!(b.sync(transport.clone(), bob.token.clone()).unwrap().received, 0, "not a message");
+    let events = b.take_call_events().unwrap();
+    assert_eq!((events[0].op.as_str(), events[0].call_id.as_str(), events[0].peer.as_str()), ("call.offer", "c1", alice.id.as_str()));
+    send(&b, &bob.token, &alice.id, "call.answer", json!({ "call_id": "c1", "sdp": sdp("CC:DD"), "fingerprint": "CC:DD" }));
+    send(&b, &bob.token, &alice.id, "call.ice", json!({ "call_id": "c1", "candidate": "candidate:1 1 udp 2 1.2.3.4 5 typ host", "sdpMid": "0", "sdpMLineIndex": 0 }));
+    a.sync(transport.clone(), alice.token.clone()).unwrap();
+    let back: Vec<String> = a.take_call_events().unwrap().into_iter().map(|e| e.op).collect();
+    assert_eq!(back, vec!["call.answer", "call.ice"]);
+    // The relay's credentials: some while the secret is set on that server, none (not an error) before.
+    assert!(a.fetch_turn_servers(transport.clone(), alice.token.clone()).is_ok());
+    send(&a, &alice.token, &bob.id, "call.end", json!({ "call_id": "c1" }));
+    b.sync(transport.clone(), bob.token.clone()).unwrap();
+    assert_eq!(b.take_call_events().unwrap()[0].op, "call.end");
+}

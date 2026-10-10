@@ -23,6 +23,7 @@ struct NotificationsScreen: View {
                 .padding(.horizontal, 18).frame(minHeight: 58)
                 .accessibilityIdentifier("notif-toggle")
             }
+            SettingsFootnote(text: "Calls ring only while Lime is open or was just open, until push calls arrive. Outside work hours or in Do Not Disturb, a call is a missed call.")
             if settings.enabled {
                 SettingsFootnote(text: "Preview")
                 SettingsCard {

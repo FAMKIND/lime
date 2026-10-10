@@ -75,6 +75,33 @@ final class ConversationStore {
     var demoPhotoVisibility: PhotoVisibility = .everyone
     #endif
 
+    /// The one call at a time (LIME-111). UI tests and demo mode use stand-ins with no system call screen.
+    @ObservationIgnored private var callManager: CallManager?
+    var calls: CallManager {
+        if let callManager { return callManager }
+        var quiet = false
+        #if DEBUG
+        quiet = ProcessInfo.processInfo.arguments.contains("-lime-skip-sign-in") || ProcessInfo.processInfo.arguments.contains("-lime-fake-auth")
+        #endif
+        let system: CallSystem = quiet ? QuietCallSystem() : CallKitSystem()
+        let manager = CallManager(signalling: StoreSignalling(store: self), system: system,
+                                  isQuiet: { StatusSettings.shared.plan().isQuiet }, makeMedia: { WebRTCMedia() })
+        callManager = manager
+        return manager
+    }
+
+    /// Hands the call ops that arrived to the call manager (after a sync).
+    func deliverCallEvents() async {
+        guard let core, let events = try? core.takeCallEvents(), !events.isEmpty else { return }
+        let infos = events.map { event -> CallEventInfo in
+            let payload = (try? JSONSerialization.jsonObject(with: Data(event.payload.utf8))) as? [String: Any] ?? [:]
+            let name = conversations.first { $0.members.count == 1 && $0.members.first?.id == event.peer }?.title ?? "Someone"
+            return CallEventInfo(op: event.op, callID: event.callId, peerID: event.peer, peerName: name, payload: payload)
+        }
+        await calls.handle(infos)
+        await reload()
+    }
+
     /// Accepted conversations (the Messages list) and strangers' first messages (the Requests list).
     var chats: [Conversation] { conversations.filter { !$0.isRequest } }
     var requests: [Conversation] { conversations.filter(\.isRequest) }
@@ -182,6 +209,7 @@ final class ConversationStore {
                 problem = ConnectionProblem.from(error)
             }
             await reload()
+            await deliverCallEvents()
         } while syncAgain
         // Other people's photos, at most hourly each; this is off the critical path of the messages.
         await refreshPhotos()

@@ -10,16 +10,31 @@ struct ChatRow: Identifiable {
         case system(Message)
         /// Two or more deleted messages in a row, as one line: "3 messages deleted".
         case deletedRun(count: Int)
+        /// "Voice call · 4:12", "Missed call": a call with this person, from this phone's call history.
+        case call(CallRecord)
     }
 
     let id: String
     let kind: Kind
 
-    static func rows(for conversation: Conversation, calendar: Calendar = .current) -> [ChatRow] {
+    static func rows(for conversation: Conversation, calls: [CallRecord] = [], calendar: Calendar = .current) -> [ChatRow] {
         var result: [ChatRow] = []
         var lastDay: Date?
         var lastSender: String??
+        var waiting = calls.sorted { $0.date < $1.date }
+        func flushCalls(before date: Date?) {
+            while let call = waiting.first, date == nil || call.date <= date! {
+                waiting.removeFirst()
+                if lastDay == nil || !calendar.isDate(lastDay!, inSameDayAs: call.date) {
+                    result.append(ChatRow(id: "day-call-\(call.id)", kind: .day(MessageFormat.day(call.date))))
+                }
+                lastDay = call.date
+                result.append(ChatRow(id: "call-\(call.id)", kind: .call(call)))
+                lastSender = nil
+            }
+        }
         for message in conversation.messages {
+            flushCalls(before: message.date)
             if lastDay == nil || !calendar.isDate(lastDay!, inSameDayAs: message.date) {
                 result.append(ChatRow(id: "day-\(message.id)", kind: .day(MessageFormat.day(message.date))))
                 lastSender = nil
@@ -34,6 +49,7 @@ struct ChatRow: Identifiable {
             result.append(ChatRow(id: message.id, kind: .message(message, showAvatar: showAvatar)))
             lastSender = .some(message.senderID)
         }
+        flushCalls(before: nil)
         return collapsingDeletedRuns(result)
     }
 

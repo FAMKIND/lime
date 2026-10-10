@@ -4720,3 +4720,15 @@ Also suggested for the re-run: send the greeting again whenever a link re-forms 
 
 **Verification.** Core `cargo test` **167** (new: only the owner deletes, a forged delete is ignored, members end up read-only, Clear keeps me in and new messages still arrive; the old "leaving" test updated to the stays-listed behaviour), clippy clean; the real-server 3-account test: **15 pass locally and on staging** (new: delete for everyone, a member's Clear, refused sends). iOS: 0 warnings, Release has no Bluetooth; unit tests for the default names and the badge text; UI tests: swipe actions per row type (owner, member, one-to-one), owner delete shows the read-only group, leaving keeps it listed, Clear keeps me in, the default name with Create at once, the dock badge is a circle; the full suite on the iPhone 13 mini and the changed tests on SE and 18 Pro.
 **Not done:** the "left"/"deleted" states are not shown in Group details (a deleted group's details can still be opened from the list); the 10+ capsule shape is the same code as the circle, covered by the text test rather than a screenshot.
+
+
+## LIME-111
+
+**1:1 voice and video calls (committed, awaiting the user's check on two phones).** Phase 0: `PLOT.md` committed.
+
+1. **TURN server.** Hetzner `lime-turn-1` (178.156.199.1), coturn installed by the committed, idempotent `infra/turn/setup.sh` (REST-secret auth, UDP/TCP 3478, TLS 5349 with a Let's Encrypt certificate for `turn.limechat.org`, relay ports 49152-49999, private ranges denied, quotas). The shared secret exists only in `/etc/lime-turn/secret` on the server (root-only); it was never printed. `infra/turn/README.md` has the Terminal steps.
+2. **Edge Function `turn-credentials`** (deployed to staging): HMAC time-limited credentials, verified sessions, 20 per minute; **503 until `TURN_SECRET` is set**, which the user does (secret never in chat). Server suite: 50 pass.
+3. **Core.** Migration 24 `call_events`; `send_call_signal` (accepted DMs only, validated payloads, the DTLS fingerprint in an offer/answer must equal the SDP's), receive path (accepted contacts, fresh offers), `take_call_events`, `fetch_turn_servers`. `cargo test` 169, clippy 0, local integration 16.
+4. **iOS.** WebRTC 152.0.0 (SwiftPM), `CallMedia`/`WebRTCMedia`, `CallManager` (ring timeout 45 s, busy, decline, DND/work hours become a missed call, early ICE queued), CallKit bridge, `CallView` (mute, speaker, video on/off, flip, end, self-view), header phone icon is a Voice/Video menu, call lines in the chat ("Voice call · 4:12", "Missed call"), the dock's call tab is a local history (tap to call back), Settings → Notifications note that calls ring only while Lime is open or recent. `audio` background mode added (Release check allows only it). Unit tests with fakes: 9.
+
+**Not exercised (needs two real phones):** actual audio/video, TURN over mobile data, CallKit on a device, the camera flip. Custom call sounds apply only to Lime's own ringing UI (CallKit takes bundle sounds only); in-app ringing for custom sounds is not built. Group calls are LIME-112; no PushKit.

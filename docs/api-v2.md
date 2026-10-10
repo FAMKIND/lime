@@ -302,3 +302,9 @@ Things the decision did not settle. Items marked **decided in LIME-92** were set
 ### 11.x In-person verification (LIME-97b; client only, no server change)
 
 A teacher's QR code is `https://limechat.org/u/<username>?k=<20 hex digits>`: the invite link plus the first ten bytes of SHA-256 of the account's master public key (the same fingerprint Settings shows). The scanning phone looks the username up (`users-find`), fetches the master key the server serves (`users-devices`) and compares fingerprints on the device. On a match the peer is pinned (as for any first contact) and marked `verified_at` in the local `peers` table; accepting a different master key later clears it. The server learns nothing new (the same two calls any chat start makes) and never sees the code.
+
+
+## 12. Calls (LIME-111)
+
+- **Control ops** (sealed where the contact shared a delivery key): `call.offer` / `call.answer` carry `call_id`, `sdp`, and `fingerprint`, which must equal the SDP's `a=fingerprint` (the DTLS key is bound inside the signed op); `call.ice` carries a candidate; `call.end`, `call.decline`, `call.busy` carry only `call_id`. Only accepted contacts ring; an offer older than the ring window is dropped.
+- **`POST /functions/v1/turn-credentials`** (verified session, 20 requests/minute): returns `{urls, username, credential, ttl}`; `username` is `<expiry>:<user>`, `credential` is base64(HMAC-SHA1(TURN_SECRET, username)), valid 1 hour. `503 not_configured` until the `TURN_SECRET` function secret is set.

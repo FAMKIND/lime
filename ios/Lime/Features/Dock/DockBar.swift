@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The floating bottom dock: link, jam, call. Only "link" (Messages) does anything yet.
+/// The floating bottom dock: link, jam, call. "link" is Messages; "call" lists calls on this phone; "jam" is coming.
 struct DockBar: View {
     @Environment(ConversationStore.self) private var store
+    @State private var showCalls = false
 
     private struct Item: Identifiable {
         let id: String
@@ -24,7 +25,7 @@ struct DockBar: View {
         HStack(spacing: 4) {
             ForEach(items) { item in
                 Button {
-                    if item.id != "link" { store.comingSoon(item.id.capitalized) }
+                    if item.id == "call" { showCalls = true } else if item.id != "link" { store.comingSoon(item.id.capitalized) }
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: item.symbol)
@@ -51,5 +52,6 @@ struct DockBar: View {
         }
         .padding(6)
         .limeGlass()
+        .sheet(isPresented: $showCalls) { CallHistoryView() }
     }
 }

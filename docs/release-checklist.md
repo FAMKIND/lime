@@ -70,3 +70,10 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **Say it plainly in help and the privacy policy**: status is visible only to the people you chat with, there is no "last seen", and the server never learns it.
 - [ ] **Held notifications outside work hours work only while Lime is running** until push exists (APNs); with push the same rule moves into the notification service extension. Test "messages arrive silently, then a summary" on a real phone.
 - [ ] The **urgent flag that breaks through quiet hours** is reserved for emergency mode and is not sendable yet.
+
+
+## Calls (LIME-111)
+
+- `TURN_SECRET` is set on the project (`supabase secrets set`) and `turn-credentials` returns 200, not 503.
+- `infra/turn/setup.sh` has been run on the TURN server; ports 3478 (UDP/TCP), 5349 (TLS), 49152-49999/UDP are open; the certificate renews.
+- Two real phones: voice call, video with flip camera, a missed call, and a call over mobile data (relay).

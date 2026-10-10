@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -2758,6 +2758,48 @@ fn only_the_owner_deletes_a_group_for_everyone_and_it_becomes_read_only_while_cl
     // Late news does not bring it back.
     sync(&carol, &transport);
     assert!(group_chat(&carol).is_none());
+}
+
+#[test]
+fn call_signalling_reaches_an_accepted_contact_and_a_swapped_media_key_or_a_stranger_is_refused() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    let sdp = "v=0\r\na=fingerprint:sha-256 AB:CD:EF:01\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
+    let offer = serde_json::json!({ "call_id": "call-1", "video": false, "sdp": sdp, "fingerprint": "ab:cd:ef:01" }).to_string();
+    alice.store.send_call_signal(transport.clone(), alice.token.clone(), bob.user.clone(), "call.offer".into(), offer.clone()).unwrap();
+    alice.store.send_call_signal(transport.clone(), alice.token.clone(), bob.user.clone(), "call.ice".into(), serde_json::json!({ "call_id": "call-1", "candidate": "candidate:1 1 udp 2 1.2.3.4 5 typ host" }).to_string()).unwrap();
+    assert_eq!(sync(&bob, &transport).received, 0, "signalling is not a message");
+    let events = bob.store.take_call_events().unwrap();
+    assert_eq!(events.iter().map(|e| (e.op.as_str(), e.call_id.as_str(), e.peer.as_str())).collect::<Vec<_>>(),
+               vec![("call.offer", "call-1", alice.user.as_str()), ("call.ice", "call-1", alice.user.as_str())]);
+    assert!(bob.store.take_call_events().unwrap().is_empty(), "taken once");
+    assert!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().iter().all(|m| !m.text.contains("call")), "nothing shows in the chat");
+
+    // The fingerprint must be the one inside the SDP: refused on sending, and ignored if a phone forges it anyway.
+    let swapped = serde_json::json!({ "call_id": "call-2", "sdp": sdp, "fingerprint": "00:00:00:00" }).to_string();
+    assert!(alice.store.send_call_signal(transport.clone(), alice.token.clone(), bob.user.clone(), "call.offer".into(), swapped.clone()).is_err());
+    let mut state = alice.store.load_or_create_account().unwrap();
+    alice.store.send_control_op(&transport, &alice.token, &mut state, &alice.user, &bob.user, "call.offer", serde_json::from_str(&swapped).unwrap()).unwrap();
+    sync(&bob, &transport);
+    assert!(bob.store.take_call_events().unwrap().is_empty(), "a swapped media key is dropped on arrival");
+    assert!(alice.store.send_call_signal(transport.clone(), alice.token.clone(), bob.user.clone(), "call.hangup".into(), "{}".into()).is_err(), "only the six call ops");
+
+    // TURN credentials come from the server's function (the stand-in answers with a fixed set).
+    let servers = alice.store.fetch_turn_servers(transport.clone(), alice.token.clone()).unwrap().expect("credentials");
+    assert!(servers.username.ends_with(&alice.user) && servers.urls[0].starts_with("turn:") && servers.ttl_seconds == 3600);
+
+    // Someone Bob has not accepted cannot ring him.
+    say(&carol, &bob, &transport, "hello, it's carol");
+    sync(&bob, &transport);
+    let mut carol_state = carol.store.load_or_create_account().unwrap();
+    carol.store.send_control_op(&transport, &carol.token, &mut carol_state, &carol.user, &bob.user, "call.offer", serde_json::from_str(&offer).unwrap()).unwrap();
+    sync(&bob, &transport);
+    assert!(bob.store.take_call_events().unwrap().is_empty(), "a request is not rung");
+    // And Alice cannot start a call with a stranger.
+    assert!(alice.store.send_call_signal(transport.clone(), alice.token.clone(), carol.user.clone(), "call.offer".into(), offer).is_err());
 }
 
 #[test]

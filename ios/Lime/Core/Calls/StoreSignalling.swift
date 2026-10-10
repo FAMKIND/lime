@@ -1,0 +1,32 @@
+import Foundation
+
+/// Sends call signalling over Lime's encrypted channel and fetches the TURN relay's credentials, through the signed-in session.
+@MainActor
+final class StoreSignalling: CallSignalling {
+    private weak var store: ConversationStore?
+    init(store: ConversationStore) { self.store = store }
+
+    func send(peer: String, op: String, payload: [String: Any]) async -> Bool {
+        guard let store, let core = store.core, let link = store.link,
+              let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return false }
+        do {
+            let token = try await link.token()
+            try await Task.detached(priority: .userInitiated) {
+                try core.sendCallSignal(transport: link.transport, authToken: token, peerUserId: peer, opType: op, payload: json)
+            }.value
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func iceServers() async -> [IceServer] {
+        var servers = [IceServer(urls: ["stun:turn.limechat.org:3478"], username: nil, credential: nil)]
+        guard let store, let core = store.core, let link = store.link, let token = try? await link.token() else { return servers }
+        let turn = try? await Task.detached(priority: .userInitiated) {
+            try core.fetchTurnServers(transport: link.transport, authToken: token)
+        }.value
+        if let turn { servers = [IceServer(urls: turn.urls, username: turn.username, credential: turn.credential)] }
+        return servers
+    }
+}

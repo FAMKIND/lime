@@ -18,6 +18,7 @@ struct RootView: View {
         }
         .overlay(alignment: .top) { ComingSoonBanner() }
         .overlay(alignment: .top) { IncomingBannerView() }
+        .fullScreenCover(isPresented: Binding(get: { store.calls.inCall }, set: { _ in })) { CallView() }
     }
 }
 

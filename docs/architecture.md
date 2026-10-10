@@ -196,3 +196,8 @@ DESIGN-01's order, **as amended by the user on 2026-10-05: mesh v1 comes before 
 4. **The web and desktop client's end-to-end encryption** (vodozemac compiled to WebAssembly), later.
 5. **Message ordering under the mailbox** (raised while writing this document). v1 makes the server's `seq` the one order of events. DESIGN-01 kept `seq` as the server's ordering online, and then D8 made the server blind to conversations. How a per-mailbox delivery order relates to the order messages appear in a conversation is not specified, and the API v2 brief has to answer it.
    **Answered in `docs/api-v2.md` §5 (2026-10-06).**
+
+
+### Calls: as built (LIME-111)
+
+1:1 voice and video over WebRTC (stasel/WebRTC), DTLS-SRTP between the phones; media goes peer to peer, or through a self-hosted coturn at `turn.limechat.org` (`infra/turn/`) which only sees ciphertext. Signalling is Lime's own encrypted control ops (`core/src/client/calls.rs`); the app's `CallManager` is a small state machine over injectable signalling, system (CallKit) and media. History is local to the phone (`CallLog`). Calls ring only while Lime is open or recently open (no PushKit yet).

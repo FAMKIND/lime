@@ -31,6 +31,7 @@ const POOL_LOW: u32 = 20;
 /// A text message must fit in a 64 KB mailbox item once wrapped and encrypted.
 const MAX_TEXT_BYTES: usize = 30_000;
 pub(crate) mod attachments;
+pub(crate) mod calls;
 pub(crate) mod groups;
 pub(crate) mod message_ops;
 pub(crate) mod photos;
@@ -838,7 +839,7 @@ impl LimeStore {
 
     /// A signed control op (never shown as a message) to one person, sealed when we hold their key.
     #[allow(clippy::too_many_arguments)]
-    fn send_control_op(
+    pub(crate) fn send_control_op(
         &self,
         transport: &Arc<dyn Transport>,
         token: &str,
@@ -1217,7 +1218,8 @@ impl LimeStore {
         let is_share = inner.op.op_type == DELIVERY_KEY_SHARE;
         let is_changed = inner.op.op_type == PROFILE_CHANGED;
         let is_status = inner.op.op_type == STATUS_CHANGED;
-        let is_control = is_share || is_changed || is_status;
+        let is_call = crate::store::calls::is_call_op(&inner.op.op_type);
+        let is_control = is_share || is_changed || is_status || is_call;
         let is_message_op = crate::store::message_ops::is_message_op(&inner.op.op_type);
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
@@ -1315,6 +1317,21 @@ impl LimeStore {
                     .unwrap_or(false);
                 if !blocked {
                     crate::store::message_ops::apply(conn, &sender, &format!("dm:{sender}"), &inner.op)?;
+                }
+                return Ok(Some(Stored::Control));
+            }
+            if is_call {
+                // Call signalling from an accepted contact only, well formed, and (for an offer) fresh: kept for the app to take.
+                let accepted = conn
+                    .query_row("SELECT request_state = 'accepted' FROM conversations WHERE id = ?1", params![format!("dm:{sender}")], |r| r.get::<_, bool>(0))
+                    .optional()
+                    .map_err(db_err)?
+                    .unwrap_or(false);
+                let fresh = inner.op.op_type != "call.offer" || now - remote_hlc.wall <= crate::store::calls::OFFER_MAX_AGE_MS;
+                if accepted && fresh {
+                    if let Some(call_id) = crate::store::calls::validate(&inner.op.op_type, &inner.op.payload) {
+                        crate::store::calls::push(conn, &sender, &inner.op.op_type, &call_id, &inner.op.payload, now)?;
+                    }
                 }
                 return Ok(Some(Stored::Control));
             }

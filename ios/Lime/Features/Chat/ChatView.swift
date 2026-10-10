@@ -129,7 +129,7 @@ struct ChatView: View {
             ScrollView {
                 let lastOwnID = conversation.messages.last(where: { $0.isOwn && !$0.isSystem })?.id
                 LazyVStack(spacing: 0) {
-                    ForEach(ChatRow.rows(for: conversation)) { row in
+                    ForEach(ChatRow.rows(for: conversation, calls: callRecords(conversation))) { row in
                         switch row.kind {
                         case .day(let text):
                             Text(text)
@@ -145,6 +145,13 @@ struct ChatView: View {
                                 .padding(.vertical, 6).padding(.horizontal, 24)
                                 .frame(maxWidth: .infinity)
                                 .accessibilityIdentifier("system-line")
+                        case .call(let record):
+                            Label(record.line, systemImage: record.video ? "video" : (record.outcome == .missed ? "phone.arrow.down.left" : "phone"))
+                                .font(Theme.caption)
+                                .foregroundStyle(record.outcome == .missed ? Color.red : Theme.textSecondary)
+                                .padding(.vertical, 6).padding(.horizontal, 24)
+                                .frame(maxWidth: .infinity)
+                                .accessibilityIdentifier("call-line")
                         case .deletedRun(let count):
                             Text("\(count) messages deleted")
                                 .font(Theme.caption.italic())
@@ -462,9 +469,34 @@ struct ChatView: View {
     private func toolGroup(_ conversation: Conversation) -> some View {
         HStack(spacing: -6) {
             toolIcon("magnifyingglass", label: "Search in chat", id: "chat-search-button") { startFinding() }
-            toolIcon("phone", label: "Call", id: "chat-call-button") { store.comingSoon("Call") }
+            callMenu(conversation)
             moreMenu(conversation) { ToolIconLabel(symbol: "ellipsis") }
         }
+    }
+
+    /// The call button: voice or video, to one accepted person (group calls come later).
+    private func callMenu(_ conversation: Conversation) -> some View {
+        Menu {
+            Button { startCall(conversation, video: false) } label: { Label("Voice call", systemImage: "phone") }
+                .accessibilityIdentifier("chat-call-voice")
+            Button { startCall(conversation, video: true) } label: { Label("Video call", systemImage: "video") }
+                .accessibilityIdentifier("chat-call-video")
+        } label: { ToolIconLabel(symbol: "phone") }
+            .accessibilityLabel("Call")
+            .accessibilityIdentifier("chat-call-button")
+    }
+
+    private func callRecords(_ conversation: Conversation) -> [CallRecord] {
+        guard !conversation.isGroup, let peer = conversation.members.first?.id else { return [] }
+        return CallLog.shared.records(with: peer)
+    }
+
+    private func startCall(_ conversation: Conversation, video: Bool) {
+        guard !conversation.isGroup, !conversation.isRequest, conversation.groupEnded == nil, let peer = conversation.members.first else {
+            store.comingSoon("Group calls")
+            return
+        }
+        Task { _ = await store.calls.start(peerID: peer.id, name: conversation.title, video: video) }
     }
 
     private func toolIcon(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {
