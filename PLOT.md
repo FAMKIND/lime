@@ -1741,6 +1741,10 @@ If anything contradicts this brief, stop and ask the user.
   - **when a test fails, fix it and re-run ONLY that test (`-only-testing`) until it passes; run the full 13 mini suite once, at the end.**
   - Don't re-run whole suites to check a single fix.
   - Prefer briefs that are small enough to finish in ~30–45 min.
+- **Addition 2 (2026-10-09, the user asked again during LIME-107-qa2, at 1 h 22 m):**
+  - **time-box test debugging to about 15 minutes per failing test.** If a layout/pixel assertion still fails on one device after that, loosen its tolerance, or skip it on that device with a comment + a `TEND.md` note, and move on.
+  - **Never spend longer debugging a test than building the feature.**
+  - **The brief soft-caps at about 60 min:** at that point, commit what's verified and report the rest as follow-ups.
 
 **The user's gate on LIME-97: "groups look great".**
 
@@ -2163,7 +2167,21 @@ If anything contradicts this brief, stop and ask the user.
 10. limechat.org (marketing/waitlist/privacy/terms; it must precede TestFlight because App Store Connect needs privacy/support URLs);
 11. TestFlight.
 
-### LIME-107-qa2 → `tend` (lime-aa) (NEXT, before LIME-108; tend hadn't started 108): reply duplication, reactions in previews, landscape width
+**LIME-107-qa2 landed as `0e77002`** (pushed and verified; 1 h 53 m).
+- The duplicate preview was **an app bug** (line 2 drew text that already held both lines).
+- **Reactions in the row:** a core change (`last_reaction`, `activity_at`).
+- **The unread bug had three causes, all fixed:**
+  - a manual mark wasn't cleared on open (an early return);
+  - Replies-only reading left the chat count;
+  - a stale reload overwrote "read" after a fast Back.
+
+  The notification badge = the dock count.
+- **Landscape:** full width, aligned to the header (38/34 pt on notch phones), "+" beside the dock.
+- **Accepted exceptions:** the landscape assertion is loosened to 12 pt; the reaction-row UI test is skipped on the SE.
+- 163 Rust tests pass; tiered iOS; 0 warnings.
+- **Next: LIME-108.**
+
+### LIME-107-qa2 → `tend` (lime-aa) (landed as `0e77002`): reply duplication, reactions in previews, landscape width
 **The user's QA (2026-10-09, screenshots).**
 
 **Phase 0:** `git add PLOT.md` only.
@@ -2185,8 +2203,21 @@ If anything contradicts this brief, stop and ask the user.
    - **Resolve the "+" overlap differently:** in landscape (compact height), **move the "+" into the bottom bar beside the dock** (or into the top pill), and give the list a bottom content inset so the last rows scroll clear of the dock.
    - Portrait is unchanged.
 
+5. **BUG (the user, 2026-10-09): reading a chat sometimes doesn't clear its unread state.** The user opens an unread chat, goes Back, and the Messages row still shows unread (the dot/count/bold), and so does the dock badge.
+   - **Reproduce first:**
+     - a new message arrives **while the chat is open**;
+     - opening via a notification/banner, via search or via a pinned row;
+     - reading only the Replies (thread unread vs chat unread);
+     - fast Back;
+     - an unread mark set manually, then the chat opened.
+   - **Report the cause.**
+   - **Rule:** opening a chat marks every message visible in it as read **at once**; **returning to Messages always shows the updated state**, with no stale row. The row must refresh on appear, and the dock badge recomputes.
+   - Thread replies read inside Replies clear the thread's unread too.
+   - A manual "mark unread" is cleared by opening the chat.
+
 **Verification:**
 - UI tests:
+  - **the unread clears after open → Back in each repro path above** (the row + dock badge);
   - no composer strip in Replies;
   - the row's line 1 ≠ line 2, and line 2 contains the reply text;
   - a reaction preview string;
@@ -2197,9 +2228,93 @@ If anything contradicts this brief, stop and ask the user.
 - Replies shows only the header card;
 - the reply row shows a quote line + the reply text (no duplicate);
 - a reaction shows in the preview;
-- landscape rows span to the avatar pill, with nothing under the "+".
+- landscape rows span to the avatar pill, with nothing under the "+";
+- **open an unread chat → Back → the row and the dock badge show it as read, every time.**
 
-**Record:** `## LIME-107-qa2`. Commit: `fix(ios): reply preview duplicate, reactions in previews, Replies strip removed, landscape width`, trailer `Brief: LIME-107-qa2`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+**Record:** `## LIME-107-qa2`. Commit: `fix(ios): reply preview duplicate, reactions in previews, Replies strip removed, landscape width, unread clears on read`, trailer `Brief: LIME-107-qa2`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### Open thread: compliance posture (GDPR, COPPA, FERPA, SOC 2), asked by the user 2026-10-09
+**Plot's assessment (not legal advice):**
+- **Strengths by design:**
+  - E2EE + the blind mailbox (FAM can't read messages or see groups/senders);
+  - data minimisation (the server holds ciphertext, delete-after-fetch, 30-day expiry);
+  - no ads/tracking/analytics;
+  - no contact upload;
+  - MFA on the admin accounts;
+  - secrets handling;
+  - acknowledgements;
+  - a planned external security review.
+- **COPPA:** applies to services directed at under-13s or knowingly collecting their data. **Lime is adults-only (18+, DESIGN-03), but NO age gate is built yet** → add an 18+ confirmation at sign-up + "not for students" in the terms.
+  - **Student data inside messages/Jam:** E2EE means FAM can't access message content; Jam (public) has the required student-privacy check.
+- **FERPA/state student-privacy laws (e.g. SOPIPA):** Lime is a teacher's personal tool, not a school-contracted service, so FERPA's school-official model mostly doesn't attach. Still publish **teacher guidance** ("don't share identifiable student info") + Jam safeguards.
+  - **If districts ever contract with Lime,** a DPA + student-privacy pledge becomes necessary.
+- **GDPR (if EU teachers join):**
+  - a privacy policy with the lawful bases;
+  - **DPAs with processors** (Supabase, Resend, Hetzner, Apple);
+  - EU→US transfer terms (SCCs/DPF; Supabase staging is East US);
+  - a records-of-processing doc;
+  - **data subject rights:** access/**export** (missing; deletion = LIME-113);
+  - a breach-notification process;
+  - possibly an EU representative (Art. 27) if EU users are targeted.
+  - **CCPA:** nonprofits are generally exempt; revenue thresholds are not met.
+- **SOC 2:** an expensive third-party audit (~$20k–80k+/yr incl. tooling) that enterprise buyers ask for. **Not needed for a teacher-direct nonprofit launch;** revisit if districts/partners require it.
+  - Meanwhile adopt the practices: a security policy, an incident response plan, access reviews, vulnerability disclosure (`security@limechat.org` + `/.well-known/security.txt`), dependency updates, logging without content.
+- **The App Store:** privacy nutrition labels; the account deletion (113); report (113).
+
+**→ Proposed LIME-114b "compliance pack"** (docs + small app items, before TestFlight; with limechat.org):
+- **18+ age confirmation at sign-up**;
+- **data export** (Settings → Account → "Export my data": the profile + your own local messages as JSON/HTML, generated on the device);
+- `docs/privacy-policy.md` + `terms.md` drafts (published on limechat.org; **lawyer review**);
+- `docs/compliance.md` (processors + DPAs to sign; records of processing; the breach/incident runbook; the security policy; the student-data guidance);
+- `security.txt`;
+- the App Store privacy-label answers.
+- **The user's actions:**
+  - sign the DPAs (Supabase/Resend/Hetzner dashboards);
+  - a lawyer review;
+  - decide whether EU users are targeted at launch. **DECIDED (2026-10-10): US first.** Stay GDPR-ready (DPAs, export, a policy), but no EU representative or EU-specific work at launch; the App Store availability is the US at first.
+
+### LIME-102b → `tend` (lime-aa) (after 108): Lime's own sounds: the message chime + the call ringtone
+**The user provided (2026-10-09), on their Desktop:**
+- `~/Desktop/lime-message-chime.m4a`: **1.2 s**, stereo AAC 44.1 kHz, 18 KB;
+- `~/Desktop/lime-call-steelpan.m4a`: **25.9 s**, stereo AAC 44.1 kHz, 410 KB (a steelpan ringtone, for calls).
+- **Rights confirmed by the user (2026-10-10): "chimes are good".** A more produced version will come later (it will drop in by replacing the CAFs).
+
+**Phase 0:** `git add PLOT.md` only.
+
+**Phase 2:**
+1. **Convert** with `afconvert` to Apple-friendly CAF (linear PCM or IMA4, mono is fine), **keeping the originals out of git** (only the converted CAFs are committed):
+   - `ios/Lime/Resources/Sounds/lime-chime.caf` (≤ 2 s);
+   - `lime-ring.caf` (**< 30 s**, which iOS requires for notification sounds; this one is 25.9 s, so OK).
+   - Normalise loudness so neither is jarring (about −16 LUFS integrated; a brief peak check).
+   - Record the conversion commands in `ios/Lime/Resources/Sounds/README.md`.
+2. **The message chime:**
+   - **"Lime chime" becomes the default Sound** in Settings → Notifications (options: Lime chime / Default / None);
+   - used for local notifications (`UNNotificationSound(named:)`) and the in-app banner sound;
+   - **the silent switch is respected.**
+3. **The call ringtone:** set as the **CallKit `ringtoneSound`** for incoming calls once LIME-111 lands (wire the constant now; LIME-111 uses it); it loops while ringing.
+4. **Remove the "honest note" wording** about the missing chime if any.
+5. **Custom sounds (the user, 2026-10-09: "be able to add their own custom message and call chimes"):**
+   - **Settings → Notifications → Message sound / Call sound:** a list of built-ins (Lime chime, Default, None; for calls: Lime steelpan, Default) + **"Add your own…"**.
+   - **Add your own:**
+     - pick an audio file (the document picker: Files, Voice Memos exports, music the user owns; no Apple Music DRM files);
+     - **trim it** (a simple start/end trimmer with a preview; **max 2 s for messages, < 30 s for calls**);
+     - name it;
+     - Lime converts it to CAF and saves it in the app's **`Library/Sounds`** directory (where iOS looks for custom notification sounds).
+   - **Custom sounds stay on this phone** (not uploaded, not synced; excluded from backup like other media).
+   - Delete or rename a custom sound; the max is 10.
+   - **Verify in Phase 1** whether CallKit's `ringtoneSound` can play a file from `Library/Sounds` (Apple documents it as an app-bundle sound). **If not:** the custom call sound applies to the in-app ringing UI only, and CallKit uses the Lime steelpan. **Say which in the report.**
+   - **Per-chat sounds are optional** (a chat's ⋯ → Notification sound), if cheap; otherwise list it as a follow-up.
+
+**Verification:**
+- a unit test that the bundle contains both CAFs with durations < 30 s / ≤ 2 s;
+- a UI test that Settings shows "Lime chime" selected by default;
+- tiered; 0 warnings.
+
+**Gate:**
+- a message arrives while Lime is in the background → the Lime chime plays; Settings → Notifications → Sound shows Lime chime;
+- **add your own message sound** from a file, trim it to 2 s, select it → the next message plays it.
+
+**Record:** `## LIME-102b`. Commit: `feat(ios): Lime message chime and call ringtone, plus custom sounds`, trailer `Brief: LIME-102b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ### LIME-111 → `tend` (lime-aa) (after the chime): 1:1 voice and video calls (peer-to-peer WebRTC, E2EE, CallKit)
 **Decisions already made:**
