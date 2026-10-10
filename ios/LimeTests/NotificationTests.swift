@@ -41,8 +41,12 @@ final class NotificationTests: XCTestCase {
         let settings = NotificationSettings(defaults: suite())
         XCTAssertTrue(settings.enabled)
         XCTAssertEqual(settings.preview, .nameAndMessage, "N2 = A")
-        XCTAssertEqual(settings.sound, .systemDefault)
-        XCTAssertEqual(NotificationSound.allCases, [.systemDefault, .none], "no Lime chime until the file exists")
+        XCTAssertEqual(settings.sound, .limeChime, "Lime's own chime is the default")
+        XCTAssertEqual(settings.callSound, .limeSteelpan)
+        XCTAssertEqual(NotificationSound.builtIns, [.limeChime, .systemDefault, .none])
+        XCTAssertEqual(NotificationSound(rawValue: "custom:abc"), .custom("abc"), "a custom sound survives being stored")
+        XCTAssertEqual(NotificationSound.custom("abc").fileName, "abc.caf")
+        XCTAssertEqual(NotificationSound.limeChime.fileName, "lime-chime.caf")
         XCTAssertFalse(settings.explainerDismissed)
     }
 

@@ -55,7 +55,17 @@ struct LimeApp: App {
         }
         #endif
         let system = SystemNotifications()
-        let coordinator = NotificationCoordinator(center: system, feedback: SystemArrivalFeedback())
+        let feedback = SystemArrivalFeedback()
+        let coordinator = NotificationCoordinator(center: system, feedback: feedback)
+        // The chosen message sound: the bundled chime, one of the person's own files, or the system's.
+        system.soundFile = { [weak coordinator] in coordinator?.settings.sound.fileName }
+        feedback.soundURL = { [weak coordinator] in
+            switch coordinator?.settings.sound {
+            case .limeChime: Bundle.main.url(forResource: "lime-chime", withExtension: "caf")
+            case .custom(let id): CustomSounds.shared.fileURL(id)
+            default: nil
+            }
+        }
         coordinator.isQuiet = { now in MainActor.assumeIsolated { StatusSettings.shared.plan(now: now).isQuiet } }
         system.onTap = { [weak coordinator] conversation, thread in coordinator?.open(conversationID: conversation, threadRoot: thread) }
         return coordinator

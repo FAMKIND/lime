@@ -6,6 +6,7 @@ struct ThreadView: View {
     let target: ThreadTarget
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(ConversationStore.self) private var store
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dismiss) private var dismiss
     @State private var composerModel = RichComposerModel()
     @State private var highlightedID: String?
@@ -48,6 +49,11 @@ struct ThreadView: View {
                 .environment(\.chatConversationID, target.conversationID)
                 .scrollDismissesKeyboard(.interactively)
                 .defaultScrollAnchor(.bottom)
+                // After a turn to landscape (or when it first appears) the newest message is brought clear of the composer.
+                .onChange(of: verticalSizeClass) { _, _ in
+                    Task { try? await Task.sleep(for: .milliseconds(250)); proxy.scrollTo("bottom", anchor: .bottom) }
+                }
+                .task { try? await Task.sleep(for: .milliseconds(250)); proxy.scrollTo("bottom", anchor: .bottom) }
                 .linkOpening()
                 .attachmentPresenting()
                 .onChange(of: messages.count) {
@@ -82,7 +88,6 @@ struct ThreadView: View {
         }
         .safeAreaInset(edge: .top) {
             VStack(spacing: 0) {
-                if let root = messages.first { ReplyContext(root: root, conversation: conversation, compact: false, onClose: nil) }
                 if finding { findBar }
             }
         }
@@ -91,8 +96,15 @@ struct ThreadView: View {
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 0) {
-                    Text("Replies").font(.system(.headline, design: .default, weight: .semibold)).foregroundStyle(Theme.text)
+                // Who the replies answer, like a chat's header: their avatar, "Replies · Name", and how many replies.
+                HStack(spacing: 8) {
+                    if let root = messages.first, let author = rootAuthor(root) { AvatarView(person: author, size: 30) }
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(rootAuthor(messages.first).map { "Replies · \($0.name)" } ?? "Replies")
+                            .font(.system(.headline, design: .default, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(replyCountText).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            .accessibilityIdentifier("replies-subtitle")
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("replies-title")
@@ -194,6 +206,13 @@ struct ThreadView: View {
         .padding(.horizontal, 14).frame(minHeight: 48)
         .limeGlass(in: Capsule())
         .padding(.horizontal, 12).padding(.vertical, 4)
+    }
+
+    /// Whose message the replies answer ("You" for mine).
+    private func rootAuthor(_ root: Message?) -> Person? {
+        guard let root else { return nil }
+        if root.isOwn { return Person(id: store.meProvider().id, name: "You", tone: store.meProvider().tone) }
+        return conversation.flatMap { store.person(root.senderID, in: $0) }
     }
 
     private var replyCountText: String {

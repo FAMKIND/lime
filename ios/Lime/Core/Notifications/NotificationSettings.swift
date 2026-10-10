@@ -16,19 +16,102 @@ enum NotificationPreview: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// The sound for a new message. Lime's own chime is not bundled yet: to add it, drop `lime-chime.caf`
-/// into `Resources/Sounds/`, add a `limeChime` case here (default it, play it in `SystemArrivalFeedback`
-/// and use `UNNotificationSound(named:)` in `SystemNotifications`). See `Resources/Sounds/README.md`.
-enum NotificationSound: String, CaseIterable, Identifiable, Sendable {
-    case systemDefault, none
+/// The sound for a new message: Lime's own chime (the default), the system's, none, or one of the person's own (a file they added,
+/// kept on this phone in `Library/Sounds`).
+enum NotificationSound: Hashable, Identifiable, Sendable {
+    case limeChime, systemDefault, none
+    case custom(String)
 
     var id: String { rawValue }
-    var title: String {
+
+    /// How it is stored: "limeChime", "systemDefault", "none" or "custom:<id>".
+    var rawValue: String {
         switch self {
-        case .systemDefault: "Default"
-        case .none: "None"
+        case .limeChime: "limeChime"
+        case .systemDefault: "systemDefault"
+        case .none: "none"
+        case .custom(let id): "custom:\(id)"
         }
     }
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "limeChime": self = .limeChime
+        case "systemDefault": self = .systemDefault
+        case "none": self = .none
+        default:
+            guard rawValue.hasPrefix("custom:"), rawValue.count > 7 else { return nil }
+            self = .custom(String(rawValue.dropFirst(7)))
+        }
+    }
+
+    /// The built-in choices, in the order Settings lists them.
+    static let builtIns: [NotificationSound] = [.limeChime, .systemDefault, .none]
+
+    var title: String {
+        switch self {
+        case .limeChime: "Lime chime"
+        case .systemDefault: "Default"
+        case .none: "None"
+        case .custom: "Your sound"
+        }
+    }
+
+    /// The file notifications play: in the app bundle (the chime) or `Library/Sounds` (a custom sound). `nil` means the system's.
+    var fileName: String? {
+        switch self {
+        case .limeChime: SoundFiles.chime
+        case .custom(let id): "\(id).caf"
+        case .systemDefault, .none: nil
+        }
+    }
+}
+
+/// The ringtone for a call: Lime's steelpan, the system's, or a custom one (used by the in-app ringing; see `CallRingtone`).
+enum CallSound: Hashable, Identifiable, Sendable {
+    case limeSteelpan, systemDefault
+    case custom(String)
+
+    var id: String { rawValue }
+    var rawValue: String {
+        switch self {
+        case .limeSteelpan: "limeSteelpan"
+        case .systemDefault: "systemDefault"
+        case .custom(let id): "custom:\(id)"
+        }
+    }
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "limeSteelpan": self = .limeSteelpan
+        case "systemDefault": self = .systemDefault
+        default:
+            guard rawValue.hasPrefix("custom:"), rawValue.count > 7 else { return nil }
+            self = .custom(String(rawValue.dropFirst(7)))
+        }
+    }
+
+    static let builtIns: [CallSound] = [.limeSteelpan, .systemDefault]
+    var title: String {
+        switch self {
+        case .limeSteelpan: "Lime steelpan"
+        case .systemDefault: "Default"
+        case .custom: "Your sound"
+        }
+    }
+}
+
+/// The names of the sound files in the app bundle.
+enum SoundFiles {
+    static let chime = "lime-chime.caf"
+    static let ring = "lime-ring.caf"
+}
+
+/// What CallKit plays for an incoming call (LIME-111 passes this to `CXProviderConfiguration.ringtoneSound`). CallKit documents that
+/// setting as the name of a sound in the app bundle, so a custom call sound cannot be handed to it: the custom sound plays in Lime's own
+/// ringing screen, and the system call screen uses the Lime steelpan.
+enum CallRingtone {
+    static let callKitSoundName = SoundFiles.ring
 }
 
 /// How long a chat stays muted.
@@ -63,6 +146,7 @@ final class NotificationSettings {
     var enabled: Bool { didSet { defaults.set(enabled, forKey: Keys.enabled) } }
     var preview: NotificationPreview { didSet { defaults.set(preview.rawValue, forKey: Keys.preview) } }
     var sound: NotificationSound { didSet { defaults.set(sound.rawValue, forKey: Keys.sound) } }
+    var callSound: CallSound { didSet { defaults.set(callSound.rawValue, forKey: Keys.callSound) } }
     /// "Not now" was chosen on the explainer: do not ask again by itself (Settings still offers it).
     var explainerDismissed: Bool { didSet { defaults.set(explainerDismissed, forKey: Keys.dismissed) } }
     /// Chat id to when its mute ends (`distantFuture` for always).
@@ -74,6 +158,7 @@ final class NotificationSettings {
         static let enabled = "lime.notify.enabled"
         static let preview = "lime.notify.preview"
         static let sound = "lime.notify.sound"
+        static let callSound = "lime.notify.callSound"
         static let dismissed = "lime.notify.explainerDismissed"
         static let muted = "lime.notify.muted"
     }
@@ -82,7 +167,8 @@ final class NotificationSettings {
         self.defaults = defaults
         enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
         preview = defaults.string(forKey: Keys.preview).flatMap(NotificationPreview.init) ?? .nameAndMessage
-        sound = defaults.string(forKey: Keys.sound).flatMap(NotificationSound.init) ?? .systemDefault
+        sound = defaults.string(forKey: Keys.sound).flatMap(NotificationSound.init) ?? .limeChime
+        callSound = defaults.string(forKey: Keys.callSound).flatMap(CallSound.init) ?? .limeSteelpan
         explainerDismissed = defaults.bool(forKey: Keys.dismissed)
         let stored = defaults.dictionary(forKey: Keys.muted) as? [String: Double] ?? [:]
         muted = stored.mapValues { Date(timeIntervalSince1970: $0) }
@@ -112,7 +198,7 @@ final class NotificationSettings {
 
     /// Forget everything (signing out).
     func reset() {
-        for key in [Keys.enabled, Keys.preview, Keys.sound, Keys.dismissed, Keys.muted] { defaults.removeObject(forKey: key) }
-        enabled = true; preview = .nameAndMessage; sound = .systemDefault; explainerDismissed = false; muted = [:]
+        for key in [Keys.enabled, Keys.preview, Keys.sound, Keys.callSound, Keys.dismissed, Keys.muted] { defaults.removeObject(forKey: key) }
+        enabled = true; preview = .nameAndMessage; sound = .limeChime; callSound = .limeSteelpan; explainerDismissed = false; muted = [:]
     }
 }

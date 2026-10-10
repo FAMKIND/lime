@@ -30,6 +30,8 @@ final class LimeUITests: XCTestCase {
         let row = app.buttons["status-open-settings"]
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the status sheet opens")
         row.tap()
+        // The status sheet closes first, then Settings opens: wait for it before the test taps inside.
+        XCTAssertTrue(app.descendants(matching: .any)["settings-root"].waitForExistence(timeout: 10), "Settings opens")
     }
 
     private func goBack(_ app: XCUIApplication) {
@@ -861,16 +863,16 @@ final class LimeUITests: XCTestCase {
         toggle.tap()   // back on, so other tests are unaffected
     }
 
-    func testRepliesShowsOnlyTheHeaderCardAndNoReplyToStripAboveTheComposer() {
+    func testRepliesHeadlineIsTheRootAuthorsAvatarAndNameWithTheCountAndNoCard() {
         let app = threadApp("thread-open")
         app.launch()
-        let card = app.descendants(matching: .any)["reply-context-card"]
-        XCTAssertTrue(card.waitForExistence(timeout: 10), "the card under the title")
-        XCTAssertTrue(card.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Replies · '")).firstMatch.exists)
-        XCTAssertTrue(card.staticTexts["reply-context-quote"].label.contains("recess duty"), "a one-line quote of the root")
+        let title = app.descendants(matching: .any)["replies-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertTrue(title.label.contains("Replies · Rae"), title.label)
+        XCTAssertTrue(app.staticTexts["replies-subtitle"].label.contains("repl"), "how many replies, as a small subtitle")
+        XCTAssertFalse(app.descendants(matching: .any)["reply-context-card"].exists, "no separate card")
+        XCTAssertFalse(app.descendants(matching: .any)["reply-context-strip"].exists)
         XCTAssertTrue(app.buttons["composer-plus"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["reply-context-strip"].exists, "no strip above the composer")
-        XCTAssertFalse(app.buttons["reply-context-close"].exists)
     }
 
     private func remoteApp(extra: [String] = []) -> XCUIApplication {
@@ -1116,6 +1118,39 @@ final class LimeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["hours-day-1"].isSelected)
         app.buttons["hours-day-7"].tap()
         XCTAssertTrue(app.buttons["hours-day-7"].isSelected)
+    }
+
+    // MARK: LIME-102b
+
+    func testNotificationSettingsShowLimeChimeSelectedByDefaultAndAnAddYourOwnRow() {
+        let app = threadApp("settings/notifications")
+        app.launchArguments += ["-lime-reset-session"]   // the demo's own notification choices start fresh
+        app.launch()
+        let chime = app.buttons["sound-limeChime"]
+        XCTAssertTrue(chime.waitForExistence(timeout: 10))
+        XCTAssertTrue(chime.isSelected, "Lime chime is the default sound")
+        XCTAssertTrue(app.buttons["sound-systemDefault"].exists && app.buttons["sound-none"].exists)
+        XCTAssertTrue(app.buttons["callsound-limeSteelpan"].isSelected, "and the Lime steelpan for calls")
+        XCTAssertTrue(app.buttons["sound-add-message"].exists && app.buttons["sound-add-call"].exists)
+        app.buttons["sound-none"].tap()
+        XCTAssertTrue(app.buttons["sound-none"].isSelected)
+        app.buttons["sound-limeChime"].tap()
+        app.buttons["sound-add-message"].tap()
+        XCTAssertTrue(app.buttons["sound-choose-file"].waitForExistence(timeout: 5), "the add-your-own sheet")
+        app.buttons["sound-cancel"].tap()
+    }
+
+    func testInLandscapeTheComposerDoesNotCoverTheLastMessage() {
+        let app = threadApp("thread-open")
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let plus = app.buttons["composer-plus"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 1)
+        let last = app.staticTexts["message-time-t1c"]
+        XCTAssertTrue(last.exists)
+        XCTAssertLessThanOrEqual(last.frame.maxY, plus.frame.minY + 1, "the last message ends above the composer")
     }
 
     func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {
@@ -1561,11 +1596,11 @@ final class LimeUITests: XCTestCase {
         app.buttons["preview-hidden"].tap()
         XCTAssertTrue(app.buttons["preview-hidden"].isSelected)
         XCTAssertFalse(app.buttons["preview-nameAndMessage"].isSelected)
-        XCTAssertTrue(app.buttons["sound-systemDefault"].isSelected)
-        XCTAssertTrue(app.buttons["sound-none"].exists)
-        XCTAssertFalse(app.buttons["sound-limeChime"].exists, "no Lime chime until the file exists")
+        XCTAssertTrue(app.buttons["sound-limeChime"].isSelected, "Lime chime is the default")
+        XCTAssertTrue(app.buttons["sound-systemDefault"].exists && app.buttons["sound-none"].exists)
         app.buttons["sound-none"].tap()
         XCTAssertTrue(app.buttons["sound-none"].isSelected)
+        for _ in 0..<4 where !app.staticTexts["notif-no-muted"].exists { app.swipeUp() }   // the sound lists made the page longer
         XCTAssertTrue(app.staticTexts["notif-no-muted"].exists)
         app.switches["notif-toggle"].tap()
         XCTAssertFalse(app.buttons["preview-hidden"].exists, "off hides the details")
@@ -1615,6 +1650,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["muted-dm:lee"].waitForExistence(timeout: 5), "a bell on the muted chat")
         openSettingsFromAvatar(app)
         app.buttons["settings-notifications"].tap()
+        for _ in 0..<4 where !app.buttons["unmute-dm:lee"].isHittable { app.swipeUp() }   // the sound lists made the page longer
         XCTAssertTrue(app.buttons["unmute-dm:lee"].waitForExistence(timeout: 5))
         app.buttons["unmute-dm:lee"].tap()
         XCTAssertTrue(app.staticTexts["notif-no-muted"].waitForExistence(timeout: 5))
@@ -1679,6 +1715,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
         openSettingsFromAvatar(app)
         app.buttons["settings-about"].tap()
+        for _ in 0..<4 where !app.buttons["about-developer"].isHittable { app.swipeUp() }   // the Developer row is at the bottom of About
         XCTAssertTrue(app.buttons["about-developer"].waitForExistence(timeout: 5))
         app.buttons["about-developer"].tap()
         XCTAssertTrue(app.staticTexts["sealed-contacts"].waitForExistence(timeout: 5))

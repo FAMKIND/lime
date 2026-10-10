@@ -6,6 +6,10 @@ struct NotificationsScreen: View {
     @Environment(ConversationStore.self) private var store
     @Environment(NotificationCoordinator.self) private var notifications
     @State private var explaining = false
+    @State private var sounds = CustomSounds.shared
+    @State private var adding: CustomSounds.Kind?
+    @State private var renaming: CustomSounds.Item?
+    @State private var renameText = ""
 
     var body: some View {
         @Bindable var settings = notifications.settings
@@ -29,14 +33,35 @@ struct NotificationsScreen: View {
                     }
                 }
                 SettingsFootnote(text: "Messages are decrypted on this iPhone, so a preview never passes through a server. A message request never shows its words.")
-                SettingsFootnote(text: "Sound")
+                SettingsFootnote(text: "Message sound")
                 SettingsCard {
-                    ForEach(NotificationSound.allCases) { option in
-                        choice(option.title, selected: settings.sound == option, id: "sound-\(option.rawValue)", last: option == NotificationSound.allCases.last) {
+                    ForEach(NotificationSound.builtIns) { option in
+                        choice(option.title, selected: settings.sound == option, id: "sound-\(option.rawValue)", last: false) {
                             settings.sound = option
+                            SoundPreview.shared.play(messageSound: option)
                         }
                     }
+                    ForEach(sounds.items(of: .message)) { item in
+                        choice(item.name, selected: settings.sound == .custom(item.id), id: "sound-custom-\(item.id)", last: false) {
+                            settings.sound = .custom(item.id)
+                            SoundPreview.shared.play(messageSound: .custom(item.id))
+                        }
+                        .contextMenu { customMenu(item) }
+                    }
+                    choice("Add your own…", selected: false, id: "sound-add-message", last: true) { adding = .message }
                 }
+                SettingsFootnote(text: "Call sound")
+                SettingsCard {
+                    ForEach(CallSound.builtIns) { option in
+                        choice(option.title, selected: settings.callSound == option, id: "callsound-\(option.rawValue)", last: false) { settings.callSound = option }
+                    }
+                    ForEach(sounds.items(of: .call)) { item in
+                        choice(item.name, selected: settings.callSound == .custom(item.id), id: "callsound-custom-\(item.id)", last: false) { settings.callSound = .custom(item.id) }
+                            .contextMenu { customMenu(item) }
+                    }
+                    choice("Add your own…", selected: false, id: "sound-add-call", last: true) { adding = .call }
+                }
+                SettingsFootnote(text: "Your own sounds stay on this iPhone: they are not uploaded or synced. Press and hold one to rename or delete it. Up to \(CustomSounds.limit).")
                 SettingsFootnote(text: "Muted chats")
                 mutedChats
             }
@@ -44,6 +69,22 @@ struct NotificationsScreen: View {
         }
         .task { await notifications.refreshAuthorization() }
         .sheet(isPresented: $explaining) { NotificationExplainerSheet() }
+        .sheet(item: $adding) { kind in AddSoundSheet(kind: kind) }
+        .alert("Rename sound", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $renameText)
+            Button("Save") { if let item = renaming { sounds.rename(item.id, to: renameText) }; renaming = nil }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
+    }
+
+    @ViewBuilder
+    private func customMenu(_ item: CustomSounds.Item) -> some View {
+        Button { renameText = item.name; renaming = item } label: { Label("Rename", systemImage: "pencil") }
+        Button(role: .destructive) {
+            if notifications.settings.sound == .custom(item.id) { notifications.settings.sound = .limeChime }
+            if notifications.settings.callSound == .custom(item.id) { notifications.settings.callSound = .limeSteelpan }
+            sounds.delete(item.id)
+        } label: { Label("Delete", systemImage: "trash") }
     }
 
     /// What iOS allows: ask (explainer first), or send the person to iOS Settings when it was refused.

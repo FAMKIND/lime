@@ -26,6 +26,9 @@ enum Theme {
         static let linkOwn = "LinkOwn"
         /// A warm neutral for active and pressed states (the formatting toolbar). The accent is only for the primary action.
         static let pressed = "Pressed"
+        /// A reaction chip: barely there, so the emoji is the clear thing (mine a touch deeper).
+        static let chipFill = "ChipFill"
+        static let chipFillMine = "ChipFillMine"
         /// Find: every matched word, the current one, and the ink on both (fixed, so it reads on any bubble).
         static let findMatch = "FindMatch"
         static let findCurrent = "FindCurrent"
@@ -54,6 +57,8 @@ enum Theme {
     /// A link in my own bubble.
     static let linkOwn = color(Name.linkOwn)
     static let pressed = color(Name.pressed)
+    static let chipFill = color(Name.chipFill)
+    static let chipFillMine = color(Name.chipFillMine)
     static let findMatch = color(Name.findMatch)
     static let findCurrent = color(Name.findCurrent)
     static let findInk = color(Name.findInk)

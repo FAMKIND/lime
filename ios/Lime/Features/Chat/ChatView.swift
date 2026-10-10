@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ChatView: View {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     let conversationID: Conversation.ID
     /// Opened from a search result: scroll to this message and highlight it for a moment.
     var focusMessageID: String? = nil
@@ -180,6 +181,9 @@ struct ChatView: View {
             .attachmentPresenting()
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
+            .onChange(of: verticalSizeClass) { _, _ in
+                Task { try? await Task.sleep(for: .milliseconds(250)); proxy.scrollTo("bottom", anchor: .bottom) }
+            }
             .refreshable { await store.pullToRefresh() }
             .onChange(of: scrollRequest) { _, request in
                 guard let request else { return }
@@ -690,12 +694,12 @@ struct MessageBubble: View {
                     if chip.count > 1 { Text("\(chip.count)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text) }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(chip.mine ? Theme.pressed : Theme.surface, in: Capsule())
+                .background(chip.mine ? Theme.chipFillMine : Theme.chipFill, in: Capsule())
             }
             if more > 0 {
                 Text("+\(more)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.textSecondary)
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Theme.surface, in: Capsule())
+                    .background(Theme.chipFill, in: Capsule())
             }
         }
         .fixedSize()

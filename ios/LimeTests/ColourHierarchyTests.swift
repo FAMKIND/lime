@@ -37,6 +37,17 @@ final class ColourHierarchyTests: XCTestCase {
         XCTAssertEqual(ComposerTextView().tintColor, UIColor.systemBlue)
     }
 
+    func testReactionChipsAreBarelyThereSoTheEmojiIsTheClearThing() {
+        for dark in [false, true] {
+            let chip = contrast(Theme.Name.chipFill, Theme.Name.canvas, dark: dark)
+            let mine = contrast(Theme.Name.chipFillMine, Theme.Name.canvas, dark: dark)
+            XCTAssertGreaterThanOrEqual(chip, 1.07, "still visible, dark: \(dark): \(String(format: "%.3f", chip))")
+            XCTAssertLessThanOrEqual(chip, 1.2, "very subtle, dark: \(dark): \(String(format: "%.3f", chip))")
+            XCTAssertGreaterThan(mine, chip, "mine a touch deeper, dark: \(dark)")
+            XCTAssertLessThanOrEqual(mine, 1.22, "but still subtle, dark: \(dark): \(String(format: "%.3f", mine))")
+        }
+    }
+
     func testThePressedNeutralIsNotTheAccentAndReadsOnTheBar() {
         for dark in [false, true] {
             let pressed = Theme.uiColor(Theme.Name.pressed, dark: dark)

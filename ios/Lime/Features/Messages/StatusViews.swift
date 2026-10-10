@@ -14,10 +14,12 @@ struct StatusBadge: View {
             case .available:
                 Circle().fill(Color(red: 0.20, green: 0.72, blue: 0.36)).frame(width: size - 2, height: size - 2)
             case .away:
-                Image(systemName: "moon.fill").font(.system(size: size - 3, weight: .bold)).foregroundStyle(Color(red: 0.96, green: 0.70, blue: 0.10))
+                // A solid disc with the moon on it, like the other two, so it reads the same on any background.
+                Circle().fill(Color(red: 0.96, green: 0.70, blue: 0.10)).frame(width: size - 1, height: size - 1)
+                    .overlay(Image(systemName: "moon.fill").font(.system(size: size * 0.5, weight: .bold)).foregroundStyle(.white))
             case .dnd:
                 Circle().fill(Color(red: 0.88, green: 0.28, blue: 0.30)).frame(width: size - 1, height: size - 1)
-                    .overlay(Text("z").font(.system(size: size * 0.62, weight: .black, design: .rounded)).foregroundStyle(.white).offset(y: -0.5))
+                    .overlay(Text("z").font(.system(size: size * 0.72, weight: .black, design: .rounded)).foregroundStyle(.white).offset(y: -0.5))
             }
         }
         .frame(width: size + 4, height: size + 4)

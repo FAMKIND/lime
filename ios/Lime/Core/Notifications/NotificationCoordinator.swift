@@ -153,6 +153,8 @@ final class SystemNotifications: NSObject, LocalNotificationCenter, UNUserNotifi
     private let center = UNUserNotificationCenter.current()
     /// Set by the app: a tapped notification opens its chat (and thread).
     var onTap: (String, String?) -> Void = { _, _ in }
+    /// The sound file the chosen message sound plays (in the bundle or `Library/Sounds`); `nil` is the system's.
+    var soundFile: @MainActor () -> String? = { nil }
 
     override init() {
         super.init()
@@ -176,7 +178,7 @@ final class SystemNotifications: NSObject, LocalNotificationCenter, UNUserNotifi
         item.title = content.title
         item.body = content.body
         item.threadIdentifier = content.threadIdentifier
-        item.sound = content.sound ? .default : nil
+        item.sound = content.sound ? (soundFile().map { UNNotificationSound(named: UNNotificationSoundName($0)) } ?? .default) : nil
         item.userInfo = ["conversation": content.conversationID, "thread": content.threadRoot ?? ""]
         let request = UNNotificationRequest(identifier: content.messageID, content: item, trigger: nil)
         try? await center.add(request)
@@ -206,8 +208,20 @@ final class SystemNotifications: NSObject, LocalNotificationCenter, UNUserNotifi
 final class SystemArrivalFeedback: ArrivalFeedback {
     /// The system's "received message" tone.
     private static let systemMessageSound: SystemSoundID = 1007
+    /// The file of the chosen message sound, or `nil` for the system's tone.
+    var soundURL: @MainActor () -> URL? = { nil }
+    private var loaded: [URL: SystemSoundID] = [:]
 
-    func playSound() { AudioServicesPlaySystemSound(Self.systemMessageSound) }
+    /// Plays the chosen sound through the system-sound path, so the silent switch is respected.
+    func playSound() {
+        guard let url = soundURL() else { AudioServicesPlaySystemSound(Self.systemMessageSound); return }
+        if loaded[url] == nil {
+            var id: SystemSoundID = 0
+            guard AudioServicesCreateSystemSoundID(url as CFURL, &id) == kAudioServicesNoError else { AudioServicesPlaySystemSound(Self.systemMessageSound); return }
+            loaded[url] = id
+        }
+        if let id = loaded[url] { AudioServicesPlaySystemSound(id) }
+    }
 
     func tick() { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
 }
