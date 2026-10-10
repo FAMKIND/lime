@@ -2029,7 +2029,15 @@ If anything contradicts this brief, stop and ask the user.
 - **One UI check was dropped** (the Forward-enabled long-press on the SE/18 Pro is flaky; covered by core tests). Took 1 h 28 m.
 - **Next: LIME-107-qa.**
 
-### LIME-107-qa → `tend` (lime-aa) (right after LIME-107; tend was mid-107 when these arrived): the unread system, row alignment, the message-group footer, the reply summary
+**LIME-107-qa landed** (iOS only; 46 min).
+- Unread = dot + bold + count; manual unread = dot only; **the dock badge now counts unread chats** (it used to sum messages: the root of the mismatch).
+- A 16 pt page margin with the dot hanging; **the avatar is at x = 16 vs the logo glyph at x = 21: the user should check by eye**.
+- The landscape list stops before the "+".
+- The message-group alignment test was added (tend couldn't see the screenshots: plot to remind the user to report if anything still looks detached).
+- The reply summary is "1 reply · 6:35 PM", regular weight.
+- **Next: LIME-108.**
+
+### LIME-107-qa → `tend` (lime-aa) (landed): (right after LIME-107; tend was mid-107 when these arrived): the unread system, row alignment, the message-group footer, the reply summary
 **The user's QA (2026-10-09; screenshots of both phones; portrait + landscape):**
 1. **One coherent unread system** (today the dot and the count badge disagree: e.g. Jean's phone shows a dot on one chat and a count on another).
    - **Any unread chat shows BOTH:** the left dot **and** the trailing count badge.
@@ -2142,7 +2150,149 @@ If anything contradicts this brief, stop and ask the user.
   - **J4 moderation:** Report → auto-hide after N reports → a FAM admin review queue (a small admin web page); the user agrees to be the first moderator(s).
   - **Where it sits in the order:** after 108 + the chime, before calls (as the user listed).
 
-**Open questions put to the user (2026-10-09):**
+**ORDER REVISED (the user, 2026-10-09, later), authoritative:**
+1. 107-qa;
+2. 108 status + work hours;
+3. **the chime**;
+4. **calls** (111 1:1, then 112 group);
+5. **account deletion + Report (113)**;
+6. **offline messaging + emergency mode** (the mesh v1 design pass → briefs);
+7. **Jam MVP (110)**;
+8. **Spanish (109)**;
+9. **push (APNs; the paid account)**;
+10. limechat.org (marketing/waitlist/privacy/terms; it must precede TestFlight because App Store Connect needs privacy/support URLs);
+11. TestFlight.
+
+### LIME-107-qa2 → `tend` (lime-aa) (NEXT, before LIME-108; tend hadn't started 108): reply duplication, reactions in previews, landscape width
+**The user's QA (2026-10-09, screenshots).**
+
+**Phase 0:** `git add PLOT.md` only.
+
+**Phase 2:**
+1. **Replies screen:** remove the **"Reply to <Name>" strip above the composer** (too repetitive). Keep only the **header card** ("Replies · <Name>" + quote) at the top.
+2. **Messages-row reply preview: a duplicate bug.**
+   - Today both lines show "Reply to FAM · <root>"; **line 2 must be the reply itself** ("<Name>: <reply>", "You: …", or the bare text in a DM).
+   - Layout:
+     - **line 1** = the small quote with a bar ("Reply to <author> · <root>");
+     - **line 2** = the reply text;
+     - when the reply is short and both fit, they may share a line; **never repeat the same text**.
+   - Use "Reply to you" (lowercase) when the root is yours.
+3. **Reactions in the Messages preview** (Apple-style):
+   - when the latest activity in a chat is a reaction, the row shows "**Jean reacted ❤️ to "True that"**" (or "You reacted 👍 to …"), and the row's time and sort order follow it;
+   - **no unread count and no notification for reactions** (per LIME-105); the dot doesn't change.
+4. **Landscape layout:**
+   - the list must use the **full content width, aligned to the header elements**: the row's leading edge matches the logo, the trailing time/badge **aligns with the right edge of the search/avatar pill**; the scroll indicator sits at the screen edge, not mid-screen (today the 107-qa fix narrowed the list).
+   - **Resolve the "+" overlap differently:** in landscape (compact height), **move the "+" into the bottom bar beside the dock** (or into the top pill), and give the list a bottom content inset so the last rows scroll clear of the dock.
+   - Portrait is unchanged.
+
+**Verification:**
+- UI tests:
+  - no composer strip in Replies;
+  - the row's line 1 ≠ line 2, and line 2 contains the reply text;
+  - a reaction preview string;
+  - landscape: the row trailing edge ≈ the pill's trailing edge (±4 pt), the "+" doesn't intersect rows, the scroll indicator is at the trailing screen edge;
+- the tiered iOS rule; 0 warnings.
+
+**Gate:**
+- Replies shows only the header card;
+- the reply row shows a quote line + the reply text (no duplicate);
+- a reaction shows in the preview;
+- landscape rows span to the avatar pill, with nothing under the "+".
+
+**Record:** `## LIME-107-qa2`. Commit: `fix(ios): reply preview duplicate, reactions in previews, Replies strip removed, landscape width`, trailer `Brief: LIME-107-qa2`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-111 → `tend` (lime-aa) (after the chime): 1:1 voice and video calls (peer-to-peer WebRTC, E2EE, CallKit)
+**Decisions already made:**
+- 1:1 = **peer-to-peer WebRTC with a TURN fallback**; group = self-hosted LiveKit (LIME-112);
+- **open source and free**; no recording.
+
+**Phase 0:** `git add PLOT.md` only.
+
+**Phase 1: survey + one stop.**
+- Survey: the WebRTC for iOS options (Google's BSD-licensed WebRTC via a maintained prebuilt Swift package); CallKit; AVAudioSession; and how call signalling can ride Lime's existing encrypted control ops.
+- **TURN hosting is a user decision. STOP and present it:**
+  - (a) **coturn self-hosted on a small VPS** (open source; ~€4–6/month; the user creates the VPS account);
+  - (b) a free-tier managed TURN (cheaper to start, but a third party sees IPs and timing; still no media access);
+  - (c) STUN-only for now (works on most home Wi-Fi; **fails on many school/mobile networks**).
+  - Give the cost/privacy trade-offs and a lean (**plot's lean: (a)**, shared later with LiveKit's server).
+- **Don't create accounts.**
+
+**DECIDED (the user, 2026-10-09): (a) Lime's own relay (coturn on a small VPS).**
+- **Plot's provider lean: Hetzner Cloud** (open-source-friendly, cheap, a US region Ashburn VA; a **CX22 (2 vCPU / 4 GB), about €4–5/month** for coturn; it can be resized later for LiveKit).
+- **The user creates the Hetzner account + adds the Mac's SSH public key; tend never creates accounts.**
+- **The Phase 1 stop becomes:**
+  - give the user step-by-step VPS creation (Ubuntu LTS, Ashburn, the SSH key, the firewall ports for TURN: 3478 UDP/TCP, 5349 TLS, the relay port range);
+  - then tend provisions coturn over SSH with a **committed, idempotent setup script** (`infra/turn/setup.sh`):
+    - a TLS certificate for `turn.limechat.org` (**the user adds an A record in deSEC**);
+    - `use-auth-secret` with the REST-API shared secret **stored only on the server and as a Supabase function secret (set by the user via Terminal `read -s`)**.
+  - Document it in `infra/turn/README.md`.
+
+**Phase 2 (after the user's TURN choice):**
+1. **Signalling over Lime's E2EE channel:** encrypted, signed control ops `call.offer` / `call.answer` / `call.ice` / `call.end` / `call.busy` / `call.decline`, sealed where possible. **The server never learns a call happened beyond normal mailbox traffic.**
+   - **TURN credentials** come from a new Edge Function `turn-credentials` (time-limited HMAC credentials per the coturn REST API; rate-limited; verified sessions only).
+2. **Media:** WebRTC **DTLS-SRTP** (end-to-end between the two phones; TURN only relays ciphertext).
+   - **Verify the DTLS fingerprint** inside the signed `call.offer`/`call.answer` (it binds the media to the Lime identity, so a TURN/MITM can't swap keys).
+   - Audio: Opus; video: VP8/H.264, adaptive.
+3. **iOS UI:**
+   - **the phone icon** in the chat header (voice), plus a **video** option;
+   - **CallKit** for the system call UI (incoming while Lime is open/recent; outgoing; it shows in Recents as "Lime");
+   - an in-call screen: mute, speaker, video on/off, flip camera, end; a picture-in-picture self view;
+   - a **calls timeline line** in the chat ("Voice call · 4:12", "Missed call");
+   - **the dock "call" tab:** a call history (local).
+   - **Respect work hours/DND** (LIME-108): calls outside hours are silenced, shown as missed.
+4. **The honest limit (until APNs/PushKit, the paid account):** an incoming call **rings only if Lime is open or recently used**. Show the note in Settings → Notifications (the existing note, extended to calls).
+
+**Out of scope:** group calls (112), PushKit ringing (with APNs), screen share, recording.
+
+**Verification:**
+- core (call ops sign/verify; the fingerprint mismatch is rejected);
+- server (`turn-credentials` auth + rate limit);
+- an integration test of the signalling exchange through the real mailbox;
+- **a real two-device call** cannot be automated: **simulator ↔ simulator audio is limited**, so the user tests on 2 phones;
+- the tiered iOS rule; 0 warnings.
+
+**Gate (two phones):**
+- a voice call Shem→Jean while Jean has Lime open: it rings, connects, audio both ways, mute works;
+- a video call; flip the camera;
+- a missed call shows in the chat and the call tab;
+- **a call on mobile data (Wi-Fi off on one phone)** connects (via TURN).
+
+**Record:** `## LIME-111`. Commit: `feat: 1:1 voice and video calls (P2P WebRTC, E2EE signalling, CallKit)`, trailer `Brief: LIME-111`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+*(LIME-112, group calls on self-hosted LiveKit: to be drafted after 111; same VPS family, likely a larger instance.)*
+
+### LIME-113 → `tend` (lime-aa) (after the calls): in-app account deletion + Report (App Store rules 5.1.1(v) and 1.2)
+**Phase 0:** `git add PLOT.md` only. **Phase 1:** survey the auth, profiles, devices, mailbox, blobs/attachments, the Jam tables if present, Block, and the Settings → Account screen. Stop and ask the user on any conflict.
+
+**Phase 2:**
+1. **Delete account** (Settings → Account → red "Delete account"):
+   - an explanation screen: what is deleted, and that **messages already on others' phones stay there** (E2EE);
+   - type "DELETE" + **re-verify (password + an emailed code)**;
+   - **the server deletes:** the auth user, profile, devices, keys, delivery-access hashes, mailbox items, attachments/blobs owned, the avatar, Jam content (when it exists), reports filed **by** them (keep reports **about** others);
+   - **contacts receive a final encrypted `account.deleted` notice:** the chat shows "This account was deleted", and sending is disabled;
+   - **the phone wipes the local store + keys**, returning to the welcome screen;
+   - **a server deletion log row** (the user id hash + the time only) for compliance.
+2. **Report:**
+   - long-press menu **Report** on a message, plus **Report <name>** in the chat ⋯ (with Block);
+   - reasons (harassment, spam, impersonation, inappropriate content, child safety, other) + optional notes;
+   - **with E2EE the server can't see messages:** the report **includes the reported message(s) decrypted, by the reporter's choice** (a checkbox "Include this message", default on), sent to a FAM moderation mailbox (an Edge Function → the `moderation_reports` table; admin-only access; the same admin allow-list as the Jam review page);
+   - an option "**Also block**";
+   - **child-safety reports** are flagged as urgent; document the escalation process in `docs/moderation.md`.
+3. **Docs:** `docs/moderation.md` (process, response times, the admin allow-list, data retention for reports); `release-checklist.md` (tick the account deletion + report items; the remaining items: the content policy page, the abuse contact email on limechat.org).
+
+**Verification:**
+- server tests (deletion removes every row/object for the user, and nothing of others; the report endpoint auth; the admin allow-list);
+- the integration e2e (2 accounts: A deletes → B sees "account deleted", sends disabled; A's server data gone);
+- UI tests;
+- tiered iOS; 0 warnings.
+
+**Gate:**
+- report a message from Jean (it arrives in the admin view with the included message);
+- delete a **throwaway** account (the iPad's FAM test account) end to end.
+
+**Record:** `## LIME-113`. Commit: `feat: in-app account deletion and reporting (with moderation queue)`, trailer `Brief: LIME-113`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**(History) Open questions put to the user (2026-10-09):**
 - **(a) Mesh v1:** the user decided earlier that **TestFlight waits until offline relaying is included**; the new list omits it. Keep mesh v1 before TestFlight, or move it to after?
 - **(b) Spanish (109):** before TestFlight, or after?
 
