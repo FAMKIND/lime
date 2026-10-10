@@ -2,7 +2,97 @@
 
 Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execution record.
 
-## ▶ START HERE: session-end note (plot, 2026-10-05, written at "end")
+## ▶ START HERE: session-end note (plot, 2026-10-10, context handoff)
+
+**Read this first. It supersedes the 2026-10-05 note below.** Details live in the sections below; search for the IDs.
+
+### Where things stand
+- **The product direction:** native iOS app (SwiftUI) + a shared Rust core (`core/`, vodozemac E2EE, SQLCipher) + a Supabase blind-mailbox backend (`supabase/`). **The web app (`public/`) is frozen.**
+- **The docs:** `docs/architecture.md`, `docs/api-v2.md`, `docs/spike-ble.md`, `docs/release-checklist.md`.
+- **The org:** a teacher-co-op 501(c)(3) foundation owning Lime Messenger LLC; **always free**; the audience is teachers; **US first**.
+- **origin/main = `096123b`** (LIME-102b-fix). The landed chain this session, all pushed:
+  - 87-fix2 … fix5, 88–98d;
+  - 103/103b/103c (BLE spikes done: a locked receiver works for hours; both asleep = bursty);
+  - 104, 104-fix, 105, 106, 106-fix, 106-fix2, 107, 107-qa, 107-qa2, 108, 102b, 102b-fix.
+- **Two real iPhones** (Shem 13 mini, Jean 12 mini) + an iPad (a test account) run Debug builds via free provisioning (7-day expiry). **Staging Supabase = `lime-staging`.**
+- **Domains:**
+  - `limechat.org` (NameSilo; **deSEC DNS + DNSSEC**; Resend on `send.limechat.org` for sign-in codes; **Migadu mail active**: the shem@ mailbox exists; **Jean's mailbox + aliases are pending the user's card**);
+  - famkind.com is on KnownHost (its NS-record fix was suggested to the user).
+
+### LIME-115 → `tend` (lime-aa) (**running NOW, before 111**: the user runs it while away; then the Hetzner server for 111): group row actions, owner-only Delete group, default group names
+**The user (2026-10-10).**
+
+**Phase 0:** `git add PLOT.md` only. Time-box ~60 min.
+
+**Phase 2:**
+1. **Swipe left on a GROUP row: Mute · Leave · Delete** (right swipe unchanged: Unread · Pin).
+   - **Leave:** confirms "Leave <group>?"; sends `group.leave`; the group stays in the list as "You left", read-only, deletable locally.
+   - **Delete:**
+     - **owner only:** "Delete <group> for everyone?". A new signed, encrypted **`group.delete`** op (owner authority enforced by every client) ends the group for all: members see "<Owner> deleted this group" and the group becomes read-only, and each member can remove it locally. Rotate/retire the Megolm session.
+     - **Non-owners** see **"Clear messages"** instead of Delete: removes the messages from this phone **and stays in the group** (the gap the user found).
+   - **DM rows:** Mute · Delete (unchanged: local clear; a new message brings it back empty).
+2. **Group details:** add a red **"Delete group"** (owner only, same op) below Leave; non-owners see "Clear messages".
+3. **The default group name:**
+   - New Group pre-fills the name from the **selected members' first names**: "Jean & Lee", "Jean, Lee & Sam", 4+ = "Jean, Lee, Sam +2";
+   - editable, max 50; **Create is enabled immediately** (no required naming step);
+   - it updates as members are added/removed **until the user edits it**;
+   - rename is still available later.
+
+4. **Unread count badges are round** (the user, 2026-10-10): a **perfect circle** for 1–9 (width = height); for 10+ a capsule that keeps fully round ends; for 99+ show "99+". The same on Messages rows and the dock badge. Centred digits.
+
+**Docs:** `api-v2.md` (`group.delete`; authority = owner only).
+
+**Verification:**
+- core (only the owner's `group.delete` is honoured; a forged one is ignored; members end up read-only);
+- the integration e2e (3 accounts);
+- UI tests (swipe actions per row type; owner vs non-owner; default name + Create without editing);
+- tiered; 0 warnings.
+
+**Gate:**
+- swipe a group: Mute/Leave/Delete;
+- as owner, Delete group → Jean sees "deleted this group";
+- as non-owner, Clear messages keeps you in the group;
+- New Group: pick 2 people → the name pre-filled → Create right away.
+
+**Record:** `## LIME-115`. Commit: `feat: group row actions (mute/leave/delete), owner-only delete group, clear messages, default group names`, trailer `Brief: LIME-115`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### The authoritative order (the user, 2026-10-09/10)
+0. **LIME-115 is running first** (the user's choice, 2026-10-10), then:
+1. **LIME-111: 1:1 calls** (P2P WebRTC + **self-hosted coturn on Hetzner CPX11, Ashburn**).
+   - **The user is mid-way through buying the Hetzner server** (settings + SSH key steps given). Next: give tend the IPv4; tend runs `infra/turn/setup.sh`; the user adds `turn.limechat.org` A in deSEC; the TURN secret is set via Terminal `read -s`.
+   - Prompt: "implement LIME-111 (re-read from PLOT.md), commit, push, and stop for my check. In Phase 0 commit PLOT.md only (git add PLOT.md). Stop at the TURN server step and give me the Hetzner setup steps. Keep to the ~60 min soft cap. No /loop wakeups."
+2. **LIME-115:** group row actions, owner-only Delete group, Clear messages, default group names (drafted, above).
+3. **LIME-112:** group calls (LiveKit, self-hosted; **not yet drafted**; cost principles under LIME-111).
+3. **LIME-113:** account deletion + Report (drafted).
+4. **Offline messaging (mesh v1) + emergency mode:** **plot's design pass is needed first** (inputs: DESIGN-01 §4, DESIGN-06 bitchat notes, `docs/spike-ble.md` §5b; rules: Nearby mode, emergency turns it on, flush on wake, no timers in a suspended app, an honest promise, 48 h carry).
+5. **LIME-110:** Jam MVP (drafted; J1 = A, J2 = B, J3 required, J4 ok).
+6. **LIME-109:** Spanish (drafted; needs a native review).
+7. **Push/APNs** (needs the paid Apple account, which **the user enrols in November**).
+8. **limechat.org site** (marketing, waitlist, invite pages, privacy/terms/support) + **the compliance pack (LIME-114b: 18+ gate, data export, policies, security.txt)**.
+9. **TestFlight.**
+
+### Open with the user
+- Is the avatar→status sheet→Settings change OK? (LIME-108)
+- Gate checks pending on recent briefs (102b-fix: chime without touching Settings on iPhone + iPad).
+- Apple enrolment: individual vs FAMKIND (D-U-N-S); use shem@limechat.org.
+- Migadu: add a card → Jean's mailbox + aliases (hello, support, privacy, security, safety, accounts, dmarc) → connect Nextcloud Mail → move service accounts to accounts@.
+- DPAs to sign; a lawyer review (licences, trademark "LimeChat", policies).
+
+### Standing rules (also in the sections below)
+- Tend Phase 0: `git add PLOT.md` only.
+- Tiered iOS tests (full on the 13 mini, changed tests on SE/18 Pro); **~15 min per failing test, ~60 min per brief**.
+- Never suggest sign-out to refresh (it wipes keys).
+- Secrets only via the Terminal app (`read -s`), never in chats.
+- Green = only the primary action; no dividers/arrows on lists (Settings keeps its chevrons).
+- The QA intake: small items go into the next QA brief; features get their own brief.
+- Tend is the session **lime-aa**; relay prompts there.
+
+### Gather
+**Tend: commit this file as written; do not edit it** (it happens as Phase 0 of the next brief).
+
+---
+
+## (Previous) session-end note (plot, 2026-10-05, written at "end")
 
 **The next plot session (`rtb`) reads this section first.** Everything below it is history and reference. Where they conflict, this note wins.
 
@@ -2341,7 +2431,16 @@ If anything contradicts this brief, stop and ask the user.
   - (d) Away is a solid amber disc, and the "z" is bigger.
 - **Next: LIME-111 (calls); the user needs the Hetzner VPS** (blocked on the user's Hetzner setup; Phase 1 stops for it anyway).
 
-### LIME-102b-fix → `tend` (lime-aa) (NEXT, before 111): sound default not applied, the iPad seal under the name, a SwiftUI state warning, bare links
+**LIME-102b-fix landed as `096123b`** (pushed and verified).
+- **Sound root cause:** no default was stored, and old builds stored "Default". Now there's a registered Lime-chime default, plus a one-time migration of the old "Default".
+- The iPad isn't tested by tend.
+- The seal is inline after the name, tappable with a date (a core change).
+- The emoji-field state deferred.
+- Bare URLs are auto-linked.
+- **The runtime-warning console check is a follow-up** (needs `log stream`).
+- **Next: LIME-111 (calls).**
+
+### LIME-102b-fix → `tend` (lime-aa) (landed as `096123b`): sound default not applied, the iPad seal under the name, a SwiftUI state warning, bare links
 **The user's report (2026-10-10, iPhone + iPad + Xcode screenshot).**
 
 **Phase 0:** `git add PLOT.md` only. **Time-box: ~45 min.**
@@ -2356,6 +2455,10 @@ If anything contradicts this brief, stop and ask the user.
    - **Identify it** (likely the LIME-97b "Verified in person" seal, or the status/label line) and report it.
    - **Design fix:** the verified seal sits **inline after the name** (a small seal icon, with accessibility label "Verified in person"), **not on its own line**.
    - **Tapping it** shows a short explanation ("You scanned Shem's QR code in person on <date>").
+   - **The user's note (2026-10-10):** they imagined labels might later carry verification (e.g. the official "teacher" label). **For now, keep them separate:**
+     - **the seal = a security fact on this device** ("in-person verified keys"), always an icon;
+     - **the label = the user's private text tag.**
+   - **Build them as two independent pieces in one name-adornment row** (name · seal · label capsule), so a future official "Verified teacher" label can sit in the same row without redesign. Revisit after the user sees it.
    - If it is **not** verification, fix whatever it is.
 3. **The Xcode runtime warning:** "Modifying state during view update, this will cause undefined behavior" at `ProfileScreens.swift` `EmojiKeyboardField.Coordinator.textFieldDidEndEditing` (`parent.isActive = false`).
    - Defer the state change (e.g. `DispatchQueue.main.async` / a `Task { @MainActor in … }`), and fix the same pattern anywhere else.
@@ -2501,6 +2604,19 @@ If anything contradicts this brief, stop and ask the user.
 **Record:** `## LIME-111`. Commit: `feat: 1:1 voice and video calls (P2P WebRTC, E2EE signalling, CallKit)`, trailer `Brief: LIME-111`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 *(LIME-112, group calls on self-hosted LiveKit: to be drafted after 111; same VPS family, likely a larger instance.)*
+
+**Call scaling and cost principles (plot, 2026-10-10; the user wants low cost + open source):**
+- **1:1:** P2P first (most calls use no server). TURN only relays the fallback. ~1.5–2 GB of egress per relayed video-hour, so 1 TB ≈ 500+ relayed video-hours/month on CPX11.
+- **Group (LiveKit, Apache-2.0):**
+  - egress ≈ the receivers × the forwarded video;
+  - **simulcast + active-speaker-only video + 360p thumbnails + video off by default in sessions > 12** → a 50-person PD hour ≈ 20–35 GB.
+- **Levers:**
+  - **separate the always-on small TURN box from the LiveKit box**;
+  - **resize LiveKit up for scheduled PD sessions and back down** (Hetzner bills hourly);
+  - audio-first defaults;
+  - a 720p cap (480p default on mobile data);
+  - LiveKit Cloud is never used (open-source requirement).
+- **Rough monthly at the pilot scale:** TURN ~$7–21 + LiveKit (CPX21–CPX31) only when group calls launch; overage traffic ~€1/TB (US, verify).
 
 ### LIME-113 → `tend` (lime-aa) (after the calls): in-app account deletion + Report (App Store rules 5.1.1(v) and 1.2)
 **Phase 0:** `git add PLOT.md` only. **Phase 1:** survey the auth, profiles, devices, mailbox, blobs/attachments, the Jam tables if present, Block, and the Settings → Account screen. Stop and ask the user on any conflict.
