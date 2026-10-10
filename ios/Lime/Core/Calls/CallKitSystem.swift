@@ -67,13 +67,13 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
 
     nonisolated func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
         let id = action.callUUID.uuidString.lowercased()
-        Task { @MainActor in self.onAnswer?(id) }
+        Task { @MainActor in CallDiagnostics.shared.log("callkit answer"); self.onAnswer?(id) }
         action.fulfill()
     }
 
     nonisolated func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         let id = action.callUUID.uuidString.lowercased()
-        Task { @MainActor in self.onEnd?(id) }
+        Task { @MainActor in CallDiagnostics.shared.log("callkit end"); self.onEnd?(id) }
         action.fulfill()
     }
 
@@ -84,8 +84,15 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
         action.fulfill()
     }
 
-    nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {}
-    nonisolated func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {}
+    nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+        Task { @MainActor in CallDiagnostics.shared.log("callkit audio activated") }
+        WebRTCMedia.audioSessionActivated(audioSession)
+    }
+
+    nonisolated func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+        Task { @MainActor in CallDiagnostics.shared.log("callkit audio deactivated") }
+        WebRTCMedia.audioSessionDeactivated(audioSession)
+    }
 }
 
 /// A stand-in for UI tests and previews: no system call screen.

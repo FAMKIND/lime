@@ -62,6 +62,21 @@ final class CallManager {
     @ObservationIgnored private var pendingCandidates: [(String, String?, Int32)] = []
     @ObservationIgnored private var remoteReady = false
     @ObservationIgnored private var ringTimeout: Task<Void, Never>?
+    @ObservationIgnored private var connectTimeout: Task<Void, Never>?
+    @ObservationIgnored private var poller: Task<Void, Never>?
+    /// Candidates that arrived before their offer (the mailbox does not keep the order), by call id.
+    @ObservationIgnored private var earlyCandidates: [String: [(String, String?, Int32)]] = [:]
+    /// Ops waiting to be handled, one at a time and in order, away from the sync that fetched them.
+    @ObservationIgnored private var inbox: [CallEventInfo] = []
+    @ObservationIgnored private var draining = false
+    /// Fetches the mailbox now (set by the app); used once a second while a call is ringing or connecting, in case a nudge is missed.
+    @ObservationIgnored var fetchNow: (() async -> Void)?
+    /// How long the media path may take to come up after an answer before the call fails.
+    @ObservationIgnored var connectSeconds: Double = 30
+    @ObservationIgnored private let diag = CallDiagnostics.shared
+    /// My own candidates wait until my offer/answer has gone out, so the other phone never sees one before the description it belongs to.
+    @ObservationIgnored private var outbound: [(String, String?, Int32)] = []
+    @ObservationIgnored private var descriptionSent = false
     /// How long a call rings before it is a missed call.
     @ObservationIgnored var ringSeconds: Double = 45
 
@@ -91,18 +106,29 @@ final class CallManager {
         let media = makeMedia()
         self.media = media
         wire(media)
+        let id = callID
+        diag.log("start video=\(video)")
         do {
-            try media.start(servers: await signalling.iceServers(), video: video)
+            let servers = await signalling.iceServers()
+            guard callID == id else { return false }
+            diag.log("ice servers: \(servers.count) (relay credentials \(servers.contains { $0.username != nil } ? "present" : "missing"))")
+            try media.start(servers: servers, video: video)
             let sdp = try await media.makeOffer()
-            guard await signalling.send(peer: peerID, op: "call.offer", payload: ["call_id": callID, "video": video, "sdp": sdp, "fingerprint": Self.fingerprint(in: sdp) ?? ""]) else {
-                finish(.failed, notify: false)
+            guard callID == id else { return false }
+            let sent = await signalling.send(peer: peerID, op: "call.offer", payload: ["call_id": callID, "video": video, "sdp": sdp, "fingerprint": Self.fingerprint(in: sdp) ?? ""])
+            diag.log("sent call.offer ok=\(sent)")
+            guard sent, callID == id else {
+                if callID == id { finish(.failed, notify: true) }
                 return false
             }
+            await descriptionWasSent()
         } catch {
-            finish(.failed, notify: false)
+            diag.log("start failed: \(error)")
+            if callID == id { finish(.failed, notify: true) }
             return false
         }
         armTimeout()
+        startPolling()
         return true
     }
 
@@ -110,29 +136,75 @@ final class CallManager {
         phase = outgoing ? .outgoing : .incoming
         self.peerID = peerID; peerName = name; self.video = video; self.outgoing = outgoing
         callID = id; muted = false; speaker = video; cameraOn = true; startedAt = nil
-        pendingOffer = nil; pendingCandidates = []; remoteReady = false
+        pendingOffer = nil; pendingCandidates = []; remoteReady = false; outbound = []; descriptionSent = false
     }
 
     private func wire(_ media: any CallMedia) {
         media.onCandidate = { [weak self] candidate, mid, index in
             guard let self, !self.callID.isEmpty else { return }
-            let id = self.callID, peer = self.peerID
-            var payload: [String: Any] = ["call_id": id, "candidate": candidate, "sdpMLineIndex": Int(index)]
-            if let mid { payload["sdpMid"] = mid }
-            Task { _ = await self.signalling.send(peer: peer, op: "call.ice", payload: payload) }
+            self.diag.log("local candidate \(CallDiagnostics.candidateKind(candidate))")
+            if self.descriptionSent { self.sendCandidate((candidate, mid, index)) } else { self.outbound.append((candidate, mid, index)) }
         }
         media.onConnection = { [weak self] up in
             guard let self, self.inCall else { return }
+            self.diag.log("media connection \(up ? "up" : "failed")")
             if up {
                 if self.phase != .active {
                     self.phase = .active
                     self.startedAt = self.now()
                     self.ringTimeout?.cancel()
+                    self.connectTimeout?.cancel()
+                    self.stopPolling()
                     self.system.reportConnected(callID: self.callID)
                 }
             } else {
                 Task { await self.end(reason: .failed) }
             }
+        }
+    }
+
+    private func sendCandidate(_ item: (String, String?, Int32)) {
+        let id = callID, peer = peerID
+        var payload: [String: Any] = ["call_id": id, "candidate": item.0, "sdpMLineIndex": Int(item.2)]
+        if let mid = item.1 { payload["sdpMid"] = mid }
+        Task { _ = await signalling.send(peer: peer, op: "call.ice", payload: payload) }
+    }
+
+    /// My offer/answer is out: now my candidates may follow, in order.
+    private func descriptionWasSent() async {
+        descriptionSent = true
+        let waiting = outbound
+        outbound = []
+        for item in waiting { sendCandidate(item) }
+    }
+
+    /// While ringing or connecting, ask the mailbox once a second (a missed nudge must not strand a call).
+    private func startPolling() {
+        guard poller == nil, let fetchNow else { return }
+        poller = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self, self.inCall, self.phase != .active else { break }
+                await fetchNow()
+            }
+            self?.poller = nil
+        }
+    }
+
+    private func stopPolling() {
+        poller?.cancel()
+        poller = nil
+    }
+
+    /// The media path must come up within `connectSeconds` of the answer, or the call fails and everything is torn down.
+    private func armConnectTimeout() {
+        connectTimeout?.cancel()
+        let id = callID, seconds = connectSeconds
+        connectTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self, self.callID == id, self.phase == .connecting else { return }
+            self.diag.log("connect timeout")
+            await self.end(reason: .failed)
         }
     }
 
@@ -150,10 +222,15 @@ final class CallManager {
 
     /// Handles what the other phone sent (called after each sync).
     func handle(_ events: [CallEventInfo]) async {
-        for event in events { await handle(event) }
+        inbox.append(contentsOf: events)
+        guard !draining else { return }
+        draining = true
+        while !inbox.isEmpty { await handle(inbox.removeFirst()) }
+        draining = false
     }
 
     func handle(_ event: CallEventInfo) async {
+        diag.log("recv \(event.op) phase=\(phase) mine=\(event.callID == callID)\(event.op == "call.ice" ? " kind=\(CallDiagnostics.candidateKind(event.payload["candidate"] as? String ?? ""))" : "")")
         switch event.op {
         case "call.offer": await receivedOffer(event)
         case "call.answer": await receivedAnswer(event)
@@ -181,6 +258,8 @@ final class CallManager {
         }
         begin(peerID: event.peerID, name: event.peerName, video: video, outgoing: false, id: event.callID)
         pendingOffer = sdp
+        pendingCandidates = earlyCandidates.removeValue(forKey: event.callID) ?? []
+        startPolling()
         guard await system.reportIncoming(callID: callID, name: peerName, video: video) else {
             // The system refused to ring (a Focus): a missed call.
             finish(.missed, notify: false)
@@ -192,19 +271,28 @@ final class CallManager {
     private func receivedAnswer(_ event: CallEventInfo) async {
         guard phase == .outgoing, event.callID == callID, event.peerID == peerID, let sdp = event.payload["sdp"] as? String, let media else { return }
         do {
-            try await media.apply(answer: sdp)
-            remoteReady = true
             phase = .connecting
             ringTimeout?.cancel()
+            armConnectTimeout()
+            try await media.apply(answer: sdp)
+            diag.log("answer applied")
+            remoteReady = true
             await flushCandidates()
         } catch {
+            diag.log("apply answer failed: \(error)")
             await end(reason: .failed)
         }
     }
 
     private func receivedCandidate(_ event: CallEventInfo) async {
-        guard inCall, event.callID == callID, event.peerID == peerID, let candidate = event.payload["candidate"] as? String else { return }
+        guard let candidate = event.payload["candidate"] as? String else { return }
         let item = (candidate, event.payload["sdpMid"] as? String, Int32((event.payload["sdpMLineIndex"] as? Int) ?? 0))
+        // Before its offer has been handled (or while this phone is on another call) a candidate is kept, not dropped.
+        guard inCall, event.callID == callID, event.peerID == peerID else {
+            if event.callID != callID || !inCall { earlyCandidates[event.callID, default: []].append(item) }
+            if earlyCandidates.count > 4, let oldest = earlyCandidates.keys.first(where: { $0 != event.callID }) { earlyCandidates[oldest] = nil }
+            return
+        }
         if remoteReady, let media { await media.add(candidate: item.0, mid: item.1, index: item.2) } else { pendingCandidates.append(item) }
     }
 
@@ -222,26 +310,41 @@ final class CallManager {
         guard phase == .incoming, let offer = pendingOffer else { return }
         phase = .connecting
         ringTimeout?.cancel()
+        armConnectTimeout()
+        let id = callID
+        diag.log("accept")
         let media = makeMedia()
         self.media = media
         wire(media)
         do {
-            try media.start(servers: await signalling.iceServers(), video: video)
+            let servers = await signalling.iceServers()
+            guard callID == id else { return }
+            diag.log("ice servers: \(servers.count) (relay credentials \(servers.contains { $0.username != nil } ? "present" : "missing"))")
+            try media.start(servers: servers, video: video)
             let answer = try await media.accept(offer: offer)
+            guard callID == id else { return }
             remoteReady = true
             pendingOffer = nil
-            _ = await signalling.send(peer: peerID, op: "call.answer", payload: ["call_id": callID, "sdp": answer, "fingerprint": Self.fingerprint(in: answer) ?? ""])
+            let sent = await signalling.send(peer: peerID, op: "call.answer", payload: ["call_id": callID, "sdp": answer, "fingerprint": Self.fingerprint(in: answer) ?? ""])
+            diag.log("sent call.answer ok=\(sent)")
+            guard sent, callID == id else {
+                if callID == id { await end(reason: .failed) }
+                return
+            }
+            await descriptionWasSent()
             await flushCandidates()
         } catch {
-            await end(reason: .failed)
+            diag.log("accept failed: \(error)")
+            if callID == id { await end(reason: .failed) }
         }
     }
 
     /// Declines the ringing call.
     func decline() async {
         guard phase == .incoming else { return }
-        _ = await signalling.send(peer: peerID, op: "call.decline", payload: ["call_id": callID])
+        let id = callID, peer = peerID
         finish(.declined, notify: true)
+        _ = await signalling.send(peer: peer, op: "call.decline", payload: ["call_id": id])
     }
 
     enum Reason { case hungUp, noAnswer, missed, declined, busy, failed, remoteEnded
@@ -260,9 +363,13 @@ final class CallManager {
     /// Ends the call (hang up, cancel before an answer, or a failure).
     func end(reason: Reason = .hungUp) async {
         guard inCall else { return }
+        diag.log("end reason=\(reason) phase=\(phase)")
         if phase == .incoming && reason == .hungUp { await decline(); return }
-        if reason != .missed { _ = await signalling.send(peer: peerID, op: "call.end", payload: ["call_id": callID]) }
-        finish(reason.outcome(wasActive: phase == .active), notify: true)
+        // Tear down first and tell the other phone afterwards: a second end (the call screen and the system's End button) then finds nothing to end.
+        let id = callID, peer = peerID
+        let outcome = reason.outcome(wasActive: phase == .active)
+        finish(outcome, notify: true)
+        if reason != .missed { _ = await signalling.send(peer: peer, op: "call.end", payload: ["call_id": id]) }
     }
 
     func setMuted(_ on: Bool) { muted = on; media?.setMuted(on) }
@@ -271,7 +378,11 @@ final class CallManager {
     func flipCamera() { media?.flipCamera() }
 
     private func finish(_ outcome: CallOutcome, notify: Bool) {
+        guard inCall else { return }
+        diag.log("finish \(outcome.rawValue)")
         ringTimeout?.cancel()
+        connectTimeout?.cancel()
+        stopPolling()
         let duration = startedAt.map { now().timeIntervalSince($0) } ?? 0
         log.add(CallRecord(id: callID, peerID: peerID, peerName: peerName, video: video, outgoing: outgoing, date: startedAt ?? now(), duration: duration, outcome: outcome))
         if notify { system.reportEnded(callID: callID, answeredOrOutgoing: phase != .incoming) }
@@ -279,6 +390,7 @@ final class CallManager {
         media = nil
         phase = .idle
         callID = ""; peerID = ""; startedAt = nil; pendingOffer = nil; pendingCandidates = []; remoteReady = false
+        outbound = []; descriptionSent = false
     }
 
     /// The `a=fingerprint:` value of an SDP, the DTLS key that protects the media.

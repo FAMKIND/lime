@@ -85,7 +85,8 @@ final class ConversationStore {
         #endif
         let system: CallSystem = quiet ? QuietCallSystem() : CallKitSystem()
         let manager = CallManager(signalling: StoreSignalling(store: self), system: system,
-                                  isQuiet: { StatusSettings.shared.plan().isQuiet }, makeMedia: { WebRTCMedia() })
+                                  isQuiet: { StatusSettings.shared.plan().isQuiet }, makeMedia: { WebRTCMedia(manualAudio: !quiet) })
+        manager.fetchNow = { [weak self] in await self?.syncNow() }
         callManager = manager
         return manager
     }
@@ -98,8 +99,8 @@ final class ConversationStore {
             let name = conversations.first { $0.members.count == 1 && $0.members.first?.id == event.peer }?.title ?? "Someone"
             return CallEventInfo(op: event.op, callID: event.callId, peerID: event.peer, peerName: name, payload: payload)
         }
-        await calls.handle(infos)
-        await reload()
+        // Handled in the call manager's own queue, not inside this sync, so a slow step never holds up the next fetch.
+        Task { @MainActor in await calls.handle(infos) }
     }
 
     /// Accepted conversations (the Messages list) and strangers' first messages (the Requests list).

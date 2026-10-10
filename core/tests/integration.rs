@@ -1382,7 +1382,11 @@ fn call_signalling_goes_through_the_real_mailbox_as_sealed_control_ops_and_is_no
     let back: Vec<String> = a.take_call_events().unwrap().into_iter().map(|e| e.op).collect();
     assert_eq!(back, vec!["call.answer", "call.ice"]);
     // The relay's credentials: some while the secret is set on that server, none (not an error) before.
-    assert!(a.fetch_turn_servers(transport.clone(), alice.token.clone()).is_ok());
+    let turn = a.fetch_turn_servers(transport.clone(), alice.token.clone()).unwrap();
+    eprintln!("TURN credentials from the server: {}", if turn.is_some() { "200 (configured)" } else { "503 not_configured" });
+    if let Some(t) = &turn {
+        assert!(t.urls.iter().any(|u| u.starts_with("turn:")) && !t.username.is_empty() && !t.credential.is_empty());
+    }
     send(&a, &alice.token, &bob.id, "call.end", json!({ "call_id": "c1" }));
     b.sync(transport.clone(), bob.token.clone()).unwrap();
     assert_eq!(b.take_call_events().unwrap()[0].op, "call.end");

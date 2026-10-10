@@ -4732,3 +4732,23 @@ Also suggested for the re-run: send the greeting again whenever a link re-forms 
 4. **iOS.** WebRTC 152.0.0 (SwiftPM), `CallMedia`/`WebRTCMedia`, `CallManager` (ring timeout 45 s, busy, decline, DND/work hours become a missed call, early ICE queued), CallKit bridge, `CallView` (mute, speaker, video on/off, flip, end, self-view), header phone icon is a Voice/Video menu, call lines in the chat ("Voice call · 4:12", "Missed call"), the dock's call tab is a local history (tap to call back), Settings → Notifications note that calls ring only while Lime is open or recent. `audio` background mode added (Release check allows only it). Unit tests with fakes: 9.
 
 **Not exercised (needs two real phones):** actual audio/video, TURN over mobile data, CallKit on a device, the camera flip. Custom call sounds apply only to Lime's own ringing UI (CallKit takes bundle sounds only); in-app ringing for custom sounds is not built. Group calls are LIME-112; no PushKit.
+
+
+## LIME-111-fix
+
+**Calls did not connect and ending crashed (committed, awaiting the user's two-phone re-test and diagnostics logs).** Phase 0: `PLOT.md` committed.
+
+**Root cause: not proven.** I could not reproduce the device failure. Two WebRTC engines in one simulator process crash on their own (the audio unit's `AURemoteIO::Initialize` RPC times out, SIGABRT), so a real-engine loopback is not possible; the signalling path (two cores through staging) is already covered by the integration test and works. What the code and the fake-media race tests show, most likely first:
+1. **A missed nudge or a stuck sync strands the call.** The caller learned of the answer only from a Realtime nudge → `syncNow`, and the call ops were handled *inside* that sync (`isSyncing` stays true while handled). One missed nudge, or one slow step, means "Calling" forever. This fits "the caller stays on Calling".
+2. **Candidates raced the description.** The engine emits candidates the moment the offer/answer is set, and each was sent as its own op before the offer/answer itself. The mailbox does not keep order, so the callee could receive candidates before the offer and **drop** them (no call yet).
+3. **Audio session.** CallKit's `didActivate` did nothing and WebRTC activated the session itself, so the two competed (no media until it settles).
+4. **Teardown.** `end()` awaited the network send before tearing down, so the call screen's End and CallKit's End could both run (double end); `close()` freed the camera capturer and views while frames were still being delivered, a known WebRTC crash.
+Ruled out: the TURN relay and `turn-credentials` (the staging integration test now reports **200, configured**), and core signalling.
+
+**Fixes.** Call ops are handled in the call manager's own queue (not inside the sync); **while ringing or connecting the mailbox is fetched every 1 s** as a fallback; my candidates wait until my offer/answer has been sent; candidates that arrive early are kept by call id; a **30 s connect timeout** → "Call failed" with a clean teardown; **`end`/`decline` tear down first** and tell the other phone afterwards (idempotent); `close()` stops the camera and waits, takes the views off the tracks, clears the delegate, then closes; **manual audio**: WebRTC waits for CallKit's `didActivate` (and is disabled on deactivate).
+
+**Call diagnostics (Debug).** `CallDiagnostics` writes a timestamped log (`Caches/call-diagnostics.log`) of signalling (ops, phase), TURN credential status (present/missing, no values), ICE state, candidate *types* only (host/srflx/relay, never addresses), CallKit actions, timeouts. In Debug builds the Calls sheet (dock → call) has a share button. Copy it off a phone with `xcrun devicectl device copy from --device <id> --domain-type appDataContainer --domain-identifier <bundle id> --source Library/Caches/call-diagnostics.log --destination ~/Desktop/`.
+
+**Tests.** 7 new race tests (`CallLoopbackTests`: both sides end in ringing/connecting/connected, double end, early candidates kept, candidates never before the description, connect timeout, 1 s polling stops with the call). Integration: `LIME_TEST_FILTER=<name> ./core/run-integration.sh [staging]` runs one test; the call test prints the TURN status.
+
+**Not exercised:** a real two-device call; the camera/crash path on a device (only reasoned); CallKit on a device.

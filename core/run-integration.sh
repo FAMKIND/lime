@@ -36,4 +36,5 @@ else
   cd core
 fi
 [ -n "$LIME_ANON_KEY" ] && [ -n "$LIME_SERVICE_ROLE_KEY" ] || { echo "Could not read the API keys." >&2; exit 1; }
-exec cargo test --features integration --test integration -- --test-threads=1
+# LIME_TEST_FILTER=call_signalling runs just the tests whose name contains it.
+exec cargo test --features integration --test integration $LIME_TEST_FILTER -- --test-threads=1 --nocapture

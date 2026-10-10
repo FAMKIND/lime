@@ -54,7 +54,31 @@ final class WebRTCMedia: NSObject, CallMedia {
     private var front = true
     private var wantsVideo = false
 
+    /// With CallKit the system activates the audio session; WebRTC must wait for that (manual audio), or the two fight over it.
+    private let manualAudio: Bool
+
+    init(manualAudio: Bool = false) {
+        self.manualAudio = manualAudio
+        super.init()
+    }
+
+    /// CallKit gave the call its audio session: let WebRTC use it.
+    nonisolated static func audioSessionActivated(_ session: AVAudioSession) {
+        let rtc = RTCAudioSession.sharedInstance()
+        rtc.audioSessionDidActivate(session)
+        rtc.isAudioEnabled = true
+    }
+
+    nonisolated static func audioSessionDeactivated(_ session: AVAudioSession) {
+        let rtc = RTCAudioSession.sharedInstance()
+        rtc.isAudioEnabled = false
+        rtc.audioSessionDidDeactivate(session)
+    }
+
     func start(servers: [IceServer], video: Bool) throws {
+        let rtc = RTCAudioSession.sharedInstance()
+        rtc.useManualAudio = manualAudio
+        if !manualAudio { rtc.isAudioEnabled = true }
         let configuration = RTCConfiguration()
         configuration.iceServers = servers.map { RTCIceServer(urlStrings: $0.urls, username: $0.username, credential: $0.credential) }
         configuration.sdpSemantics = .unifiedPlan
@@ -134,13 +158,24 @@ final class WebRTCMedia: NSObject, CallMedia {
         session.unlockForConfiguration()
     }
 
+    /// Tears everything down in the order WebRTC needs: stop the camera and wait for it, take the views off the tracks, then close.
     func close() {
-        capturer?.stopCapture()
-        connection?.close()
-        connection = nil
-        audioTrack = nil
-        videoTrack = nil
-        capturer = nil
+        let capturer = capturer, connection = connection, videoTrack = videoTrack
+        audioTrack?.isEnabled = false
+        self.capturer = nil; self.connection = nil; self.videoTrack = nil; audioTrack = nil
+        audioTrack?.isEnabled = false
+        if let view = localView as? RTCMTLVideoView { videoTrack?.remove(view) }
+        for receiver in connection?.receivers ?? [] {
+            if let track = receiver.track as? RTCVideoTrack, let view = remoteView as? RTCMTLVideoView { track.remove(view) }
+        }
+        connection?.delegate = nil
+        if let capturer {
+            // Closing the connection and freeing the capturer while the camera is still delivering frames can crash; wait for it to stop.
+            capturer.stopCapture { connection?.close() }
+        } else {
+            connection?.close()
+        }
+        if manualAudio { RTCAudioSession.sharedInstance().isAudioEnabled = false }
     }
 }
 
@@ -153,6 +188,7 @@ extension WebRTCMedia: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     nonisolated func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+        Task { @MainActor in CallDiagnostics.shared.log("ice state \(newState.rawValue)") }
         let connected = newState == .connected || newState == .completed
         let failed = newState == .failed
         Task { @MainActor in
