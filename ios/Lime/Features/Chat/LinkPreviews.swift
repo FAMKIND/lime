@@ -10,7 +10,7 @@ enum LinkPreviewMaker {
         guard !text.isEmpty, let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
         for match in detector.matches(in: text, options: [], range: range) {
-            if let url = match.url, url.scheme == "https" || url.scheme == "http", url.host != nil { return url }
+            if let url = match.url, ["https", "http"].contains(url.scheme?.lowercased()), url.host != nil { return url }
         }
         return nil
     }

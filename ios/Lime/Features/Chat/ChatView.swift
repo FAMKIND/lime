@@ -13,6 +13,7 @@ struct ChatView: View {
     @State private var composerModel = RichComposerModel()
     @State private var confirmingBlock = false
     @State private var confirmingLeave = false
+    @State private var showingSeal = false
     @State private var labelling = false
     @State private var labelText = ""
     // In-chat find (the header's magnifier): the matches, which one is current, and where to scroll.
@@ -229,15 +230,32 @@ struct ChatView: View {
         }
     }
 
+    private func sealExplanation(_ conversation: Conversation) -> String {
+        let name = conversation.members.first?.name.split(separator: " ").first.map(String.init) ?? conversation.title
+        guard let date = conversation.verifiedAt else { return "You scanned \(name)'s QR code in person." }
+        return "You scanned \(name)'s QR code in person on \(date.formatted(.dateTime.month(.wide).day().year()))."
+    }
+
     private func titlePill(_ conversation: Conversation) -> some View {
         HStack(spacing: 8) {
             ConversationAvatar(conversation: conversation, size: 36)
                 .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 0) {
-                Text(conversation.title)
-                    .font(Theme.secondary.weight(.semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(conversation.title)
+                        .font(Theme.secondary.weight(.semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                    // "Verified in person" (they scanned each other's QR codes): a small seal after the name, with the date when tapped.
+                    if conversation.verified && !conversation.isGroup {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
+                            .contentShape(Rectangle())
+                            .onTapGesture { showingSeal = true }
+                            .accessibilityLabel("Verified in person").accessibilityAddTraits(.isButton)
+                            .accessibilityIdentifier("chat-verified")
+                    }
+                }
                 if conversation.isGroup {
                     Text(conversation.subtitle)
                         .font(Theme.caption)
@@ -257,20 +275,19 @@ struct ChatView: View {
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                         .accessibilityIdentifier("chat-label")
-                } else if conversation.verified {
-                    Label("Verified in person", systemImage: "checkmark.seal.fill")
-                        .font(Theme.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                        .accessibilityIdentifier("chat-verified")
                 }
             }
         }
         .contentShape(Rectangle())
         .onTapGesture { if conversation.isGroup && !conversation.isRequest { store.path.append(GroupTarget(conversationID: conversation.id)) } }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: conversation.verified ? .contain : .combine)
         .accessibilityAddTraits(conversation.isGroup ? .isButton : [])
         .accessibilityIdentifier("chat-title")
+        .alert("Verified in person", isPresented: $showingSeal) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(sealExplanation(conversation))
+        }
     }
 
     // MARK: Find in this chat
@@ -531,7 +548,7 @@ struct ChatView: View {
     private func composer(_ conversation: Conversation) -> some View {
         ChatComposer(model: composerModel, onSend: { markdown in store.send(markdown, in: conversation.id) },
                      onSendAttachments: conversation.isRequest ? nil : { items, caption in store.sendAttachments(items, caption: caption, in: conversation.id) },
-                     onSendPreview: conversation.isRequest ? nil : { markdown, preview in Task { await store.sendNow(markdown, preview: preview, in: conversation.id) } })
+                     onSendPreview: conversation.isRequest || conversation.id == store.selfChatID ? nil : { markdown, preview in Task { await store.sendNow(markdown, preview: preview, in: conversation.id) } })
     }
 }
 

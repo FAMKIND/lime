@@ -153,6 +153,8 @@ struct Conversation: Identifiable, Hashable, Sendable {
     var keyChangePending: Bool = false
     /// Their key was confirmed in person (a scanned QR code matched).
     var verified: Bool = false
+    /// When they were verified in person.
+    var verifiedAt: Date?
     /// A group chat (even one with a single other person left).
     var isGroupChat: Bool = false
     /// A group's emoji avatar.
@@ -201,6 +203,7 @@ extension Conversation {
             messages: messages.map(Message.init),
             isPinned: summary.isPinned, unread: Int(summary.unread),
             isRequest: summary.requestState == "pending", keyChangePending: summary.keyChangePending, verified: summary.verified,
+            verifiedAt: summary.verifiedAt.map { Date(timeIntervalSince1970: Double($0) / 1000) },
             isGroupChat: summary.isGroup, emoji: summary.groupEmoji,
             latest: summary.lastMessage.map(Message.init), latestIsReply: summary.lastIsReply, markedUnread: summary.markedUnread,
             lastReaction: summary.lastReaction.map { ReactionPreview(emoji: $0.emoji, reactorName: $0.reactorId == nil ? nil : $0.reactorName, messageID: $0.messageId, text: $0.text) },

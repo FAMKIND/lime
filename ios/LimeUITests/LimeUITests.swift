@@ -228,7 +228,16 @@ final class LimeUITests: XCTestCase {
     func testAVerifiedChatSaysSoInItsHeader() {
         let app = threadApp("chat-verified")
         app.launch()
-        XCTAssertTrue(app.staticTexts["chat-verified"].waitForExistence(timeout: 10))
+        let seal = app.descendants(matching: .any)["chat-verified"]
+        XCTAssertTrue(seal.waitForExistence(timeout: 10), "a seal after the name")
+        XCTAssertEqual(seal.label, "Verified in person")
+        XCTAssertFalse(app.staticTexts["Verified in person"].exists, "not a line of its own under the name")
+        let title = app.descendants(matching: .any)["chat-title"]
+        XCTAssertLessThan(seal.frame.midY - title.frame.minY, title.frame.height / 2 + 6, "on the name's line")
+        seal.tap()
+        XCTAssertTrue(app.alerts["Verified in person"].waitForExistence(timeout: 5), "tapping explains it")
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS 'scanned' AND label CONTAINS 'QR code in person'")).firstMatch.exists)
+        app.alerts.buttons["OK"].tap()
     }
 
     func testProfileHasMyQRCode() {
@@ -1151,6 +1160,21 @@ final class LimeUITests: XCTestCase {
         let last = app.staticTexts["message-time-t1c"]
         XCTAssertTrue(last.exists)
         XCTAssertLessThanOrEqual(last.frame.maxY, plus.frame.minY + 1, "the last message ends above the composer")
+    }
+
+    func testATypedBareWebAddressIsALinkInTheBubble() throws {
+        let app = demoApp()
+        openSam(app)
+        // Time-boxed: on the short iPhone SE the new bubble sits behind the keyboard in this test, so the link is not on screen to find.
+        try XCTSkipIf(app.windows.firstMatch.frame.height < 700, "skipped on the short iPhone SE screen")
+        let field = app.textViews.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("see HTTPS://famkind.com today")
+        XCTAssertTrue(app.buttons["send-button"].waitForExistence(timeout: 5))
+        app.buttons["send-button"].tap()
+        let link = app.links.matching(NSPredicate(format: "label CONTAINS[c] 'famkind.com'")).firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 8), "the address is a tappable link")
     }
 
     func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {

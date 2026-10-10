@@ -251,9 +251,14 @@ struct EmojiKeyboardField: UIViewRepresentable {
             guard let text = field.text, !text.isEmpty else { return }
             parent.onPick(text)
             field.text = ""
-            parent.isActive = false
+            deactivate()
         }
 
-        func textFieldDidEndEditing(_ textField: UITextField) { parent.isActive = false }
+        func textFieldDidEndEditing(_ textField: UITextField) { deactivate() }
+
+        /// UIKit can call back while SwiftUI is still updating the view: change the state a moment later, never during the update.
+        private func deactivate() {
+            DispatchQueue.main.async { [weak self] in self?.parent.isActive = false }
+        }
     }
 }

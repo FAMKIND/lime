@@ -93,9 +93,39 @@ enum MessageRender {
 
     /// One run of text with its styles. A link is its own green plus an underline (and a tint while pressed);
     /// `__underline__` is the text colour with a plain underline.
+    /// Splits plain text runs so a bare web address ("https://famkind.com", any case of the scheme) becomes a link. Code and runs that
+    /// already have a link are left alone; trailing punctuation stays outside the link.
+    static func autoLinked(_ spans: [Span]) -> [Span] {
+        guard let regex = try? NSRegularExpression(pattern: #"\bhttps?://[^\s<>"']+"#, options: [.caseInsensitive]) else { return spans }
+        var out: [Span] = []
+        for span in spans {
+            guard span.link == nil, !span.code, span.text.range(of: "://") != nil else { out.append(span); continue }
+            let text = span.text as NSString
+            var cursor = 0
+            func piece(_ s: String, link: String? = nil) -> Span {
+                Span(text: s, bold: span.bold, italic: span.italic, underline: span.underline, strike: span.strike, code: false, link: link)
+            }
+            for match in regex.matches(in: span.text, range: NSRange(location: 0, length: text.length)) {
+                var range = match.range
+                // Closing punctuation after an address belongs to the sentence, not to the link.
+                while range.length > 8, let last = text.substring(with: range).last, ".,;:!?)]}".contains(last) { range.length -= 1 }
+                let url = text.substring(with: range)
+                guard let host = URL(string: url)?.host, host.contains(".") else { continue }
+                if range.location > cursor { out.append(piece(text.substring(with: NSRange(location: cursor, length: range.location - cursor)))) }
+                // The scheme is case-insensitive: the link is stored with it in lower case.
+                let colon = url.range(of: "://")!
+                out.append(piece(url, link: url[..<colon.lowerBound].lowercased() + url[colon.lowerBound...]))
+                cursor = range.location + range.length
+            }
+            if cursor < text.length { out.append(piece(text.substring(from: cursor))) }
+            else if cursor == 0 { out.append(span) }
+        }
+        return out
+    }
+
     static func attributed(_ spans: [Span], ink: Color, link linkColor: Color, pressed: String? = nil, find: FindStyle? = nil) -> AttributedString {
         var result = AttributedString()
-        for span in spans {
+        for span in autoLinked(spans) {
             var piece = AttributedString(span.text)
             var intent: InlinePresentationIntent = []
             if span.bold { intent.insert(.stronglyEmphasized) }

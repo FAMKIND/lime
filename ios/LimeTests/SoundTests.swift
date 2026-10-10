@@ -73,3 +73,36 @@ final class CustomSoundTests: XCTestCase {
         XCTAssertThrowsError(try sounds.add(from: junk, start: 0, length: 1, name: "x", kind: .message)) { XCTAssertEqual($0 as? CustomSounds.Failure, .unreadable) }
     }
 }
+
+@MainActor
+final class DefaultSoundTests: XCTestCase {
+    private func defaults() -> UserDefaults {
+        let name = "lime.test.defaultsound.\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: name)!
+        d.removePersistentDomain(forName: name)
+        return d
+    }
+
+    func testAFreshInstallAndAnUpgradedOneWithNoStoredKeyBothPlayTheLimeChime() {
+        let fresh = NotificationSettings(defaults: defaults())
+        XCTAssertEqual(fresh.sound, .limeChime)
+        XCTAssertEqual(fresh.sound.fileName, "lime-chime.caf", "the file both the banner and the notification play")
+        // An older install that never touched the picker has nothing stored at all.
+        let upgraded = defaults()
+        upgraded.set(true, forKey: "lime.notify.enabled")
+        XCTAssertEqual(NotificationSettings(defaults: upgraded).sound, .limeChime)
+        // The stored value is readable by anything that asks the defaults directly, not only by this class.
+        XCTAssertEqual(upgraded.string(forKey: "lime.notify.sound"), "limeChime")
+    }
+
+    func testADefaultStoredBeforeTheChimeExistedBecomesTheChimeOnceButALaterChoiceSticks() {
+        let d = defaults()
+        d.set("systemDefault", forKey: "lime.notify.sound")   // what an older build wrote when the picker was touched
+        XCTAssertEqual(NotificationSettings(defaults: d).sound, .limeChime, "never a deliberate choice then")
+        let settings = NotificationSettings(defaults: d)
+        settings.sound = .systemDefault   // now it is a choice
+        XCTAssertEqual(NotificationSettings(defaults: d).sound, .systemDefault)
+        settings.sound = .none
+        XCTAssertEqual(NotificationSettings(defaults: d).sound, NotificationSound.none)
+    }
+}

@@ -1407,6 +1407,7 @@ fn a_scanned_fingerprint_that_matches_marks_the_person_verified_and_a_wrong_one_
     // The chat shows it, and it survives more messages.
     say(&alice, &bob, &transport, "hello");
     assert!(conversation(&alice, &bob).unwrap().verified);
+    assert!(conversation(&alice, &bob).unwrap().verified_at.is_some_and(|at| at > 1_600_000_000_000), "and when it was");
 }
 
 #[test]

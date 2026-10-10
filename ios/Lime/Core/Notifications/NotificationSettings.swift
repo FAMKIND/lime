@@ -159,12 +159,20 @@ final class NotificationSettings {
         static let preview = "lime.notify.preview"
         static let sound = "lime.notify.sound"
         static let callSound = "lime.notify.callSound"
+        static let soundMigrated = "lime.notify.soundMigrated102b"
         static let dismissed = "lime.notify.explainerDismissed"
         static let muted = "lime.notify.muted"
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        // One source of truth for the sound: Lime's chime unless the person chose another, whatever was or was not written before.
+        defaults.register(defaults: [Keys.sound: NotificationSound.limeChime.rawValue, Keys.callSound: CallSound.limeSteelpan.rawValue])
+        // Before Lime had its own chime, "Default" was the preset, so a stored "Default" was never a choice: once, it becomes the chime.
+        if !defaults.bool(forKey: Keys.soundMigrated) {
+            if defaults.string(forKey: Keys.sound) == NotificationSound.systemDefault.rawValue { defaults.removeObject(forKey: Keys.sound) }
+            defaults.set(true, forKey: Keys.soundMigrated)
+        }
         enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
         preview = defaults.string(forKey: Keys.preview).flatMap(NotificationPreview.init) ?? .nameAndMessage
         sound = defaults.string(forKey: Keys.sound).flatMap(NotificationSound.init) ?? .limeChime
@@ -198,7 +206,7 @@ final class NotificationSettings {
 
     /// Forget everything (signing out).
     func reset() {
-        for key in [Keys.enabled, Keys.preview, Keys.sound, Keys.callSound, Keys.dismissed, Keys.muted] { defaults.removeObject(forKey: key) }
+        for key in [Keys.enabled, Keys.preview, Keys.sound, Keys.callSound, Keys.dismissed, Keys.muted, Keys.soundMigrated] { defaults.removeObject(forKey: key) }
         enabled = true; preview = .nameAndMessage; sound = .limeChime; callSound = .limeSteelpan; explainerDismissed = false; muted = [:]
     }
 }

@@ -183,6 +183,8 @@ pub struct ConversationSummary {
     pub group_emoji: Option<String>,
     /// The other person's key was confirmed in person against their QR code (one-to-one chats).
     pub verified: bool,
+    /// When they were verified in person (milliseconds), if so.
+    pub verified_at: Option<i64>,
     /// I marked the conversation unread by hand (it shows the unread dot until opened).
     pub marked_unread: bool,
     /// `last_message` is a reply in a thread (it is the newest thing in the conversation, replies included).
@@ -274,7 +276,8 @@ impl LimeStore {
                         EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NOT NULL),
                         c.group_emoji,
                         EXISTS (SELECT 1 FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.verified_at IS NOT NULL AND p.new_master_key IS NULL),
-                        c.marked_unread
+                        c.marked_unread,
+                        (SELECT p.verified_at FROM peers p WHERE 'dm:' || p.user_id = c.id AND p.new_master_key IS NULL)
                  FROM conversations c
                  WHERE c.request_state NOT IN ('blocked', 'left') AND c.hidden = 0
                  ORDER BY c.is_pinned DESC,
@@ -298,6 +301,7 @@ impl LimeStore {
                     r.get::<_, Option<String>>(7)?,
                     r.get::<_, bool>(8)?,
                     r.get::<_, bool>(9)?,
+                    r.get::<_, Option<i64>>(10)?,
                 ))
             })
             .map_err(db_err)?
@@ -305,7 +309,7 @@ impl LimeStore {
             .map_err(db_err)?;
 
         let mut summaries = Vec::with_capacity(rows.len());
-        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji, verified, marked_unread) in rows {
+        for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji, verified, marked_unread, verified_at) in rows {
             let (latest, last_is_reply) = latest_activity(&conn, &id)?;
             // A reaction newer than the last message is the newest thing (no unread, no notification: it only shows in the preview).
             let reaction = message_ops::latest_reaction(&conn, &id, &my_user_id(&conn)).filter(|r| latest.as_ref().is_none_or(|m| r.at > m.sent_at));
@@ -325,6 +329,7 @@ impl LimeStore {
                 key_change_pending,
                 group_emoji,
                 verified,
+                verified_at: verified.then_some(verified_at).flatten(),
                 marked_unread,
             });
         }
