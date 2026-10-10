@@ -48,6 +48,11 @@ final class NotificationCoordinator {
     /// What each arrival turned into, newest last (tests and the debug screens read it).
     private(set) var log: [Presentation] = []
 
+    /// Whether I am quiet at a moment (Do not disturb, quiet hours, or outside work hours).
+    @ObservationIgnored var isQuiet: (Date) -> Bool = { _ in false }
+    /// Messages that arrived while I was quiet, waiting for a summary.
+    private(set) var held: [IncomingMessage] = []
+
     @ObservationIgnored private let center: LocalNotificationCenter
     @ObservationIgnored private let feedback: ArrivalFeedback
 
@@ -80,10 +85,11 @@ final class NotificationCoordinator {
         for message in arrivals {
             let how = NotificationPolicy.presentation(
                 for: message, enabled: settings.enabled, muted: settings.isMuted(message.conversationID, now: now),
-                sound: settings.sound, appActive: isActive, viewing: viewing)
+                sound: settings.sound, appActive: isActive, viewing: viewing, quiet: isQuiet(now))
             log.append(how)
             switch how {
             case .none: break
+            case .held: if !message.isRequest { held.append(message) }
             case .tick: ticked = true
             case .banner(let sound): bannerFor = message; bannerSound = bannerSound || sound
             case .local(let sound):
@@ -97,6 +103,24 @@ final class NotificationCoordinator {
             if bannerSound { feedback.playSound() }
         } else if ticked {
             feedback.tick()
+        }
+    }
+
+    /// When the quiet ends, one summary of what arrived in the meantime ("3 new messages while you were away").
+    func releaseHeld(now: Date = Date()) async {
+        guard !held.isEmpty, !isQuiet(now) else { return }
+        let messages = held
+        held = []
+        let chats = Set(messages.map(\.conversationID)).count
+        let words = messages.count == 1 ? "1 new message" : "\(messages.count) new messages"
+        let body = chats == 1 ? "\(words) from \(messages[0].conversationTitle)" : "\(words) in \(chats) chats"
+        let last = messages[messages.count - 1]
+        let content = NotificationContent(title: "While you were away", body: body, threadIdentifier: "summary", conversationID: last.conversationID,
+                                          threadRoot: nil, messageID: "summary-\(last.id)", sound: false)
+        if isActive {
+            banner = IncomingBanner(id: content.messageID, content: content, sender: Person(id: "lime", name: "Lime"))
+        } else if authorization == .authorized, settings.enabled {
+            await center.schedule(content)
         }
     }
 

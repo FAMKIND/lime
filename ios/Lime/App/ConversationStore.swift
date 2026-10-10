@@ -22,6 +22,8 @@ final class ConversationStore {
     @ObservationIgnored var notifications: NotificationCoordinator?
     @ObservationIgnored private var detector = ArrivalDetector()
     var banner: String?
+    /// What each accepted contact last told this phone about their status (periods that ended are left out).
+    var statuses: [String: PeerStatus] = [:]
     /// The phone is nearly full: automatic downloads are paused (Messages says so).
     var lowStorage = false
     /// Until when the server still has an attachment (`.some(nil)`: it is gone), as asked this session.
@@ -190,6 +192,7 @@ final class ConversationStore {
     /// Sends what is queued (a message that failed is retried here).
     func deliverNow() async {
         guard let core, let link else { return }
+        publishStatus()
         do {
             let token = try await link.token()
             _ = try await Task.detached(priority: .userInitiated) {
@@ -462,6 +465,7 @@ final class ConversationStore {
 
     func reload() async {
         refreshStorageState()
+        refreshStatuses()
         #if DEBUG
         if isDemo { return }
         #endif
@@ -705,6 +709,7 @@ final class ConversationStore {
         ]
         isLoaded = true
         refreshStorageState()
+        statuses = ["sam": PeerStatus(state: .dnd, until: nil), "lee": PeerStatus(state: .away, until: nil)]
         demoBlocked = [BlockedPerson(conversationId: "dm:pat", name: "Pat Doe", tone: UInt32(AvatarTone.tone(for: "pat")))]
         switch screen {
         case "requests": path.append(MessagesRoute.requests)

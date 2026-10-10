@@ -66,6 +66,8 @@ private struct SignedInView: View {
                 switch phase {
                 case .active:
                     store.refreshStorageState()
+                    await store.statusSettingsChanged()
+                    await notifications.releaseHeld()
                     await notifications.refreshAuthorization()
                     await session.appBecameActive()
                 case .background: await session.appLeftForeground()

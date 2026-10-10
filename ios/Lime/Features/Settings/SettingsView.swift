@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Where Settings can go.
 enum SettingsRoute: Hashable {
-    case profile, account, privacy, blocked, keys, devices, notifications, customize, about, acknowledgements, changePassword, myQR, photo, storage
+    case profile, account, privacy, blocked, keys, devices, notifications, customize, about, acknowledgements, changePassword, myQR, photo, storage, workHours
     case chatMedia(String)
 }
 
@@ -39,6 +39,7 @@ struct SettingsView: View {
                     case .myQR: MyQRScreen()
                     case .photo: ProfilePhotoScreen()
                     case .storage: StorageScreen()
+                    case .workHours: WorkHoursScreen()
                     case .chatMedia(let id): ChatMediaScreen(conversationID: id)
                     }
                 }
@@ -55,7 +56,7 @@ struct SettingsView: View {
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
             "profile": .profile, "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
-            "notifications": .notifications, "customize": .customize, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "crop": .photo, "storage": .storage,
+            "notifications": .notifications, "customize": .customize, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "crop": .photo, "storage": .storage, "work-hours": .workHours,
         ]
         return names.compactMap { table[$0] }
     }
@@ -83,6 +84,7 @@ struct SettingsView: View {
                 SettingsCard {
                     SettingsRow(symbol: "bell", title: "Notifications", value: notifications.settings.enabled ? "On" : "Off",
                                 route: .notifications, id: "settings-notifications")
+                    SettingsRow(symbol: "clock", title: "Work hours", value: StatusSettings.shared.hours.enabled ? "On" : "Off", route: .workHours, id: "settings-work-hours")
                     SettingsRow(symbol: "paintpalette", title: "Customize", route: .customize, id: "settings-customize", showsDivider: false)
                 }
                 SettingsCard {
@@ -137,7 +139,7 @@ struct SettingsView: View {
 
     private var profileCard: some View {
         HStack(spacing: 14) {
-            AvatarView(person: session.mePerson, size: 60)
+            AvatarView(person: session.mePerson, size: 60, showsStatus: true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.profile?.displayName ?? "Your profile").font(Theme.title).foregroundStyle(Theme.text)
                     .accessibilityIdentifier("settings-card-name")

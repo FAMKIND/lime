@@ -344,7 +344,7 @@ struct GroupDetailsView: View {
     private func memberRow(_ member: GroupMemberInfo, last: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                AvatarView(person: Person(id: member.userId, name: member.isMe ? "You" : member.name, tone: Int(member.tone)), size: 44)
+                AvatarView(person: Person(id: member.userId, name: member.isMe ? "You" : member.name, tone: Int(member.tone)), size: 44, showsStatus: !member.isMe)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text(member.name).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1).layoutPriority(2)

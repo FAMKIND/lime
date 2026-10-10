@@ -180,7 +180,7 @@ pub(crate) fn forget_all_shared(conn: &Connection) -> Result<(), StoreError> {
 /// The accepted one-to-one chats: the people to re-share a new key with after a block.
 pub(crate) fn accepted_peers(conn: &Connection) -> Result<Vec<String>, StoreError> {
     let mut statement = conn
-        .prepare("SELECT substr(id, 4) FROM conversations WHERE id LIKE 'dm:%' AND request_state = 'accepted'")
+        .prepare("SELECT substr(id, 4) FROM conversations WHERE id LIKE 'dm:%' AND request_state = 'accepted' AND id != 'dm:' || COALESCE((SELECT user_id FROM account WHERE id = 1), '')")
         .map_err(db_err)?;
     let rows = statement.query_map([], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
     Ok(rows)

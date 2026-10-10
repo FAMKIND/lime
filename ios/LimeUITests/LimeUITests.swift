@@ -24,6 +24,14 @@ final class LimeUITests: XCTestCase {
         return app
     }
 
+    /// Your avatar opens the status sheet; Settings is a row in it.
+    private func openSettingsFromAvatar(_ app: XCUIApplication) {
+        app.buttons["settings-button"].tap()
+        let row = app.buttons["status-open-settings"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "the status sheet opens")
+        row.tap()
+    }
+
     private func goBack(_ app: XCUIApplication) {
         let custom = app.buttons["back-button"]
         (custom.exists ? custom : app.navigationBars.buttons.element(boundBy: 0)).tap()
@@ -1058,6 +1066,58 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["dock-badge"].waitForNonExistence(timeout: 5))
     }
 
+    // MARK: LIME-108: status and work hours
+
+    func testContactsShowAStatusBadgeAndTheChatHeaderSaysIt() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.descendants(matching: .any)["status-badge-sam"].label, "Do not disturb")
+        XCTAssertEqual(app.descendants(matching: .any)["status-badge-lee"].label, "Away")
+        app.buttons["conversation-row-dm:sam"].tap()
+        XCTAssertEqual(app.staticTexts["chat-status"].label, "Do not disturb", "under the contact's name")
+        XCTAssertTrue(app.descendants(matching: .any)["status-badge-sam"].exists, "and on the avatar in the header")
+    }
+
+    func testSettingMyStatusFromMyAvatarShowsMyBadgeAndQuietForAWhile() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["status-badge-test-user"].exists, "no badge until I set one")
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["status-sheet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["status-quiet-1h"].exists && app.buttons["status-quiet-tomorrow"].exists)
+        XCTAssertTrue(app.buttons["status-work-hours"].exists && app.buttons["status-open-settings"].exists)
+        app.buttons["status-dnd"].tap()
+        let badge = app.descendants(matching: .any)["status-badge-test-user"]
+        XCTAssertTrue(badge.waitForExistence(timeout: 5), "my own avatar shows it")
+        XCTAssertEqual(badge.label, "Do not disturb")
+        // Quiet for an hour, then back to automatic.
+        app.buttons["settings-button"].tap()
+        app.buttons["status-quiet-1h"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["status-badge-test-user"].waitForExistence(timeout: 5))
+        app.buttons["settings-button"].tap()
+        app.buttons["status-automatic"].tap()
+        app.buttons["status-available"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["status-badge-test-user"].waitForExistence(timeout: 5), "Available shows the green dot")
+        XCTAssertEqual(app.descendants(matching: .any)["status-badge-test-user"].label, "Available")
+    }
+
+    func testWorkHoursCanBeTurnedOnWithDaysAndTimes() {
+        let app = threadApp("settings/work-hours")
+        app.launch()
+        let toggle = app.switches["hours-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["hours-start"].exists, "nothing to edit while it is off")
+        toggle.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["hours-start"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["hours-end"].exists)
+        for weekday in 2...6 { XCTAssertTrue(app.buttons["hours-day-\(weekday)"].isSelected, "Monday to Friday by default") }
+        XCTAssertFalse(app.buttons["hours-day-1"].isSelected)
+        app.buttons["hours-day-7"].tap()
+        XCTAssertTrue(app.buttons["hours-day-7"].isSelected)
+    }
+
     func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {
         let app = demoApp()
         openSam(app)
@@ -1524,7 +1584,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["notification-explainer"].waitForExistence(timeout: 10), "asked once, with the reason first")
         app.buttons["explainer-not-now"].tap()
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 5))
-        app.buttons["settings-button"].tap()
+        openSettingsFromAvatar(app)
         app.buttons["settings-notifications"].tap()
         XCTAssertTrue(app.buttons["notif-allow"].waitForExistence(timeout: 5), "Settings still offers it")
         app.buttons["notif-allow"].tap()
@@ -1553,7 +1613,7 @@ final class LimeUITests: XCTestCase {
         app.buttons["Always"].tap()
         goBack(app)
         XCTAssertTrue(app.descendants(matching: .any)["muted-dm:lee"].waitForExistence(timeout: 5), "a bell on the muted chat")
-        app.buttons["settings-button"].tap()
+        openSettingsFromAvatar(app)
         app.buttons["settings-notifications"].tap()
         XCTAssertTrue(app.buttons["unmute-dm:lee"].waitForExistence(timeout: 5))
         app.buttons["unmute-dm:lee"].tap()
@@ -1580,7 +1640,7 @@ final class LimeUITests: XCTestCase {
         let app = notifApp()
         app.launch()
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        openSettingsFromAvatar(app)
         app.buttons["settings-about"].tap()
         let version = app.staticTexts["about-version"]
         XCTAssertTrue(version.waitForExistence(timeout: 5))
@@ -1597,7 +1657,7 @@ final class LimeUITests: XCTestCase {
         let app = notifApp()
         app.launch()
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        openSettingsFromAvatar(app)
         app.buttons["settings-about"].tap()
         let version = app.staticTexts["about-version"]
         XCTAssertTrue(version.waitForExistence(timeout: 5))
@@ -1617,7 +1677,7 @@ final class LimeUITests: XCTestCase {
         let app = notifApp()
         app.launch()
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        openSettingsFromAvatar(app)
         app.buttons["settings-about"].tap()
         XCTAssertTrue(app.buttons["about-developer"].waitForExistence(timeout: 5))
         app.buttons["about-developer"].tap()
@@ -1641,7 +1701,7 @@ final class LimeUITests: XCTestCase {
         confirm.tap()
         XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5), "back on Messages")
         XCTAssertFalse(app.buttons["conversation-row-dm:sam"].exists)
-        app.buttons["settings-button"].tap()
+        openSettingsFromAvatar(app)
         app.buttons["settings-privacy"].tap()
         app.buttons["privacy-blocked"].tap()
         XCTAssertTrue(app.staticTexts["Sam Park"].waitForExistence(timeout: 5), "listed under Blocked, with Unblock")
@@ -1748,7 +1808,7 @@ final class LimeUITests: XCTestCase {
 
     private func openSettings(_ app: XCUIApplication) {
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        openSettingsFromAvatar(app)
         XCTAssertTrue(app.otherElements["settings-root"].waitForExistence(timeout: 5) || app.buttons["settings-profile"].waitForExistence(timeout: 5))
     }
 

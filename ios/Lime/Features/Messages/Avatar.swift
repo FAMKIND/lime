@@ -3,8 +3,15 @@ import SwiftUI
 struct AvatarView: View {
     let person: Person
     var size: CGFloat = 52
+    /// Shows the person's status badge at the bottom-right (for a contact who shared one, or me).
+    var showsStatus = false
 
     var body: some View {
+        content.statusBadge(showsStatus ? person.id : nil, size: size)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if let photo = AvatarCache.shared.image(for: person.id) {
             Image(uiImage: photo)
                 .resizable().scaledToFill()
@@ -37,7 +44,7 @@ struct ConversationAvatar: View {
 
     var body: some View {
         if let only = conversation.members.first, !conversation.isGroup {
-            AvatarView(person: only, size: size)
+            AvatarView(person: only, size: size, showsStatus: true)
         } else if let photo = AvatarCache.shared.image(for: conversation.id) {
             Image(uiImage: photo).resizable().scaledToFill()
                 .frame(width: size, height: size).clipShape(Circle())

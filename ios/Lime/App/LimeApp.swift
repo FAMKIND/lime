@@ -56,6 +56,7 @@ struct LimeApp: App {
         #endif
         let system = SystemNotifications()
         let coordinator = NotificationCoordinator(center: system, feedback: SystemArrivalFeedback())
+        coordinator.isQuiet = { now in MainActor.assumeIsolated { StatusSettings.shared.plan(now: now).isQuiet } }
         system.onTap = { [weak coordinator] conversation, thread in coordinator?.open(conversationID: conversation, threadRoot: thread) }
         return coordinator
     }

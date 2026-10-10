@@ -1259,3 +1259,38 @@ fn a_forward_of_files_through_the_real_server_is_sent_on_the_senders_phone_and_a
     let last = stores[2].list_messages(format!("dm:{}", accounts[1].id)).unwrap().into_iter().rfind(|m| m.forwarded).unwrap();
     stores[2].download_attachment(transport.clone(), accounts[2].token.clone(), last.attachments[0].id.clone()).unwrap();
 }
+
+#[test]
+fn a_status_reaches_an_accepted_contact_through_the_real_server_and_the_server_holds_no_status() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    a.register_device(transport.clone(), alice.token.clone()).unwrap();
+    b.register_device(transport.clone(), bob.token.clone()).unwrap();
+    let chat = a.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    a.queue_text(chat, "hello".into()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    b.sync(transport.clone(), bob.token.clone()).unwrap();
+    b.accept_request(format!("dm:{}", alice.id)).unwrap();
+    b.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    a.sync(transport.clone(), alice.token.clone()).unwrap();
+
+    a.set_my_status(lime_core::StatusInfo { state: "dnd".into(), until: None, then_state: None, then_until: None }).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(b.sync(transport.clone(), bob.token.clone()).unwrap().received, 0, "a status is not a message");
+    let seen = b.contact_statuses(now_ms()).unwrap();
+    assert_eq!((seen[0].user_id.as_str(), seen[0].state.as_str()), (alice.id.as_str(), "dnd"));
+    for (name, rows) in admin.every_table() {
+        assert!(!name.contains("status") || !rows.contains("dnd"), "no status in table {name}");
+    }
+}

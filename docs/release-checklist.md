@@ -64,3 +64,9 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **Say where files live**: received media are kept decrypted in the phone's encrypted Lime store, excluded from iCloud backup; the server's copy goes about an hour after every recipient fetched it (or after 30 days). Until the recovery backup exists, a lost phone loses its media (the other person's copy remains). Put this in help and the privacy policy.
 - [ ] **Keep media** removes files, not messages. Default is Forever.
 - [ ] **Low storage**: below 500 MB free Lime pauses downloads and says so; a download or send that would leave under 50 MB free fails cleanly and can be retried. Test on a nearly full device before TestFlight.
+
+## Status and work hours (LIME-108)
+
+- [ ] **Say it plainly in help and the privacy policy**: status is visible only to the people you chat with, there is no "last seen", and the server never learns it.
+- [ ] **Held notifications outside work hours work only while Lime is running** until push exists (APNs); with push the same rule moves into the notification service extension. Test "messages arrive silently, then a summary" on a real phone.
+- [ ] The **urgent flag that breaks through quiet hours** is reserved for emergency mode and is not sendable yet.

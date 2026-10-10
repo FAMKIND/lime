@@ -389,7 +389,7 @@ struct TeacherRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            AvatarView(person: person, size: 44)
+            AvatarView(person: person, size: 44, showsStatus: true)
             Text(person.name).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1).layoutPriority(2)
             if let label = person.label {
                 LabelCapsule(text: label, id: "teacher-label-\(person.id)")

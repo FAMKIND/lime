@@ -23,6 +23,7 @@ pub(crate) mod search;
 pub(crate) mod threads;
 pub(crate) mod link_preview;
 pub(crate) mod storage;
+pub(crate) mod status;
 mod sample;
 #[cfg(test)]
 mod search_tests;
@@ -368,6 +369,10 @@ impl LimeStore {
             let conn = self.lock();
             if !delivery::is_shared(&conn, peer)? {
                 delivery::queue_share(&conn, peer, now_ms())?;
+            }
+            // The new contact is told my status too (when I have set one).
+            if status::mine(&conn).is_some() {
+                status::queue_notices(&conn, &[peer.to_owned()], now_ms())?;
             }
         }
         Ok(())

@@ -239,8 +239,16 @@ struct ChatView: View {
                         .font(Theme.caption)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
-                } else if let label = conversation.members.first?.label {
-                    Text(label)
+                } else if let person = conversation.members.first, person.label == nil, let status = store.status(of: person.id), let words = StatusPlan.caption(state: status.state, until: status.until) {
+                    Text(words)
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("chat-status")
+                } else if let person = conversation.members.first, let label = person.label {
+                    // My label for them, then their status when they have one ("Grade 4 · Do not disturb").
+                    let status = store.status(of: person.id).flatMap { StatusPlan.caption(state: $0.state, until: $0.until) }
+                    Text(status.map { "\(label) · \($0)" } ?? label)
                         .font(Theme.caption)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)

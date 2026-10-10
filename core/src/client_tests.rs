@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -2660,6 +2660,49 @@ fn reading_only_the_replies_clears_the_chat_and_a_hand_made_mark_is_cleared_by_r
     assert!(c.marked_unread && c.unread == 0);
     alice.store.mark_read(to_bob.clone()).unwrap();
     assert!(!unread(&to_bob).marked_unread, "reading clears the hand-made mark");
+}
+
+#[test]
+fn a_status_goes_only_to_accepted_contacts_and_is_kept_only_from_them_and_ends_when_it_says() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    // Carol wrote to Alice first and Alice has not accepted her: a request.
+    say(&carol, &alice, &transport, "hello, it's carol");
+    sync(&alice, &transport);
+    let now = 1_000_000_i64;
+    let dnd = crate::StatusInfo { state: "dnd".into(), until: Some(now + 3_600_000), then_state: Some("available".into()), then_until: None };
+    alice.store.set_my_status(dnd.clone()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    let of = |p: &Party, at: i64| p.store.contact_statuses(at).unwrap().into_iter().map(|c| (c.user_id, c.state)).collect::<Vec<_>>();
+    assert_eq!(of(&bob, now), vec![(alice.user.clone(), "dnd".to_owned())], "an accepted contact sees it");
+    assert!(of(&carol, now).is_empty(), "a request is not told");
+    // It ends when it says, and what follows takes over; setting the same thing again tells nobody again.
+    assert_eq!(of(&bob, now + 3_600_001), vec![(alice.user.clone(), "available".to_owned())]);
+    let calls = server.state.lock().unwrap().calls;
+    alice.store.set_my_status(dnd).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!(server.state.lock().unwrap().calls, calls, "the same status is not sent twice");
+    assert!(alice.store.set_my_status(crate::StatusInfo { state: "busy".into(), until: None, then_state: None, then_until: None }).is_err(), "only the three states");
+
+    // A status from someone I have not accepted is ignored; once I accept them and they tell me again, it is kept.
+    carol.store.set_my_status(crate::StatusInfo { state: "away".into(), until: None, then_state: None, then_until: None }).unwrap();
+    deliver(&carol, &transport);
+    sync(&alice, &transport);
+    assert!(of(&alice, now).is_empty(), "not from a request");
+    alice.store.accept_request(format!("dm:{}", carol.user)).unwrap();
+    carol.store.set_my_status(crate::StatusInfo { state: "dnd".into(), until: None, then_state: None, then_until: None }).unwrap();
+    deliver(&carol, &transport);
+    sync(&alice, &transport);
+    assert_eq!(of(&alice, now), vec![(carol.user.clone(), "dnd".to_owned())]);
+    // And Alice's own status reached Carol once she was accepted.
+    deliver(&alice, &transport);
+    sync(&carol, &transport);
+    assert_eq!(of(&carol, now), vec![(alice.user.clone(), "dnd".to_owned())]);
 }
 
 #[test]

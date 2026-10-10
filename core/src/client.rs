@@ -39,6 +39,7 @@ pub(crate) mod photos;
 const DELIVERY_KEY_SHARE: &str = "delivery_key.share";
 /// The control op that tells a contact my profile photo changed, so they refresh it now (LIME-98b-fix).
 const PROFILE_CHANGED: &str = "profile.changed";
+use crate::store::status::STATUS_CHANGED;
 
 /// Why one send did not go through.
 enum SendError {
@@ -183,6 +184,7 @@ impl LimeStore {
             self.deliver_shares(&transport, &auth_token, &mut state, &me);
             self.refresh_my_photo_if_stale(&transport, &auth_token);
             self.deliver_photo_notices(&transport, &auth_token, &mut state, &me);
+            self.deliver_status_notices(&transport, &auth_token, &mut state, &me);
         }
         // Group state ops (a new group, someone added or removed...) go out before the messages that follow them.
         self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
@@ -871,6 +873,17 @@ impl LimeStore {
         }
     }
 
+    /// Tells everyone queued my status (accepted contacts only; queued when it changed or when they accepted).
+    fn deliver_status_notices(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
+        let Ok(peers) = self.with_conn(crate::store::status::queued) else { return };
+        let Ok(Some(payload)) = self.with_conn(|conn| Ok(crate::store::status::current_payload(conn))) else { return };
+        for peer in peers {
+            if self.send_control_op(transport, token, state, me, &peer, STATUS_CHANGED, payload.clone()).is_ok() {
+                let _ = self.with_conn(|conn| crate::store::status::dequeue(conn, &peer));
+            }
+        }
+    }
+
     /// Tells everyone queued that my photo changed. Errors leave the person queued; nothing waits on this.
     fn deliver_photo_notices(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
         let Ok(peers) = self.with_conn(crate::store::photos::queued_notices) else { return };
@@ -1203,7 +1216,8 @@ impl LimeStore {
         let sender = known_sender.clone().unwrap_or_else(|| inner.sender_user.clone());
         let is_share = inner.op.op_type == DELIVERY_KEY_SHARE;
         let is_changed = inner.op.op_type == PROFILE_CHANGED;
-        let is_control = is_share || is_changed;
+        let is_status = inner.op.op_type == STATUS_CHANGED;
+        let is_control = is_share || is_changed || is_status;
         let is_message_op = crate::store::message_ops::is_message_op(&inner.op.op_type);
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
@@ -1301,6 +1315,20 @@ impl LimeStore {
                     .unwrap_or(false);
                 if !blocked {
                     crate::store::message_ops::apply(conn, &sender, &format!("dm:{sender}"), &inner.op)?;
+                }
+                return Ok(Some(Stored::Control));
+            }
+            if is_status {
+                // A contact's status: kept only from an accepted contact, never shown for a request or a blocked person.
+                let accepted = conn
+                    .query_row("SELECT request_state = 'accepted' FROM conversations WHERE id = ?1", params![format!("dm:{sender}")], |r| r.get::<_, bool>(0))
+                    .optional()
+                    .map_err(db_err)?
+                    .unwrap_or(false);
+                if accepted {
+                    if let Some(status) = crate::store::status::parse(&inner.op.payload) {
+                        crate::store::status::store_contact(conn, &sender, &status, remote_hlc.wall)?;
+                    }
                 }
                 return Ok(Some(Stored::Control));
             }

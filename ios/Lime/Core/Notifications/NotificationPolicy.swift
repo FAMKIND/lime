@@ -34,6 +34,8 @@ enum Presentation: Equatable, Sendable {
     case banner(sound: Bool)
     /// Lime is in the background but still running: a local notification.
     case local(sound: Bool)
+    /// Quiet (Do not disturb, or outside work hours): delivered silently and kept for a summary when the quiet ends.
+    case held
 }
 
 /// What a local notification says.
@@ -51,8 +53,11 @@ struct NotificationContent: Equatable, Sendable {
 /// The rules, as pure functions so they can be tested without a phone.
 enum NotificationPolicy {
     static func presentation(for message: IncomingMessage, enabled: Bool, muted: Bool, sound: NotificationSound,
-                             appActive: Bool, viewing: ViewingTarget?) -> Presentation {
+                             appActive: Bool, viewing: ViewingTarget?, quiet: Bool = false) -> Presentation {
         guard enabled, !muted else { return .none }
+        // Quiet hours hold everything (a message in the chat on screen still just ticks). Nothing here is marked urgent: the flag that
+        // would break through is reserved for emergency mode, which users cannot send yet.
+        if quiet, !(appActive && viewing?.conversationID == message.conversationID && viewing?.threadRoot == message.threadRoot) { return .held }
         let loud = sound != .none
         guard appActive else { return .local(sound: loud) }
         if let viewing, viewing.conversationID == message.conversationID {

@@ -10,6 +10,8 @@ struct MessagesView: View {
     @State private var showAbout = false
     @State private var showNewMessage = false
     @State private var showSettings = false
+    @State private var showStatus = false
+    @State private var settingsAfterStatus = false
     /// The chat a swipe asked about: to mute (it asks for how long) or to delete (it asks to confirm).
     @State private var muting: Conversation.ID?
     @State private var deleting: Conversation.ID?
@@ -25,6 +27,9 @@ struct MessagesView: View {
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showNewMessage) { NewMessageSheet() }
         .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showStatus, onDismiss: { if settingsAfterStatus { settingsAfterStatus = false; showSettings = true } }) {
+            StatusSheet(openSettings: { settingsAfterStatus = true })
+        }
         #if DEBUG
         .task {
             if store.demoNotification == "banner" {
@@ -70,7 +75,7 @@ struct MessagesView: View {
                 Button { store.path.append(MessagesRoute.search) } label: { Image(systemName: "magnifyingglass") }
                     .accessibilityLabel("Search")
                     .accessibilityIdentifier("messages-search-button")
-                Button { showSettings = true } label: { AvatarView(person: session.mePerson, size: 30) }
+                Button { showStatus = true } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true) }
                     .accessibilityLabel("Settings")
                     .accessibilityIdentifier("settings-button")
             }
@@ -86,7 +91,7 @@ struct MessagesView: View {
         }
         .readSideInsets($sideInsets)
         .overlay(alignment: .top) { TopFade() }
-        .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }, onSettings: { showSettings = true }) }
+        .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }, onSettings: { showStatus = true }) }
         .overlay(alignment: .bottomTrailing) { if verticalSizeClass != .compact { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) } }
         .overlay(alignment: .bottom) { bottomControls }
         .toolbar(.hidden, for: .navigationBar)
@@ -390,7 +395,7 @@ private struct TopControls: View {
                 .accessibilityLabel("Search")
                 .accessibilityIdentifier("messages-search-button")
                 Button(action: onSettings) {
-                    AvatarView(person: session.mePerson, size: 36)
+                    AvatarView(person: session.mePerson, size: 36, showsStatus: true)
                 }
                 .accessibilityLabel("Settings")
                 .accessibilityIdentifier("settings-button")
@@ -513,6 +518,7 @@ struct ConversationRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             ConversationAvatar(conversation: conversation, size: avatarSize)
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("row-avatar-\(conversation.id)")
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {

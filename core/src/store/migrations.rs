@@ -368,6 +368,24 @@ const MIGRATIONS: &[&str] = &[
     // 21: storage management (LIME-107). A file removed on this phone (by hand or by "Keep media") keeps its row, so the bubble can say
     // "Media removed" instead of offering a download that can no longer be had.
     "ALTER TABLE message_attachments ADD COLUMN removed INTEGER NOT NULL DEFAULT 0;",
+    // 22: status (LIME-108). Mine, the notices still to send, and what each accepted contact last told this phone.
+    "CREATE TABLE my_status (
+         id          INTEGER PRIMARY KEY CHECK (id = 1),
+         state       TEXT NOT NULL,
+         until       INTEGER,
+         then_state  TEXT,
+         then_until  INTEGER,
+         updated_at  INTEGER NOT NULL
+     );
+     CREATE TABLE status_notices (peer_user_id TEXT PRIMARY KEY NOT NULL, queued_at INTEGER NOT NULL);
+     CREATE TABLE contact_status (
+         user_id     TEXT PRIMARY KEY NOT NULL,
+         state       TEXT NOT NULL,
+         until       INTEGER,
+         then_state  TEXT,
+         then_until  INTEGER,
+         sent_at     INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.
