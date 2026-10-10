@@ -359,7 +359,7 @@ extension View {
     func linkOpening() -> some View { modifier(LinkOpening()) }
 }
 
-/// "3 replies · Last reply 8:20 AM" with up to three replier avatars, under a message that has a thread.
+/// "3 replies · 8:20 AM" with up to three replier avatars, under a message that has a thread.
 struct ThreadSummaryRow: View {
     let messageID: String
     let thread: ThreadInfo
@@ -375,15 +375,16 @@ struct ThreadSummaryRow: View {
                     }
                 }
                 Text(thread.summaryText)
-                    .font(Theme.caption.weight(.semibold))
+                    .font(Theme.caption)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .lineLimit(1)
                 if thread.unread > 0 {
                     // New replies: an accent dot (the count is in the accessibility label).
                     Circle().fill(Theme.accent).frame(width: 9, height: 9)
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
+            .fixedSize()
             .background(Theme.surface, in: Capsule())
             .contentShape(Capsule())
         }

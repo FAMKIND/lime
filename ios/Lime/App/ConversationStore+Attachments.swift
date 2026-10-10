@@ -199,6 +199,9 @@ extension ConversationStore {
         voiceTwo.attachments = [demoVoice(seconds: 9)]
         var clip = Message(id: "a6", senderID: "pat", text: "Our class rehearsal", date: now.addingTimeInterval(-300))
         clip.attachments = [demoVideo()]
+        // A video with a reaction and a reply under it: the footer and the summary belong to the same group as the video.
+        clip.reactions = [ReactionChip(emoji: "👍", count: 2, mine: false, people: ["Pat Rivera", "Lee Wong"])]
+        clip.thread = ThreadInfo(replyCount: 1, lastReplyAt: now.addingTimeInterval(-120), repliers: [pat], unread: 0)
         // One of mine still going up, three fifths of the way.
         var going = Message(id: "a7", senderID: nil, text: "", date: now.addingTimeInterval(-60), state: .sending)
         going.attachments = [demoAttachment(hue: 0.9, name: "Banner.jpg")]

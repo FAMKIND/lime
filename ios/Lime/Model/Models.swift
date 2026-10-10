@@ -85,7 +85,7 @@ struct ReactionChip: Hashable, Sendable, Identifiable {
     var id: String { emoji }
 }
 
-/// What a message with replies shows under its bubble ("3 replies · Last reply 8:20 AM").
+/// What a message with replies shows under its bubble ("3 replies · 8:20 AM").
 struct ThreadInfo: Hashable, Sendable {
     let replyCount: Int
     let lastReplyAt: Date
@@ -109,7 +109,13 @@ struct ThreadInfo: Hashable, Sendable {
         self.unread = unread
     }
 
-    var summaryText: String { "\(replyCount) \(replyCount == 1 ? "reply" : "replies") · Last reply \(MessageFormat.listTime(lastReplyAt))" }
+    /// "1 reply · 6:35 PM", or the date instead of the time when the last reply was not today.
+    var summaryText: String { summary(now: Date()) }
+
+    func summary(now: Date, calendar: Calendar = .current) -> String {
+        let stamp = calendar.isDate(lastReplyAt, inSameDayAs: now) ? MessageFormat.clock(lastReplyAt) : lastReplyAt.formatted(.dateTime.month(.abbreviated).day())
+        return "\(replyCount) \(replyCount == 1 ? "reply" : "replies") · \(stamp)"
+    }
 }
 
 /// Where tapping a group's header goes: its details.

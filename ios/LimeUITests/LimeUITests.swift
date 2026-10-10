@@ -29,8 +29,9 @@ final class LimeUITests: XCTestCase {
         (custom.exists ? custom : app.navigationBars.buttons.element(boundBy: 0)).tap()
     }
 
-    override func setUp() {
+    override func setUp() async throws {
         continueAfterFailure = false
+        await MainActor.run { XCUIDevice.shared.orientation = .portrait }
     }
 
     // MARK: New message, requests and delivery states (in-memory demo conversations)
@@ -933,6 +934,67 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(photo.exists && photo.label.contains("tap to download"), "and it can be tried again")
     }
 
+    // MARK: LIME-107-qa
+
+    func testTheFooterAndTheReplySummaryAreAlignedToTheVideoTheyBelongTo() {
+        let app = threadApp("attachments-media")
+        app.launch()
+        let video = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'attachment-video-'")).firstMatch
+        XCTAssertTrue(video.waitForExistence(timeout: 10))
+        let chips = app.descendants(matching: .any)["reaction-cluster-a6"]
+        let time = app.staticTexts["message-time-a6"]
+        let summary = app.buttons["thread-summary-a6"]
+        XCTAssertTrue(chips.exists && time.exists && summary.exists)
+        XCTAssertEqual(chips.frame.minX, video.frame.minX, accuracy: 2, "the chips start at the group's leading edge")
+        XCTAssertEqual(summary.frame.minX, video.frame.minX, accuracy: 2, "so does the reply summary")
+        XCTAssertEqual(time.frame.maxX, video.frame.maxX, accuracy: 3, "the time ends at the group's trailing edge")
+        XCTAssertGreaterThan(chips.frame.minY, video.frame.maxY, "under the video and its caption")
+        XCTAssertTrue(summary.label.hasPrefix("1 reply · "), summary.label)
+        XCTAssertFalse(summary.label.contains("Last reply"))
+    }
+
+    func testUnreadChatsShowADotAndANumberTogetherAndTheDockCountsChats() {
+        let app = demoApp()
+        app.launch()
+        XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
+        // Mark Sam unread by hand: the dot only. Lee has no unread, so the dock counts the one chat.
+        app.buttons["conversation-row-dm:sam"].swipeRight()
+        app.buttons["swipe-unread-dm:sam"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForExistence(timeout: 5), "marked unread: the dot")
+        let dock = app.staticTexts["dock-badge"]
+        XCTAssertTrue(dock.waitForExistence(timeout: 5))
+        XCTAssertEqual(dock.label, "1", "the dock counts unread chats")
+        // The dot hangs in the margin, left of the avatar, and rows start at the same edge as the logo.
+        let dot = app.descendants(matching: .any)["unread-dot-dm:sam"]
+        XCTAssertLessThan(dot.frame.maxX, 16, "in the margin")
+        let lee = app.buttons["conversation-row-dm:lee"]
+        XCTAssertEqual(lee.frame.minX, 0, accuracy: 1, "rows use the full width")
+        let logo = app.buttons["Lime menu"]
+        let avatar = app.descendants(matching: .any)["row-avatar-dm:lee"]
+        XCTAssertTrue(logo.exists && avatar.exists)
+        // The logo's glass button starts at the page margin (16); its picture sits a few points inside it.
+        XCTAssertEqual(avatar.frame.minX, 16, accuracy: 1, "the avatar starts at the page margin")
+        XCTAssertEqual(avatar.frame.minX, logo.frame.minX, accuracy: 6, "under the logo button")
+        // Read it again: the dot and the dock badge go together.
+        app.buttons["conversation-row-dm:sam"].swipeRight()
+        app.buttons["swipe-unread-dm:sam"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(dock.waitForNonExistence(timeout: 5), "and the badge")
+    }
+
+    func testInLandscapeTheFloatingPlusDoesNotSitOverTheRows() {
+        let app = demoApp()
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let plus = app.buttons["new-message-button"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 10))
+        let sam = app.buttons["conversation-row-dm:sam"]
+        XCTAssertTrue(sam.waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertLessThanOrEqual(sam.frame.maxX, plus.frame.minX + 1, "rows stop short of the +, so no time sits under it")
+    }
+
     func testEditingMyMessageMarksItEditedAndDeleteOffersMeOrEveryone() {
         let app = demoApp()
         openSam(app)
@@ -1044,7 +1106,8 @@ final class LimeUITests: XCTestCase {
         app.launch()
         let summary = app.buttons["thread-summary-t1"]
         XCTAssertTrue(summary.waitForExistence(timeout: 10), "the root shows its thread")
-        XCTAssertTrue(summary.label.contains("3 replies · Last reply"), summary.label)
+        XCTAssertTrue(summary.label.contains("3 replies · "), summary.label)
+        XCTAssertFalse(summary.label.contains("Last reply"), summary.label)
         XCTAssertTrue(summary.label.contains("1 new"), "an unread reply is marked")
         XCTAssertFalse(app.staticTexts["I can take the first half"].exists, "replies are not in the main timeline")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'book fair'")).firstMatch.exists, "other messages are")

@@ -10,9 +10,9 @@ struct DockBar: View {
         let badge: Int?
     }
 
-    /// The link badge is the real number of unread messages (none, for a new account).
+    /// The link badge is the number of unread chats (a chat marked unread by hand counts): exactly the chats with a dot.
     private var items: [Item] {
-        let unread = store.conversations.reduce(0) { $0 + $1.unread }
+        let unread = store.chats.filter(\.isUnread).count
         return [
             Item(id: "link", symbol: "bubble.left", badge: unread > 0 ? unread : nil),
             Item(id: "jam", symbol: "book", badge: nil),
@@ -37,6 +37,7 @@ struct DockBar: View {
                                         .padding(.horizontal, 5).padding(.vertical, 1)
                                         .background(Theme.accent, in: Capsule())
                                         .offset(x: 12, y: -8)
+                                        .accessibilityIdentifier("dock-badge")
                                 }
                             }
                         Text(item.id)

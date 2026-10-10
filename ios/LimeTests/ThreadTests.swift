@@ -8,8 +8,13 @@ final class ThreadTests: XCTestCase {
 
     func testTheSummaryIsOneReplyOrNReplies() {
         let me = Person(id: "u-me", name: "Me Teacher")
-        XCTAssertTrue(ThreadInfo(summary(count: 1, repliers: []), me: me).summaryText.hasPrefix("1 reply · Last reply "))
-        XCTAssertTrue(ThreadInfo(summary(count: 3, repliers: []), me: me).summaryText.hasPrefix("3 replies · Last reply "))
+        let info = ThreadInfo(summary(count: 1, repliers: []), me: me)
+        XCTAssertTrue(info.summaryText.hasPrefix("1 reply · "))
+        XCTAssertFalse(info.summaryText.contains("Last reply"), "no \"Last reply\"")
+        // Not today: the date instead of the time.
+        let later = Calendar.current.date(byAdding: .day, value: 3, to: info.lastReplyAt)!
+        XCTAssertEqual(info.summary(now: later), "1 reply · \(info.lastReplyAt.formatted(.dateTime.month(.abbreviated).day()))")
+        XCTAssertTrue(ThreadInfo(summary(count: 3, repliers: []), me: me).summaryText.hasPrefix("3 replies · "))
         XCTAssertTrue(ThreadInfo(summary(count: 12, repliers: []), me: me).summaryText.hasPrefix("12 replies"))
     }
 

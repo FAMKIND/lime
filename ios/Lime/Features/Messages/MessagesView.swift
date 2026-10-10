@@ -4,6 +4,9 @@ struct MessagesView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
     @Environment(NotificationCoordinator.self) private var notifications
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    /// The screen's own inset on the trailing side in landscape (the notch side), which the floating + sits inside.
+    @State private var sideInset: CGFloat = 0
     @State private var showAbout = false
     @State private var showNewMessage = false
     @State private var showSettings = false
@@ -107,7 +110,7 @@ struct MessagesView: View {
                 Button { store.path.append(conversation.id) } label: { ConversationRow(conversation: conversation) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("conversation-row-\(conversation.id)")
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
                     // The swiped chat stays highlighted while its mute choices are open.
                     .listRowBackground(muting == conversation.id ? Theme.surface : Color.clear)
@@ -139,6 +142,13 @@ struct MessagesView: View {
         .scrollContentBackground(.hidden)
         .contentMargins(.top, top, for: .scrollContent)
         .contentMargins(.bottom, bottom, for: .scrollContent)
+        // In landscape the floating + would sit over the times: the list stops short of it (beyond the screen's own side inset).
+        .background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { sideInset = proxy.safeAreaInsets.trailing }
+                .onChange(of: proxy.safeAreaInsets.trailing) { _, value in sideInset = value }
+        })
+        .padding(.trailing, verticalSizeClass == .compact ? 92 + sideInset : 0)
         .accessibilityIdentifier("messages-list")
         .refreshable { await store.pullToRefresh() }
         .animation(.snappy, value: store.chats.map(\.id))
@@ -471,20 +481,13 @@ struct ConversationRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            // A column of its own for the unread dot: aligned down the list, never touching the avatar.
-            Color.clear.frame(width: 14, height: avatarSize)
-                .overlay {
-                    if conversation.markedUnread && conversation.unread == 0 {
-                        Circle().fill(Theme.accent).frame(width: 9, height: 9)
-                            .accessibilityIdentifier("unread-dot-\(conversation.id)")
-                    }
-                }
+        HStack(alignment: .top, spacing: 12) {
             ConversationAvatar(conversation: conversation, size: avatarSize)
+                .accessibilityIdentifier("row-avatar-\(conversation.id)")
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(conversation.title)
-                        .font(Theme.title)
+                        .font(Theme.title.weight(conversation.isUnread ? .bold : .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
                         .layoutPriority(2)
@@ -523,6 +526,7 @@ struct ConversationRow: View {
                             .accessibilityElement(children: .ignore)
                             .accessibilityIdentifier("row-thumb-\(conversation.id)")
                     }
+                    // Any unread chat has the dot (left) and, unless it was only marked unread by hand, this number.
                     if conversation.unread > 0 {
                         Text("\(conversation.unread)")
                             .font(Theme.caption.weight(.semibold))
@@ -534,8 +538,16 @@ struct ConversationRow: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
+        // The avatar starts at the page margin, under the logo; the unread dot hangs in the margin to its left.
+        .padding(.horizontal, 16)
         .padding(.vertical, 15)
+        .overlay(alignment: .topLeading) {
+            if conversation.isUnread {
+                Circle().fill(Theme.accent).frame(width: 8, height: 8)
+                    .offset(x: 4, y: 15 + avatarSize / 2 - 4)
+                    .accessibilityIdentifier("unread-dot-\(conversation.id)")
+            }
+        }
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.unread > 0 ? ", \(conversation.unread) unread" : (conversation.markedUnread ? ", unread" : ""))")
@@ -555,7 +567,8 @@ struct ConversationRow: View {
                 previewText.font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
             }
         } else {
-            previewText.font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(2)
+            previewText.font(Theme.secondary.weight(conversation.isUnread ? .semibold : .regular))
+                .foregroundStyle(conversation.isUnread ? Theme.text : Theme.textSecondary).lineLimit(2)
         }
     }
 
