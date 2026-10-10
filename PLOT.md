@@ -64,6 +64,28 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
      - Tend then SSHes in as root (key auth) for `infra/turn/setup.sh`.
    - **(History) The user is mid-way through buying the Hetzner server** (settings + SSH key steps given). Next: give tend the IPv4; tend runs `infra/turn/setup.sh`; the user adds `turn.limechat.org` A in deSEC; the TURN secret is set via Terminal `read -s`.
    - Prompt: "implement LIME-111 (re-read from PLOT.md), commit, push, and stop for my check. In Phase 0 commit PLOT.md only (git add PLOT.md). Stop at the TURN server step and give me the Hetzner setup steps. Keep to the ~60 min soft cap. No /loop wakeups."
+1b. **LIME-111 LANDED** (pushed; coturn installed on lime-turn-1 via `infra/turn/setup.sh`; `turn-credentials` deployed, returning 503 until `TURN_SECRET` is set).
+   - Call ops with the DTLS fingerprint; CallKit; an in-call UI; call lines; a call-tab history; DND/work hours → missed.
+   - 169 Rust / 50 server / 16 integration tests pass; mini full suite passed (SE/18 Pro not run).
+   - **`TURN_SECRET` is set on staging (2026-10-10, via Terminal; "Finished supabase secrets set").** Next: the user's two-phone gate (voice, video + flip, missed, Wi-Fi-off relay call).
+1c. **LIME-111-fix (NEXT; drafted 2026-10-10): calls don't connect; ending a call crashes.**
+   - **The user's two-phone test:** the caller stays on "Calling"; the callee sees the incoming call, answers, and shows "Connecting" with only its own camera; **ending the call crashes the app** (force-quit needed). The same for voice and video, repeatedly.
+   - **Plot's checks:** `turn.limechat.org` TLS cert OK; 3478 UDP/TCP reachable. **The relay is up, so the likely fault is signalling/ICE in the app.** Candidates:
+     - the callee's `call.answer`/ICE ops not reaching the caller (mailbox delivery only on nudge/sync; Realtime not triggering a fetch for control ops);
+     - the answer not applied (state machine);
+     - ICE candidates sent before the remote description is set and dropped;
+     - TURN credentials not fetched (`turn-credentials` auth/503);
+     - a CallKit ↔ WebRTC audio session activation order bug (no media until `didActivate`);
+     - **the crash in end-call teardown** (a double end / CallKit `CXEndCallAction` + WebRTC close race, or a force unwrap).
+   - **Tend must:**
+     - (1) **add a Debug "Call diagnostics" log** (signalling events with timestamps, ICE state, candidate types (host/srflx/relay, no IPs in logs), TURN credential status, CallKit actions), exportable via the share sheet **and** copyable via devicectl;
+     - (2) **reproduce with two simulators** (signalling + audio-only WebRTC work there) and/or the integration test driving two cores through staging, with a fake media track;
+     - (3) **report the root cause(s) before fixing**;
+     - (4) fix: the delivery of call ops (**fetch immediately on call-op nudge; poll every 1 s during ringing/connecting as a fallback**), ICE candidate buffering, the audio-session activation order, the idempotent end/teardown (no crash on double end);
+     - (5) a **30 s connect timeout** → "Call failed" + a clean teardown;
+     - (6) **test end-call from both sides in all states** (ringing, connecting, connected) with no crash;
+     - (7) verify the `turn-credentials` 200 on staging from the app's session.
+   - **The user then re-tests on two phones and shares the diagnostics logs.**
 2. **LIME-115:** group row actions, owner-only Delete group, Clear messages, default group names (drafted, above).
 3. **LIME-112:** group calls (LiveKit, self-hosted; **not yet drafted**; cost principles under LIME-111).
 3. **LIME-113:** account deletion + Report (drafted).
