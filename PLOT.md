@@ -95,7 +95,13 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
      - (7) verify the `turn-credentials` 200 on staging from the app's session.
    - **The user then re-tests on two phones and shares the diagnostics logs.**
 2. **LIME-115:** group row actions, owner-only Delete group, Clear messages, default group names (drafted, above).
-1d. **LIME-111-fix2 (NEXT, drafted 2026-10-10 from both phones' diagnostics logs). Calls still don't connect after `a45e697`.** See "### LIME-111-fix2". LIME-116 waits for it.
+1d. **LIME-111-fix2 LANDED as `95d4416` (pushed, 2026-10-10).**
+   - **The root cause is confirmed by reproduction:** sends run one after another under `protocol_lock` (about 1 s each, so 30 candidates = 30 s) and starved the fetch.
+   - **The fix:** candidates go inside the SDP (1 op per side), the fetch runs outside the lock, and there is a dedicated `fetchCallOps`.
+   - **The residual:** a send still holds the lock across its HTTP, so expect about 4–5 s from answer to connected. The next lever is to prepare under the lock, send after, and commit on success; do it only if the logs show waits.
+   - **Waiting on the user's two-phone gate**, then plot pulls the logs over USB ("logs").
+   - (Original entry:) **LIME-111-fix2 (drafted 2026-10-10 from both phones' diagnostics logs). Calls still don't connect after `a45e697`.** See "### LIME-111-fix2". LIME-116 waits for it.
+1e. **LIME-111-fix3 (NEXT, drafted 2026-10-10 from the second logs):** after one good call (18:08), nothing from Jean reached Shem; Shem → Jean kept working. See "### LIME-111-fix3". LIME-116 waits.
 2b. **LIME-116 (DESIGN-08): the Calls tab**, drafted 2026-10-10, after 111-fix and **before 112b**; C1 is open (lean A). Then **LIME-117: call links**, after 112b (drafted; C2 = A, C3 = on).
 3. **LIME-112b:** group calls (LiveKit, self-hosted). **READY (plot, 2026-10-10); the user decided D1 = B, D2 = B with 10, D3 = A.** Send it only **after LIME-111-fix passes the two-phone gate**. See "### LIME-112b".
 3. **LIME-113:** account deletion + Report (drafted).
@@ -2666,6 +2672,96 @@ If anything contradicts this brief, stop and ask the user.
   - a 720p cap (480p default on mobile data);
   - LiveKit Cloud is never used (open-source requirement).
 - **Rough monthly at the pilot scale:** TURN ~$7–21 + LiveKit (CPX21–CPX31) only when group calls launch; overage traffic ~€1/TB (US, verify).
+
+### LIME-111-fix3 → `tend` (lime-aa) (NEXT): find where Jean → Shem ops go, then fix it; a 1 s gather cap; retry TURN credentials
+**The evidence** (`~/Downloads/call-logs2/{jean,shem}/call-diagnostics.log`, tend's read plus plot's check, 2026-10-10):
+- **18:08 Jean → Shem video connected end to end** (the offer arrived in 1.5 s, the answer was applied 1 s after it was sent, the media came up, and both sides ended cleanly). **fix2 works when ops are delivered.**
+- **After 18:08:26, Shem's log has no `recv` at all**, although Jean's sends all say ok:
+  - her `call.end` at 18:09:12;
+  - her answer at 18:53;
+  - her offers at 18:52:32, 18:55:18 and 18:55:56;
+  - her ends at 18:53:00, 18:53:43, 18:55:46 and 18:56:11.
+- **Shem → Jean kept working** (Shem's 18:53 offer reached Jean in 1.5 s).
+- Every `fetch ok … N items` on both phones says 0, **even on Jean when she did receive the answer**, so that count is not a count of call ops and tells us nothing.
+- **Plot read `fetch_mailbox` / `sync` / `fetch_call_ops` (`core/src/client.rs`):** items are inserted into `pending` before `mailbox-ack`, and both paths then run `retry_pending`. That looks safe, so the ops are in one of three places:
+  - **(a)** on the server for Shem's device, never fetched;
+  - **(b)** fetched into Shem's `pending` table and kept undecryptable (`Outcome::Keep`);
+  - **(c)** never addressed to Shem's current device (Jean's view of Shem's devices or sessions is stale).
+- **Also seen:**
+  - ICE gathering hit the 2.5 s cap in 14 of 16 calls, and the relay candidates were already in by then;
+  - one call had no relay because `turn-credentials` failed with a network error on Jean, and that offer also failed;
+  - Shem's 18:31 offer never reached Jean, but Jean's app was closed then (the known no-push limit).
+- **Severity:** if (b) or (c) also hits ordinary messages, **this is a messaging bug, not just a calls bug**. The user's text test (below) tells us.
+
+**Goal:** know with evidence which of (a), (b) or (c) swallowed Jean → Shem ops, fix that cause so both directions keep working through repeated calls, and trim the 2.5 s gather wait.
+
+**Capabilities assumed:**
+- edit files, run commands, simulators, commit and push;
+- **read-only SQL on staging with the service role** (no writes, no deletes);
+- `devicectl` copying when the phones are plugged in.
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: locate (read-only, no code changes), then report to the user before fixing**
+1. **Staging DB:** for mailbox rows from Jean's user to Shem's user since 18:09 on 2026-10-10 (and today's test window), report:
+   - which device ids they were addressed to;
+   - whether they are still present (not acked) or gone;
+   - Shem's **currently registered** device ids (and whether the phone's own device id, from the app, is among them);
+   - any duplicate or stale devices for Shem.
+   - No message content; ids, counts and timestamps only.
+2. **Reading it:**
+   - rows addressed to Shem's live device and **not acked** → (a), Shem's fetch: look at the `after` cursor, `has_more`, and the device id it fetches with;
+   - rows **acked** → (b): they're in Shem's `pending`;
+   - rows addressed to **another** device id, or none at all → (c): look at Jean's device list and session for Shem.
+3. **If (b):** add a Debug-only readout (About → "Pending items: N, by reason") **or** a diagnostics line after every fetch ("pending N: reason=count…"), and get the reasons from Shem's phone (the user plugs it in).
+4. **A two-core repro of the 18:08 sequence through staging:** A calls B, B answers, both end, then **B → A** (call ops and **one text message**) must arrive. Also run **crossed calls** (both call within 2 s). Report whether it reproduces.
+
+**STOP and report the finding (a, b or c, with the evidence) to the user before the fix.**
+
+---
+
+**Phase 2: the fix**
+- **Fix the cause found.** If the fix touches Olm session handling (e.g. a session that one side replaced, or prekey-message handling after crossed sessions), **describe it to the user before changing core crypto.**
+- Add a regression test from the Phase 1 repro.
+- **Glare (crossed calls):** if both phones offer to each other within the ring window, the lower user id's offer wins and the other side treats its own as superseded (no "busy", no stuck state). Test it.
+
+---
+
+**Phase 3: smaller items**
+1. **The gather cap goes from 2.5 s to 1.0 s**, but only once at least one relay candidate is in (if a relay is configured); otherwise wait up to 2.5 s. Late candidates go in the existing batch op.
+2. **`turn-credentials`:** retry once after 1 s on a network error. If it still fails, log "relay unavailable" and **still place the call** (direct/srflx may work) instead of failing it.
+3. **Diagnostics:** replace the misleading "N items" with "downloaded D, stored S, call ops C, pending P". Log the device id's last 4 characters at app start, to match against the server.
+4. **The caller can tell it's ringing** (the user, 2026-10-10: "I can't even tell if it's ringing"):
+   - the callee sends a small **`call.ringing { call_id }`** the moment it shows the incoming call (CallKit reported);
+   - the caller shows **"Calling…"** until then and **"Ringing…"** after it, and plays a quiet **ringback tone** (a standard repeating tone, bundled, through the call audio session) until answer or end;
+   - if no `call.ringing` arrives within 10 s, the caller keeps "Calling…" and shows the small hint **"Jean's phone may be off or lime closed"** (the honest no-push limit);
+   - core validates `call.ringing` like the other call ops;
+   - unit-test the state changes.
+
+---
+
+**Verification**
+- the Phase 1 repro, now passing (both directions after a completed call; text and call ops; crossed calls resolve);
+- `cargo test`, clippy 0;
+- iOS unit tests (the gather-cap rule with a fake media layer; the TURN retry; the glare rule);
+- the full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings; Release has no Bluetooth.
+
+**Gate (the user, two phones, lime open on both):**
+- three calls in a row alternating direction (Shem → Jean, Jean → Shem, Shem → Jean), each connecting;
+- a text Jean → Shem after them arrives;
+- then "logs" for plot.
+
+---
+
+**Record:** `## LIME-111-fix3` in `TEND.md`, including the Phase 1 finding.
+
+**Commit:** `fix: <the cause found>; 1 s gather cap after a relay candidate; retry TURN credentials`, trailer `Brief: LIME-111-fix3`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
 
 ### LIME-111-fix2 → `tend` (lime-aa) (NEXT): stop the signalling flood that starves the mailbox (batched ICE, no network under the core lock)
 **The evidence** (plot pulled both phones' `call-diagnostics.log` with `devicectl` on 2026-10-10, 16:56–17:00; the clocks are network time):
