@@ -57,9 +57,12 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 **Record:** `## LIME-115`. Commit: `feat: group row actions (mute/leave/delete), owner-only delete group, clear messages, default group names`, trailer `Brief: LIME-115`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ### The authoritative order (the user, 2026-10-09/10)
-0. **LIME-115 is running first** (the user's choice, 2026-10-10), then:
+0. **LIME-115 landed as `7f17df5`** (group swipe Mute/Leave/Delete-or-Clear, owner-only `group.delete`, Leave now keeps a read-only "You left" row, Clear messages, default first-name group names, round badges). Awaiting the user's gate. Then:
 1. **LIME-111: 1:1 calls** (P2P WebRTC + **self-hosted coturn on Hetzner CPX11, Ashburn**).
-   - **The user is mid-way through buying the Hetzner server** (settings + SSH key steps given). Next: give tend the IPv4; tend runs `infra/turn/setup.sh`; the user adds `turn.limechat.org` A in deSEC; the TURN secret is set via Terminal `read -s`.
+   - **The Hetzner server is CREATED (2026-10-10):** `lime-turn-1`, CPX11, Ashburn VA, Ubuntu 26.04, **IPv4 178.156.199.1**, the user's ed25519 key (shem@MBP.local), project `lime`; the account is under FAMKIND LLC, login accounts@limechat.org; **$21.09/mo excl. VAT** (US plans cost more than EU).
+     - **DNS:** the user adds `turn.limechat.org` A → 178.156.199.1 in deSEC (guided).
+     - Tend then SSHes in as root (key auth) for `infra/turn/setup.sh`.
+   - **(History) The user is mid-way through buying the Hetzner server** (settings + SSH key steps given). Next: give tend the IPv4; tend runs `infra/turn/setup.sh`; the user adds `turn.limechat.org` A in deSEC; the TURN secret is set via Terminal `read -s`.
    - Prompt: "implement LIME-111 (re-read from PLOT.md), commit, push, and stop for my check. In Phase 0 commit PLOT.md only (git add PLOT.md). Stop at the TURN server step and give me the Hetzner setup steps. Keep to the ~60 min soft cap. No /loop wakeups."
 2. **LIME-115:** group row actions, owner-only Delete group, Clear messages, default group names (drafted, above).
 3. **LIME-112:** group calls (LiveKit, self-hosted; **not yet drafted**; cost principles under LIME-111).
@@ -75,8 +78,22 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 - Is the avatar→status sheet→Settings change OK? (LIME-108)
 - Gate checks pending on recent briefs (102b-fix: chime without touching Settings on iPhone + iPad).
 - Apple enrolment: individual vs FAMKIND (D-U-N-S); use shem@limechat.org.
-- Migadu: add a card → Jean's mailbox + aliases (hello, support, privacy, security, safety, accounts, dmarc) → connect Nextcloud Mail → move service accounts to accounts@.
+- **Migadu DONE (2026-10-10):**
+  - the Micro plan paid (renews 2027-10-10);
+  - mailboxes shem@ (active), jean@ (pending invite), admin@ (default);
+  - aliases: postmaster→admin; accounts/dmarc/privacy/security/abuse→shem; hello/support/safety→jean+shem.
+  - postmaster→shem (done; the forwarding page is external-only, so it isn't used).
+  - **Remaining:** connect Nextcloud Mail (IMAP `imap.migadu.com:993`, SMTP `smtp.migadu.com:465`); move service accounts to accounts@; use shem@limechat.org for Apple enrolment.
 - DPAs to sign; a lawyer review (licences, trademark "LimeChat", policies).
+
+### BRAND RULE (the user, 2026-10-10): **"lime" is always lowercase**, like the logo
+- It applies everywhere in UI, notifications, permission strings, the App Store display name, the website, emails, docs prose, and project names (Hetzner project `lime`).
+- **Even at the start of a sentence** ("lime uses the camera…").
+- **Exceptions:**
+  - **legal entity names** keep their registered form (e.g. FAMKIND LLC; the future foundation/LLC as filed);
+  - **code identifiers** don't change (`Lime.xcodeproj`, `LimeCore`, the bundle id stay).
+- **Implementation:** fold a full user-facing string sweep "Lime" → "lime" into **LIME-109** (which already moves every string into String Catalogs). Until then, new briefs use lowercase.
+- The App Store name, e.g. "lime: teacher messaging" (lowercase is allowed).
 
 ### Standing rules (also in the sections below)
 - Tend Phase 0: `git add PLOT.md` only.
