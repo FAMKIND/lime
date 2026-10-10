@@ -161,6 +161,10 @@ pub struct MessageItem {
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ConversationSummary {
+    /// When the newest thing happened (a message, a reply or a reaction), milliseconds: what the list shows and sorts by.
+    pub activity_at: i64,
+    /// Set when the newest thing is a reaction (newer than the last message).
+    pub last_reaction: Option<message_ops::ReactionActivity>,
     pub id: String,
     pub title: String,
     pub is_group: bool,
@@ -273,8 +277,10 @@ impl LimeStore {
                  FROM conversations c
                  WHERE c.request_state NOT IN ('blocked', 'left') AND c.hidden = 0
                  ORDER BY c.is_pinned DESC,
-                          COALESCE((SELECT MAX(m.sent_at) FROM messages m
-                                    WHERE m.conversation_id = c.id), 0) DESC,
+                          max(COALESCE((SELECT MAX(m.sent_at) FROM messages m
+                                        WHERE m.conversation_id = c.id), 0),
+                              COALESCE((SELECT MAX(CAST(substr(r.hlc, 1, 13) AS INTEGER)) FROM reactions r JOIN messages m ON m.id = r.message_id
+                                        WHERE m.conversation_id = c.id AND r.active = 1 AND m.hidden = 0 AND m.deleted = 0), 0)) DESC,
                           c.id",
             )
             .map_err(db_err)?;
@@ -300,7 +306,12 @@ impl LimeStore {
         let mut summaries = Vec::with_capacity(rows.len());
         for (id, title, is_group, is_pinned, unread, request_state, key_change_pending, group_emoji, verified, marked_unread) in rows {
             let (latest, last_is_reply) = latest_activity(&conn, &id)?;
+            // A reaction newer than the last message is the newest thing (no unread, no notification: it only shows in the preview).
+            let reaction = message_ops::latest_reaction(&conn, &id, &my_user_id(&conn)).filter(|r| latest.as_ref().is_none_or(|m| r.at > m.sent_at));
+            let activity_at = reaction.as_ref().map(|r| r.at).or(latest.as_ref().map(|m| m.sent_at)).unwrap_or(0);
             summaries.push(ConversationSummary {
+                activity_at,
+                last_reaction: reaction,
                 last_message: latest,
                 last_is_reply,
                 members: members_of(&conn, &id)?,

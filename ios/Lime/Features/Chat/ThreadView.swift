@@ -71,10 +71,6 @@ struct ThreadView: View {
                              onDelete: { actions.deleting = messages.filter { selection.contains($0.id) } },
                              onForward: { actions.requestForward(messages.filter { selection.contains($0.id) }, store: store) })
             } else {
-            VStack(spacing: 0) {
-            if let root = messages.first {
-                ReplyContext(root: root, conversation: conversation, compact: true) { dismiss() }
-            }
             ChatComposer(model: composerModel, onSend: { markdown in
                 Task { await store.sendReply(markdown, root: target.rootID, in: target.conversationID) }
             }, onSendAttachments: { items, caption in
@@ -82,7 +78,6 @@ struct ThreadView: View {
             }, onSendPreview: { markdown, preview in
                 Task { await store.sendNow(markdown, preview: preview, in: target.conversationID, replyTo: target.rootID) }
             })
-            }
             }
         }
         .safeAreaInset(edge: .top) {

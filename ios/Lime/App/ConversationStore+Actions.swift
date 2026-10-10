@@ -97,6 +97,12 @@ extension ConversationStore {
             }
             message.reactions = chips
         }
+        // A reaction is the newest thing in the chat's row ("You reacted 👍 to …"); it changes no unread count.
+        if on, let c = conversations.firstIndex(where: { $0.messages.contains { $0.id == messageID } }),
+           let target = conversations[c].messages.first(where: { $0.id == messageID }) {
+            conversations[c].lastReaction = ReactionPreview(emoji: emoji, reactorName: nil, messageID: messageID, text: messagePlainText(text: target.text))
+            conversations[c].activityAt = Date()
+        }
     }
 
     func demoEdit(_ id: Message.ID, to text: String) { mutate(id) { $0.text = text; $0.edited = true } }

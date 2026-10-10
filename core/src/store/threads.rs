@@ -89,6 +89,13 @@ impl LimeStore {
     /// The thread has been looked at: its unread count goes to zero.
     pub fn mark_thread_read(&self, root_id: String) -> Result<(), StoreError> {
         let conn = self.lock();
+        // The replies were counted in the chat's unread number when they arrived: reading them takes them off it.
+        conn.execute(
+            "UPDATE conversations SET unread = max(unread - COALESCE((SELECT unread FROM thread_state WHERE root_id = ?1), 0), 0)
+             WHERE id = (SELECT conversation_id FROM messages WHERE id = ?1)",
+            params![root_id],
+        )
+        .map_err(db_err)?;
         conn.execute("UPDATE thread_state SET unread = 0 WHERE root_id = ?1 AND unread != 0", params![root_id])
             .map_err(db_err)?;
         Ok(())

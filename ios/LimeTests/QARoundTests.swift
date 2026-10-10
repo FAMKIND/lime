@@ -33,7 +33,7 @@ final class QARoundTests: XCTestCase {
         XCTAssertEqual(reply(nil, "on it", root: root).plain, "Reply to Jean · Who can cover recess duty on Thursday?\nYou: on it")
         XCTAssertEqual(reply("lee", "see you", root: root, group: true).plain, "Reply to Jean · Who can cover recess duty on Thursday?\nLee: see you")
         // A root that is mine, or a picture, reads naturally; one not loaded still says it is a reply.
-        XCTAssertEqual(reply("jean", "ok", root: message("m", from: nil, "my plan")).quote, "Reply to You · my plan")
+        XCTAssertEqual(reply("jean", "ok", root: message("m", from: nil, "my plan")).quote, "Reply to you · my plan")
         XCTAssertEqual(reply("jean", "ok", root: message("p", from: "jean", attachments: [AttachmentItem(id: "p", mime: "image/jpeg", name: "p.jpg", size: 1)])).quote, "Reply to Jean · Photo")
         var stray = message("2", from: "jean", "hi"); stray.threadRoot = "missing"
         XCTAssertEqual(ListPreview.make(chat(last: stray, reply: true)).quote, "Reply in a thread")

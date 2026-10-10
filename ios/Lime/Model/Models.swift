@@ -68,6 +68,15 @@ struct Message: Identifiable, Hashable, Sendable {
     var isSystem: Bool { state == .system }
 }
 
+/// "Jean reacted ❤️ to “True that”" in a Messages row.
+struct ReactionPreview: Hashable, Sendable {
+    let emoji: String
+    /// `nil` when it was me.
+    let reactorName: String?
+    let messageID: String
+    let text: String
+}
+
 /// A link card under a message: the page's title and site, and a picture (an encrypted attachment).
 struct LinkPreviewItem: Hashable, Sendable {
     let url: String
@@ -154,6 +163,10 @@ struct Conversation: Identifiable, Hashable, Sendable {
     var latestIsReply = false
     /// I marked it unread by hand.
     var markedUnread = false
+    /// The newest thing is a reaction (shown in the Messages preview; it changes no unread count).
+    var lastReaction: ReactionPreview?
+    /// When the newest thing happened (a reaction counts): what the row's time shows.
+    var activityAt: Date?
 
     var isGroup: Bool { isGroupChat || members.count > 1 }
     var subtitle: String { isGroup ? "\(members.count + 1) members" : "" }
@@ -189,7 +202,9 @@ extension Conversation {
             isPinned: summary.isPinned, unread: Int(summary.unread),
             isRequest: summary.requestState == "pending", keyChangePending: summary.keyChangePending, verified: summary.verified,
             isGroupChat: summary.isGroup, emoji: summary.groupEmoji,
-            latest: summary.lastMessage.map(Message.init), latestIsReply: summary.lastIsReply, markedUnread: summary.markedUnread)
+            latest: summary.lastMessage.map(Message.init), latestIsReply: summary.lastIsReply, markedUnread: summary.markedUnread,
+            lastReaction: summary.lastReaction.map { ReactionPreview(emoji: $0.emoji, reactorName: $0.reactorId == nil ? nil : $0.reactorName, messageID: $0.messageId, text: $0.text) },
+            activityAt: summary.activityAt > 0 ? Date(timeIntervalSince1970: Double(summary.activityAt) / 1000) : nil)
     }
 }
 

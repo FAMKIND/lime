@@ -2590,6 +2590,79 @@ fn availability_says_until_when_a_file_is_on_the_server_and_none_once_it_is_gone
 }
 
 #[test]
+fn a_reaction_is_the_newest_thing_in_the_chat_list_without_an_unread_or_a_new_message() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    befriend(&alice, &carol, &transport);
+    let (to_bob, to_carol) = (format!("dm:{}", bob.user), format!("dm:{}", carol.user));
+    let old = alice.store.queue_text(to_bob.clone(), "True that".into()).unwrap();
+    alice.store.queue_text(to_carol.clone(), "newer chat".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let summary = |chat: &str| alice.store.list_conversations().unwrap().into_iter().find(|c| c.id == chat).unwrap();
+    assert!(summary(&to_bob).last_reaction.is_none());
+    let unread_before = summary(&to_bob).unread;
+    let order: Vec<String> = alice.store.list_conversations().unwrap().into_iter().map(|c| c.id).collect();
+    assert_eq!(order[0], to_carol, "the newer chat is first");
+
+    // Bob reacts to the older message: that chat now has the newest activity, and says so; nothing is unread.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    bob.store.accept_request(format!("dm:{}", alice.user)).unwrap();
+    bob.store.react(format!("dm:{}", alice.user), old.id.clone(), "❤️".into(), true).unwrap();
+    bob.store.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    sync(&alice, &transport);
+    let now = summary(&to_bob);
+    let reaction = now.last_reaction.clone().expect("a reaction preview");
+    assert_eq!((reaction.emoji.as_str(), reaction.text.as_str(), reaction.reactor_id.as_deref()), ("❤️", "True that", Some(bob.user.as_str())));
+    assert_eq!(now.unread, unread_before, "a reaction is not unread");
+    assert_eq!(now.last_message.as_ref().unwrap().text, "True that", "the last message is unchanged");
+    assert!(now.activity_at >= now.last_message.as_ref().unwrap().sent_at);
+    let order: Vec<String> = alice.store.list_conversations().unwrap().into_iter().map(|c| c.id).collect();
+    assert_eq!(order[0], to_bob, "and its row moves up");
+
+    // My own reaction reads as mine; a newer message takes the preview back.
+    alice.store.react(to_carol.clone(), alice.store.list_messages(to_carol.clone()).unwrap()[0].id.clone(), "👍".into(), true).unwrap();
+    assert_eq!(summary(&to_carol).last_reaction.unwrap().reactor_id, None);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    alice.store.queue_text(to_bob.clone(), "and another thing".into()).unwrap();
+    assert!(summary(&to_bob).last_reaction.is_none(), "a newer message is the preview again");
+}
+
+#[test]
+fn reading_only_the_replies_clears_the_chat_and_a_hand_made_mark_is_cleared_by_reading() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let to_bob = format!("dm:{}", bob.user);
+    let root = alice.store.queue_text(to_bob.clone(), "who can cover recess?".into()).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let unread = |chat: &str| alice.store.list_conversations().unwrap().into_iter().find(|c| c.id == chat).unwrap();
+    alice.store.mark_read(to_bob.clone()).unwrap();
+    assert_eq!(unread(&to_bob).unread, 0);
+
+    // A reply arrives and counts; reading only the Replies clears the chat's number too, and the thread's.
+    reply(&bob, &alice, &transport, &root.id, "I can");
+    sync(&alice, &transport);
+    assert_eq!(unread(&to_bob).unread, 1);
+    assert_eq!(alice.store.list_thread_summaries(to_bob.clone()).unwrap()[0].unread, 1);
+    alice.store.mark_thread_read(root.id.clone()).unwrap();
+    assert_eq!(unread(&to_bob).unread, 0, "reading the replies took them off the chat's number");
+    assert_eq!(alice.store.list_thread_summaries(to_bob.clone()).unwrap()[0].unread, 0);
+
+    // Marked unread by hand (no number): opening the chat clears the mark.
+    alice.store.set_marked_unread(to_bob.clone(), true).unwrap();
+    let c = unread(&to_bob);
+    assert!(c.marked_unread && c.unread == 0);
+    alice.store.mark_read(to_bob.clone()).unwrap();
+    assert!(!unread(&to_bob).marked_unread, "reading clears the hand-made mark");
+}
+
+#[test]
 fn an_edit_or_delete_that_arrives_before_its_message_waits_for_it() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);

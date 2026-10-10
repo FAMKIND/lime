@@ -5,8 +5,8 @@ struct MessagesView: View {
     @Environment(AccountSession.self) private var session
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    /// The screen's own inset on the trailing side in landscape (the notch side), which the floating + sits inside.
-    @State private var sideInset: CGFloat = 0
+    /// The screen's own insets on the leading and trailing sides in landscape (the notch side).
+    @State private var sideInsets: (CGFloat, CGFloat) = (0, 0)
     @State private var showAbout = false
     @State private var showNewMessage = false
     @State private var showSettings = false
@@ -49,8 +49,9 @@ struct MessagesView: View {
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
         }
-        .safeAreaBar(edge: .bottom) { DockBar().padding(.bottom, 8) }
-        .overlay(alignment: .bottomTrailing) { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) }
+        .readSideInsets($sideInsets)
+        .safeAreaBar(edge: .bottom) { bottomControls }
+        .overlay(alignment: .bottomTrailing) { if verticalSizeClass != .compact { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) } }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -83,14 +84,24 @@ struct MessagesView: View {
             Theme.canvas.ignoresSafeArea()
             list(top: 76, bottom: 170)
         }
+        .readSideInsets($sideInsets)
         .overlay(alignment: .top) { TopFade() }
         .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }, onSettings: { showSettings = true }) }
-        .overlay(alignment: .bottomTrailing) { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) }
-        .overlay(alignment: .bottom) { DockBar().padding(.bottom, 8) }
+        .overlay(alignment: .bottomTrailing) { if verticalSizeClass != .compact { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) } }
+        .overlay(alignment: .bottom) { bottomControls }
         .toolbar(.hidden, for: .navigationBar)
     }
 
     // MARK: Shared
+
+    /// The dock; in landscape the + sits beside it (a floating + would cover the rows' times there).
+    private var bottomControls: some View {
+        HStack(spacing: 14) {
+            DockBar()
+            if verticalSizeClass == .compact { newMessageButton }
+        }
+        .padding(.bottom, 8)
+    }
 
     private func list(top: CGFloat, bottom: CGFloat) -> some View {
         List {
@@ -107,7 +118,7 @@ struct MessagesView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             ForEach(store.chats) { conversation in
-                Button { store.path.append(conversation.id) } label: { ConversationRow(conversation: conversation) }
+                Button { store.path.append(conversation.id) } label: { ConversationRow(conversation: conversation, leadingInset: sideInsets.0 > 0 ? 22 : 0, trailingInset: sideInsets.1 > 0 ? 18 : 0) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("conversation-row-\(conversation.id)")
                     .listRowInsets(EdgeInsets())
@@ -142,13 +153,12 @@ struct MessagesView: View {
         .scrollContentBackground(.hidden)
         .contentMargins(.top, top, for: .scrollContent)
         .contentMargins(.bottom, bottom, for: .scrollContent)
-        // In landscape the floating + would sit over the times: the list stops short of it (beyond the screen's own side inset).
-        .background(GeometryReader { proxy in
-            Color.clear
-                .onAppear { sideInset = proxy.safeAreaInsets.trailing }
-                .onChange(of: proxy.safeAreaInsets.trailing) { _, value in sideInset = value }
-        })
-        .padding(.trailing, verticalSizeClass == .compact ? 92 + sideInset : 0)
+        // The list spans the whole screen (its scroll indicator at the screen's edge); the rows keep to the header's margins. On a
+        // phone with a notch the system puts the header 38 pt in from the left edge and 34 pt from the right in landscape (measured
+        // on the iPhone 13 mini and 18 Pro), and 16 pt without one.
+        .ignoresSafeArea(.container, edges: .horizontal)
+        // Back from a chat the rows are read again, so a row never shows an unread state that was already cleared.
+        .task(id: store.path.count) { if store.path.isEmpty { await store.reload() } }
         .accessibilityIdentifier("messages-list")
         .refreshable { await store.pullToRefresh() }
         .animation(.snappy, value: store.chats.map(\.id))
@@ -404,7 +414,12 @@ struct ListPreview: Equatable {
     /// For reply activity: what it answers, "Reply to Jean · Who can cover recess duty?" (shown above the reply, with a quote bar).
     var quote: String?
 
-    var plain: String { (quote.map { $0 + "\n" } ?? "") + prefix + text }
+    /// The words of the second line (the reply itself; for a reaction, the whole sentence).
+    var body: String { prefix + text }
+    var plain: String { (quote.map { $0 + "\n" } ?? "") + body }
+
+    /// For a reaction in a chat: "Jean reacted ❤️ to “True that”".
+    var isReaction = false
 
     /// "Jean" or "You" for a message, by its first name.
     private static func name(of message: Message, in conversation: Conversation) -> String? {
@@ -421,6 +436,17 @@ struct ListPreview: Equatable {
     }
 
     static func make(_ conversation: Conversation) -> ListPreview {
+        // A reaction newer than the last message is the newest thing: "Jean reacted ❤️ to “True that”".
+        if let reaction = conversation.lastReaction {
+            let who = reaction.reactorName.map { String($0.split(separator: " ").first ?? "") } ?? "You"
+            let target = conversation.messages.first { $0.id == reaction.messageID }
+            var gist = reaction.text.trimmingCharacters(in: .whitespaces)
+            if gist.isEmpty, let target { gist = Self.gist(target) }
+            let tail = gist.isEmpty ? "a message" : "“\(gist)”"
+            var line = ListPreview(text: "\(who) reacted \(reaction.emoji) to \(tail)")
+            line.isReaction = true
+            return line
+        }
         guard let last = conversation.lastMessage else { return ListPreview() }
         if last.isSystem { return ListPreview(text: last.text) }
         if last.deleted { return ListPreview(text: "This message was deleted") }
@@ -431,7 +457,8 @@ struct ListPreview: Equatable {
             let root = last.threadRoot.flatMap { id in conversation.messages.first { $0.id == id } }
             if let root, let author = name(of: root, in: conversation) {
                 let gist = gist(root)
-                line.quote = gist.isEmpty ? "Reply to \(author)" : "Reply to \(author) · \(gist)"
+                let who = author == "You" ? "you" : author
+                line.quote = gist.isEmpty ? "Reply to \(who)" : "Reply to \(who) · \(gist)"
             } else {
                 line.quote = "Reply in a thread"
             }
@@ -453,6 +480,9 @@ struct ListPreview: Equatable {
 
 struct ConversationRow: View {
     let conversation: Conversation
+    /// The screen's side insets in landscape, added to the 16 pt page margin so rows line up with the header.
+    var leadingInset: CGFloat = 0
+    var trailingInset: CGFloat = 0
     @Environment(NotificationCoordinator.self) private var notifications
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 52
 
@@ -461,7 +491,7 @@ struct ConversationRow: View {
 
     private var line: ListPreview { ListPreview.make(conversation) }
     private var preview: String { line.plain }
-    private var time: String { MessageFormat.listTime(conversation.lastMessage?.date) }
+    private var time: String { MessageFormat.listTime(conversation.activityAt ?? conversation.lastMessage?.date) }
     /// My private label for the person (a one-to-one chat).
     private var label: String? { conversation.isGroup ? nil : conversation.members.first?.label }
     /// A picture or video in the newest message: its tiny thumbnail goes at the trailing edge.
@@ -512,6 +542,7 @@ struct ConversationRow: View {
                         .font(Theme.secondary)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize()
+                        .accessibilityIdentifier("row-time-\(conversation.id)")
                 }
                 HStack(alignment: .center, spacing: 8) {
                     previewBlock
@@ -539,12 +570,12 @@ struct ConversationRow: View {
             }
         }
         // The avatar starts at the page margin, under the logo; the unread dot hangs in the margin to its left.
-        .padding(.horizontal, 16)
+        .padding(.leading, 16 + leadingInset).padding(.trailing, 16 + trailingInset)
         .padding(.vertical, 15)
         .overlay(alignment: .topLeading) {
             if conversation.isUnread {
                 Circle().fill(Theme.accent).frame(width: 8, height: 8)
-                    .offset(x: 4, y: 15 + avatarSize / 2 - 4)
+                    .offset(x: 4 + leadingInset, y: 15 + avatarSize / 2 - 4)
                     .accessibilityIdentifier("unread-dot-\(conversation.id)")
             }
         }
@@ -565,6 +596,7 @@ struct ConversationRow: View {
                         .accessibilityIdentifier("row-quote-\(conversation.id)")
                 }
                 previewText.font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    .accessibilityIdentifier("row-line2-\(conversation.id)")
             }
         } else {
             previewText.font(Theme.secondary.weight(conversation.isUnread ? .semibold : .regular))
@@ -575,7 +607,7 @@ struct ConversationRow: View {
     /// The preview with its symbol (a camera for a picture, a microphone for a voice message...).
     private var previewText: Text {
         if let symbol = line.symbol { return Text("\(line.prefix)\(Image(systemName: symbol)) \(line.text)") }
-        return Text(line.plain)
+        return Text(line.body)
     }
 }
 
@@ -594,5 +626,17 @@ private struct LowStorageBanner: View {
         .padding(.horizontal, 8).padding(.bottom, 8)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("low-storage-banner")
+    }
+}
+
+extension View {
+    /// Reads the screen's own leading and trailing insets (non-zero in landscape on a phone with a notch), from a view that respects them.
+    func readSideInsets(_ insets: Binding<(CGFloat, CGFloat)>) -> some View {
+        background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { insets.wrappedValue = (proxy.safeAreaInsets.leading, proxy.safeAreaInsets.trailing) }
+                .onChange(of: proxy.safeAreaInsets.leading) { _, value in insets.wrappedValue.0 = value }
+                .onChange(of: proxy.safeAreaInsets.trailing) { _, value in insets.wrappedValue.1 = value }
+        })
     }
 }

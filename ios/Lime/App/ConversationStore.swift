@@ -416,14 +416,21 @@ final class ConversationStore {
 
     /// The chat is open: its unread count goes to zero.
     func markRead(_ id: Conversation.ID) async {
-        guard let index = conversations.firstIndex(where: { $0.id == id }), conversations[index].unread > 0 else { return }
+        // Unread by new messages or by a hand-made mark: opening the chat clears either (a chat marked unread has no number).
+        guard let index = conversations.firstIndex(where: { $0.id == id }), conversations[index].isUnread else { return }
         conversations[index].unread = 0
-        if let notifications { await notifications.chatOpened(id); await notifications.updateBadge(unreadChats: conversations.filter { $0.unread > 0 }.count) }
+        conversations[index].markedUnread = false
+        if let notifications { await notifications.chatOpened(id); await notifications.updateBadge(unreadChats: conversations.filter(\.isUnread).count) }
         #if DEBUG
         if isDemo { return }
         #endif
         guard let core else { return }
         try? await Task.detached(priority: .userInitiated) { try core.markRead(conversationId: id) }.value
+        // A reload that started before the store was told may have brought the old state back: say it again, so the row never goes stale.
+        if let again = conversations.firstIndex(where: { $0.id == id }), conversations[again].isUnread {
+            conversations[again].unread = 0
+            conversations[again].markedUnread = false
+        }
     }
 
     #if DEBUG
@@ -533,7 +540,7 @@ final class ConversationStore {
         }
         let arrivals = detector.arrivals(among: candidates)
         if !arrivals.isEmpty { await notifications.announce(arrivals) }
-        await notifications.updateBadge(unreadChats: conversations.filter { $0.unread > 0 }.count)
+        await notifications.updateBadge(unreadChats: conversations.filter(\.isUnread).count)
     }
 
     // MARK: Threads
@@ -565,6 +572,8 @@ final class ConversationStore {
         if let c = conversations.firstIndex(where: { $0.id == conversationID }),
            let m = conversations[c].messages.firstIndex(where: { $0.id == root }), let info = conversations[c].messages[m].thread, info.unread > 0 {
             conversations[c].messages[m].thread = ThreadInfo(replyCount: info.replyCount, lastReplyAt: info.lastReplyAt, repliers: info.repliers, unread: 0)
+            // Those replies were part of the chat's unread number.
+            conversations[c].unread = max(conversations[c].unread - info.unread, 0)
         }
         #if DEBUG
         if isDemo { return }
@@ -822,6 +831,8 @@ final class ConversationStore {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         let message = Message(id: UUID().uuidString, senderID: nil, text: text, date: Date(), state: .sending)
         conversations[index].messages.append(message)
+        conversations[index].lastReaction = nil
+        conversations[index].activityAt = nil
         Task {
             try? await Task.sleep(for: .seconds(1.5))
             if let c = conversations.firstIndex(where: { $0.id == id }),

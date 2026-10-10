@@ -46,6 +46,44 @@ pub struct Reaction {
     pub people: Vec<String>,
 }
 
+/// The newest reaction in a chat, for its row in Messages ("Jean reacted ❤️ to …").
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ReactionActivity {
+    pub emoji: String,
+    /// Who reacted; `None` when it was me.
+    pub reactor_id: Option<String>,
+    pub reactor_name: String,
+    pub message_id: String,
+    /// The words of the message reacted to (shortened), empty for a picture or file.
+    pub text: String,
+    pub at: i64,
+}
+
+pub(crate) fn latest_reaction(conn: &Connection, conversation_id: &str, me: &str) -> Option<ReactionActivity> {
+    conn.query_row(
+        "SELECT r.emoji, r.user_id, COALESCE(p.name, r.user_id), r.message_id, m.plain, CAST(substr(r.hlc, 1, 13) AS INTEGER)
+         FROM reactions r JOIN messages m ON m.id = r.message_id LEFT JOIN people p ON p.id = r.user_id
+         WHERE m.conversation_id = ?1 AND r.active = 1 AND m.hidden = 0 AND m.deleted = 0
+         ORDER BY r.hlc DESC, r.user_id LIMIT 1",
+        params![conversation_id],
+        |r| {
+            let user: String = r.get(1)?;
+            let plain: Option<String> = r.get(4)?;
+            Ok(ReactionActivity {
+                emoji: r.get(0)?,
+                reactor_name: r.get(2)?,
+                reactor_id: (user != me && user != super::ME_ID).then_some(user),
+                message_id: r.get(3)?,
+                text: plain.unwrap_or_default().chars().take(80).collect(),
+                at: r.get(5)?,
+            })
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
 pub(crate) fn reactions_for(conn: &Connection, message_id: &str, me: &str) -> Vec<Reaction> {
     let Ok(mut statement) = conn.prepare(
         "SELECT r.emoji, r.user_id, COALESCE(p.name, r.user_id)
