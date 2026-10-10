@@ -222,6 +222,10 @@ pub struct LimeStore {
     pub(crate) pickle_key: [u8; 32],
     /// Serialises register, send and sync, so two of them never interleave their network calls.
     pub(crate) protocol_lock: Mutex<()>,
+    /// Only one mailbox fetch at a time (the fetch itself runs outside `protocol_lock`).
+    pub(crate) fetch_lock: Mutex<()>,
+    /// The longest wait for `protocol_lock` since the app last asked, in ms (call diagnostics).
+    pub(crate) lock_wait_ms: std::sync::atomic::AtomicU64,
 }
 
 pub(crate) fn db_err(_: rusqlite::Error) -> StoreError {
@@ -701,6 +705,8 @@ impl LimeStore {
             conn: Mutex::new(conn),
             pickle_key: crate::keys::derive_pickle_key(key),
             protocol_lock: Mutex::new(()),
+            fetch_lock: Mutex::new(()),
+            lock_wait_ms: std::sync::atomic::AtomicU64::new(0),
         })
     }
 }

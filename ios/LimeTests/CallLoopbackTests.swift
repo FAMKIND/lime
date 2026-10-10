@@ -33,10 +33,12 @@ private final class PairMedia: CallMedia {
     private func describe(_ fingerprint: String) -> String {
         haveLocal = true
         // The engine finds its candidates the moment a description is set, before the op carrying it has gone out.
-        onCandidate?("candidate:1 1 udp 1 10.0.0.1 1 typ host", "0", 0)
-        onCandidate?("candidate:2 1 udp 1 10.0.0.2 2 typ relay", "0", 0)
+        for i in 0..<30 { onCandidate?("candidate:\(i) 1 udp 1 10.0.0.\(i) 1 typ host", "0", 0) }
         return "v=0\r\na=fingerprint:sha-256 \(fingerprint)\r\n"
     }
+
+    /// Candidates found after the description went out.
+    func emitLate(_ count: Int) { for i in 0..<count { onCandidate?("candidate:L\(i) 1 udp 1 10.9.0.\(i) 1 typ relay", "0", 0) } }
 
     func maybeConnect() { if connectsWhenReady && haveLocal && haveRemote { onConnection?(true) } }
 }
@@ -106,12 +108,26 @@ final class CallLoopbackTests: XCTestCase {
         }
     }
 
-    func testMyCandidatesNeverGoBeforeMyDescription() async {
+    func testAThirtyCandidateCallIsOnlyAFewOps() async {
         let (a, b) = pair()
         await connect(a, b)
-        XCTAssertEqual(boxA.sent.first, "call.offer")
-        XCTAssertEqual(boxB.sent.first, "call.answer")
-        XCTAssertEqual(boxA.sent.filter { $0 == "call.ice" }.count, 2)
+        // The candidates were gathered before the description went out, so they travel inside it: one op each way.
+        XCTAssertEqual(boxA.sent, ["call.offer"])
+        XCTAssertEqual(boxB.sent, ["call.answer"])
+        // Ones found later go together, in one op, at most once a second.
+        mediaA.emitLate(12)
+        await wait(3) { self.boxA.sent.count == 2 }
+        XCTAssertEqual(boxA.sent, ["call.offer", "call.ice"])
+        await a.end()
+    }
+
+    func testBatchedLateCandidatesReachTheOtherSide() async {
+        let (a, b) = pair()
+        await connect(a, b)
+        mediaA.emitLate(5)
+        await wait(4) { self.mediaB.candidates.count >= 5 }
+        XCTAssertEqual(mediaB.candidates.count, 5)
+        await b.end()
     }
 
     func testCandidatesThatArriveBeforeTheirOfferAreKept() async {

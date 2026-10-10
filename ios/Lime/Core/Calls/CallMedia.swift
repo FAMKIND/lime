@@ -82,7 +82,11 @@ final class WebRTCMedia: NSObject, CallMedia {
         let configuration = RTCConfiguration()
         configuration.iceServers = servers.map { RTCIceServer(urlStrings: $0.urls, username: $0.username, credential: $0.credential) }
         configuration.sdpSemantics = .unifiedPlan
-        configuration.continualGatheringPolicy = .gatherContinually
+        // Few candidates, all bundled on one transport: the fewer there are, the fewer there is to send (TURN over TCP/TLS stays in the servers).
+        configuration.continualGatheringPolicy = .gatherOnce
+        configuration.bundlePolicy = .maxBundle
+        configuration.rtcpMuxPolicy = .require
+        configuration.tcpCandidatePolicy = .disabled
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: ["DtlsSrtpKeyAgreement": "true"])
         guard let connection = Self.factory.peerConnection(with: configuration, constraints: constraints, delegate: self) else { throw CallMediaError.failed }
         self.connection = connection
@@ -122,15 +126,31 @@ final class WebRTCMedia: NSObject, CallMedia {
         let constraints = RTCMediaConstraints(mandatoryConstraints: ["OfferToReceiveAudio": "true", "OfferToReceiveVideo": wantsVideo ? "true" : "false"], optionalConstraints: nil)
         let offer = try await connection.offer(for: constraints)
         try await connection.setLocalDescription(offer)
-        return offer.sdp
+        return await gathered(connection, fallback: offer.sdp)
     }
+
+    /// Waits (at most 2.5 s) for ICE gathering to finish, then returns the local description *with its candidates inside*, so the
+    /// candidates travel in the signed offer/answer and need no ops of their own.
+    private func gathered(_ connection: RTCPeerConnection, fallback: String) async -> String {
+        let started = Date()
+        while connection.iceGatheringState != .complete, Date().timeIntervalSince(started) < Self.gatherCap {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        let sdp = connection.localDescription?.sdp ?? fallback
+        let kinds = sdp.split(whereSeparator: \.isNewline).filter { $0.hasPrefix("a=candidate") }.map { CallDiagnostics.candidateKind(String($0)) }
+        let counts = Dictionary(grouping: kinds, by: { $0 }).map { "\($0.key)=\($0.value.count)" }.sorted().joined(separator: " ")
+        CallDiagnostics.shared.log("gathering \(connection.iceGatheringState == .complete ? "complete" : "CAP HIT") in \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(counts.isEmpty ? "none" : counts)")
+        return sdp
+    }
+
+    static let gatherCap: TimeInterval = 2.5
 
     func accept(offer: String) async throws -> String {
         guard let connection else { throw CallMediaError.notStarted }
         try await connection.setRemoteDescription(RTCSessionDescription(type: .offer, sdp: offer))
         let answer = try await connection.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
         try await connection.setLocalDescription(answer)
-        return answer.sdp
+        return await gathered(connection, fallback: answer.sdp)
     }
 
     func apply(answer: String) async throws {

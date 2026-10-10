@@ -86,9 +86,27 @@ final class ConversationStore {
         let system: CallSystem = quiet ? QuietCallSystem() : CallKitSystem()
         let manager = CallManager(signalling: StoreSignalling(store: self), system: system,
                                   isQuiet: { StatusSettings.shared.plan().isQuiet }, makeMedia: { WebRTCMedia(manualAudio: !quiet) })
-        manager.fetchNow = { [weak self] in await self?.syncNow() }
+        manager.fetchNow = { [weak self] in await self?.fetchCallOps() }
         callManager = manager
         return manager
+    }
+
+    /// A light fetch while a call is ringing or connecting: the mailbox and the call ops, nothing else, and never skipped because a
+    /// full sync is running.
+    func fetchCallOps() async {
+        guard let core, let link else { return }
+        let diag = CallDiagnostics.shared
+        let started = Date()
+        do {
+            let token = try await link.token()
+            let found = try await Task.detached(priority: .userInitiated) { try core.fetchCallOps(transport: link.transport, authToken: token) }.value
+            diag.log("fetch ok \(Int(Date().timeIntervalSince(started) * 1000)) ms, \(found) items")
+        } catch {
+            diag.log("fetch failed \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(error)")
+        }
+        let waited = core.takeLockWaitMs()
+        if waited > 250 { diag.log("waited \(waited) ms for the core lock") }
+        await deliverCallEvents()
     }
 
     /// Hands the call ops that arrived to the call manager (after a sync).
@@ -195,6 +213,7 @@ final class ConversationStore {
         isSyncing = true
         defer { isSyncing = false }
         repeat {
+        repeat {
             syncAgain = false
             do {
                 let token = try await link.token()
@@ -216,6 +235,8 @@ final class ConversationStore {
         await refreshPhotos()
         await refreshGroupPhotos()
         await downloadRecentImages()
+        // A nudge that came in while the photo work above ran is not lost: sync again.
+        } while syncAgain
     }
 
     /// Sends what is queued (a message that failed is retried here).

@@ -4752,3 +4752,24 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **Tests.** 7 new race tests (`CallLoopbackTests`: both sides end in ringing/connecting/connected, double end, early candidates kept, candidates never before the description, connect timeout, 1 s polling stops with the call). Integration: `LIME_TEST_FILTER=<name> ./core/run-integration.sh [staging]` runs one test; the call test prints the TURN status.
 
 **Not exercised:** a real two-device call; the camera/crash path on a device (only reasoned); CallKit on a device.
+
+
+## LIME-111-fix2
+
+**Calls signal in a few ops and never wait behind the mailbox (committed, awaiting the user's two-phone gate and the logs).** Phase 0: `PLOT.md` committed.
+
+**Phase 1 reproduction (staging, two cores; `call_signalling_flood_does_not_starve_the_fetch`, `LIME_FLOOD=n`).** The offer goes first, then n candidate ops on parallel threads while B fetches every second.
+- **Each send takes about 1 s** (recipient devices, key claim if needed, send: 2–3 HTTP calls) and they **all run one after another under `protocol_lock`**: 30 candidates took **30–31 s** (per-send median 14 s, worst 29 s). That is the flood: a call's 30 to 60 ops hold the core for 30 to 60 s, and the old `sync` (fetch + ack + extras, all under the same lock) queued behind them. B's first fetched op arrived 3.2 s after the start in that run only because the fetch happened to win the lock; the lock is not fair.
+- **Rate limit: refused 0** of 31 sends. One 30-candidate call stays under 120 sends/min, but two calls in a minute (plus retries) would not; batching removes the risk.
+- **`syncNow` swallowing polls: confirmed** by reading: `isSyncing` returned early for every poll while the photo work after the loop ran, and a `syncAgain` raised there was lost.
+- Nothing pointed elsewhere, so no stop.
+
+**Fix.**
+1. **Few ops.** Peer connection: `maxBundle`, `rtcpMux` required, TCP candidates off, `gatherOnce`. The offer/answer is sent only after ICE gathering completes (cap 2.5 s) and **carries its candidates inside the signed SDP** (the fingerprint check is unchanged; core test with candidates in the SDP). Candidates found later go in **one `call.ice` op with `candidates: [...]`, at most once a second**; core accepts both forms. A call is normally 1 op per side (offer; answer), plus an occasional batch. Tested with a fake media that gathers 30 candidates: `["call.offer"]` / `["call.answer"]`, then one batch op for 12 late ones.
+2. **Core lock.** The mailbox download and ack (`fetch_mailbox`) now run **outside** `protocol_lock` (its own `fetch_lock`); `sync` takes the lock only to load state and then to decrypt and do its extras. New `fetch_call_ops` = download + decrypt only. **Residual, not refactored:** a send still holds `protocol_lock` across its own HTTP (the Olm ratchet and one-time-key state must be committed in order, and the recipient's device list is deliberately not cached because it carries key-change detection). So the decrypt step can wait for one in-flight send (about 1 s); with 1 to 3 ops per call that is bounded. A true "no network under the lock" send needs a broader change (prepare the ciphertext under the lock, send after, commit the ratchet only on success): proposing it if the logs still show waits.
+3. **Dedicated call fetch.** While ringing or connecting, the 1 s poller calls `fetchCallOps` (core `fetch_call_ops` + `deliverCallEvents`), never skipped by `isSyncing`; `syncNow` now reruns when a nudge arrived during its photo tail.
+4. **Diagnostics.** Every call-op send (op, ok/FAILED, ms), every fetch during a call (ms, items), any wait on the core lock over 250 ms (`take_lock_wait_ms`), gathering end (complete or CAP HIT, ms, candidate counts by type), batch sends. Still no IPs or SDP.
+
+**After (same test).** `LIME_FLOOD=2` (a realistic call: offer + one batch): first op fetched **2.6 s** after the start (offer sent at 1.0–1.2 s, one 1 s poll, about 1 s fetch); all sends done 3.6 s; refused 0. `LIME_FLOOD=30` still takes 30 s to send (the lock is unchanged) but B's first fetch is **2.6 s** instead of being queued behind the sends; the app no longer sends 30. An offer → answer exchange is about 1 s send + up to 1 s poll + 1 s fetch each way, so roughly 4 to 5 s end to end on this network: **not under 3 s**; the send cost (2–3 HTTP calls) is what remains and is the next lever.
+
+**Not exercised:** real two-phone calls, real ICE gathering counts on a device (the cap and the maxBundle/tcp-off settings are untested against a real network), the camera path. `cargo test` 171, clippy 0.

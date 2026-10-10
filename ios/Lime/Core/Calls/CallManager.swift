@@ -77,6 +77,7 @@ final class CallManager {
     /// My own candidates wait until my offer/answer has gone out, so the other phone never sees one before the description it belongs to.
     @ObservationIgnored private var outbound: [(String, String?, Int32)] = []
     @ObservationIgnored private var descriptionSent = false
+    @ObservationIgnored private var batcher: Task<Void, Never>?
     /// How long a call rings before it is a missed call.
     @ObservationIgnored var ringSeconds: Double = 45
 
@@ -115,13 +116,14 @@ final class CallManager {
             try media.start(servers: servers, video: video)
             let sdp = try await media.makeOffer()
             guard callID == id else { return false }
+            descriptionSent = true // from here on a candidate is late: it is not in this SDP
+            let began = Date()
             let sent = await signalling.send(peer: peerID, op: "call.offer", payload: ["call_id": callID, "video": video, "sdp": sdp, "fingerprint": Self.fingerprint(in: sdp) ?? ""])
-            diag.log("sent call.offer ok=\(sent)")
+            diag.log("sent call.offer ok=\(sent) \(Int(Date().timeIntervalSince(began) * 1000)) ms")
             guard sent, callID == id else {
                 if callID == id { finish(.failed, notify: true) }
                 return false
             }
-            await descriptionWasSent()
         } catch {
             diag.log("start failed: \(error)")
             if callID == id { finish(.failed, notify: true) }
@@ -142,8 +144,11 @@ final class CallManager {
     private func wire(_ media: any CallMedia) {
         media.onCandidate = { [weak self] candidate, mid, index in
             guard let self, !self.callID.isEmpty else { return }
-            self.diag.log("local candidate \(CallDiagnostics.candidateKind(candidate))")
-            if self.descriptionSent { self.sendCandidate((candidate, mid, index)) } else { self.outbound.append((candidate, mid, index)) }
+            // Before my description has gone out, candidates are inside it. Later ones are sent together, at most once a second.
+            guard self.descriptionSent else { return }
+            self.diag.log("late candidate \(CallDiagnostics.candidateKind(candidate))")
+            self.outbound.append((candidate, mid, index))
+            self.scheduleBatch()
         }
         media.onConnection = { [weak self] up in
             guard let self, self.inCall else { return }
@@ -163,19 +168,26 @@ final class CallManager {
         }
     }
 
-    private func sendCandidate(_ item: (String, String?, Int32)) {
-        let id = callID, peer = peerID
-        var payload: [String: Any] = ["call_id": id, "candidate": item.0, "sdpMLineIndex": Int(item.2)]
-        if let mid = item.1 { payload["sdpMid"] = mid }
-        Task { _ = await signalling.send(peer: peer, op: "call.ice", payload: payload) }
-    }
-
-    /// My offer/answer is out: now my candidates may follow, in order.
-    private func descriptionWasSent() async {
-        descriptionSent = true
-        let waiting = outbound
-        outbound = []
-        for item in waiting { sendCandidate(item) }
+    /// Candidates found after the description went out: one `call.ice` op with all of them, at most once a second.
+    private func scheduleBatch() {
+        guard batcher == nil else { return }
+        let id = callID
+        batcher = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, self.callID == id, !Task.isCancelled else { return }
+            self.batcher = nil
+            let items = self.outbound
+            self.outbound = []
+            guard !items.isEmpty else { return }
+            let list: [[String: Any]] = items.map { item in
+                var entry: [String: Any] = ["candidate": item.0, "sdpMLineIndex": Int(item.2)]
+                if let mid = item.1 { entry["sdpMid"] = mid }
+                return entry
+            }
+            let started = Date()
+            let ok = await self.signalling.send(peer: self.peerID, op: "call.ice", payload: ["call_id": id, "candidates": list])
+            self.diag.log("sent call.ice x\(items.count) ok=\(ok) \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+        }
     }
 
     /// While ringing or connecting, ask the mailbox once a second (a missed nudge must not strand a call).
@@ -285,8 +297,16 @@ final class CallManager {
     }
 
     private func receivedCandidate(_ event: CallEventInfo) async {
-        guard let candidate = event.payload["candidate"] as? String else { return }
-        let item = (candidate, event.payload["sdpMid"] as? String, Int32((event.payload["sdpMLineIndex"] as? Int) ?? 0))
+        var items: [(String, String?, Int32)] = []
+        if let list = event.payload["candidates"] as? [[String: Any]] {
+            items = list.compactMap { entry in (entry["candidate"] as? String).map { ($0, entry["sdpMid"] as? String, Int32((entry["sdpMLineIndex"] as? Int) ?? 0)) } }
+        } else if let candidate = event.payload["candidate"] as? String {
+            items = [(candidate, event.payload["sdpMid"] as? String, Int32((event.payload["sdpMLineIndex"] as? Int) ?? 0))]
+        }
+        for item in items { await receivedCandidate(item, of: event) }
+    }
+
+    private func receivedCandidate(_ item: (String, String?, Int32), of event: CallEventInfo) async {
         // Before its offer has been handled (or while this phone is on another call) a candidate is kept, not dropped.
         guard inCall, event.callID == callID, event.peerID == peerID else {
             if event.callID != callID || !inCall { earlyCandidates[event.callID, default: []].append(item) }
@@ -323,15 +343,16 @@ final class CallManager {
             try media.start(servers: servers, video: video)
             let answer = try await media.accept(offer: offer)
             guard callID == id else { return }
+            descriptionSent = true
             remoteReady = true
             pendingOffer = nil
+            let began = Date()
             let sent = await signalling.send(peer: peerID, op: "call.answer", payload: ["call_id": callID, "sdp": answer, "fingerprint": Self.fingerprint(in: answer) ?? ""])
-            diag.log("sent call.answer ok=\(sent)")
+            diag.log("sent call.answer ok=\(sent) \(Int(Date().timeIntervalSince(began) * 1000)) ms")
             guard sent, callID == id else {
                 if callID == id { await end(reason: .failed) }
                 return
             }
-            await descriptionWasSent()
             await flushCandidates()
         } catch {
             diag.log("accept failed: \(error)")
@@ -382,6 +403,7 @@ final class CallManager {
         diag.log("finish \(outcome.rawValue)")
         ringTimeout?.cancel()
         connectTimeout?.cancel()
+        batcher?.cancel(); batcher = nil
         stopPolling()
         let duration = startedAt.map { now().timeIntervalSince($0) } ?? 0
         log.add(CallRecord(id: callID, peerID: peerID, peerName: peerName, video: video, outgoing: outgoing, date: startedAt ?? now(), duration: duration, outcome: outcome))

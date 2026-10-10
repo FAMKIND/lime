@@ -46,7 +46,12 @@ pub(crate) fn validate(op_type: &str, payload: &Value) -> Option<String> {
             (sdp_fingerprint(sdp).as_deref() == Some(claimed.as_str())).then_some(())?;
         }
         "call.ice" => {
-            payload.get("candidate").and_then(Value::as_str).filter(|c| c.len() <= 2_000)?;
+            // One candidate (`candidate`) or a batch (`candidates`: a list of `{candidate, sdpMid, sdpMLineIndex}`).
+            let single = payload.get("candidate").and_then(Value::as_str).is_some_and(|c| c.len() <= 2_000);
+            let batch = payload.get("candidates").and_then(Value::as_array).is_some_and(|list| {
+                !list.is_empty() && list.len() <= 64 && list.iter().all(|c| c.get("candidate").and_then(Value::as_str).is_some_and(|c| c.len() <= 2_000))
+            });
+            (single || batch).then_some(())?;
         }
         _ => {}
     }
@@ -99,6 +104,24 @@ mod tests {
     use serde_json::json;
 
     const SDP: &str = "v=0\r\na=fingerprint:sha-256 ab:cd:ef\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
+
+    #[test]
+    fn a_batch_of_candidates_validates_and_the_single_form_still_does() {
+        let one = json!({ "call_id": "c-1", "candidate": "candidate:1 1 udp 2 1.2.3.4 5 typ host" });
+        assert!(validate("call.ice", &one).is_some());
+        let batch = json!({ "call_id": "c-1", "candidates": [{ "candidate": "candidate:1 1 udp 2 1.2.3.4 5 typ host", "sdpMid": "0", "sdpMLineIndex": 0 }, { "candidate": "candidate:2 1 udp 2 1.2.3.5 5 typ relay" }] });
+        assert!(validate("call.ice", &batch).is_some());
+        assert!(validate("call.ice", &json!({ "call_id": "c-1", "candidates": [] })).is_none());
+        assert!(validate("call.ice", &json!({ "call_id": "c-1", "candidates": [{ "nope": 1 }] })).is_none());
+        assert!(validate("call.ice", &json!({ "call_id": "c-1" })).is_none());
+    }
+
+    #[test]
+    fn candidates_inside_the_sdp_do_not_change_the_fingerprint_check() {
+        let sdp = format!("{SDP}a=candidate:1 1 udp 2 1.2.3.4 5 typ host\r\na=candidate:2 1 udp 2 1.2.3.5 6 typ relay\r\n");
+        assert!(validate("call.offer", &json!({ "call_id": "c-1", "sdp": sdp, "fingerprint": "AB:CD:EF" })).is_some());
+        assert!(validate("call.offer", &json!({ "call_id": "c-1", "sdp": sdp, "fingerprint": "00:00:00" })).is_none());
+    }
 
     #[test]
     fn the_fingerprint_is_read_from_the_sdp_and_must_match_the_one_the_op_names() {

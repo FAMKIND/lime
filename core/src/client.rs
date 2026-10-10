@@ -275,76 +275,21 @@ impl LimeStore {
         transport: Arc<dyn Transport>,
         auth_token: String,
     ) -> Result<SyncReport, StoreError> {
-        let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let device_id = {
+            let _guard = self.lock_protocol();
+            let state = self.load_or_create_account()?;
+            state.user_id.as_ref().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
+            state.device_id.clone()
+        };
+        self.fetch_mailbox(&transport, &auth_token, &device_id)?;
+
+        let _guard = self.lock_protocol();
         let mut state = self.load_or_create_account()?;
         let me = state
             .user_id
             .clone()
             .filter(|_| state.registered)
             .ok_or(StoreError::NotRegistered)?;
-
-        let mut after = 0i64;
-        loop {
-            let (status, body) = call(
-                &transport,
-                Some(&auth_token),
-                "mailbox-fetch",
-                &json!({ "device_id": state.device_id, "after": after }),
-            )?;
-            check(status)?;
-            let items = body
-                .get("items")
-                .and_then(Value::as_array)
-                .ok_or(StoreError::BadMessage)?;
-            if items.is_empty() {
-                break;
-            }
-            let mut fetched = Vec::with_capacity(items.len());
-            let mut highest = after;
-            for item in items {
-                let cursor = item
-                    .get("cursor")
-                    .and_then(Value::as_i64)
-                    .ok_or(StoreError::BadMessage)?;
-                highest = highest.max(cursor);
-                fetched.push(Fetched {
-                    cursor,
-                    sender_user: item
-                        .get("sender_user")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned),
-                    identified: item.get("identified").and_then(Value::as_bool) == Some(true),
-                    ciphertext: item
-                        .get("ciphertext")
-                        .and_then(Value::as_str)
-                        .ok_or(StoreError::BadMessage)?
-                        .to_owned(),
-                    received_at: item
-                        .get("received_at")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned),
-                });
-            }
-            // Keep every item BEFORE telling the server to delete it: if this fails nothing is
-            // acknowledged, and if the acknowledgement fails the items are still safe here.
-            {
-                let now = now_ms();
-                let mut conn = self.lock();
-                pending::insert_all(&mut conn, &fetched, now)?;
-            }
-            let (status, _) = call(
-                &transport,
-                Some(&auth_token),
-                "mailbox-ack",
-                &json!({ "device_id": state.device_id, "up_to_cursor": highest }),
-            )?;
-            check(status)?;
-            after = highest;
-            if body.get("has_more").and_then(Value::as_bool) != Some(true) {
-                break;
-            }
-        }
-
         // The delivery key's hash may still be waiting to go up (a block rotated it): send it, then the shares.
         if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
             self.deliver_shares(&transport, &auth_token, &mut state, &me);
@@ -361,6 +306,27 @@ impl LimeStore {
             received,
             pending: waiting,
         })
+    }
+
+    /// A light fetch for a call that is ringing or connecting: the mailbox is downloaded outside the lock and decrypted, and
+    /// nothing else (no shares, names or receipts), so it is quick and never queues behind anything but a send's own turn.
+    pub fn fetch_call_ops(&self, transport: Arc<dyn Transport>, auth_token: String) -> Result<u32, StoreError> {
+        let device_id = {
+            let _guard = self.lock_protocol();
+            let state = self.load_or_create_account()?;
+            state.user_id.as_ref().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
+            state.device_id.clone()
+        };
+        self.fetch_mailbox(&transport, &auth_token, &device_id)?;
+        let _guard = self.lock_protocol();
+        let mut state = self.load_or_create_account()?;
+        let me = state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
+        self.retry_pending(&mut state, &me)
+    }
+
+    /// The longest wait for the core's lock since this was last called, in milliseconds (call diagnostics).
+    pub fn take_lock_wait_ms(&self) -> u64 {
+        self.lock_wait_ms.swap(0, std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -1771,5 +1737,57 @@ fn check(status: u16) -> Result<(), StoreError> {
         429 => Err(StoreError::RateLimited),
         500..=599 => Err(StoreError::Unavailable),
         _ => Err(StoreError::Rejected),
+    }
+}
+
+impl LimeStore {
+    /// Takes `protocol_lock`, noting a long wait for it.
+    pub(crate) fn lock_protocol(&self) -> std::sync::MutexGuard<'_, ()> {
+        let asked = std::time::Instant::now();
+        let guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.lock_wait_ms.fetch_max(asked.elapsed().as_millis() as u64, std::sync::atomic::Ordering::Relaxed);
+        guard
+    }
+
+    /// Downloads the mailbox into the local `pending` table and acknowledges it. This is network only: it runs **outside**
+    /// `protocol_lock`, so a send in flight never holds a fetch up. (Decrypting is a separate, local step.)
+    fn fetch_mailbox(&self, transport: &Arc<dyn Transport>, auth_token: &str, device_id: &str) -> Result<(), StoreError> {
+        let _one_at_a_time = self.fetch_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut after = 0i64;
+        loop {
+            let (status, body) = call(transport, Some(auth_token), "mailbox-fetch", &json!({ "device_id": device_id, "after": after }))?;
+            check(status)?;
+            let items = body.get("items").and_then(Value::as_array).ok_or(StoreError::BadMessage)?;
+            if items.is_empty() {
+                break;
+            }
+            let mut fetched = Vec::with_capacity(items.len());
+            let mut highest = after;
+            for item in items {
+                let cursor = item.get("cursor").and_then(Value::as_i64).ok_or(StoreError::BadMessage)?;
+                highest = highest.max(cursor);
+                fetched.push(Fetched {
+                    cursor,
+                    sender_user: item.get("sender_user").and_then(Value::as_str).map(str::to_owned),
+                    identified: item.get("identified").and_then(Value::as_bool) == Some(true),
+                    ciphertext: item.get("ciphertext").and_then(Value::as_str).ok_or(StoreError::BadMessage)?.to_owned(),
+                    received_at: item.get("received_at").and_then(Value::as_str).map(str::to_owned),
+                });
+            }
+            // Keep every item BEFORE telling the server to delete it: if this fails nothing is
+            // acknowledged, and if the acknowledgement fails the items are still safe here.
+            {
+                let now = now_ms();
+                let mut conn = self.lock();
+                pending::insert_all(&mut conn, &fetched, now)?;
+            }
+            let (status, _) = call(transport, Some(auth_token), "mailbox-ack", &json!({ "device_id": device_id, "up_to_cursor": highest }))?;
+            check(status)?;
+            after = highest;
+            if body.get("has_more").and_then(Value::as_bool) != Some(true) {
+                break;
+            }
+        }
+        Ok(())
     }
 }

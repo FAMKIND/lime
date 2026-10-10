@@ -1391,3 +1391,91 @@ fn call_signalling_goes_through_the_real_mailbox_as_sealed_control_ops_and_is_no
     b.sync(transport.clone(), bob.token.clone()).unwrap();
     assert_eq!(b.take_call_events().unwrap()[0].op, "call.end");
 }
+
+/// LIME-111-fix2, Phase 1: what a call's signalling flood does. A fires `LIME_FLOOD` (default 30) candidate ops at B on parallel
+/// threads while B fetches in a loop. Prints the time to B's first fetched op, the total time and any refused send. Always passes
+/// unless a send is refused, so it can run before and after a fix; the numbers go to stderr (`--nocapture`).
+#[test]
+fn call_signalling_flood_does_not_starve_the_fetch() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    a.register_device(transport.clone(), alice.token.clone()).unwrap();
+    b.register_device(transport.clone(), bob.token.clone()).unwrap();
+    let chat = a.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    a.queue_text(chat, "hello".into()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    b.sync(transport.clone(), bob.token.clone()).unwrap();
+    b.accept_request(format!("dm:{}", alice.id)).unwrap();
+    b.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    a.sync(transport.clone(), alice.token.clone()).unwrap();
+
+    let flood: usize = std::env::var("LIME_FLOOD").ok().and_then(|v| v.parse().ok()).unwrap_or(30);
+    let sdp = "v=0\r\na=fingerprint:sha-256 AA:BB\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
+    let started = std::time::Instant::now();
+    let offer_at = std::sync::Mutex::new(None::<std::time::Duration>);
+    let first_fetched = std::sync::Mutex::new(None::<std::time::Duration>);
+    let refused = std::sync::atomic::AtomicUsize::new(0);
+    let send_ms = std::sync::Mutex::new(Vec::<u128>::new());
+    let done = std::sync::atomic::AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            // The offer goes first, then the candidates follow on parallel threads, as the app does.
+            let t = std::time::Instant::now();
+            a.send_call_signal(transport.clone(), alice.token.clone(), bob.id.clone(), "call.offer".into(), json!({ "call_id": "f1", "video": false, "sdp": sdp, "fingerprint": "AA:BB" }).to_string()).unwrap();
+            *offer_at.lock().unwrap() = Some(started.elapsed());
+            send_ms.lock().unwrap().push(t.elapsed().as_millis());
+            std::thread::scope(|inner| {
+                for i in 0..flood {
+                    let (a, transport, token, peer) = (&a, transport.clone(), alice.token.clone(), bob.id.clone());
+                    let (refused, send_ms) = (&refused, &send_ms);
+                    inner.spawn(move || {
+                        let t = std::time::Instant::now();
+                        let payload = json!({ "call_id": "f1", "candidate": format!("candidate:{i} 1 udp 2 10.0.0.{i} 5 typ host"), "sdpMid": "0", "sdpMLineIndex": 0 });
+                        if a.send_call_signal(transport, token, peer, "call.ice".into(), payload.to_string()).is_err() {
+                            refused.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        }
+                        send_ms.lock().unwrap().push(t.elapsed().as_millis());
+                    });
+                }
+            });
+            done.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        scope.spawn(|| {
+            // B fetches in a loop, as the app's one-second poll does.
+            while !done.load(std::sync::atomic::Ordering::SeqCst) || first_fetched.lock().unwrap().is_none() {
+                let _ = b.fetch_call_ops(transport.clone(), bob.token.clone());
+                if first_fetched.lock().unwrap().is_none() && !b.take_call_events().unwrap().is_empty() {
+                    *first_fetched.lock().unwrap() = Some(started.elapsed());
+                }
+                if started.elapsed().as_secs() > 240 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+            }
+        });
+    });
+    let total = started.elapsed();
+    let mut ms = send_ms.lock().unwrap().clone();
+    ms.sort_unstable();
+    eprintln!(
+        "FLOOD {flood}: offer sent after {:?}; B's first fetched op after {:?}; all sends done after {:?}; refused {}; per-send ms median {} max {}",
+        offer_at.lock().unwrap().unwrap(),
+        first_fetched.lock().unwrap().unwrap_or_default(),
+        total,
+        refused.load(std::sync::atomic::Ordering::SeqCst),
+        ms[ms.len() / 2],
+        ms.last().unwrap()
+    );
+    assert_eq!(refused.load(std::sync::atomic::Ordering::SeqCst), 0, "a send was refused (rate limit?)");
+}

@@ -30,7 +30,7 @@ impl LimeStore {
         if !accepted {
             return Err(StoreError::Rejected);
         }
-        let _guard = self.protocol_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = self.lock_protocol();
         let mut state = self.load_or_create_account()?;
         let me = state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
         self.send_control_op(&transport, &auth_token, &mut state, &me, &peer_user_id, &op_type, payload)

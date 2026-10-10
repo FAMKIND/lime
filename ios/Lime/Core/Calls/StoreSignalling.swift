@@ -9,13 +9,18 @@ final class StoreSignalling: CallSignalling {
     func send(peer: String, op: String, payload: [String: Any]) async -> Bool {
         guard let store, let core = store.core, let link = store.link,
               let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return false }
+        let started = Date()
+        let diag = CallDiagnostics.shared
+        defer { let waited = core.takeLockWaitMs(); if waited > 250 { diag.log("waited \(waited) ms for the core lock") } }
         do {
             let token = try await link.token()
             try await Task.detached(priority: .userInitiated) {
                 try core.sendCallSignal(transport: link.transport, authToken: token, peerUserId: peer, opType: op, payload: json)
             }.value
+            diag.log("send \(op) ok \(Int(Date().timeIntervalSince(started) * 1000)) ms")
             return true
         } catch {
+            diag.log("send \(op) FAILED \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(error)")
             return false
         }
     }
