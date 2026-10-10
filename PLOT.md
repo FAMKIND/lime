@@ -68,7 +68,15 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - Call ops with the DTLS fingerprint; CallKit; an in-call UI; call lines; a call-tab history; DND/work hours → missed.
    - 169 Rust / 50 server / 16 integration tests pass; mini full suite passed (SE/18 Pro not run).
    - **`TURN_SECRET` is set on staging (2026-10-10, via Terminal; "Finished supabase secrets set").** Next: the user's two-phone gate (voice, video + flip, missed, Wi-Fi-off relay call).
-1c. **LIME-111-fix (NEXT; drafted 2026-10-10): calls don't connect; ending a call crashes.**
+1c. **LIME-111-fix LANDED as `a45e697` (pushed, 2026-10-10). No root cause was proven:** two WebRTC engines can't run in one simulator (AURemoteIO aborts), so tend fixed the four likely causes:
+   - call ops moved off the sync, plus a 1 s fetch while ringing or connecting;
+   - candidates only after the offer or answer, and early ones kept by call id;
+   - WebRTC waits for CallKit's `didActivate`;
+   - teardown before the network send, with a double end a no-op, and the capturer stopped before close;
+   - plus a 30 s timeout and the Debug diagnostics log (the share button is on the call tab).
+
+   Full suite passed on the 13 mini; SE/18 Pro not run. **Waiting on the user's two-phone gate plus both phones' diagnostics logs.** If calls still fail, the logs decide the next fix (plot reads them).
+   - (Original brief follows.) **LIME-111-fix: calls don't connect; ending a call crashes.**
    - **The user's two-phone test:** the caller stays on "Calling"; the callee sees the incoming call, answers, and shows "Connecting" with only its own camera; **ending the call crashes the app** (force-quit needed). The same for voice and video, repeatedly.
    - **Plot's checks:** `turn.limechat.org` TLS cert OK; 3478 UDP/TCP reachable. **The relay is up, so the likely fault is signalling/ICE in the app.** Candidates:
      - the callee's `call.answer`/ICE ops not reaching the caller (mailbox delivery only on nudge/sync; Realtime not triggering a fetch for control ops);
@@ -87,7 +95,9 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
      - (7) verify the `turn-credentials` 200 on staging from the app's session.
    - **The user then re-tests on two phones and shares the diagnostics logs.**
 2. **LIME-115:** group row actions, owner-only Delete group, Clear messages, default group names (drafted, above).
-3. **LIME-112:** group calls (LiveKit, self-hosted; **not yet drafted**; cost principles under LIME-111).
+1d. **LIME-111-fix2 (NEXT, drafted 2026-10-10 from both phones' diagnostics logs). Calls still don't connect after `a45e697`.** See "### LIME-111-fix2". LIME-116 waits for it.
+2b. **LIME-116 (DESIGN-08): the Calls tab**, drafted 2026-10-10, after 111-fix and **before 112b**; C1 is open (lean A). Then **LIME-117: call links**, after 112b (drafted; C2 = A, C3 = on).
+3. **LIME-112b:** group calls (LiveKit, self-hosted). **READY (plot, 2026-10-10); the user decided D1 = B, D2 = B with 10, D3 = A.** Send it only **after LIME-111-fix passes the two-phone gate**. See "### LIME-112b".
 3. **LIME-113:** account deletion + Report (drafted).
 4. **Offline messaging (mesh v1) + emergency mode:** **plot's design pass is needed first** (inputs: DESIGN-01 §4, DESIGN-06 bitchat notes, `docs/spike-ble.md` §5b; rules: Nearby mode, emergency turns it on, flush on wake, no timers in a suspended app, an honest promise, 48 h carry).
 5. **LIME-110:** Jam MVP (drafted; J1 = A, J2 = B, J3 required, J4 ok).
@@ -2656,6 +2666,592 @@ If anything contradicts this brief, stop and ask the user.
   - a 720p cap (480p default on mobile data);
   - LiveKit Cloud is never used (open-source requirement).
 - **Rough monthly at the pilot scale:** TURN ~$7–21 + LiveKit (CPX21–CPX31) only when group calls launch; overage traffic ~€1/TB (US, verify).
+
+### LIME-111-fix2 → `tend` (lime-aa) (NEXT): stop the signalling flood that starves the mailbox (batched ICE, no network under the core lock)
+**The evidence** (plot pulled both phones' `call-diagnostics.log` with `devicectl` on 2026-10-10, 16:56–17:00; the clocks are network time):
+- **Gathering works:** each side gathers about 30 candidates per call (about 16+ host, 2–4 srflx, 4–6 relay); the relay credentials are present; every `sent call.offer/answer ok=true`.
+- **Delivery collapses once a call starts:**
+  - Jean's first offer reached Shem in **1.6 s** (sent 16:57:11.2, received 16:57:12.8);
+  - Shem's answer (sent 16:57:24) reached Jean at **16:58:27, 63 s later**, after Jean had hung up;
+  - **after that first offer, Shem's phone received nothing for over 3 minutes:** 0 `call.ice` in the whole log, not Jean's second offer (sent 16:57:52), and no `call.end`;
+  - Jean received Shem's later offer 16 s late, and never received Shem's third offer (16:59:29);
+  - **every `recv` on both phones has `phase=idle`:** no op ever arrived while a call was ringing or connecting.
+- **The likely root cause** (plot, from the code):
+  - every ICE candidate is its own E2EE mailbox op, so about 30 to 60 network sends per call per side;
+  - in core, **`send_call_signal` and `sync` both hold `protocol_lock` across their network I/O** (`core/src/client/calls.rs`, `core/src/client.rs:278`);
+  - the burst of candidate sends (fire-and-forget Tasks in `CallManager.sendCandidate`) queues behind the lock, and **`sync` (the fetch) waits behind all of them**, so ops arrive tens of seconds late or after the call has ended;
+  - the 1 s poller can't help: `syncNow` returns early while `isSyncing`, and a `syncAgain` raised during the photo-refresh tail is never rerun;
+  - possibly also the send rate limit (`LIME_RATE_SEND_PER_MIN` = 120 per user): several calls a minute, at about 30 sends each, fanned out to several devices, can hit it; candidate send results are not logged, so this is unknown.
+- **This can be reproduced without phones**: two cores through staging, with about 30 call-op sends in flight while the other side syncs.
+
+**Goal:** a call's signalling is a handful of ops per side, and a fetch is never stuck behind sends, so the offer, the answer and the candidates arrive within about 2 s and calls connect.
+
+**Capabilities assumed:** edit files, run commands, simulators, the integration tests against staging, commit and push.
+
+**What plot read:**
+- both logs (`/tmp/lime-calllogs/{jean,shem}.log`; tend may re-pull them with the README's `devicectl` command; Jean's iPhone `00008101-000348EC0E51003A`, Shem's `00008110-000651D23647801E`);
+- `CallManager.swift` (`sendCandidate`, `startPolling`, `handle`);
+- `ConversationStore.syncNow`/`deliverCallEvents`;
+- `core/src/client/calls.rs`;
+- `supabase/functions/_shared/config.ts` (send rate limit 120/min).
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: reproduce, then report (before any fix)**
+1. **A core integration test (staging):** A fires 30 `send_call_signal` ops at B on parallel threads while B (or A) runs `sync`.
+   - Measure the time to the first fetched op, the total time, and any 429s.
+   - **Report the numbers.** This is the reproduction LIME-111-fix lacked.
+2. **Confirm or refute each suspect** with evidence:
+   - the lock held across the network (both paths);
+   - `syncNow` swallowing polls (`isSyncing` / `syncAgain` in the photo tail);
+   - the rate limit (count the sends per call; any 429 in a test run).
+
+**STOP if the evidence points somewhere else**, and report to the user.
+
+---
+
+**Phase 2: the fix** (all four parts)
+1. **Far fewer candidates, sent in batches:**
+   - the peer connection config: `bundlePolicy = .maxBundle`, `rtcpMuxPolicy = .require`, `tcpCandidatePolicy = .disabled` (TURN over TCP/TLS stays in the ICE servers), `continualGatheringPolicy = .gatherOnce`;
+   - **wait for ICE gathering to complete (cap 2.5 s)** before sending the offer or answer, so **the candidates travel inside the signed SDP**. The fingerprint check is unchanged, and **the DTLS fingerprint check must still pass**;
+   - candidates gathered after the cap go in **one `call.ice` op with `candidates: [...]`** (flushed at most once a second);
+   - core `validate` accepts the array form (keep accepting the single form for compatibility);
+   - **expected: 1–3 call ops per side per call.**
+2. **No network I/O under `protocol_lock`** for call ops and sync:
+   - do the crypto/state work (Olm encrypt, ratchet and store updates) under the lock, release it, then do the HTTP; on receive, fetch over HTTP first, then take the lock to decrypt and apply;
+   - **if making this safe needs a broader core refactor** (e.g. ratchet state committed before a send that may fail), **stop and describe the trade-off to the user** rather than improvising.
+   - **Minimum acceptable:** call-op sends and fetches never wait behind each other's network round trips.
+3. **A dedicated call fetch:** while ringing or connecting, the poller calls a light `fetchCallOps` (`core.sync` + `deliverCallEvents` only; no reload of the list, no photo refresh), which is never swallowed by `isSyncing`. Also fix `syncNow` so a `syncAgain` raised during the photo tail triggers another sync.
+4. **Diagnostics** (still no IPs and no SDP):
+   - log every call-op send (op, ok or HTTP status, duration);
+   - log every fetch during a call (duration, items, call ops found);
+   - log any wait on the core lock longer than 250 ms;
+   - log the end of ICE gathering (count by type, and whether the cap was hit).
+
+---
+
+**Verification**
+- **The Phase 1 test, rerun:**
+  - the first op fetched within 2 s while sends are in flight;
+  - a whole offer → answer exchange through staging in under 3 s;
+  - **no 429**.
+- **core:** the batched `call.ice` validates; the single form still works; the fingerprint is still enforced with candidates in the SDP; clippy 0; `cargo test`.
+- **iOS:**
+  - unit tests (only 1–3 ops sent per side with a fake media layer gathering 30 candidates; the poller uses `fetchCallOps` and isn't skipped during `isSyncing`);
+  - the full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings; Release has no Bluetooth.
+- **Report:**
+  - the before/after numbers from the Phase 1 test;
+  - the ops per call;
+  - what was not exercised.
+
+---
+
+**Gate (the user, two phones, lime open on both):**
+1. A voice call Shem → Jean connects within ~5 s of answering, with audio both ways.
+2. Then a video call; then Jean → Shem.
+3. End from each side in each state, with no crash.
+4. Wi-Fi off on one phone.
+5. Plot pulls both logs again over USB (the user plugs both phones in and says "logs").
+
+---
+
+**Record:** `## LIME-111-fix2` in `TEND.md`.
+
+**Commit:** `fix: calls signal in a few ops and never wait behind the mailbox (batched ICE, no network under the core lock, a dedicated call fetch)`, trailer `Brief: LIME-111-fix2`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
+### DESIGN-08 (plot, 2026-10-10): a strong Calls tab
+**The user (2026-10-10), with screenshots of Kakao's call list, Apple's Phone Recents, and Signal's New Call sheet and Create Call Link:**
+- "I like the Signal approach the most, with a call link as well.
+- The sheet is only pulled up when you make a new call; everything else happens in the main app, in the call section.
+- I also like Apple's and Kakao's call history list with filters at the top."
+
+**What exists (surveyed `ios/Lime/Features/Calls/CallView.swift`, `Core/Calls/CallLog.swift`, `DockBar.swift`):**
+- the dock's call item opens a **sheet** (`CallHistoryView`): a plain list of name + "Voice call · 4:12 · date", with tap to call back;
+- **the history is in `UserDefaults`** (`lime.callLog`, at most 200). That is unencrypted and included in iCloud backups, and who-called-whom is sensitive, so it moves into the core's SQLCipher store.
+- Tend's LIME-111-fix is editing `CallView.swift` right now (the Debug diagnostics share), so LIME-116 waits for it.
+
+**The order:**
+1. 111-fix;
+2. **LIME-116: the Calls tab (1:1)**;
+3. 112b: group calls (adds group rows and a Groups section to New Call);
+4. **LIME-117: call links** (plot's design pass after C2/C3, reusing 112b's LiveKit and key machinery).
+
+**DECIDED (the user, 2026-10-10): C1 = A** (one button repeating the call's kind). **C2 = A** (lime users only). **C3 = approval on by default.**
+
+**(History) Open with the user:**
+- **C1. Buttons at the end of each history row:**
+  - **A.** One grey button that repeats that call's kind (Apple, Signal). *Pro:* calm and uncluttered; tapping the row opens the details, which has both Voice and Video. *Con:* switching kind takes one extra tap.
+  - **B.** Both voice and video buttons on every row (Kakao). *Pro:* one tap for either. *Con:* busy, and 2 buttons × 20 rows.
+  - **Plot's lean: A.**
+- **C2. Who can join a call link?**
+  - **A.** lime users only (the link opens the app). *Pro:* builds on 112b; every joiner has a verified identity.
+  - **B.** Anyone with a browser, e.g. parents, with no account. *Pro:* reach. *Con:* a whole web call client, plus web E2EE and abuse handling. That is a large separate project.
+  - **Plot's lean: A now, and B as a later project if teachers ask.**
+- **C3. "Require admin approval" (Signal's toggle) on links:** **on by default** (lean), so people can only join once the creator lets them in.
+- **Note:** a shareable `https://limechat.org/call/…` link that opens the app needs Associated Domains, which needs **the paid Apple account (November)** and the site (LIME-114). Until then links work through "Share via lime" (a Join card in a chat) and a `lime://` link.
+
+### LIME-116 → `tend` (lime-aa) (**after LIME-111-fix lands**; C1 = A, decided): the Calls tab: history with All/Missed, call details, the New Call sheet, encrypted history
+**Goal:** Calls is a full section of the main app, not a sheet. It has:
+- a history list with an **All | Missed** filter at the top, grouped rows and a call-back button;
+- a details screen per row;
+- a Signal-style **New Call** sheet (the only sheet);
+- call history kept in the encrypted core store instead of `UserDefaults`.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push. No server change.
+
+**What plot read:**
+- `ios/Lime/Features/Calls/CallView.swift` (`CallHistoryView`);
+- `ios/Lime/Core/Calls/CallLog.swift`;
+- `ios/Lime/Features/Dock/DockBar.swift` (`showCalls` sheet);
+- core migration 24 (`call_events`).
+
+**Plot assumed:** the Messages screen's header, search, row and avatar components can be reused. Check this in the survey, and **reuse them rather than restyling**.
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. **~60 min** soft cap.
+
+---
+
+**Phase 1: survey (read-only)**
+- How the dock switches sections (link vs call);
+- the Messages header, search, rows and swipe actions;
+- New Message's "find by username";
+- what LIME-111-fix left in `CallView.swift`.
+
+If the survey turns up related issues, raise them before editing.
+
+---
+
+**Phase 2: the change**
+1. **A section, not a sheet.** The dock's call item shows Calls in the main area, the way "link" shows Messages; delete the `showCalls` sheet.
+   - **Dock badge:** missed calls not yet seen. They count as seen when Calls is opened.
+2. **The header** matches Messages exactly (the same component):
+   - the large title **"Calls"**;
+   - on the right, the **New Call** button (`phone.badge.plus`) and the same avatar/status entry as Messages;
+   - search works as on Messages (by name).
+   - Debug builds only: the Call diagnostics share moves into a ⋯ menu here.
+3. **The filter:** directly under the title, a segmented pill **All | Missed** (Signal's shape; lime tokens: green only on the primary action, so the selected segment is neutral).
+   - **Missed** = incoming calls that were missed or declined by DND/work hours.
+4. **Rows** (the same avatar size and padding as Messages rows; no dividers):
+   - the avatar;
+   - **the name**, in the danger/red token when the row is a missed incoming call, plus **"(3)"** when grouped;
+   - the second line: a direction glyph (`arrow.down.left` incoming, `arrow.up.right` outgoing), then **"Voice"** or **"Video"**;
+   - on the right, the time:
+     - today = "4:12 PM";
+     - "Yesterday";
+     - a weekday within 7 days;
+     - else a short date;
+   - at the end, **one grey circular button repeating that call's kind** (phone or video) that calls back (**C1 = A**).
+   - **Grouping (Apple's rule):** consecutive calls with the same person, the same kind, the same day, and the same missed/not-missed class form one row with a count.
+5. **Tap a row → Call details**, **pushed** (not a sheet):
+   - the avatar and name;
+   - three buttons **Message · Voice · Video**;
+   - the calls in that group, each with its time, direction and duration or outcome ("Missed", "No answer", "4:12").
+6. **Swipe left on a row:** Delete (removes those calls).
+7. **Clear all:** **Settings → Privacy → "Clear call history"**, with a confirm.
+8. **Empty states:**
+   - All: "No calls yet" with a **New call** button;
+   - Missed: "No missed calls".
+9. **The New Call sheet** (the only sheet; modelled on Signal's):
+   - the title "New Call" with a close ✕;
+   - the search field **pinned at the bottom** ("Name or username");
+   - at the top, **"Find by username"**, which reuses New Message's flow;
+   - then **accepted contacts A–Z with section headers and the side index**, each with grey outline **voice** and **video** buttons;
+   - only accepted contacts appear (the 1:1 rule); no Groups section (that comes with 112b); no call-link row (117).
+10. **The history moves into core:**
+    - a migration adds `call_history`, with uniffi `add`, `list`, `delete`, `clear`, `mark_missed_seen` and `missed_unseen_count`;
+    - `CallLog` becomes a thin wrapper;
+    - **on first launch, existing `UserDefaults` records are moved into core once, then the key is removed**;
+    - the chat call lines are unchanged (they read the same records).
+
+---
+
+**Verification**
+- **core:** add, list, delete, clear and missed-unseen tests; the migration; clippy 0.
+- **iOS unit tests:** the grouping rule (a mixed sequence → the expected rows and counts), the time labels, and the one-time `UserDefaults` migration (records moved and the key gone).
+- **UI tests:**
+  - the dock opens Calls in place (no sheet);
+  - All/Missed filters;
+  - tapping a row pushes the details;
+  - the trailing button starts a call of the matching kind;
+  - swipe Delete;
+  - New Call opens as a sheet, with search at the bottom and both buttons per contact;
+  - the empty states;
+  - the dock badge clears when Calls is opened.
+- Tiered (full suite on the 13 mini; changed tests on SE and 18 Pro); 0 warnings; Release has no Bluetooth.
+
+---
+
+**Gate (the user, two phones):**
+1. The call icon opens Calls in the app, not a sheet.
+2. Missed calls show red and grouped "(N)", and Missed filters them.
+3. The dock badge shows missed calls and clears once Calls is opened.
+4. Tapping a row shows the details; the row's button calls back.
+5. "+" opens New Call with search at the bottom.
+6. Old history is still there after the update.
+
+---
+
+**Record:** `## LIME-116` in `TEND.md`.
+
+**Commit:** `feat(ios): Calls tab (All/Missed history, call details, New Call sheet), call history in the encrypted store`, trailer `Brief: LIME-116`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
+**Out of scope:** group calls (112b), call links (117), web joining, PushKit.
+
+### LIME-117 → `tend` (lime-aa) (**after LIME-112b lands and passes its gate**): call links (lime users only, admin approval on by default)
+**Goal:** a teacher can create a named call link that **any lime user who holds it can use to ask to join**, with the creator approving each person by default. The link's name and settings stay unreadable to the server, and the media stays end-to-end encrypted using 112b's per-sender keys.
+
+**Decided:** C2 = A (lime users only; no web joining); C3 = approval **on** by default; LiveKit on `lime-turn-1` (D1 = B).
+
+**Capabilities assumed:** edit files, run commands, simulators, the Supabase CLI on staging, commit and push. No new server.
+
+**What plot read:**
+- `supabase/functions/blob` (the client picks a UUID id; **holding the id lets you read; only the owner can replace or delete**);
+- `send_control_op` in `core/src/client.rs` (identified sends to any user);
+- api-v2 §4 (message requests; call ops today are accepted-contacts only);
+- the LIME-112b brief (the ops `call.start/join/key/leave`, `livekit-token` with a 64-hex room).
+
+**Plot assumed:**
+- 112b landed with per-sender keys sent over Olm, and LiveKit data messages are available in the room;
+- the `blob` function's limits allow a tiny (< 4 KB) state blob per link.
+
+If either is false, **stop and report**.
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. **~90 min** soft cap; report at the cap.
+
+---
+
+**Phase 1: survey (read-only), then report the plan for the crypto in Phase 2 before writing it**
+- 112b's key code;
+- `blob`;
+- how a `lime://` link is handled today (if at all);
+- the Calls tab from LIME-116.
+
+---
+
+**Phase 2: the link and its secrets (core)**
+1. **The root key** `R` is 16 random bytes. **The link is `lime://call#<R in base32, grouped like signal.link>`.** The key sits after `#`, so it never reaches a server. Later, with the site and the paid account, it becomes `https://limechat.org/call/#…`.
+2. **Derived with HKDF-SHA256 from R** (one label each):
+   - `room` (32 bytes → 64 hex, the LiveKit room name);
+   - `state-id` (16 bytes → a UUID for the blob);
+   - `state-key` (AES-256-GCM);
+   - `knock-key` (AES-256-GCM).
+3. **The link's state** is a blob at `state-id`, encrypted with `state-key`:
+   - `{ v: 1, name, approval: true|false, admins: [creator user id], created }`, **signed by the creator's identity key**; readers check the signature against the creator's identity;
+   - only the creator can replace it (an edit) or delete it (the link is revoked);
+   - **a missing state means the link is dead**: every app refuses to join or admit, and says "This call link was deleted".
+4. **Joining:**
+   - **(a)** the joiner reads the state, fetches a token for `room`, and connects;
+   - **(b)** it sends a **knock** as a LiveKit data message encrypted with `knock-key`, holding the user id, device id, participant id and a signature by the device key;
+   - **(c)** if `approval` is false, any participant already in the call checks the knock and admits the joiner. If it is true, **only an admin's device can admit**, and the knock shows on the admin's screen ("Ask to join: <Name>, <not a contact | contact>", **Admit / Deny**).
+   - **Admitting** sends a signed `call.admit { call_id, participant, user, device }` to each participant's devices over Olm; then everyone exchanges keys exactly as in 112b.
+   - **Until admitted, the joiner sees "Waiting for <admin> to let you in"** and receives no keys.
+   - If no admin is in the call, approval links show "Waiting for the host"; the admin is notified only while lime is open (no PushKit yet).
+5. **Non-contacts:**
+   - call ops from a non-contact are accepted **only** for a link call the receiver is in, and only after that person was admitted;
+   - they never create a message request and never open a DM;
+   - blocked users' knocks are dropped silently.
+6. **Removing someone:** an admin's **Remove** sends `call.remove { participant }`; everyone rotates their keys without that person (112b's leave rule).
+
+---
+
+**Phase 3: iOS**
+1. **The top of the Calls list** (above the All | Missed pill): a row **"Create a call link"** (a link icon), opening the **Create Call Link** sheet. This is the second sheet; it counts as "making a new call" (DESIGN-08).
+   - a card: a video icon, the name (default "lime call"), the link (truncated), and **Join**;
+   - **Add call name** (at most 50);
+   - **Require admin approval**, on by default;
+   - **Share via lime** (pick a chat; it sends the link as a message);
+   - **Copy link**;
+   - **Share link** (the system share sheet).
+   - Creating uploads the state; the ✓ closes the sheet.
+2. **A link in a chat** renders as a **Join card** (the name and "lime call link", with a Join button) instead of a plain link. A pasted `lime://call#…` opens the join flow.
+3. **Calls list:** link calls appear as rows with a link avatar and the call's name; tap → **link details**, pushed:
+   - Join;
+   - Share;
+   - for the creator: edit name, the approval toggle, and **Delete link** (with a confirm; it deletes the state blob).
+4. **In the call:**
+   - the admin sees knocks as a banner with **Admit / Deny**;
+   - the participant list has **Remove** (admins only);
+   - "not a contact" is labelled.
+5. **The Copy and Share warning, once:** "Anyone with this link can ask to join. Share it only with people you trust."
+
+---
+
+**Phase 4: docs**
+- **api-v2:** the derivation labels, the state format, `call.admit`/`call.remove`, and the non-contact rule;
+- **architecture §9:**
+  - what the server sees: an opaque blob, plus a token request for a room;
+  - **the honest limits:**
+    - whoever has the link can see who knocks, by name;
+    - a removed person still receives ciphertext they can't read;
+    - the link can't be revoked from a joiner's memory, only by deleting it;
+  - this is in scope for the external security review.
+
+---
+
+**Verification**
+- **core:**
+  - the derivation is stable (fixed test vectors);
+  - the state signature is checked (a forged state is refused);
+  - a deleted state → join refused;
+  - with approval on, only an admin's admit counts (a participant's admit is ignored);
+  - with approval off, any participant admits;
+  - an unadmitted knocker gets no keys;
+  - a non-contact's call op outside a link call is ignored;
+  - a blocked user's knock is dropped;
+  - Remove → rotation without them.
+- **integration (3 accounts, staging):**
+  - create a link → B knocks → A admits → keys are exchanged;
+  - C knocks and is denied → no keys;
+  - delete the link → join refused.
+- **iOS:**
+  - unit tests (the parsing of `lime://call#…` and the Join card detection);
+  - UI tests: Create Call Link (approval on by default, name, Copy), the Join card in a chat, the waiting screen, Admit/Deny on the admin, Delete link;
+  - **two simulators**: a knock and an admit end to end against staging;
+  - tiered; 0 warnings; Release has no Bluetooth.
+
+---
+
+**Gate (the user, three devices):**
+1. Create a link named "Grade 3 team" → Share via lime to Jean → Jean taps Join and sees "Waiting…" → you Admit → audio and video work.
+2. The iPad (not a contact of Jean) joins through a copied link → you Deny → it gets nothing.
+3. Turn approval off → the iPad joins straight in.
+4. Delete the link → Join says the link was deleted.
+
+---
+
+**Record:** `## LIME-117` in `TEND.md`.
+
+**Commit:** `feat: call links (lime users only, admin approval, encrypted link state)`, trailer `Brief: LIME-117`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
+**Out of scope:**
+- web/browser joining (C2 = B, a later project);
+- `https://limechat.org/call/` universal links (needs the paid account and LIME-114);
+- scheduled calls;
+- waiting-room ringing via PushKit.
+
+### LIME-112 decisions (plot, 2026-10-10)
+**DECIDED (the user, 2026-10-10): D1 = B** (LiveKit on `lime-turn-1`, the existing Hetzner box; the user's words: "use what we have and make the server support group calls as well"). **D2 = B, with 10 people instead of 8.** **D3 = A.**
+- *Lesson:* the user read "the relay" and "Hetzner" as different things. Name servers by their name (`lime-turn-1`, the Hetzner box) rather than by their role.
+Decided earlier (not reopened): self-hosted LiveKit, never LiveKit Cloud; 50–100 people; no recording; speaker view and video off by default above 12; simulcast; a 720p cap (480p on mobile data); the media is E2EE with keys sent over lime's own channel.
+
+**D1. Where the LiveKit server runs**
+- **A.** A second Hetzner box, `lime-sfu-1` (CPX21, Ashburn). *Pro:* resizing it for big PD sessions never touches TURN, and one box failing doesn't take down every call. *Con:* another monthly bill now (confirm the price in the console; CPX11 was $21.09), before anyone uses group calls.
+- **B.** Put it on **`lime-turn-1` as it is** (CPX11, 2 vCPU / 2 GB). *Pro:* **$0 more now**, which is plenty for pilot calls of 2–10 people; the setup script works on any host, so moving it later means rerunning the script and changing one DNS record. *Con:* one box for all calls; a resize means a reboot that drops the TURN relay for a minute.
+- **Plot's lean: B for the pilot.** Move to A when a load test or real PD sessions call for it (a 100-person load test is already a pre-launch rule).
+
+**D2. Do group calls ring?**
+- **A.** Never: a "<Name> started a call · Join" line in the chat plus an ordinary notification, like a Slack huddle. *Pro:* it never disrupts a 40-person staff group. *Con:* a 3-teacher grade team has to watch for the notification.
+- **B.** Ring groups of **up to 8 people**; larger groups get the line and the notification. *Pro:* small teams feel like a phone call, and big groups stay calm. *Con:* the cut-off is a rule people have to learn.
+- **C.** The caller picks "Ring everyone" or "Just start". *Pro:* flexible. *Con:* one more choice every time, and ringing 100 people becomes possible.
+- **Plot's lean: B.** Work hours and DND always silence the ring, as in LIME-108.
+
+**D3. Who can start a group call?**
+- **A.** Any member. *Pro:* simple, like Signal and WhatsApp. *Con:* a big group can get stray calls.
+- **B.** Only the owner and admins. *Pro:* fits PD sessions. *Con:* blocks small teams with no admin.
+- **Plot's lean: A now,** with an owner/admin setting "Only admins can start calls" as a later follow-up.
+
+### LIME-112b → `tend` (lime-aa) (**after LIME-111-fix passes the user's two-phone gate**): group voice and video calls on self-hosted LiveKit, E2EE
+**Revises the LIME-112 draft (never sent): the ring cut-off is 10, per the user. Decisions: D1 = B (on `lime-turn-1`), D2 = B with 10, D3 = A.**
+
+**Goal:** members of a lime group can start or join a voice or video call of up to 100 people, through lime's own LiveKit server, with the media end-to-end encrypted using per-sender keys sent over lime's own E2EE channel, so the server and the SFU only ever see ciphertext.
+
+**Capabilities assumed:**
+- edit files, run commands, build and test iOS on simulators, commit and push;
+- SSH as root to `178.156.199.1` (`lime-turn-1`, key auth);
+- the Supabase CLI against `lime-staging`;
+- network access for SwiftPM and apt.
+
+**Never:** create accounts, buy servers, edit DNS, or print, log or paste secrets. The user does those through Terminal (`read -s` or a pipe, as in `infra/turn/README.md`).
+
+**What plot read:**
+- `core/src/client/calls.rs`;
+- `docs/api-v2.md` (group ops, Megolm, `group.session`, `group.delete`);
+- `docs/architecture.md` §9 and "Calls: as built";
+- `infra/turn/README.md` and `setup.sh` (certbot **standalone on port 80**, ufw, relay 49152–49999);
+- `ios/project.yml` (stasel/WebRTC);
+- the LIME-111 brief and its TEND record.
+
+**Plot assumed (check these in the survey):**
+- LiveKit's Swift SDK (`client-sdk-swift`, Apache-2.0) links its own renamed WebRTC build (`LiveKitWebRTC`), so it can live next to stasel/WebRTC without symbol clashes;
+- the SDK's E2EE supports **per-participant keys** (a key provider in non-shared-key mode, `setKey(key, participantId, index)`);
+- LiveKit server can hand clients an **external TURN** (our coturn) instead of its built-in TURN.
+
+If any of these is false, **stop and report**; don't work around it.
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. Time-box: **~90 min** soft cap (this brief is bigger than usual); report at the cap rather than pushing on.
+
+---
+
+**Phase 1: survey (read-only), then one stop**
+1. **Confirm the three assumptions above** (versions, licences, the API names).
+2. **Measure the app-size cost** of adding the LiveKit SDK next to stasel/WebRTC (Release `.app` size before and after). **Don't** migrate 1:1 calls off stasel in this brief; if one WebRTC could serve both, write that up as a follow-up proposal.
+3. **Ports and certificates on `lime-turn-1`:**
+   - LiveKit needs HTTPS/WSS on 443 (Caddy or similar, for `sfu.limechat.org`), 7881/TCP, and a UDP media range (e.g. 50000–60000, which must not overlap coturn's 49152–49999);
+   - certbot renews `turn.limechat.org` **standalone on port 80**, which clashes with a web server on 80/443. **Propose how they share** (e.g. Caddy serves both names and coturn reads its certificate, or certbot switches to webroot), and check that the TURN renewal still works.
+4. **Check how lime's existing 1:1 call code** (`CallManager`, `CallKitSystem`, the audio session, and what LIME-111-fix changed) can be shared with group calls rather than copied.
+5. **STOP and give the user:**
+   - the DNS step: **`sfu.limechat.org` A → 178.156.199.1** in deSEC;
+   - whether a Hetzner Cloud Firewall needs the new ports;
+   - the size number from step 2;
+   - any surprises.
+
+   After the user says the DNS is in, continue.
+
+---
+
+**Phase 2: the server**
+1. **`infra/sfu/setup.sh`** (committed, idempotent, works on any Ubuntu host, so moving to `lime-sfu-1` later is a rerun):
+   - install LiveKit server (a pinned release) and the TLS front;
+   - config: `max_participants: 100` per room, a short `empty_timeout`, **built-in TURN off, ICE pointed at our coturn**, no webhooks, **no egress/recording service**, logging without room names or IPs where configurable;
+   - ufw rules;
+   - the API key and secret created **once** in `/etc/lime-sfu/` (root only, never printed).
+2. **`infra/sfu/README.md`** in the same shape as `infra/turn/README.md`:
+   - install or repair;
+   - the no-echo pipe that sets **`LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `LIVEKIT_URL`** as Supabase secrets;
+   - the checks;
+   - cost and growth (when to move to D1 = A).
+3. **The Edge Function `livekit-token`:**
+   - verified sessions only; 20 per minute;
+   - **the room name must be 64 hex characters** (the call's random id; holding it is the capability, and there is no server-side membership, architecture §5/§9);
+   - **the identity is a random per-call participant id sent by the client**, never the user id;
+   - grants: join, publish, subscribe, data; **no admin, no recording**;
+   - a TTL of about 10 min to join;
+   - **stores nothing and logs no room ids**;
+   - **503 `not_configured`** until the secrets exist.
+
+---
+
+**Phase 3: core (Rust): group call ops**
+
+**New signed, encrypted group ops.** They go to members' devices like other group control ops; keys go over **Olm** to specific devices only, like `group.session`.
+- `call.start { call_id, room, video }`
+  - `room` is 32 random bytes, hex; `call_id` is another 32 random bytes, hex.
+  - It writes the chat line "<Name> started a call · Join".
+- `call.join { call_id, participant }`
+  - `participant` is the random LiveKit identity.
+  - It maps the participant to this member and device, for names and tiles.
+- `call.key { call_id, key, index }`
+  - Over **Olm, only to the devices of people in the call.**
+  - Each participant has **its own sender key**, created at join. When someone joins, every current participant sends its current key to the newcomer's device, and the newcomer sends its own key to everyone in the call.
+  - **When anyone leaves (a `call.leave`, or the SFU reports them gone), every remaining participant makes a new key, raises the index, and sends it only to those still in the call.**
+- `call.leave { call_id }`
+- **The call ends when the room is empty:** a "Call ended · 23:10" line.
+
+**Rules** (all enforced on receive and tested):
+- only a **current group member's** device can start, join, or send a key;
+- a key is accepted only for a known `call_id` in that group, from the participant who owns it;
+- **a member removed from the group or who leaves it gets no new keys** and is treated as having left the call;
+- calls are refused in a deleted or left group (LIME-115's read-only state).
+
+**Also:**
+- `fetch_livekit_token(call_id, participant)` mirrors `fetch_turn_servers`, including `None` on 503;
+- a migration for the group call state;
+- `take_call_events` covers group events;
+- the 1:1 `call.*` ops stay unchanged.
+
+---
+
+**Phase 4: iOS**
+1. **Add the LiveKit Swift SDK** (pinned) to `project.yml`.
+2. **`GroupCallManager`:**
+   - shares the CallKit and audio-session code with `CallManager` (per the survey; **one active call at a time**: "End your current call to join?");
+   - turns on E2EE with a per-participant key provider, fed only from the core's `call.key` events;
+   - **a participant whose key hasn't arrived shows "Connecting securely…", never undecrypted video**.
+3. **Group header:** the phone icon opens a Voice/Video menu (as in DMs). Anyone can start (**D3 = A**).
+4. **Ringing (D2 = B):**
+   - groups of **≤ 10 members** ring through CallKit (with LIME-111's honest limit: only while lime is open or recent);
+   - larger groups get the chat line and an ordinary notification;
+   - work hours and DND silence the ring.
+5. **The in-call screen:**
+   - a grid of up to 9 tiles; **speaker view by default above 12 people**; **camera off by default above 12**;
+   - mute, camera, flip, speaker, leave;
+   - participant count and names (from `call.join`);
+   - simulcast on; a 720p cap, 480p on mobile data.
+6. **Chat lines:**
+   - "<Name> started a call · Join" (Join opens the call);
+   - while the call is live, the group header shows a **"Join" pill** with the count;
+   - "Call ended · 23:10".
+7. **The Calls tab (LIME-116):**
+   - group calls appear as rows with the group avatar and name, and Missed applies to rung group calls;
+   - the **New Call sheet gets a "Groups" section** after the contacts, each group with voice and video buttons.
+8. **The Debug Call diagnostics log** (from LIME-111-fix) covers group calls too:
+   - connection state, E2EE state per participant, key index changes;
+   - **no keys, no IPs.**
+
+---
+
+**Phase 5: docs**
+- `docs/api-v2.md`: the four ops, their rules, `livekit-token`;
+- `docs/architecture.md` §9 "as built": the key model, and **an honest limits list**:
+  - the SFU sees IPs, timing, participant count and packet sizes, never media or names;
+  - anyone holding the current key could pretend to be a participant's stream (per-sender keys limit this to people in the call);
+  - the key exchange is flagged for the pre-launch external security review;
+- `docs/release-checklist.md`: a **100-person load test before launch** (`lk load-test`).
+
+---
+
+**Verification**
+- **core** `cargo test`, clippy 0:
+  - ops sign and verify;
+  - a non-member's start/join/key is ignored;
+  - keys go only to devices in the call;
+  - leave → a new index, and the leaver doesn't receive it;
+  - a member removed mid-call gets no new key;
+  - refused in a deleted group.
+- **server:** `livekit-token` (no session → 401; a bad room name → 400; the rate limit; the grants contain no admin or recording; 503 until configured).
+- **integration (3 accounts, staging):**
+  - start → two joins → the keys exchanged;
+  - one leaves → the remaining two have new indexes;
+  - a token from staging connects to `sfu.limechat.org`.
+- **infra:**
+  - an `lk load-test` against the SFU with E2EE-sized traffic (e.g. 3 video publishers + 10 subscribers): report peak CPU and RAM on CPX11;
+  - **the TURN renewal still works** (`certbot renew --dry-run`);
+  - the TURN allocation check from `infra/turn/README.md` still passes.
+- **iOS:**
+  - unit tests with fakes (key provider fed only by core events, the ring threshold, the >12 defaults);
+  - **two simulators join the same staging room**: each sees the other, and E2EE reports ok (audio-only or a fake track);
+  - UI tests: the group Voice/Video menu, the Join line and pill, leave;
+  - tiered (full on the 13 mini, changed tests on SE and 18 Pro); 0 warnings; Release-has-no-Bluetooth passes.
+- **Report:** the size delta from Phase 1, and the load-test numbers.
+
+---
+
+**Gate (the user, three devices: Shem, Jean, the iPad; all on the 3-person test group):**
+1. Shem starts a **voice** call in a group of ≤ 10 → Jean and the iPad **ring** (lime open); both join; audio flows all ways; mute works.
+2. Switch to **video**: tiles show for everyone; flip works.
+3. The iPad leaves → Shem and Jean carry on with no glitch beyond a moment (the key rotates).
+4. "Call ended" appears in the chat and the call tab when the last person leaves.
+5. **One phone on mobile data** (Wi-Fi off) joins and works.
+6. Share the Call diagnostics logs if anything fails.
+
+**Record:** `## LIME-112b` in `TEND.md` (include the size delta, the load-test numbers, and anything not exercised).
+
+**Commit:** `feat: group voice and video calls (self-hosted LiveKit, E2EE per-sender keys)`, trailer `Brief: LIME-112b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if the survey turns up related issues, or a decision this brief doesn't make, **stop and ask the user** (not plot).
+
+**Out of scope:**
+- screen share, raise hand, recording;
+- PushKit ringing (APNs, after November);
+- "end for everyone" and "only admins can start calls" (follow-ups);
+- moving 1:1 onto LiveKit's WebRTC;
+- Android.
 
 ### LIME-113 → `tend` (lime-aa) (after the calls): in-app account deletion + Report (App Store rules 5.1.1(v) and 1.2)
 **Phase 0:** `git add PLOT.md` only. **Phase 1:** survey the auth, profiles, devices, mailbox, blobs/attachments, the Jam tables if present, Block, and the Settings → Account screen. Stop and ask the user on any conflict.
