@@ -101,7 +101,20 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **The residual:** a send still holds the lock across its HTTP, so expect about 4–5 s from answer to connected. The next lever is to prepare under the lock, send after, and commit on success; do it only if the logs show waits.
    - **Waiting on the user's two-phone gate**, then plot pulls the logs over USB ("logs").
    - (Original entry:) **LIME-111-fix2 (drafted 2026-10-10 from both phones' diagnostics logs). Calls still don't connect after `a45e697`.** See "### LIME-111-fix2". LIME-116 waits for it.
-1e. **LIME-111-fix3 (NEXT, drafted 2026-10-10 from the second logs):** after one good call (18:08), nothing from Jean reached Shem; Shem → Jean kept working. See "### LIME-111-fix3". LIME-116 waits.
+1e. **LIME-111-fix3 Phase 1 landed as `2274c9d` (pushed): a repro plus diagnostics only; the cause is NOT found yet.**
+   - The two-core staging repro of the 18:08 sequence **passes** (B → A call ops and texts arrive after a completed call and after crossed calls), so the protocol path is fine. **The fault is in the real phones' state** (a stale device, stuck pending items, or a fetch cursor).
+   - **The staging read (a) vs (c) was blocked** by Claude Code's PII permission check. The user approves a narrow query (devices + mailbox_items, ids and counts only) or gives Shem's user id.
+   - **The new log lines:** "downloaded D, stored S, pending[reason=count]" and the device id's last 4 characters at app start.
+     - Shem downloaded 0 while Jean sends → (a) or (c);
+     - downloaded > 0 with pending `no_session` or `decrypt_failed` → (b).
+   - **Next:** the user installs, places calls both ways plus a Jean → Shem text, then says "logs" to plot. Phase 2 (fix, gather cap, TURN retry, glare, ringback) waits for the cause.
+   - (Original entry:) **LIME-111-fix3 (drafted 2026-10-10 from the second logs):** after one good call (18:08), nothing from Jean reached Shem; Shem → Jean kept working. See "### LIME-111-fix3". LIME-116 waits.
+1e2. **ROOT CAUSE FOUND (plot, 2026-10-10 20:05, from the 19:56–20:02 logs on both phones): the callee's call-op queue jams after the first incoming offer per app launch.** See "### LIME-111-fix3b" (NEXT; it replaces fix3 Phase 2). LIME-118 follows it.
+1f. **2026-10-10 19:39: the iPad → Shem video call CONNECTED** (9 s from tap to media up; gathering completed in about 0.3 s, no cap hit; the answer was applied 1 s after it was sent; a clean end on both sides).
+   - **Calling works in general; Jean ↔ Shem specifically does not.**
+   - **Jean's phone had NOT installed the fix3-diagnostics build** (no "app start" line; her log ends at 18:56), so the next step is to install it on Jean's phone, place Jean ↔ Shem calls, and send "logs".
+   - The user also saw **one phone with only its self-view and a black main area** (the remote video isn't rendered). That goes to LIME-118.
+1g. **LIME-118 (DESIGN-09): the call screen and call sounds**, drafted 2026-10-10. It goes **after the fix3 cause is fixed**; its 'Ringing…' + ringback can go first if the user wants.
 2b. **LIME-116 (DESIGN-08): the Calls tab**, drafted 2026-10-10, after 111-fix and **before 112b**; C1 is open (lean A). Then **LIME-117: call links**, after 112b (drafted; C2 = A, C3 = on).
 3. **LIME-112b:** group calls (LiveKit, self-hosted). **READY (plot, 2026-10-10); the user decided D1 = B, D2 = B with 10, D3 = A.** Send it only **after LIME-111-fix passes the two-phone gate**. See "### LIME-112b".
 3. **LIME-113:** account deletion + Report (drafted).
@@ -2673,6 +2686,220 @@ If anything contradicts this brief, stop and ask the user.
   - LiveKit Cloud is never used (open-source requirement).
 - **Rough monthly at the pilot scale:** TURN ~$7–21 + LiveKit (CPX21–CPX31) only when group calls launch; overage traffic ~€1/TB (US, verify).
 
+### LIME-111-fix3b → `tend` (lime-aa) (NEXT; revises fix3's Phase 2 now that the cause is known): the callee's call-op queue jams after the first incoming offer
+**The evidence** (plot pulled `/tmp/lime-calllogs5/{jean,shem}.log` over USB, 2026-10-10, 19:56–20:02; both phones on the fix3-diagnostics build `2274c9d`):
+- **One `recv` per app launch on the receiving side, then silence:**
+  - **Shem:** app start 19:14:56 → `recv call.offer` 19:39:37 → no `recv` until the next app start at 19:56:43 → `recv call.offer` 19:56:45 → **no `recv` for the rest of the session**, although `sync: downloaded 1` appears right after each of Jean's sends:
+    - 19:59:13, Jean's answer sent 19:59:11;
+    - 19:59:29, her end;
+    - 19:59:38, her offer;
+    - 20:00:40, four items;
+    - 20:01:21.
+  - **Jean:** `recv call.offer` 19:59:05 → no `recv` afterwards, despite later downloads.
+  - **In every log so far, Shem's phone has only ever logged `recv call.offer`**: never an answer, an end or ICE.
+- **Nothing is pending** (`pending []`), so the items were decrypted and became call events. They just never reached `CallManager.handle(_ event:)`, whose first line logs `recv`.
+- **The jam:**
+  - `CallManager.handle(_ events:)` drains an `inbox` behind a `draining` flag (`guard !draining else { return }`);
+  - `receivedOffer` awaits `system.reportIncoming(...)` → `CallKitSystem.reportIncoming`, which does `try await provider.reportNewIncomingCall(with:update:)`;
+  - **on a device that await does not return** (the call still rings and can be answered: "accept" is logged, so the main actor isn't blocked);
+  - so `draining` stays true and **every later call op appends to `inbox` forever**, until the app restarts;
+  - the unit tests use `QuietCallSystem.reportIncoming`, which returns `true` at once, so they never saw it.
+- **This explains every symptom:**
+  - the caller is stuck on "Calling" (the answer arrives after the callee's queue is jammed);
+  - "only the first call works";
+  - "Jean → Shem never arrives";
+  - the 18:08 success (Shem's first offer after a launch);
+  - the iPad as caller works.
+- **Also in these logs:**
+  - 20:00:19 "relay credentials missing" then `send call.offer FAILED … Network` on Shem: a network blip; fix3's TURN retry is still wanted;
+  - the gather cap was hit in most calls.
+
+**Goal:** an incoming offer never blocks later call ops; every call op is handled within a second of being fetched, for any number of calls in one app session.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push; the user's phones are plugged in for log pulls.
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: confirm (quick)**
+- Confirm by reading that `reportIncoming` is the only await in `receivedOffer` on the non-busy path.
+- Check whether the async `reportNewIncomingCall` overload is known not to resume (iOS release notes, forums), and **whether the completion-handler form resumes on the device**: log both, with timestamps.
+- If the evidence points elsewhere, stop and report.
+
+---
+
+**Phase 2: the fix**
+1. **Never hold the drain on system UI:**
+   - `receivedOffer` starts the CallKit report **without awaiting it inside the drain**: use the completion-handler `reportNewIncomingCall(with:update:completion:)`, and handle a refusal (error → missed) **in the completion**, on the main actor;
+   - log "incoming reported" or "refused: <error>".
+2. **A drain that can't jam:**
+   - each event's handling gets a **watchdog**: if one event takes over 3 s, log "handler stuck: <op>" and move on (the drain continues);
+   - `draining` is always reset (`defer`);
+   - no `await` on the network or the system inside the drain except the short signalling sends already there (busy).
+3. **The fake system in the tests gets a mode where `reportIncoming` never returns** (and one where it returns after 5 s), and a test proves a later `call.answer`/`call.end` for the next call is still handled.
+4. **From fix3's Phase 3 (unchanged):**
+   - the gather cap is 1.0 s once a relay candidate is in (otherwise up to 2.5 s);
+   - `turn-credentials` retries once after 1 s and **still places the call** if it fails ("relay unavailable" logged);
+   - **glare:** the lower user id's offer wins.
+5. **Diagnostics:**
+   - log the `inbox` depth whenever it is above 0 when a drain starts;
+   - log "incoming reported in N ms".
+
+---
+
+**Verification**
+- **Unit tests:**
+  - the never-returning and slow `reportIncoming` modes: three calls in a row in one session, alternating caller and callee, every op handled;
+  - the watchdog fires and the drain continues;
+  - the gather-cap rule; the TURN retry; glare.
+- `cargo test` if core is touched; the full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings; Release has no Bluetooth.
+
+**Gate (the user, Shem + Jean, lime open on both, no app restarts between calls):**
+1. Shem → Jean, Jean → Shem, Shem → Jean, Jean → Shem: all connect.
+2. End from the callee's side once.
+3. Plot pulls the logs ("logs"): a `recv` for every op, and no "handler stuck".
+
+---
+
+**Record:** `## LIME-111-fix3b` in `TEND.md`.
+
+**Commit:** `fix: an incoming call no longer jams later call ops (CallKit report outside the drain, a drain watchdog); 1 s gather cap; TURN retry; glare`, trailer `Brief: LIME-111-fix3b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
+### DESIGN-09 (plot, 2026-10-10): the call screen and call sounds
+**The user (2026-10-10), after the first successful call (iPad ↔ phone):**
+- "The phone call screen needs some love. It's hard to tell if a call is being made without a sound, so connecting can feel longer."
+- "Can we pull the default Apple call and FaceTime call sounds and use those?"
+- "With one phone I can see my own camera in the top right, but the main area is just black."
+- References:
+  - **FaceTime (iOS 26) in-call:** full-bleed video; a name pill top-left with a chevron; a vertical stack of round buttons bottom-right (camera, mic, ⋯, red ✕); flip camera bottom-left;
+  - **Signal:** the call-link sheets; the in-call participant sheet "In this call (3) · 1 waiting" with ✓/✕ and Remove;
+  - **Kakao group calls:** a grid of rounded tiles with speaking bars; a header with the name, count and duration; a bottom bar of effects, mic, red end, speaker and camera;
+  - **Apple Phone:** Recents with a favourites poster row; the incoming banner and full-screen poster.
+
+**Apple's sounds: no.** Apple's ringtones and FaceTime's tones are Apple's copyrighted assets with no licence for other apps. Bundling them (even in Debug builds, which reach testers) risks App Store rejection and a takedown. **Instead:**
+- the **standard telephone ringback** that callers hear on any phone: the North American tone, **440 + 480 Hz, 2 s on, 4 s off**. It's a public telephony standard and instantly reads as "it's ringing";
+- a short **connect** blip and an **end** tone, synthesized (tend generates the files with a script and commits the script);
+- lime's own steelpan ringtone (already bundled) stays the incoming ring.
+
+**Limits to state honestly:**
+- the incoming **CallKit screen is Apple's system UI**: lime can set the name, the app icon and the ringtone, **not** a full-screen poster;
+- the poster look applies to lime's own in-app screens.
+
+**Layout decisions (plot):**
+- **1:1 = FaceTime-style. Groups (112b) = Kakao-style grid.**
+- **Proposed for later:** a favourites row at the top of Calls (Apple) as an amendment to LIME-116, if the user wants it.
+
+### LIME-118 → `tend` (lime-aa) (after the fix3 cause is fixed): the call screen (FaceTime-style 1:1), "Ringing…", call sounds, and the black remote video
+**Goal:** a 1:1 call always tells you what's happening, by sound and on screen (Calling → Ringing → Connecting → the timer). Video calls show the other person full screen. The screen follows FaceTime's layout in lime's style.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push; `devicectl` log pulls when the phones are plugged in.
+
+**What plot read:**
+- the user's references (above);
+- `CallView.swift`, `CallManager.swift`, `CallMedia.swift`;
+- `Resources/Sounds/README.md` (the CAF pipeline from LIME-102b);
+- the 19:39 iPad → Shem logs: the call connected, and **no log line records the remote video track or its first frame**.
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: survey, then the black video**
+1. **Find why one side shows only the self-view.** Log, with no SDP:
+   - the remote track added (kind, and the receiver/transceiver event used);
+   - the renderer attached;
+   - the first remote frame size;
+   - the remote track enabled/muted.
+
+   Likely causes:
+   - the remote video track arrives through `didAdd rtpReceiver` / a transceiver, and the view only listens for `didAdd stream` (Unified Plan with `maxBundle`, since fix2);
+   - the track arrives before the view exists and is never re-attached;
+   - the renderer is attached to the wrong track after a camera flip.
+2. **Report the cause, then fix it.** Unit test: a fake media layer that adds the remote track **before** the view appears and one that adds it **after**, and the view shows it in both cases.
+
+---
+
+**Phase 2: the state and sounds**
+1. **`call.ringing { call_id }`:**
+   - the callee sends it the moment the incoming call is reported to CallKit;
+   - core validates it like the other call ops;
+   - the caller shows **"Calling…"** before it and **"Ringing…"** after;
+   - if no `call.ringing` arrives within 10 s, show the hint **"<Name>'s phone may be off or lime closed"** under "Calling…" (the no-push limit).
+2. **Sounds** (bundled CAF, mono; **generated by a committed script** in `ios/tools/`, documented in `Resources/Sounds/README.md`):
+   - **ringback:** 440 + 480 Hz, 2 s on / 4 s off, at a modest level. It plays **on the caller from "Calling…" until answer, decline, no answer or end**, through the call's audio session (the earpiece for voice, the speaker for video), like a phone, so the silent switch doesn't mute it;
+   - **connect:** a short soft two-note blip when the media comes up, plus a light haptic;
+   - **end:** a short descending tone when either side ends; also for busy or failed, with the status text ("Busy", "Call failed").
+   - **No Apple sounds**, and no third-party sounds.
+
+---
+
+**Phase 3: the 1:1 in-call screen** (FaceTime layout, lime tokens; dark always)
+1. **Video call:**
+   - the **remote video full-bleed** (aspect-fill);
+   - the **self-view** is a rounded tile in the top-right, **draggable and snapping to the four corners**;
+   - tapping the self-view swaps the big and small views.
+2. **Until there's remote video** (calling, ringing, connecting, or the camera is off):
+   - a **large lime-shaped avatar** centred on a softly blurred version of it;
+   - the name;
+   - the status ("Calling…", "Ringing…", "Connecting…", then the **timer 0:42**).
+3. **Top-left:**
+   - a **name pill** (the avatar, the name, `chevron.right`) that opens a small sheet: the person, **Message**, and later "Add people" (112b);
+   - under the pill, the status or timer.
+4. **The controls:**
+   - **video calls** (FaceTime): a **vertical stack bottom-right** of camera on/off, mic, ⋯ (the audio route: speaker, Bluetooth, iPhone, via `AVRoutePickerView`), and **the red end button (✕)**; **flip camera bottom-left**;
+   - **voice calls**: one bottom row (Kakao/Phone) of mic, speaker, video (**turns the call into video**), and the red end button;
+   - the controls **fade after 5 s** of no touch on video calls, and a tap shows them again;
+   - all buttons have VoiceOver labels.
+5. **The other side's state:**
+   - when the remote mutes, a small "muted" mic glyph on their view;
+   - when they turn the camera off, the avatar view replaces their video.
+6. **Accessibility and size:** Dynamic Type for the name and status; works on the SE (667 pt) and in landscape for video.
+
+---
+
+**Out of scope:**
+- the group grid (112b, Kakao-style);
+- call-link sheets (117, Signal-style);
+- the favourites row in Calls (a proposed amendment to 116);
+- PiP outside the app (later);
+- effects, reactions and raise hand.
+
+---
+
+**Verification**
+- core: `call.ringing` validates; `cargo test`; clippy 0.
+- **iOS unit tests:**
+  - the state text sequence (Calling → Ringing → Connecting → timer);
+  - the 10 s hint;
+  - the ringback starts and stops on each outcome (answer, decline, no answer, end, failed);
+  - the remote-track attach before and after the view.
+- **UI tests:** the voice layout (row) vs the video layout (stack); the controls fade and come back; the self-view snaps to a corner; the name pill opens the sheet.
+- The sound files are bundled, with the expected durations; the generator script reproduces them.
+- The full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings; Release has no Bluetooth.
+
+**Gate (the user, the iPad + a phone):**
+1. Calling: you hear ringback, and "Ringing…" appears when the other side rings.
+2. Answer: the connect blip; the timer starts.
+3. **A video call: the other person fills the screen on both devices** (no black main area).
+4. Drag the self-view; tap to swap; the controls fade.
+5. A voice call shows the row layout; the video button turns it into video.
+6. End: the end tone on both.
+
+---
+
+**Record:** `## LIME-118` in `TEND.md`.
+
+**Commit:** `feat(ios): FaceTime-style call screen, Ringing state, ringback/connect/end tones; fix remote video not shown`, trailer `Brief: LIME-118`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
 ### LIME-111-fix3 → `tend` (lime-aa) (NEXT): find where Jean → Shem ops go, then fix it; a 1 s gather cap; retry TURN credentials
 **The evidence** (`~/Downloads/call-logs2/{jean,shem}/call-diagnostics.log`, tend's read plus plot's check, 2026-10-10):
 - **18:08 Jean → Shem video connected end to end** (the offer arrived in 1.5 s, the answer was applied 1 s after it was sent, the media came up, and both sides ended cleanly). **fix2 works when ops are delivered.**
@@ -2735,12 +2962,7 @@ If anything contradicts this brief, stop and ask the user.
 1. **The gather cap goes from 2.5 s to 1.0 s**, but only once at least one relay candidate is in (if a relay is configured); otherwise wait up to 2.5 s. Late candidates go in the existing batch op.
 2. **`turn-credentials`:** retry once after 1 s on a network error. If it still fails, log "relay unavailable" and **still place the call** (direct/srflx may work) instead of failing it.
 3. **Diagnostics:** replace the misleading "N items" with "downloaded D, stored S, call ops C, pending P". Log the device id's last 4 characters at app start, to match against the server.
-4. **The caller can tell it's ringing** (the user, 2026-10-10: "I can't even tell if it's ringing"):
-   - the callee sends a small **`call.ringing { call_id }`** the moment it shows the incoming call (CallKit reported);
-   - the caller shows **"Calling…"** until then and **"Ringing…"** after it, and plays a quiet **ringback tone** (a standard repeating tone, bundled, through the call audio session) until answer or end;
-   - if no `call.ringing` arrives within 10 s, the caller keeps "Calling…" and shows the small hint **"Jean's phone may be off or lime closed"** (the honest no-push limit);
-   - core validates `call.ringing` like the other call ops;
-   - unit-test the state changes.
+4. *(Moved to LIME-118: "Ringing…", `call.ringing` and the ringback tone.)*
 
 ---
 
