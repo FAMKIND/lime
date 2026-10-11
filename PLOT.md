@@ -109,6 +109,15 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
      - downloaded > 0 with pending `no_session` or `decrypt_failed` → (b).
    - **Next:** the user installs, places calls both ways plus a Jean → Shem text, then says "logs" to plot. Phase 2 (fix, gather cap, TURN retry, glare, ringback) waits for the cause.
    - (Original entry:) **LIME-111-fix3 (drafted 2026-10-10 from the second logs):** after one good call (18:08), nothing from Jean reached Shem; Shem → Jean kept working. See "### LIME-111-fix3". LIME-116 waits.
+1e4. **fix3b VERIFIED on two phones (2026-10-10, 20:55–20:58):** 4 alternating calls connected; every op was received; no "handler stuck".
+   - **But there is NO AUDIO, and CallKit is dead on both phones:** 0 "callkit answer/end/audio activated" and 0 "incoming reported" lines (plot's grep of `/tmp/lime-calllogs6`).
+   - The audio waits for `didActivate`, which never comes, so there is no sound.
+   - **→ LIME-111-fix4 (NEXT, drafted).** Then LIME-118 (the user again: "the UI is broken like the others I shared").
+1e3. **LIME-111-fix3b LANDED as `03da8b9` (pushed, 2026-10-10).**
+   - The CallKit report now uses the completion form, outside the drain; a 3 s watchdog per op; the 1 s gather cap after a relay candidate; a TURN retry, else the call is placed with STUN only; glare (the lower id wins).
+   - Unit tests cover a never-returning `reportIncoming`; not tried on a device.
+   - **Waiting on the user's gate:** 4 alternating calls with no app restart, then "logs".
+   - After that: **LIME-118** (the call screen, Ringing, tones, the black remote video), then 116 → 112b → 117.
 1e2. **ROOT CAUSE FOUND (plot, 2026-10-10 20:05, from the 19:56–20:02 logs on both phones): the callee's call-op queue jams after the first incoming offer per app launch.** See "### LIME-111-fix3b" (NEXT; it replaces fix3 Phase 2). LIME-118 follows it.
 1f. **2026-10-10 19:39: the iPad → Shem video call CONNECTED** (9 s from tap to media up; gathering completed in about 0.3 s, no cap hit; the answer was applied 1 s after it was sent; a clean end on both sides).
    - **Calling works in general; Jean ↔ Shem specifically does not.**
@@ -2685,6 +2694,76 @@ If anything contradicts this brief, stop and ask the user.
   - a 720p cap (480p default on mobile data);
   - LiveKit Cloud is never used (open-source requirement).
 - **Rough monthly at the pilot scale:** TURN ~$7–21 + LiveKit (CPX21–CPX31) only when group calls launch; overage traffic ~€1/TB (US, verify).
+
+### LIME-111-fix4 → `tend` (lime-aa) (NEXT): no audio; CallKit never calls lime back
+**The evidence** (`~/Downloads/call-logs6/{jean,shem}` = `/tmp/lime-calllogs6`, 2026-10-10, 20:55–20:58, the fix3b build):
+- all four calls connected (media up) and every op arrived, **but the user heard no audio on any call**;
+- **CallKit gives no sign of life on either phone:**
+  - **0** `callkit answer`, **0** `callkit end`, **0** `callkit audio activated`;
+  - **0** `incoming reported in N ms` / `incoming refused` (the completion of `reportNewIncomingCall` never fires, even in fix3b's completion-handler form);
+  - the "accept" lines come from lime's in-app button, not CallKit;
+- **so `CXProviderDelegate` gets nothing**, and since LIME-111-fix, WebRTC (`useManualAudio`) turns audio on only in `provider(_:didActivate:)` → `WebRTCMedia.audioSessionActivated` (`rtc.isAudioEnabled = true`). **That never runs, so the call is silent.**
+- **Plot read:**
+  - `CallKitSystem.swift`: the provider is created in `init`, `setDelegate(self, queue: .main)`, `nonisolated` delegate methods, and **no `providerDidBegin`**;
+  - `CallManager` holds `system` strongly;
+  - `Info-Debug.plist` `UIBackgroundModes` = bluetooth-central, bluetooth-peripheral, audio: **no `voip`**.
+- **Suspects** (unverified):
+  - the missing `voip` background mode;
+  - a provider set up in a way iOS 26 ignores;
+  - CallKit unusable with this signing/region;
+  - a `nonisolated`/`@MainActor` delegate mismatch swallowing the callbacks.
+
+**Goal:** every call has two-way audio on real phones, whether or not CallKit cooperates, and we know (with device evidence) why CallKit is silent and whether it's fixed.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push; the user's phones are plugged in; device logs pulled with `devicectl`.
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: make CallKit's state visible**
+1. Add a Debug-only **About → "CallKit self-test"**. It reports a fake incoming call (a fixed UUID, "lime test"), waits 3 s, ends it, and logs every step: provider created, `providerDidBegin`, the report completion (error or nil), any delegate action, and audio activate/deactivate. Also log `providerDidReset`.
+2. Log `providerDidBegin` and every delegate callback in real calls too.
+3. **Stop with a short report for the user:**
+   - what the self-test logs (the user runs it on one phone and says "logs"; plot or tend pulls the log);
+   - what the likely cause is.
+
+---
+
+**Phase 2: the audio can't depend on CallKit**
+1. **A fallback activation:** when the call is accepted (callee) or answered (caller), if `didActivate` hasn't arrived within **1 s**:
+   - configure and activate `AVAudioSession` (playAndRecord; voiceChat for voice, videoChat for video; allowBluetooth; defaultToSpeaker for video);
+   - call `audioSessionDidActivate` and set `isAudioEnabled = true` on `RTCAudioSession`;
+   - log "audio activated by lime (CallKit silent)".
+2. **If `didActivate` arrives later,** it's a no-op beyond logging.
+3. **On end,** deactivate it cleanly.
+4. **Remote audio track:** log when it's received and enabled; make sure the local mic track is enabled and not muted at the start.
+5. **Fix the CallKit cause found in Phase 1**, if it's a small, safe change (e.g. adding the `voip` background mode, or the delegate setup). **If it needs anything the user must decide** (entitlements, the paid account), report it instead.
+6. **The callee's answer without relay candidates** (tend's finding: answers "gathering complete in 53 ms: host=7"):
+   - apply the caller's rule on the callee too: wait for a relay candidate (1 s cap after the first relay, else 2.5 s) before sending the answer;
+   - log the late-candidate batch sends on both sides.
+
+---
+
+**Verification**
+- unit tests: the fallback activates after 1 s when the fake system sends no `didActivate`, and not when it does; deactivation on end; the callee's gather rule;
+- the full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings; Release has no Bluetooth (**if `voip` is added, update the Release background-modes check to allow only `audio` + `voip`**).
+
+**Gate (the user, Shem + Jean):**
+1. A voice call each way: **you hear each other**; mute works.
+2. A video call: audio and video.
+3. **Wi-Fi off on one phone:** a call connects with audio (through the relay).
+4. "logs": plot checks for "audio activated" (CallKit or lime) and the CallKit self-test result.
+
+---
+
+**Record:** `## LIME-111-fix4` in `TEND.md`.
+
+**Commit:** `fix(ios): call audio no longer waits on CallKit (fallback activation), CallKit self-test and callbacks logged; callee waits for a relay candidate`, trailer `Brief: LIME-111-fix4`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
 
 ### LIME-111-fix3b → `tend` (lime-aa) (NEXT; revises fix3's Phase 2 now that the cause is known): the callee's call-op queue jams after the first incoming offer
 **The evidence** (plot pulled `/tmp/lime-calllogs5/{jean,shem}.log` over USB, 2026-10-10, 19:56–20:02; both phones on the fix3-diagnostics build `2274c9d`):
