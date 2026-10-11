@@ -73,6 +73,13 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
         controller.request(CXTransaction(action: action)) { _ in }
     }
 
+    /// lime's own Accept button also answers the system call, so CallKit (not lime) activates the audio.
+    func requestAnswer(callID: String) {
+        controller.request(CXTransaction(action: CXAnswerCallAction(call: uuid(callID)))) { error in
+            if let error { Task { @MainActor in CallDiagnostics.shared.log("callkit answer request failed: \(error)") } }
+        }
+    }
+
     func reportConnected(callID: String) {
         provider.reportOutgoingCall(with: uuid(callID), connectedAt: nil)
     }
@@ -135,6 +142,7 @@ final class QuietCallSystem: CallSystem {
     var audioActive: Bool { false }
     func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (String?) -> Void) { completion(nil) }
     func reportOutgoing(callID: String, name: String, video: Bool) {}
+    func requestAnswer(callID: String) {}
     func reportConnected(callID: String) {}
     func reportEnded(callID: String, answeredOrOutgoing: Bool) {}
 }

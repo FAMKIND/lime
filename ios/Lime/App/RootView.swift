@@ -18,7 +18,19 @@ struct RootView: View {
         }
         .overlay(alignment: .top) { ComingSoonBanner() }
         .overlay(alignment: .top) { IncomingBannerView() }
-        .fullScreenCover(isPresented: Binding(get: { store.calls.inCall }, set: { _ in })) { CallView() }
+        .fullScreenCover(isPresented: Binding(get: { store.calls.inCall && !store.calls.minimized }, set: { _ in })) { CallView() }
+        .overlay(alignment: .top) {
+            if store.calls.inCall && store.calls.minimized {
+                Button { store.calls.minimized = false } label: {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Label("Tap to return to call \u{00B7} \(store.calls.statusText(at: context.date))", systemImage: "phone.fill")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 36).background(Theme.accent)
+                    }
+                }
+                .accessibilityIdentifier("call-return-bar")
+            }
+        }
     }
 }
 

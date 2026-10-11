@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use super::{db_err, LimeStore, StoreError};
 
-pub(crate) const OPS: [&str; 6] = ["call.offer", "call.answer", "call.ice", "call.end", "call.busy", "call.decline"];
+pub(crate) const OPS: [&str; 7] = ["call.offer", "call.answer", "call.ice", "call.end", "call.busy", "call.decline", "call.ringing"];
 
 /// An offer older than this is not rung.
 pub(crate) const OFFER_MAX_AGE_MS: i64 = 90_000;
@@ -72,7 +72,7 @@ pub(crate) fn push(conn: &Connection, peer: &str, op_type: &str, call_id: &str, 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CallEvent {
     pub peer: String,
-    /// `call.offer`, `call.answer`, `call.ice`, `call.end`, `call.busy` or `call.decline`.
+    /// `call.offer`, `call.answer`, `call.ice`, `call.end`, `call.busy`, `call.decline` or `call.ringing` (the callee's phone is ringing).
     pub op: String,
     pub call_id: String,
     /// The op's payload as JSON (the SDP, the candidate...).
@@ -104,6 +104,13 @@ mod tests {
     use serde_json::json;
 
     const SDP: &str = "v=0\r\na=fingerprint:sha-256 ab:cd:ef\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
+
+    #[test]
+    fn ringing_needs_only_a_call_id() {
+        assert_eq!(validate("call.ringing", &json!({ "call_id": "c-1" })).as_deref(), Some("c-1"));
+        assert!(validate("call.ringing", &json!({})).is_none());
+        assert!(is_call_op("call.ringing"));
+    }
 
     #[test]
     fn a_batch_of_candidates_validates_and_the_single_form_still_does() {

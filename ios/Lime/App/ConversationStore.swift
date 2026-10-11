@@ -86,7 +86,7 @@ final class ConversationStore {
         quiet = ProcessInfo.processInfo.arguments.contains("-lime-skip-sign-in") || ProcessInfo.processInfo.arguments.contains("-lime-fake-auth")
         #endif
         let system: CallSystem = quiet ? QuietCallSystem() : CallKitSystem()
-        let manager = CallManager(signalling: StoreSignalling(store: self), system: system,
+        let manager = CallManager(signalling: StoreSignalling(store: self), system: system, sounds: quiet ? QuietCallSounds() : SystemCallSounds(),
                                   isQuiet: { StatusSettings.shared.plan().isQuiet }, myID: { [weak self] in self?.myUserID }, makeMedia: { WebRTCMedia(manualAudio: !quiet) })
         manager.fetchNow = { [weak self] in await self?.fetchCallOps() }
         callManager = manager

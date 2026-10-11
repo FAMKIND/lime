@@ -32,6 +32,8 @@ protocol CallSystem: AnyObject {
     /// Starts the system's incoming-call report and returns at once; `completion` says whether the system will ring (`nil` error) or refused.
     func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (_ refusal: String?) -> Void)
     func reportOutgoing(callID: String, name: String, video: Bool)
+    /// lime's own Accept button: also answer the system's call, so the system activates the audio.
+    func requestAnswer(callID: String)
     func reportConnected(callID: String)
     func reportEnded(callID: String, answeredOrOutgoing: Bool)
 }
@@ -51,6 +53,14 @@ final class CallManager {
     private(set) var speaker = false
     private(set) var cameraOn = true
     private(set) var startedAt: Date?
+    /// The person left the call screen to read a chat; the call goes on and a bar returns to it.
+    var minimized = false
+    /// The other phone is ringing (it sent `call.ringing`).
+    private(set) var remoteRinging = false
+    /// Ten seconds of "Calling…" with no sign of ringing: the other phone may be off or lime closed.
+    private(set) var showUnreachableHint = false
+    /// The other side's picture has arrived (a frame was drawn).
+    private(set) var remoteVideoLive = false
     var media: (any CallMedia)?
 
     @ObservationIgnored private let signalling: CallSignalling
@@ -59,6 +69,9 @@ final class CallManager {
     @ObservationIgnored private let log: CallLog
     @ObservationIgnored private let isQuiet: () -> Bool
     @ObservationIgnored private let myID: () -> String?
+    @ObservationIgnored private let sounds: CallSounds
+    /// Where the sound is going, for the call screen.
+    let route = CallRoute()
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var callID = ""
     var currentID: String { callID }
@@ -85,26 +98,42 @@ final class CallManager {
     @ObservationIgnored private var descriptionSent = false
     @ObservationIgnored private var batcher: Task<Void, Never>?
     @ObservationIgnored private var audioWatch: Task<Void, Never>?
+    @ObservationIgnored private var hintWatch: Task<Void, Never>?
+    /// How long "Calling…" waits for `call.ringing` before the hint appears.
+    @ObservationIgnored var hintSeconds: Double = 10
     /// How long to wait for the system to activate the audio before lime does it.
     @ObservationIgnored var audioFallbackSeconds: Double = 1
     /// How long a call rings before it is a missed call.
     @ObservationIgnored var ringSeconds: Double = 45
 
     init(signalling: CallSignalling, system: CallSystem, log: CallLog = .shared, now: @escaping () -> Date = Date.init,
-         isQuiet: @escaping () -> Bool = { false }, myID: @escaping () -> String? = { nil }, makeMedia: @escaping () -> any CallMedia) {
+         sounds: CallSounds = QuietCallSounds(), isQuiet: @escaping () -> Bool = { false }, myID: @escaping () -> String? = { nil }, makeMedia: @escaping () -> any CallMedia) {
         self.signalling = signalling
         self.system = system
         self.log = log
         self.now = now
         self.isQuiet = isQuiet
         self.myID = myID
+        self.sounds = sounds
         self.makeMedia = makeMedia
-        system.onAnswer = { [weak self] id in Task { @MainActor in if self?.callID == id { await self?.accept() } } }
+        route.onHeadphonesGone = { [weak self] in self?.headphonesGone() }
+        system.onAnswer = { [weak self] id in Task { @MainActor in if self?.callID == id { await self?.accept(fromSystem: true) } } }
         system.onEnd = { [weak self] id in Task { @MainActor in if self?.callID == id { await self?.end() } } }
         system.onMute = { [weak self] id, muted in Task { @MainActor in if self?.callID == id { self?.setMuted(muted) } } }
     }
 
     var inCall: Bool { phase != .idle }
+
+    /// The line under the name: Calling… → Ringing… → Connecting… → the timer.
+    func statusText(at date: Date = Date()) -> String {
+        switch phase {
+        case .idle: return ""
+        case .outgoing: return remoteRinging ? "Ringing…" : "Calling…"
+        case .incoming: return video ? "lime video call" : "lime voice call"
+        case .connecting: return "Connecting…"
+        case .active: return CallRecord.clock(date.timeIntervalSince(startedAt ?? date))
+        }
+    }
 
     // MARK: Starting
 
@@ -141,6 +170,7 @@ final class CallManager {
         }
         armTimeout()
         startPolling()
+        startRinging()
         return true
     }
 
@@ -149,6 +179,7 @@ final class CallManager {
         self.peerID = peerID; peerName = name; self.video = video; self.outgoing = outgoing
         callID = id; muted = false; speaker = video; cameraOn = true; startedAt = nil
         pendingOffer = nil; pendingCandidates = []; remoteReady = false; outbound = []; descriptionSent = false
+        remoteRinging = false; showUnreachableHint = false; remoteVideoLive = false; minimized = false
     }
 
     private func wire(_ media: any CallMedia) {
@@ -160,6 +191,7 @@ final class CallManager {
             self.outbound.append((candidate, mid, index))
             self.scheduleBatch()
         }
+        media.onRemoteVideo = { [weak self] live in self?.remoteVideoLive = live }
         media.onConnection = { [weak self] up in
             guard let self, self.inCall else { return }
             self.diag.log("media connection \(up ? "up" : "failed")")
@@ -170,6 +202,8 @@ final class CallManager {
                     self.ringTimeout?.cancel()
                     self.connectTimeout?.cancel()
                     self.stopPolling()
+                    self.stopRinging()
+                    self.sounds.playConnect()
                     self.system.reportConnected(callID: self.callID)
                 }
             } else {
@@ -213,6 +247,31 @@ final class CallManager {
                 self.diag.log("audio activated by lime (CallKit silent)")
             }
         }
+    }
+
+    /// The caller hears the ringback from the moment the offer is out; after `hintSeconds` without a `call.ringing`, the hint shows.
+    private func startRinging() {
+        route.start()
+        sounds.startRingback(video: video)
+        hintWatch?.cancel()
+        let id = callID, seconds = hintSeconds
+        hintWatch = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self, self.callID == id, self.phase == .outgoing, !self.remoteRinging else { return }
+            self.showUnreachableHint = true
+        }
+    }
+
+    private func stopRinging() {
+        sounds.stopRingback()
+        hintWatch?.cancel(); hintWatch = nil
+    }
+
+    private func headphonesGone() {
+        guard inCall else { return }
+        // Like any phone call: the earpiece for a voice call, the speaker for a video call.
+        media?.setSpeaker(video)
+        speaker = video
     }
 
     /// While ringing or connecting, ask the mailbox once a second (a missed nudge must not strand a call).
@@ -289,6 +348,10 @@ final class CallManager {
         diag.log("recv \(event.op) phase=\(phase) mine=\(event.callID == callID)\(event.op == "call.ice" ? " kind=\(CallDiagnostics.candidateKind(event.payload["candidate"] as? String ?? ""))" : "")")
         switch event.op {
         case "call.offer": await receivedOffer(event)
+        case "call.ringing":
+            guard phase == .outgoing, event.callID == callID, event.peerID == peerID else { return }
+            remoteRinging = true
+            showUnreachableHint = false
         case "call.answer": await receivedAnswer(event)
         case "call.ice": await receivedCandidate(event)
         case "call.end", "call.decline", "call.busy":
@@ -335,6 +398,11 @@ final class CallManager {
                 if self.callID == id, self.phase == .incoming { self.finish(.missed, notify: false) }
             } else {
                 self.diag.log("incoming reported in \(Int(Date().timeIntervalSince(began) * 1000)) ms")
+                // Tell the caller this phone is ringing.
+                if self.callID == id, self.phase == .incoming {
+                    let peer = self.peerID
+                    Task { _ = await self.signalling.send(peer: peer, op: "call.ringing", payload: ["call_id": id]) }
+                }
             }
         }
     }
@@ -344,6 +412,7 @@ final class CallManager {
         do {
             phase = .connecting
             ringTimeout?.cancel()
+            stopRinging()
             armConnectTimeout()
             armAudioFallback()
             try await media.apply(answer: sdp)
@@ -386,8 +455,9 @@ final class CallManager {
     // MARK: What the person does
 
     /// Answers the ringing call.
-    func accept() async {
+    func accept(fromSystem: Bool = false) async {
         guard phase == .incoming, let offer = pendingOffer else { return }
+        if !fromSystem { system.requestAnswer(callID: callID) }
         phase = .connecting
         ringTimeout?.cancel()
         armConnectTimeout()
@@ -462,6 +532,10 @@ final class CallManager {
     private func finish(_ outcome: CallOutcome, notify: Bool) {
         guard inCall else { return }
         diag.log("finish \(outcome.rawValue)")
+        stopRinging()
+        // The end tone: for any call this phone placed or answered (not for a call it never rang for).
+        if outgoing || startedAt != nil || outcome == .declined { sounds.playEnd() }
+        route.stop()
         ringTimeout?.cancel()
         connectTimeout?.cancel()
         batcher?.cancel(); batcher = nil
@@ -521,3 +595,13 @@ final class Once {
         return true
     }
 }
+
+#if DEBUG
+extension CallManager {
+    /// UI tests and screenshots (`-lime-demo-call voice|video`): the call screen with no media.
+    func demo(video: Bool, phase: CallPhase = .active) {
+        peerID = "sam"; peerName = "Sam Rivera"; self.video = video; outgoing = true
+        self.phase = phase; startedAt = Date().addingTimeInterval(-42); remoteVideoLive = false
+    }
+}
+#endif

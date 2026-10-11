@@ -24,3 +24,11 @@ Settings → Notifications → Add your own… picks a file, trims it (a message
 keeps it in `Library/Sounds` (where iOS looks for custom notification sounds), excluded from backup. They never leave the phone.
 CallKit documents `ringtoneSound` as a sound **in the app bundle**, so a custom call sound plays in Lime's own ringing screen and the system
 call screen uses the Lime steelpan.
+
+## Call tones (LIME-118)
+
+`lime-ringback.caf` (6 s: 440 + 480 Hz for 2 s, silence for 4 s, the North American ringback; the app loops it while "Calling…"),
+`lime-connect.caf` (0.18 s, two soft notes when the media comes up) and `lime-end.caf` (0.30 s, a short descending pair when a call
+ends) are plain sine tones made by `ios/tools/make-call-tones.py` (run `python3 ios/tools/make-call-tones.py`; it writes the three
+CAFs here with `afconvert`). Level about -18 dBFS. They are lime's own: no Apple sounds and no third-party recordings. They play through
+the call's audio session (play-and-record), so the silent switch does not mute them.

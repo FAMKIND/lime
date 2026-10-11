@@ -14,6 +14,7 @@ private final class Wire {
 private final class PairMedia: CallMedia {
     var onCandidate: ((String, String?, Int32) -> Void)?
     var onConnection: ((Bool) -> Void)?
+    var onRemoteVideo: ((Bool) -> Void)?
     let localView = UIView(), remoteView = UIView()
     var haveLocal = false, haveRemote = false, closed = false
     var candidates: [String] = []
@@ -116,7 +117,7 @@ final class CallLoopbackTests: XCTestCase {
         await connect(a, b)
         // The candidates were gathered before the description went out, so they travel inside it: one op each way.
         XCTAssertEqual(boxA.sent, ["call.offer"])
-        XCTAssertEqual(boxB.sent, ["call.answer"])
+        XCTAssertEqual(boxB.sent, ["call.ringing", "call.answer"])
         // Ones found later go together, in one op, at most once a second.
         mediaA.emitLate(12)
         await wait(3) { self.boxA.sent.count == 2 }
@@ -215,6 +216,7 @@ final class CallLoopbackTests: XCTestCase {
             Task { @MainActor in try? await Task.sleep(for: delay); completion(nil) }
         }
         func reportOutgoing(callID: String, name: String, video: Bool) {}
+        func requestAnswer(callID: String) {}
         func reportConnected(callID: String) {}
         func reportEnded(callID: String, answeredOrOutgoing: Bool) {}
     }

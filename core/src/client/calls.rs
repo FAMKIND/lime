@@ -5,7 +5,7 @@ use crate::store::calls;
 
 #[uniffi::export]
 impl LimeStore {
-    /// Sends one call op (`call.offer`, `call.answer`, `call.ice`, `call.end`, `call.busy` or `call.decline`) to an accepted contact,
+    /// Sends one call op (`call.offer`, `call.answer`, `call.ice`, `call.end`, `call.busy`, `call.decline` or `call.ringing`) to an accepted contact,
     /// now (signalling is not queued: a ring that arrives late is no ring). `payload` is a JSON object with a `call_id`; an offer or answer
     /// must carry an SDP and the fingerprint inside it.
     pub fn send_call_signal(

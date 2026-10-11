@@ -17,6 +17,8 @@ protocol CallMedia: AnyObject {
     var onCandidate: ((String, String?, Int32) -> Void)? { get set }
     /// The media path came up (`true`) or failed (`false`).
     var onConnection: ((Bool) -> Void)? { get set }
+    /// The other side's picture started (`true`: a frame arrived) or is gone.
+    var onRemoteVideo: ((Bool) -> Void)? { get set }
     var localView: UIView { get }
     var remoteView: UIView { get }
 
@@ -41,6 +43,9 @@ enum CallMediaError: Error { case notStarted, failed }
 final class WebRTCMedia: NSObject, CallMedia {
     var onCandidate: ((String, String?, Int32) -> Void)?
     var onConnection: ((Bool) -> Void)?
+    var onRemoteVideo: ((Bool) -> Void)?
+    private lazy var remoteSlot = RemoteVideoSlot()
+    private var statsTask: Task<Void, Never>?
     let localView: UIView = RTCMTLVideoView(frame: .zero)
     let remoteView: UIView = RTCMTLVideoView(frame: .zero)
 
@@ -68,8 +73,12 @@ final class WebRTCMedia: NSObject, CallMedia {
     nonisolated static func audioSessionActivated(_ session: AVAudioSession) {
         let rtc = RTCAudioSession.sharedInstance()
         rtc.audioSessionDidActivate(session)
-        rtc.isAudioEnabled = true
+        // If lime already activated the audio itself, CallKit's later "activated" only updates WebRTC's bookkeeping above: no second reconfiguration.
+        if !limeHoldsAudio.value { rtc.isAudioEnabled = true }
     }
+
+    /// Set while lime's own fallback has the audio session (so a late `didActivate` does not reconfigure it).
+    nonisolated static let limeHoldsAudio = AtomicFlag()
 
     nonisolated static func audioSessionDeactivated(_ session: AVAudioSession) {
         let rtc = RTCAudioSession.sharedInstance()
@@ -93,6 +102,13 @@ final class WebRTCMedia: NSObject, CallMedia {
         guard let connection = Self.factory.peerConnection(with: configuration, constraints: constraints, delegate: self) else { throw CallMediaError.failed }
         self.connection = connection
         wantsVideo = video
+        if let view = remoteView as? RTCMTLVideoView {
+            remoteSlot.setRenderer(FrameLogger(target: view) { [weak self] size in
+                CallDiagnostics.shared.log("remote video first frame \(Int(size.width))x\(Int(size.height))")
+                self?.onRemoteVideo?(true)
+            })
+        }
+        startStats()
         relayConfigured = servers.contains { $0.urls.contains { $0.hasPrefix("turn") } }
 
         let audioSource = Self.factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
@@ -161,6 +177,7 @@ final class WebRTCMedia: NSObject, CallMedia {
     func accept(offer: String) async throws -> String {
         guard let connection else { throw CallMediaError.notStarted }
         try await connection.setRemoteDescription(RTCSessionDescription(type: .offer, sdp: offer))
+        attachRemoteVideo(connection)
         let answer = try await connection.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
         try await connection.setLocalDescription(answer)
         return await gathered(connection, fallback: answer.sdp)
@@ -169,6 +186,7 @@ final class WebRTCMedia: NSObject, CallMedia {
     func apply(answer: String) async throws {
         guard let connection else { throw CallMediaError.notStarted }
         try await connection.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer))
+        attachRemoteVideo(connection)
     }
 
     func add(candidate: String, mid: String?, index: Int32) async {
@@ -177,6 +195,37 @@ final class WebRTCMedia: NSObject, CallMedia {
 
     private var fallbackActive = false
 
+    /// After a remote description, look at every video transceiver: its receiver's track is the picture to show, however the
+    /// delegate reported (or did not report) it.
+    private func attachRemoteVideo(_ connection: RTCPeerConnection) {
+        for transceiver in connection.transceivers where transceiver.mediaType == .video {
+            if let track = transceiver.receiver.track as? RTCVideoTrack {
+                CallDiagnostics.shared.log("remote video track found on a transceiver (enabled: \(track.isEnabled), direction \(transceiver.direction.rawValue))")
+                remoteSlot.setSource(TrackSource(track))
+            }
+        }
+    }
+
+    // MARK: Call-quality statistics (every 5 s while a call is up)
+
+    private func startStats() {
+        statsTask?.cancel()
+        statsTask = Task { [weak self] in
+            var lastBytes: Double = 0
+            var lastAt = Date()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard let self, let connection = self.connection, connection.iceConnectionState == .connected || connection.iceConnectionState == .completed else { continue }
+                let report = await withCheckedContinuation { (continuation: CheckedContinuation<RTCStatisticsReport, Never>) in
+                    connection.statistics { continuation.resume(returning: $0) }
+                }
+                let line = CallStats.line(report: report, lastBytes: &lastBytes, elapsed: Date().timeIntervalSince(lastAt))
+                lastAt = Date()
+                CallDiagnostics.shared.log("stats \(line)")
+            }
+        }
+    }
+
     /// CallKit has not called back (it is reset on some phones): configure and activate the audio session ourselves.
     func activateAudioFallback(video: Bool) -> Bool {
         guard manualAudio, !fallbackActive else { return false }
@@ -184,7 +233,7 @@ final class WebRTCMedia: NSObject, CallMedia {
         rtc.lockForConfiguration()
         defer { rtc.unlockForConfiguration() }
         do {
-            try rtc.setCategory(.playAndRecord, with: video ? [.allowBluetooth, .defaultToSpeaker] : [.allowBluetooth])
+            try rtc.setCategory(.playAndRecord, with: video ? [.allowBluetoothHFP, .defaultToSpeaker] : [.allowBluetoothHFP])
             try rtc.setMode(video ? .videoChat : .voiceChat)
             try rtc.setActive(true)
         } catch {
@@ -193,6 +242,7 @@ final class WebRTCMedia: NSObject, CallMedia {
         }
         rtc.isAudioEnabled = true
         fallbackActive = true
+        Self.limeHoldsAudio.value = true
         return true
     }
 
@@ -214,6 +264,8 @@ final class WebRTCMedia: NSObject, CallMedia {
 
     /// Tears everything down in the order WebRTC needs: stop the camera and wait for it, take the views off the tracks, then close.
     func close() {
+        statsTask?.cancel(); statsTask = nil
+        remoteSlot.clear()
         let capturer = capturer, connection = connection, videoTrack = videoTrack
         audioTrack?.isEnabled = false
         self.capturer = nil; self.connection = nil; self.videoTrack = nil; audioTrack = nil
@@ -234,6 +286,7 @@ final class WebRTCMedia: NSObject, CallMedia {
             rtc.isAudioEnabled = false
             if fallbackActive {
                 fallbackActive = false
+                Self.limeHoldsAudio.value = false
                 rtc.lockForConfiguration()
                 try? rtc.setActive(false)
                 rtc.unlockForConfiguration()
@@ -246,7 +299,10 @@ extension WebRTCMedia: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
         let track = stream.videoTracks.first
-        Task { @MainActor in if let track, let view = remoteView as? RTCMTLVideoView { track.add(view) } }
+        Task { @MainActor in
+            CallDiagnostics.shared.log("remote stream added (video tracks: \(stream.videoTracks.count))")
+            if let track { self.remoteSlot.setSource(TrackSource(track)) }
+        }
     }
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     nonisolated func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
@@ -267,6 +323,136 @@ extension WebRTCMedia: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams mediaStreams: [RTCMediaStream]) {
         let track = rtpReceiver.track as? RTCVideoTrack
-        Task { @MainActor in if let track, let view = remoteView as? RTCMTLVideoView { track.add(view) } }
+        let kind = rtpReceiver.track?.kind ?? "?"
+        Task { @MainActor in
+            CallDiagnostics.shared.log("remote receiver added: \(kind)")
+            if let track { self.remoteSlot.setSource(TrackSource(track)) }
+        }
+    }
+}
+
+
+/// A flag readable from any thread.
+final class AtomicFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+    var value: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return flag }
+        set { lock.lock(); flag = newValue; lock.unlock() }
+    }
+}
+
+/// Where frames come from (a WebRTC video track in the app, a fake in tests).
+@MainActor
+protocol FrameSource: AnyObject {
+    func add(renderer: AnyObject)
+    func remove(renderer: AnyObject)
+}
+
+@MainActor
+final class TrackSource: FrameSource {
+    let track: RTCVideoTrack
+    init(_ track: RTCVideoTrack) { self.track = track }
+    func add(renderer: AnyObject) { if let renderer = renderer as? RTCVideoRenderer { track.add(renderer) } }
+    func remove(renderer: AnyObject) { if let renderer = renderer as? RTCVideoRenderer { track.remove(renderer) } }
+}
+
+/// Joins the other side's picture (a source) to what draws it (a renderer), whichever of the two arrives first, and again when the
+/// source changes (a renegotiation or a camera flip on the other side).
+@MainActor
+final class RemoteVideoSlot {
+    private var source: FrameSource?
+    private var renderer: AnyObject?
+    private var attachedSource: FrameSource?
+    private(set) var attachments = 0
+
+    func setSource(_ new: FrameSource?) {
+        guard new !== source else { return }
+        detach()
+        source = new
+        attach()
+    }
+
+    func setRenderer(_ new: AnyObject?) {
+        detach()
+        renderer = new
+        attach()
+    }
+
+    func clear() {
+        detach()
+        source = nil
+        renderer = nil
+    }
+
+    private func attach() {
+        guard let source, let renderer, attachedSource == nil else { return }
+        source.add(renderer: renderer)
+        attachedSource = source
+        attachments += 1
+        CallDiagnostics.shared.log("remote video renderer attached")
+    }
+
+    private func detach() {
+        if let attachedSource, let renderer { attachedSource.remove(renderer: renderer) }
+        attachedSource = nil
+    }
+}
+
+/// Passes frames on to the view and says when the first one arrives, with its size.
+final class FrameLogger: NSObject, RTCVideoRenderer, @unchecked Sendable {
+    private nonisolated(unsafe) let target: any RTCVideoRenderer
+    private let first: @MainActor (CGSize) -> Void
+    private var seen = false
+
+    @MainActor init(target: RTCMTLVideoView, first: @escaping @MainActor (CGSize) -> Void) {
+        self.target = target
+        self.first = first
+    }
+
+    func setSize(_ size: CGSize) { target.setSize(size) }
+
+    func renderFrame(_ frame: RTCVideoFrame?) {
+        target.renderFrame(frame)
+        guard !seen, let frame else { return }
+        seen = true
+        let size = CGSize(width: Int(frame.width), height: Int(frame.height))
+        let callback = first
+        Task { @MainActor in callback(size) }
+    }
+}
+
+/// One log line from a peer connection's statistics: the path, round trip, audio quality and, for video, the picture. No addresses.
+enum CallStats {
+    static func line(report: RTCStatisticsReport, lastBytes: inout Double, elapsed: TimeInterval) -> String {
+        var parts: [String] = []
+        var pairLocal = "?", pairRemote = "?"
+        var kinds: [String: String] = [:]
+        for (id, stat) in report.statistics where stat.type == "local-candidate" || stat.type == "remote-candidate" {
+            kinds[id] = (stat.values["candidateType"] as? String) ?? "?"
+        }
+        for stat in report.statistics.values {
+            let v = stat.values
+            func number(_ key: String) -> Double? { (v[key] as? NSNumber)?.doubleValue }
+            switch stat.type {
+            case "candidate-pair" where (v["nominated"] as? NSNumber)?.boolValue == true && (v["state"] as? String) == "succeeded":
+                pairLocal = kinds[(v["localCandidateId"] as? String) ?? ""] ?? "?"
+                pairRemote = kinds[(v["remoteCandidateId"] as? String) ?? ""] ?? "?"
+                if let rtt = number("currentRoundTripTime") { parts.append("rtt \(Int(rtt * 1000)) ms") }
+            case "inbound-rtp" where (v["kind"] as? String) == "audio":
+                parts.append("audio in: jitter \(Int((number("jitter") ?? 0) * 1000)) ms, lost \(Int(number("packetsLost") ?? 0)), concealed \(Int(number("concealedSamples") ?? 0))/\(Int(number("totalSamplesReceived") ?? 0))")
+                if let delay = number("jitterBufferDelay"), let count = number("jitterBufferEmittedCount"), count > 0 { parts.append("jitter buffer \(Int(delay / count * 1000)) ms") }
+            case "outbound-rtp" where (v["kind"] as? String) == "audio":
+                let bytes = number("bytesSent") ?? 0
+                if elapsed > 0, lastBytes > 0 { parts.append("audio out \(Int((bytes - lastBytes) * 8 / elapsed / 1000)) kbps") }
+                lastBytes = bytes
+            case "inbound-rtp" where (v["kind"] as? String) == "video":
+                parts.append("video in \(Int(number("frameWidth") ?? 0))x\(Int(number("frameHeight") ?? 0)) \(Int(number("framesPerSecond") ?? 0)) fps, dropped \(Int(number("framesDropped") ?? 0))")
+            case "outbound-rtp" where (v["kind"] as? String) == "video":
+                parts.append("video out \(Int(number("frameWidth") ?? 0))x\(Int(number("frameHeight") ?? 0)) \(Int(number("framesPerSecond") ?? 0)) fps")
+            default: break
+            }
+        }
+        return "path \(pairLocal)->\(pairRemote); " + (parts.isEmpty ? "no samples" : parts.joined(separator: "; "))
     }
 }

@@ -15,8 +15,8 @@ struct DockBar: View {
     private var items: [Item] {
         let unread = store.chats.filter(\.isUnread).count
         return [
-            Item(id: "link", symbol: "bubble.left", badge: unread > 0 ? unread : nil),
-            Item(id: "jam", symbol: "book", badge: nil),
+            Item(id: "link", symbol: "message", badge: unread > 0 ? unread : nil),
+            Item(id: "jam", symbol: "book.pages", badge: nil),
             Item(id: "call", symbol: "phone", badge: nil),
         ]
     }

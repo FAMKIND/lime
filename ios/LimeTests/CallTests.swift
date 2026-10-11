@@ -22,6 +22,8 @@ private final class FakeSystem: CallSystem {
         completion(refuse ? "refused" : nil)
     }
     func reportOutgoing(callID: String, name: String, video: Bool) {}
+    func requestAnswer(callID: String) { answerRequests += 1 }
+    var answerRequests = 0
     func reportConnected(callID: String) {}
     func reportEnded(callID: String, answeredOrOutgoing: Bool) {}
 }
@@ -30,6 +32,7 @@ private final class FakeSystem: CallSystem {
 private final class FakeMedia: CallMedia {
     var onCandidate: ((String, String?, Int32) -> Void)?
     var onConnection: ((Bool) -> Void)?
+    var onRemoteVideo: ((Bool) -> Void)?
     let localView = UIView()
     let remoteView = UIView()
     var muted = false
@@ -46,6 +49,22 @@ private final class FakeMedia: CallMedia {
     var fallbacks = 0
     func activateAudioFallback(video: Bool) -> Bool { fallbacks += 1; return true }
     func close() { closed = true }
+}
+
+@MainActor
+private final class FakeSounds: CallSounds {
+    var log: [String] = []
+    func startRingback(video: Bool) { log.append("ringback on") }
+    func stopRingback() { log.append("ringback off") }
+    func playConnect() { log.append("connect") }
+    func playEnd() { log.append("end") }
+}
+
+@MainActor
+private final class FakeSource: FrameSource {
+    var renderers: [ObjectIdentifier] = []
+    func add(renderer: AnyObject) { renderers.append(ObjectIdentifier(renderer)) }
+    func remove(renderer: AnyObject) { renderers.removeAll { $0 == ObjectIdentifier(renderer) } }
 }
 
 @MainActor
@@ -201,6 +220,111 @@ final class CallTests: XCTestCase {
             XCTAssertTrue(media.closed, "the media (and with it a fallback-activated session) is torn down on end")
             system = FakeSystem()
         }
+    }
+
+    private var sounds = FakeSounds()
+
+    private func soundManager() -> CallManager {
+        let m = CallManager(signalling: signalling, system: system, log: log, sounds: sounds, makeMedia: { [unowned self] in media })
+        m.ringSeconds = 0.4
+        return m
+    }
+
+    func testStatusSequenceCallingRingingConnectingTimer() async {
+        let m = soundManager()
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        XCTAssertEqual(m.statusText(), "Calling…")
+        await m.handle(event("call.ringing", id: m.currentID))
+        XCTAssertEqual(m.statusText(), "Ringing…")
+        await m.handle(event("call.answer", id: m.currentID, payload: ["sdp": "x"]))
+        XCTAssertEqual(m.statusText(), "Connecting…")
+        media.onConnection?(true)
+        XCTAssertTrue(m.statusText(at: Date().addingTimeInterval(72)).hasPrefix("1:1"), "the timer counts up (0:00 at the start)")
+        XCTAssertEqual(CallRecord.clock(42), "0:42")
+    }
+
+    func testTheUnreachableHintAppearsAfterTenSecondsWithoutRingingAndNotWithIt() async {
+        let m = soundManager()
+        m.hintSeconds = 0.15
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        try? await Task.sleep(for: .seconds(0.3))
+        XCTAssertTrue(m.showUnreachableHint)
+        await m.end()
+        let n = soundManager()
+        n.hintSeconds = 0.15
+        _ = await n.start(peerID: "jean", name: "Jean", video: false)
+        await n.handle(event("call.ringing", id: n.currentID))
+        try? await Task.sleep(for: .seconds(0.3))
+        XCTAssertFalse(n.showUnreachableHint, "ringing arrived: no hint")
+        await n.end()
+    }
+
+    func testRingbackStartsWithTheOfferAndStopsOnEveryOutcome() async {
+        // answered
+        var m = soundManager()
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        XCTAssertEqual(sounds.log, ["ringback on"])
+        await m.handle(event("call.answer", id: m.currentID, payload: ["sdp": "x"]))
+        XCTAssertEqual(sounds.log, ["ringback on", "ringback off"])
+        media.onConnection?(true)
+        XCTAssertEqual(sounds.log.last, "connect")
+        await m.end()
+        XCTAssertEqual(sounds.log.last, "end")
+        // declined, no answer, ended by me, busy, failed: the ringback always stops, and an end tone plays
+        for outcome in ["call.decline", "call.busy", "call.end"] {
+            sounds = FakeSounds(); media = FakeMedia()
+            m = soundManager()
+            _ = await m.start(peerID: "jean", name: "Jean", video: false)
+            await m.handle(event(outcome, id: m.currentID))
+            XCTAssertEqual(Array(sounds.log.prefix(2)), ["ringback on", "ringback off"], outcome)
+            XCTAssertTrue(sounds.log.contains("end"), outcome)
+        }
+        sounds = FakeSounds(); media = FakeMedia()
+        m = soundManager()
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        try? await Task.sleep(for: .seconds(0.7))
+        XCTAssertEqual(m.phase, .idle)
+        XCTAssertEqual(sounds.log.filter { $0 == "ringback off" }.count, 1, "no answer: stops")
+        sounds = FakeSounds(); media = FakeMedia()
+        m = soundManager()
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        await m.end()
+        XCTAssertEqual(Array(sounds.log.prefix(3)), ["ringback on", "ringback off", "end"], "cancelled by me")
+    }
+
+    func testTheCalleeTellsTheCallerItIsRingingAndInAppAcceptAnswersTheSystemCall() async {
+        let m = soundManager()
+        await m.handle(event("call.offer", payload: ["sdp": "v=0"]))
+        try? await Task.sleep(for: .seconds(0.1))
+        XCTAssertEqual(signalling.sent.map(\.op), ["call.ringing"])
+        await m.accept()
+        XCTAssertEqual(system.answerRequests, 1, "lime's own Accept answers CallKit too, so CallKit activates the audio")
+        await m.accept(fromSystem: true)
+        XCTAssertEqual(system.answerRequests, 1)
+    }
+
+    func testTheRemotePictureShowsWhetherItArrivesBeforeTheViewOrAfter() {
+        let rendererA = NSObject(), rendererB = NSObject()
+        let source = FakeSource()
+        // the track first, the view later
+        var slot = RemoteVideoSlot()
+        slot.setSource(source)
+        XCTAssertTrue(source.renderers.isEmpty)
+        slot.setRenderer(rendererA)
+        XCTAssertEqual(source.renderers, [ObjectIdentifier(rendererA)])
+        // the view first, the track later
+        let late = FakeSource()
+        slot = RemoteVideoSlot()
+        slot.setRenderer(rendererB)
+        slot.setSource(late)
+        XCTAssertEqual(late.renderers, [ObjectIdentifier(rendererB)])
+        // a new track (a renegotiation) replaces the old one on the same view
+        let next = FakeSource()
+        slot.setSource(next)
+        XCTAssertTrue(late.renderers.isEmpty)
+        XCTAssertEqual(next.renderers, [ObjectIdentifier(rendererB)])
+        slot.clear()
+        XCTAssertTrue(next.renderers.isEmpty)
     }
 
     func testFingerprintAndClock() {
