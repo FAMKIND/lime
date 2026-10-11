@@ -109,6 +109,21 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
      - downloaded > 0 with pending `no_session` or `decrypt_failed` → (b).
    - **Next:** the user installs, places calls both ways plus a Jean → Shem text, then says "logs" to plot. Phase 2 (fix, gather cap, TURN retry, glare, ringback) waits for the cause.
    - (Original entry:) **LIME-111-fix3 (drafted 2026-10-10 from the second logs):** after one good call (18:08), nothing from Jean reached Shem; Shem → Jean kept working. See "### LIME-111-fix3". LIME-116 waits.
+1e7. **1:1 CALLS PASS THE USER'S GATE (2026-10-10, about 22:55–23:01, `cc64c24`): "all cases I tried worked"**: voice, video, both directions, Wi-Fi off.
+   - **CallKit now works on both phones** (`callkit audio activated` on nearly every call), thanks to `voip` plus one provider.
+   - **The user's note:** "a minor sound delay and glitchy sound here and there, but overall good."
+   - **From the logs (`/tmp/lime-calllogs7`):**
+     - once (Shem 22:57:13) lime's fallback activated the audio, then **CallKit activated it again 13 s later**, mid-call: a likely glitch source;
+     - one Jean accept (23:00:05) logged no activation line at all;
+     - the gather cap is hit every time at about 1.0 s (fine).
+   - **The user (later): the glitch was probably their Bluetooth headphones**: connected to the phone, so the call audio went to them unheard, and then taken off. **So the 22:57 double activation is most likely a Bluetooth route change, not a lime bug.** The lesson: the call screen must show where the audio is going.
+   - **There are no in-call quality stats yet**, so the glitches can't be diagnosed. **→ added to LIME-118 Phase 1:** stats logging and the double-activation check.
+   - **LIME-111 is DONE. Next: LIME-118.**
+1e6. **LIME-111-fix4 Phase 1 (`3faba23`, `619a690`):**
+   - the CallKit self-test on **Shem's phone**: `providerDidBegin` → **`providerDidReset` immediately**, and again on every report; **no report completion**;
+   - **the user: "didn't work on Jean's phone either"**; Shem's region is US (not China);
+   - **so it's lime's setup, not one phone.** The prime suspect is the missing `voip` background mode; the next is two `CXProvider`s alive at once (the self-test's plus the call manager's).
+   - **Phase 2 is NEXT:** the fallback audio, `voip`, and tend reruns the self-test on both phones via `devicectl` and reports.
 1e5. **The calls queue (the user, 2026-10-10): fix4 → 118 → 119 → 120 → 116 → 112b → 117.** 119 and 120 come from "Learnings: Signal / Telegram / Element" (below, before DESIGN-09).
 1e4. **fix3b VERIFIED on two phones (2026-10-10, 20:55–20:58):** 4 alternating calls connected; every op was received; no "handler stuck".
    - **But there is NO AUDIO, and CallKit is dead on both phones:** 0 "callkit answer/end/audio activated" and 0 "incoming reported" lines (plot's grep of `/tmp/lime-calllogs6`).
@@ -3046,6 +3061,25 @@ If the survey turns up related issues, raise them before editing.
 2. **Report the cause, then fix it.** Unit test: a fake media layer that adds the remote track **before** the view appears and one that adds it **after**, and the view shows it in both cases.
 
 ---
+
+**Phase 1b: call-quality stats and the audio glitches** (the user after the 111 gate: "minor sound delay and glitchy sound here and there")
+1. **Every 5 s during a call, log one line from `RTCPeerConnection.statistics`:**
+   - the selected candidate pair (local/remote type: host, srflx or relay; no IPs);
+   - RTT;
+   - inbound audio jitter, packets lost, and concealed samples (or the concealment events);
+   - jitter buffer delay;
+   - outbound audio bitrate;
+   - for video: frames per second, resolution, and frames dropped.
+2. **The double activation:** at 22:57 Shem's phone was activated by lime's fallback, then by CallKit 13 s later.
+   - Make a later `didActivate` after a lime activation **not** reconfigure the session (only `audioSessionDidActivate` bookkeeping), or skip the fallback while CallKit reports a call in progress.
+   - Explain why one accept (Jean, 23:00:05) logged no activation line.
+2b. **Audio route:**
+   - log every `AVAudioSession.routeChangeNotification` (the reason, and the new output **port type** only: built-in receiver, speaker, Bluetooth HFP/A2DP, headphones; no device names in the log);
+   - **on screen, the route button (⋯ / `AVRoutePickerView`) shows the current output** with its icon and name (e.g. "AirPods", "Speaker", "iPhone");
+   - **when the route changes mid-call, a 2 s toast**: "Audio now on AirPods" / "Audio now on iPhone";
+   - when headphones disconnect, the audio falls back to the earpiece (voice) or the speaker (video), as iOS calls do.
+3. **Check the audio session config:** mode `.voiceChat` for voice (Apple's echo cancellation) and `.videoChat` for video, with no category change mid-call. Report it.
+4. **Report the stats** from one 2-minute call on the two phones (the user says "logs"). **Tuning beyond the obvious fixes is a later brief, based on those numbers.**
 
 **Phase 2: the state and sounds**
 1. **`call.ringing { call_id }`:**
