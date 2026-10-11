@@ -126,6 +126,18 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e16. **The user's part-A QA + a bigger profile ask (2026-10-11):** "the all and missed toggle should scroll with the call list like in link, and the gradient should be like in link; the person details call dates need to be smaller and responsive; there needs to be a share button in the top header; any time someone taps someone's avatar, including your own, this should open; it should have all the content you've sent with a particular sender or a group, in the context of where the user is."
+   - **→ LIME-116d (NEXT, drafted):** the toggle scrolls with the list; the fades exactly like Messages.
+   - **→ LIME-122 (drafted; waits on P1–P3 below): the profile everywhere.** It **supersedes 116c part B** (never started), adding the share button, every avatar opening it (yours too), and the in-context Shared media/files/links.
+   - **P1–P3 (asked 2026-10-11, leans A/A/A):** P1 your header avatar opens your profile (with status and Settings on it) vs keeps the quick status sheet; P2 Messages-row avatars open the profile (the rest of the row opens the chat) vs the row stays one target; P3 Share = the system share sheet with their lime link (`https://limechat.org/u/<username>`) now, with "send as a contact in lime" later.
+1e15. **LIME-116c part A LANDED as `1cf0bae` (pushed, 2026-10-11); part B (the contact profile) NOT started; superseded by LIME-122.** Tend stopped at the soft cap, as the brief allowed.
+   - Edge to edge: iOS 26 soft scroll-edge fade top/bottom; before 26, Messages' top veil plus a bottom fade; bottom margin = "+" + 32.
+   - All | Missed = the native segmented `Picker` (glass on iOS 26, checked from a screenshot only).
+   - Search: `SearchHeader` was extracted from `MessageSearchScreen`; it shows People (voice/video) and Calls. **People match by name and label only: the phone doesn't store contacts' usernames.** Part B's `fetch_profile` cache could feed username matching later (not in 116c).
+   - Status badges on history, search, New Call and details avatars.
+   - Tests: 3 new UI tests; full suite on the 13 mini; Calls/tab tests on SE and 18 Pro; 0 warnings; Release clean.
+   - **Not exercised:** the fades with a long list on a phone; the glass slide on a device; iOS 17.
+   - **Next:** the user's gate on part A (items 1–4), then **"continue LIME-116c part B"** (same brief; commit with part B's message and `Brief: LIME-116c`).
 1e14. **LIME-116b LANDED as `ad6e32a` (pushed, 2026-10-11).** The user's phone QA (screenshots, 11:04–11:11) → **LIME-116c (NEXT, drafted 2026-10-11, before 118b)**: Calls tab fades, glass All|Missed, search like Messages, status badges, and a real **contact profile** (replacing the call details screen; opened from a call row, the DM chat header and group member rows).
    - The "+" placement (floats just above the bar on narrow phones) was not objected to: treat it as accepted.
    - **Open with the user (K1):** call events in chat as KakaoTalk-style bubbles on the caller's side (their reference screenshot) vs today's centred lines. Not in 116c.
@@ -3940,6 +3952,104 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Record:** `## LIME-116c` in `TEND.md`.
 
 **Commit:** `feat(ios): Calls tab edge-to-edge with fades, glass All|Missed, Calls search, status badges; contact profile (About, handle, status, recent calls) from calls, DM header and group members`, trailer `Brief: LIME-116c`, plus the attribution trailer. (If split: part A `feat(ios): Calls tab edge-to-edge with fades, glass All|Missed, Calls search, status badges` and part B `feat: contact profile (fetch_profile; About, handle, status, recent calls) from calls, DM header and group members`, both with `Brief: LIME-116c`.) **Push.** Stop. No /loop wakeups.
+
+### LIME-116d → `tend` (lime-aa) (NEXT): the All | Missed toggle scrolls with the list; the fades exactly like Messages
+**The user (2026-10-11, after 116c part A):** "the all and missed toggle should scroll with the call list like in link, and the gradient should be like in link."
+
+**Goal:** on the call tab the All | Missed control is part of the scrolling content (it scrolls away under the header, like the top of the Messages list), and the top and bottom fades are produced exactly as Messages produces them, on both OS paths.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push. iOS only.
+
+**What plot read:** `ios/Lime/Features/Calls/CallsTab.swift` at `1cf0bae`:
+- iOS 26: `content(groups, topMargin: 0)` + `.scrollEdgeEffectStyle(.soft, for: .top/.bottom)` + **`.safeAreaBar(edge: .top) { filter }`** (the pinned bar: it doesn't scroll, and the soft edge then starts under the bar, not under the header);
+- iOS 17–25: `topMargin: 76 + 46`, the filter as a pinned `.overlay(alignment: .top)`, and **an extra `BottomFade()`** that Messages doesn't have;
+- `MessagesView.swift`: iOS 26 `list(top: 8, bottom: 24)` + soft top/bottom edges, the system toolbar; iOS 17–25 `list(top: 76, bottom: 24)` + `TopFade()` + `TopControls`, **no bottom veil**.
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~30 min.
+
+**Phase 1 (read-only):** confirm the above; check `RootHeader(overlays: true)` (added in 116c) doesn't add its own veil that differs from Messages'.
+
+**Phase 2: the change**
+1. **The filter becomes the first row of the `List`** (`listRowInsets`/separator/background as the other rows, centred, about 240 pt wide, a little vertical padding), not a `safeAreaBar` or an overlay. It scrolls away with the rows. The empty state keeps the filter above its message (also scrolling, or simply at the top of the empty content).
+2. **The fades exactly like Messages:**
+   - iOS 26: the same top content margin as Messages (8), `.scrollEdgeEffectStyle(.soft)` top and bottom, nothing else;
+   - iOS 17–25: the same top margin (76), the same `TopFade()` and header controls as Messages, and **remove `BottomFade`** (Messages has none). If removing it makes rows look cut off at the tab bar on iOS 18, **stop and report with a screenshot** rather than inventing a different veil.
+3. Keep the bottom content margin that clears the "+" (`FloatingPlus.size + 32`).
+4. Remove `BottomFade` if nothing else uses it.
+
+**Verification:**
+- update `CallsTabUITests`: the filter scrolls (after a swipe up its frame moves up, or it goes off screen); the first call row is below the filter at rest; the last row still clears the "+";
+- a side-by-side check: on the iOS 26 simulator, screenshot Messages and Calls scrolled mid-list. The top fades should look the same (report what you see in one sentence);
+- tiered (full suite on the 13 mini; changed tests on SE and 18 Pro); 0 warnings; Release no-Bluetooth check clean.
+
+**Gate (the user, the phone):** on Calls, the All | Missed toggle scrolls up with the list, and the fades at the top and bottom look the same as in link.
+
+**Record:** `## LIME-116d` in `TEND.md`. **Commit:** `fix(ios): Calls filter scrolls with the list; fades match Messages`, trailer `Brief: LIME-116d`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-122 → `tend` (lime-aa) (after 116d; **WAITS on the user's P1–P3**): the profile everywhere (supersedes LIME-116c part B)
+**The user (2026-10-11):** "the person details call dates need to be smaller and responsive, and there needs to be a share button in the top header, and anytime someone clicks on someone's avatar including your own this should open. it should have all the content you send with a particular sender or a group, basically be in context of where the user's desire."
+
+**Goal:** one profile screen opens from any avatar (and a DM chat's header), shows the person's public profile and status, Message/Voice/Video, a Share button in the header, and the **media, files and links shared in the context it was opened from**. Groups get the same Shared section in Group details.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push. **No server change** (`profile-get { user_id }` already returns public fields). Core additions: `fetch_profile` and `list_shared`.
+
+**What plot read:** everything listed under LIME-116c part B, plus:
+- `core/src/store/storage.rs` `list_media(conversation_id)` (files held for a chat, largest first; no sender filter, no links);
+- `ios/Lime/Features/Invite/Invite.swift`: `Invite.url(username:)` = `https://limechat.org/u/<username>` (the same link invites already share; the web page for it comes with LIME-114);
+- avatars today: chat message avatars (`ChatView.swift` ~line 637, no tap), the thread root author (`ThreadView.swift`), group member rows (`GroupScreens.swift` ~line 404), Messages rows (`ConversationAvatar`), the header's own avatar (opens `StatusSheet` → Settings, LIME-108), call rows.
+
+**Decisions (the user's P1–P3; the brief is written with the leans; tend: if PLOT.md records a different answer, follow that):**
+- **P1 = A:** your own header avatar opens **your** profile (your status at the top, tap to change it; a gear to Settings) instead of the quick status sheet.
+- **P2 = A:** on a Messages row, **the avatar opens the profile** (a group's avatar opens Group details); the rest of the row opens the chat as now.
+- **P3 = A:** **Share** in the header = the system share sheet with the person's lime link `https://limechat.org/u/<username>` and their name. Hidden when they have no public username (hidden from search). "Send as a contact in lime" is later.
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. **~60 min** soft cap; if long, stop after the core + profile screen (items 1–3), commit, and report.
+
+**Phase 1 (read-only):** the 116b `CallDetailsView`; the avatar call sites above; how link previews and URLs are stored (is there a table, or only the message text?); `GroupScreens` (where a Shared section fits in Group details).
+
+---
+
+**Phase 2: the change**
+1. **Core:**
+   - `fetch_profile(transport, auth_token, user_id) -> Option<PublicProfile>` wrapping `profile-get { user_id }` (display_name, username, school, about_emoji, about_text; 404 → None; 429 → RateLimited);
+   - `list_shared(conversation_id, sender_id: Option<String>, kind: SharedKind) -> Vec<SharedItem>` where `SharedKind` = media (photos and videos) | files (everything else) | links (URLs in message text; use stored link-preview titles if they exist), **newest first**, hidden messages excluded. `sender_id = None` means everyone in the chat; `"me"` means my own messages.
+2. **The profile screen** (pushed; the tab bar hides), from top to bottom:
+   - **the header:** back on the left; **Share** (`square.and.arrow.up`) on the right (P3); on your own profile, a gear to Settings (P1);
+   - the avatar (96 pt) with the status badge; the name with the verified seal; "@username · School"; the status line (on your own profile, tap it to change your status, reusing `StatusSheet`'s content);
+   - **Message · Voice · Video** (Voice/Video only for an accepted DM; none on your own profile);
+   - **About** card; **Info** card (username, tap to copy; school; my label → the label editor; "Verified in person");
+   - **Shared** (in context, see 3): a segmented **Media | Files | Links** with a 3-column grid for media (tap opens the existing viewer at that message), rows for files and links (tap opens the message in the chat, or the link); hidden when empty;
+   - **Calls** card: from a call row, that group; otherwise the last 10 calls with this person. **One line per call:** direction glyph · Voice/Video · date · outcome, the date in `Theme.caption` formatted short (today "11:01 AM"; "Yesterday 11:01 AM"; else "Oct 11, 11:01 AM"; the year only if not this year). **Responsive:** at large Dynamic Type sizes the line may wrap to two lines (outcome under the date) via `ViewThatFits`, never mid-date.
+3. **Context (what Shared shows):**
+   - opened from a DM chat, a call row, New Call, or a Messages row → **what you and this person shared in your DM**;
+   - opened from a group (a message avatar, a member row, the thread author) → **what this person shared in that group**, titled "Shared in <Group name>";
+   - **your own profile** from a group → what *you* shared in that group; from the header (P1) → no Shared section;
+   - **Group details** gains the same Shared section for **the whole group** (everyone).
+4. **Every avatar opens it:**
+   - chat message avatars (groups), the thread root author, Group details member rows (yours too: your profile), call rows (the avatar; the row body opens it too, as in 116b), call search people, **Messages rows (P2)**, **your header avatar (P1)**, and **a DM chat's header avatar or title**. Groups' headers keep opening Group details.
+   - Tap targets at least 44 pt; VoiceOver: "<Name>, profile".
+5. **Remove `CallDetailsView`**; the profile takes its routes and the `call-details` identifier (or update the tests).
+
+**Out of scope:** call events as chat bubbles (K1); Block/Report (LIME-113); the `/u/<username>` web page (LIME-114); sending a contact inside lime; username matching in search.
+
+---
+
+**Verification**
+- **core:** `fetch_profile` (found, hidden fields null, 404, 429); `list_shared` (media/files/links by kind, sender filter, "me", hidden messages excluded, newest first); cargo test, clippy 0.
+- **iOS unit tests:** the short date formatter (today / yesterday / this year / other years); the context rule (where opened → which chat and sender).
+- **UI tests:** a group message avatar opens that member's profile with "Shared in <Group>"; a DM header title opens the profile; a Messages row avatar opens the profile while the row body opens the chat (P2); your header avatar opens your profile with the gear (P1); Share presents the share sheet (P3); Group details shows the Shared section; call dates are one line at default size on the 13 mini.
+- Tiered; 0 warnings; Release no-Bluetooth check clean.
+
+**Gate (the user, the phone):**
+1. Tap any avatar (a group message, a member, a call row, a Messages row, your own) → the profile opens.
+2. In a group, Jean's profile shows "Shared in <Group>" with only her items; from your DM it shows what you two shared.
+3. Share opens the share sheet with her lime link.
+4. Call dates are small and on one line.
+5. Group details shows the group's Media | Files | Links.
+
+**Record:** `## LIME-122` in `TEND.md`. **Commit:** `feat: profile everywhere (any avatar, DM header, your own), share, in-context shared media/files/links, compact call dates; fetch_profile and list_shared in core`, trailer `Brief: LIME-122`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ### LIME-118b → `tend` (lime-aa) (after LIME-116b): in-call follow-ups: an in-call control channel, voice → video, the remote mute/camera indicators, audio delay, SE/landscape
 **Why:**
