@@ -45,28 +45,25 @@ private struct SignedInView: View {
 
     var body: some View {
         @Bindable var store = store
-        NavigationStack(path: $store.path) {
-            MessagesView()
-                .navigationDestination(for: Conversation.ID.self) { id in
-                    ChatView(conversationID: id)
-                }
-                .navigationDestination(for: GroupTarget.self) { target in
-                    GroupDetailsView(target: target)
-                }
-                .navigationDestination(for: ThreadTarget.self) { target in
-                    ThreadView(target: target)
-                }
-                .navigationDestination(for: ChatTarget.self) { target in
-                    ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words)
-                }
-                .navigationDestination(for: MessagesRoute.self) { route in
-                    switch route {
-                    case .requests: RequestsView()
-                    case .search: MessageSearchScreen()
-                    }
-                }
+        TabView(selection: Binding(get: { store.section }, set: { store.select($0) })) {
+            linkTab(path: $store.path)
+                .tabItem { Label("link", systemImage: "bubble.left") }
+                .badge(store.chats.filter(\.isUnread).count)
+                .tag(ConversationStore.Section.link)
+            callTab(path: $store.callPath)
+                .tabItem { Label("call", systemImage: "phone") }
+                .badge(store.missedCalls)
+                .tag(ConversationStore.Section.call)
+            JamPage()
+                .tabItem { Label("jam", systemImage: "book") }
+                .tag(ConversationStore.Section.jam)
         }
         .tint(Theme.text)
+        .modifier(TabBarMinimize())
+        .background(TabRetapObserver { index in
+            let sections = ConversationStore.Section.allCases
+            if index < sections.count, sections[index] == store.section { store.select(sections[index]) }
+        })
         .sheet(isPresented: $explaining) { NotificationExplainerSheet() }
         .task {
             // Once, after signing in: why Lime would like to notify, before the system's prompt.
@@ -88,6 +85,45 @@ private struct SignedInView: View {
                 }
             }
         }
+    }
+
+    private func linkTab(path: Binding<NavigationPath>) -> some View {
+        NavigationStack(path: path) {
+            MessagesView()
+                .navigationDestination(for: Conversation.ID.self) { id in
+                    ChatView(conversationID: id).toolbar(.hidden, for: .tabBar)
+                }
+                .navigationDestination(for: GroupTarget.self) { target in
+                    GroupDetailsView(target: target).toolbar(.hidden, for: .tabBar)
+                }
+                .navigationDestination(for: ThreadTarget.self) { target in
+                    ThreadView(target: target).toolbar(.hidden, for: .tabBar)
+                }
+                .navigationDestination(for: ChatTarget.self) { target in
+                    ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words)
+                        .toolbar(.hidden, for: .tabBar)
+                }
+                .navigationDestination(for: MessagesRoute.self) { route in
+                    switch route {
+                    case .requests: RequestsView()
+                    case .search: MessageSearchScreen()
+                    }
+                }
+        }
+    }
+
+    private func callTab(path: Binding<NavigationPath>) -> some View {
+        NavigationStack(path: path) {
+            CallHistoryView()
+        }
+    }
+}
+
+
+/// iOS 26: the tab bar shrinks while a list scrolls, like the Phone app. Earlier systems keep the standard bar.
+private struct TabBarMinimize: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) { content.tabBarMinimizeBehavior(.onScrollDown) } else { content }
     }
 }
 

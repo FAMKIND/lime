@@ -56,8 +56,6 @@ struct MessagesView: View {
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
         }
         .readSideInsets($sideInsets)
-        .safeAreaBar(edge: .bottom) { bottomControls }
-        .overlay(alignment: .bottomTrailing) { if verticalSizeClass != .compact { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) } }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -73,6 +71,9 @@ struct MessagesView: View {
                 .accessibilityHint("Press and hold for About Lime")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showNewMessage = true } label: { Image(systemName: "square.and.pencil") }
+                    .accessibilityLabel("New message")
+                    .accessibilityIdentifier("new-message-button")
                 Button { store.path.append(MessagesRoute.search) } label: { Image(systemName: "magnifyingglass") }
                     .accessibilityLabel("Search")
                     .accessibilityIdentifier("messages-search-button")
@@ -88,28 +89,27 @@ struct MessagesView: View {
     private var legacyBody: some View {
         ZStack {
             Theme.canvas.ignoresSafeArea()
-            list(top: 76, bottom: 170)
+            list(top: 76, bottom: 24)
         }
         .readSideInsets($sideInsets)
         .overlay(alignment: .top) { TopFade() }
-        .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }, onSettings: { showStatus = true }) }
-        .overlay(alignment: .bottomTrailing) { if verticalSizeClass != .compact { newMessageButton.padding(.trailing, 20).padding(.bottom, 92) } }
-        .overlay(alignment: .bottom) { bottomControls }
+        .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }, onNewMessage: { showNewMessage = true }, onSettings: { showStatus = true }) }
         .toolbar(.hidden, for: .navigationBar)
     }
 
     // MARK: Shared
 
-    /// The dock; in landscape the + sits beside it (a floating + would cover the rows' times there).
-    private var bottomControls: some View {
-        HStack(spacing: 14) {
-            DockBar()
-            if verticalSizeClass == .compact { newMessageButton }
+    /// The list; tapping the link tab while already at the top of Messages scrolls it up (see `ConversationStore.select`).
+    private func list(top: CGFloat, bottom: CGFloat) -> some View {
+        ScrollViewReader { proxy in
+            listBody(top: top, bottom: bottom)
+                .onChange(of: store.retap[.link, default: 0]) { _, _ in
+                    withAnimation { if let first = store.chats.first?.id { proxy.scrollTo(first, anchor: .top) } }
+                }
         }
-        .padding(.bottom, 8)
     }
 
-    private func list(top: CGFloat, bottom: CGFloat) -> some View {
+    private func listBody(top: CGFloat, bottom: CGFloat) -> some View {
         List {
             Group {
                 if let problem = store.problem { ProblemBanner(problem: problem) }
@@ -127,6 +127,7 @@ struct MessagesView: View {
                 Button { store.path.append(conversation.id) } label: { ConversationRow(conversation: conversation, leadingInset: sideInsets.0 > 0 ? 22 : 0, trailingInset: sideInsets.1 > 0 ? 18 : 0) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("conversation-row-\(conversation.id)")
+                    .id(conversation.id)
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
                     // The swiped chat stays highlighted while its mute choices are open.
@@ -246,19 +247,6 @@ struct MessagesView: View {
     private var deleteMessage: String {
         deletingGroup ? "It has ended and is read-only. This removes it and its messages from this phone."
                       : "This removes it from this phone. The other person keeps their copy."
-    }
-
-    private var newMessageButton: some View {
-        Button { showNewMessage = true } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 26, weight: .regular))
-                .foregroundStyle(Theme.accentInk)
-                .frame(width: 64, height: 64)
-                .background(Theme.accent, in: Circle())
-                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
-        }
-        .accessibilityLabel("New message")
-        .accessibilityIdentifier("new-message-button")
     }
 }
 
@@ -408,6 +396,7 @@ private struct TopControls: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
     let onAbout: () -> Void
+    let onNewMessage: () -> Void
     let onSettings: () -> Void
 
     var body: some View {
@@ -426,6 +415,14 @@ private struct TopControls: View {
             #endif
             Spacer()
             HStack(spacing: 12) {
+                Button(action: onNewMessage) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(Theme.text)
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("New message")
+                .accessibilityIdentifier("new-message-button")
                 Button { store.path.append(MessagesRoute.search) } label: {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 20, weight: .regular))

@@ -282,46 +282,44 @@ struct CallView: View {
     }
 }
 
-/// The dock's call tab: calls on this phone, newest first; tap to call back.
+/// The call tab's root: calls on this phone, newest first; tap to call back. (LIME-116 redesigns it.)
 struct CallHistoryView: View {
     @Environment(ConversationStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
     private let log = CallLog.shared
 
     var body: some View {
-        NavigationStack {
-            List {
-                if log.records.isEmpty {
-                    Text("No calls yet. Start one from a chat's phone button.")
-                        .foregroundStyle(Theme.textSecondary).accessibilityIdentifier("calls-empty")
-                }
-                ForEach(log.records) { record in
-                    Button {
-                        dismiss()
-                        Task { _ = await store.calls.start(peerID: record.peerID, name: record.peerName, video: record.video) }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(record.peerName).foregroundStyle(record.outcome == .missed ? Color.red : Theme.text)
-                            Text("\(record.line) · \(record.date.formatted(date: .abbreviated, time: .shortened))")
-                                .font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                        }
-                    }
-                    .accessibilityIdentifier("call-history-row")
-                }
+        List {
+            if log.records.isEmpty {
+                Text("No calls yet. Start one from a chat's phone button.")
+                    .foregroundStyle(Theme.textSecondary).accessibilityIdentifier("calls-empty")
+                    .listRowBackground(Color.clear)
             }
-            .listStyle(.plain)
-            .navigationTitle("Calls")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-                #if DEBUG
-                ToolbarItem(placement: .cancellationAction) {
-                    ShareLink(item: CallDiagnostics.shared.fileURL) { Label("Call diagnostics", systemImage: "square.and.arrow.up") }
-                        .accessibilityIdentifier("call-diagnostics-share")
+            ForEach(log.records) { record in
+                Button {
+                    Task { _ = await store.calls.start(peerID: record.peerID, name: record.peerName, video: record.video) }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(record.peerName).foregroundStyle(record.outcome == .missed ? Color.red : Theme.text)
+                        Text("\(record.line) \u{00B7} \(record.date.formatted(date: .abbreviated, time: .shortened))")
+                            .font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                    }
                 }
-                #endif
+                .accessibilityIdentifier("call-history-row")
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Theme.canvas)
+        .navigationTitle("Calls")
+        .navigationBarTitleDisplayMode(.large)
         .accessibilityIdentifier("calls-screen")
+        .toolbar {
+            #if DEBUG
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: CallDiagnostics.shared.fileURL) { Label("Call diagnostics", systemImage: "square.and.arrow.up") }
+                    .accessibilityIdentifier("call-diagnostics-share")
+            }
+            #endif
+        }
     }
 }

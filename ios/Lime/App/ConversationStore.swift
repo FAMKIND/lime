@@ -43,6 +43,32 @@ final class ConversationStore {
 
     /// The screens pushed on Messages (chats by id, the Requests list).
     var path = NavigationPath()
+    /// The app's three sections (the system tab bar): link (Messages), call (Calls), jam. Each keeps its own navigation.
+    enum Section: String, CaseIterable, Hashable { case link, call, jam }
+    var section: Section = .link
+    /// The call tab's own navigation path.
+    var callPath = NavigationPath()
+    /// Counts re-taps of a tab (a tap on the tab already showing): the section pops to its root, then scrolls to the top.
+    var retap: [Section: Int] = [:]
+    /// Calls missed since the call tab was last opened (the call tab's badge).
+    var missedCalls: Int {
+        let seen = UserDefaults.standard.object(forKey: "lime.callTabSeen") as? Date ?? .distantPast
+        return CallLog.shared.records.filter { !$0.outgoing && $0.outcome == .missed && $0.date > seen }.count
+    }
+
+    /// Selecting a tab. Choosing the one already showing pops it to its root; at the root it scrolls to the top.
+    func select(_ new: Section) {
+        if new == section {
+            switch new {
+            case .link: if path.isEmpty { retap[new, default: 0] += 1 } else { path = NavigationPath() }
+            case .call: if callPath.isEmpty { retap[new, default: 0] += 1 } else { callPath = NavigationPath() }
+            case .jam: retap[new, default: 0] += 1
+            }
+            return
+        }
+        section = new
+        if new == .call { UserDefaults.standard.set(Date(), forKey: "lime.callTabSeen") }
+    }
     private(set) var link: BackendLink?
     /// How the signed-in person is shown (set by the account session): core calls them "me".
     var meProvider: @MainActor () -> Person = { SampleData.me }
@@ -570,6 +596,7 @@ final class ConversationStore {
     /// A tapped banner or notification: the chat (and the thread in it) opens from Messages.
     func openFromNotification(_ conversationID: String, thread root: String?) {
         guard conversation(conversationID) != nil else { return }
+        section = .link
         var fresh = NavigationPath()
         fresh.append(conversationID)
         if let root { fresh.append(ThreadTarget(conversationID: conversationID, rootID: root)) }

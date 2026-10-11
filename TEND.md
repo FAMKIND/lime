@@ -4840,3 +4840,26 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 - **The other side's muted/camera-off indicator: not built** (it needs a small signalling op; camera-off still shows the avatar only on my own side's logic).
 - The avatar is lime's circular avatar, not a special "lime shape". Landscape and the SE were not exercised.
 - Nothing was run with real audio/video or on a device in this brief: the ringback/connect/end tones, the route toast, the stats and the new screen need your gate. UI tests run against a made-up call (`-lime-demo-call voice|video`), without media.
+
+
+## LIME-121b
+
+**The dock is now Apple's native tab bar: link · call · jam (committed, awaiting the user's check on a phone).** Phase 0: `PLOT.md` committed.
+
+**Survey.** `store.path` is used by Messages, Chat, search, forwarding, group creation and the notification/banner taps: it stays as the **link** path, and a new `callPath` belongs to call. Opening a chat from a notification (and "Message" from the call sheet) now selects link first. The tab bar is hidden in a chat, a thread, group details and a focused-message chat (`.toolbar(.hidden, for: .tabBar)` on those destinations), so the composer keeps the bottom. LIME-118's `CallView` was unchanged except that `CallHistoryView` (the old sheet's contents) is now the call tab's root.
+
+**Built.**
+1. `SignedInView` is a `TabView` (selection through `store.select`), three tabs with their own `NavigationStack`s, lowercase labels, `.tabItem` (it works on iOS 17 to 26; the iOS 18+ `Tab` type was not needed). **Icons: SF Symbols `bubble.left` / `phone` / `book` as placeholders**: `design/icons/` does not exist yet (no SVGs supplied), and I drew nothing. Tint is `Theme.text`.
+2. Badges: link = unread chats (the `.badge`), call = missed incoming calls since the call tab was last opened (from the local call log, until 116 moves it into core).
+3. iOS 26: `tabBarMinimizeBehavior(.onScrollDown)` (the bar shrinks while the lists scroll); earlier systems get the standard bar.
+4. The custom `DockBar`, its `showCalls` sheet and the floating "+" are gone. **New Message** is in the Messages header (a compose icon next to Search), both on iOS 26 and the older layout; the list's bottom inset dropped from 170 to 24 now that the system bar owns the bottom.
+5. **call** is a tab (the old sheet's list, unchanged in look, Debug diagnostics share kept); **jam** is a calm page with the line you gave and a local "Notify me" toggle (no more "coming soon" banner).
+6. Re-tap: `ConversationStore.select` pops a pushed tab to its root, then (at the root) bumps a counter that scrolls Messages to the top.
+
+**Re-tap detection is NOT verified (time-boxed, ~15 min).** SwiftUI's `TabView` does not call its selection binding for a tap on the tab already showing, and on iOS 26 it did not call a tab-bar-controller delegate either. `TabRetap.swift` watches touches on the tab bar and fires when a touch lands on the selected tab; under XCUITest's synthesized tap it never fired, so `testReTapLinkPopsToMessages` is skipped with a comment. Gate item 4 on a real phone will say whether it works; if not, the fallback is the iOS 18 `Tab` API's per-tab handling or dropping re-tap.
+
+**Tests.** New `TabBarUITests`: order and labels, call opens in place (tab bar still there), a chat stays open when you switch to call and back (the bar is hidden in the chat), "+" in the header, the jam page and toggle. Existing tests updated: the dock-badge assertions read the link tab's value (the system shows "1 item"; the number is kept), and the landscape test now expects the "+" in the header. One flaky failure in the full run (`testASearchHitInsideAThreadOpensTheThread`) passed on its own re-run.
+
+**Older bar:** the iPhone SE simulator runs **iOS 18.3**, so the new tests and the badge/landscape tests ran against the standard (non-glass) tab bar there and passed; the 13 mini and 18 Pro run the iOS 26 glass bar and passed. No iOS 17 runtime is installed.
+
+**Not exercised:** iOS 17, the glass tab bar on a real phone, the minimise-on-scroll behaviour, re-tap, and a missed-call badge with a real missed call.

@@ -34,6 +34,25 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["settings-root"].waitForExistence(timeout: 10), "Settings opens")
     }
 
+    /// The link tab's badge (the system tab bar shows the count of unread chats as the tab's value); "" when there is none.
+    private func linkBadge(_ app: XCUIApplication) -> String {
+        // The system reads the badge as the tab's value, e.g. "1 item"; keep the number.
+        let text = (app.tabBars.buttons["link"].value as? String) ?? ""
+        let digits = text.prefix { $0.isNumber }
+        return digits == "0" ? "" : String(digits)
+    }
+
+    /// Waits for the link badge to read `text` ("" = no badge).
+    @discardableResult
+    private func waitForLinkBadge(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 5) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if linkBadge(app) == text { return true }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return linkBadge(app) == text
+    }
+
     private func goBack(_ app: XCUIApplication) {
         let custom = app.buttons["back-button"]
         (custom.exists ? custom : app.navigationBars.buttons.element(boundBy: 0)).tap()
@@ -981,10 +1000,7 @@ final class LimeUITests: XCTestCase {
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForExistence(timeout: 5), "marked unread: the dot")
-        let dock = app.staticTexts["dock-badge"]
-        XCTAssertTrue(dock.waitForExistence(timeout: 5))
-        XCTAssertEqual(dock.label, "1", "the dock counts unread chats")
-        XCTAssertEqual(dock.frame.width, dock.frame.height, accuracy: 1, "a single digit is in a perfect circle")
+        XCTAssertTrue(waitForLinkBadge(app, "1"), "the link tab counts unread chats: \(linkBadge(app))")
         // The dot hangs in the margin, left of the avatar, and rows start at the same edge as the logo.
         let dot = app.descendants(matching: .any)["unread-dot-dm:sam"]
         XCTAssertLessThan(dot.frame.maxX, 16, "in the margin")
@@ -1000,10 +1016,10 @@ final class LimeUITests: XCTestCase {
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(dock.waitForNonExistence(timeout: 5), "and the badge")
+        XCTAssertTrue(waitForLinkBadge(app, ""), "and the badge")
     }
 
-    func testInLandscapeTheListSpansTheScreenAlignedToTheHeaderAndThePlusSitsBesideTheDock() {
+    func testInLandscapeTheListSpansTheScreenAlignedToTheHeaderAndThePlusIsInTheHeader() {
         let app = demoApp()
         app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -1024,9 +1040,9 @@ final class LimeUITests: XCTestCase {
         XCTAssertEqual(time.frame.maxX, pill.frame.maxX + 8, accuracy: 12, "the time lines up with the right edge of the pill")
         let logo = app.buttons["Lime menu"], avatar = app.descendants(matching: .any)["row-avatar-dm:sam"]
         XCTAssertLessThanOrEqual(abs(avatar.frame.minX - logo.frame.minX), 12, "the avatar starts under the logo")
-        // The + is in the bottom bar, clear of every row.
+        // The + (New message) is in the header now (top right), above every row; the tab bar replaced the dock.
         XCTAssertFalse(plus.frame.intersects(sam.frame), "the + does not sit over a row")
-        XCTAssertGreaterThan(plus.frame.minY, sam.frame.maxY - 1)
+        XCTAssertLessThan(plus.frame.maxY, sam.frame.minY + 1)
     }
 
     func testAReactionShowsInTheMessagesRowWithoutAnUnreadMark() throws {
@@ -1043,7 +1059,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 8))
         XCTAssertTrue(row.label.contains("You reacted 👍 to “Are you coming to the staff meeting?”"), row.label)
         XCTAssertFalse(app.descendants(matching: .any)["unread-dot-dm:sam"].exists, "a reaction does not mark the chat unread")
-        XCTAssertFalse(app.staticTexts["dock-badge"].exists)
+        XCTAssertEqual(linkBadge(app), "")
     }
 
     func testOpeningAnUnreadChatClearsTheRowAndTheDockBadgeWhicheverWayItIsOpened() {
@@ -1054,12 +1070,12 @@ final class LimeUITests: XCTestCase {
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["dock-badge"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForLinkBadge(app, "1"))
         app.buttons["conversation-row-dm:sam"].tap()
         XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 5))
         goBack(app)
         XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForNonExistence(timeout: 5), "opening clears a hand-made mark")
-        XCTAssertTrue(app.staticTexts["dock-badge"].waitForNonExistence(timeout: 5), "and the dock badge follows")
+        XCTAssertTrue(waitForLinkBadge(app, ""), "and the badge follows")
         // Marked again and opened through search.
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
@@ -1075,7 +1091,7 @@ final class LimeUITests: XCTestCase {
         goBack(app)
         app.buttons["search-back"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForNonExistence(timeout: 5), "opened from search clears it too")
-        XCTAssertTrue(app.staticTexts["dock-badge"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(waitForLinkBadge(app, ""))
     }
 
     // MARK: LIME-108: status and work hours
