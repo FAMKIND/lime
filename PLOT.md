@@ -126,8 +126,12 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e14. **LIME-116b LANDED as `ad6e32a` (pushed, 2026-10-11).** The user's phone QA (screenshots, 11:04–11:11) → **LIME-116c (NEXT, drafted 2026-10-11, before 118b)**: Calls tab fades, glass All|Missed, search like Messages, status badges, and a real **contact profile** (replacing the call details screen; opened from a call row, the DM chat header and group member rows).
+   - The "+" placement (floats just above the bar on narrow phones) was not objected to: treat it as accepted.
+   - **Open with the user (K1):** call events in chat as KakaoTalk-style bubbles on the caller's side (their reference screenshot) vs today's centred lines. Not in 116c.
+   - **Plot crossed the line once (2026-10-09, a general session before this one):** it edited `DockBar.swift` itself (the `message`/`book.pages` icons). Superseded: 121b replaced the dock, and the tab bar now uses those exact symbols. Nothing to revert. Lesson: icon tweaks still go through a brief.
 1e13. **The user (2026-10-11): the "+" should be bigger, like before (64 pt), with see-through glass → folded into LIME-116b** (LIME-116 revised, never sent).
-   - **The calls UX order: 116b (the Calls tab) → 118b (in-call screen follow-ups: voice → video, the remote mute/camera-off indicator, landscape/SE checks, the audio jitter-buffer growth); 118b is not drafted yet** → 119 → 120 → 112b → 117.
+   - **The calls UX order: 116b (the Calls tab) → 118b (in-call screen follow-ups; **drafted 2026-10-11**, see "### LIME-118b") → **118c (minimise the call to a floating tile + system Picture in Picture; drafted 2026-10-11)**** → 119 → 120 → 112b → 117.
 1e12. **LIME-121d LANDED as `4bed9e0` (pushed, 2026-10-11); waiting on the user's gate.**
    - The same header on all tabs; outline/fill icons; Diagnostics moved to About.
    - **The "+" is beside the bar only where it fits** (18 Pro: about 60 pt free → 48 pt beside it). **On the 13 mini (about 46 pt free) and the SE simulator (iOS 18.3, a full-width bar) it floats just above the bar at the right** (tend's call instead of stopping).
@@ -3720,6 +3724,313 @@ If the survey turns up related issues, raise them before editing.
   - **Plot's lean: A now, and B as a later project if teachers ask.**
 - **C3. "Require admin approval" (Signal's toggle) on links:** **on by default** (lean), so people can only join once the creator lets them in.
 - **Note:** a shareable `https://limechat.org/call/…` link that opens the app needs Associated Domains, which needs **the paid Apple account (November)** and the site (LIME-114). Until then links work through "Share via lime" (a Join card in a chat) and a `lime://` link.
+
+### Open decision: the Apple Developer account (asked by the user 2026-10-11: "limechat.org or FAMKIND LLC? I'd prefer lime")
+**DECIDED (the user, 2026-10-11): B.** "Going to make lime into a business and use that so that it's clean." Form **Lime Messenger LLC**, then enrol it as an organisation.
+- **The path:**
+  1. the state and the owner (the user, or FAMKIND LLC as member, later assigned to the foundation): **confirm with a lawyer/accountant**;
+  2. file the Articles of Organization;
+  3. an EIN (IRS online, free);
+  4. a D-U-N-S number (Apple's lookup; free);
+  5. **a basic public page at limechat.org naming Lime Messenger LLC** (a mini LIME-114, which plot can brief);
+  6. enrol with accounts@limechat.org.
+- **Name check:** the trademark question about "LimeChat" (the existing IRC client) is still on the lawyer list; "Lime Messenger LLC" as the legal name is separate from the app name "lime".
+- **Bundle id:** changing `com.famkind.lime` → `org.limechat.lime` makes the test devices see **a new app** (a fresh install: sign in again; on-device keys and history stay in the old app). **Ask the user when to do it** (once, before the App ID is registered).
+
+**Facts** (Apple's enrolment pages, checked 2026-10-11):
+- an organisation enrols under its **legal entity name**, and **that name is shown as the seller on the App Store**;
+- **Apple doesn't accept DBAs, trade names or branches**;
+- it needs a **D-U-N-S number** and a legal entity (an LLC qualifies), plus a public website;
+- an Individual shows **the person's legal name** as the seller.
+- **App transfer** between accounts later is allowed for published apps (at least one approved version) that don't use iCloud, Wallet, auto-renew subscriptions, etc. lime uses none of these, so it stays transferable if we keep it that way.
+- **`limechat.org` is a domain, not an entity, so it can't be the seller.** The **app name "lime"** is what people see big; the seller is the small line under it.
+
+**Options:**
+- **A.** Enrol **FAMKIND LLC** now; transfer the app to Lime Messenger LLC / the foundation once it exists. *Pro:* starts this week (D-U-N-S lookup plus a few days); unblocks TestFlight, APNs and PushKit. *Con:* the seller line reads "FAMKIND LLC" until the transfer, and the transfer is admin work later.
+- **B.** **Form Lime Messenger LLC first**, then enrol it. *Pro:* the seller is "Lime Messenger LLC" from day one, with no transfer. *Con:* about 2–4+ weeks (the state filing, an EIN, D-U-N-S, Apple's verification), and **limechat.org needs a basic public page** first (LIME-114).
+- **C.** Individual. *Con:* your personal name is the seller; avoid.
+
+**Plot's lean: A now if TestFlight/push timing matters; B if the user would rather wait for "lime" in the seller line.** Either way:
+- the Apple ID is a role address, **accounts@limechat.org** (a Migadu alias → shem), with 2FA; **if Apple's verification wants an email on the organisation's own domain for FAMKIND, use a famkind.com address**;
+- **choose the final bundle id before registering anything:** plot suggests `org.limechat.lime` (today's `com.famkind.lime` is a placeholder; bundle ids are permanent and move with an app transfer);
+- **the $99 fee waiver applies only to the 501(c)(3)** once it exists.
+
+### LIME-118c → `tend` (lime-aa) (after LIME-118b): minimise a call into a floating tile you can move around, plus system Picture in Picture
+**The user (2026-10-11):** "it would be good to be able to, picture-in-picture style, minimise the voice or video call into a small box you can move around while you type a message to that person or others."
+
+**Today** (`RootView.swift:21-26`):
+- the call is a `fullScreenCover` shown while `inCall && !minimized`;
+- LIME-118's "Message" action sets `minimized` and shows a **"Tap to return to call · 0:42" bar**;
+- there's no draggable tile and no system PiP.
+
+**Goal:**
+- **in lime:** a minimise button turns the call into a **small floating tile** over the whole app (any tab, any chat, typing included), draggable and snapping to the corners, and tapping it returns to the full call;
+- **outside lime:** the video call continues in **iOS Picture in Picture** when you leave the app.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push; the user's devices for the gate.
+
+**What plot read:**
+- `RootView.swift` (the cover and the return bar);
+- LIME-118 (the `minimized` state, the name pill sheet, `RemoteVideoSlot`);
+- LIME-118b (the `lime-ctl` state for the remote camera/mute, used by the tile).
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: survey, then one stop**
+1. The `minimized` state and the return bar; how the remote video renderer can be **moved between the full screen and the tile without re-creating the track** (one `RTCMTLVideoView`, re-parented, or a second renderer on the same track).
+2. **System PiP:** `AVPictureInPictureController` with `AVPictureInPictureVideoCallViewController` (iOS 15+) needs the remote frames as sample buffers (`AVSampleBufferDisplayLayer`).
+   - Check what's needed so **your own camera keeps running** in PiP: `AVCaptureSession.isMultitaskingCameraAccessSupported/Enabled` (iOS 16+), and whether it needs the `com.apple.developer.avfoundation.multitasking-camera-access` entitlement (the paid account).
+3. **STOP and report** what system PiP needs; anything entitlement-bound goes to the user, not worked around. **The in-app tile does not depend on it, so build the tile either way.**
+
+---
+
+**Phase 2: the in-app floating tile**
+1. **A minimise button** on the call screen (top-left, next to the name pill; `arrow.down.right.and.arrow.up.left`); the name pill sheet's "Message" also minimises (it replaces the old return bar).
+2. **The tile** (always above the app's content, the tab bar and sheets, below system alerts):
+   - **video call:** the **remote video** (about 110 × 150 pt, rounded 16 pt, a hairline border); when their camera is off, their avatar; a small timer;
+   - **voice call:** a compact glass capsule with the avatar, the name and the timer, plus a pulsing ring when they speak (from the audio level, if available);
+   - **controls on the tile:** mute and **end** (red); tapping anywhere else **restores the full screen**;
+   - **draggable, snapping to the nearest corner** (respecting the safe areas, the tab bar, the composer and the keyboard: it moves up when the keyboard shows);
+   - it remembers its corner during the call;
+   - the muted badge from 118b on the tile.
+3. **Works everywhere:** switching tabs, opening any chat (with them or others), typing, scrolling; the tile stays put.
+4. **Ending:** the end tone; the tile disappears; the call line appears in the chat as usual.
+5. **Accessibility:** the tile is one element ("Call with Jean, 3:12. Double-tap to return. Actions: Mute, End").
+
+---
+
+**Phase 3: system Picture in Picture** (only what doesn't need a new entitlement)
+- when you leave lime during a **video** call, show iOS Picture in Picture with the remote video (`AVPictureInPictureVideoCallViewController`), starting automatically (`canStartPictureInPictureAutomaticallyFromInline`);
+- restoring returns to lime's full call screen;
+- **if your own camera can't run in the background** without the entitlement: the call keeps your audio, your video pauses, and the other side gets `camera: false` via `lime-ctl` (so they see your avatar);
+- note the entitlement as a "paid account" item in `docs/release-checklist.md`;
+- voice calls need no PiP (the green status pill / Dynamic Island already returns to the call).
+
+---
+
+**Verification**
+- **unit tests:** the minimise/restore state; the corner snapping maths; the keyboard avoidance offset;
+- **UI tests** (demo calls):
+  - minimise → the tile visible while switching tabs and opening a chat and typing;
+  - drag to each corner snaps;
+  - tap restores;
+  - end from the tile;
+  - the voice tile vs the video tile;
+  - not overlapping the tab bar or the composer on the SE and 18 Pro;
+- the full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings; Release has no Bluetooth.
+
+**Gate (the user, two devices):**
+1. In a video call, minimise → a small box with the other person; type a message to them and to someone else while it stays on screen.
+2. Drag it to each corner.
+3. Tap it to go back full screen.
+4. The same in a voice call (the compact capsule).
+5. Leave lime during a video call → iOS Picture in Picture shows them (and tend reports what happens to your camera).
+
+---
+
+**Record:** `## LIME-118c` in `TEND.md`.
+
+**Commit:** `feat(ios): minimise a call to a floating draggable tile; system Picture in Picture for video calls`, trailer `Brief: LIME-118c`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
+### LIME-116c → `tend` (lime-aa) (NEXT, after the 116b gate; before 118b): Calls tab polish (fades, Liquid Glass All | Missed, search like Messages, status badges) + the contact profile
+**The user (2026-10-11, phone screenshots of the Calls tab, a chat, call details; plus a KakaoTalk reference):**
+- "there is a cut off at the top and bottom of the call. all the content should scroll and fade under the logo, search and avatar, as well as the dock at the bottom."
+- "let the toggle All and Missed use the liquid glass pattern that toggles."
+- "Search in the call section should use the same pattern used in the link/messages section."
+- "each avatar needs their status icons."
+- "the profile section needs to be clean up. Do a mix of this and the details section we had in the web app. clean up the call date text size so that it's smaller. add bio, handle, status, etc."
+- "if someone click on a chat, then presses the avatar or the title in the header it should pull up the updated version of this."
+
+**Goal:** the Calls list scrolls edge to edge and fades under the header and the tab bar; All | Missed is a Liquid Glass segmented control; the header's search opens a search screen like Messages'; every avatar shows its status badge; and one clean **contact profile** (avatar + status, name, @username · school, About, Message/Voice/Video, info, recent calls) replaces the call details screen and opens from a call row, from a DM chat's header (avatar or title), and from a group's member rows.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push. **No server change** (`profile-get { user_id }` already returns another person's public fields). A small core addition (one uniffi function).
+
+**What plot read (2026-10-11):**
+- `ios/Lime/Features/Calls/CallsTab.swift`: the root is a `VStack { filterPill; [inline TextField]; List }`, so **the list starts below an opaque band and never scrolls under the header; there is no scroll-edge effect**; the pill is a custom `HStack` of two buttons; search is an inline `.roundedBorder` `TextField` toggled by `store.callSearching`/`store.callQuery`; rows use `AvatarView(person:size:)` **without `showsStatus`**; `CallDetailsView` shows the date with `Theme.body` and `.abbreviated` + `.shortened`, which wraps to two lines ("Oct 11, 2026 at / 11:01 AM").
+- `ios/Lime/Features/Messages/MessagesView.swift`: iOS 26 = a full-screen `List` with `.scrollEdgeEffectStyle(.soft, for: .top)` and `.bottom`; iOS 17–25 = `contentMargins(.top, 76)` + `TopFade()` overlay + `TopControls`. Its search **pushes** `MessagesRoute.search` → `MessageSearchScreen` (its own header with the field, back, results).
+- `Features/Calls/RootHeader.swift` (the shared header for Calls/jam), `Features/Messages/Avatar.swift` (`AvatarView(showsStatus:)`, `.statusBadge(userID,size:)` in `StatusViews.swift`), `NewMessageSheet.swift` (`TeacherRow`, `FindByScreen`).
+- `ChatView.swift`: the title's `.onTapGesture` only acts for groups (`GroupTarget`); a DM's title/avatar does nothing. The DM subtitle already shows the label and status via `store.status(of:)` + `StatusPlan.caption`.
+- The web app's person details (`public/js/app.js` `renderProfilePanel`, ~line 4690): an XL avatar; name; role · school; pronouns; an **"About me"** section; a **"Contact Information"** section (@username, local time, presence).
+- Server `supabase/functions/profile-get` with `{ user_id }`: `display_name`, `username`, `school`, `about_emoji`, `about_text` (null when the person hides from search). Core already calls it only in `refresh_names` (`core/src/client.rs` ~line 910).
+
+**Plot assumed:** local time and pronouns are not available (no such fields), so they're left out. Status comes from `store.status(of:)` (contacts-only, already on the phone).
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. **~60 min** soft cap; if it runs long, stop after Phase 2 part A, commit it, and report (part B can be its own commit under the same brief ID).
+
+---
+
+**Phase 1: survey (read-only)**
+- the Calls root after 116b, the "+" overlay, and `RootHeader`;
+- `MessageSearchScreen`'s header/field component (can it be reused for calls?);
+- `GroupScreens.swift` member rows (what tapping a member does today);
+- whether a native `Picker(.segmented)` renders as Liquid Glass on the iOS 26 simulator.
+
+If the survey turns up related issues, raise them before editing. If a decision isn't covered here, **stop and ask the user**.
+
+---
+
+**Phase 2, part A: the Calls tab**
+1. **Edge-to-edge scrolling with fades (like Messages):**
+   - the history `List` fills the screen (ignore the top/bottom container safe area as Messages does) and scrolls **under** the header and the tab bar;
+   - iOS 26: `.scrollEdgeEffectStyle(.soft, for: .top)` and `.bottom`;
+   - iOS 17–25: the same `TopFade()` veil as Messages, plus a matching bottom veil above the tab bar;
+   - the All | Missed control is **not** in a band above the list: it floats (pinned) under the header, and the list's top content margin leaves room for it so the first row starts below it and scrolls under it;
+   - **the bottom content margin is at least the "+" height + its gap (64 + 16 pt) above the tab bar**, so the last row's call-back button is never stuck under the "+" at the end of the list.
+2. **All | Missed is a Liquid Glass segmented control:** prefer the native `Picker` with `.pickerStyle(.segmented)` (on iOS 26 it is the system's glass control with the sliding selection), about 240 pt wide, centred; neutral selection (not green). If the native control doesn't render as glass on iOS 26, build it as a `GlassEffectContainer` with the selected segment as a glass capsule that moves (`glassEffectID` + a namespace). iOS 17–25: the standard segmented `Picker`. Keep the identifiers `calls-filter-all`/`calls-filter-missed` working for the UI tests (or update the tests).
+3. **Search works like Messages:** the header's magnifier **pushes a Calls search screen** onto the call tab's path, with the same header/field style as `MessageSearchScreen` (reuse its header if it can be factored out cleanly; don't fork a look-alike), focused on open. Results:
+   - **People:** accepted contacts whose name or username matches, each with the voice and video circle buttons (as in New Call);
+   - **Calls:** matching history rows (the same row view as the list).
+   - Remove the inline `TextField` and the `callSearching` toggle (keep `callQuery` only if the search screen uses it).
+4. **Status badges on every avatar in the call surfaces:** history rows, search results, New Call rows, and the profile (`AvatarView(... showsStatus: true)` or `.statusBadge`).
+
+**Phase 2, part B: the contact profile (replaces `CallDetailsView`)**
+
+5. **Core:** a uniffi `fetch_profile(transport, auth_token, user_id) -> Option<PublicProfile>` wrapping `profile-get { user_id }` (fields: `display_name`, `username`, `school`, `about_emoji`, `about_text`; 404 → `None`; 429 → `RateLimited`). No new table. iOS keeps the last result per person in memory for the session and shows cached fields instantly, then refreshes.
+6. **The profile screen** (pushed; the tab bar hides, as in a chat), top to bottom, using existing tokens and cards (no dividers, `Theme.surface` rounded cards as elsewhere):
+   - **the avatar (96 pt) with the status badge**; the name (title2 semibold) with the verified seal if verified in person;
+   - **under the name:** "@username · School" (secondary; either part omitted if missing);
+   - **the status line** when they shared one ("🌙 Do not disturb · until 3 PM", via `StatusPlan.caption`);
+   - **three actions: Message · Voice · Video** (as today). Voice/Video only when the DM is accepted; otherwise only Message (or nothing for a pending request);
+   - **About** card: the about emoji and text (omitted if empty);
+   - **Info** card (the web app's "Contact Information"): Username (tap to copy, with a "Copied" toast), School, **My label** (shows the private label; tapping opens the existing "Add a label" editor), and "Verified in person" when true;
+   - **Calls** card: when opened from a call row, the calls in that group; from anywhere else, **the most recent 10 calls with this person** (omit the card if none). Each call is **one line**: direction glyph · "Voice"/"Video" · the date in **`Theme.caption` or `Theme.secondary`**, formatted short (today "11:01 AM"; "Yesterday 11:01 AM"; else "Oct 11, 11:01 AM", year only if not this year), and the outcome on the right ("No answer", "Missed" in red, "4:12"). No wrapping at default Dynamic Type on a 13 mini.
+   - Someone who hides from search shows only the name, avatar, status (if shared to me) and actions.
+7. **Where it opens from:**
+   - a Calls history row (replaces `CallDetailsView`; keep the identifier `call-details` on the new screen or update the tests);
+   - **a DM chat's header: tapping the avatar or the title** (today it does nothing for a DM). Groups keep opening Group details;
+   - **a group's member rows in Group details** open that member's profile (if they currently do something else, report it first).
+
+**Out of scope:** call events as chat bubbles (K1, open with the user); Block/Report on the profile (LIME-113); local time and pronouns; any server change.
+
+---
+
+**Verification**
+- **core:** `fetch_profile` (found, hidden-from-search fields null, 404 → None, 429 → RateLimited) with the test transport; `cargo test`, clippy 0.
+- **iOS unit tests:** the short call-date formatter (today / yesterday / this year / other year); the profile model maps hidden fields to omitted rows.
+- **UI tests:**
+  - the Calls list's first row starts below the floating All | Missed control, and **the list scrolls under the header** (the list frame extends above the control);
+  - at the end of the list the last row's call-back button doesn't intersect the "+" frame (13 mini, SE);
+  - All/Missed still filter;
+  - the magnifier pushes the Calls search screen; typing a name shows People and Calls results; back returns to the list;
+  - status badges exist on call row avatars (a contact with a demo status);
+  - tapping a call row opens the profile with @username, About and the Calls card; call dates are one line;
+  - **in a DM, tapping the header title opens the profile**; in a group it still opens Group details; a group member row opens the profile.
+- Tiered (the full suite on the 13 mini; changed tests on SE and 18 Pro); 0 warnings; Release has no Bluetooth.
+
+---
+
+**Gate (the user, the phone):**
+1. Calls: the rows scroll and fade under the logo/search/avatar and under the tab bar; nothing is cut off; the last row clears the "+".
+2. All | Missed is a glass toggle that slides.
+3. The magnifier on Calls opens a search screen like Messages'.
+4. Avatars in Calls (and New Call) show status badges.
+5. Tap a call row → the new profile: @handle, school, About, status, Message/Voice/Video, and compact one-line call dates.
+6. In a chat with Jean, tap her name or avatar in the header → the same profile.
+
+---
+
+**Record:** `## LIME-116c` in `TEND.md`.
+
+**Commit:** `feat(ios): Calls tab edge-to-edge with fades, glass All|Missed, Calls search, status badges; contact profile (About, handle, status, recent calls) from calls, DM header and group members`, trailer `Brief: LIME-116c`, plus the attribution trailer. (If split: part A `feat(ios): Calls tab edge-to-edge with fades, glass All|Missed, Calls search, status badges` and part B `feat: contact profile (fetch_profile; About, handle, status, recent calls) from calls, DM header and group members`, both with `Brief: LIME-116c`.) **Push.** Stop. No /loop wakeups.
+
+### LIME-118b → `tend` (lime-aa) (after LIME-116b): in-call follow-ups: an in-call control channel, voice → video, the remote mute/camera indicators, audio delay, SE/landscape
+**Why:**
+- LIME-118 left these gaps (tend's report): voice → video wasn't built (it needs renegotiation); the other side's muted/camera-off state wasn't built (it needs a small op); landscape and the SE weren't exercised.
+- The 2026-10-11 iPad stats (`/tmp/lime-calllogs8`) showed **the audio jitter buffer growing from about 150 ms to about 400 ms after the video stalled** (the user's "minor sound delay").
+- Also seen: **the iPad's camera stops while lime is in a Stage Manager window** (video out 0 fps).
+
+**Design decision (plot): an in-call control channel.**
+- Once connected, the two phones open a WebRTC **data channel** `lime-ctl` (reliable, ordered) inside the existing peer connection.
+- It's **end-to-end protected by the same DTLS session** whose fingerprints are bound inside the signed offer/answer, so it's as trustworthy as the media, and it's **peer to peer and instant** (no mailbox round trip, no server).
+- **Used for:**
+  - (a) state messages `{ "t": "state", "muted": bool, "camera": bool }`, sent on every change and once on connect;
+  - (b) **renegotiation** `{ "t": "offer"|"answer", "sdp": … }` for mid-call changes;
+  - (c) later, reactions and raise hand.
+- **The mailbox `call.*` ops stay for setup and end** (and as the fallback for end if the channel is down).
+
+**Goal:**
+- a voice call can turn into a video call;
+- each side sees when the other mutes or turns their camera off;
+- the audio delay stays low when the video stalls;
+- the call screen is checked and fixed on the SE and in landscape.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push; the user's phones/iPad for the gate, with "logs" pulls.
+
+**What plot read:**
+- LIME-118's TEND report;
+- `CallManager.swift` / `CallMedia.swift` / `CallView.swift` (after 118);
+- the iPad stats lines (`stats path host->host; … jitter buffer 148 → 433 ms …; video in 0 fps`).
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: survey + the audio delay finding (report before fixing)**
+1. **Reproduce the jitter-buffer growth** with stats: a video call where one side's video stops (camera off / app backgrounded) while the audio continues; log `jitterBufferDelay/emitted` per 5 s for audio.
+2. **Check whether audio and video share a MediaStream id** (WebRTC lip sync makes the audio wait for the video).
+3. **Report the cause.** The likely fix is to stop syncing the audio to a stalled video: give audio and video different stream ids, or stop syncing while the video is off or stalled.
+   - **The acceptance bar:** with a clean network, the audio jitter buffer stays ≤ 200 ms even when the video stalls; lip sync drift ≤ about 100 ms while both flow.
+
+---
+
+**Phase 2: build**
+1. **`lime-ctl` data channel:**
+   - created by the caller before the offer (so it's in the initial SDP), opened on both sides;
+   - messages are JSON, at most 64 KB; unknown `t` is ignored;
+   - logged in diagnostics (type only).
+2. **Remote state:**
+   - each side sends `state` on connect and on every mute/camera change;
+   - the UI shows:
+     - **a small muted-mic badge** on the other person's view (video) or under their name (voice);
+     - **when their camera is off,** their avatar replaces the frozen or black video;
+   - VoiceOver announces "<Name> muted" / "unmuted".
+3. **Voice → video:**
+   - the voice-call row gets a **video button**: tapping it adds the camera track and renegotiates over `lime-ctl` (offer/answer). The DTLS fingerprint must not change; **reject an in-call SDP whose fingerprint differs** (tear down the call).
+   - The other side **sees you**, its own camera stays off, and it gets a "Turn on camera" button (FaceTime's behaviour);
+   - the screen switches to the video layout when either side has video;
+   - camera-off on both returns to the voice layout.
+4. **The audio delay fix** from Phase 1.
+5. **iPad camera in a window:**
+   - when the camera is interrupted (`AVCaptureSession` interruption: video device not available with multiple foreground apps), show **"Your camera is paused while lime is in a window"** on your self-view and send `camera: false`;
+   - resume when it's available.
+   - *(Multitasking camera access needs an Apple entitlement plus the paid account: note it, don't request it.)*
+6. **SE and landscape:** run the call screen at 667 pt and in landscape on the 18 Pro; fix any overlap or clipping (the controls, the name pill, the self-view tile, the person sheet).
+
+---
+
+**Verification**
+- **unit tests:**
+  - `lime-ctl` state messages update the remote state;
+  - renegotiation with the same fingerprint works, and a different one tears down the call;
+  - the voice → video layout switch;
+  - the interruption → `camera: false`;
+- **UI tests** (demo calls): the muted badge, the camera-off avatar, the video button on a voice call, and the SE and landscape layouts with no overlap (frames);
+- the full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings; Release has no Bluetooth.
+
+**Gate (the user, the phone + the iPad or Jean's phone):**
+1. Mute on one side → the other sees the muted badge.
+2. Camera off → the other sees your avatar, not black.
+3. A voice call → tap video → the other side sees you, and can turn on their camera.
+4. During a video call, turn your camera off for 20 s: the audio stays snappy (plot checks the jitter buffer ≤ 200 ms in the logs).
+5. The call screen looks right on the SE and when turned to landscape.
+
+---
+
+**Record:** `## LIME-118b` in `TEND.md`.
+
+**Commit:** `feat(ios): in-call control channel (lime-ctl), voice→video, remote mute/camera indicators, audio not delayed by stalled video, SE/landscape fixes`, trailer `Brief: LIME-118b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
 
 ### LIME-116b → `tend` (lime-aa) (NEXT, after the 121d gate): the Calls tab (All/Missed, call details, New Call sheet, encrypted history) + the bigger, see-through "+"
 **Revises LIME-116 (never sent):** 121b/121d already made Calls a tab with the shared header (logo left; search + avatar right) and a name filter. This brief builds the list, the details, New Call and the storage, and adjusts the "+".
