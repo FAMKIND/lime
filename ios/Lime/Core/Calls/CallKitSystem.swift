@@ -21,6 +21,23 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
         provider = CXProvider(configuration: configuration)
         super.init()
         provider.setDelegate(self, queue: .main)
+        CallDiagnostics.shared.log("callkit provider created")
+    }
+
+    /// Debug: reports a fake incoming call, waits 3 s, ends it, and logs each step (About → CallKit self-test).
+    func selfTest() async {
+        let diag = CallDiagnostics.shared
+        let id = UUID(uuidString: "00000000-0000-4000-8000-00000000A11E")!
+        diag.log("self-test: start")
+        let began = Date()
+        reportIncoming(callID: id.uuidString.lowercased(), name: "lime test", video: false) { refusal in
+            diag.log("self-test: report completion after \(Int(Date().timeIntervalSince(began) * 1000)) ms, error: \(refusal ?? "none")")
+        }
+        try? await Task.sleep(for: .seconds(3))
+        diag.log("self-test: ending")
+        provider.reportCall(with: id, endedAt: nil, reason: .remoteEnded)
+        try? await Task.sleep(for: .seconds(1))
+        diag.log("self-test: done (a 'report completion' line above means CallKit answered; none means it is silent)")
     }
 
     private func uuid(_ id: String) -> UUID { UUID(uuidString: id) ?? UUID() }
@@ -59,9 +76,16 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
 
     // MARK: CXProviderDelegate
 
-    nonisolated func providerDidReset(_ provider: CXProvider) {}
+    nonisolated func providerDidBegin(_ provider: CXProvider) {
+        Task { @MainActor in CallDiagnostics.shared.log("callkit providerDidBegin") }
+    }
+
+    nonisolated func providerDidReset(_ provider: CXProvider) {
+        Task { @MainActor in CallDiagnostics.shared.log("callkit providerDidReset") }
+    }
 
     nonisolated func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
+        Task { @MainActor in CallDiagnostics.shared.log("callkit start action") }
         action.fulfill()
     }
 
@@ -80,7 +104,7 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
     nonisolated func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
         let id = action.callUUID.uuidString.lowercased()
         let muted = action.isMuted
-        Task { @MainActor in self.onMute?(id, muted) }
+        Task { @MainActor in CallDiagnostics.shared.log("callkit mute \(muted)"); self.onMute?(id, muted) }
         action.fulfill()
     }
 

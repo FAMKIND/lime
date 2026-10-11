@@ -52,7 +52,7 @@ final class CallManager {
     var media: (any CallMedia)?
 
     @ObservationIgnored private let signalling: CallSignalling
-    @ObservationIgnored private let system: CallSystem
+    @ObservationIgnored let system: CallSystem
     @ObservationIgnored private let makeMedia: () -> any CallMedia
     @ObservationIgnored private let log: CallLog
     @ObservationIgnored private let isQuiet: () -> Bool

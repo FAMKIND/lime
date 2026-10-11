@@ -4798,3 +4798,12 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 4. **Gather cap:** stops at 1.0 s once a relay candidate is in (when a relay is configured), otherwise at completion or 2.5 s; late candidates still go in the batch op. **TURN credentials:** one retry after 1 s; if both fail, "relay unavailable: placing the call without it" and the call goes on with STUN only. **Glare:** when both phones offer at once the lower user id's offer wins and the other side drops its own silently (no "busy"); the store gives the manager `myUserID`.
 
 **Not exercised:** a real device (the original jam only showed there), glare between two real phones (unit-tested with fakes only), the effect of the 1 s cap on connection success over a real network.
+
+
+## LIME-111-fix4 (Phase 1 only: CallKit self-test, awaiting a device run)
+
+**Phase 1 committed; stopped before Phase 2 as asked.** Phase 0: `PLOT.md` committed.
+
+- **Added (Debug only):** About → **CallKit self-test** (also at launch with `-lime-callkit-selftest`, e.g. `xcrun devicectl device process launch --device <id> --terminate-existing com.famkind.lime -lime-callkit-selftest`). It reports a fake incoming call ("lime test"), waits 3 s, ends it, and logs to the call diagnostics: provider created, `providerDidBegin`, the report completion (ms, error or none), every delegate action, audio activate/deactivate and `providerDidReset`. The same callbacks are now logged in real calls.
+- **How to read it:** a `report completion after N ms, error: none` line means CallKit answers; no completion line and no `providerDidBegin` means CallKit is silent on that phone (the audio then depends on the Phase 2 fallback).
+- **Not run on a device:** nothing here can tap or unlock a phone, and I did not install on the user's phones unasked, so there is no device result yet.

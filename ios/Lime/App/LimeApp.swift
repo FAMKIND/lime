@@ -36,6 +36,15 @@ struct LimeApp: App {
                 .environment(notifications)
                 .preferredColorScheme(AppearanceSetting(rawValue: appearance)?.colorScheme)
                 .task { await session.resume() }
+                #if DEBUG
+                // LIME-111-fix4: `-lime-callkit-selftest` runs the CallKit self-test at launch (log in the call diagnostics).
+                .task {
+                    if ProcessInfo.processInfo.arguments.contains("-lime-callkit-selftest") {
+                        try? await Task.sleep(for: .seconds(2))
+                        await (store.calls.system as? CallKitSystem)?.selfTest()
+                    }
+                }
+                #endif
         }
     }
 

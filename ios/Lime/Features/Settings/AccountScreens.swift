@@ -330,6 +330,14 @@ struct AboutScreen: View {
             }
             #if DEBUG
             SettingsCard {
+                Button {
+                    // LIME-111-fix4: does CallKit answer at all on this phone? Logs to the call diagnostics.
+                    Task { await (store.calls.system as? CallKitSystem)?.selfTest() }
+                } label: {
+                    SettingsRowLabel(symbol: "phone.badge.checkmark", title: "CallKit self-test")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("about-callkit-selftest")
                 Button { showDeveloper = true } label: {
                     SettingsRowLabel(symbol: "wrench.and.screwdriver", title: "Developer", showsDivider: false)
                 }
