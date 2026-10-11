@@ -126,6 +126,13 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e26. **LIME-125 LANDED as `f5c8880` (pushed, 2026-10-11; PLOT.md `58dc5dd`).** The user said "next", so **LIME-124 was sent.**
+1e25. **PROFILE v2 (the user, 2026-10-11): a KakaoTalk-style hero teachers can personalize. B1 = A (own photo + 6 built-in classroom themes; video later), B2 = A (follows the photo visibility), B3 = A (the student-privacy check), B4 = A (split).** LIME-122 → **122a** (the profile everywhere + the hero with themes/gradient; a small server column `profile_theme`) and **122b** (upload your own background). **Queue: 125 (running) → 124 → 123 → 122a → 122b.**
+1e24. **ORDER REVISED (the user, 2026-10-11): "quickest to longest" → LIME-125 (running) → 124 (filters; iOS only, about 1 run) → 123 (call bubbles; core + a two-phone test, about 1 long run) → 122 (profile; 2 core functions, a new screen and about 8 entry points, likely 2 runs).** This supersedes 1e23.
+1e23. (Superseded by 1e24) **ORDER (the user, 2026-10-11): LIME-125 (tend is running it now) → 122 (profile) → 124 (filters) → 123 (call bubbles).** This supersedes the earlier queues in 1e20/1e21. No dependencies block it:
+   - 122's Calls tab reads `CallLog`, not the bubbles;
+   - 124 is independent;
+   - 123's Delete uses 125's `ConfirmSheet`.
 1e22. **LIME-116e LANDED as `41e11f0` and LIME-116f as `48749b7` (both pushed, 2026-10-11; PLOT.md commits `54ab823`, `1d75a2b`).**
    - **116f's root cause was CONFIRMED** by a probe on the 13 mini: the fixed 400 pt blurred avatar widened the layout. The video column ended at x = 380–384; the voice row was centred at 200, not 187.5.
    - **Fix:** the screen is pinned to `geo.size`, and the background is clipped. After the fix the right edge is at 359 (16 pt) and the voice row is centred.
@@ -4026,7 +4033,7 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-116e` in `TEND.md`. **Commit:** `fix(ios): no status badges on Calls; tab bar stays open; selected tab icon stays outlined`, trailer `Brief: LIME-116e`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
-### LIME-123 → `tend` (lime-aa) (after 116e): calls appear in the chat as bubbles you can react to, reply to and delete
+### LIME-123 → `tend` (lime-aa) (after 124; its Delete uses 125's `ConfirmSheet`): calls appear in the chat as bubbles you can react to, reply to and delete
 **The user (2026-10-11):** "all video and calls made should show up in the chat as a bubble that you can do similar actions from emojis to, like reply and say 'sorry I missed that, give me 5 minutes as my class leaves'." Reference: their KakaoTalk screenshot (a "Video Call" bubble with a camera icon; a "Cancelled" bubble), on the caller's side.
 
 **Goal:** every 1:1 call (any outcome) appears in the DM as a message bubble on the caller's side, and supports the long-press menu: the emoji reactions, Reply (with a quote of the call), and Delete for me. Reactions and replies reach the other person like any message's.
@@ -4067,7 +4074,7 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-123` in `TEND.md`. **Commit:** `feat: calls in the chat as bubbles (reactions, reply, delete; tap to call back), one shared id per call`, trailer `Brief: LIME-123`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
-### LIME-124 → `tend` (lime-aa) (after 116e and 123): All | Unread + a filter menu on link; All | Missed + a filter menu on Calls (DESIGN-11)
+### LIME-124 → `tend` (lime-aa) (NEXT after 125): All | Unread + a filter menu on link; All | Missed + a filter menu on Calls (DESIGN-11)
 **The user (2026-10-11):** "explore (All, Missed, filter icon) and add similar in link (All, Unread, filter icon) using `line.3.horizontal.decrease` from SF Symbols. The filter icon adds context based on the section you're in (direct messages, groups …). Also less space above the toggles, at least 8 px." **Decided:** F1 top of the list, scrolling; F2 only filters that exist today; F3 Voice/Video/Incoming/Outgoing; F4 the outline icon with a dot/number badge.
 
 **Goal:** both list tabs open with one row at the top of the scrolling list: a segmented control (link: **All | Unread**; Calls: **All | Missed**) and, beside it, a round **filter button** (`line.3.horizontal.decrease`, outline) whose menu narrows the list by context; the button shows a small **number badge** with how many filters are on; the gap between the header and this row is **8 pt**.
@@ -4156,7 +4163,44 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-125` in `TEND.md`. **Commit:** `fix(ios): confirmations are bottom sheets (ConfirmSheet), not popovers`, trailer `Brief: LIME-125`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
-### LIME-122 → `tend` (lime-aa) (LAST in the queue: after 116e, 125, 123, 124; P1–P3 decided; Design below)
+### LIME-122a → `tend` (lime-aa) (after 124 and 123; P1–P3 and B1–B4 decided): the profile everywhere, with the KakaoTalk-style hero (built-in themes; no uploads yet)
+**Renamed from LIME-122 (2026-10-11).** The user's KakaoTalk references (their own and Jean's profile: a full-bleed background photo, the avatar bottom-left, the name and a status line over a fade, a glass action bar, a grid below): "since this will be a teacher's profile, and teachers love to dress up their classrooms, if they can personalize the background image or video, have a clear area to read their details, or toggles to break up the info, that would be a space to be creative and free." **Decided: B1 = A** (your own photo + built-in classroom themes; video later), **B2 = A** (the background follows the profile photo's visibility setting), **B3 = A** (the student-privacy check on upload), **B4 = A** (split: **122a** = this brief, with themes or a gradient; **122b** = uploading your own background).
+
+**Hero v2 (overrides the Design section's "Hero" and "Header" bullets below):**
+- **The background fills the top** of the profile (about 55% of the screen height on a 13 mini, edge to edge, under the status bar), **scrolling up with the page** (a gentle parallax is fine; no new tests for it).
+- **What fills it in 122a:** the person's chosen **built-in theme**, or, if none, **a soft gradient made from their avatar colour** (`Theme.avatar(tone)`). **Built-in themes (6, bundled image assets, each under ~300 KB):** Chalkboard, Cork board, Bookshelf, Plants, Sunrise, Notebook paper. Choosing one is a **profile field** synced like the About text (`profile_theme`, a short string; **this needs one server column + `profile-set`/`profile-get` support**, see Phase 2 item 0). Other people see your theme.
+- **A readable area:** a dark gradient scrim over the bottom ~40% of the hero (black 0 → about 55% opacity), so white text always reads; the **avatar (about 88 pt) sits bottom-left**, then **the name (large, bold, white)**, then the **status or About line** (white, 80% opacity), then "@username · School" (white, 70%). The status badge is on the avatar.
+- **The header floats over the hero:** glass circles, ✕/back on the left; **Share** and **⋯** on the right (your own profile: **Edit** instead of Share). The ⋯ menu holds Notifications, Safety number, Storage and, on your own profile, Settings and Sign out.
+- **The actions:** one **glass bar** at the bottom of the hero (KakaoTalk's "Chat | Call"): **Message · Voice · Video** (your own: **Change status · Edit profile · Settings**, with Sign out in the ⋯ menu).
+- **Below the hero:** the tab strip and tabs from the Design section (Info · Media · Files · Links · Calls), on the canvas.
+- **Editing (your own profile):** Edit → **Background** → a sheet with the 6 themes and "Avatar colour" (and, from 122b, "Choose a photo…").
+
+**Phase 2 item 0 (122a's only server change):** a migration adding `profiles.profile_theme text null` (one of the six theme ids), with `profile-set` accepting it (validated against the list) and `profile-get` returning it in both forms. Core: include it in the profile model, `fetch_profile`, and the own-profile save. Tests: server (set, get, an invalid id refused) and core.
+
+### LIME-122b → `tend` (lime-aa) (after 122a): upload your own profile background photo (student-privacy check, follows the photo visibility)
+**Goal:** on your own profile, Edit → Background → **Choose a photo…** lets a teacher set their own background image. It shows on their profile hero for others, under the same visibility rule as their profile photo, after a required student-privacy check.
+
+**What plot read:** `supabase/functions/avatar/index.ts` (actions `put`/`commit`/`get`/`visibility`/`remove`; a public JPEG ≤ 1 MiB in `AVATAR_BUCKET` at `<user>.jpg`; `profiles.avatar_version` and `photo_visibility` ∈ {everyone, contacts}; with "contacts" there is no public copy and the photo travels as an encrypted blob announced by the `profile.changed` op, LIME-98b/c63e2d1).
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min.
+
+**Phase 2:**
+1. **Server:** the same flow for a second image: an `avatar` action parameter `kind: "background"` (or a sibling function, if cleaner; say which), stored at `<user>-bg.jpg`, **≤ 2 MiB**, `profiles.background_version bigint null`; `get` with `kind`; `visibility` applies to both images (switching to contacts deletes both public copies); `remove` per kind. A migration for the column. RLS/rate limits as for avatars.
+2. **Core + iOS:** pick a photo (Photos picker or camera), crop to the hero's aspect ratio, resize/compress to ≤ 2 MiB, strip location metadata; upload via the public path when visibility is "everyone", or as an encrypted blob announced in `profile.changed` when "contacts" (exactly as the avatar does); others fetch and cache it with the version.
+3. **The student-privacy check (B3), required before upload:** "No students can be identified (faces, names or voices)" with a link to the short guidance page (shared with Jam's check if it exists by then; otherwise add the page).
+4. A custom photo overrides the theme; "Remove photo" falls back to the theme or the gradient.
+
+**Verification (behavioural: real tests):** server (put/commit/get for `background`, the size limit, visibility switching deletes both public copies, remove); core (the upload paths for both visibilities, the version/cache); the integration test (A sets a background; B sees it; A switches to contacts-only → a stranger can't fetch it, a contact still sees it); a UI test that the privacy check blocks upload until ticked. Tiered; 0 warnings; Release clean.
+
+**Gate (the user, two phones):** set a classroom photo as your background → tick the privacy check → Jean sees it on your profile; switch your photo visibility to contacts only → Jean (a contact) still sees it.
+
+**Record:** `## LIME-122b`. **Commit:** `feat: custom profile background photo (privacy check, follows photo visibility)`, trailer `Brief: LIME-122b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**Later (not drafted):** short looping video backgrounds (≤ 10 s, muted, autoplay on Wi-Fi only); showing a teacher's latest Jam posts on their profile (KakaoTalk's posts grid) once Jam exists.
+
+---
+
+**(The original LIME-122 text follows; it is LIME-122a's body. Where it says "Commit" or "Record", use `LIME-122a`.)**
 **Amendment (the user, 2026-10-11):** "access the profile by clicking the top avatar and name in an individual chat **or the 3-dot menu Profile**"; "Profile also needs to update and look like the examples I share from Kakao, Telegram, iMessage, Signal and WhatsApp." → add a **"Profile"** item to the DM chat's ⋯ menu (first item) that opens the profile.
 
 **Design (from the user's references, 2026-10-11: iMessage's iOS 26 contact, WhatsApp's Contact info, KakaoTalk's chat-room profile). This section overrides the layout in item 2 below where they differ.**
