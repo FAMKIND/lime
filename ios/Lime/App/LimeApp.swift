@@ -49,7 +49,7 @@ struct LimeApp: App {
                         var waited = 0
                         while !store.isLoaded && waited < 100 { try? await Task.sleep(for: .milliseconds(100)); waited += 1 }
                         CallLog.shared.clear()
-                        if arguments.contains("-lime-demo-calls") { CallLog.shared.seedDemo() }
+                        if arguments.contains("-lime-demo-calls") { CallLog.shared.seedDemo(many: arguments.contains("-lime-demo-calls-many")) }
                     }
                     if let at = arguments.firstIndex(of: "-lime-demo-call"), at + 1 < arguments.count {
                         try? await Task.sleep(for: .seconds(1))

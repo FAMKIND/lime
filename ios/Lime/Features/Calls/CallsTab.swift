@@ -90,14 +90,13 @@ struct CallHistoryView: View {
         let groups = CallGrouping.groups(shown)
         Group {
             if #available(iOS 26, *) {
-                content(groups, topMargin: 0)
+                // Exactly as Messages: top margin 8 and the system's soft edge effect at both ends, nothing else.
+                content(groups, topMargin: 8)
                     .scrollEdgeEffectStyle(.soft, for: .top)
                     .scrollEdgeEffectStyle(.soft, for: .bottom)
-                    .safeAreaBar(edge: .top) { filter }
             } else {
-                content(groups, topMargin: 76 + 46)
-                    .overlay(alignment: .top) { filter.padding(.top, 62) }
-                    .overlay(alignment: .bottom) { BottomFade() }
+                // Exactly as Messages: top margin 76 under the same veil and header controls (see `rootHeader(overlays:)`).
+                content(groups, topMargin: 76)
             }
         }
         .background(Theme.canvas.ignoresSafeArea().accessibilityIdentifier("calls-screen"))
@@ -109,7 +108,8 @@ struct CallHistoryView: View {
 
     // MARK: All | Missed
 
-    /// The system's segmented control (on iOS 26 it is the Liquid Glass one with the sliding selection).
+    /// The system's segmented control (on iOS 26 it is the Liquid Glass one with the sliding selection). It is the first row of the list
+    /// (it scrolls away with the rows), centred.
     private var filter: some View {
         Picker("Calls", selection: Binding(get: { store.callMissedOnly }, set: { store.callMissedOnly = $0 })) {
             Text("All").tag(false)
@@ -118,42 +118,46 @@ struct CallHistoryView: View {
         .pickerStyle(.segmented)
         .frame(width: 240)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .accessibilityIdentifier("calls-filter")
     }
 
     // MARK: List
 
-    @ViewBuilder
     private func content(_ groups: [CallGroup], topMargin: CGFloat) -> some View {
-        if groups.isEmpty {
-            empty.padding(.top, topMargin)
-        } else {
-            List {
-                ForEach(groups) { group in
-                    CallRowView(group: group)
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) { log.delete(ids: group.records.map(\.id)) } label: { Label("Delete", systemImage: "trash") }
-                                .tint(.red).accessibilityIdentifier("call-swipe-delete")
-                        }
-                }
+        List {
+            filter
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            if groups.isEmpty {
+                empty
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .contentMargins(.top, topMargin, for: .scrollContent)
-            .contentMargins(.bottom, bottomMargin, for: .scrollContent)
-            .accessibilityIdentifier("calls-list")
+            ForEach(groups) { group in
+                CallRowView(group: group)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) { log.delete(ids: group.records.map(\.id)) } label: { Label("Delete", systemImage: "trash") }
+                            .tint(.red).accessibilityIdentifier("call-swipe-delete")
+                    }
+            }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .contentMargins(.top, topMargin, for: .scrollContent)
+        .contentMargins(.bottom, bottomMargin, for: .scrollContent)
+        .accessibilityIdentifier("calls-list")
     }
 
     // MARK: Empty
 
     private var empty: some View {
         VStack(spacing: 14) {
-            Spacer()
             if store.callMissedOnly {
                 Text("No missed calls").font(Theme.body).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("calls-empty-missed")
             } else {
@@ -162,21 +166,11 @@ struct CallHistoryView: View {
                     Text("New call").font(Theme.title).foregroundStyle(Theme.accentInk)
                         .padding(.horizontal, 22).frame(minHeight: 44).background(Theme.accent, in: Capsule())
                 }
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("calls-empty-new-call")
             }
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-/// A soft veil at the bottom edge above the tab bar (iOS 17 to 25; iOS 26 has the system's scroll-edge effect).
-struct BottomFade: View {
-    var body: some View {
-        LinearGradient(colors: [Theme.canvas.opacity(0), Theme.canvas.opacity(0.9)], startPoint: .top, endPoint: .bottom)
-            .frame(height: 36)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        .frame(maxWidth: .infinity).padding(.top, 80)
     }
 }
 

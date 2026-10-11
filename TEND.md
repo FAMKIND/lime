@@ -4925,3 +4925,18 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **Not done (part B):** `fetch_profile` in core, the contact profile screen (avatar + status, @username · school, About, Message/Voice/Video, the Info and Calls cards, compact one-line call dates), and opening it from a call row, a DM chat's header (avatar or title) and a group's member rows. `CallDetailsView` still shows the calls of a row as in 116b (its date line still wraps).
 
 **Not exercised:** the fades on a phone with a long list (the simulator list is short), the glass control's sliding on a phone, iOS 17.
+
+
+## LIME-116d
+
+**The Calls filter scrolls with the list; the fades are exactly Messages' (committed, awaiting the user's check on a phone).** Phase 0: `PLOT.md` committed.
+
+**Phase 1.** `RootHeader(overlays: true)` (116c) adds `TopFade` + `TopControls`, the same two overlays Messages uses on iOS 17 to 25, nothing different; on iOS 26 it is the system toolbar, as in Messages.
+
+**Change.**
+1. **All | Missed is the first row of the `List`** (centred, 240 pt, a little vertical padding, no separator or background), no longer a `safeAreaBar` or a pinned overlay, so it scrolls away under the header with the rows. The empty state sits in the list under it.
+2. **Fades as in Messages:** iOS 26: top content margin 8, `.scrollEdgeEffectStyle(.soft)` top and bottom, nothing else; iOS 17 to 25: top margin 76 under `TopFade` and the header controls, and **`BottomFade` is removed** (Messages has none; nothing else used it). The bottom margin that clears the "+" stays (`FloatingPlus.size + 32`).
+
+**What I saw (iOS 26, 13 mini, Calls scrolled mid-list, 14 extra demo calls):** rows blur and fade softly under the header controls at the top and under the tab bar at the bottom (the system's soft edge, the same effect Messages uses), the tab bar minimises to a single call button while scrolling, and the see-through "+" shows the rows faintly behind it. I could not compare with Messages mid-scroll because the demo chat list is too short to scroll; the effect and margins are the same code path as Messages'. **The iOS 18 path (no bottom veil now) was not screenshotted scrolled**, so whether rows look cut off at the iOS 18 tab bar is unchecked; the brief says to stop and report if they do, and nothing was seen to report.
+
+**Tests.** `testTheFilterIsPartOfTheListAndScrollsAwayWithIt` (new `-lime-demo-calls-many` seeds 14 more calls): the list starts near the top, the first call row is below the filter at rest, after a swipe up the filter moves off, and at the end the last call-back button clears the "+".

@@ -138,7 +138,7 @@ final class CoreCallHistory: CallHistoryBacking {
 #if DEBUG
 extension CallLog {
     /// UI tests and screenshots (`-lime-demo-calls`): a few made-up calls with the demo chats' people.
-    func seedDemo(now: Date = Date()) {
+    func seedDemo(now: Date = Date(), many: Bool = false) {
         func make(_ id: String, _ peer: String, _ name: String, video: Bool, outgoing: Bool, minutesAgo: Double, seconds: Double, _ outcome: CallOutcome) -> CallRecord {
             CallRecord(id: id, peerID: peer, peerName: name, video: video, outgoing: outgoing, date: now.addingTimeInterval(-minutesAgo * 60), duration: seconds, outcome: outcome)
         }
@@ -149,6 +149,12 @@ extension CallLog {
             make("d2", "lee", "Lee Wong", video: false, outgoing: false, minutesAgo: 2, seconds: 0, .missed),
             make("d1", "lee", "Lee Wong", video: false, outgoing: false, minutesAgo: 1, seconds: 0, .missed),
         ] { add(record) }
+        // A long list (`-lime-demo-calls-many`): enough older calls to scroll.
+        if many {
+            for i in 0..<14 {
+                add(make("m\(i)", i % 2 == 0 ? "lee" : "sam", i % 2 == 0 ? "Lee Wong" : "Sam Park", video: false, outgoing: i % 3 == 0, minutesAgo: Double(8 + i) * 24 * 60, seconds: 90, .completed))
+            }
+        }
     }
 }
 #endif

@@ -93,16 +93,24 @@ final class CallsTabUITests: XCTestCase {
         XCTAssertFalse(plus.frame.intersects(bar))
     }
 
-    func testTheListScrollsUnderTheHeaderAndTheLastRowClearsThePlus() {
-        let app = app()
+    func testTheFilterIsPartOfTheListAndScrollsAwayWithIt() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-calls", "-lime-demo-calls-many"]
+        app.launch()
         openCalls(app)
         let list = any(app, "calls-list")
         XCTAssertTrue(list.waitForExistence(timeout: 5))
         let pill = app.segmentedControls.firstMatch
-        XCTAssertLessThan(list.frame.minY, pill.frame.minY, "the list starts above the All | Missed control: it scrolls under it (and under the header)")
-        XCTAssertLessThan(list.frame.minY, 80, "edge to edge at the top")
+        XCTAssertLessThan(list.frame.minY, 80, "the list is edge to edge at the top (it scrolls under the header)")
         let first = app.buttons.matching(identifier: "call-history-row").firstMatch
-        XCTAssertGreaterThanOrEqual(first.frame.minY, pill.frame.maxY - 4, "the first row starts below the control")
+        XCTAssertGreaterThanOrEqual(first.frame.minY, pill.frame.maxY - 4, "at rest the first call row is below the filter")
+        let before = pill.frame.minY
+        list.swipeUp()
+        let moved = NSPredicate { _, _ in !pill.exists || pill.frame.minY < before - 40 || !pill.isHittable }
+        expectation(for: moved, evaluatedWith: nil)
+        waitForExpectations(timeout: 5)
+        // At the very end the last row's call-back button still clears the "+".
+        for _ in 0..<4 { list.swipeUp() }
         let plus = app.buttons["new-call-button"].frame
         let lastCallBack = app.buttons.matching(identifier: "call-row-callback").allElementsBoundByIndex.last!
         XCTAssertFalse(lastCallBack.frame.intersects(plus), "the last row's button is not under the +")
