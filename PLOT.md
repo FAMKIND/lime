@@ -121,7 +121,18 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
      - voice → video upgrade (needs a mid-call renegotiation);
      - the remote muted/camera-off indicator (needs a small op);
      - landscape and the SE not exercised.
-1e8. **The dock becomes a real dock (the user, 2026-10-10): DESIGN-10. DECIDED: T1 = B (Apple's native tab bar), T2 = A (link · call · jam), T3 = A (a jam coming-soon page). → LIME-121b, ready after 118.** **The proposed order: 118 → 121b → 116 → 119 → 120 → 112b → 117.** 116's step 1 ("a section, not a sheet") is done by 121b, and 116's header must match 121b's (New Call top right).
+1e10. **LIME-121b LANDED as `7a624e2` (pushed, 2026-10-11); waiting on the user's gate.**
+   - SF Symbols placeholders (no `design/icons/` yet); New Message is a compose icon in the Messages header.
+   - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
+   - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
+   - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e11. **The user's 121b feedback (2026-10-11, screenshots of Messages + Calls on the phone) → LIME-121c, **superseded by LIME-121d (NEXT, before 116)** after the user's corrections (the SE fits; the header on all tabs; outline/fill):**
+   - "the Add button should still be at the bottom right corner next to the thumb, using a Liquid Glass brand light green with a plus icon";
+   - "the top header should be the lime logo on the left, and on the right search and the avatar only" (the compose icon goes);
+   - the tab icons are the SF Symbols **`message`, `phone`, `book.pages`** (the user exported them from the SF Symbols app; they're system symbols, so nothing to convert).
+   - The phone showed them **filled** even when unselected (the iOS tab bar's automatic `.fill`). The user's picks are the outline glyphs.
+   - **The re-tap result was not reported yet.**
+1e8. **The dock becomes a real dock (the user, 2026-10-10): DESIGN-10. DECIDED: T1 = B (Apple's native tab bar), T2 = A (link · call · jam), T3 = A (a jam coming-soon page). → LIME-121b, ready after 118.** **The proposed order: 118 → 121b → 116 → 119 → 120 → 112b → 117.** 116's step 1 ("a section, not a sheet") is done by 121b, and 116's header must match Messages' (logo left; search + avatar right), **with New Call on the floating "+" (121c)**.
 1e7. **1:1 CALLS PASS THE USER'S GATE (2026-10-10, about 22:55–23:01, `cc64c24`): "all cases I tried worked"**: voice, video, both directions, Wi-Fi off.
    - **CallKit now works on both phones** (`callkit audio activated` on nearly every call), thanks to `voip` plus one provider.
    - **The user's note:** "a minor sound delay and glitchy sound here and there, but overall good."
@@ -2900,6 +2911,167 @@ If anything contradicts this brief, stop and ask the user.
 
 **Where it goes:** a QA/feature brief after the calls work (it isn't in the calls queue); fold it into the next composer brief.
 
+### LIME-121d → `tend` (lime-aa) (NEXT, before 116; revises 121c after the user's corrections): the floating green "+", one header on every tab, outline/filled tab icons
+**The user (2026-10-11):**
+- "I have an iPhone SE and the + icon at the bottom right worked before";
+- "the logo (left), search and avatar (right) should be on all main screens: link, call and jam";
+- "make sure we use the right outline icons and fill when active".
+
+*(If 121c was already sent and landed, do only the differences.)*
+
+**Goal:**
+- **every tab's root (link, call, jam) has the same header:** the lime logo left; search + the avatar right; nothing else;
+- link has a **floating Liquid Glass "+" in lime's light green** at the bottom right beside the tab bar, opening New Message, **including on the iPhone SE**;
+- the tabs use **`message` / `phone` / `book.pages` outlined, and `message.fill` / `phone.fill` / `book.pages.fill` when selected.**
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push.
+
+**What plot read:**
+- the user's screenshots (Messages: logo + a glass capsule with compose/search/avatar; Calls: a large "Calls" title with only a Debug share button; tab glyphs all filled);
+- `RootView.swift:50/58` (`.tabItem { Label("link", systemImage: "bubble.left") }` etc.);
+- LIME-121b's report (New Message moved into the header; DockBar and the floating "+" removed);
+- **the pre-121b "+" (it worked on the user's SE) is in git history.**
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: survey (read-only)**
+- the pre-121b "+" (size, offsets, behaviour) from git;
+- the iOS 26 tab bar platter's frame at the SE, 13 mini and 18 Pro widths (portrait and landscape);
+- the Messages header component;
+- the `Accent` / `AccentInk` assets.
+
+If the survey turns up related issues, raise them before editing.
+
+---
+
+**Phase 2: the change**
+1. **One header component, used at the root of link, call and jam:**
+   - **the lime logo on the left** (as Messages today);
+   - **a glass capsule on the right with search and the avatar only** (the avatar opens the status sheet/Settings, as today);
+   - **search searches that tab:**
+     - link = the existing message search;
+     - call = filter the call list by name (a simple filter now; 116 refines it);
+     - jam = a search screen with the empty state "Nothing to search in jam yet.";
+   - the large titles go ("Calls" etc.). The tab bar says where you are. **Debug only:** the call diagnostics share moves into the call tab's search/⋯ area or the About screen, never the header.
+2. **The floating "+" (New Message) on the link root:**
+   - **bring back the pre-121b button's placement** (bottom right, beside the bar, under the thumb), restyled:
+     - **iOS 26:** `.glassEffect(.regular.tint(Accent).interactive())`, a `plus` glyph in `AccentInk`, about 56 pt;
+     - **iOS 17–25:** a solid `Accent` circle with a soft shadow;
+   - **vertically centred on the tab bar platter, not overlapping it, on the SE too** (the user's own phone; it worked there before). If the iOS 26 platter is wider than the old dock, use 48 pt and/or nudge, as the old button did; **only if it truly can't fit, stop and report**;
+   - hidden inside a chat (with the tab bar); VoiceOver "New message";
+   - **the compose icon leaves the header.**
+   - **call and jam get no "+" in this brief** (call's "+" = New Call arrives with 116).
+3. **The tab icons:**
+   - link `message` → `message.fill` when selected;
+   - call `phone` → `phone.fill`;
+   - jam `book.pages` → `book.pages.fill`;
+   - **set the variant explicitly per selection state**, so iOS doesn't auto-fill unselected items (the screenshot showed all filled);
+   - the lowercase labels and the neutral tint stay.
+
+---
+
+**Verification**
+- **UI tests:**
+  - **each tab's root has the logo, search and the avatar, and no other header buttons**;
+  - each tab's search opens its own search;
+  - the "+" exists only at the link root and opens New Message;
+  - **its frame doesn't intersect the tab bar's on the SE, 13 mini and 18 Pro** (portrait; and landscape on 18 Pro);
+  - it's hidden in a chat;
+  - the tab image names are the outline ones when unselected and the fill one when selected (by accessibility identifiers or snapshot);
+- the full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings; Release has no Bluetooth.
+
+**Gate (the user, on the SE and/or the 13 mini):**
+1. link, call and jam all show the logo left, and search + the avatar right.
+2. A green glass "+" sits bottom right on Messages, opens New Message, and doesn't cover the tab bar on the SE.
+3. The tab icons are message / phone / book.pages, outlined, with only the active one filled.
+
+---
+
+**Record:** `## LIME-121d` in `TEND.md`.
+
+**Commit:** `feat(ios): one header (logo, search, avatar) on every tab, floating green glass "+", outline/filled tab icons`, trailer `Brief: LIME-121d`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
+### LIME-121c (SUPERSEDED by LIME-121d before it was sent; kept for history)
+**Goal:**
+- Messages has a **floating Liquid Glass "+" in lime's light green** at the bottom right, beside the tab bar, that opens New Message;
+- the header is **the lime logo on the left, and search + the avatar on the right only**;
+- the tabs use the SF Symbols **`message` · `phone` · `book.pages`**: outline when not selected, filled when selected.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push.
+
+**What plot read:**
+- the user's two screenshots (2026-10-11, the phone on iOS 26):
+  - Messages: the logo top-left; a glass capsule top-right with compose, search and the avatar; the tab bar link · call · jam with **filled** glyphs;
+  - Calls: the plain list;
+- `RootView.swift:50/58` (`.tabItem { Label("link", systemImage: "bubble.left") }` etc.);
+- LIME-121b's report (New Message moved into the header; DockBar and the floating "+" removed);
+- the 107-qa2 history (the "+" beside the dock).
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: survey (read-only)**
+- **the tab bar's frame on iOS 26** (the floating platter) at the SE, 13 mini and 18 Pro widths, in portrait and landscape, to see the room on its right for a 48–56 pt circle;
+- what the removed "+" looked like before 121b (git history);
+- the `Accent` / `AccentInk` colour assets.
+
+If the survey turns up related issues, raise them before editing.
+
+---
+
+**Phase 2: the change**
+1. **The floating "+" (New Message):**
+   - **iOS 26:**
+     - a circular button, **`.glassEffect(.regular.tint(Accent).interactive())`** (lime's light green Liquid Glass);
+     - a `plus` glyph in `AccentInk` (semibold, about 22 pt), 56 pt (48 pt on the SE if needed);
+     - **bottom-right, vertically centred on the tab bar platter**, with the same gap to the screen edge as the platter's gap on the left; **it must not overlap the tab bar platter.**
+   - **iOS 17–25:** the same circle with a solid `Accent` fill and a soft shadow, floating above the standard tab bar at the bottom right.
+   - **It shows only at the root of the link tab** (hidden inside a chat, with the tab bar), and **also at the root of the call tab, opening the New Call sheet, once LIME-116 exists.** Until then: link only.
+   - VoiceOver: "New message". Remove the compose icon from the header.
+   - **If there's no room beside the platter at some width without overlap, STOP and report the options** (e.g. the circle above the bar's right end; or a `tabViewBottomAccessory`); don't improvise.
+2. **The header (Messages):**
+   - **the lime logo on the left; on the right, a glass capsule with search and the avatar only**;
+   - the same component for Calls when 116 builds its header;
+   - the compose button is gone from the header.
+3. **The tab icons:**
+   - `message` (link), `phone` (call), `book.pages` (jam);
+   - **unselected = outline, selected = `.fill`**: set the tab items' symbol variant explicitly (e.g. `.environment(\.symbolVariants, …)` per state) so iOS doesn't fill all of them;
+   - the lowercase labels and the neutral tint stay.
+4. **Re-tap** (from 121b): no change here; the user reports it separately.
+
+---
+
+**Verification**
+- **UI tests:**
+  - the "+" exists at the link root, bottom-right, and **its frame doesn't intersect the tab bar's** (SE, 13 mini, 18 Pro; portrait and landscape);
+  - it opens New Message;
+  - it's hidden in a chat;
+  - the header shows only search and the avatar on the right (no compose);
+  - the tab images are the expected symbols (or labels);
+- the full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings; Release has no Bluetooth.
+
+**Gate (the user, the phone):**
+1. A green glass "+" sits at the bottom right beside the tab bar, under the thumb, and opens New Message.
+2. The header is the logo, search and the avatar.
+3. The tab icons are message / phone / book.pages, outline except the selected one.
+
+---
+
+**Record:** `## LIME-121c` in `TEND.md`.
+
+**Commit:** `feat(ios): floating green glass "+" for New Message, logo/search/avatar header, message/phone/book.pages tab icons`, trailer `Brief: LIME-121c`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
 ### DESIGN-10 (plot, 2026-10-10): the dock works like a dock
 **The user:** "Now that calls work and we're building the UX and UI for the Call section, I think our dock needs to function like a dock."
 
@@ -3580,7 +3752,7 @@ If the survey turns up related issues, raise them before editing.
    - **Dock badge:** missed calls not yet seen. They count as seen when Calls is opened.
 2. **The header** matches Messages exactly (the same component):
    - the large title **"Calls"**;
-   - on the right, the **New Call** button (`phone.badge.plus`) and the same avatar/status entry as Messages;
+   - **(amended by LIME-121c, 2026-10-11)** the header is the same as Messages: **the lime logo on the left; search and the avatar on the right; nothing else.** **New Call is the floating green glass "+" at the bottom right** (the same component as Messages' New Message, built in 121c);
    - search works as on Messages (by name).
    - Debug builds only: the Call diagnostics share moves into a ⋯ menu here.
 3. **The filter:** directly under the title, a segmented pill **All | Missed** (Signal's shape; lime tokens: green only on the primary action, so the selected segment is neutral).
