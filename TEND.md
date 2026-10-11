@@ -4962,3 +4962,23 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **Fix.** The `ZStack` is pinned to the screen (`.frame(width: geo.size.width, height: geo.size.height)`); the blurred avatar moved into a `.background` that takes the whole screen (safe areas too) and is clipped to it, so it can never widen the layout; the look is the same (the blurred avatar filling the screen, the 160 pt avatar in the middle). **After, on the 13 mini:** the video column's right edge is at 359 (a 16 pt margin: Camera 299–355, End 295–359), the flip button at 16 on the left, the voice row centred on 187.5 (Mute 38–94 … End 272–336). **New Call** shows the status badges again (Calls history and Calls search stay plain); the one 116e test that asserted otherwise now asserts the badge is back in New Call. No new UI tests (a visual change).
 
 **SE (iPhone SE simulator, video call):** the camera flip is at the bottom left with a 16 pt margin, and Camera, Mute, the audio route and the red End are fully on screen at the right with a 16 pt margin; the name pill and timer are at the left; the blurred avatar backdrop fills the screen. (The controls fade after 5 s on a video call, as designed.) I did not check landscape.
+
+
+## LIME-125
+
+**Every confirmation is a bottom sheet (`ConfirmSheet`), not a popover (committed, awaiting the user's check on a phone).** Phase 0: `PLOT.md` committed.
+
+**Phase 1: the list of `confirmationDialog`s (19), all replaced.**
+- Messages list (`MessagesView`, on the `List`, so on iOS 26 it was the popover pointing at the wrong row): **Mute <chat>** (the duration list, one button per duration), **Leave / Delete for everyone / Clear messages** for a group row (one dialog, the wording per action), **Delete chat** (a DM row; "This removes it from this phone. The other person keeps their copy.").
+- `ChatView`: **Leave <group>?**, **Block <name>?**. `MessageActions`: **Delete message(s)** (for me / for everyone). `ChatComposer`: **Add to your message** (the attach choices) and **Open this link?** (the address as the line).
+- `GroupScreens`: **Remove <member>?**, **Leave <group>?**, **Delete <group> for everyone?**, **Clear messages in <group>?**.
+- Settings: **Sign out of Lime?** (three places: `AccountScreens`, `SettingsView`, `AboutView`), **Clear call history?** (Privacy), **Remove N files from this iPhone?** (`StorageScreens`). `InviteScreens`: **Send your invite with** (the channel choices).
+- Not confirmations, left as they are: `.alert`s (an error or a notice), the ⋯ menus, the long-press message menu, the swipe actions.
+
+**Change.** One modifier, `confirmSheet(_:isPresented:actions:message:)` in `Features/Common/ConfirmSheet.swift`, used exactly like the old dialog (same buttons, same roles, same wording and identifiers): a bottom sheet sized to its content, a drag indicator, the canvas background, a bold title, the one-line message, then full-width capsule buttons (≥ 52 pt), a `.destructive` one in the danger red and the sheet's own `Cancel` last (every dialog already had its Cancel). A tap on any button closes the sheet after its action has run. The link dialog was rewritten by hand (it used `presenting:`). No dialog needed the popover form.
+
+**Seen:** a simulator screenshot of swipe → Delete on a Messages row (13 mini, iOS 26): a sheet from the bottom with the drag indicator, "Delete chat?", "This removes it from this phone. The other person keeps their copy.", a red "Delete chat" capsule and "Cancel", over the dimmed list (like Signal's).
+
+**Gotcha, again:** an `.accessibilityIdentifier` on the sheet's container replaced its buttons' identifiers; it now sits on a background view.
+
+**Tests.** New `ConfirmSheetUITests`: swipe Delete on a chat → the sheet's Delete and Cancel are in the bottom of the screen, Cancel closes it and keeps the chat; Delete removes the chat; Leave group asks in the same sheet and Cancel keeps me in; Clear call history asks in it; Mute shows its duration choices in it. The existing tests that tapped dialog buttons by identifier are unchanged (see the full run below).

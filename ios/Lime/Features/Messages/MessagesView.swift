@@ -180,7 +180,7 @@ struct MessagesView: View {
         .accessibilityIdentifier("messages-list")
         .refreshable { await store.pullToRefresh() }
         .animation(.snappy, value: store.chats.map(\.id))
-        .confirmationDialog(muteTitle, isPresented: Binding(get: { muting != nil }, set: { if !$0 { muting = nil } }), titleVisibility: .visible) {
+        .confirmSheet(muteTitle, isPresented: Binding(get: { muting != nil }, set: { if !$0 { muting = nil } })) {
             ForEach(MuteDuration.allCases) { duration in
                 Button(duration.title) {
                     if let id = muting { notifications.settings.mute(id, for: duration) }
@@ -190,7 +190,7 @@ struct MessagesView: View {
             }
             Button("Cancel", role: .cancel) { muting = nil }
         }
-        .confirmationDialog(groupActionTitle, isPresented: Binding(get: { groupAction != nil }, set: { if !$0 { groupAction = nil } }), titleVisibility: .visible) {
+        .confirmSheet(groupActionTitle, isPresented: Binding(get: { groupAction != nil }, set: { if !$0 { groupAction = nil } })) {
             if let action = groupAction {
                 Button(action.kind.button, role: .destructive) {
                     Task {
@@ -208,7 +208,7 @@ struct MessagesView: View {
         } message: {
             Text(groupAction?.kind.message ?? "")
         }
-        .confirmationDialog(deleteTitle, isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+        .confirmSheet(deleteTitle, isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button(deleteButton, role: .destructive) {
                 if let id = deleting { Task { await store.deleteChat(id) } }
                 deleting = nil

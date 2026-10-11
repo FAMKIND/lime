@@ -307,14 +307,14 @@ struct GroupDetailsView: View {
                 if saved { Task { _ = await store.renameGroup(target.conversationID, to: newName); await refresh() } }
             }
         }
-        .confirmationDialog("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
+        .confirmSheet("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Remove", role: .destructive) {
                 if let member = removing { Task { await store.removeFromGroup(target.conversationID, user: member.userId); await refresh() } }
             }
             .accessibilityIdentifier("group-remove-confirm")
             Button("Cancel", role: .cancel) {}
         } message: { Text("They will not get new messages from this group.") }
-        .confirmationDialog("Leave \(details?.name ?? "this group")?", isPresented: $leaving, titleVisibility: .visible) {
+        .confirmSheet("Leave \(details?.name ?? "this group")?", isPresented: $leaving) {
             Button("Leave group", role: .destructive) {
                 Task {
                     await store.leaveGroup(target.conversationID)
@@ -324,14 +324,14 @@ struct GroupDetailsView: View {
             .accessibilityIdentifier("group-leave-confirm")
             Button("Cancel", role: .cancel) {}
         } message: { Text("You won't get new messages from this group. Someone can add you back.") }
-        .confirmationDialog("Delete \(details?.name ?? "this group") for everyone?", isPresented: $deletingForEveryone, titleVisibility: .visible) {
+        .confirmSheet("Delete \(details?.name ?? "this group") for everyone?", isPresented: $deletingForEveryone) {
             Button("Delete for everyone", role: .destructive) {
                 Task { await store.deleteGroup(target.conversationID); store.path = NavigationPath() }
             }
             .accessibilityIdentifier("group-delete-confirm")
             Button("Cancel", role: .cancel) {}
         } message: { Text(GroupRowAction.Kind.deleteForEveryone.message) }
-        .confirmationDialog("Clear messages in \(details?.name ?? "this group")?", isPresented: $clearing, titleVisibility: .visible) {
+        .confirmSheet("Clear messages in \(details?.name ?? "this group")?", isPresented: $clearing) {
             Button("Clear messages", role: .destructive) {
                 Task { await store.clearMessages(target.conversationID); store.path = NavigationPath() }
             }

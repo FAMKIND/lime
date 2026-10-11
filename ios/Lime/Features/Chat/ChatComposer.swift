@@ -100,7 +100,7 @@ struct ChatComposer: View {
         .padding(.bottom, 4)
         .overlay { EmojiKeyboardField(isActive: $pickingEmoji) { model.insertEmoji($0) }.frame(width: 1, height: 1).opacity(0.01) }
         .sheet(item: $model.linkRequest) { request in LinkSheet(request: request, composer: model) }
-        .confirmationDialog("Add to your message", isPresented: $choosing, titleVisibility: .visible) {
+        .confirmSheet("Add to your message", isPresented: $choosing) {
             Button("Photo Library") { chooser = .album }.accessibilityIdentifier("composer-photo-library")
             if CameraPicker.isAvailable { Button("Take Photo") { chooser = .camera }.accessibilityIdentifier("composer-take-photo") }
             Button("Choose Video") { chooser = .videoLibrary }.accessibilityIdentifier("composer-video-library")
@@ -345,12 +345,14 @@ struct LinkOpening: ViewModifier {
                 pending = url
                 return .handled
             })
-            .confirmationDialog("Open this link?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }), titleVisibility: .visible, presenting: pending) { url in
-                Button("Open \(url.scheme == "mailto" ? "mail" : "link")") { UIApplication.shared.open(url) }
-                    .accessibilityIdentifier("link-open")
+            .confirmSheet("Open this link?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
+                if let url = pending {
+                    Button("Open \(url.scheme == "mailto" ? "mail" : "link")") { UIApplication.shared.open(url) }
+                        .accessibilityIdentifier("link-open")
+                }
                 Button("Cancel", role: .cancel) {}.accessibilityIdentifier("link-dialog-cancel")
-            } message: { url in
-                Text(url.absoluteString)
+            } message: {
+                Text(pending?.absoluteString ?? "")
             }
     }
 }

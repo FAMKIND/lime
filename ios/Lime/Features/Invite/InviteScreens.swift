@@ -158,7 +158,7 @@ struct InviteFlow: ViewModifier {
                     ShareSheet(text: text) { self.step = nil }.ignoresSafeArea()
                 }
             }
-            .confirmationDialog("Send your invite with", isPresented: $choosing, titleVisibility: .visible) {
+            .confirmSheet("Send your invite with", isPresented: $choosing) {
                 if MFMessageComposeViewController.canSendText() {
                     Button("Messages") { step = .messages(phones) }
                 }

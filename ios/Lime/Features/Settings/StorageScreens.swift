@@ -156,7 +156,7 @@ struct ChatMediaScreen: View {
             }
         }
         .task { await load() }
-        .confirmationDialog("Remove \(selected.count) \(selected.count == 1 ? "file" : "files") from this iPhone?", isPresented: $confirming, titleVisibility: .visible) {
+        .confirmSheet("Remove \(selected.count) \(selected.count == 1 ? "file" : "files") from this iPhone?", isPresented: $confirming) {
             Button("Remove from this iPhone", role: .destructive) {
                 let chosen = files.filter { selected.contains($0.id) }
                 Task { await store.removeMedia(chosen); selected = []; await load() }

@@ -48,7 +48,7 @@ struct ChatView: View {
                     legacyContent(conversation)
                 }
             }
-            .confirmationDialog("Leave \(conversation.title)?", isPresented: $confirmingLeave, titleVisibility: .visible) {
+            .confirmSheet("Leave \(conversation.title)?", isPresented: $confirmingLeave) {
                 Button("Leave group", role: .destructive) {
                     Task {
                         await store.leaveGroup(conversation.id)
@@ -70,7 +70,7 @@ struct ChatView: View {
                 }
             }
             // One confirmation for both ways in: the request bar's Block and the ⋯ menu's "Block <Name>".
-            .confirmationDialog("Block \(conversation.title)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
+            .confirmSheet("Block \(conversation.title)?", isPresented: $confirmingBlock) {
                 Button("Block", role: .destructive) {
                     Task {
                         await store.block(conversation.id)

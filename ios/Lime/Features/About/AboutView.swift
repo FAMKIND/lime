@@ -103,7 +103,7 @@ struct AboutView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.canvas.ignoresSafeArea())
         .presentationDetents([.large])
-        .confirmationDialog("Sign out of Lime?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
+        .confirmSheet("Sign out of Lime?", isPresented: $confirmingSignOut) {
             Button("Sign out and remove chats from this phone", role: .destructive) {
                 dismiss()
                 Task { await session.signOut() }

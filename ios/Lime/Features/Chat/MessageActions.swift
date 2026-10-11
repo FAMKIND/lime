@@ -77,7 +77,7 @@ struct MessageActionsHost: ViewModifier {
                     }
                 }
             }
-            .confirmationDialog(deleteTitle, isPresented: Binding(get: { !state.deleting.isEmpty }, set: { if !$0 { state.deleting = [] } }), titleVisibility: .visible) {
+            .confirmSheet(deleteTitle, isPresented: Binding(get: { !state.deleting.isEmpty }, set: { if !$0 { state.deleting = [] } })) {
                 Button("Delete for me", role: .destructive) { delete(everyone: false) }
                     .accessibilityIdentifier("delete-for-me")
                 if everyoneAllowed {

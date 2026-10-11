@@ -30,7 +30,7 @@ struct AccountScreen: View {
                 .accessibilityIdentifier("account-sign-out")
             }
         }
-        .confirmationDialog("Sign out of Lime?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
+        .confirmSheet("Sign out of Lime?", isPresented: $confirmingSignOut) {
             Button("Sign out and remove messages from this iPhone", role: .destructive) {
                 onClose()
                 Task { await session.signOut() }
@@ -166,7 +166,7 @@ struct PrivacyScreen: View {
             SettingsFootnote(text: "Messages are end-to-end encrypted: only you and the person you message can read them.")
         }
         .task { blockedCount = await store.blockedPeople().count }
-        .confirmationDialog("Clear call history?", isPresented: $confirmClearCalls, titleVisibility: .visible) {
+        .confirmSheet("Clear call history?", isPresented: $confirmClearCalls) {
             Button("Clear call history", role: .destructive) { CallLog.shared.clear() }
                 .accessibilityIdentifier("privacy-clear-calls-confirm")
             Button("Cancel", role: .cancel) {}
