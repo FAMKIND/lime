@@ -4906,3 +4906,22 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **A gotcha again:** an `.accessibilityIdentifier` on a container replaces its children's identifiers (it bit `calls-screen`, `call-details` and the New Call sheet); they now sit on a background view.
 
 **Not exercised:** a real call from a row's button (the tests check the button's kind, not the call), a real missed call arriving in the list, the see-through "+" over a scrolling list on a phone (the simulator list was short), iOS 17, and the old-history migration with a real `UserDefaults` record from an old build (only the fake-backed unit test).
+
+
+## LIME-116c (part A: the Calls tab)
+
+**The Calls tab scrolls edge to edge with fades, All | Missed is a glass control, search is pushed like Messages', and avatars show their status (part A committed; part B, the contact profile, is NOT done).** Phase 0: `PLOT.md` committed. The brief allowed stopping after part A if it ran long; the profile (core `fetch_profile`, the profile screen, the DM-header and group-member entry points) is its own commit under the same brief ID, still to do.
+
+**Survey.** The 116b root was a `VStack` (an opaque band with the pill, then the list), so nothing scrolled under the header; `MessageSearchScreen`'s header factors out cleanly; the native segmented `Picker` is the Liquid Glass control on the iOS 26 simulator (screenshot checked), so no custom `GlassEffectContainer` was needed.
+
+**Built (part A).**
+1. **Edge to edge with fades:** the history `List` is the root. iOS 26: the system scroll-edge effect (soft, top and bottom) and the All | Missed control as a `safeAreaBar` under the header, so rows scroll under both. iOS 17 to 25: the same `TopFade` veil and `TopControls` overlay as Messages (`rootHeader(overlays: true)`), a matching `BottomFade` above the tab bar, and top/bottom content margins. The bottom margin is the "+" (64 pt) plus 32, so the last row's call-back button is never under the "+".
+2. **All | Missed** is the system segmented `Picker` (the glass control with the sliding selection on iOS 26, the standard one before), 240 pt, neutral.
+3. **Search:** the magnifier pushes `CallSearchScreen` onto the call tab's path with the **same header and field as Messages** (`SearchHeader`, extracted from `MessageSearchScreen`, ids `search-back`/`search-field`), focused on open. **People** (accepted contacts matching the name, each with voice and video buttons) and **Calls** (the same row view as the list). The inline field and `callSearching`/`callQuery` are gone. Contacts are matched by name and label only: the phone does not store usernames for contacts.
+4. **Status badges** on every avatar in the history rows, the search results (via `TeacherRow`), New Call and the details screen; rows now use the chat's person (their colour and label) instead of a plain one.
+
+**Tests.** `CallsTabUITests`: the list's frame starts above the All | Missed control and near the top (it scrolls under the header), the first row starts below the control, the last row's call-back button does not intersect the "+", status badges on Lee and Sam, the magnifier pushes the search with People and Calls (and back returns), plus the earlier ones moved to the segmented control. `TabBarUITests` search test updated. The demo calls now use "Sam Park" (the demo chat's name).
+
+**Not done (part B):** `fetch_profile` in core, the contact profile screen (avatar + status, @username · school, About, Message/Voice/Video, the Info and Calls cards, compact one-line call dates), and opening it from a call row, a DM chat's header (avatar or title) and a group's member rows. `CallDetailsView` still shows the calls of a row as in 116b (its date line still wraps).
+
+**Not exercised:** the fades on a phone with a long list (the simulator list is short), the glass control's sliding on a phone, iOS 17.

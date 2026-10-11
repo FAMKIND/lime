@@ -51,10 +51,8 @@ final class ConversationStore {
     var section: Section = .link
     /// The call tab's own navigation path, and its name filter (the header's search).
     var callPath = NavigationPath()
-    var callSearching = false
     /// The call tab's All | Missed pill.
     var callMissedOnly = false
-    var callQuery = ""
     /// The jam tab's search screen is showing.
     var jamSearching = false
     /// Counts re-taps of a tab (a tap on the tab already showing): the section pops to its root, then scrolls to the top.

@@ -19,96 +19,27 @@ extension CallRecord {
     }
 }
 
-/// The call tab's root (LIME-116b): All | Missed, grouped rows with a call-back button, details, swipe to delete, and the "+" for New Call.
-struct CallHistoryView: View {
+/// The call tab's search screen is pushed onto the tab's path.
+struct CallSearchRoute: Hashable {}
+
+/// One history row: avatar with its status badge, name (red when missed, "(3)" when grouped), kind, time, and the call-back button.
+struct CallRowView: View {
+    let group: CallGroup
     @Environment(ConversationStore.self) private var store
-    @State private var showNewCall = false
-    private let log = CallLog.shared
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 52
 
-    private var shown: [CallRecord] {
-        var list = log.records
-        if store.callMissedOnly { list = list.filter(\.isMissedIncoming) }
-        let query = store.callQuery.trimmingCharacters(in: .whitespaces)
-        if !query.isEmpty { list = list.filter { $0.peerName.localizedCaseInsensitiveContains(query) } }
-        return list
+    /// The person as the chats know them (their colour and label), or a plain one.
+    private func person(_ call: CallRecord) -> Person {
+        store.conversations.first { !$0.isGroup && $0.members.first?.id == call.peerID }?.members.first ?? Person(id: call.peerID, name: call.peerName, tone: 0)
     }
 
     var body: some View {
-        @Bindable var store = store
-        let groups = CallGrouping.groups(shown)
-        VStack(spacing: 0) {
-            filterPill
-            if store.callSearching {
-                TextField("Search calls by name", text: $store.callQuery)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal, 16).padding(.bottom, 6)
-                    .accessibilityIdentifier("calls-search-field")
-            }
-            if groups.isEmpty { empty } else { list(groups) }
-        }
-        // The identifier sits on the background: on the container it would replace every child's own identifier.
-        .background(Theme.canvas.accessibilityIdentifier("calls-screen"))
-        .navigationBarTitleDisplayMode(.inline)
-        .rootHeader(searchID: "calls-search-button") { store.callSearching.toggle(); if !store.callSearching { store.callQuery = "" } }
-        .overlay { FloatingPlus(label: "New call", id: "new-call-button") { showNewCall = true } }
-        .sheet(isPresented: $showNewCall) { NewCallSheet() }
-    }
-
-    // MARK: All | Missed
-
-    private var filterPill: some View {
-        HStack(spacing: 0) {
-            segment("All", selected: !store.callMissedOnly, id: "calls-filter-all") { store.callMissedOnly = false }
-            segment("Missed", selected: store.callMissedOnly, id: "calls-filter-missed") { store.callMissedOnly = true }
-        }
-        .padding(3)
-        .background(Theme.surface, in: Capsule())
-        .frame(maxWidth: 240)
-        .padding(.vertical, 8)
-    }
-
-    private func segment(_ title: String, selected: Bool, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(Theme.body.weight(selected ? .semibold : .regular)).foregroundStyle(Theme.text)
-                .frame(maxWidth: .infinity, minHeight: 34)
-                .background(selected ? Theme.canvas : Color.clear, in: Capsule())
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier(id)
-    }
-
-    // MARK: Rows
-
-    private func list(_ groups: [CallGroup]) -> some View {
-        List {
-            ForEach(groups) { group in
-                row(group)
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) { log.delete(ids: group.records.map(\.id)) } label: { Label("Delete", systemImage: "trash") }
-                            .tint(.red).accessibilityIdentifier("call-swipe-delete")
-                    }
-            }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .contentMargins(.bottom, 90, for: .scrollContent)
-        .accessibilityIdentifier("calls-list")
-    }
-
-    private func row(_ group: CallGroup) -> some View {
         let call = group.first
         let missed = group.isMissedIncoming
-        return HStack(spacing: 12) {
+        HStack(spacing: 12) {
             Button { store.callPath.append(CallGroupRoute(ids: group.records.map(\.id))) } label: {
                 HStack(spacing: 12) {
-                    AvatarView(person: Person(id: call.peerID, name: call.peerName), size: avatarSize)
+                    AvatarView(person: person(call), size: avatarSize, showsStatus: true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(call.peerName + (group.count > 1 ? " (\(group.count))" : ""))
                             .font(Theme.title.weight(.semibold))
@@ -139,6 +70,84 @@ struct CallHistoryView: View {
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
     }
+}
+
+/// The call tab's root (LIME-116b/c): the history fills the screen and scrolls under the header and the tab bar (faded like Messages);
+/// All | Missed floats under the header as a glass segmented control; grouped rows with a call-back button; swipe to delete; "+" for New Call.
+struct CallHistoryView: View {
+    @Environment(ConversationStore.self) private var store
+    @State private var showNewCall = false
+    private let log = CallLog.shared
+
+    private var shown: [CallRecord] {
+        store.callMissedOnly ? log.records.filter(\.isMissedIncoming) : log.records
+    }
+
+    /// The room left at the end of the list for the "+" above the tab bar.
+    private let bottomMargin: CGFloat = FloatingPlus.size + 32
+
+    var body: some View {
+        let groups = CallGrouping.groups(shown)
+        Group {
+            if #available(iOS 26, *) {
+                content(groups, topMargin: 0)
+                    .scrollEdgeEffectStyle(.soft, for: .top)
+                    .scrollEdgeEffectStyle(.soft, for: .bottom)
+                    .safeAreaBar(edge: .top) { filter }
+            } else {
+                content(groups, topMargin: 76 + 46)
+                    .overlay(alignment: .top) { filter.padding(.top, 62) }
+                    .overlay(alignment: .bottom) { BottomFade() }
+            }
+        }
+        .background(Theme.canvas.ignoresSafeArea().accessibilityIdentifier("calls-screen"))
+        .navigationBarTitleDisplayMode(.inline)
+        .rootHeader(searchID: "calls-search-button", overlays: true) { store.callPath.append(CallSearchRoute()) }
+        .overlay { FloatingPlus(label: "New call", id: "new-call-button") { showNewCall = true } }
+        .sheet(isPresented: $showNewCall) { NewCallSheet() }
+    }
+
+    // MARK: All | Missed
+
+    /// The system's segmented control (on iOS 26 it is the Liquid Glass one with the sliding selection).
+    private var filter: some View {
+        Picker("Calls", selection: Binding(get: { store.callMissedOnly }, set: { store.callMissedOnly = $0 })) {
+            Text("All").tag(false)
+            Text("Missed").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 240)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .accessibilityIdentifier("calls-filter")
+    }
+
+    // MARK: List
+
+    @ViewBuilder
+    private func content(_ groups: [CallGroup], topMargin: CGFloat) -> some View {
+        if groups.isEmpty {
+            empty.padding(.top, topMargin)
+        } else {
+            List {
+                ForEach(groups) { group in
+                    CallRowView(group: group)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { log.delete(ids: group.records.map(\.id)) } label: { Label("Delete", systemImage: "trash") }
+                                .tint(.red).accessibilityIdentifier("call-swipe-delete")
+                        }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.top, topMargin, for: .scrollContent)
+            .contentMargins(.bottom, bottomMargin, for: .scrollContent)
+            .accessibilityIdentifier("calls-list")
+        }
+    }
 
     // MARK: Empty
 
@@ -161,6 +170,95 @@ struct CallHistoryView: View {
     }
 }
 
+/// A soft veil at the bottom edge above the tab bar (iOS 17 to 25; iOS 26 has the system's scroll-edge effect).
+struct BottomFade: View {
+    var body: some View {
+        LinearGradient(colors: [Theme.canvas.opacity(0), Theme.canvas.opacity(0.9)], startPoint: .top, endPoint: .bottom)
+            .frame(height: 36)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The call tab's search (pushed, like Messages' search): people you can call, and matching calls.
+struct CallSearchScreen: View {
+    @Environment(ConversationStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @FocusState private var focused: Bool
+    private let log = CallLog.shared
+
+    private var typed: String { query.trimmingCharacters(in: .whitespaces) }
+    private var people: [KnownTeacher] {
+        KnownTeachers.sections(KnownTeachers.from(store.conversations).filter { $0.id != store.selfChatID }, filter: typed).flatMap(\.teachers)
+    }
+    private var groups: [CallGroup] {
+        CallGrouping.groups(log.records.filter { $0.peerName.localizedCaseInsensitiveContains(typed) })
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SearchHeader(placeholder: "Search people and calls", query: $query, focused: $focused) { dismiss() }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if typed.isEmpty {
+                        Text("Search for someone to call, or a call you made or missed.")
+                            .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity).padding(.top, 60).padding(.horizontal, 24)
+                            .accessibilityIdentifier("calls-search-hint")
+                    } else if people.isEmpty && groups.isEmpty {
+                        Text("No results for “\(typed)”")
+                            .font(Theme.body).foregroundStyle(Theme.textSecondary)
+                            .frame(maxWidth: .infinity).padding(.top, 60)
+                            .accessibilityIdentifier("calls-search-none")
+                    } else {
+                        if !people.isEmpty {
+                            title("People")
+                            ForEach(people) { teacher in
+                                HStack(spacing: 8) {
+                                    TeacherRow(person: teacher.person)
+                                    circle("phone", "Voice call \(teacher.person.name)", id: "calls-search-voice-\(teacher.person.id)") { start(teacher, video: false) }
+                                    circle("video", "Video call \(teacher.person.name)", id: "calls-search-video-\(teacher.person.id)") { start(teacher, video: true) }
+                                }
+                                .padding(.trailing, 16)
+                            }
+                        }
+                        if !groups.isEmpty {
+                            title("Calls")
+                            ForEach(groups) { group in CallRowView(group: group) }
+                        }
+                    }
+                }
+                .padding(.bottom, 24)
+            }
+            .scrollDismissesKeyboard(.immediately)
+            .accessibilityIdentifier("calls-search-results")
+        }
+        .background(Theme.canvas.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)
+        .swipeBackEnabled()
+        .onAppear { focused = true }
+    }
+
+    private func title(_ text: String) -> some View {
+        Text(text).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4).accessibilityAddTraits(.isHeader)
+    }
+
+    private func circle(_ symbol: String, _ label: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 16)).foregroundStyle(Theme.text)
+                .frame(width: 40, height: 40).overlay(Circle().stroke(Theme.textSecondary.opacity(0.5), lineWidth: 1))
+        }
+        .buttonStyle(.plain).accessibilityLabel(label).accessibilityIdentifier(id)
+    }
+
+    private func start(_ teacher: KnownTeacher, video: Bool) {
+        Task { _ = await store.calls.start(peerID: teacher.person.id, name: teacher.person.name, video: video) }
+    }
+}
+
 /// One person's calls (a group from the list): who, Message · Voice · Video, and each call with its time, direction and outcome.
 struct CallDetailsView: View {
     let route: CallGroupRoute
@@ -173,7 +271,7 @@ struct CallDetailsView: View {
         ScrollView {
             if let first = records.first {
                 VStack(spacing: 18) {
-                    AvatarView(person: Person(id: first.peerID, name: first.peerName), size: 96).padding(.top, 20)
+                    AvatarView(person: Person(id: first.peerID, name: first.peerName, tone: 0), size: 96, showsStatus: true).padding(.top, 20)
                     Text(first.peerName).font(.title2.weight(.semibold)).foregroundStyle(Theme.text)
                     HStack(spacing: 12) {
                         action("message", "Message", id: "call-details-message") { store.openFromNotification("dm:\(first.peerID)", thread: nil) }

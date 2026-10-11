@@ -6,6 +6,8 @@ struct RootHeader: ViewModifier {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
     let searchID: String
+    /// Draw the header over the content (which then scrolls under it, with the same veil as Messages) instead of reserving room for it.
+    var overlays = false
     let search: () -> Void
     @State private var showStatus = false
     @State private var showSettings = false
@@ -40,15 +42,21 @@ struct RootHeader: ViewModifier {
                         }
                     }
             } else {
-                content
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        TopControls(onAbout: {
-                            #if DEBUG
-                            showAbout = true
-                            #endif
-                        }, onSearch: search, onSettings: { showStatus = true }, searchID: searchID)
-                    }
-                    .toolbar(.hidden, for: .navigationBar)
+                let controls = TopControls(onAbout: {
+                    #if DEBUG
+                    showAbout = true
+                    #endif
+                }, onSearch: search, onSettings: { showStatus = true }, searchID: searchID)
+                if overlays {
+                    content
+                        .overlay(alignment: .top) { TopFade() }
+                        .overlay(alignment: .top) { controls }
+                        .toolbar(.hidden, for: .navigationBar)
+                } else {
+                    content
+                        .safeAreaInset(edge: .top, spacing: 0) { controls }
+                        .toolbar(.hidden, for: .navigationBar)
+                }
             }
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
@@ -63,5 +71,5 @@ struct RootHeader: ViewModifier {
 
 extension View {
     /// The shared root header (logo left; search and avatar right) for a tab other than Messages.
-    func rootHeader(searchID: String, search: @escaping () -> Void) -> some View { modifier(RootHeader(searchID: searchID, search: search)) }
+    func rootHeader(searchID: String, overlays: Bool = false, search: @escaping () -> Void) -> some View { modifier(RootHeader(searchID: searchID, overlays: overlays, search: search)) }
 }

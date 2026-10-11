@@ -143,9 +143,9 @@ extension CallLog {
             CallRecord(id: id, peerID: peer, peerName: name, video: video, outgoing: outgoing, date: now.addingTimeInterval(-minutesAgo * 60), duration: seconds, outcome: outcome)
         }
         for record in [
-            make("d5", "sam", "Sam Rivera", video: false, outgoing: true, minutesAgo: 3 * 24 * 60, seconds: 0, .noAnswer),
+            make("d5", "sam", "Sam Park", video: false, outgoing: true, minutesAgo: 3 * 24 * 60, seconds: 0, .noAnswer),
             make("d4", "lee", "Lee Wong", video: false, outgoing: false, minutesAgo: 26 * 60, seconds: 61, .completed),
-            make("d3", "sam", "Sam Rivera", video: true, outgoing: true, minutesAgo: 4, seconds: 252, .completed),
+            make("d3", "sam", "Sam Park", video: true, outgoing: true, minutesAgo: 4, seconds: 252, .completed),
             make("d2", "lee", "Lee Wong", video: false, outgoing: false, minutesAgo: 2, seconds: 0, .missed),
             make("d1", "lee", "Lee Wong", video: false, outgoing: false, minutesAgo: 1, seconds: 0, .missed),
         ] { add(record) }

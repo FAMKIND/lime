@@ -41,6 +41,9 @@ struct LimeApp: App {
                 // LIME-111-fix4: `-lime-callkit-selftest` runs the CallKit self-test at launch (log in the call diagnostics).
                 .task {
                     let arguments = ProcessInfo.processInfo.arguments
+                    if let at = arguments.firstIndex(of: "-lime-start-tab"), at + 1 < arguments.count, let tab = ConversationStore.Section(rawValue: arguments[at + 1]) {
+                        store.section = tab
+                    }
                     if arguments.contains("-lime-skip-sign-in") {
                         // The call history lives in the (persistent) test store: start every UI-test launch from a known list.
                         var waited = 0

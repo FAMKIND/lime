@@ -122,6 +122,7 @@ private struct SignedInView: View {
     private func callTab(path: Binding<NavigationPath>) -> some View {
         NavigationStack(path: path) {
             CallHistoryView()
+                .navigationDestination(for: CallSearchRoute.self) { _ in CallSearchScreen() }
                 .navigationDestination(for: CallGroupRoute.self) { route in
                     CallDetailsView(route: route).toolbar(.hidden, for: .tabBar)
                 }

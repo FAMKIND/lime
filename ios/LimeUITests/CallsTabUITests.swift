@@ -14,7 +14,7 @@ final class CallsTabUITests: XCTestCase {
     private func openCalls(_ app: XCUIApplication) {
         XCTAssertTrue(app.tabBars.buttons["call"].waitForExistence(timeout: 10))
         app.tabBars.buttons["call"].tap()
-        XCTAssertTrue(app.buttons["calls-filter-all"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls.buttons["All"].waitForExistence(timeout: 5))
     }
 
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
@@ -23,18 +23,18 @@ final class CallsTabUITests: XCTestCase {
         let app = app()
         openCalls(app)
         let names = app.staticTexts.matching(identifier: "call-row-name").allElementsBoundByIndex.map(\.label)
-        XCTAssertEqual(names, ["Lee Wong (2)", "Sam Rivera", "Lee Wong", "Sam Rivera"], "the two missed calls from Lee are one row with a count")
-        app.buttons["calls-filter-missed"].tap()
+        XCTAssertEqual(names, ["Lee Wong (2)", "Sam Park", "Lee Wong", "Sam Park"], "the two missed calls from Lee are one row with a count")
+        app.segmentedControls.buttons["Missed"].tap()
         let missed = app.staticTexts.matching(identifier: "call-row-name").allElementsBoundByIndex.map(\.label)
         XCTAssertEqual(missed, ["Lee Wong (2)"], "Missed shows only the missed incoming calls")
-        app.buttons["calls-filter-all"].tap()
+        app.segmentedControls.buttons["All"].tap()
         XCTAssertEqual(app.staticTexts.matching(identifier: "call-row-name").count, 4)
     }
 
     func testTheTrailingButtonRepeatsTheKindAndTapOpensTheDetails() {
         let app = app()
         openCalls(app)
-        XCTAssertTrue(app.buttons["Video call Sam Rivera"].waitForExistence(timeout: 5), "a video call's button is a video button")
+        XCTAssertTrue(app.buttons["Video call Sam Park"].waitForExistence(timeout: 5), "a video call's button is a video button")
         XCTAssertTrue(app.buttons["Call Lee Wong"].exists, "a voice call's button is a phone button")
         app.buttons.matching(identifier: "call-history-row").firstMatch.tap()
         XCTAssertTrue(any(app, "call-details").waitForExistence(timeout: 5))
@@ -93,12 +93,49 @@ final class CallsTabUITests: XCTestCase {
         XCTAssertFalse(plus.frame.intersects(bar))
     }
 
+    func testTheListScrollsUnderTheHeaderAndTheLastRowClearsThePlus() {
+        let app = app()
+        openCalls(app)
+        let list = any(app, "calls-list")
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let pill = app.segmentedControls.firstMatch
+        XCTAssertLessThan(list.frame.minY, pill.frame.minY, "the list starts above the All | Missed control: it scrolls under it (and under the header)")
+        XCTAssertLessThan(list.frame.minY, 80, "edge to edge at the top")
+        let first = app.buttons.matching(identifier: "call-history-row").firstMatch
+        XCTAssertGreaterThanOrEqual(first.frame.minY, pill.frame.maxY - 4, "the first row starts below the control")
+        let plus = app.buttons["new-call-button"].frame
+        let lastCallBack = app.buttons.matching(identifier: "call-row-callback").allElementsBoundByIndex.last!
+        XCTAssertFalse(lastCallBack.frame.intersects(plus), "the last row's button is not under the +")
+    }
+
+    func testStatusBadgesOnTheCallAvatars() {
+        let app = app()
+        openCalls(app)
+        XCTAssertTrue(any(app, "status-badge-lee").waitForExistence(timeout: 5))
+        XCTAssertTrue(any(app, "status-badge-sam").exists)
+    }
+
+    func testTheMagnifierPushesTheCallsSearchWithPeopleAndCalls() {
+        let app = app()
+        openCalls(app)
+        app.buttons["calls-search-button"].tap()
+        let field = app.textFields["search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("lee")
+        XCTAssertTrue(app.buttons["calls-search-voice-lee"].waitForExistence(timeout: 5), "People: Lee, with call buttons")
+        XCTAssertTrue(app.buttons["calls-search-video-lee"].exists)
+        XCTAssertTrue(app.buttons.matching(identifier: "call-history-row").firstMatch.exists, "Calls: Lee's history rows")
+        XCTAssertFalse(app.staticTexts["Sam Park"].exists, "only matches")
+        app.buttons["search-back"].tap()
+        XCTAssertTrue(app.segmentedControls.buttons["All"].waitForExistence(timeout: 5), "back returns to the list")
+    }
+
     func testEmptyStates() {
         let app = app(calls: false)
         openCalls(app)
         XCTAssertTrue(any(app, "calls-empty").waitForExistence(timeout: 5), "All: No calls yet")
         XCTAssertTrue(app.buttons["calls-empty-new-call"].exists, "with a New call button")
-        app.buttons["calls-filter-missed"].tap()
+        app.segmentedControls.buttons["Missed"].tap()
         XCTAssertTrue(any(app, "calls-empty-missed").waitForExistence(timeout: 5), "Missed: No missed calls")
     }
 
@@ -110,7 +147,7 @@ final class CallsTabUITests: XCTestCase {
         expectation(for: counted, evaluatedWith: nil)
         waitForExpectations(timeout: 8)
         app.tabBars.buttons["call"].tap()
-        XCTAssertTrue(app.buttons["calls-filter-all"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls.buttons["All"].waitForExistence(timeout: 5))
         let cleared = NSPredicate { _, _ in !value().hasPrefix("2") }
         expectation(for: cleared, evaluatedWith: nil)
         waitForExpectations(timeout: 5)

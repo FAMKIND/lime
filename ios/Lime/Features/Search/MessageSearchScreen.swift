@@ -48,33 +48,7 @@ struct MessageSearchScreen: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 18, weight: .medium)).foregroundStyle(Theme.text)
-                    .frame(width: 48, height: 48).limeGlass()
-            }
-            .accessibilityLabel("Back").accessibilityIdentifier("search-back")
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(Theme.textSecondary)
-                TextField("Search chats and messages", text: $query)
-                    .font(Theme.body)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-                    .focused($focused)
-                    .selectionTint()
-                    .accessibilityIdentifier("search-field")
-                if !query.isEmpty {
-                    Button { query = "" } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textSecondary)
-                    }
-                    .accessibilityLabel("Clear").accessibilityIdentifier("search-clear")
-                }
-            }
-            .padding(.horizontal, 14).frame(minHeight: 48)
-            .limeGlass(in: Capsule())
-        }
-        .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 8)
+        SearchHeader(placeholder: "Search chats and messages", query: $query, focused: $focused) { dismiss() }
     }
 
     @ViewBuilder
@@ -150,5 +124,43 @@ struct MessageSearchScreen: View {
         Text(text).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 2)
             .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The search screens' top row: a glass back button and a glass field (shared by Messages and Calls).
+struct SearchHeader: View {
+    let placeholder: String
+    @Binding var query: String
+    var focused: FocusState<Bool>.Binding
+    let back: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: back) {
+                Image(systemName: "chevron.left").font(.system(size: 18, weight: .medium)).foregroundStyle(Theme.text)
+                    .frame(width: 48, height: 48).limeGlass()
+            }
+            .accessibilityLabel("Back").accessibilityIdentifier("search-back")
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(Theme.textSecondary)
+                TextField(placeholder, text: $query)
+                    .font(Theme.body)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .focused(focused)
+                    .selectionTint()
+                    .accessibilityIdentifier("search-field")
+                if !query.isEmpty {
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textSecondary)
+                    }
+                    .accessibilityLabel("Clear").accessibilityIdentifier("search-clear")
+                }
+            }
+            .padding(.horizontal, 14).frame(minHeight: 48)
+            .limeGlass(in: Capsule())
+        }
+        .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 8)
     }
 }
