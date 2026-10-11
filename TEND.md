@@ -4951,3 +4951,14 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 3. **Outlined in every state:** the tabs use `message` / `phone` / `book.pages` always (symbol variants off); the filled names and `TabSymbols.name` are gone. **Screenshots on the iOS 26 glass bar (13 mini) and the iOS 18.3 bar (SE):** the selected `call` tab is the outline glyph with the bold label and a dark highlight (glass pill on iOS 26, darker tint on iOS 18); the other two are outlined and grey.
 
 **Tests.** A unit test that no tab symbol ends in `.fill`; UI tests: no status badge on call rows or in New Call, and the tab bar's frame is unchanged and all three tabs are still hittable after scrolling a long Calls list (`-lime-demo-calls-many`).
+
+
+## LIME-116f
+
+**The call screen fits narrow phones; status badges are back on New Call (committed, awaiting the user's check on a 13 mini).** Phase 0: `PLOT.md` committed.
+
+**Phase 1: the hypothesis was right.** A temporary probe on the 13 mini simulator (375 pt) measured the demo call screens: **video, the right-hand column ended at x = 380 to 384 on a 375 pt window (the Camera, Mute and End buttons hung over the edge); voice, the control row sat centred on x = 200 instead of 187.5** (shifted right by 12.5). The fixed 400 pt blurred avatar in `background(_:)` made the `ZStack` 400 pt wide, and everything aligned to its edges moved with it.
+
+**Fix.** The `ZStack` is pinned to the screen (`.frame(width: geo.size.width, height: geo.size.height)`); the blurred avatar moved into a `.background` that takes the whole screen (safe areas too) and is clipped to it, so it can never widen the layout; the look is the same (the blurred avatar filling the screen, the 160 pt avatar in the middle). **After, on the 13 mini:** the video column's right edge is at 359 (a 16 pt margin: Camera 299–355, End 295–359), the flip button at 16 on the left, the voice row centred on 187.5 (Mute 38–94 … End 272–336). **New Call** shows the status badges again (Calls history and Calls search stay plain); the one 116e test that asserted otherwise now asserts the badge is back in New Call. No new UI tests (a visual change).
+
+**SE (iPhone SE simulator, video call):** the camera flip is at the bottom left with a 16 pt margin, and Camera, Mute, the audio route and the red End are fully on screen at the right with a 16 pt margin; the name pill and timer are at the left; the blurred avatar backdrop fills the screen. (The controls fade after 5 s on a video call, as designed.) I did not check landscape.

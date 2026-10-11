@@ -366,7 +366,7 @@ struct NewCallSheet: View {
                                     .accessibilityAddTraits(.isHeader)
                                 ForEach(section.teachers) { teacher in
                                     HStack(spacing: 8) {
-                                        TeacherRow(person: teacher.person, showsStatus: false)
+                                        TeacherRow(person: teacher.person)
                                         circle("phone", "Voice call \(teacher.person.name)", id: "new-call-voice-\(teacher.person.id)") { call(teacher, video: false) }
                                         circle("video", "Video call \(teacher.person.name)", id: "new-call-video-\(teacher.person.id)") { call(teacher, video: true) }
                                     }

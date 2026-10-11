@@ -116,16 +116,16 @@ final class CallsTabUITests: XCTestCase {
         XCTAssertFalse(lastCallBack.frame.intersects(plus), "the last row's button is not under the +")
     }
 
-    func testNoStatusBadgesOnTheCallsSurfaces() {
+    func testNoStatusBadgesOnCallRowsButBackInNewCall() {
         let app = app()
         openCalls(app)
         XCTAssertTrue(app.buttons["call-row-callback"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(any(app, "status-badge-lee").exists, "plain avatars on the call rows")
         XCTAssertFalse(any(app, "status-badge-sam").exists)
-        // New Call
+        // New Call is the one place they are back: someone you are about to call, with their status.
         app.buttons["new-call-button"].tap()
         XCTAssertTrue(app.buttons["new-call-voice-lee"].waitForExistence(timeout: 5))
-        XCTAssertFalse(any(app, "status-badge-lee").exists, "and in New Call")
+        XCTAssertTrue(any(app, "status-badge-lee").waitForExistence(timeout: 5), "status badges are back in New Call")
     }
 
     func testTheTabBarStaysOpenWhileScrollingCalls() {

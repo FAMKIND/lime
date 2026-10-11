@@ -40,8 +40,7 @@ struct CallView: View {
         let call = store.calls
         GeometryReader { geo in
             ZStack {
-                Color.black.ignoresSafeArea().accessibilityIdentifier("call-screen")
-                background(call)
+                background(call, in: geo.size)
                 if call.video { videoLayers(call, in: geo.size) }
                 VStack(alignment: .leading, spacing: 6) {
                     header(call)
@@ -67,6 +66,14 @@ struct CallView: View {
                     .accessibilityHidden(call.video && !controlsVisible)
                     .animation(.easeInOut(duration: 0.25), value: controlsVisible)
             }
+            // Pinned to the screen, so no layer can widen the layout (a 400 pt background once pushed the controls off a 375 pt screen).
+            .frame(width: geo.size.width, height: geo.size.height)
+            .background {
+                ZStack {
+                    Color.black.ignoresSafeArea().accessibilityIdentifier("call-screen")
+                    blurredBackdrop(call)
+                }
+            }
             .contentShape(Rectangle())
             .onTapGesture { if call.video { showControls() } }
             .onAppear { showControls() }
@@ -80,16 +87,26 @@ struct CallView: View {
 
     private var person: (ConversationStore) -> Person = { store in Person(id: store.calls.peerID, name: store.calls.peerName) }
 
+    /// The blurred avatar behind everything: it takes the whole screen (the safe areas too) and is clipped to it, so it can never be
+    /// wider than the screen.
     @ViewBuilder
-    private func background(_ call: CallManager) -> some View {
+    private func blurredBackdrop(_ call: CallManager) -> some View {
+        if !(call.video && (swapped ? call.cameraOn : call.remoteVideoLive)) {
+            AvatarView(person: person(store), size: 480).blur(radius: 60).opacity(0.5)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .ignoresSafeArea()
+        }
+    }
+
+    @ViewBuilder
+    private func background(_ call: CallManager, in size: CGSize) -> some View {
         // The avatar fills the screen until there is a picture to show big: the other person's video, or mine after a swap.
         let pictureBig = call.video && (swapped ? call.cameraOn : call.remoteVideoLive)
         if !pictureBig {
-            ZStack {
-                AvatarView(person: person(store), size: 400).blur(radius: 60).opacity(0.5).ignoresSafeArea()
-                AvatarView(person: person(store), size: 160)
-                    .accessibilityIdentifier("call-avatar")
-            }
+            AvatarView(person: person(store), size: 160)
+                .accessibilityIdentifier("call-avatar")
+                .frame(width: size.width, height: size.height)
         }
     }
 
