@@ -9,19 +9,26 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
     var onAnswer: ((String) -> Void)?
     var onEnd: ((String) -> Void)?
     var onMute: ((String, Bool) -> Void)?
-    private let provider: CXProvider
-    private let controller = CXCallController()
-
-    override init() {
+    /// One provider for the whole process: a second one would fight the first (and the system resets both).
+    private static let sharedProvider: CXProvider = {
         let configuration = CXProviderConfiguration()
         configuration.supportsVideo = true
         configuration.maximumCallsPerCallGroup = 1
         configuration.supportedHandleTypes = [.generic]
         configuration.includesCallsInRecents = false
-        provider = CXProvider(configuration: configuration)
+        CallDiagnostics.shared.log("callkit provider created (the only one)")
+        return CXProvider(configuration: configuration)
+    }()
+    private var provider: CXProvider { Self.sharedProvider }
+    private static var systemCount = 0
+    private(set) var audioActive = false
+    private let controller = CXCallController()
+
+    override init() {
         super.init()
+        Self.systemCount += 1
+        CallDiagnostics.shared.log("callkit system objects alive: \(Self.systemCount) (one provider)")
         provider.setDelegate(self, queue: .main)
-        CallDiagnostics.shared.log("callkit provider created")
     }
 
     /// Debug: reports a fake incoming call, waits 3 s, ends it, and logs each step (About → CallKit self-test).
@@ -109,12 +116,12 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
     }
 
     nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        Task { @MainActor in CallDiagnostics.shared.log("callkit audio activated") }
+        Task { @MainActor in CallDiagnostics.shared.log("callkit audio activated"); self.audioActive = true }
         WebRTCMedia.audioSessionActivated(audioSession)
     }
 
     nonisolated func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
-        Task { @MainActor in CallDiagnostics.shared.log("callkit audio deactivated") }
+        Task { @MainActor in CallDiagnostics.shared.log("callkit audio deactivated"); self.audioActive = false }
         WebRTCMedia.audioSessionDeactivated(audioSession)
     }
 }
@@ -125,6 +132,7 @@ final class QuietCallSystem: CallSystem {
     var onAnswer: ((String) -> Void)?
     var onEnd: ((String) -> Void)?
     var onMute: ((String, Bool) -> Void)?
+    var audioActive: Bool { false }
     func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (String?) -> Void) { completion(nil) }
     func reportOutgoing(callID: String, name: String, video: Bool) {}
     func reportConnected(callID: String) {}

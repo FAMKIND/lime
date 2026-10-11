@@ -53,8 +53,8 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Lime saves a photo to your library only when you ask it to."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Lime uses the microphone to record voice messages and the sound of videos you record."
-        # A call keeps its audio going when the screen locks or Lime is in the background.
-        INFOPLIST_KEY_UIBackgroundModes: audio
+        # A call keeps its audio going when the screen locks or Lime is in the background; "voip" is for the system call screen (CallKit).
+        INFOPLIST_KEY_UIBackgroundModes: audio voip
         INFOPLIST_KEY_NSCameraUsageDescription: "Lime uses the camera to scan a teacher's QR code and to take photos and videos to send."
       configs:
         # LIME-103 (the Bluetooth field test): Bluetooth and its background modes exist in Debug builds only.

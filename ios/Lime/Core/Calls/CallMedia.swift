@@ -29,6 +29,8 @@ protocol CallMedia: AnyObject {
     func setVideo(_ on: Bool)
     func flipCamera()
     func setSpeaker(_ on: Bool)
+    /// The system (CallKit) has not activated the audio session: do it here. `false` when nothing needed doing.
+    func activateAudioFallback(video: Bool) -> Bool
     func close()
 }
 
@@ -83,7 +85,7 @@ final class WebRTCMedia: NSObject, CallMedia {
         configuration.iceServers = servers.map { RTCIceServer(urlStrings: $0.urls, username: $0.username, credential: $0.credential) }
         configuration.sdpSemantics = .unifiedPlan
         // Few candidates, all bundled on one transport: the fewer there are, the fewer there is to send (TURN over TCP/TLS stays in the servers).
-        configuration.continualGatheringPolicy = .gatherOnce
+        configuration.continualGatheringPolicy = .gatherContinually
         configuration.bundlePolicy = .maxBundle
         configuration.rtcpMuxPolicy = .require
         configuration.tcpCandidatePolicy = .disabled
@@ -150,7 +152,8 @@ final class WebRTCMedia: NSObject, CallMedia {
     nonisolated static let gatherQuick: TimeInterval = 1.0
 
     nonisolated static func gatheringDone(elapsed: TimeInterval, complete: Bool, relayConfigured: Bool, hasRelay: Bool) -> Bool {
-        complete || elapsed >= gatherCap || (relayConfigured && hasRelay && elapsed >= gatherQuick)
+        // "Complete" is not enough when a relay is expected but absent (an answer once left with host candidates only); keep waiting for it.
+        (complete && (hasRelay || !relayConfigured)) || elapsed >= gatherCap || (relayConfigured && hasRelay && elapsed >= gatherQuick)
     }
 
     private var relayConfigured = false
@@ -170,6 +173,27 @@ final class WebRTCMedia: NSObject, CallMedia {
 
     func add(candidate: String, mid: String?, index: Int32) async {
         try? await connection?.add(RTCIceCandidate(sdp: candidate, sdpMLineIndex: index, sdpMid: mid))
+    }
+
+    private var fallbackActive = false
+
+    /// CallKit has not called back (it is reset on some phones): configure and activate the audio session ourselves.
+    func activateAudioFallback(video: Bool) -> Bool {
+        guard manualAudio, !fallbackActive else { return false }
+        let rtc = RTCAudioSession.sharedInstance()
+        rtc.lockForConfiguration()
+        defer { rtc.unlockForConfiguration() }
+        do {
+            try rtc.setCategory(.playAndRecord, with: video ? [.allowBluetooth, .defaultToSpeaker] : [.allowBluetooth])
+            try rtc.setMode(video ? .videoChat : .voiceChat)
+            try rtc.setActive(true)
+        } catch {
+            CallDiagnostics.shared.log("audio fallback failed: \(error)")
+            return false
+        }
+        rtc.isAudioEnabled = true
+        fallbackActive = true
+        return true
     }
 
     func setMuted(_ muted: Bool) { audioTrack?.isEnabled = !muted }
@@ -205,7 +229,16 @@ final class WebRTCMedia: NSObject, CallMedia {
         } else {
             connection?.close()
         }
-        if manualAudio { RTCAudioSession.sharedInstance().isAudioEnabled = false }
+        if manualAudio {
+            let rtc = RTCAudioSession.sharedInstance()
+            rtc.isAudioEnabled = false
+            if fallbackActive {
+                fallbackActive = false
+                rtc.lockForConfiguration()
+                try? rtc.setActive(false)
+                rtc.unlockForConfiguration()
+            }
+        }
     }
 }
 

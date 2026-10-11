@@ -16,6 +16,7 @@ private final class FakeSystem: CallSystem {
     var onMute: ((String, Bool) -> Void)?
     var refuse = false
     var incoming = 0
+    var audioActive = false
     func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (String?) -> Void) {
         incoming += 1
         completion(refuse ? "refused" : nil)
@@ -42,6 +43,8 @@ private final class FakeMedia: CallMedia {
     func setVideo(_ on: Bool) {}
     func flipCamera() {}
     func setSpeaker(_ on: Bool) {}
+    var fallbacks = 0
+    func activateAudioFallback(video: Bool) -> Bool { fallbacks += 1; return true }
     func close() { closed = true }
 }
 
@@ -144,6 +147,8 @@ final class CallTests: XCTestCase {
         XCTAssertTrue(done(1.0, false, true, true), "a relay is in: 1 s is enough")
         XCTAssertFalse(done(1.5, false, true, false), "a relay is expected but not in yet: keep waiting")
         XCTAssertFalse(done(1.5, false, false, false), "no relay configured: wait for completion")
+        XCTAssertFalse(done(0.2, true, true, false), "'complete' with no relay candidate (a callee's answer once left like that): keep waiting")
+        XCTAssertTrue(done(0.2, true, true, true), "complete with a relay")
         XCTAssertTrue(done(2.5, false, true, false), "the cap")
         XCTAssertTrue(done(0.2, true, false, false), "complete")
     }
@@ -179,6 +184,22 @@ final class CallTests: XCTestCase {
             XCTAssertFalse(signalling.sent.map(\.op).contains("call.busy"), "crossed calls are not 'busy'")
             await m.end()
             signalling.sent = []
+        }
+    }
+
+    func testLimeActivatesTheAudioWhenCallKitStaysSilentAndNotWhenItDoesNot() async {
+        for silent in [true, false] {
+            system.audioActive = !silent
+            media = FakeMedia()
+            let m = manager()
+            m.audioFallbackSeconds = 0.1
+            await m.handle(event("call.offer", payload: ["sdp": "v=0"]))
+            await m.accept()
+            try? await Task.sleep(for: .seconds(0.4))
+            XCTAssertEqual(media.fallbacks, silent ? 1 : 0, silent ? "CallKit silent: lime activates" : "CallKit activated: lime leaves it")
+            await m.end()
+            XCTAssertTrue(media.closed, "the media (and with it a fallback-activated session) is torn down on end")
+            system = FakeSystem()
         }
     }
 

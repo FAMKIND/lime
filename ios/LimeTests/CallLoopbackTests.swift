@@ -28,6 +28,7 @@ private final class PairMedia: CallMedia {
     func setVideo(_ on: Bool) {}
     func flipCamera() {}
     func setSpeaker(_ on: Bool) {}
+    func activateAudioFallback(video: Bool) -> Bool { false }
     func close() { closed = true }
 
     private func describe(_ fingerprint: String) -> String {
@@ -208,6 +209,7 @@ final class CallLoopbackTests: XCTestCase {
         var onEnd: ((String) -> Void)?
         var onMute: ((String, Bool) -> Void)?
         var delay: Duration? // nil = never completes
+        var audioActive: Bool { true }
         func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (String?) -> Void) {
             guard let delay else { return }
             Task { @MainActor in try? await Task.sleep(for: delay); completion(nil) }

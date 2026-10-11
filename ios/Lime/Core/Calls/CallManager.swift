@@ -26,6 +26,8 @@ protocol CallSystem: AnyObject {
     var onAnswer: ((String) -> Void)? { get set }
     var onEnd: ((String) -> Void)? { get set }
     var onMute: ((String, Bool) -> Void)? { get set }
+    /// The system has activated the call's audio session (`didActivate` arrived).
+    var audioActive: Bool { get }
     /// Tells the system about an incoming call; `false` if it refuses (Do Not Disturb or a Focus).
     /// Starts the system's incoming-call report and returns at once; `completion` says whether the system will ring (`nil` error) or refused.
     func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (_ refusal: String?) -> Void)
@@ -82,6 +84,9 @@ final class CallManager {
     @ObservationIgnored private var outbound: [(String, String?, Int32)] = []
     @ObservationIgnored private var descriptionSent = false
     @ObservationIgnored private var batcher: Task<Void, Never>?
+    @ObservationIgnored private var audioWatch: Task<Void, Never>?
+    /// How long to wait for the system to activate the audio before lime does it.
+    @ObservationIgnored var audioFallbackSeconds: Double = 1
     /// How long a call rings before it is a missed call.
     @ObservationIgnored var ringSeconds: Double = 45
 
@@ -192,6 +197,21 @@ final class CallManager {
             let started = Date()
             let ok = await self.signalling.send(peer: self.peerID, op: "call.ice", payload: ["call_id": id, "candidates": list])
             self.diag.log("sent call.ice x\(items.count) ok=\(ok) \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+        }
+    }
+
+    /// If the system has not activated the audio within a second of the call being answered, lime activates it (CallKit can be silent).
+    private func armAudioFallback() {
+        audioWatch?.cancel()
+        let id = callID, seconds = audioFallbackSeconds
+        audioWatch = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self, self.callID == id, self.inCall else { return }
+            if self.system.audioActive {
+                self.diag.log("audio activated by CallKit")
+            } else if self.media?.activateAudioFallback(video: self.video) == true {
+                self.diag.log("audio activated by lime (CallKit silent)")
+            }
         }
     }
 
@@ -325,6 +345,7 @@ final class CallManager {
             phase = .connecting
             ringTimeout?.cancel()
             armConnectTimeout()
+            armAudioFallback()
             try await media.apply(answer: sdp)
             diag.log("answer applied")
             remoteReady = true
@@ -370,6 +391,7 @@ final class CallManager {
         phase = .connecting
         ringTimeout?.cancel()
         armConnectTimeout()
+        armAudioFallback()
         let id = callID
         diag.log("accept")
         let media = makeMedia()
@@ -443,6 +465,7 @@ final class CallManager {
         ringTimeout?.cancel()
         connectTimeout?.cancel()
         batcher?.cancel(); batcher = nil
+        audioWatch?.cancel(); audioWatch = nil
         stopPolling()
         let duration = startedAt.map { now().timeIntervalSince($0) } ?? 0
         log.add(CallRecord(id: callID, peerID: peerID, peerName: peerName, video: video, outgoing: outgoing, date: startedAt ?? now(), duration: duration, outcome: outcome))
