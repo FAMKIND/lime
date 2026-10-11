@@ -107,8 +107,43 @@ struct MessagesView: View {
         }
     }
 
+    /// The chats after the All | Unread segment and the filters (the number on the filter button counts the filters).
+    private var shownChats: [Conversation] {
+        store.chatFilter.apply(store.chats, unreadOnly: store.chatUnreadOnly, isMuted: { notifications.settings.isMuted($0) })
+    }
+
+    private var filterRow: some View {
+        @Bindable var store = store
+        return FilterRow(first: "All", second: "Unread", secondSelected: $store.chatUnreadOnly, activeCount: store.chatFilter.activeCount, idPrefix: "chat-filter") {
+            Section("Show") {
+                Toggle("Direct messages", isOn: Binding(get: { store.chatFilter.kind == .direct }, set: { store.chatFilter.kind = $0 ? .direct : nil }))
+                Toggle("Groups", isOn: Binding(get: { store.chatFilter.kind == .group }, set: { store.chatFilter.kind = $0 ? .group : nil }))
+                Toggle("Pinned", isOn: $store.chatFilter.pinned)
+                Toggle("Muted", isOn: $store.chatFilter.muted)
+            }
+            let labels = ChatFilter.labels(in: store.chats)
+            if !labels.isEmpty {
+                Menu("By label") {
+                    ForEach(labels, id: \.self) { label in
+                        Toggle(label, isOn: Binding(get: { store.chatFilter.label == label }, set: { store.chatFilter.label = $0 ? label : nil }))
+                    }
+                }
+            }
+            Button { store.path.append(MessagesRoute.requests) } label: {
+                Label(store.requests.isEmpty ? "Requests" : "Requests (\(store.requests.count))", systemImage: "envelope")
+            }
+            if store.chatFilter.isOn {
+                Button("Clear filters", role: .destructive) { store.chatFilter = ChatFilter() }
+            }
+        }
+    }
+
     private func listBody(top: CGFloat, bottom: CGFloat) -> some View {
         List {
+            filterRow
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             Group {
                 if let problem = store.problem { ProblemBanner(problem: problem) }
                 if store.lowStorage { LowStorageBanner() }
@@ -116,12 +151,16 @@ struct MessagesView: View {
                 if !store.requests.isEmpty { RequestsRow(count: store.requests.count) }
                 if store.isLoaded && store.chats.isEmpty && store.requests.isEmpty {
                     EmptyChatsView(onNewMessage: { showNewMessage = true })
+                } else if !store.chats.isEmpty && shownChats.isEmpty {
+                    FilteredEmpty(text: store.chatUnreadOnly && !store.chatFilter.isOn ? "No unread chats" : "No chats match") {
+                        store.chatFilter = ChatFilter(); store.chatUnreadOnly = false
+                    }
                 }
             }
             .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
-            ForEach(store.chats) { conversation in
+            ForEach(shownChats) { conversation in
                 Button { store.path.append(conversation.id) } label: { ConversationRow(conversation: conversation, leadingInset: sideInsets.0 > 0 ? 22 : 0, trailingInset: sideInsets.1 > 0 ? 18 : 0) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("conversation-row-\(conversation.id)")
@@ -179,7 +218,7 @@ struct MessagesView: View {
         .task(id: store.path.count) { if store.path.isEmpty { await store.reload() } }
         .accessibilityIdentifier("messages-list")
         .refreshable { await store.pullToRefresh() }
-        .animation(.snappy, value: store.chats.map(\.id))
+        .animation(.snappy, value: shownChats.map(\.id))
         .confirmSheet(muteTitle, isPresented: Binding(get: { muting != nil }, set: { if !$0 { muting = nil } })) {
             ForEach(MuteDuration.allCases) { duration in
                 Button(duration.title) {

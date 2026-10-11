@@ -4982,3 +4982,22 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **Gotcha, again:** an `.accessibilityIdentifier` on the sheet's container replaced its buttons' identifiers; it now sits on a background view.
 
 **Tests.** New `ConfirmSheetUITests`: swipe Delete on a chat → the sheet's Delete and Cancel are in the bottom of the screen, Cancel closes it and keeps the chat; Delete removes the chat; Leave group asks in the same sheet and Cancel keeps me in; Clear call history asks in it; Mute shows its duration choices in it. The existing tests that tapped dialog buttons by identifier are unchanged (see the full run below).
+
+
+## LIME-124
+
+**All | Unread and All | Missed, each with a filter menu and a badge, on link and Calls (committed, awaiting the user's check on a phone).** Phase 0: `PLOT.md` committed.
+
+**Phase 1.** Both lists start with their banners/rows inside a `List`; the Requests row stays where it was (under the new filter row); labels are read from each direct chat's member (`Person.label`).
+
+**Built.**
+1. **`FilterRow`** (shared), the first row of the List on link and Calls, scrolling away with it: the system segmented control (link **All | Unread**, Calls **All | Missed**) and beside it a 40 pt round glass button with the outline `line.3.horizontal.decrease`; a lime `CountBadge` at its top-right shows how many filters are on (nothing when none); VoiceOver "Filter, 2 active". The row has no extra top padding, so the gap below the header is the list's top margin: **8 pt** on iOS 26 (a UI test measures the filter button 8 ± 4 pt under the system toolbar); on iOS 17 to 25 the 76 pt margin under the veil is unchanged.
+2. **link's menu** (checkmarks): Show: Direct messages · Groups (one at a time) · Pinned · Muted; **By label ▸** (the private labels in use, one at a time; hidden when none); **Requests (N)** (opens the Requests list); **Clear filters** when any is on. **Calls' menu:** Voice · Video, Incoming · Outgoing (each pair one at a time) and Clear filters; the Missed segment still applies.
+3. **Combining:** everything on applies together (AND), the segment included; filters last while the app runs (not saved). Filtered empty: "No chats match" / "No calls match" (or "No unread chats") with a Clear filters button; the unfiltered empty states are unchanged.
+4. Pure logic in `Model/ListFilters.swift` (`ChatFilter`, `CallFilter`), unit-tested.
+
+**Seen (13 mini, iOS 26):** link and Calls both open with the glass All | Unread (or Missed) control and the round outline filter button beside it, the same height and spacing on both tabs.
+
+**Tests.** `ListFilterTests` (each filter, AND combinations with Unread/Missed, the active count, the labels in use, the call filters) and `FilterRowUITests`: the filter row is above the first chat with its menu items, Groups shows only groups and the badge reads 1 then 2 and Clear filters resets and removes it, the filtered empty state, and Calls' Voice/Video/Incoming/Outgoing menu with "No calls match" and Voice + Incoming leaving Lee's calls.
+
+**Not exercised:** the By label submenu on a phone with real labels (the unit test covers the logic; the demo chats have none), the Requests item opening the list from the menu, iOS 17.

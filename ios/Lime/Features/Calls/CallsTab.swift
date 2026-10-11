@@ -79,9 +79,7 @@ struct CallHistoryView: View {
     @State private var showNewCall = false
     private let log = CallLog.shared
 
-    private var shown: [CallRecord] {
-        store.callMissedOnly ? log.records.filter(\.isMissedIncoming) : log.records
-    }
+    private var shown: [CallRecord] { store.callFilter.apply(log.records, missedOnly: store.callMissedOnly) }
 
     /// The room left at the end of the list for the "+" above the tab bar.
     private let bottomMargin: CGFloat = FloatingPlus.size + 32
@@ -108,18 +106,22 @@ struct CallHistoryView: View {
 
     // MARK: All | Missed
 
-    /// The system's segmented control (on iOS 26 it is the Liquid Glass one with the sliding selection). It is the first row of the list
-    /// (it scrolls away with the rows), centred.
+    /// All | Missed and the filter button: the first row of the list (it scrolls away with the rows).
     private var filter: some View {
-        Picker("Calls", selection: Binding(get: { store.callMissedOnly }, set: { store.callMissedOnly = $0 })) {
-            Text("All").tag(false)
-            Text("Missed").tag(true)
+        @Bindable var store = store
+        return FilterRow(first: "All", second: "Missed", secondSelected: $store.callMissedOnly, activeCount: store.callFilter.activeCount, idPrefix: "calls-filter") {
+            Section("Kind") {
+                Toggle("Voice", isOn: Binding(get: { store.callFilter.video == false }, set: { store.callFilter.video = $0 ? false : nil }))
+                Toggle("Video", isOn: Binding(get: { store.callFilter.video == true }, set: { store.callFilter.video = $0 ? true : nil }))
+            }
+            Section("Direction") {
+                Toggle("Incoming", isOn: Binding(get: { store.callFilter.direction == .incoming }, set: { store.callFilter.direction = $0 ? .incoming : nil }))
+                Toggle("Outgoing", isOn: Binding(get: { store.callFilter.direction == .outgoing }, set: { store.callFilter.direction = $0 ? .outgoing : nil }))
+            }
+            if store.callFilter.isOn {
+                Button("Clear filters", role: .destructive) { store.callFilter = CallFilter() }
+            }
         }
-        .pickerStyle(.segmented)
-        .frame(width: 240)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .accessibilityIdentifier("calls-filter")
     }
 
     // MARK: List
@@ -156,7 +158,16 @@ struct CallHistoryView: View {
 
     // MARK: Empty
 
+    @ViewBuilder
     private var empty: some View {
+        if !log.records.isEmpty && store.callFilter.isOn {
+            FilteredEmpty(text: "No calls match") { store.callFilter = CallFilter() }
+        } else {
+            emptyPlain
+        }
+    }
+
+    private var emptyPlain: some View {
         VStack(spacing: 14) {
             if store.callMissedOnly {
                 Text("No missed calls").font(Theme.body).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("calls-empty-missed")
