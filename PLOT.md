@@ -126,6 +126,9 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e21. **The user (2026-10-11, during 116e):** "the status icon can be in New Call, as that makes sense" (partly reverses 116e item 1: badges back on New Call rows only; history and Calls search stay plain) and "the video and voice call screen's icons get cut off on the right" (a 13 mini screenshot, 7:52). **→ LIME-116f (drafted), NEXT after 116e, before 125.** Queue: 116e → **116f** → 125 → 123 → 124 → 122.
+1e20. **The user's profile references arrived (2026-10-11, 15:32–15:35): iMessage (iOS 26 contact), WhatsApp "Contact info", KakaoTalk chat-room profile, plus Signal's Delete Chat sheet and lime's misplaced Delete popover.** → **LIME-122's Design section is written (122 is now READY, last in the queue).** The user asked "should delete bring up a sheet instead of a dropdown?" → **plot: yes** (Signal-style bottom sheet; the popover anchors to the List, not the swiped row). **→ LIME-125 (drafted): every confirmation becomes a bottom sheet.** **Queue: 116e → 125 → 123 → 124 → 122.**
+1e19. **DESIGN-11, the list filters (the user, 2026-10-11): DECIDED F1 = top of the list (scrolls); F2 = A (only what exists: Direct messages, Groups, Requests, Pinned, Muted, By label; no Archive, no Recently deleted); F3 = A (Voice, Video, Incoming, Outgoing); F4 = the outline filter icon with a dot/number badge (the count of active filters).** Plus "less space above the toggles, at least 8 px". **→ LIME-124 (drafted), after 116e and 123.** The user's icon: SF Symbol `line.3.horizontal.decrease` (outline).
 1e18. **The user (2026-10-11, after 116d):**
    - "remove the status symbol from the call section, too busy if you call the same person";
    - "the dock should stay open, and the active state of the icon should still be outlined";
@@ -230,6 +233,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 - The App Store name, e.g. "lime: teacher messaging" (lowercase is allowed).
 
 ### Standing rules (also in the sections below)
+- **Visual changes: no new UI tests (the user, 2026-10-11).** "It doesn't need to always test on changes like adding padding around the entire call screen; those are visual changes I can test each build run." For padding, spacing, sizes, colours, icons, fonts, fades and layout polish: **no new UI or unit tests**; build, 0 warnings, Release clean, fix only existing tests that break, optionally one screenshot in TEND.md. **Keep real tests for behaviour:** data, core, sync, encryption, ops, navigation, filters, anything that can silently break. Briefs should say which kind they are.
 - Tend Phase 0: `git add PLOT.md` only.
 - Tiered iOS tests (full on the 13 mini, changed tests on SE/18 Pro); **~15 min per failing test, ~60 min per brief**.
 - Never suggest sign-out to refresh (it wipes keys).
@@ -4058,8 +4062,107 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-123` in `TEND.md`. **Commit:** `feat: calls in the chat as bubbles (reactions, reply, delete; tap to call back), one shared id per call`, trailer `Brief: LIME-123`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
-### LIME-122 → `tend` (lime-aa) (after 116e and 123; **its visual design WAITS on the user's reference screenshots**; P1–P3 decided)
-**Amendment (the user, 2026-10-11):** "access the profile by clicking the top avatar and name in an individual chat **or the 3-dot menu Profile**"; "Profile also needs to update and look like the examples I share from Kakao, Telegram, iMessage, Signal and WhatsApp." → add a **"Profile"** item to the DM chat's ⋯ menu (first item) that opens the profile; **before sending, plot adds a "Design" section from the user's reference screenshots** (not received yet).: the profile everywhere (supersedes LIME-116c part B)
+### LIME-124 → `tend` (lime-aa) (after 116e and 123): All | Unread + a filter menu on link; All | Missed + a filter menu on Calls (DESIGN-11)
+**The user (2026-10-11):** "explore (All, Missed, filter icon) and add similar in link (All, Unread, filter icon) using `line.3.horizontal.decrease` from SF Symbols. The filter icon adds context based on the section you're in (direct messages, groups …). Also less space above the toggles, at least 8 px." **Decided:** F1 top of the list, scrolling; F2 only filters that exist today; F3 Voice/Video/Incoming/Outgoing; F4 the outline icon with a dot/number badge.
+
+**Goal:** both list tabs open with one row at the top of the scrolling list: a segmented control (link: **All | Unread**; Calls: **All | Missed**) and, beside it, a round **filter button** (`line.3.horizontal.decrease`, outline) whose menu narrows the list by context; the button shows a small **number badge** with how many filters are on; the gap between the header and this row is **8 pt**.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push. iOS only (all data is already on the phone).
+
+**What plot read:** `MessagesView.swift` (the List, `store.chats`, `RequestsRow`, top margins 8 on iOS 26 / 76 before); `CallsTab.swift` after 116d (the segmented `Picker` as the first List row, about 240 pt); `Models.swift` `Conversation` (`isGroup`, `isPinned`, `isUnread`, `isRequest`, members' `label`); mute lives in `notifications.settings.isMuted(id)`. There is no archive and no recoverable delete (delete hides the chat and wipes its messages), so those filters are out (F2 = A).
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min.
+
+**Phase 1 (read-only):** the first rows of both lists; where the requests list lives; how labels are read for the Messages rows.
+
+**Phase 2:**
+1. **The filter row (both tabs), the first row of the List, scrolling with it:**
+   - the segmented `Picker` (link: All | Unread; Calls: All | Missed), then a **40 pt round glass button** with the outline `line.3.horizontal.decrease` (never filled), centred as a group;
+   - **8 pt** between the bottom of the header and the top of the row at rest (adjust the list's top margin/row padding; check on iOS 26 and iOS 18);
+   - **the badge:** when filters are on, a small badge on the button's top-right shows **the number of active filters** (1, 2, …), in the same lime-green `CountBadge` style as the tab badges; nothing when none are on;
+   - VoiceOver: "Filter, 2 active".
+2. **link's menu** (a `Menu`; checkmarks show what's on; tapping an item toggles it):
+   - **Show:** Direct messages · Groups (one at a time; tapping the active one clears it);
+   - **Pinned** · **Muted** (each on/off);
+   - **By label ▸** a submenu of the private labels in use (one at a time; hidden when there are no labels);
+   - **Requests (N)** (opens the existing Requests list; not a filter, no badge count);
+   - **Clear filters** (when any are on).
+   - **All | Unread:** Unread = `isUnread` chats.
+3. **Calls' menu:** **Voice · Video** (one at a time) and **Incoming · Outgoing** (one at a time), plus Clear filters. Missed (the segment) still applies.
+4. **How filters combine:** everything on applies together (AND), including the segment. Filters last while the app runs (not saved across relaunches).
+5. **Filtered and empty:** "No chats match" / "No calls match" with a **Clear filters** button.
+
+**Verification:**
+- unit tests: the filter logic (each filter, combinations with AND, Unread/Missed with filters, the active count);
+- UI tests: the row is the first list row and scrolls away; the gap below the header is 8 pt (±2) at rest on the 13 mini; the menu items per tab; choosing Groups + Pinned shows only pinned groups and the badge reads 2; Clear filters resets and removes the badge; the filtered empty state;
+- tiered; 0 warnings; Release clean.
+
+**Gate (the user, the phone):** on link, All | Unread with the filter icon at the top, 8 pt below the header, scrolling away; pick Groups and Pinned → only pinned groups, the icon shows "2"; By label shows your labels; on Calls, Video + Incoming works the same; Clear filters resets both.
+
+**Record:** `## LIME-124` in `TEND.md`. **Commit:** `feat(ios): All|Unread and All|Missed with a filter menu and badge on link and Calls`, trailer `Brief: LIME-124`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-116f → `tend` (lime-aa) (NEXT after 116e): status badges back on New Call; the call screen's controls no longer cut off on the right
+**The user (2026-10-11):** "the status icon can be in the new call as that makes sense" and "slight update to the video and voice call screen: the icons get cut off on the right" (a 13 mini screenshot: the Camera, Mute, audio-route and red End buttons hang partly off the right edge; the name pill and the "may be off or lime closed" hint sit slightly left).
+
+**Goal:** New Call rows show status badges again (Calls history and Calls search stay plain); on every phone and both call types, all call-screen controls sit fully on screen with a 16 pt margin.
+
+**What plot read:** `ios/Lime/Features/Calls/CallView.swift`:
+- `body`: a `GeometryReader` → `ZStack` with `background(call)`, the header `VStack`, and `controls(call)`;
+- `background(call)`: **`AvatarView(person:, size: 400).blur(radius: 60)…ignoresSafeArea()`**. A fixed 400 pt view is wider than a 375 pt screen (13 mini, SE), so **the `ZStack` grows to 400 pt and everything aligned to its edges shifts**: the controls column (`.frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 16)`, ~line 222) ends about 12 pt past the right edge, and the leading header about 12 pt past the left. **This is plot's hypothesis; confirm it in Phase 1.**
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~30 min.
+
+**Phase 1 (read-only):** on the 13 mini simulator (375 pt), log or inspect the call screen's `ZStack` width during an outgoing voice call and a video call; confirm whether the 400 pt background is the cause, or find the real one. Check the voice-call controls branch too (after line 235).
+
+**Phase 2:**
+1. **The call screen fits the screen:** constrain the blurred background to the screen (e.g. `.frame(width: geo.size.width, height: geo.size.height).clipped()` around it, or size it from `geo.size` instead of a fixed 400), and pin the `ZStack` to `geo.size`, so no layer can widen the layout. Keep the look (the blurred avatar filling the screen; the 160 pt avatar in the middle).
+2. **Controls:** the right-hand column (video) and the voice-call controls keep a **16 pt margin from the screen edge**, respecting the safe area (landscape/notch included). The flip button keeps 16 pt on the left.
+3. **New Call:** `TeacherRow` in New Call shows the status badge again (`showsStatus: true`); Calls history and Calls search stay without.
+
+**Verification (visual-only change; the user checks it on the phone, see the standing rule "Visual changes: no new UI tests"):**
+- **no new UI tests.** Build; 0 warnings; Release clean;
+- update only the existing 116e test that now fails (New Call rows have a badge again);
+- run the existing call and Calls UI tests once on the 13 mini to make sure nothing broke; one simulator screenshot of a video call on the SE in TEND.md is enough.
+
+**Gate (the user, the phone):** start a video call and a voice call on the 13 mini: every button is fully visible with a margin on the right, and the name sits normally on the left; New Call shows status badges.
+
+**Record:** `## LIME-116f` in `TEND.md`. **Commit:** `fix(ios): call screen fits narrow phones (background no longer widens the layout); status badges back on New Call`, trailer `Brief: LIME-116f`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-125 → `tend` (lime-aa) (after 116f): every confirmation is a bottom sheet (Signal-style), never a popover
+**The user (2026-10-11, a screenshot):** swipe → Delete on a Messages row shows "Delete chat?" as a **popover pointing at the wrong row** ("the dropdown needs to be aligned with the selected row; should it bring up a sheet instead?"). Reference: Signal's Delete Chat (a bottom sheet: title, one line, a red Delete, Cancel). **Plot: yes, a sheet.**
+
+**Goal:** every confirmation in the app appears as one consistent bottom sheet, never a popover that can point at the wrong place.
+
+**What plot read:** `.confirmationDialog` is used in `MessagesView.swift` (3), `GroupScreens.swift` (4), `ChatView.swift` (2), `ChatComposer.swift` (2), `AccountScreens.swift` (2), `SettingsView`, `StorageScreens`, `MessageActions`, `AboutView`, `InviteScreens` (1 each). On iOS 26 a confirmation dialog attached to the List is shown as a popover anchored to the List, not to the swiped row.
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~45 min.
+
+**Phase 1 (read-only):** list every `confirmationDialog`: what it asks, how many choices, where it's attached. Report the list in TEND.md.
+
+**Phase 2:**
+1. **One component, `ConfirmSheet`:** a bottom sheet sized to its content (`presentationDetents([.height(…)])`, the glass/canvas background used by other sheets, a drag indicator), with a bold title, an optional one-line explanation, then full-width capsule buttons: the action(s) (destructive ones in the danger red), then **Cancel**. Large enough targets (≥ 50 pt); VoiceOver reads the title first.
+2. **Replace every two-or-three-choice confirmation** with it: Delete chat; Leave group; Delete group for everyone; Clear messages; Clear call history; Sign out; Remove media; Mute durations (a list of choices: the same sheet with one button per duration); and the rest from the Phase 1 list. **Keep the wording** of each (e.g. "This removes it from this phone. The other person keeps their copy.").
+3. **Menus stay menus:** the ⋯ menus, the long-press message menu and the upcoming filter menu are not confirmations; leave them.
+4. If any dialog needs the popover form (an iPad-specific reason), list it and ask.
+
+**Verification:** UI tests: swipe Delete on a Messages row → the sheet appears at the bottom with Delete and Cancel; Cancel keeps the chat; Delete removes it; the same for Leave group and Clear call history; the existing tests that tapped dialog buttons still pass (update identifiers once, in `ConfirmSheet`). Tiered; 0 warnings; Release clean.
+
+**Gate (the user, the phone):** swipe → Delete on a chat → a sheet from the bottom (like Signal's) with the red Delete and Cancel; the same look for Leave group, Mute, and Clear call history.
+
+**Record:** `## LIME-125` in `TEND.md`. **Commit:** `fix(ios): confirmations are bottom sheets (ConfirmSheet), not popovers`, trailer `Brief: LIME-125`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-122 → `tend` (lime-aa) (LAST in the queue: after 116e, 125, 123, 124; P1–P3 decided; Design below)
+**Amendment (the user, 2026-10-11):** "access the profile by clicking the top avatar and name in an individual chat **or the 3-dot menu Profile**"; "Profile also needs to update and look like the examples I share from Kakao, Telegram, iMessage, Signal and WhatsApp." → add a **"Profile"** item to the DM chat's ⋯ menu (first item) that opens the profile.
+
+**Design (from the user's references, 2026-10-11: iMessage's iOS 26 contact, WhatsApp's Contact info, KakaoTalk's chat-room profile). This section overrides the layout in item 2 below where they differ.**
+- **Header (iMessage/Kakao):** a glass back button on the left; on the right, glass circle buttons: **Share** (P3), and on your own profile a **gear** (Settings). No title text in the bar (iMessage), the page scrolls under the glass with the soft edge.
+- **Hero (iMessage):** a **large centred avatar (about 120 pt)** with the status badge, the **name in a large bold title** (about 34 pt, like iMessage's "Jean"), then "@username · School" in secondary text and the status line under it.
+- **Actions (WhatsApp's cards, lime's colours):** three equal rounded cards in a row: **Message · Voice · Video** (your own profile: **Change status · Settings · Sign out**, Sign out in red). Icon above the label, icons in the text colour (**no green**: the accent is for the primary action only; WhatsApp's green is not ours).
+- **Tab strip (iMessage's "Info | Backgrounds | Photos | Links"):** a horizontally scrolling glass segmented strip under the actions: **Info · Media · Files · Links · Calls**. It replaces the separate "Shared" segmented control and the Calls card in item 2; tabs with nothing in them are hidden (Info always shows).
+  - **Info:** the About card; the details card (username, tap to copy; school; my label → the label editor; "Verified in person"); then **WhatsApp-style grouped rows with chevrons:** **Notifications** (mute/unmute and durations for this chat) · **Storage** (this chat's media size → the existing per-chat storage screen) · **Safety number** (the existing screen). Your own profile's Info tab shows your About and details only (with Edit profile → the existing Settings editor).
+  - **Media:** a 3-column grid (tap → the existing viewer); **Files:** rows (name, size, date); **Links:** rows (title or URL, date); **Calls:** one-line rows (see item 2's call line rules); all **in context** (item 3).
+- **Group details (Kakao's room profile):** add a card of rows near the top: **Photos & videos · Files · Links**, each with a count and a chevron, opening the same Media/Files/Links tabs for the **whole group**; the member list keeps its Add/Invite row (as Kakao's "Participants · Invite").
+- **Not now:** Kakao's Schedule/Boards/Announcement/Vote/Chatbot, WhatsApp's Starred/Chat theme/Save to Photos, iMessage's Backgrounds and Find My (no such features in lime yet; candidates for later briefs).: the profile everywhere (supersedes LIME-116c part B)
 **The user (2026-10-11):** "the person details call dates need to be smaller and responsive, and there needs to be a share button in the top header, and anytime someone clicks on someone's avatar including your own this should open. it should have all the content you send with a particular sender or a group, basically be in context of where the user's desire."
 
 **Goal:** one profile screen opens from any avatar (and a DM chat's header), shows the person's public profile and status, Message/Voice/Video, a Share button in the header, and the **media, files and links shared in the context it was opened from**. Groups get the same Shared section in Group details.
