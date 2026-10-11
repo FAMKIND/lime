@@ -109,6 +109,19 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
      - downloaded > 0 with pending `no_session` or `decrypt_failed` → (b).
    - **Next:** the user installs, places calls both ways plus a Jean → Shem text, then says "logs" to plot. Phase 2 (fix, gather cap, TURN retry, glare, ringback) waits for the cause.
    - (Original entry:) **LIME-111-fix3 (drafted 2026-10-10 from the second logs):** after one good call (18:08), nothing from Jean reached Shem; Shem → Jean kept working. See "### LIME-111-fix3". LIME-116 waits.
+1e9. **LIME-118 LANDED as `90df45b` and PASSED the user's gate (2026-10-11, about 00:50: "working").**
+   - The phone first ran an old build (it had no stats lines); after a reinstall it worked.
+   - **iPad stats (`/tmp/lime-calllogs8`):**
+     - host→host, RTT mostly 5–30 ms, 0 packets lost, concealment flat after the start;
+     - **the audio jitter buffer grew from about 150 ms to about 400 ms** after the video stalled (the iPad's camera stopped while lime was in a Stage Manager window, then the incoming video went to 0 fps). That's the likely "sound delay", **for a later audio-tuning brief.**
+   - **Next: LIME-121b** (no icons yet in `design/icons/`; SF Symbols placeholders).
+   - **The black video cause is NOT proven** (no device); the fix is belt and braces (attach after every remote description, a source/renderer join, a "remote video first frame" log, the avatar until the first frame).
+   - **The double activation cause was FOUND:** lime's own Accept never told CallKit. Fixed (Accept sends `CXAnswerCallAction`; a late `didActivate` doesn't reconfigure).
+   - **Gaps against the brief → 118-fix after the gate:**
+     - voice → video upgrade (needs a mid-call renegotiation);
+     - the remote muted/camera-off indicator (needs a small op);
+     - landscape and the SE not exercised.
+1e8. **The dock becomes a real dock (the user, 2026-10-10): DESIGN-10. DECIDED: T1 = B (Apple's native tab bar), T2 = A (link · call · jam), T3 = A (a jam coming-soon page). → LIME-121b, ready after 118.** **The proposed order: 118 → 121b → 116 → 119 → 120 → 112b → 117.** 116's step 1 ("a section, not a sheet") is done by 121b, and 116's header must match 121b's (New Call top right).
 1e7. **1:1 CALLS PASS THE USER'S GATE (2026-10-10, about 22:55–23:01, `cc64c24`): "all cases I tried worked"**: voice, video, both directions, Wi-Fi off.
    - **CallKit now works on both phones** (`callkit audio activated` on nearly every call), thanks to `voip` plus one provider.
    - **The user's note:** "a minor sound delay and glitchy sound here and there, but overall good."
@@ -2862,6 +2875,166 @@ If anything contradicts this brief, stop and ask the user.
 **Record:** `## LIME-111-fix3b` in `TEND.md`.
 
 **Commit:** `fix: an incoming call no longer jams later call ops (CallKit report outside the drain, a drain watchdog); 1 s gather cap; TURN retry; glare`, trailer `Brief: LIME-111-fix3b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
+### NOTE for later (the user, 2026-10-10): a simpler voice-message recorder (unbriefed)
+**The reference:** a white rounded card with:
+- the state text **"Listening…"** (top left);
+- a row of a **simple dotted/bar sound wave** under it;
+- two square buttons on the right: a grey **✕** (cancel) and a blue **✓** (done).
+
+**The user:** "I like the simplicity of this audio component. Could we simplify the drag-swipe interactivity and make it more seamless like this? The words tell you what's happening (listening… recording… etc.), the clear CTA, and the sound wave are nice as well."
+
+**Today** (`ios/Lime/Features/Chat/ChatComposer.swift:143`): the mic is **hold to record, release to send, slide left to cancel, slide up to lock and go hands-free** (`RecordingBar`, `lockedRow`, `dragX`). It's the WhatsApp/Telegram gesture model.
+
+**Plot's first thoughts, for the brief when it's scheduled:**
+- **Tap the mic** (no hold) → the composer turns into this card;
+- **state words:** "Listening…" (the mic is warming up or no speech yet) → **"Recording 0:07"** → "Paused", **"Ready to send"**;
+- **a live bar wave** from the input level;
+- **✕ = discard** (a confirm if over about 5 s), **✓ = send** (lime's green, not blue: green is the primary action);
+- optional: tap the wave to pause/resume, and play back before sending;
+- **drop the slide gestures** (keep hold-to-record as a hidden power-user shortcut? **The user decides**);
+- VoiceOver-friendly: real buttons, not gestures;
+- **the same card can serve dictation later.**
+
+**Where it goes:** a QA/feature brief after the calls work (it isn't in the calls queue); fold it into the next composer brief.
+
+### DESIGN-10 (plot, 2026-10-10): the dock works like a dock
+**The user:** "Now that calls work and we're building the UX and UI for the Call section, I think our dock needs to function like a dock."
+
+**Today** (surveyed `ios/Lime/Features/Dock/DockBar.swift`, `App/RootView.swift`, `Messages/MessagesView.swift:106`):
+- the dock is drawn **inside `MessagesView`** (it's part of Messages, not the app);
+- "link" is **always** drawn selected;
+- "call" opens a **sheet** (`CallHistoryView`); "jam" shows a "coming soon" banner;
+- one `NavigationStack` (`store.path`) for everything;
+- the items are link · jam · call, with lowercase labels; the link badge is the unread chats;
+- the deployment target is iOS 17.
+
+**What "like a dock" means (decided by plot, standard tab-bar behaviour):**
+- each item **switches the section in place** and shows as selected;
+- **each section keeps its own navigation stack and scroll position** when you switch away and back;
+- **tapping the selected item again** pops to its root, or scrolls to the top if already at the root;
+- **badges per section:** link = unread chats, call = missed calls not yet seen (with 116);
+- the dock shows on **each section's root** and hides when you push into a chat or details (as today);
+- sheets only for creating things (New Message, New Call), per DESIGN-08;
+- a deep link or notification opens the right section;
+- accessibility: the selected trait and the "tab, 2 of 3" semantics.
+
+**Implementation (plot):** a `TabView(selection:)` holding one `NavigationStack` per section **with the system tab bar hidden**, and lime's `DockBar` overlaid as the only visible switcher. This gives native state preservation and works the same on iOS 17–26. **If T1 = B, use the system tab bar instead.**
+
+**DECIDED (the user, 2026-10-10): T1 = B, T2 = A, T3 = A.** So the implementation is the **native `TabView` tab bar**, not the overlaid dock; LIME-121 was revised to 121b before it was sent.
+
+**(History) Open with the user:**
+- **T1. The look:**
+  - **A.** Keep **lime's own floating glass dock** (as now), behaving like a tab bar. *Pro:* lime's look, identical on iOS 17–26. *Con:* lime keeps maintaining it.
+  - **B.** **Apple's native tab bar:** Liquid Glass on iOS 26 (it shrinks while scrolling, like the Phone app), a plain bar on iOS 17–25. *Pro:* fully native, with free system behaviours. *Con:* it looks different on older iPhones and loses lime's dock styling.
+  - **Lean: A.**
+- **T2. The order** (today link · jam · call):
+  - **A.** link · call · jam (the two working sections first; Jam last until it's live);
+  - **B.** keep link · jam · call.
+  - **Lean: A.**
+- **T3. Jam before the Jam MVP (110):**
+  - **A.** A Jam **section** with a calm "coming soon" page (what Jam will be, plus "Notify me");
+  - **B.** Hide the Jam item until 110 lands.
+  - **Lean: A.** A dock item should always go somewhere; it replaces the banner.
+
+### LIME-121b → `tend` (lime-aa) (after LIME-118): the dock becomes Apple's native tab bar (link · call · jam)
+**Revises LIME-121 (never sent) after the user's T1 = B: Apple's native tab bar, not lime's overlaid dock.** T2 = A (the order link · call · jam); T3 = A (a jam coming-soon page).
+
+**Goal:** the app's bottom bar is the system tab bar with three sections:
+- **link** (Messages), **call** (Calls), **jam**;
+- each section keeps its own navigation and scroll;
+- per-section badges;
+- re-tap goes back to the root or the top;
+- **Liquid Glass on iOS 26** (it shrinks while scrolling, like the Phone app), the standard bar on iOS 17–25.
+
+**Capabilities assumed:** edit files, run commands, simulators (including an iOS 17/18 runtime, if installed, for the older bar), commit and push.
+
+**What plot read:**
+- `DockBar.swift` (a custom glass dock drawn inside `MessagesView`; "link" always selected; "call" opens a `CallHistoryView` sheet; "jam" shows a banner);
+- `RootView.swift` (`SignedInView`: one `NavigationStack(path: $store.path)`);
+- `MessagesView.swift:106`;
+- the deployment target iOS 17.0;
+- LIME-107-qa2 (the landscape "+" beside the dock).
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: survey (read-only)**
+- every user of `store.path` (notification taps, search, the incoming banner, deep links);
+- where the **"+" (New Message)** lives relative to the dock (portrait and landscape);
+- the screens whose bottom would collide with a tab bar (the chat composer, a thread, Replies, group details);
+- what LIME-118 changed in `CallView.swift`.
+
+If the survey turns up related issues, raise them before editing.
+
+---
+
+**Phase 2: the change**
+1. **The shell:**
+   - `SignedInView` becomes `TabView(selection: $store.section)` with `enum Section { link, call, jam }`, using the iOS 18+ `Tab` API where available (fall back to `.tabItem` on iOS 17);
+   - **each tab owns its own `NavigationStack` and path** (`store.path` becomes the link path; add `callPath`).
+2. **The tabs** (the order **link · call · jam**):
+   - **lowercase labels** (the brand rule);
+   - **the icons are lime's own** (the user, 2026-10-10: "adopt the Apple glass bar but use our lime icons"):
+     - **if the user has supplied SVGs** (outline + filled per tab, e.g. in `design/icons/`), convert each to a **custom SF Symbol** (`.symbolset` in `Assets.xcassets`, template rendering; filled = selected) so they tint, scale with Dynamic Type, and sit right in the glass bar;
+     - **if the files aren't there, use the SF Symbols `bubble.left` / `phone` / `book` as placeholders and say so in the report.** **Never draw icons yourself.**
+     - Today the repo has only the logo, `Logomark-outline.svg` (untracked) and the lime silhouettes in `public/assets/`; no tab icons.
+     - **Update (2026-10-10): the user is drawing the icons themselves in Penpot** (dew was stopped). Lime's ask: 6 SVGs, `link|call|jam` × `outline|filled`, single colour, square canvas, legible at about 25 pt, delivered to `design/icons/` in this repo.
+   - **the tint is neutral** (`Theme.text`; green is only for the primary action);
+   - badges via `.badge(…)`: link = unread chats (as now); call = missed incoming calls since the call tab was last opened (from the call log, until 116 moves it into core).
+3. **iOS 26:** `.tabBarMinimizeBehavior(.onScrollDown)` on the Messages and Calls lists. On iOS 17–25 the standard bar; nothing custom.
+4. **Re-tap:** a selection binding that detects tapping the current tab. If pushed, pop to the root; if at the root, scroll that list to the top.
+5. **The bar is hidden where it would collide:** in a chat, a thread/Replies, group details, and the call details (`.toolbar(.hidden, for: .tabBar)`), so the composer keeps the bottom as today.
+6. **Remove the custom dock:**
+   - delete `DockBar` and its use in `MessagesView`, and the `showCalls` sheet;
+   - **"+" (New Message) moves into the Messages header toolbar (top right)**, matching Calls' New Call button (116); this replaces the landscape "+"-beside-the-dock placement;
+   - the badge component stays for list rows.
+7. **Calls is a tab:** `CallHistoryView` becomes the call tab's root, **unchanged in look** (116 redesigns it); the Debug diagnostics share stays.
+8. **Jam is a tab** (T3 = A): a calm page:
+   - the title "jam";
+   - "A place for teachers to share what works: posts, articles and recordings, by teachers, for teachers. Coming soon.";
+   - a **"Notify me"** toggle (local);
+   - **remove the "coming soon" banner path for jam.**
+9. **Routing:**
+   - a chat notification, the incoming message banner, or opening a chat from search selects **link** and pushes;
+   - a missed-call notification (if any) selects **call**;
+   - the in-call full-screen cover is unchanged;
+   - the app starts on **link**.
+
+---
+
+**Verification**
+- **unit tests:** the section switch keeps the paths; re-tap pops, then scrolls; the badge counts;
+- **UI tests:**
+  - the tab order and labels;
+  - Calls is in place (no sheet);
+  - push a chat → switch to call → back keeps the chat;
+  - re-tap link pops to Messages;
+  - the tab bar is hidden in a chat (the composer is visible and not overlapped);
+  - "+" in the Messages header opens New Message;
+  - jam shows the page and the toggle;
+  - a notification tap from call opens the chat in link;
+- the full suite on the 13 mini; changed tests on SE and 18 Pro (iOS 26 look); **one run on an iOS 17 or 18 simulator if a runtime is installed** (otherwise say so); 0 warnings; Release has no Bluetooth.
+
+**Gate (the user):**
+1. The bottom bar is Apple's glass tab bar (link · call · jam), and it shrinks when scrolling Messages.
+2. call opens Calls in place.
+3. Open a chat, switch to call and back: the chat is still open.
+4. Re-tap link: back to Messages, then scrolls to the top.
+5. "+" is top right on Messages.
+6. jam shows its page.
+7. The badges are right.
+
+---
+
+**Record:** `## LIME-121b` in `TEND.md`.
+
+**Commit:** `feat(ios): native tab bar (link, call, jam) with per-tab navigation, re-tap to root, badges; New Message in the header`, trailer `Brief: LIME-121b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 **If unsure:** if a decision isn't made here, stop and ask the user.
 
