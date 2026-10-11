@@ -98,12 +98,119 @@ impl LimeStore {
     }
 }
 
+/// One call on this phone, as the Calls tab lists it (LIME-116b).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CallHistoryRecord {
+    pub id: String,
+    pub peer: String,
+    pub peer_name: String,
+    pub video: bool,
+    pub outgoing: bool,
+    pub at_ms: i64,
+    pub duration_ms: i64,
+    /// `completed`, `missed`, `declined`, `noAnswer`, `busy` or `failed`.
+    pub outcome: String,
+}
+
+/// The most calls kept.
+const HISTORY_KEEP: i64 = 500;
+
+#[uniffi::export]
+impl LimeStore {
+    /// Adds a call (or replaces the one with that id). A missed incoming call starts unseen.
+    pub fn call_history_add(&self, record: CallHistoryRecord) -> Result<(), StoreError> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO call_history (id, peer, peer_name, video, outgoing, at_ms, duration_ms, outcome, seen)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, COALESCE((SELECT seen FROM call_history WHERE id = ?1), 0))",
+            params![record.id, record.peer, record.peer_name, record.video, record.outgoing, record.at_ms, record.duration_ms, record.outcome],
+        )
+        .map_err(db_err)?;
+        conn.execute("DELETE FROM call_history WHERE id NOT IN (SELECT id FROM call_history ORDER BY at_ms DESC LIMIT ?1)", params![HISTORY_KEEP]).map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Every call, newest first.
+    pub fn call_history_list(&self) -> Result<Vec<CallHistoryRecord>, StoreError> {
+        let conn = self.lock();
+        let mut statement = conn
+            .prepare("SELECT id, peer, peer_name, video, outgoing, at_ms, duration_ms, outcome FROM call_history ORDER BY at_ms DESC, id")
+            .map_err(db_err)?;
+        let rows = statement
+            .query_map([], |r| {
+                Ok(CallHistoryRecord { id: r.get(0)?, peer: r.get(1)?, peer_name: r.get(2)?, video: r.get(3)?, outgoing: r.get(4)?, at_ms: r.get(5)?, duration_ms: r.get(6)?, outcome: r.get(7)? })
+            })
+            .map_err(db_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db_err)?;
+        Ok(rows)
+    }
+
+    /// Removes these calls.
+    pub fn call_history_delete(&self, ids: Vec<String>) -> Result<(), StoreError> {
+        let conn = self.lock();
+        for id in ids {
+            conn.execute("DELETE FROM call_history WHERE id = ?1", params![id]).map_err(db_err)?;
+        }
+        Ok(())
+    }
+
+    /// Removes every call (Settings → Privacy → Clear call history).
+    pub fn call_history_clear(&self) -> Result<(), StoreError> {
+        self.lock().execute("DELETE FROM call_history", []).map_err(db_err)?;
+        Ok(())
+    }
+
+    /// The call tab was opened: the missed calls so far are seen.
+    pub fn call_history_mark_missed_seen(&self) -> Result<(), StoreError> {
+        self.lock().execute("UPDATE call_history SET seen = 1 WHERE seen = 0", []).map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Missed incoming calls not yet seen (the call tab's badge).
+    pub fn call_history_missed_unseen_count(&self) -> Result<u32, StoreError> {
+        let count: i64 = self
+            .lock()
+            .query_row("SELECT COUNT(*) FROM call_history WHERE outgoing = 0 AND outcome = 'missed' AND seen = 0", [], |r| r.get(0))
+            .map_err(db_err)?;
+        Ok(count as u32)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
     const SDP: &str = "v=0\r\na=fingerprint:sha-256 ab:cd:ef\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
+
+    fn record(id: &str, at: i64, outgoing: bool, outcome: &str) -> CallHistoryRecord {
+        CallHistoryRecord { id: id.into(), peer: "jean".into(), peer_name: "Jean".into(), video: false, outgoing, at_ms: at, duration_ms: 0, outcome: outcome.into() }
+    }
+
+    #[test]
+    fn call_history_adds_lists_newest_first_deletes_clears_and_counts_unseen_missed() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LimeStore::open(dir.path().join("calls.db").to_string_lossy().into_owned(), vec![7u8; 32]).unwrap();
+        assert!(store.call_history_list().unwrap().is_empty());
+        store.call_history_add(record("a", 100, false, "missed")).unwrap();
+        store.call_history_add(record("b", 300, true, "completed")).unwrap();
+        store.call_history_add(record("c", 200, false, "missed")).unwrap();
+        store.call_history_add(record("d", 250, false, "completed")).unwrap();
+        assert_eq!(store.call_history_list().unwrap().iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["b", "d", "c", "a"]);
+        assert_eq!(store.call_history_missed_unseen_count().unwrap(), 2, "two missed incoming calls; outgoing and answered ones do not count");
+        store.call_history_mark_missed_seen().unwrap();
+        assert_eq!(store.call_history_missed_unseen_count().unwrap(), 0);
+        store.call_history_add(record("e", 400, false, "missed")).unwrap();
+        assert_eq!(store.call_history_missed_unseen_count().unwrap(), 1, "a new missed call is unseen again");
+        // replacing a call keeps its seen state
+        store.call_history_add(record("a", 100, false, "missed")).unwrap();
+        assert_eq!(store.call_history_missed_unseen_count().unwrap(), 1);
+        store.call_history_delete(vec!["b".into(), "nope".into()]).unwrap();
+        assert_eq!(store.call_history_list().unwrap().len(), 4);
+        store.call_history_clear().unwrap();
+        assert!(store.call_history_list().unwrap().is_empty());
+    }
 
     #[test]
     fn ringing_needs_only_a_call_id() {

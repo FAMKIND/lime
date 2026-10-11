@@ -397,6 +397,19 @@ const MIGRATIONS: &[&str] = &[
          payload TEXT NOT NULL,
          at      INTEGER NOT NULL
      );",
+    // 25: the calls on this phone (LIME-116b), newest first in the app; `seen` is for the call tab's missed-call badge.
+    "CREATE TABLE call_history (
+         id        TEXT PRIMARY KEY,
+         peer      TEXT NOT NULL,
+         peer_name TEXT NOT NULL,
+         video     INTEGER NOT NULL,
+         outgoing  INTEGER NOT NULL,
+         at_ms     INTEGER NOT NULL,
+         duration_ms INTEGER NOT NULL,
+         outcome   TEXT NOT NULL,
+         seen      INTEGER NOT NULL DEFAULT 0
+     );
+     CREATE INDEX call_history_by_time ON call_history (at_ms);",
 ];
 
 /// The schema version this build writes.

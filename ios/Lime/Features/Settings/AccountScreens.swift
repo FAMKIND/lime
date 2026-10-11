@@ -138,6 +138,7 @@ struct ChangePasswordScreen: View {
 struct PrivacyScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var blockedCount: Int?
+    @State private var confirmClearCalls = false
     @AppStorage(LinkPreviewSetting.key) private var linkPreviews = true
 
     var body: some View {
@@ -154,10 +155,24 @@ struct PrivacyScreen: View {
                 .padding(.horizontal, 18).frame(minHeight: 58)
                 .accessibilityIdentifier("privacy-link-previews")
             }
+            SettingsCard {
+                Button { confirmClearCalls = true } label: {
+                    SettingsRowLabel(symbol: "phone.badge.minus", title: "Clear call history", showsDivider: false)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("privacy-clear-calls")
+            }
             SettingsFootnote(text: "Creating a preview visits the site from your phone. The people you send it to never visit it: the preview travels inside the encrypted message.")
             SettingsFootnote(text: "Messages are end-to-end encrypted: only you and the person you message can read them.")
         }
         .task { blockedCount = await store.blockedPeople().count }
+        .confirmationDialog("Clear call history?", isPresented: $confirmClearCalls, titleVisibility: .visible) {
+            Button("Clear call history", role: .destructive) { CallLog.shared.clear() }
+                .accessibilityIdentifier("privacy-clear-calls-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the list of calls on this iPhone. It does not change your messages.")
+        }
     }
 }
 

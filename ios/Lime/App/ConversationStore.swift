@@ -38,7 +38,10 @@ final class ConversationStore {
     /// Shown on Messages after the previous data could not be opened and a fresh store was made.
     private(set) var showsRecoveryNotice = false
 
-    private(set) var core: LimeStore?
+    private(set) var core: LimeStore? {
+        // The call history lives in the encrypted store: follow it as it opens and closes.
+        didSet { CallLog.shared.attach(core.map { CoreCallHistory($0) }) }
+    }
     private var bannerTask: Task<Void, Never>?
 
     /// The screens pushed on Messages (chats by id, the Requests list).
@@ -49,16 +52,15 @@ final class ConversationStore {
     /// The call tab's own navigation path, and its name filter (the header's search).
     var callPath = NavigationPath()
     var callSearching = false
+    /// The call tab's All | Missed pill.
+    var callMissedOnly = false
     var callQuery = ""
     /// The jam tab's search screen is showing.
     var jamSearching = false
     /// Counts re-taps of a tab (a tap on the tab already showing): the section pops to its root, then scrolls to the top.
     var retap: [Section: Int] = [:]
     /// Calls missed since the call tab was last opened (the call tab's badge).
-    var missedCalls: Int {
-        let seen = UserDefaults.standard.object(forKey: "lime.callTabSeen") as? Date ?? .distantPast
-        return CallLog.shared.records.filter { !$0.outgoing && $0.outcome == .missed && $0.date > seen }.count
-    }
+    var missedCalls: Int { CallLog.shared.missedUnseen }
 
     /// Selecting a tab. Choosing the one already showing pops it to its root; at the root it scrolls to the top.
     func select(_ new: Section) {
@@ -71,7 +73,7 @@ final class ConversationStore {
             return
         }
         section = new
-        if new == .call { UserDefaults.standard.set(Date(), forKey: "lime.callTabSeen") }
+        if new == .call { CallLog.shared.markMissedSeen() }
     }
     private(set) var link: BackendLink?
     /// How the signed-in person is shown (set by the account session): core calls them "me".

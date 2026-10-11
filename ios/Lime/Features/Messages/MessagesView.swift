@@ -25,7 +25,7 @@ struct MessagesView: View {
                 legacyBody
             }
         }
-        .overlay { newMessageOverlay }
+        .overlay { FloatingPlus(label: "New message", id: "new-message-button") { showNewMessage = true } }
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showNewMessage) { NewMessageSheet() }
         .sheet(isPresented: $showSettings) { SettingsView() }
@@ -93,43 +93,6 @@ struct MessagesView: View {
         .overlay(alignment: .top) { TopFade() }
         .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }, onSearch: { store.path.append(MessagesRoute.search) }, onSettings: { showStatus = true }) }
         .toolbar(.hidden, for: .navigationBar)
-    }
-
-    // MARK: The floating "+" (New message)
-
-    /// A "+" at the bottom right, under the thumb. On iOS 26 with room beside the glass tab bar (an 18 Pro; the bar's platter is about
-    /// 280 pt wide) it sits beside the bar, centred on it; otherwise (a 13 mini or SE, a standard bar, landscape) it floats just above
-    /// the bar at the right. It never covers the bar. Hidden with the bar when a chat is open (this view is then behind it).
-    private var newMessageOverlay: some View {
-        GeometryReader { geo in
-            let size: CGFloat = 52
-            if #available(iOS 26, *), geo.size.width >= 390, verticalSizeClass != .compact {
-                // Beside the platter: its centre line is 52 pt above the screen's bottom edge (measured on the 13 mini and 18 Pro).
-                plusButton(size: 48)
-                    .position(x: geo.size.width - 8 - 24, y: geo.size.height + geo.safeAreaInsets.bottom - 52)
-            } else {
-                plusButton(size: size)
-                    .position(x: geo.size.width - 16 - size / 2, y: geo.size.height - 14 - size / 2)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func plusButton(size: CGFloat) -> some View {
-        let glyph = Image(systemName: "plus").font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(Theme.accentInk)
-        Button { showNewMessage = true } label: {
-            if #available(iOS 26, *) {
-                glyph.frame(width: size, height: size)
-                    .glassEffect(.regular.tint(Theme.accent).interactive(), in: Circle())
-            } else {
-                glyph.frame(width: size, height: size)
-                    .background(Theme.accent, in: Circle())
-                    .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("New message")
-        .accessibilityIdentifier("new-message-button")
     }
 
     // MARK: Shared

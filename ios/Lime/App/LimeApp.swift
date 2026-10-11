@@ -23,6 +23,7 @@ struct LimeApp: App {
         #if DEBUG
         NearbyTest.resumeIfNeeded() // iOS may relaunch the app for Bluetooth (LIME-103 field test)
         #endif
+        TabBadgeStyle.install()
         _store = State(initialValue: store)
         _notifications = State(initialValue: coordinator)
         _session = State(initialValue: AccountSession(auth: auth, config: config, store: store))
@@ -40,6 +41,13 @@ struct LimeApp: App {
                 // LIME-111-fix4: `-lime-callkit-selftest` runs the CallKit self-test at launch (log in the call diagnostics).
                 .task {
                     let arguments = ProcessInfo.processInfo.arguments
+                    if arguments.contains("-lime-skip-sign-in") {
+                        // The call history lives in the (persistent) test store: start every UI-test launch from a known list.
+                        var waited = 0
+                        while !store.isLoaded && waited < 100 { try? await Task.sleep(for: .milliseconds(100)); waited += 1 }
+                        CallLog.shared.clear()
+                        if arguments.contains("-lime-demo-calls") { CallLog.shared.seedDemo() }
+                    }
                     if let at = arguments.firstIndex(of: "-lime-demo-call"), at + 1 < arguments.count {
                         try? await Task.sleep(for: .seconds(1))
                         store.calls.demo(video: arguments[at + 1] == "video")
