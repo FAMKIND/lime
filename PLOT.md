@@ -109,6 +109,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
      - downloaded > 0 with pending `no_session` or `decrypt_failed` → (b).
    - **Next:** the user installs, places calls both ways plus a Jean → Shem text, then says "logs" to plot. Phase 2 (fix, gather cap, TURN retry, glare, ringback) waits for the cause.
    - (Original entry:) **LIME-111-fix3 (drafted 2026-10-10 from the second logs):** after one good call (18:08), nothing from Jean reached Shem; Shem → Jean kept working. See "### LIME-111-fix3". LIME-116 waits.
+1e5. **The calls queue (the user, 2026-10-10): fix4 → 118 → 119 → 120 → 116 → 112b → 117.** 119 and 120 come from "Learnings: Signal / Telegram / Element" (below, before DESIGN-09).
 1e4. **fix3b VERIFIED on two phones (2026-10-10, 20:55–20:58):** 4 alternating calls connected; every op was received; no "handler stuck".
    - **But there is NO AUDIO, and CallKit is dead on both phones:** 0 "callkit answer/end/audio activated" and 0 "incoming reported" lines (plot's grep of `/tmp/lime-calllogs6`).
    - The audio waits for `didActivate`, which never comes, so there is no sound.
@@ -2846,6 +2847,147 @@ If anything contradicts this brief, stop and ask the user.
 **Record:** `## LIME-111-fix3b` in `TEND.md`.
 
 **Commit:** `fix: an incoming call no longer jams later call ops (CallKit report outside the drain, a drain watchdog); 1 s gather cap; TURN retry; glare`, trailer `Brief: LIME-111-fix3b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
+### Learnings: Signal / Telegram / Element for calls (plot, 2026-10-10; the user said "yes" to writing 119 + 120)
+From the published designs and source as plot knows them; not re-verified on the web.
+1. **Signal works without CallKit** (it is banned in China), so CallKit is optional. **→ LIME-111-fix4's fallback.**
+2. **Signal sends in one request:**
+   - it caches each contact's device list and sends in one request;
+   - the server answers **409 (missing/extra devices) / 410 (stale)**, and the client fixes the list and retries;
+   - key-change detection stays, because a new device in the correction goes through the key-change flow.
+   - **→ LIME-120.**
+3. **Telegram's call states** (Requesting → Ringing → Exchanging keys → timer): **→ in LIME-118 (`call.ringing`).**
+4. **Telegram's emoji verification** (4 emoji from the call key, compared aloud): **→ LIME-119.**
+5. **Signal's "Always relay calls"** (hides your IP from the other side): **→ LIME-119.**
+6. **Later:**
+   - Signal's "answered/declined on another device" hangups (when lime has multi-device accounts);
+   - Telegram's optional "How was the call?" with an opt-in diagnostics attach (useful in the pilot);
+   - Signal's "Use less data for calls".
+7. **Element Call** (LiveKit + per-sender keys over to-device) confirms 112b; its known weak spot is the black video until keys arrive, which 112b covers ("Connecting securely…").
+8. **Avoid:** RingRTC (AGPL, unsupported outside Signal); MTProto-style custom crypto.
+
+### LIME-119 → `tend` (lime-aa) (after LIME-118): emoji call verification + "Always relay calls"
+**Goal:** both people on a 1:1 call can confirm by eye that the call is end-to-end encrypted with nobody in between (4 matching emoji), and anyone can choose to hide their IP address from the other person by always relaying.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push.
+
+**What plot read:**
+- `CallManager.swift`, `CallMedia.swift` (the peer connection config since fix2);
+- core `calls.rs` (the DTLS fingerprint is bound inside the signed offer/answer);
+- the LIME-118 brief (the name pill sheet).
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min soft cap.
+
+---
+
+**Phase 1: survey**
+- where both fingerprints are available on each side once connected;
+- how `iceTransportPolicy` is set;
+- the Settings → Privacy layout.
+
+If the survey turns up related issues, raise them before editing.
+
+---
+
+**Phase 2: the change**
+1. **Emoji verification** (in core, so Android matches later):
+   - `call_emoji(call_id, fp_caller, fp_callee) -> [String; 4]` = the first 4 bytes of `SHA-256("lime-call-emoji-v1" || call_id || fp_caller || fp_callee)` (the fingerprints normalised as in `calls.rs`), each byte indexing a **fixed 256-emoji list committed in core** (simple, distinct, nameable emoji: animals, food, objects; no flags, no skin tones, no look-alikes);
+   - both phones compute the same 4.
+   - **UI:** once connected, a small lock chip with the 4 emoji under the name pill. Tapping it opens a short sheet: "If you both see these same 4 emoji, your call is end-to-end encrypted and no one is in between. Read them to each other." with the emoji large;
+   - VoiceOver reads the emoji names;
+   - **No server change.**
+2. **Always relay calls:**
+   - **Settings → Privacy → "Always relay calls"**, off by default, with the footer "Hides your IP address from the person you're calling. Calls may be a little slower.";
+   - when on: `iceTransportPolicy = .relay`, so only relay candidates are gathered and sent;
+   - the callee applies **its own** setting (either side can relay independently);
+   - if relay credentials are unavailable while it's on, the call fails with the clear message **"Can't reach lime's relay. Turn off Always relay calls to call directly."** (no silent fallback to direct).
+   - **The rule kept for later:** when call links (117) or non-contact calls arrive, they relay by default. Write it in `architecture.md` §9; nothing to build now, since 1:1 calls are contacts-only.
+
+---
+
+**Verification**
+- core: the emoji are deterministic (fixed test vectors), identical whichever side computes them, and different for a changed fingerprint; the list has 256 unique entries;
+- iOS unit tests: the relay policy is applied when the setting is on (the fake media sees `.relay` and no host/srflx sent); the failure message when credentials are missing;
+- UI tests: the emoji chip appears once connected and the sheet opens; the Settings toggle;
+- the full suite on the 13 mini; changed tests on SE and 18 Pro; 0 warnings.
+
+**Gate (the user, two phones):**
+1. A call: both screens show the **same 4 emoji**.
+2. Turn on Always relay on one phone → a call still connects (the log shows only relay candidates from that phone).
+
+---
+
+**Record:** `## LIME-119` in `TEND.md`.
+
+**Commit:** `feat: emoji call verification and Always relay calls`, trailer `Brief: LIME-119`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
+
+### LIME-120 → `tend` (lime-aa) (after LIME-119): one request per send (cached device lists, with server corrections)
+**Goal:** sending a message or call op is **one** HTTP request in the normal case (down from 2–3), while key-change detection and sealed sending keep working, so call setup and messaging get about 1–2 s faster.
+
+**What plot read:**
+- `supabase/functions/send/index.ts` (it takes `{ ciphertext, recipients: [{ to_device, access }] }`, looks up `devices`, stores one item per device, and nudges);
+- `core/src/client.rs` (`users-devices` at about :440/:983, `keys-claim` at about :1043, `send_op`; tend's fix2 note: "the recipient's device list is deliberately not cached because it carries key-change detection");
+- the fix2 numbers (about 1 s per send; 2–3 HTTP calls).
+
+**Capabilities assumed:** edit core, functions and iOS; deploy to staging (`supabase/deploy-staging.sh`); the integration tests against staging; commit and push.
+
+---
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~90 min soft cap.
+
+---
+
+**Phase 1: survey, then report the design**
+- map today's send: which calls, when `keys-claim` happens (only without an Olm session?), and what `users-devices` returns;
+- **design the correction protocol and present it to the user before building:**
+  - **(a)** the client sends with its cached device list for each recipient user, plus `expect: { user_id: [device ids] }`;
+  - **(b)** `send` compares it with the live, non-revoked devices and, on a mismatch, **stores nothing** and returns **409 `{ missing: [...], extra: [...] }`** (or 410 for revoked);
+  - **(c)** the client updates its cache, runs the **existing key-change flow for any new device**, claims keys only for devices without a session, and retries once.
+- **Sealed sending:** `expect` names the user ids, which the server can already infer from the device ids it stores to. Confirm this adds no new metadata for sealed sends; if it does, **stop and give the user the trade-off**.
+
+**STOP for the user's go on the design.**
+
+---
+
+**Phase 2: build**
+- **the server:** the `expect` check, 409/410, and old clients without `expect` still accepted (unchanged behaviour);
+- **core:**
+  - a cached device list for each contact (in the encrypted store);
+  - the 409/410 handling;
+  - the key-change flow on any new device;
+  - one retry;
+  - `users-devices` only on a cache miss or after a correction;
+- **diagnostics:** the call log's send lines also show "requests: N".
+
+---
+
+**Verification**
+- **server tests:** a matching `expect` → stored; a missing device → 409 with nothing stored; a revoked device → 410; no `expect` → the old behaviour.
+- **core:**
+  - a send with a warm cache = 1 request;
+  - a new device for a contact → 409 → the key-change flow → a retry → delivered;
+  - a revoked device → dropped from the cache;
+  - the sealed path is unchanged;
+  - `cargo test`, clippy 0.
+- **integration (staging):** a send's median time before and after (report it); a call's offer → answer end to end.
+- **iOS:** the full suite on the 13 mini; 0 warnings.
+
+**Gate (the user):**
+- messages and calls still work on both phones;
+- **a simulator signed in on Jean's account** (a new device; **never sign the iPad or a phone out**, which wipes its keys) → Shem's next message reaches both and shows the usual "new device" notice;
+- the call setup feels quicker (plot checks "requests: 1" in the logs).
+
+---
+
+**Record:** `## LIME-120` in `TEND.md`.
+
+**Commit:** `perf: one request per send (cached device lists, 409/410 corrections, key-change flow kept)`, trailer `Brief: LIME-120`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 **If unsure:** if a decision isn't made here, stop and ask the user.
 
