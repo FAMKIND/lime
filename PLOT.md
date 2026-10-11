@@ -126,6 +126,13 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e13. **The user (2026-10-11): the "+" should be bigger, like before (64 pt), with see-through glass → folded into LIME-116b** (LIME-116 revised, never sent).
+   - **The calls UX order: 116b (the Calls tab) → 118b (in-call screen follow-ups: voice → video, the remote mute/camera-off indicator, landscape/SE checks, the audio jitter-buffer growth); 118b is not drafted yet** → 119 → 120 → 112b → 117.
+1e12. **LIME-121d LANDED as `4bed9e0` (pushed, 2026-10-11); waiting on the user's gate.**
+   - The same header on all tabs; outline/fill icons; Diagnostics moved to About.
+   - **The "+" is beside the bar only where it fits** (18 Pro: about 60 pt free → 48 pt beside it). **On the 13 mini (about 46 pt free) and the SE simulator (iOS 18.3, a full-width bar) it floats just above the bar at the right** (tend's call instead of stopping).
+   - **The user decides on the device.** If they want it beside the bar on narrow phones, the options are a smaller button, `tabViewBottomAccessory`, or accepting "above".
+   - Re-tap is still unverified.
 1e11. **The user's 121b feedback (2026-10-11, screenshots of Messages + Calls on the phone) → LIME-121c, **superseded by LIME-121d (NEXT, before 116)** after the user's corrections (the SE fits; the header on all tabs; outline/fill):**
    - "the Add button should still be at the bottom right corner next to the thumb, using a Liquid Glass brand light green with a plus icon";
    - "the top header should be the lime logo on the left, and on the right search and the avatar only" (the compose icon goes);
@@ -3714,22 +3721,28 @@ If the survey turns up related issues, raise them before editing.
 - **C3. "Require admin approval" (Signal's toggle) on links:** **on by default** (lean), so people can only join once the creator lets them in.
 - **Note:** a shareable `https://limechat.org/call/…` link that opens the app needs Associated Domains, which needs **the paid Apple account (November)** and the site (LIME-114). Until then links work through "Share via lime" (a Join card in a chat) and a `lime://` link.
 
-### LIME-116 → `tend` (lime-aa) (**after LIME-111-fix lands**; C1 = A, decided): the Calls tab: history with All/Missed, call details, the New Call sheet, encrypted history
-**Goal:** Calls is a full section of the main app, not a sheet. It has:
-- a history list with an **All | Missed** filter at the top, grouped rows and a call-back button;
+### LIME-116b → `tend` (lime-aa) (NEXT, after the 121d gate): the Calls tab (All/Missed, call details, New Call sheet, encrypted history) + the bigger, see-through "+"
+**Revises LIME-116 (never sent):** 121b/121d already made Calls a tab with the shared header (logo left; search + avatar right) and a name filter. This brief builds the list, the details, New Call and the storage, and adjusts the "+".
+
+**The user (2026-10-11), on the "+":** "make the green button slightly bigger, similar to the size we had before, and make the glass a little transparent so you can slightly see the content scrolling under it."
+
+**Goal:**
+- the call tab shows an **All | Missed** history with grouped rows and a call-back button;
 - a details screen per row;
-- a Signal-style **New Call** sheet (the only sheet);
-- call history kept in the encrypted core store instead of `UserDefaults`.
+- **the green "+" at the bottom right opens a Signal-style New Call sheet** (on link it still opens New Message);
+- call history lives in the encrypted core store, not `UserDefaults`;
+- the "+" is the old size (64 pt) with see-through glass.
 
 **Capabilities assumed:** edit files, run commands, simulators, commit and push. No server change.
 
 **What plot read:**
-- `ios/Lime/Features/Calls/CallView.swift` (`CallHistoryView`);
-- `ios/Lime/Core/Calls/CallLog.swift`;
-- `ios/Lime/Features/Dock/DockBar.swift` (`showCalls` sheet);
+- the pre-121b "+" (`git show 7a624e2^:ios/Lime/Features/Messages/MessagesView.swift`: **64 × 64 pt, a `plus` glyph at 26 pt regular**);
+- LIME-121d's report (the "+" is 48 pt beside the bar on the 18 Pro, 52 pt floating above on narrower phones; the call tab's search is a name filter; Diagnostics moved to About);
+- `ios/Lime/Core/Calls/CallLog.swift` (`UserDefaults` key `lime.callLog`, at most 200);
+- `CallView.swift` (`CallHistoryView`);
 - core migration 24 (`call_events`).
 
-**Plot assumed:** the Messages screen's header, search, row and avatar components can be reused. Check this in the survey, and **reuse them rather than restyling**.
+**Plot assumed:** the Messages row, avatar and swipe components can be reused. **Reuse them rather than restyling.**
 
 ---
 
@@ -3738,88 +3751,89 @@ If the survey turns up related issues, raise them before editing.
 ---
 
 **Phase 1: survey (read-only)**
-- How the dock switches sections (link vs call);
-- the Messages header, search, rows and swipe actions;
+- the call tab's root after 121d;
+- the "+" component and its placement logic;
 - New Message's "find by username";
-- what LIME-111-fix left in `CallView.swift`.
+- the Messages rows and swipe actions.
 
 If the survey turns up related issues, raise them before editing.
 
 ---
 
 **Phase 2: the change**
-1. **A section, not a sheet.** The dock's call item shows Calls in the main area, the way "link" shows Messages; delete the `showCalls` sheet.
-   - **Dock badge:** missed calls not yet seen. They count as seen when Calls is opened.
-2. **The header** matches Messages exactly (the same component):
-   - the large title **"Calls"**;
-   - **(amended by LIME-121c, 2026-10-11)** the header is the same as Messages: **the lime logo on the left; search and the avatar on the right; nothing else.** **New Call is the floating green glass "+" at the bottom right** (the same component as Messages' New Message, built in 121c);
-   - search works as on Messages (by name).
-   - Debug builds only: the Call diagnostics share moves into a ⋯ menu here.
-3. **The filter:** directly under the title, a segmented pill **All | Missed** (Signal's shape; lime tokens: green only on the primary action, so the selected segment is neutral).
-   - **Missed** = incoming calls that were missed or declined by DND/work hours.
-4. **Rows** (the same avatar size and padding as Messages rows; no dividers):
+1. **The "+" (both tabs):**
+   - **64 pt** (as before 121b), the `plus` glyph at 26 pt;
+   - **see-through glass:** iOS 26 `.glassEffect(.regular.tint(Accent.opacity(≈0.55)).interactive())`, tuned so the list is **faintly visible** scrolling under it while the green still reads clearly and the `AccentInk` plus keeps at least 3:1 contrast;
+   - iOS 17–25: `.ultraThinMaterial` under an `Accent` fill at about 0.75 opacity, with a soft shadow;
+   - **placement:** beside the tab bar where 64 pt fits without overlapping it; otherwise floating just above the bar at the right (121d's rule, now at 64 pt). It must never overlap the bar.
+   - **On the call tab the same "+" opens the New Call sheet** (VoiceOver "New call").
+2. **The filter:** under the shared header, a segmented pill **All | Missed** (Signal's shape; the selected segment is neutral, since green is only for the primary action).
+   - **Missed** = incoming calls that were missed, or silenced by DND/work hours.
+   - The 121d name filter still applies on top.
+3. **Rows** (the same avatar size and padding as Messages rows; no dividers):
    - the avatar;
    - **the name**, in the danger/red token when the row is a missed incoming call, plus **"(3)"** when grouped;
    - the second line: a direction glyph (`arrow.down.left` incoming, `arrow.up.right` outgoing), then **"Voice"** or **"Video"**;
-   - on the right, the time:
-     - today = "4:12 PM";
-     - "Yesterday";
-     - a weekday within 7 days;
-     - else a short date;
-   - at the end, **one grey circular button repeating that call's kind** (phone or video) that calls back (**C1 = A**).
+   - on the right, the time (today "4:12 PM"; "Yesterday"; a weekday within 7 days; else a short date);
+   - at the end, **one grey circular button repeating that call's kind** that calls back (C1 = A).
    - **Grouping (Apple's rule):** consecutive calls with the same person, the same kind, the same day, and the same missed/not-missed class form one row with a count.
-5. **Tap a row → Call details**, **pushed** (not a sheet):
+4. **Tap a row → Call details**, **pushed** (the tab bar hides, as in a chat):
    - the avatar and name;
    - three buttons **Message · Voice · Video**;
    - the calls in that group, each with its time, direction and duration or outcome ("Missed", "No answer", "4:12").
-6. **Swipe left on a row:** Delete (removes those calls).
-7. **Clear all:** **Settings → Privacy → "Clear call history"**, with a confirm.
-8. **Empty states:**
-   - All: "No calls yet" with a **New call** button;
-   - Missed: "No missed calls".
-9. **The New Call sheet** (the only sheet; modelled on Signal's):
+5. **Swipe left on a row:** Delete. **Clear all:** Settings → Privacy → "Clear call history", with a confirm.
+6. **Empty states:** All: "No calls yet" with a **New call** button; Missed: "No missed calls".
+7. **The New Call sheet** (modelled on Signal's):
    - the title "New Call" with a close ✕;
    - the search field **pinned at the bottom** ("Name or username");
    - at the top, **"Find by username"**, which reuses New Message's flow;
    - then **accepted contacts A–Z with section headers and the side index**, each with grey outline **voice** and **video** buttons;
-   - only accepted contacts appear (the 1:1 rule); no Groups section (that comes with 112b); no call-link row (117).
-10. **The history moves into core:**
-    - a migration adds `call_history`, with uniffi `add`, `list`, `delete`, `clear`, `mark_missed_seen` and `missed_unseen_count`;
-    - `CallLog` becomes a thin wrapper;
-    - **on first launch, existing `UserDefaults` records are moved into core once, then the key is removed**;
-    - the chat call lines are unchanged (they read the same records).
+   - only accepted contacts appear; no Groups section (112b); no call-link row (117).
+8. **The history moves into core:**
+   - a migration adds `call_history`, with uniffi `add`, `list`, `delete`, `clear`, `mark_missed_seen` and `missed_unseen_count`;
+   - `CallLog` becomes a thin wrapper;
+   - **on first launch, existing `UserDefaults` records are moved into core once, then the key is removed**;
+   - **the call tab badge now uses `missed_unseen_count`** (seen when the call tab is opened);
+   - the chat call lines are unchanged.
+9. **Tab bar badges in lime green, not iOS red** (the user, 2026-10-11: "the new message badge number on the dock icons is red instead of our brand lime green"):
+   - match `CountBadge` (`MessagesView.swift`): **`Theme.accent` background, `Theme.accentInk` digits**, semibold;
+   - set it through `UITabBarAppearance` for every layout (stacked, inline, compactInline; normal and selected `badgeBackgroundColor` + `badgeTextAttributes`), applied to the tab bar used by the SwiftUI `TabView` (or `UITabBarItem.badgeColor` if that's what works);
+   - **check it on the iOS 26 glass bar and the iOS 18 bar** (SE simulator). If the iOS 26 glass bar ignores the colour, **stop and report** rather than drawing a fake badge over the bar.
 
 ---
 
 **Verification**
 - **core:** add, list, delete, clear and missed-unseen tests; the migration; clippy 0.
-- **iOS unit tests:** the grouping rule (a mixed sequence → the expected rows and counts), the time labels, and the one-time `UserDefaults` migration (records moved and the key gone).
+- **iOS unit tests:** the grouping rule; the time labels; the one-time `UserDefaults` migration (records moved and the key gone).
 - **UI tests:**
-  - the dock opens Calls in place (no sheet);
   - All/Missed filters;
   - tapping a row pushes the details;
   - the trailing button starts a call of the matching kind;
   - swipe Delete;
-  - New Call opens as a sheet, with search at the bottom and both buttons per contact;
+  - **the "+" on call opens New Call** (search at the bottom, both buttons per contact), and on link still opens New Message;
+  - **the "+" is 64 pt and doesn't overlap the tab bar** (SE, 13 mini, 18 Pro);
   - the empty states;
-  - the dock badge clears when Calls is opened.
-- Tiered (full suite on the 13 mini; changed tests on SE and 18 Pro); 0 warnings; Release has no Bluetooth.
+  - the badge clears when the call tab is opened;
+  - the tab bar appearance's badge colour equals `Accent` (a unit test on the configured appearance).
+- Tiered (the full suite on the 13 mini; changed tests on SE and 18 Pro); 0 warnings; Release has no Bluetooth.
 
 ---
 
-**Gate (the user, two phones):**
-1. The call icon opens Calls in the app, not a sheet.
-2. Missed calls show red and grouped "(N)", and Missed filters them.
-3. The dock badge shows missed calls and clears once Calls is opened.
-4. Tapping a row shows the details; the row's button calls back.
-5. "+" opens New Call with search at the bottom.
+**Gate (the user, the phone):**
+1. The "+" is the old, bigger size, and you can faintly see the list through it when scrolling.
+2. On call, "+" opens New Call with search at the bottom.
+3. Missed calls show red and grouped "(N)", and Missed filters them.
+4. The badge shows missed calls and clears once the call tab is opened; **every tab badge is lime green with dark digits, not red.**
+5. Tapping a row shows the details; the row's button calls back.
 6. Old history is still there after the update.
 
 ---
 
-**Record:** `## LIME-116` in `TEND.md`.
+**Record:** `## LIME-116b` in `TEND.md`.
 
-**Commit:** `feat(ios): Calls tab (All/Missed history, call details, New Call sheet), call history in the encrypted store`, trailer `Brief: LIME-116`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+**Commit:** `feat(ios): Calls tab (All/Missed history, call details, New Call sheet), call history in the encrypted store; 64 pt see-through "+"; lime-green tab badges`, trailer `Brief: LIME-116b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+**If unsure:** if a decision isn't made here, stop and ask the user.
 
 **If unsure:** if a decision isn't made here, stop and ask the user.
 
