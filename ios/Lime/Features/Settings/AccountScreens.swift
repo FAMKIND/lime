@@ -338,6 +338,10 @@ struct AboutScreen: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("about-callkit-selftest")
+                ShareLink(item: CallDiagnostics.shared.fileURL) {
+                    SettingsRowLabel(symbol: "square.and.arrow.up", title: "Call diagnostics")
+                }
+                .accessibilityIdentifier("call-diagnostics-share")
                 Button { showDeveloper = true } label: {
                     SettingsRowLabel(symbol: "wrench.and.screwdriver", title: "Developer", showsDivider: false)
                 }

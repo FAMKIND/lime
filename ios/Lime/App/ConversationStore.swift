@@ -46,8 +46,12 @@ final class ConversationStore {
     /// The app's three sections (the system tab bar): link (Messages), call (Calls), jam. Each keeps its own navigation.
     enum Section: String, CaseIterable, Hashable { case link, call, jam }
     var section: Section = .link
-    /// The call tab's own navigation path.
+    /// The call tab's own navigation path, and its name filter (the header's search).
     var callPath = NavigationPath()
+    var callSearching = false
+    var callQuery = ""
+    /// The jam tab's search screen is showing.
+    var jamSearching = false
     /// Counts re-taps of a tab (a tap on the tab already showing): the section pops to its root, then scrolls to the top.
     var retap: [Section: Int] = [:]
     /// Calls missed since the call tab was last opened (the call tab's badge).

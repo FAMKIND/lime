@@ -282,19 +282,32 @@ struct CallView: View {
     }
 }
 
-/// The call tab's root: calls on this phone, newest first; tap to call back. (LIME-116 redesigns it.)
+/// The call tab's root: calls on this phone, newest first; tap to call back. Search (in the header) filters by name. (LIME-116 redesigns it.)
 struct CallHistoryView: View {
     @Environment(ConversationStore.self) private var store
     private let log = CallLog.shared
 
+    private var shown: [CallRecord] {
+        let query = store.callQuery.trimmingCharacters(in: .whitespaces)
+        return query.isEmpty ? log.records : log.records.filter { $0.peerName.localizedCaseInsensitiveContains(query) }
+    }
+
     var body: some View {
+        @Bindable var store = store
         List {
-            if log.records.isEmpty {
-                Text("No calls yet. Start one from a chat's phone button.")
+            if store.callSearching {
+                TextField("Search calls by name", text: $store.callQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("calls-search-field")
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+            if shown.isEmpty {
+                Text(log.records.isEmpty ? "No calls yet. Start one from a chat's phone button." : "No calls match.")
                     .foregroundStyle(Theme.textSecondary).accessibilityIdentifier("calls-empty")
                     .listRowBackground(Color.clear)
             }
-            ForEach(log.records) { record in
+            ForEach(shown) { record in
                 Button {
                     Task { _ = await store.calls.start(peerID: record.peerID, name: record.peerName, video: record.video) }
                 } label: {
@@ -310,16 +323,8 @@ struct CallHistoryView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.canvas)
-        .navigationTitle("Calls")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("calls-screen")
-        .toolbar {
-            #if DEBUG
-            ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: CallDiagnostics.shared.fileURL) { Label("Call diagnostics", systemImage: "square.and.arrow.up") }
-                    .accessibilityIdentifier("call-diagnostics-share")
-            }
-            #endif
-        }
+        .rootHeader(searchID: "calls-search-button") { store.callSearching.toggle(); if !store.callSearching { store.callQuery = "" } }
     }
 }

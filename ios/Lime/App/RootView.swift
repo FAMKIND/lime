@@ -47,15 +47,15 @@ private struct SignedInView: View {
         @Bindable var store = store
         TabView(selection: Binding(get: { store.section }, set: { store.select($0) })) {
             linkTab(path: $store.path)
-                .tabItem { Label("link", systemImage: "bubble.left") }
+                .tabItem { tabLabel("link", .link, outline: TabSymbols.link.outline, filled: TabSymbols.link.filled) }
                 .badge(store.chats.filter(\.isUnread).count)
                 .tag(ConversationStore.Section.link)
             callTab(path: $store.callPath)
-                .tabItem { Label("call", systemImage: "phone") }
+                .tabItem { tabLabel("call", .call, outline: TabSymbols.call.outline, filled: TabSymbols.call.filled) }
                 .badge(store.missedCalls)
                 .tag(ConversationStore.Section.call)
             JamPage()
-                .tabItem { Label("jam", systemImage: "book") }
+                .tabItem { tabLabel("jam", .jam, outline: TabSymbols.jam.outline, filled: TabSymbols.jam.filled) }
                 .tag(ConversationStore.Section.jam)
         }
         .tint(Theme.text)
@@ -85,6 +85,13 @@ private struct SignedInView: View {
                 }
             }
         }
+    }
+
+    /// A tab's label: the outlined symbol, and the filled one only while it is the selected tab (set explicitly, so the system does not
+    /// fill the others).
+    private func tabLabel(_ title: String, _ section: ConversationStore.Section, outline: String, filled: String) -> some View {
+        Label(title, systemImage: TabSymbols.name(outline: outline, filled: filled, selected: store.section == section))
+            .environment(\.symbolVariants, .none)
     }
 
     private func linkTab(path: Binding<NavigationPath>) -> some View {
@@ -119,6 +126,14 @@ private struct SignedInView: View {
     }
 }
 
+
+/// The tab symbols: outlined, and filled only for the selected tab.
+enum TabSymbols {
+    static func name(outline: String, filled: String, selected: Bool) -> String { selected ? filled : outline }
+    static let link = (outline: "message", filled: "message.fill")
+    static let call = (outline: "phone", filled: "phone.fill")
+    static let jam = (outline: "book.pages", filled: "book.pages.fill")
+}
 
 /// iOS 26: the tab bar shrinks while a list scrolls, like the Phone app. Earlier systems keep the standard bar.
 private struct TabBarMinimize: ViewModifier {

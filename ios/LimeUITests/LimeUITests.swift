@@ -1019,7 +1019,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(waitForLinkBadge(app, ""), "and the badge")
     }
 
-    func testInLandscapeTheListSpansTheScreenAlignedToTheHeaderAndThePlusIsInTheHeader() {
+    func testInLandscapeTheListSpansTheScreenAlignedToTheHeader() {
         let app = demoApp()
         app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -1040,9 +1040,8 @@ final class LimeUITests: XCTestCase {
         XCTAssertEqual(time.frame.maxX, pill.frame.maxX + 8, accuracy: 12, "the time lines up with the right edge of the pill")
         let logo = app.buttons["Lime menu"], avatar = app.descendants(matching: .any)["row-avatar-dm:sam"]
         XCTAssertLessThanOrEqual(abs(avatar.frame.minX - logo.frame.minX), 12, "the avatar starts under the logo")
-        // The + (New message) is in the header now (top right), above every row; the tab bar replaced the dock.
-        XCTAssertFalse(plus.frame.intersects(sam.frame), "the + does not sit over a row")
-        XCTAssertLessThan(plus.frame.maxY, sam.frame.minY + 1)
+        // The floating + (New message) is bottom right; its clearance from the tab bar is TabBarUITests' job.
+        XCTAssertGreaterThan(plus.frame.midX, window.midX)
     }
 
     func testAReactionShowsInTheMessagesRowWithoutAnUnreadMark() throws {

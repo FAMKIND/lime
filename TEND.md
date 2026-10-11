@@ -4863,3 +4863,24 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **Older bar:** the iPhone SE simulator runs **iOS 18.3**, so the new tests and the badge/landscape tests ran against the standard (non-glass) tab bar there and passed; the 13 mini and 18 Pro run the iOS 26 glass bar and passed. No iOS 17 runtime is installed.
 
 **Not exercised:** iOS 17, the glass tab bar on a real phone, the minimise-on-scroll behaviour, re-tap, and a missed-call badge with a real missed call.
+
+
+## LIME-121d
+
+**One header on every tab, the floating glass "+", outline/filled tab icons (committed, awaiting the user's check on the SE and the 13 mini).** Phase 0: `PLOT.md` committed. 121c was never sent, so this is the whole change on top of 121b.
+
+**Survey.**
+- The pre-121b "+" (git): a 64 pt solid green circle, 20 pt from the right and 92 pt above the bottom, floating over the list (beside the dock only in landscape).
+- Measured tab bar geometry (XCUITest): the **iPhone SE simulator runs iOS 18.3, whose standard bar is full width (375 pt, items 2–373)**, so there is no room beside it; the **13 mini and 18 Pro (iOS 26) have a floating platter** with its items from x 55 to 321 (13 mini) and 68 to 334 (18 Pro), centred 52 pt above the screen's bottom edge; room right of the platter: about 46 pt (13 mini), about 60 pt (18 Pro).
+- So "beside the bar" fits only on a wide iOS 26 phone. That is the stop-and-report case for the SE, and the answer used is the old behaviour: the "+" floats just above the bar at the right.
+
+**Built.**
+1. **One header** (logo left; a glass capsule with search and your avatar on the right; nothing else) on link, call and jam: Messages keeps its own (veil and margins) and Calls/jam use the new `rootHeader` modifier (the iOS 26 toolbar, or the same `TopControls` pills on iOS 17 to 25). The large titles are gone. Search: link = message search; call = a name filter at the top of the list; jam = a search screen that says "Nothing to search in jam yet." The compose icon left the header. The Debug call-diagnostics share moved to About (Debug).
+2. **The floating "+"** on the link root only (hidden in a chat, since the root is behind it): **iOS 26 glass** (`.glassEffect(.regular.tint(Accent).interactive())`, a `plus` in `AccentInk`) and a solid `Accent` circle with a shadow before iOS 26. On iOS 26 at 390 pt wide or more (the 18 Pro) it is 48 pt and sits **beside the platter, centred on it**; on a narrower iOS 26 phone (13 mini), on iOS 17 to 25 (the SE, a full-width bar) and in landscape it is 52 pt and floats **just above the bar at the right**. It never overlaps the bar (tests on all three devices, portrait; landscape on the 13 mini).
+3. **Tab icons:** `message` / `phone` / `book.pages`, with `.fill` only on the selected tab, set explicitly with symbol variants turned off so the system does not fill the others (`TabSymbols`, unit-tested). The labels stay lowercase.
+
+**A gotcha worth knowing:** on iOS 17 to 25 a container's `.accessibilityIdentifier("calls-screen")` was overriding the header buttons' own identifiers (they read "calls-screen"); the identifier now sits on the list only.
+
+**Tests.** New in `TabBarUITests`: each tab root has the logo, search, the avatar and no other header buttons (the "+" only on link); each tab's search opens its own; the "+" clears the tab bar (13 mini, SE, 18 Pro; landscape on the 13 mini), opens New Message and is gone in a chat. Updated: the landscape Messages test no longer expects the "+" in the header. `testReTapLinkPopsToMessages` is still skipped (see 121b).
+
+**Not exercised:** the tab icons' filled/outline look on a real phone (the unit test pins the names, not the pixels), the glass "+" on a phone, landscape on the 18 Pro, iOS 17.
