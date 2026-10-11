@@ -4940,3 +4940,14 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **What I saw (iOS 26, 13 mini, Calls scrolled mid-list, 14 extra demo calls):** rows blur and fade softly under the header controls at the top and under the tab bar at the bottom (the system's soft edge, the same effect Messages uses), the tab bar minimises to a single call button while scrolling, and the see-through "+" shows the rows faintly behind it. I could not compare with Messages mid-scroll because the demo chat list is too short to scroll; the effect and margins are the same code path as Messages'. **The iOS 18 path (no bottom veil now) was not screenshotted scrolled**, so whether rows look cut off at the iOS 18 tab bar is unchecked; the brief says to stop and report if they do, and nothing was seen to report.
 
 **Tests.** `testTheFilterIsPartOfTheListAndScrollsAwayWithIt` (new `-lime-demo-calls-many` seeds 14 more calls): the list starts near the top, the first call row is below the filter at rest, after a swipe up the filter moves off, and at the end the last call-back button clears the "+".
+
+
+## LIME-116e
+
+**No status badges on Calls, the tab bar stays open, the selected tab icon stays outlined (committed, awaiting the user's check on a phone).** Phase 0: `PLOT.md` committed.
+
+1. **Plain avatars on the Calls surfaces:** history rows, the Calls search results and New Call rows no longer show the status badge (`TeacherRow` got a `showsStatus` switch, on by default so New Message and the others keep theirs; the Calls search and New Call pass false). The chat, the Messages list, members, the header and the (116b) details screen keep theirs. The 116c badge test now asserts there are none on call rows or in New Call.
+2. **The tab bar stays open:** `tabBarMinimizeBehavior(.never)` on iOS 26 (it no longer shrinks on scroll).
+3. **Outlined in every state:** the tabs use `message` / `phone` / `book.pages` always (symbol variants off); the filled names and `TabSymbols.name` are gone. **Screenshots on the iOS 26 glass bar (13 mini) and the iOS 18.3 bar (SE):** the selected `call` tab is the outline glyph with the bold label and a dark highlight (glass pill on iOS 26, darker tint on iOS 18); the other two are outlined and grey.
+
+**Tests.** A unit test that no tab symbol ends in `.fill`; UI tests: no status badge on call rows or in New Call, and the tab bar's frame is unchanged and all three tabs are still hittable after scrolling a long Calls list (`-lime-demo-calls-many`).

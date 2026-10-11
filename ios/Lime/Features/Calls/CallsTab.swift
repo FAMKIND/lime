@@ -39,7 +39,7 @@ struct CallRowView: View {
         HStack(spacing: 12) {
             Button { store.callPath.append(CallGroupRoute(ids: group.records.map(\.id))) } label: {
                 HStack(spacing: 12) {
-                    AvatarView(person: person(call), size: avatarSize, showsStatus: true)
+                    AvatarView(person: person(call), size: avatarSize)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(call.peerName + (group.count > 1 ? " (\(group.count))" : ""))
                             .font(Theme.title.weight(.semibold))
@@ -210,7 +210,7 @@ struct CallSearchScreen: View {
                             title("People")
                             ForEach(people) { teacher in
                                 HStack(spacing: 8) {
-                                    TeacherRow(person: teacher.person)
+                                    TeacherRow(person: teacher.person, showsStatus: false)
                                     circle("phone", "Voice call \(teacher.person.name)", id: "calls-search-voice-\(teacher.person.id)") { start(teacher, video: false) }
                                     circle("video", "Video call \(teacher.person.name)", id: "calls-search-video-\(teacher.person.id)") { start(teacher, video: true) }
                                 }
@@ -366,7 +366,7 @@ struct NewCallSheet: View {
                                     .accessibilityAddTraits(.isHeader)
                                 ForEach(section.teachers) { teacher in
                                     HStack(spacing: 8) {
-                                        TeacherRow(person: teacher.person)
+                                        TeacherRow(person: teacher.person, showsStatus: false)
                                         circle("phone", "Voice call \(teacher.person.name)", id: "new-call-voice-\(teacher.person.id)") { call(teacher, video: false) }
                                         circle("video", "Video call \(teacher.person.name)", id: "new-call-video-\(teacher.person.id)") { call(teacher, video: true) }
                                     }

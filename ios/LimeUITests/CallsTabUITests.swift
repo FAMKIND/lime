@@ -116,11 +116,30 @@ final class CallsTabUITests: XCTestCase {
         XCTAssertFalse(lastCallBack.frame.intersects(plus), "the last row's button is not under the +")
     }
 
-    func testStatusBadgesOnTheCallAvatars() {
+    func testNoStatusBadgesOnTheCallsSurfaces() {
         let app = app()
         openCalls(app)
-        XCTAssertTrue(any(app, "status-badge-lee").waitForExistence(timeout: 5))
-        XCTAssertTrue(any(app, "status-badge-sam").exists)
+        XCTAssertTrue(app.buttons["call-row-callback"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(any(app, "status-badge-lee").exists, "plain avatars on the call rows")
+        XCTAssertFalse(any(app, "status-badge-sam").exists)
+        // New Call
+        app.buttons["new-call-button"].tap()
+        XCTAssertTrue(app.buttons["new-call-voice-lee"].waitForExistence(timeout: 5))
+        XCTAssertFalse(any(app, "status-badge-lee").exists, "and in New Call")
+    }
+
+    func testTheTabBarStaysOpenWhileScrollingCalls() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-calls", "-lime-demo-calls-many"]
+        app.launch()
+        openCalls(app)
+        let bar = app.tabBars.firstMatch
+        let before = bar.frame
+        let list = any(app, "calls-list")
+        for _ in 0..<3 { list.swipeUp() }
+        XCTAssertEqual(bar.frame.width, before.width, accuracy: 1, "the tab bar does not shrink on scroll")
+        XCTAssertEqual(bar.frame.height, before.height, accuracy: 1)
+        XCTAssertTrue(app.tabBars.buttons["link"].isHittable && app.tabBars.buttons["jam"].isHittable, "all three tabs are still there")
     }
 
     func testTheMagnifierPushesTheCallsSearchWithPeopleAndCalls() {

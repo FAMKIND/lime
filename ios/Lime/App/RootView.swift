@@ -47,15 +47,15 @@ private struct SignedInView: View {
         @Bindable var store = store
         TabView(selection: Binding(get: { store.section }, set: { store.select($0) })) {
             linkTab(path: $store.path)
-                .tabItem { tabLabel("link", .link, outline: TabSymbols.link.outline, filled: TabSymbols.link.filled) }
+                .tabItem { tabLabel("link", TabSymbols.link) }
                 .badge(store.chats.filter(\.isUnread).count)
                 .tag(ConversationStore.Section.link)
             callTab(path: $store.callPath)
-                .tabItem { tabLabel("call", .call, outline: TabSymbols.call.outline, filled: TabSymbols.call.filled) }
+                .tabItem { tabLabel("call", TabSymbols.call) }
                 .badge(store.missedCalls)
                 .tag(ConversationStore.Section.call)
             JamPage()
-                .tabItem { tabLabel("jam", .jam, outline: TabSymbols.jam.outline, filled: TabSymbols.jam.filled) }
+                .tabItem { tabLabel("jam", TabSymbols.jam) }
                 .tag(ConversationStore.Section.jam)
         }
         .tint(Theme.text)
@@ -87,10 +87,10 @@ private struct SignedInView: View {
         }
     }
 
-    /// A tab's label: the outlined symbol, and the filled one only while it is the selected tab (set explicitly, so the system does not
-    /// fill the others).
-    private func tabLabel(_ title: String, _ section: ConversationStore.Section, outline: String, filled: String) -> some View {
-        Label(title, systemImage: TabSymbols.name(outline: outline, filled: filled, selected: store.section == section))
+    /// A tab's label: always the outlined symbol (the selection shows through the system's tint and highlight, never a filled glyph);
+    /// symbol variants are switched off so the system does not fill the selected one.
+    private func tabLabel(_ title: String, _ symbol: String) -> some View {
+        Label(title, systemImage: symbol)
             .environment(\.symbolVariants, .none)
     }
 
@@ -131,18 +131,18 @@ private struct SignedInView: View {
 }
 
 
-/// The tab symbols: outlined, and filled only for the selected tab.
+/// The tab symbols: the outline ones, in every state.
 enum TabSymbols {
-    static func name(outline: String, filled: String, selected: Bool) -> String { selected ? filled : outline }
-    static let link = (outline: "message", filled: "message.fill")
-    static let call = (outline: "phone", filled: "phone.fill")
-    static let jam = (outline: "book.pages", filled: "book.pages.fill")
+    static let link = "message"
+    static let call = "phone"
+    static let jam = "book.pages"
+    static let all = [link, call, jam]
 }
 
-/// iOS 26: the tab bar shrinks while a list scrolls, like the Phone app. Earlier systems keep the standard bar.
+/// iOS 26: the tab bar stays open while a list scrolls (it never shrinks). Earlier systems have the standard bar.
 private struct TabBarMinimize: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26, *) { content.tabBarMinimizeBehavior(.onScrollDown) } else { content }
+        if #available(iOS 26, *) { content.tabBarMinimizeBehavior(.never) } else { content }
     }
 }
 
