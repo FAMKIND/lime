@@ -77,6 +77,8 @@ final class ConversationStore {
 
     /// The one call at a time (LIME-111). UI tests and demo mode use stand-ins with no system call screen.
     @ObservationIgnored private var callManager: CallManager?
+    /// My account's user id (for the call rule that settles crossed calls).
+    @ObservationIgnored var myUserID: String?
     var calls: CallManager {
         if let callManager { return callManager }
         var quiet = false
@@ -85,7 +87,7 @@ final class ConversationStore {
         #endif
         let system: CallSystem = quiet ? QuietCallSystem() : CallKitSystem()
         let manager = CallManager(signalling: StoreSignalling(store: self), system: system,
-                                  isQuiet: { StatusSettings.shared.plan().isQuiet }, makeMedia: { WebRTCMedia(manualAudio: !quiet) })
+                                  isQuiet: { StatusSettings.shared.plan().isQuiet }, myID: { [weak self] in self?.myUserID }, makeMedia: { WebRTCMedia(manualAudio: !quiet) })
         manager.fetchNow = { [weak self] in await self?.fetchCallOps() }
         callManager = manager
         return manager

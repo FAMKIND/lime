@@ -49,10 +49,12 @@ private final class Mailbox: CallSignalling {
     let me: String, myName: String
     var delay: (String) -> Duration = { _ in .milliseconds(5) }
     var sent: [String] = []
+    var hang = false
     init(me: String, myName: String) { self.me = me; self.myName = myName }
 
     func send(peer: String, op: String, payload: [String: Any]) async -> Bool {
         sent.append(op)
+        if hang { try? await Task.sleep(for: .seconds(60)); return false }
         let event = CallEventInfo(op: op, callID: payload["call_id"] as? String ?? "", peerID: me, peerName: myName, payload: payload)
         let target = other, wait = delay(op)
         Task { @MainActor in
@@ -197,5 +199,66 @@ final class CallLoopbackTests: XCTestCase {
         let after = fetches
         try? await Task.sleep(for: .seconds(1.2))
         XCTAssertEqual(fetches, after, "polling should stop with the call")
+    }
+
+    // MARK: A system report that never returns must not jam the queue (LIME-111-fix3b)
+
+    private final class StuckSystem: CallSystem {
+        var onAnswer: ((String) -> Void)?
+        var onEnd: ((String) -> Void)?
+        var onMute: ((String, Bool) -> Void)?
+        var delay: Duration? // nil = never completes
+        func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (String?) -> Void) {
+            guard let delay else { return }
+            Task { @MainActor in try? await Task.sleep(for: delay); completion(nil) }
+        }
+        func reportOutgoing(callID: String, name: String, video: Bool) {}
+        func reportConnected(callID: String) {}
+        func reportEnded(callID: String, answeredOrOutgoing: Bool) {}
+    }
+
+    private func stuckPair(delay: Duration?) -> (CallManager, CallManager) {
+        let defaults = { UserDefaults(suiteName: "lime.test.loop.\(UUID().uuidString)")! }
+        let sysA = StuckSystem(), sysB = StuckSystem()
+        sysA.delay = delay; sysB.delay = delay
+        let a = CallManager(signalling: boxA, system: sysA, log: CallLog(defaults: defaults()), makeMedia: { [unowned self] in mediaA })
+        let b = CallManager(signalling: boxB, system: sysB, log: CallLog(defaults: defaults()), makeMedia: { [unowned self] in mediaB })
+        boxA.other = b; boxB.other = a
+        return (a, b)
+    }
+
+    func testThreeCallsInOneSessionWhenTheSystemNeverAnswersTheReport() async {
+        for delay in [nil, Duration.seconds(5)] {
+            mediaA = PairMedia(); mediaB = PairMedia(); boxA = Mailbox(me: "alice", myName: "Alice"); boxB = Mailbox(me: "bob", myName: "Bob")
+            let (a, b) = stuckPair(delay: delay)
+            // Shem → Jean, Jean → Shem, Shem → Jean, in one session: no restarts, every op handled.
+            for (caller, callee, to) in [(a, b, "bob"), (b, a, "alice"), (a, b, "bob")] {
+                mediaA = PairMedia(); mediaB = PairMedia()
+                _ = await caller.start(peerID: to, name: "Peer", video: false)
+                await wait { callee.phase == .incoming }
+                XCTAssertEqual(callee.phase, .incoming, "the offer was handled")
+                await callee.accept()
+                await wait { caller.phase != .outgoing }
+                XCTAssertNotEqual(caller.phase, .outgoing, "the answer was handled")
+                (caller === a ? mediaA : mediaB).maybeConnect()
+                (callee === a ? mediaA : mediaB).maybeConnect()
+                await wait { caller.phase == .active && callee.phase == .active }
+                await callee.end()
+                await wait { caller.phase == .idle && callee.phase == .idle }
+                XCTAssertEqual(caller.phase, .idle, "the end was handled")
+                XCTAssertEqual(callee.phase, .idle)
+            }
+        }
+    }
+
+    func testAHandlerThatNeverReturnsIsSkippedAfterTheWatchdog() async {
+        let (a, b) = pair()
+        a.handlerSeconds = 0.2; b.handlerSeconds = 0.2
+        // B is on a call; A's second offer makes B send "busy"; that send never returns.
+        await connect(a, b)
+        boxB.hang = true
+        await b.handle([CallEventInfo(op: "call.offer", callID: "other", peerID: "carol", peerName: "Carol", payload: ["sdp": "v=0"]),
+                        CallEventInfo(op: "call.end", callID: a.currentID, peerID: "alice", peerName: "Alice", payload: [:])])
+        XCTAssertEqual(b.phase, .idle, "the end behind the stuck handler was still handled")
     }
 }

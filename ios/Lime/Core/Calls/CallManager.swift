@@ -27,7 +27,8 @@ protocol CallSystem: AnyObject {
     var onEnd: ((String) -> Void)? { get set }
     var onMute: ((String, Bool) -> Void)? { get set }
     /// Tells the system about an incoming call; `false` if it refuses (Do Not Disturb or a Focus).
-    func reportIncoming(callID: String, name: String, video: Bool) async -> Bool
+    /// Starts the system's incoming-call report and returns at once; `completion` says whether the system will ring (`nil` error) or refused.
+    func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (_ refusal: String?) -> Void)
     func reportOutgoing(callID: String, name: String, video: Bool)
     func reportConnected(callID: String)
     func reportEnded(callID: String, answeredOrOutgoing: Bool)
@@ -55,6 +56,7 @@ final class CallManager {
     @ObservationIgnored private let makeMedia: () -> any CallMedia
     @ObservationIgnored private let log: CallLog
     @ObservationIgnored private let isQuiet: () -> Bool
+    @ObservationIgnored private let myID: () -> String?
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var callID = ""
     var currentID: String { callID }
@@ -73,6 +75,8 @@ final class CallManager {
     @ObservationIgnored var fetchNow: (() async -> Void)?
     /// How long the media path may take to come up after an answer before the call fails.
     @ObservationIgnored var connectSeconds: Double = 30
+    /// How long one op may take to handle before the queue moves on.
+    @ObservationIgnored var handlerSeconds: Double = 3
     @ObservationIgnored private let diag = CallDiagnostics.shared
     /// My own candidates wait until my offer/answer has gone out, so the other phone never sees one before the description it belongs to.
     @ObservationIgnored private var outbound: [(String, String?, Int32)] = []
@@ -82,12 +86,13 @@ final class CallManager {
     @ObservationIgnored var ringSeconds: Double = 45
 
     init(signalling: CallSignalling, system: CallSystem, log: CallLog = .shared, now: @escaping () -> Date = Date.init,
-         isQuiet: @escaping () -> Bool = { false }, makeMedia: @escaping () -> any CallMedia) {
+         isQuiet: @escaping () -> Bool = { false }, myID: @escaping () -> String? = { nil }, makeMedia: @escaping () -> any CallMedia) {
         self.signalling = signalling
         self.system = system
         self.log = log
         self.now = now
         self.isQuiet = isQuiet
+        self.myID = myID
         self.makeMedia = makeMedia
         system.onAnswer = { [weak self] id in Task { @MainActor in if self?.callID == id { await self?.accept() } } }
         system.onEnd = { [weak self] id in Task { @MainActor in if self?.callID == id { await self?.end() } } }
@@ -237,8 +242,27 @@ final class CallManager {
         inbox.append(contentsOf: events)
         guard !draining else { return }
         draining = true
-        while !inbox.isEmpty { await handle(inbox.removeFirst()) }
-        draining = false
+        defer { draining = false }
+        if inbox.count > 0 { diag.log("drain starts with \(inbox.count) queued") }
+        while !inbox.isEmpty { await handleWithWatchdog(inbox.removeFirst()) }
+    }
+
+    /// One event must never hold up the next: after `handlerSeconds` the drain moves on (the handler keeps running on its own).
+    private func handleWithWatchdog(_ event: CallEventInfo) async {
+        let finished = Once()
+        let work = Task { @MainActor in
+            await self.handle(event)
+            finished.fire()
+        }
+        _ = work
+        let limit = handlerSeconds
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            finished.onFire = { continuation.resume() }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(limit))
+                if finished.fireIfWaiting() { self.diag.log("handler stuck: \(event.op)") }
+            }
+        }
     }
 
     func handle(_ event: CallEventInfo) async {
@@ -257,10 +281,18 @@ final class CallManager {
 
     private func receivedOffer(_ event: CallEventInfo) async {
         let video = (event.payload["video"] as? Bool) ?? false
-        guard phase == .idle else {
-            // Already on a call: the second caller hears "busy" and sees a missed call here.
-            if event.callID != callID { _ = await signalling.send(peer: event.peerID, op: "call.busy", payload: ["call_id": event.callID]) }
-            return
+        if phase != .idle {
+            // Crossed calls: both phones offered at once. The lower user id's offer wins; the other side drops its own, silently.
+            if phase == .outgoing, event.peerID == peerID, event.callID != callID, let me = myID() {
+                diag.log("glare: \(me < peerID ? "mine wins" : "theirs wins")")
+                if me < peerID { return }
+                finish(.missed, notify: true)
+                // falls through: theirs is handled as an ordinary incoming call
+            } else {
+                // Already on a call: the second caller hears "busy" and sees a missed call here.
+                if event.callID != callID { _ = await signalling.send(peer: event.peerID, op: "call.busy", payload: ["call_id": event.callID]) }
+                return
+            }
         }
         guard let sdp = event.payload["sdp"] as? String else { return }
         // Do Not Disturb or outside work hours: no ring; it is a missed call.
@@ -272,12 +304,19 @@ final class CallManager {
         pendingOffer = sdp
         pendingCandidates = earlyCandidates.removeValue(forKey: event.callID) ?? []
         startPolling()
-        guard await system.reportIncoming(callID: callID, name: peerName, video: video) else {
-            // The system refused to ring (a Focus): a missed call.
-            finish(.missed, notify: false)
-            return
-        }
         armTimeout()
+        // The system's report is never awaited here: on a device it can take long (or never answer) and the queue must not wait for it.
+        let id = callID, began = Date()
+        system.reportIncoming(callID: id, name: peerName, video: video) { [weak self] refusal in
+            guard let self else { return }
+            if let refusal {
+                self.diag.log("incoming refused: \(refusal)")
+                // The system refused to ring (a Focus): a missed call.
+                if self.callID == id, self.phase == .incoming { self.finish(.missed, notify: false) }
+            } else {
+                self.diag.log("incoming reported in \(Int(Date().timeIntervalSince(began) * 1000)) ms")
+            }
+        }
     }
 
     private func receivedAnswer(_ event: CallEventInfo) async {
@@ -439,5 +478,23 @@ struct CallEventInfo: Equatable {
 
     static func == (lhs: CallEventInfo, rhs: CallEventInfo) -> Bool {
         lhs.op == rhs.op && lhs.callID == rhs.callID && lhs.peerID == rhs.peerID
+    }
+}
+
+/// Resumes one waiter, once, from whichever of two sources comes first.
+@MainActor
+final class Once {
+    var onFire: (() -> Void)?
+    private var fired = false
+    func fire() {
+        guard !fired else { return }
+        fired = true
+        onFire?()
+    }
+    /// For the watchdog: fires, and says whether it was the first.
+    func fireIfWaiting() -> Bool {
+        guard !fired else { return false }
+        fire()
+        return true
     }
 }

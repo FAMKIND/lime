@@ -16,7 +16,10 @@ private final class FakeSystem: CallSystem {
     var onMute: ((String, Bool) -> Void)?
     var refuse = false
     var incoming = 0
-    func reportIncoming(callID: String, name: String, video: Bool) async -> Bool { incoming += 1; return !refuse }
+    func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (String?) -> Void) {
+        incoming += 1
+        completion(refuse ? "refused" : nil)
+    }
     func reportOutgoing(callID: String, name: String, video: Bool) {}
     func reportConnected(callID: String) {}
     func reportEnded(callID: String, answeredOrOutgoing: Bool) {}
@@ -131,6 +134,52 @@ final class CallTests: XCTestCase {
         await m.handle(event("call.end"))
         XCTAssertEqual(m.phase, .idle)
         XCTAssertEqual(log.records.first?.outcome, .missed)
+    }
+
+    func testGatheringStopsAtOneSecondOnceARelayIsIn() {
+        let done = { (elapsed: Double, complete: Bool, configured: Bool, relay: Bool) in
+            WebRTCMedia.gatheringDone(elapsed: elapsed, complete: complete, relayConfigured: configured, hasRelay: relay)
+        }
+        XCTAssertFalse(done(0.5, false, true, true), "too early")
+        XCTAssertTrue(done(1.0, false, true, true), "a relay is in: 1 s is enough")
+        XCTAssertFalse(done(1.5, false, true, false), "a relay is expected but not in yet: keep waiting")
+        XCTAssertFalse(done(1.5, false, false, false), "no relay configured: wait for completion")
+        XCTAssertTrue(done(2.5, false, true, false), "the cap")
+        XCTAssertTrue(done(0.2, true, false, false), "complete")
+    }
+
+    func testTheRelayCredentialsAreAskedTwiceThenTheCallGoesOn() async {
+        struct Down: Error {}
+        var tries = 0
+        let value: Int? = await Retry.once(after: .milliseconds(10)) { () async throws -> Int? in tries += 1; throw Down() }
+        XCTAssertNil(value)
+        XCTAssertEqual(tries, 2)
+        tries = 0
+        let second: Int? = await Retry.once(after: .milliseconds(10)) { () async throws -> Int? in tries += 1; if tries == 1 { throw Down() }; return 7 }
+        XCTAssertEqual(second, 7)
+        tries = 0
+        let none: Int? = await Retry.once(after: .milliseconds(10)) { () async throws -> Int? in tries += 1; return nil }
+        XCTAssertNil(none)
+        XCTAssertEqual(tries, 1, "'not configured' is an answer, not an error")
+    }
+
+    func testCrossedCallsTheLowerUserIdsOfferWins() async {
+        for (mine, wins) in [("a-low", true), ("z-high", false)] {
+            let m = CallManager(signalling: signalling, system: system, log: log, myID: { mine }, makeMedia: { [unowned self] in media })
+            _ = await m.start(peerID: "m-peer", name: "Peer", video: false)
+            let mineID = m.currentID
+            await m.handle(CallEventInfo(op: "call.offer", callID: "theirs", peerID: "m-peer", peerName: "Peer", payload: ["sdp": "v=0"]))
+            if wins {
+                XCTAssertEqual(m.phase, .outgoing, "my offer wins: still calling")
+                XCTAssertEqual(m.currentID, mineID)
+            } else {
+                XCTAssertEqual(m.phase, .incoming, "their offer wins: I answer theirs")
+                XCTAssertEqual(m.currentID, "theirs")
+            }
+            XCTAssertFalse(signalling.sent.map(\.op).contains("call.busy"), "crossed calls are not 'busy'")
+            await m.end()
+            signalling.sent = []
+        }
     }
 
     func testFingerprintAndClock() {

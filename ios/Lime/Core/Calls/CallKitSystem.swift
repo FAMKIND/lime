@@ -25,7 +25,7 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
 
     private func uuid(_ id: String) -> UUID { UUID(uuidString: id) ?? UUID() }
 
-    func reportIncoming(callID: String, name: String, video: Bool) async -> Bool {
+    func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (String?) -> Void) {
         let update = CXCallUpdate()
         update.remoteHandle = CXHandle(type: .generic, value: name)
         update.localizedCallerName = name
@@ -34,11 +34,11 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
         update.supportsGrouping = false
         update.supportsUngrouping = false
         update.supportsDTMF = false
-        do {
-            try await provider.reportNewIncomingCall(with: uuid(callID), update: update)
-            return true
-        } catch {
-            return false
+        CallDiagnostics.shared.log("callkit reporting incoming")
+        // The completion-handler form, not the async one: on a device the async form was suspected of never resuming (LIME-111-fix3b).
+        provider.reportNewIncomingCall(with: uuid(callID), update: update) { error in
+            let message = error.map { "\($0)" }
+            Task { @MainActor in completion(message) }
         }
     }
 
@@ -101,7 +101,7 @@ final class QuietCallSystem: CallSystem {
     var onAnswer: ((String) -> Void)?
     var onEnd: ((String) -> Void)?
     var onMute: ((String, Bool) -> Void)?
-    func reportIncoming(callID: String, name: String, video: Bool) async -> Bool { true }
+    func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (String?) -> Void) { completion(nil) }
     func reportOutgoing(callID: String, name: String, video: Bool) {}
     func reportConnected(callID: String) {}
     func reportEnded(callID: String, answeredOrOutgoing: Bool) {}

@@ -142,6 +142,7 @@ final class AccountSession {
             return try await self.accessToken()
         }))
         let store = self.store
+        store.myUserID = userID
         await nudges?.stop()
         let live = RealtimeNudges(
             baseURL: config.url, apiKey: config.apiKey, deviceID: device.deviceId,

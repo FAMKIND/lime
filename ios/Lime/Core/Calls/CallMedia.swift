@@ -91,6 +91,7 @@ final class WebRTCMedia: NSObject, CallMedia {
         guard let connection = Self.factory.peerConnection(with: configuration, constraints: constraints, delegate: self) else { throw CallMediaError.failed }
         self.connection = connection
         wantsVideo = video
+        relayConfigured = servers.contains { $0.urls.contains { $0.hasPrefix("turn") } }
 
         let audioSource = Self.factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
         let audio = Self.factory.audioTrack(with: audioSource, trackId: "lime-audio")
@@ -133,7 +134,8 @@ final class WebRTCMedia: NSObject, CallMedia {
     /// candidates travel in the signed offer/answer and need no ops of their own.
     private func gathered(_ connection: RTCPeerConnection, fallback: String) async -> String {
         let started = Date()
-        while connection.iceGatheringState != .complete, Date().timeIntervalSince(started) < Self.gatherCap {
+        while !Self.gatheringDone(elapsed: Date().timeIntervalSince(started), complete: connection.iceGatheringState == .complete,
+                                  relayConfigured: relayConfigured, hasRelay: (connection.localDescription?.sdp ?? "").contains("typ relay")) {
             try? await Task.sleep(for: .milliseconds(50))
         }
         let sdp = connection.localDescription?.sdp ?? fallback
@@ -143,7 +145,15 @@ final class WebRTCMedia: NSObject, CallMedia {
         return sdp
     }
 
-    static let gatherCap: TimeInterval = 2.5
+    nonisolated static let gatherCap: TimeInterval = 2.5
+    /// With a relay configured, 1 s is enough once a relay candidate is in; otherwise wait for completion, up to the cap.
+    nonisolated static let gatherQuick: TimeInterval = 1.0
+
+    nonisolated static func gatheringDone(elapsed: TimeInterval, complete: Bool, relayConfigured: Bool, hasRelay: Bool) -> Bool {
+        complete || elapsed >= gatherCap || (relayConfigured && hasRelay && elapsed >= gatherQuick)
+    }
+
+    private var relayConfigured = false
 
     func accept(offer: String) async throws -> String {
         guard let connection else { throw CallMediaError.notStarted }

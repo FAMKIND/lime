@@ -26,12 +26,35 @@ final class StoreSignalling: CallSignalling {
     }
 
     func iceServers() async -> [IceServer] {
-        var servers = [IceServer(urls: ["stun:turn.limechat.org:3478"], username: nil, credential: nil)]
-        guard let store, let core = store.core, let link = store.link, let token = try? await link.token() else { return servers }
-        let turn = try? await Task.detached(priority: .userInitiated) {
-            try core.fetchTurnServers(transport: link.transport, authToken: token)
-        }.value
-        if let turn { servers = [IceServer(urls: turn.urls, username: turn.username, credential: turn.credential)] }
-        return servers
+        let fallback = [IceServer(urls: ["stun:turn.limechat.org:3478"], username: nil, credential: nil)]
+        guard let store, let core = store.core, let link = store.link else { return fallback }
+        let turn = await Retry.once(after: .seconds(1), log: { CallDiagnostics.shared.log($0) }) { () async throws -> TurnServers? in
+            let token = try await link.token()
+            return try await Task.detached(priority: .userInitiated) {
+                try core.fetchTurnServers(transport: link.transport, authToken: token)
+            }.value
+        }
+        guard let turn else {
+            CallDiagnostics.shared.log("relay unavailable: placing the call without it")
+            return fallback
+        }
+        return [IceServer(urls: turn.urls, username: turn.username, credential: turn.credential)]
+    }
+}
+
+/// Tries a network step again once, a second later; `nil` if both tries fail (the call goes on without it).
+@MainActor
+enum Retry {
+    static func once<T>(after delay: Duration, log: (String) -> Void = { _ in }, _ step: () async throws -> T?) async -> T? {
+        for attempt in 1...2 {
+            do {
+                if let value = try await step() { return value }
+                return nil // answered "not configured": no point asking again
+            } catch {
+                log("relay credentials: try \(attempt) failed (\(error))")
+                if attempt == 1 { try? await Task.sleep(for: delay) }
+            }
+        }
+        return nil
     }
 }

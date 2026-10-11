@@ -4783,3 +4783,18 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 - **Two-core repro (staging): does not reproduce.** `calls_keep_working_both_ways_after_a_completed_call_and_crossed_calls` plays the 18:08 sequence (offer, answer, a late batch each way, both end at once) and then B → A call ops and a text, then crossed offers, crossed ends and a text A → B. Everything arrives, both directions, with the app's `fetch_call_ops`. So the ordinary protocol path, the 18:08 sequence and crossed calls are not what broke Jean → Shem.
 - **So the cause is still one of (a), (b), (c)**, and what is left is state on Shem's real phone or the server's device list for Shem (a second or stale device row, a re-registration after the install, a replaced session).
 - **Added so the next logs decide it:** each fetch and sync now logs `downloaded D, stored S, pending [reason=count …]` (core: `take_downloaded`, `pending_summary`; counts only), and the app logs `app start: device …xxxx` (last 4 of the device id) to match against the server. If Shem's phone shows `downloaded 0` while Jean sends, it is (a) or (c); if `downloaded` is non-zero and `pending [no_session=…]`/`decrypt_failed`, it is (b).
+
+
+## LIME-111-fix3b
+
+**An incoming call no longer jams later call ops (committed, awaiting the user's four-call gate and "logs").** Phase 0: `PLOT.md` committed.
+
+**Phase 1, by reading.** In `receivedOffer` the only `await` on the non-busy path was `system.reportIncoming`, which was `try await provider.reportNewIncomingCall(with:update:)`; it ran inside the drain (`handle(_ events:)`, behind the `draining` flag). If that await never resumes on a device, `draining` stays true and every later op piles up in `inbox`: it matches the logs (one `recv` per launch, `pending []`, answers/ends/ICE never logged). I did not verify on a device that the async form fails to resume (no device here); the fix does not depend on it, because nothing in the drain now waits for the system.
+
+**Fix.**
+1. `CallSystem.reportIncoming` is now the completion-handler form and returns at once; `receivedOffer` arms the ring timeout and moves on. A refusal (error → missed) is handled in the completion, on the main actor. Logs: "callkit reporting incoming", "incoming reported in N ms", "incoming refused: …".
+2. The drain cannot jam: `defer` resets `draining`; each event runs under a **3 s watchdog** (`handlerSeconds`): after that "handler stuck: <op>" is logged and the queue moves on; "drain starts with N queued" is logged when the inbox is not empty.
+3. Tests: a system whose report never completes and one that completes after 5 s, three calls in one session alternating caller and callee (A→B, B→A, A→B), every offer, answer and end handled; a hung "busy" send is skipped by the watchdog and the `call.end` behind it is still handled.
+4. **Gather cap:** stops at 1.0 s once a relay candidate is in (when a relay is configured), otherwise at completion or 2.5 s; late candidates still go in the batch op. **TURN credentials:** one retry after 1 s; if both fail, "relay unavailable: placing the call without it" and the call goes on with STUN only. **Glare:** when both phones offer at once the lower user id's offer wins and the other side drops its own silently (no "busy"); the store gives the manager `myUserID`.
+
+**Not exercised:** a real device (the original jam only showed there), glare between two real phones (unit-tested with fakes only), the effect of the 1 s cap on connection success over a real network.
