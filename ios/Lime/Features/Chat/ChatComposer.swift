@@ -21,6 +21,7 @@ struct ChatComposer: View {
     @State private var chooser: Chooser?
     @State private var tooLarge = false
     @State private var choosing = false
+    @State private var recent = RecentMedia()
     @State private var recorder = VoiceRecorder()
     @State private var dragX: CGFloat = 0
     @State private var released = true
@@ -29,7 +30,7 @@ struct ChatComposer: View {
     @State private var preparingVideo: Double?
     @State private var videoProblem: String?
 
-    private enum Chooser: String, Identifiable { case album, camera, files, videoLibrary, videoCamera; var id: String { rawValue } }
+    private enum Chooser: String, Identifiable { case library, camera, files; var id: String { rawValue } }
     private var canSend: Bool { model.canSend || !drafts.isEmpty }
     private var voiceEnabled: Bool { onSendAttachments != nil }
 
@@ -100,26 +101,33 @@ struct ChatComposer: View {
         .padding(.bottom, 4)
         .overlay { EmojiKeyboardField(isActive: $pickingEmoji) { model.insertEmoji($0) }.frame(width: 1, height: 1).opacity(0.01) }
         .sheet(item: $model.linkRequest) { request in LinkSheet(request: request, composer: model) }
-        .confirmSheet("Add to your message", isPresented: $choosing) {
-            Button("Photo Library") { chooser = .album }.accessibilityIdentifier("composer-photo-library")
-            if CameraPicker.isAvailable { Button("Take Photo") { chooser = .camera }.accessibilityIdentifier("composer-take-photo") }
-            Button("Choose Video") { chooser = .videoLibrary }.accessibilityIdentifier("composer-video-library")
-            if CameraPicker.isAvailable { Button("Record Video") { chooser = .videoCamera }.accessibilityIdentifier("composer-record-video") }
-            Button("Files") { chooser = .files }.accessibilityIdentifier("composer-files")
-            Button("Cancel", role: .cancel) {}
+        .sheet(isPresented: $choosing) {
+            AddToMessageSheet(
+                media: recent, room: max(0, AttachmentProcessing.maxPerMessage - drafts.count),
+                onClose: { choosing = false },
+                onCamera: { choose(.camera) },
+                onPhotos: { choose(.library) },
+                onFiles: { choose(.files) },
+                onAdd: { items in
+                    choosing = false
+                    Task {
+                        let picked = await recent.resolve(items)
+                        await addPicked(images: picked.images, videos: picked.videos)
+                    }
+                })
         }
         .fullScreenCover(item: $chooser) { which in
             switch which {
-            case .album:
-                AlbumPicker(limit: max(1, AttachmentProcessing.maxPerMessage - drafts.count), onPick: { images in chooser = nil; add(images: images) }, onCancel: { chooser = nil }).ignoresSafeArea()
+            case .library:
+                MediaLibraryPicker(limit: max(1, AttachmentProcessing.maxPerMessage - drafts.count),
+                              onPick: { images, videos in chooser = nil; Task { await addPicked(images: images, videos: videos) } },
+                              onCancel: { chooser = nil }).ignoresSafeArea()
             case .camera:
-                CameraPicker(onPick: { image in chooser = nil; add(images: [image]) }, onCancel: { chooser = nil }).ignoresSafeArea()
+                CameraCapturePicker(onPhoto: { image in chooser = nil; add(images: [image]) },
+                                    onVideo: { url in chooser = nil; add(video: url) },
+                                    onCancel: { chooser = nil }).ignoresSafeArea()
             case .files:
                 DocumentPicker(onPick: { urls in chooser = nil; add(files: urls) }, onCancel: { chooser = nil }).ignoresSafeArea()
-            case .videoLibrary:
-                VideoLibraryPicker(onPick: { url in chooser = nil; add(video: url) }, onCancel: { chooser = nil }).ignoresSafeArea()
-            case .videoCamera:
-                VideoCameraPicker(onPick: { url in chooser = nil; add(video: url) }, onCancel: { chooser = nil }).ignoresSafeArea()
             }
         }
         .alert("The microphone is off", isPresented: $micDenied) {
@@ -211,33 +219,45 @@ struct ChatComposer: View {
 
     // MARK: Video
 
-    private func add(video url: URL) {
-        Task {
-            preparingVideo = 0
-            defer { preparingVideo = nil; try? FileManager.default.removeItem(at: url) }
-            #if DEBUG
-            if store.isDemo { preparingVideo = 1; drafts.append(ChatComposer.demoVideoDraft); return }
-            #endif
-            do {
-                let made = try await VideoProcessing.prepare(url) { fraction in Task { @MainActor in preparingVideo = fraction } }
-                drafts.append(DraftAttachment(outgoing: made.item, preview: made.poster))
-            } catch let problem as VideoProcessing.Problem {
-                videoProblem = VideoProcessing.message(for: problem)
-            } catch {
-                videoProblem = VideoProcessing.message(for: .unreadable)
-            }
+    /// Closes the add sheet, then opens a picker over the chat (a cover cannot open while the sheet is still going away).
+    private func choose(_ which: Chooser) {
+        choosing = false
+        Task { try? await Task.sleep(for: .milliseconds(350)); chooser = which }
+    }
+
+    private func add(video url: URL) { Task { await addVideo(url) } }
+    private func add(images: [UIImage]) { Task { await addImages(images) } }
+
+    /// Pictures first, then each video one after the other (a video is compressed, which takes a moment).
+    private func addPicked(images: [UIImage], videos: [URL]) async {
+        if !images.isEmpty { await addImages(images) }
+        for url in videos { await addVideo(url) }
+    }
+
+    private func addVideo(_ url: URL) async {
+        preparingVideo = 0
+        defer { preparingVideo = nil; try? FileManager.default.removeItem(at: url) }
+        #if DEBUG
+        if store.isDemo { preparingVideo = 1; drafts.append(ChatComposer.demoVideoDraft); return }
+        #endif
+        guard drafts.count < AttachmentProcessing.maxPerMessage else { return }
+        do {
+            let made = try await VideoProcessing.prepare(url) { fraction in Task { @MainActor in preparingVideo = fraction } }
+            drafts.append(DraftAttachment(outgoing: made.item, preview: made.poster))
+        } catch let problem as VideoProcessing.Problem {
+            videoProblem = VideoProcessing.message(for: problem)
+        } catch {
+            videoProblem = VideoProcessing.message(for: .unreadable)
         }
     }
 
-    private func add(images: [UIImage]) {
-        Task {
-            for image in images where drafts.count < AttachmentProcessing.maxPerMessage {
-                let made = await Task.detached(priority: .userInitiated) { () -> (OutgoingAttachment, UIImage)? in
-                    guard let item = AttachmentProcessing.photo(image) else { return nil }
-                    return (item, PhotoProcessing.crop(image, viewport: 128, scale: 1, offset: .zero))
-                }.value
-                if let made { drafts.append(DraftAttachment(outgoing: made.0, preview: made.1)) }
-            }
+    private func addImages(_ images: [UIImage]) async {
+        for image in images where drafts.count < AttachmentProcessing.maxPerMessage {
+            let made = await Task.detached(priority: .userInitiated) { () -> (OutgoingAttachment, UIImage)? in
+                guard let item = AttachmentProcessing.photo(image) else { return nil }
+                return (item, PhotoProcessing.crop(image, viewport: 128, scale: 1, offset: .zero))
+            }.value
+            if let made { drafts.append(DraftAttachment(outgoing: made.0, preview: made.1)) }
         }
     }
 

@@ -5081,3 +5081,20 @@ Phase 0: `PLOT.md` committed first and items 5 and 6 re-read from it. (126 itsel
 **Tests.** Updated: the profile test (Status label, Sign out found at the bottom of the profile, still asks and cancels) and the Jam test (new words, the button flips and flips back). New: `testEditProfileOpensTheProfileEditorItself`. Full suite on the 13 mini; the profile and Jam tests on SE and 18 Pro.
 
 **Not exercised:** the "Jam is open" one-time notice for people who tapped Notify me (only the choice is stored, as the brief said); Dynamic Type at the largest sizes on the Jam page; no before screenshots.
+
+
+## LIME-127 (one add sheet: Camera, recent photos, Photos, Files)
+
+Phase 0: `PLOT.md` committed first.
+
+**The sheet** (`Features/Attachments/AddSheet.swift`, replacing the six-button `confirmSheet`): a content-height bottom sheet in the app's sheet style: glass **✕** (left), the title **Add to your message**, glass **Photos** (right); a horizontal strip with a **Camera** tile followed by the latest 20 photos and videos (square thumbnails, a ✓ ring when selected, videos show a clock and their length); **Add (N)** (accent) appears once something is selected; then a **Files** card row. Selection is capped at the message's remaining room (10 attachments in all).
+- **Camera tile** → `CameraCapturePicker`: one capture screen for a photo **or** a video (up to 3 minutes, as before). The tile is shown only where there is a camera (always in the demo).
+- **Recent strip** → `RecentMedia` (PhotoKit): reads the library only when the sheet first opens (`requestAuthorization(.readWrite)`; new `NSPhotoLibraryUsageDescription` in `project.yml`). **Limited access:** only the allowed items show, plus a **Manage** link (`presentLimitedLibraryPicker`, then it reloads). **Denied:** the strip is hidden, Camera + Photos + Files stay. Add resolves the selection: pictures at full size, videos written out to a temp file, then they go through the existing pipeline (photo compression, `VideoProcessing.prepare`, limits, encrypted upload), pictures first and each video in turn.
+- **Photos** → `MediaLibraryPicker` (`PHPickerViewController`, images **and** videos together, ordered, several at once; no permission needed).
+- **Files** → the existing `DocumentPicker` (kept as is: any file type; the existing 50 MB limit and the "too large" alert still apply).
+- Removed: the old Photo Library / Take Photo / Choose Video / Record Video list and the `AlbumPicker`, `VideoLibraryPicker`, `VideoCameraPicker` it used.
+- A picker (cover) opens ~0.35 s after the sheet closes, because a cover cannot open while the sheet is still leaving.
+
+**Tests.** New `AddSheetUITests` (7): the sheet has ✕, title, Photos, Camera, the strip and Files and none of the old buttons; two selected → **Add (2)** → both waiting above the text; a video and a photo together, and tapping again unselects; denied hides the strip; limited shows Manage; Files opens the system document picker; Photos opens the system photo picker. The strip shows made-up items in the demo (`-lime-demo-photos granted|limited|denied`), so no library or prompt is needed. I also ran it once against the simulator's real library (`-lime-demo-photos real`, permission granted by `simctl privacy`, two images added with `simctl addmedia`): the real thumbnails showed and two real pictures arrived as drafts. Updated the two older tests that looked for the removed Choose Video button. Tiered: full suite on the 13 mini; AddSheetUITests and the two older composer tests on SE and 18 Pro.
+
+**Not exercised:** a **video** from the real library (the demo uses a stand-in; the real export path `PHAssetResourceManager.writeData` has not run); the Camera tile and a real capture (no camera in the simulator); the permission prompt on a first install (granted by script); Manage on real limited access; iCloud-only photos (network access is allowed but not tried); the Photos picker's selection → attach (only opening and cancelling it); a PDF through Files (only the picker opening).

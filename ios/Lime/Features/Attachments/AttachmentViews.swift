@@ -364,50 +364,6 @@ private struct ZoomablePicture: View {
 
 // MARK: Choosing
 
-/// The system photo picker for up to ten pictures: Lime receives only the ones chosen, with no library permission.
-struct AlbumPicker: UIViewControllerRepresentable {
-    let limit: Int
-    let onPick: ([UIImage]) -> Void
-    let onCancel: () -> Void
-
-    func makeUIViewController(context: Context) -> PHPickerViewController {
-        var configuration = PHPickerConfiguration(photoLibrary: .shared())
-        configuration.filter = .images
-        configuration.selectionLimit = limit
-        configuration.selection = .ordered
-        let picker = PHPickerViewController(configuration: configuration)
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ controller: PHPickerViewController, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick, onCancel: onCancel) }
-
-    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        private nonisolated(unsafe) let onPick: ([UIImage]) -> Void
-        private nonisolated(unsafe) let onCancel: () -> Void
-        init(onPick: @escaping ([UIImage]) -> Void, onCancel: @escaping () -> Void) { self.onPick = onPick; self.onCancel = onCancel }
-
-        nonisolated func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            guard !results.isEmpty else { DispatchQueue.main.async { self.onCancel() }; return }
-            nonisolated(unsafe) var images = [UIImage?](repeating: nil, count: results.count)
-            let group = DispatchGroup()
-            let lock = NSLock()
-            for (index, result) in results.enumerated() where result.itemProvider.canLoadObject(ofClass: UIImage.self) {
-                group.enter()
-                result.itemProvider.loadObject(ofClass: UIImage.self) { object, _ in
-                    lock.lock(); images[index] = object as? UIImage; lock.unlock()
-                    group.leave()
-                }
-            }
-            group.notify(queue: .main) {
-                let chosen = images.compactMap { $0 }
-                if chosen.isEmpty { self.onCancel() } else { self.onPick(chosen) }
-            }
-        }
-    }
-}
-
 /// The document picker: any file, copied so it can be read after the picker closes.
 struct DocumentPicker: UIViewControllerRepresentable {
     let onPick: ([URL]) -> Void

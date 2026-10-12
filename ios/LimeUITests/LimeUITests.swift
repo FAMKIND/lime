@@ -429,8 +429,7 @@ final class LimeUITests: XCTestCase {
         let plus = app.buttons["composer-plus"]
         XCTAssertTrue(plus.waitForExistence(timeout: 10), "the thread composer has a +")
         plus.tap()
-        XCTAssertTrue(app.buttons["composer-photo-library"].waitForExistence(timeout: 5), "and it offers pictures, videos and files")
-        XCTAssertTrue(app.buttons["composer-video-library"].exists)
+        XCTAssertTrue(app.buttons["composer-photo-library"].waitForExistence(timeout: 5), "and it offers photos (and videos), the camera and files")
         XCTAssertTrue(app.buttons["composer-files"].exists)
     }
 
