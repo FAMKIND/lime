@@ -67,6 +67,19 @@ private final class FakeMedia: CallMedia {
 }
 
 @MainActor
+private final class FakePiP: CallPiP {
+    var isPossible = true
+    var onStarted: (() -> Void)?
+    var onStopped: (() -> Void)?
+    var onRestore: (() -> Void)?
+    var onFailed: (() -> Void)?
+    var prepared = 0, started = 0, stopped = 0
+    func prepare(sourceView: UIView) { prepared += 1 }
+    func start() { started += 1 }
+    func stop() { stopped += 1 }
+}
+
+@MainActor
 private final class FakeSounds: CallSounds {
     var log: [String] = []
     func startRingback(video: Bool) { log.append("ringback on") }
@@ -544,6 +557,84 @@ final class CallTests: XCTestCase {
         XCTAssertEqual(media.sentControl.last?["camera"] as? Bool, false)
         media.onCameraInterrupted?(false)
         XCTAssertFalse(m.cameraPaused)
+        XCTAssertTrue(media.videoEnabled)
+        XCTAssertEqual(media.sentControl.last?["camera"] as? Bool, true)
+    }
+
+    // MARK: LIME-118c: minimising
+
+    private func videoCallWithPiP(_ pip: FakePiP) async -> CallManager {
+        let m = await connectedCall(video: true)
+        m.makePictureInPicture = { _ in pip }
+        m.preparePictureInPicture(sourceView: UIView())
+        return m
+    }
+
+    func testAVoiceCallMinimisesToTheSlimBarWithNoFloatingWindow() async {
+        let m = await connectedCall()
+        let pip = FakePiP()
+        m.makePictureInPicture = { _ in pip }
+        m.preparePictureInPicture(sourceView: UIView())
+        XCTAssertEqual(pip.prepared, 0, "no Picture in Picture for a voice call")
+        m.minimize()
+        XCTAssertTrue(m.minimized)
+        XCTAssertFalse(m.pictureInPictureActive)
+        XCTAssertEqual(pip.started, 0)
+    }
+
+    func testAVideoCallMinimisesToSystemPictureInPictureAndTappingTheWindowRestoresIt() async {
+        let pip = FakePiP()
+        let m = await videoCallWithPiP(pip)
+        XCTAssertEqual(pip.prepared, 1)
+        m.minimize()
+        XCTAssertEqual(pip.started, 1)
+        XCTAssertFalse(m.minimized, "the full screen stays until the window is really up")
+        pip.onStarted?()
+        XCTAssertTrue(m.pictureInPictureActive && m.minimized, "the full screen goes, the window floats over lime")
+        pip.onRestore?()
+        XCTAssertFalse(m.minimized, "tapping the window brings the full call screen back")
+        XCTAssertFalse(m.pictureInPictureActive)
+    }
+
+    func testClosingTheWindowLeavesTheCallGoingWithTheReturnBar() async {
+        let pip = FakePiP()
+        let m = await videoCallWithPiP(pip)
+        m.minimize(); pip.onStarted?()
+        pip.onStopped?()
+        XCTAssertFalse(m.pictureInPictureActive)
+        XCTAssertTrue(m.minimized, "the call goes on; the slim bar returns to it")
+        XCTAssertEqual(m.phase, .active)
+    }
+
+    func testWhenThePictureInPictureWindowCannotStartTheCallMinimisesToTheBar() async {
+        let pip = FakePiP()
+        pip.isPossible = false
+        let m = await videoCallWithPiP(pip)
+        m.minimize()
+        XCTAssertTrue(m.minimized)
+        XCTAssertEqual(pip.started, 0)
+        let failing = FakePiP()
+        let again = await videoCallWithPiP(failing)
+        again.minimize(); failing.onFailed?()
+        XCTAssertTrue(again.minimized)
+    }
+
+    func testEndingTheCallClosesTheWindow() async {
+        let pip = FakePiP()
+        let m = await videoCallWithPiP(pip)
+        m.minimize(); pip.onStarted?()
+        await m.end()
+        XCTAssertEqual(pip.stopped, 1)
+        XCTAssertFalse(m.pictureInPictureActive)
+    }
+
+    func testMyCameraPausesWhenLimeLeavesTheFrontAndTheOtherSideIsToldThenItResumes() async {
+        let m = await connectedCall(video: true)
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        XCTAssertFalse(media.videoEnabled, "without the multitasking-camera entitlement the camera cannot run in the background")
+        XCTAssertEqual(media.sentControl.last?["camera"] as? Bool, false)
+        XCTAssertFalse(m.cameraPaused, "that is not the window notice")
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
         XCTAssertTrue(media.videoEnabled)
         XCTAssertEqual(media.sentControl.last?["camera"] as? Bool, true)
     }

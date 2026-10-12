@@ -318,6 +318,9 @@ final class WebRTCMedia: NSObject, CallMedia {
         return true
     }
 
+    /// Also draw the other side's frames here (system Picture in Picture); `nil` stops.
+    func setPictureInPictureRenderer(_ renderer: AnyObject?) { remoteSlot.setExtraRenderer(renderer) }
+
     func setMuted(_ muted: Bool) { audioTrack?.isEnabled = !muted }
 
     func setVideo(_ on: Bool) { videoTrack?.isEnabled = on }
@@ -464,12 +467,31 @@ final class RemoteVideoSlot {
     private var renderer: AnyObject?
     private var attachedSource: FrameSource?
     private(set) var attachments = 0
+    /// A second place the frames go (system Picture in Picture), on whichever source is current.
+    private var extra: AnyObject?
+    private var extraSource: FrameSource?
+
+    func setExtraRenderer(_ new: AnyObject?) {
+        if let extraSource, let extra { extraSource.remove(renderer: extra) }
+        extraSource = nil
+        extra = new
+        attachExtra()
+    }
+
+    private func attachExtra() {
+        guard let source, let extra, extraSource == nil else { return }
+        source.add(renderer: extra)
+        extraSource = source
+    }
 
     func setSource(_ new: FrameSource?) {
         guard new !== source else { return }
         detach()
+        if let extraSource, let extra { extraSource.remove(renderer: extra) }
+        extraSource = nil
         source = new
         attach()
+        attachExtra()
     }
 
     func setRenderer(_ new: AnyObject?) {
@@ -480,6 +502,8 @@ final class RemoteVideoSlot {
 
     func clear() {
         detach()
+        if let extraSource, let extra { extraSource.remove(renderer: extra) }
+        extraSource = nil; extra = nil
         source = nil
         renderer = nil
     }

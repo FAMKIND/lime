@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Where a call is.
 enum CallPhase: Equatable, Sendable {
@@ -71,6 +72,15 @@ final class CallManager {
     /// The DTLS fingerprint of the other phone's media key, from the signed offer/answer: a mid-call SDP must carry the same one.
     @ObservationIgnored private var remoteFingerprint: String?
     @ObservationIgnored private var renegotiating = false
+    /// lime is not in front: my camera cannot run (it needs an Apple entitlement), so my picture pauses and the other side is told.
+    @ObservationIgnored private var backgrounded = false
+    private var cameraHeld: Bool { cameraPaused || backgrounded }
+    /// System Picture in Picture for a video call (LIME-118c): made by the app; nil in tests and the demo.
+    @ObservationIgnored var makePictureInPicture: ((any CallMedia) -> (any CallPiP)?)?
+    @ObservationIgnored private var pip: (any CallPiP)?
+    /// The floating system window is up.
+    private(set) var pictureInPictureActive = false
+    @ObservationIgnored private var lifecycle: [NSObjectProtocol] = []
     #if DEBUG
     @ObservationIgnored fileprivate var isDemoCall = false
     #endif
@@ -142,6 +152,11 @@ final class CallManager {
         self.sounds = sounds
         self.makeMedia = makeMedia
         route.onHeadphonesGone = { [weak self] in self?.headphonesGone() }
+        let center = NotificationCenter.default
+        lifecycle = [
+            center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.appBackgrounded(true) } },
+            center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.appBackgrounded(false) } },
+        ]
         system.onAnswer = { [weak self] id in Task { @MainActor in if self?.callID == id { await self?.accept(fromSystem: true) } } }
         system.onEnd = { [weak self] id in Task { @MainActor in if self?.callID == id { await self?.end() } } }
         system.onMute = { [weak self] id, muted in Task { @MainActor in if self?.callID == id { self?.setMuted(muted) } } }
@@ -205,7 +220,7 @@ final class CallManager {
         callID = id; muted = false; speaker = video; cameraOn = true; startedAt = nil
         pendingOffer = nil; pendingCandidates = []; remoteReady = false; outbound = []; descriptionSent = false
         remoteRinging = false; showUnreachableHint = false; remoteVideoLive = false; minimized = false
-        remoteMuted = false; remoteCameraOn = true; cameraPaused = false; remoteFingerprint = nil; renegotiating = false
+        remoteMuted = false; remoteCameraOn = true; cameraPaused = false; backgrounded = false; remoteFingerprint = nil; renegotiating = false; pictureInPictureActive = false
     }
 
     private func wire(_ media: any CallMedia) {
@@ -223,7 +238,7 @@ final class CallManager {
         media.onCameraInterrupted = { [weak self] paused in
             guard let self, self.inCall else { return }
             self.cameraPaused = paused
-            self.media?.setVideo(!paused && self.cameraOn)
+            self.media?.setVideo(self.cameraOn && !self.cameraHeld)
             self.sendState()
         }
         media.onConnection = { [weak self] up in
@@ -592,7 +607,37 @@ final class CallManager {
         // No camera in the call yet (a voice call, or the other side started the video): turning it on adds it.
         guard media?.hasLocalVideo == true else { Task { await startVideo() }; return }
         cameraOn.toggle()
-        media?.setVideo(cameraOn && !cameraPaused)
+        media?.setVideo(cameraOn && !cameraHeld)
+        sendState()
+    }
+
+    // MARK: Minimising (LIME-118c)
+
+    /// Makes system Picture in Picture ready for a video call (the call screen's picture must be on screen).
+    func preparePictureInPicture(sourceView: UIView) {
+        guard video, inCall, let media else { return }
+        if pip == nil { pip = makePictureInPicture?(media); wirePictureInPicture() }
+        pip?.prepare(sourceView: sourceView)
+    }
+
+    private func wirePictureInPicture() {
+        pip?.onStarted = { [weak self] in self?.pictureInPictureActive = true; self?.minimized = true }
+        pip?.onStopped = { [weak self] in self?.pictureInPictureActive = false }
+        pip?.onRestore = { [weak self] in self?.pictureInPictureActive = false; self?.minimized = false }
+        pip?.onFailed = { [weak self] in self?.minimized = true }
+    }
+
+    /// The Minimise button (and the person sheet's Message). A video call floats in system Picture in Picture over lime, as FaceTime
+    /// does over Messages; a voice call (or a video call that cannot) leaves the full screen and keeps a slim bar to return by.
+    func minimize() {
+        if video, phase == .active, let pip, pip.isPossible { pip.start() } else { minimized = true }
+    }
+
+    private func appBackgrounded(_ away: Bool) {
+        guard inCall, backgrounded != away else { return }
+        backgrounded = away
+        guard video, let media, media.hasLocalVideo else { return }
+        media.setVideo(cameraOn && !cameraHeld)
         sendState()
     }
 
@@ -612,7 +657,7 @@ final class CallManager {
     /// My microphone and camera state, sent once the channel opens and on every change.
     func sendState() {
         guard inCall, let media else { return }
-        let sending = video && media.hasLocalVideo && cameraOn && !cameraPaused
+        let sending = video && media.hasLocalVideo && cameraOn && !cameraHeld
         _ = control(["t": "state", "muted": muted, "camera": sending])
     }
 
@@ -698,6 +743,7 @@ final class CallManager {
         guard inCall else { return }
         diag.log("finish \(outcome.rawValue)")
         unavailableTask?.cancel(); unavailableTask = nil; unavailableNote = nil
+        pip?.stop(); pip = nil; pictureInPictureActive = false
         stopRinging()
         // The end tone: for any call this phone placed or answered (not for a call it never rang for).
         if outgoing || startedAt != nil || outcome == .declined { sounds.playEnd() }

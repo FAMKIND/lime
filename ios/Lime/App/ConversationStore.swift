@@ -126,6 +126,7 @@ final class ConversationStore {
         let system: CallSystem = quiet ? QuietCallSystem() : CallKitSystem()
         let manager = CallManager(signalling: StoreSignalling(store: self), system: system, sounds: quiet ? QuietCallSounds() : SystemCallSounds(),
                                   quietReason: { StatusSettings.shared.quietCallReason() }, myID: { [weak self] in self?.myUserID }, makeMedia: { WebRTCMedia(manualAudio: !quiet) })
+        if !quiet { manager.makePictureInPicture = { ($0 as? WebRTCMedia).map { CallPictureInPicture(media: $0) } } }
         manager.fetchNow = { [weak self] in await self?.fetchCallOps() }
         manager.onFinished = { [weak self] in Task { @MainActor in await self?.reload() } }
         callManager = manager

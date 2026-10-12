@@ -60,7 +60,16 @@ struct CallView: View {
                         .frame(maxHeight: .infinity, alignment: .top).padding(.top, 70)
                         .accessibilityIdentifier("call-route-toast")
                 }
-                controls(call)
+                if !call.video && call.phase != .incoming {
+                    // Voice: the Minimise button is a glass circle on the name pill's row (the controls row is full on a small phone).
+                    Button { call.minimize() } label: {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                            .frame(width: 44, height: 44).background(.white.opacity(0.2), in: Circle())
+                    }
+                    .accessibilityLabel("Minimise").accessibilityIdentifier("call-minimize")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(.top, 8).padding(.trailing, 16)
+                }
+                controls(call, landscape: geo.size.width > geo.size.height)
                     .opacity(call.video && !controlsVisible ? 0 : 1)
                     .allowsHitTesting(!(call.video && !controlsVisible))
                     .accessibilityHidden(call.video && !controlsVisible)
@@ -76,8 +85,9 @@ struct CallView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { if call.video { showControls() } }
-            .onAppear { showControls() }
-            .onChange(of: call.phase) { _, _ in showControls() }
+            .onAppear { showControls(); preparePictureInPicture(call) }
+            .onChange(of: call.phase) { _, _ in showControls(); preparePictureInPicture(call) }
+            .onChange(of: call.video) { _, _ in preparePictureInPicture(call) }
         }
         .sheet(isPresented: $showPerson) { personSheet(call) }
         .preferredColorScheme(.dark)
@@ -219,7 +229,7 @@ struct CallView: View {
             Text(call.peerName).font(.title2.weight(.semibold))
             Button {
                 showPerson = false
-                call.minimized = true
+                call.minimize()
                 store.openFromNotification("dm:\(call.peerID)", thread: nil)
             } label: {
                 Label("Message", systemImage: "message").font(.headline).frame(maxWidth: .infinity, minHeight: 48)
@@ -237,19 +247,33 @@ struct CallView: View {
     // MARK: Controls
 
     @ViewBuilder
-    private func controls(_ call: CallManager) -> some View {
+    private func controls(_ call: CallManager, landscape: Bool) -> some View {
         if call.phase == .incoming {
             HStack(spacing: 80) {
                 round("phone.down.fill", "Decline", .red, id: "call-decline") { Task { await call.decline() } }
                 round("phone.fill", "Accept", .green, id: "call-accept") { Task { await call.accept() } }
             }
             .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 48)
+        } else if call.video && landscape {
+            // Landscape is short: the column would not fit, so the same buttons run along the bottom.
+            HStack(spacing: 14) {
+                toggle("arrow.triangle.2.circlepath.camera", "Flip camera", on: false, id: "call-flip") { call.flipCamera(); showControls() }
+                toggle(call.cameraOn ? "video.fill" : "video.slash.fill", "Camera", on: !call.cameraOn, id: "call-video") { call.toggleCamera(); showControls() }
+                toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute") { call.setMuted(!call.muted); showControls() }
+                toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }
+                routeButton(call)
+                round("xmark", "End call", .red, id: "call-end") { Task { await call.end() } }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom).padding(.bottom, 20)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("call-controls-video")
         } else if call.video {
             ZStack {
                 VStack(spacing: 14) {
                     Spacer()
                     toggle(call.cameraOn ? "video.fill" : "video.slash.fill", "Camera", on: !call.cameraOn, id: "call-video") { call.toggleCamera(); showControls() }
                     toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute") { call.setMuted(!call.muted); showControls() }
+                    toggle("arrow.down.right.and.arrow.up.left", "Minimise", on: false, id: "call-minimize") { call.minimize() }
                     routeButton(call)
                     round("xmark", "End call", .red, id: "call-end") { Task { await call.end() } }
                 }
@@ -290,6 +314,12 @@ struct CallView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Audio output, now \(call.route.name)")
         .accessibilityIdentifier("call-route")
+    }
+
+    /// System Picture in Picture needs the call's picture on screen to start from.
+    private func preparePictureInPicture(_ call: CallManager) {
+        guard call.video, call.phase == .active, let view = call.media?.remoteView else { return }
+        call.preparePictureInPicture(sourceView: view)
     }
 
     private func showControls() {

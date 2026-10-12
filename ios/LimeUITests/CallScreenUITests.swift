@@ -115,7 +115,40 @@ final class CallScreenUITests: XCTestCase {
             let frame = any(video, id).frame
             XCTAssertTrue(bounds.insetBy(dx: 0, dy: 0).contains(frame), "\(id) \(frame) is inside \(bounds)")
         }
-        let end = any(video, "call-end").frame, mute = any(video, "call-mute").frame, camera = any(video, "call-video").frame
-        XCTAssertFalse(end.intersects(mute) || mute.intersects(camera), "the stack does not overlap itself in landscape")
+        for id in ["call-minimize", "call-flip", "call-route"] { XCTAssertTrue(bounds.contains(any(video, id).frame), "\(id) is inside in landscape") }
+        let ids = ["call-flip", "call-video", "call-mute", "call-minimize", "call-route", "call-end"]
+        let frames = ids.map { any(video, $0).frame }
+        for (left, right) in zip(frames, frames.dropFirst()) { XCTAssertFalse(left.intersects(right), "no overlap in landscape: \(left) \(right)") }
+        XCTAssertFalse(any(video, "call-name-pill").frame.intersects(frames[0]), "the name pill is clear of the controls")
+    }
+
+    // MARK: LIME-118c
+
+    func testAVideoCallsMinimiseButtonIsUnderMuteAndAVoiceCallsIsTopRight() {
+        let video = app("video")
+        XCTAssertTrue(video.buttons["call-minimize"].waitForExistence(timeout: 10))
+        let order = ["call-video", "call-mute", "call-minimize", "call-route", "call-end"].map { any(video, $0).frame }
+        for (above, below) in zip(order, order.dropFirst()) { XCTAssertLessThanOrEqual(above.maxY, below.minY, "one column, in order: \(order)") }
+        XCTAssertEqual(order[1].midX, order[2].midX, accuracy: 1, "directly under Mute")
+        video.terminate()
+
+        let voice = app("voice")
+        XCTAssertTrue(voice.buttons["call-minimize"].waitForExistence(timeout: 10))
+        let frame = any(voice, "call-minimize").frame
+        let pill = any(voice, "call-name-pill").frame
+        XCTAssertGreaterThan(frame.midX, voice.windows.firstMatch.frame.width / 2, "top right")
+        XCTAssertLessThan(abs(frame.midY - pill.midY), 30, "on the name pill's row")
+        XCTAssertGreaterThanOrEqual(frame.width, 44)
+    }
+
+    func testMinimisingLeavesTheSlimBarAndTappingItReturnsToTheCall() {
+        let voice = app("voice")
+        XCTAssertTrue(voice.buttons["call-minimize"].waitForExistence(timeout: 10))
+        voice.buttons["call-minimize"].tap()
+        let bar = voice.buttons["call-return-bar"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5), "the slim bar (no floating window in a voice call)")
+        XCTAssertTrue(bar.label.contains("Tap to return to call"), bar.label)
+        bar.tap()
+        XCTAssertTrue(voice.buttons["call-end"].waitForExistence(timeout: 5), "back on the full call screen")
     }
 }

@@ -77,3 +77,8 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - `TURN_SECRET` is set on the project (`supabase secrets set`) and `turn-credentials` returns 200, not 503.
 - `infra/turn/setup.sh` has been run on the TURN server; ports 3478 (UDP/TCP), 5349 (TLS), 49152-49999/UDP are open; the certificate renews.
 - Two real phones: voice call, video with flip camera, a missed call, and a call over mobile data (relay).
+
+## Picture in Picture and the camera in the background (LIME-118c)
+
+- **Paid Apple Developer account item:** a video call's picture floats in system Picture in Picture and keeps your own camera running only while lime is in front. Keeping **your** camera on while lime is in the background (or in PiP after leaving) needs the restricted entitlement `com.apple.developer.avfoundation.multitasking-camera-access`, which Apple grants on request and which is not in the free account. Until then lime pauses your video when it leaves the front and tells the other side (`camera: false`, they see your avatar); it resumes when you come back. When the entitlement is granted: add it, set `isMultitaskingCameraAccessEnabled` on the capture session, and drop the pause in `CallManager.appBackgrounded`.
+- On a real phone: minimise a video call (the other person floats over lime; drag, resize, stash it, tap it to return); leave lime during a video call (the same window); close the window (the call goes on with the slim bar).

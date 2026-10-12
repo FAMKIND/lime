@@ -20,7 +20,7 @@ struct RootView: View {
         .overlay(alignment: .top) { IncomingBannerView() }
         .fullScreenCover(isPresented: Binding(get: { store.calls.inCall && !store.calls.minimized }, set: { _ in })) { CallView() }
         .overlay(alignment: .top) {
-            if store.calls.inCall && store.calls.minimized {
+            if store.calls.inCall && store.calls.minimized && !store.calls.pictureInPictureActive {
                 Button { store.calls.minimized = false } label: {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Label("Tap to return to call \u{00B7} \(store.calls.statusText(at: context.date))", systemImage: "phone.fill")
