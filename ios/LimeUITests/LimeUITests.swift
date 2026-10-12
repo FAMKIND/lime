@@ -24,13 +24,12 @@ final class LimeUITests: XCTestCase {
         return app
     }
 
-    /// Your avatar opens the status sheet; Settings is a row in it.
+    /// Your avatar opens your profile; Settings is one of its cards.
     private func openSettingsFromAvatar(_ app: XCUIApplication) {
         app.buttons["settings-button"].tap()
-        let row = app.buttons["status-open-settings"]
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "the status sheet opens")
+        let row = app.buttons["profile-settings"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "your profile opens")
         row.tap()
-        // The status sheet closes first, then Settings opens: wait for it before the test taps inside.
         XCTAssertTrue(app.descendants(matching: .any)["settings-root"].waitForExistence(timeout: 10), "Settings opens")
     }
 
@@ -1112,6 +1111,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.descendants(matching: .any)["status-badge-test-user"].exists, "no badge until I set one")
         app.buttons["settings-button"].tap()
+        app.buttons["profile-change-status"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["status-sheet"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["status-quiet-1h"].exists && app.buttons["status-quiet-tomorrow"].exists)
         XCTAssertTrue(app.buttons["status-work-hours"].exists && app.buttons["status-open-settings"].exists)
@@ -1119,11 +1119,11 @@ final class LimeUITests: XCTestCase {
         let badge = app.descendants(matching: .any)["status-badge-test-user"]
         XCTAssertTrue(badge.waitForExistence(timeout: 5), "my own avatar shows it")
         XCTAssertEqual(badge.label, "Do not disturb")
-        // Quiet for an hour, then back to automatic.
-        app.buttons["settings-button"].tap()
+        // Quiet for an hour, then back to automatic (the status sheet opens from my profile's Change status).
+        app.buttons["profile-change-status"].tap()
         app.buttons["status-quiet-1h"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["status-badge-test-user"].waitForExistence(timeout: 5))
-        app.buttons["settings-button"].tap()
+        app.buttons["profile-change-status"].tap()
         app.buttons["status-automatic"].tap()
         app.buttons["status-available"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["status-badge-test-user"].waitForExistence(timeout: 5), "Available shows the green dot")
@@ -1967,7 +1967,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["settings-card-name"].label, "Test Teacher")
         XCTAssertFalse(app.descendants(matching: .any)["settings-donate"].exists, "no donate link is configured, so the row is hidden")
         app.buttons["settings-close"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["profile-screen"].waitForExistence(timeout: 5), "closing Settings returns to the profile it was opened from")
     }
 
     func testTheDonateRowAppearsWhenALinkIsConfigured() {

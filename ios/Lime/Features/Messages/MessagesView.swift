@@ -75,7 +75,7 @@ struct MessagesView: View {
                 Button { store.path.append(MessagesRoute.search) } label: { Image(systemName: "magnifyingglass") }
                     .accessibilityLabel("Search")
                     .accessibilityIdentifier("messages-search-button")
-                Button { showStatus = true } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true) }
+                Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true) }
                     .accessibilityLabel("Settings")
                     .accessibilityIdentifier("settings-button")
             }
@@ -91,7 +91,7 @@ struct MessagesView: View {
         }
         .readSideInsets($sideInsets)
         .overlay(alignment: .top) { TopFade() }
-        .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }, onSearch: { store.path.append(MessagesRoute.search) }, onSettings: { showStatus = true }) }
+        .overlay(alignment: .top) { TopControls(onAbout: { showAbout = true }, onSearch: { store.path.append(MessagesRoute.search) }, onSettings: { store.openMyProfile() }) }
         .toolbar(.hidden, for: .navigationBar)
     }
 

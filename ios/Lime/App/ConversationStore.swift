@@ -53,6 +53,8 @@ final class ConversationStore {
     var publicProfiles: [String: PublicProfile] = [:]
     /// The call tab's own navigation path, and its name filter (the header's search).
     var callPath = NavigationPath()
+    /// The jam tab's own navigation path.
+    var jamPath = NavigationPath()
     /// The call tab's All | Missed segment and its filters (kept while the app runs).
     var callMissedOnly = false
     var callFilter = CallFilter()

@@ -34,3 +34,20 @@ extension ConversationStore {
         }.sorted { $0.date > $1.date }
     }
 }
+
+extension ConversationStore {
+    /// Opens a profile in the tab that is showing.
+    func openProfile(_ route: ProfileRoute) {
+        switch section {
+        case .link: path.append(route)
+        case .call: callPath.append(route)
+        case .jam: jamPath.append(route)
+        }
+    }
+
+    /// Your own header avatar: your profile.
+    func openMyProfile() {
+        let me = meProvider()
+        openProfile(ProfileRoute(userID: me.id, name: me.name, isMe: true))
+    }
+}

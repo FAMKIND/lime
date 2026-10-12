@@ -36,7 +36,7 @@ struct RootHeader: ViewModifier {
                             Button(action: search) { Image(systemName: "magnifyingglass") }
                                 .accessibilityLabel("Search")
                                 .accessibilityIdentifier(searchID)
-                            Button { showStatus = true } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true) }
+                            Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true) }
                                 .accessibilityLabel("Settings")
                                 .accessibilityIdentifier("settings-button")
                         }
@@ -46,7 +46,7 @@ struct RootHeader: ViewModifier {
                     #if DEBUG
                     showAbout = true
                     #endif
-                }, onSearch: search, onSettings: { showStatus = true }, searchID: searchID)
+                }, onSearch: search, onSettings: { store.openMyProfile() }, searchID: searchID)
                 if overlays {
                     content
                         .overlay(alignment: .top) { TopFade() }

@@ -7,6 +7,8 @@ struct ProfileRoute: Hashable {
     let name: String
     var conversationID: String? = nil
     var callIDs: [String]? = nil
+    /// Your own profile.
+    var isMe = false
 
     /// Whose items the Shared lists show: everyone in a DM, this person in a group.
     var sharedSender: String? { (conversationID ?? "").hasPrefix("grp:") ? userID : nil }
@@ -31,6 +33,16 @@ struct ProfileView: View {
     let route: ProfileRoute
     @Environment(ConversationStore.self) private var store
     @Environment(NotificationCoordinator.self) private var notifications
+    @Environment(AccountSession.self) private var session
+    @State private var confirmingMute = false
+    @State private var confirmingBlock = false
+    @State private var confirmingDelete = false
+    @State private var confirmingSignOut = false
+    @State private var showStatus = false
+    @State private var showSettings = false
+    @State private var settingsStart: SettingsRoute?
+    @State private var verifying = false
+    @State private var showStorage = false
     @State private var section: Section = .info
     @State private var copied = false
     @State private var labelling = false
@@ -39,18 +51,31 @@ struct ProfileView: View {
     enum Section: String, CaseIterable { case info = "Info", shared = "Shared", calls = "Calls" }
 
     private var conversation: Conversation? { store.conversation("dm:\(route.userID)") }
-    private var person: Person { conversation?.members.first ?? Person(id: route.userID, name: route.name, tone: AvatarTone.tone(for: route.userID)) }
-    private var profile: PublicProfile? { store.publicProfiles[route.userID] }
+    private var person: Person {
+        if route.isMe { return session.mePerson }
+        return conversation?.members.first ?? Person(id: route.userID, name: route.name, tone: AvatarTone.tone(for: route.userID))
+    }
+    /// Their public profile; for me, what my own account says.
+    private var profile: PublicProfile? {
+        if route.isMe, let mine = session.profile {
+            return PublicProfile(userId: route.userID, displayName: mine.displayName, username: mine.username, school: mine.school, aboutEmoji: mine.aboutEmoji, aboutText: mine.aboutText)
+        }
+        return store.publicProfiles[route.userID]
+    }
     private var displayName: String { (profile?.displayName).flatMap { $0.isEmpty ? nil : $0 } ?? route.name }
-    private var accepted: Bool { conversation.map { !$0.isRequest } ?? false }
+    private var accepted: Bool { !route.isMe && (conversation.map { !$0.isRequest } ?? false) }
     private var statusLine: String? {
         guard let status = store.status(of: route.userID) else { return nil }
         return StatusPlan.caption(state: status.state, until: status.until)
     }
-    private var sharedMedia: [Message] { store.shared(in: route.sharedConversation, from: route.sharedSender, kind: .media) }
-    private var sharedFiles: [Message] { store.shared(in: route.sharedConversation, from: route.sharedSender, kind: .files) }
-    private var sharedLinks: [Message] { store.shared(in: route.sharedConversation, from: route.sharedSender, kind: .links) }
+    /// Mine, from a group: what I shared there; from the header: nothing.
+    private var sharedSender: String? { route.isMe ? "me" : route.sharedSender }
+    private var hasSharedContext: Bool { !route.isMe || route.conversationID != nil }
+    private var sharedMedia: [Message] { hasSharedContext ? store.shared(in: route.sharedConversation, from: sharedSender, kind: .media) : [] }
+    private var sharedFiles: [Message] { hasSharedContext ? store.shared(in: route.sharedConversation, from: sharedSender, kind: .files) : [] }
+    private var sharedLinks: [Message] { hasSharedContext ? store.shared(in: route.sharedConversation, from: sharedSender, kind: .links) : [] }
     private var calls: [CallRecord] {
+        if route.isMe { return [] }
         if let ids = route.callIDs { return CallLog.shared.records.filter { ids.contains($0.id) } }
         return Array(CallLog.shared.records(with: route.userID).prefix(10))
     }
@@ -66,7 +91,7 @@ struct ProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 top
-                if accepted { actions }
+                if route.isMe { myActions } else if accepted { actions }
                 if available.count > 1 {
                     Picker("Section", selection: $section) {
                         ForEach(available, id: \.self) { Text($0.rawValue).tag($0) }
@@ -85,15 +110,7 @@ struct ProfileView: View {
         .background(Theme.canvas.ignoresSafeArea().accessibilityIdentifier("profile-screen"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if let username = profile?.username, let url = URL(string: InviteLink.url(username: username)) {
-                    ShareLink(item: url, message: Text("\(displayName) on lime")) { Image(systemName: "square.and.arrow.up") }
-                        .accessibilityLabel("Share").accessibilityIdentifier("profile-share")
-                }
-                if let conversation, accepted { moreMenu(conversation) }
-            }
-        }
+        .toolbar { toolbarItems }
         .task { await store.loadProfile(route.userID) }
         .onAppear { if route.callIDs != nil, available.contains(.calls) { section = .calls } }
         .sheet(isPresented: $labelling) {
@@ -101,6 +118,44 @@ struct ProfileView: View {
                 labelling = false
                 if saved { Task { await store.setLabel(labelText, for: route.userID) } }
             }
+        }
+        .sheet(isPresented: $showStatus) { StatusSheet(openSettings: { showStatus = false; settingsStart = nil; showSettings = true }) }
+        .sheet(isPresented: $showSettings) { SettingsView(startAt: settingsStart) }
+        .sheet(isPresented: $verifying) { NavigationStack { ScanQRScreen(closeSheet: { verifying = false }) }.presentationDetents([.large]) }
+        .sheet(isPresented: $showStorage) { NavigationStack { ChatMediaScreen(conversationID: "dm:\(route.userID)") }.presentationDetents([.large]) }
+        .confirmSheet("Mute \(displayName)", isPresented: $confirmingMute) {
+            ForEach(MuteDuration.allCases) { duration in
+                Button(duration.title) { notifications.settings.mute("dm:\(route.userID)", for: duration) }
+                    .accessibilityIdentifier("mute-\(duration.rawValue)")
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmSheet("Block \(displayName)?", isPresented: $confirmingBlock) {
+            Button("Block", role: .destructive) {
+                Task { await store.block("dm:\(route.userID)"); store.path = NavigationPath(); store.callPath = NavigationPath() }
+            }
+            .accessibilityIdentifier("profile-block-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They will no longer be able to message or call you.")
+        }
+        .confirmSheet("Delete chat?", isPresented: $confirmingDelete) {
+            Button("Delete chat", role: .destructive) {
+                Task { await store.deleteChat("dm:\(route.userID)"); store.path = NavigationPath(); store.callPath = NavigationPath() }
+            }
+            .accessibilityIdentifier("profile-delete-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes it from this phone. The other person keeps their copy.")
+        }
+        .confirmSheet("Sign out of Lime?", isPresented: $confirmingSignOut) {
+            Button("Sign out and remove messages from this iPhone", role: .destructive) {
+                Task { await session.signOut() }
+            }
+            .accessibilityIdentifier("profile-sign-out-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(SignOutCopy.warning)
         }
         .overlay(alignment: .bottom) {
             if copied {
@@ -133,11 +188,21 @@ struct ProfileView: View {
         }
     }
 
+    @ViewBuilder
     private var actions: some View {
         HStack(spacing: 12) {
             card("message", "Message", id: "profile-message") { store.openFromNotification("dm:\(route.userID)", thread: nil) }
             card("phone", "Voice", id: "profile-voice") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: false) } }
             card("video", "Video", id: "profile-video") { Task { _ = await store.calls.start(peerID: route.userID, name: displayName, video: true) } }
+        }
+    }
+
+    /// Your own profile: Change status, Edit profile, Settings.
+    private var myActions: some View {
+        HStack(spacing: 12) {
+            card("moon", "Change status", id: "profile-change-status") { showStatus = true }
+            card("pencil", "Edit profile", id: "profile-edit") { settingsStart = .profile; showSettings = true }
+            card("gearshape", "Settings", id: "profile-settings") { settingsStart = nil; showSettings = true }
         }
     }
 
@@ -155,17 +220,46 @@ struct ProfileView: View {
         .accessibilityIdentifier(id)
     }
 
-    private func moreMenu(_ conversation: Conversation) -> some View {
-        let settings = notifications.settings
-        return Menu {
-            if settings.isMuted(conversation.id) {
-                Button { settings.unmute(conversation.id) } label: { Label("Unmute", systemImage: "bell") }
-            } else {
-                Menu {
-                    ForEach(MuteDuration.allCases) { duration in
-                        Button(duration.title) { settings.mute(conversation.id, for: duration) }
-                    }
-                } label: { Label("Notifications: mute", systemImage: "bell.slash") }
+    /// Top right: someone's profile has Mute (the bell), Pin and ⋯; your own has ⋯ only.
+    @ToolbarContentBuilder
+    private var toolbarItems: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if !route.isMe, let conversation, accepted {
+                let muted = notifications.settings.isMuted(conversation.id)
+                Button {
+                    if muted { notifications.settings.unmute(conversation.id) } else { confirmingMute = true }
+                } label: { Image(systemName: muted ? "bell.slash" : "bell") }
+                .accessibilityLabel(muted ? "Unmute" : "Mute").accessibilityIdentifier("profile-mute")
+                Button { Task { await store.setPinned(conversation.id, !conversation.isPinned) } } label: {
+                    Image(systemName: conversation.isPinned ? "pin.slash" : "pin")
+                }
+                .accessibilityLabel(conversation.isPinned ? "Unpin" : "Pin").accessibilityIdentifier("profile-pin")
+            }
+            moreMenu
+        }
+    }
+
+    @ViewBuilder
+    private var moreMenu: some View {
+        Menu {
+            if let username = profile?.username, let url = URL(string: InviteLink.url(username: username)) {
+                ShareLink(item: url, message: Text("\(displayName) on lime")) { Label("Share profile", systemImage: "square.and.arrow.up") }
+                    .accessibilityIdentifier("profile-share")
+            }
+            if route.isMe {
+                Button { settingsStart = .profile; showSettings = true } label: { Label("Edit profile", systemImage: "pencil") }
+                Button { settingsStart = nil; showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+                Button(role: .destructive) { confirmingSignOut = true } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right") }
+                    .accessibilityIdentifier("profile-sign-out")
+            } else if accepted {
+                Button { verifying = true } label: { Label("Verify in person", systemImage: "qrcode.viewfinder") }
+                    .accessibilityIdentifier("profile-verify")
+                Button { showStorage = true } label: { Label("Storage", systemImage: "internaldrive") }
+                    .accessibilityIdentifier("profile-storage")
+                Button(role: .destructive) { confirmingBlock = true } label: { Label("Block \(displayName)", systemImage: "hand.raised") }
+                    .accessibilityIdentifier("profile-block")
+                Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete chat", systemImage: "trash") }
+                    .accessibilityIdentifier("profile-delete")
             }
         } label: { Image(systemName: "ellipsis") }
         .accessibilityLabel("More").accessibilityIdentifier("profile-more")
@@ -185,7 +279,7 @@ struct ProfileView: View {
         titledCard("Details") {
             VStack(spacing: 0) {
                 if let username = profile?.username {
-                    row("At", value: "@\(username)", id: "profile-username") {
+                    row("At", value: "@\(username)", id: "profile-handle") {
                         UIPasteboard.general.string = username
                         copied = true
                         Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
@@ -269,7 +363,7 @@ struct ProfileView: View {
             Text(title).font(Theme.title)
             Spacer()
             if count > (key == .media ? 9 : 5) {
-                NavigationLink(value: SharedListRoute(conversationID: route.sharedConversation, sender: route.sharedSender, kind: key, title: title)) {
+                NavigationLink(value: SharedListRoute(conversationID: route.sharedConversation, sender: sharedSender, kind: key, title: title)) {
                     Text("See all").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                 }
                 .accessibilityIdentifier("profile-see-all-\(key.rawValue)")

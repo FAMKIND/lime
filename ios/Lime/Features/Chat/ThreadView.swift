@@ -98,7 +98,12 @@ struct ThreadView: View {
             ToolbarItem(placement: .principal) {
                 // Who the replies answer, like a chat's header: their avatar, "Replies · Name", and how many replies.
                 HStack(spacing: 8) {
-                    if let root = messages.first, let author = rootAuthor(root) { AvatarView(person: author, size: 30) }
+                    if let root = messages.first, let author = rootAuthor(root) {
+                        AvatarView(person: author, size: 30)
+                            .contentShape(Circle())
+                            .onTapGesture { store.openProfile(ProfileRoute(userID: author.id, name: author.name, conversationID: target.conversationID)) }
+                            .accessibilityIdentifier("replies-author-avatar")
+                    }
                     VStack(alignment: .leading, spacing: 0) {
                         Text(rootAuthor(messages.first).map { "Replies · \($0.name)" } ?? "Replies")
                             .font(.system(.headline, design: .default, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)

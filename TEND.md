@@ -5039,3 +5039,20 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **Entry points done:** a Calls history row (and `CallDetailsView` is gone), a **DM chat's header avatar or title**, and the DM chat's **⋯ → Profile** (first item).
 
 **NOT done (still to do under 122a):** **your own profile (P1)** (the header avatar still opens the quick status sheet; no Change status / Edit profile / Settings / Sign out profile page); **group member rows, group message avatars and the thread author** do not open the profile yet; **Group details' Shared card** (Photos & videos · Files · Links with counts); the ⋯ menu's **Safety number** and **Storage** items (no per-chat route for them exists, so only Notifications/mute is there); "See all" and the Media grid tap (opens the existing viewer) are built but only the Shared lists' presence is UI-tested, not their drill-in; Calls search "People" rows and New Call rows do not open the profile.
+
+
+## LIME-122a2 (your own profile, every avatar opens a profile, Group details' Shared, header icons, Verify in person, Storage)
+
+Phase 0: `PLOT.md` committed first. Finishes what 122a left.
+
+**Your own profile (P1).** The header avatar on Link, Calls and Jam (`store.openMyProfile()`, id `settings-button` kept; Jam got its own `jamPath`) opens your profile: same layout, cards **Change status** (the existing `StatusSheet`) · **Edit profile** (Settings editor via `SettingsView(startAt:)`) · **Settings**; no Message/Voice/Video, no Shared/Calls from the header. Top right is **⋯ only**: Share profile (only with a username) · Edit profile · Settings · **Sign out** (the same `SignOutCopy.warning` confirm sheet and `session.signOut()`; no new sign-out logic).
+
+**Every other avatar opens the profile in context.** Group chat message avatars (Shared reads "Shared in <Group>"), the thread's root author, Group details member rows (your own row opens your profile, Shared = what you shared in that group) and Calls search People rows. Not Messages rows, not New Call rows.
+
+**Group details Shared card** (Photos & videos · Files · Links, counts, chevrons) opens the same lists for the whole group (`list_shared` with no sender).
+
+**Someone's profile, top right (amendment):** three glass buttons **Mute** (bell / bell.slash, durations in the confirm sheet) · **Pin/Unpin** (same action as the row swipe) · **⋯** = Share profile (hidden without a username) · Verify in person (the existing QR screen) · Storage (`ChatMediaScreen` for the DM, hidden if no DM) · Block (confirm sheet) · Delete chat (confirm sheet). No Report (LIME-113); no big Share button.
+
+**Tests (UI, `ProfileUITests`).** Own profile (cards, no Message, ⋯ → Sign out asks, cancel); Mute toggles via the duration sheet and Pin toggles and shows in Messages; ⋯ lists Share/Verify/Storage/Block/Delete, Block asks first (cancelled), Verify opens the QR screen; Share profile presents the system share sheet; group message avatar → Lee's profile; Group details member row → profile and the Shared card opens a list; Shared media tap → the viewer. Existing tests that opened Settings from the avatar (`LimeUITests`, `CallsTabUITests`, `ConfirmSheetUITests`) now go avatar → `profile-settings`. Full suite on the 13 mini; changed tests on SE and 18 Pro per the tiering.
+
+**Not exercised:** a real username share link on a phone; Verify in person completing a scan; Storage for a person with no DM; Block/Delete chat confirmed (only cancelled); the "Shared in <Group>" title on a member's profile from Group details (the title rule is unit-tested; the UI test checks the profile opens); the thread-author avatar and Calls-search People rows are wired but have no UI test.

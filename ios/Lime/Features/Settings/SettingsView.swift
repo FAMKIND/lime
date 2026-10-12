@@ -19,10 +19,14 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var path: [SettingsRoute] = []
     @State private var confirmingSignOut = false
+    /// Open straight on this screen (the profile's Edit profile).
+    var startAt: SettingsRoute? = nil
+    @State private var startedOnce = false
 
     var body: some View {
         NavigationStack(path: $path) {
             root
+                .onAppear { if let startAt, path.isEmpty, !startedOnce { startedOnce = true; path = [startAt] } }
                 .navigationDestination(for: SettingsRoute.self) { route in
                     switch route {
                     case .profile: ProfileSettingsScreen()

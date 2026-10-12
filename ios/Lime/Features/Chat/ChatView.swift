@@ -178,6 +178,7 @@ struct ChatView: View {
                                           onActions: { actions.menu = message },
                                           onShowReactions: { actions.reactors = message },
                                           onCallBack: conversation.isGroup ? nil : { callBack = message.call },
+                                          onAvatarTap: conversation.isGroup ? { if let who = store.person(message.senderID, in: conversation) { store.openProfile(ProfileRoute(userID: who.id, name: who.name, conversationID: conversation.id)) } } : nil,
                                           selection: selection.map { $0.contains(message.id) },
                                           onToggleSelect: { toggleSelection(message.id) })
                                 .padding(.bottom, 16)
@@ -643,6 +644,8 @@ struct MessageBubble: View {
     var onShowReactions: (() -> Void)? = nil
     /// Tapping a call bubble (the call-back question).
     var onCallBack: (() -> Void)? = nil
+    /// Tapping a sender's avatar (in a group): their profile.
+    var onAvatarTap: (() -> Void)? = nil
     /// Select mode: `nil` outside it, otherwise whether this message is selected; tapping toggles.
     var selection: Bool? = nil
     var onToggleSelect: (() -> Void)? = nil
@@ -654,7 +657,14 @@ struct MessageBubble: View {
             if let selection, !message.isOwn { selectionCircle(selection) }
             if message.isOwn { Spacer(minLength: 56) }
             if !message.isOwn, let sender {
-                if showAvatar { AvatarView(person: sender, size: avatarSize) }
+                if showAvatar {
+                    AvatarView(person: sender, size: avatarSize)
+                        .contentShape(Circle())
+                        .onTapGesture { onAvatarTap?() }
+                        .accessibilityAddTraits(onAvatarTap == nil ? [] : .isButton)
+                        .accessibilityLabel(onAvatarTap == nil ? "" : "\(sender.name), profile")
+                        .accessibilityIdentifier("message-avatar-\(sender.id)")
+                }
                 else { Color.clear.frame(width: avatarSize, height: 1) }
             }
             BubbleColumn(trailing: message.isOwn, spacing: 4) {

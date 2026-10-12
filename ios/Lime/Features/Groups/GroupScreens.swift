@@ -257,6 +257,7 @@ struct GroupDetailsView: View {
         SettingsPage(title: "Group details") {
             if let details {
                 header(details)
+                sharedCard
                 SettingsCard {
                     ForEach(Array(details.members.enumerated()), id: \.element.userId) { index, member in
                         memberRow(member, last: index == details.members.count - 1 && !details.canAdd)
@@ -398,9 +399,39 @@ struct GroupDetailsView: View {
         .padding(.vertical, 12)
     }
 
+    /// Photos & videos, Files and Links shared in the whole group, with counts (each opens the full list).
+    private var sharedCard: some View {
+        let id = target.conversationID
+        let counts = (media: store.shared(in: id, from: nil, kind: .media).count, files: store.shared(in: id, from: nil, kind: .files).count, links: store.shared(in: id, from: nil, kind: .links).count)
+        return SettingsCard {
+            sharedRow("photo.on.rectangle", "Photos & videos", counts.media, .media, id: "group-shared-media", last: false)
+            sharedRow("doc", "Files", counts.files, .files, id: "group-shared-files", last: false)
+            sharedRow("link", "Links", counts.links, .links, id: "group-shared-links", last: true)
+        }
+    }
+
+    private func sharedRow(_ symbol: String, _ title: String, _ count: Int, _ key: SharedKindKey, id: String, last: Bool) -> some View {
+        NavigationLink(value: SharedListRoute(conversationID: target.conversationID, sender: nil, kind: key, title: title)) {
+            HStack(spacing: 14) {
+                Image(systemName: symbol).font(.system(size: 18)).frame(width: 28)
+                Text(title).font(Theme.body)
+                Spacer()
+                Text("\(count)").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+            }
+            .foregroundStyle(Theme.text)
+            .padding(.horizontal, 18).frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+
     private func memberRow(_ member: GroupMemberInfo, last: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
+                Button { store.openProfile(ProfileRoute(userID: member.userId, name: member.name, conversationID: target.conversationID, isMe: member.isMe)) } label: {
+                    HStack(spacing: 14) {
                 AvatarView(person: Person(id: member.userId, name: member.isMe ? "You" : member.name, tone: Int(member.tone)), size: 44, showsStatus: !member.isMe)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
@@ -412,6 +443,11 @@ struct GroupDetailsView: View {
                     }
                 }
                 Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("group-member-open-\(member.userId)")
                 if member.canRemove {
                     Button { removing = member } label: {
                         Text("Remove").font(Theme.secondary.weight(.semibold)).foregroundStyle(Color.red)

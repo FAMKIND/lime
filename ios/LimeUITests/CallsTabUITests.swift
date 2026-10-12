@@ -183,8 +183,8 @@ final class CallsTabUITests: XCTestCase {
     func testSettingsPrivacyClearsTheCallHistory() {
         let app = app()
         app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.buttons["status-open-settings"].waitForExistence(timeout: 5))
-        app.buttons["status-open-settings"].tap()
+        XCTAssertTrue(app.buttons["profile-settings"].waitForExistence(timeout: 5))
+        app.buttons["profile-settings"].tap()
         let privacy = app.buttons["settings-privacy"]
         XCTAssertTrue(privacy.waitForExistence(timeout: 8))
         privacy.tap()

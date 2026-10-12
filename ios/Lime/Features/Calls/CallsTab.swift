@@ -217,6 +217,7 @@ struct CallSearchScreen: View {
                             ForEach(people) { teacher in
                                 HStack(spacing: 8) {
                                     TeacherRow(person: teacher.person, showsStatus: false)
+                                        .onTapGesture { store.callPath.append(ProfileRoute(userID: teacher.person.id, name: teacher.person.name)) }
                                     circle("phone", "Voice call \(teacher.person.name)", id: "calls-search-voice-\(teacher.person.id)") { start(teacher, video: false) }
                                     circle("video", "Video call \(teacher.person.name)", id: "calls-search-video-\(teacher.person.id)") { start(teacher, video: true) }
                                 }
