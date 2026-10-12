@@ -126,6 +126,10 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e46. **LIME-128 LANDED as `809f5f2` (pushed, 2026-10-12; PLOT.md `4c9ea7c`).** Full suite 438 on the 13 mini; 181 core tests.
+   - **Not exercised:** two real devices (the gate); whether iOS Focus blocks the breakthrough ring; mixed builds (an old build ignores the op and rings out 45 s); the work-hours note only in tests.
+   - **LIME-118b reconciled** with the current code (the voice row gets Video first; leave room under Mute for 118c's minimise; don't touch the 128 unavailable paths; an upgraded call is recorded as video; item 6 visual-only). **118b is NEXT.**
+1e45. **LIME-128 in progress (2026-10-12):** `call.unavailable` op (dnd | work_hours), caller ends with the reason and logs "Unavailable" (grey), silenced = red missed labelled "Silenced · …", 3-minute breakthrough, help line; 181 core tests. **Tend's deviation: every Calls row's time moved to the top right beside the name** (to fit the label; it matches Messages rows). **The user judges it at the gate.**
 1e44. **LIME-127 LANDED as `c3814df` (pushed, 2026-10-12; PLOT.md `443468f`).** One add sheet (Camera, the recent strip with multi-select, Photos, Files).
    - **Not exercised in the simulator:** a real library video export (`PHAssetResourceManager.writeData`); a real camera capture; the first-install permission prompt; Manage under limited access; iCloud-only photos; a Photos-picker selection → attach; a PDF through Files.
    - **So the phone gate covers all of it.** **Next: LIME-128.**
@@ -4495,7 +4499,16 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-122` in `TEND.md`. **Commit:** `feat: profile everywhere (any avatar, DM header, your own), share, in-context shared media/files/links, compact call dates; fetch_profile and list_shared in core`, trailer `Brief: LIME-122`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
-### LIME-118b → `tend` (lime-aa) (after LIME-116b): in-call follow-ups: an in-call control channel, voice → video, the remote mute/camera indicators, audio delay, SE/landscape
+### LIME-118b → `tend` (lime-aa) (NEXT after 128; **reconciled with the code on 2026-10-12**): in-call follow-ups: an in-call control channel, voice → video, the remote mute/camera indicators, audio delay, SE/landscape
+**Reconciled 2026-10-12 (plot re-read `CallView.swift` and `CallManager.swift` at `809f5f2`). What changed since this brief was drafted, and what it means here:**
+- **116f** pinned the call screen to `geo.size` and clipped the background (~line 43, `background(call, in: geo.size)`). The video controls are a **right-hand column**: Camera · Mute · route · End (~lines 234–237), with Flip at the bottom left (~243). The **voice controls are a centred row**: Mute · Speaker · route · End (~253–257). **Put the new video button (item 3) first in the voice row** (Video · Mute · Speaker · route · End). It must still fit the SE (375 pt) with ≥ 16 pt margins; if five 56 pt buttons don't fit, reduce the spacing (22 → about 14), not the button size.
+- **LIME-118c (next after this)** adds a **minimise button in the video column directly under Mute**. Leave room for it; don't put anything else there.
+- **126** gave the person sheet's Message button and the return-to-call bar dark text (contrast); keep that.
+- **128** added `call.unavailable` handling and `unavailableNote` to `CallManager` (~lines 76–79, 143, 369). **Don't change those paths**; the new data channel and renegotiation must not affect the unavailable/silenced flow (keep its tests green).
+- **123/128:** the call bubbles and outcomes (`missed_dnd`, `missed_hours`, `unavailable`) are stored per call. A voice call that becomes video stays **one call**, recorded as **video** (the kind when it ended), so its bubble says "Video call".
+- The iPad stats file `/tmp/lime-calllogs8` may no longer exist; Phase 1 reproduces the jitter-buffer growth fresh (it was already written that way).
+- **The visual-change rule applies to item 6** (SE/landscape layout fixes: screenshots, no new UI tests for frames). The behavioural items (the data channel, renegotiation, the fingerprint check, the remote state, the interruption) keep their unit tests.
+
 **Why:**
 - LIME-118 left these gaps (tend's report): voice → video wasn't built (it needs renegotiation); the other side's muted/camera-off state wasn't built (it needs a small op); landscape and the SE weren't exercised.
 - The 2026-10-11 iPad stats (`/tmp/lime-calllogs8`) showed **the audio jitter buffer growing from about 150 ms to about 400 ms after the video stalled** (the user's "minor sound delay").
