@@ -24,7 +24,7 @@ struct RootView: View {
                 Button { store.calls.minimized = false } label: {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         Label("Tap to return to call \u{00B7} \(store.calls.statusText(at: context.date))", systemImage: "phone.fill")
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accentInk)
                             .frame(maxWidth: .infinity, minHeight: 36).background(Theme.accent)
                     }
                 }

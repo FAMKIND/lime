@@ -64,11 +64,16 @@ final class QARoundTests: XCTestCase {
         c.latest = message("newer", from: "jean", "reply")
         XCTAssertEqual(c.lastMessage?.id, "newer", "a newer reply is what the row shows")
         XCTAssertFalse(c.isUnread)
+        XCTAssertEqual(c.unreadCount, 0)
         c.markedUnread = true
         XCTAssertTrue(c.isUnread)
+        XCTAssertEqual(c.unreadCount, 1, "a hand-marked chat counts as one unread")
         c.markedUnread = false
         c.unread = 2
         XCTAssertTrue(c.isUnread)
+        XCTAssertEqual(c.unreadCount, 2)
+        c.markedUnread = true
+        XCTAssertEqual(c.unreadCount, 2, "real unread wins")
     }
 
     func testPinMarkUnreadDeleteAndLabelInTheDemoStore() async {

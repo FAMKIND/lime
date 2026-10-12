@@ -630,27 +630,20 @@ struct ConversationRow: View {
                             .accessibilityElement(children: .ignore)
                             .accessibilityIdentifier("row-thumb-\(conversation.id)")
                     }
-                    // Any unread chat has the dot (left) and, unless it was only marked unread by hand, this number.
-                    if conversation.unread > 0 {
-                        CountBadge(count: conversation.unread)
+                    // Unread is bold plus this number; a chat marked unread by hand counts as 1.
+                    if conversation.isUnread {
+                        CountBadge(count: conversation.unreadCount)
                             .accessibilityIdentifier("count-badge-\(conversation.id)")
                     }
                 }
             }
         }
-        // The avatar starts at the page margin, under the logo; the unread dot hangs in the margin to its left.
+        // The avatar starts at the page margin, under the logo.
         .padding(.leading, 16 + leadingInset).padding(.trailing, 16 + trailingInset)
         .padding(.vertical, 15)
-        .overlay(alignment: .topLeading) {
-            if conversation.isUnread {
-                Circle().fill(Theme.accent).frame(width: 8, height: 8)
-                    .offset(x: 4 + leadingInset, y: 15 + avatarSize / 2 - 4)
-                    .accessibilityIdentifier("unread-dot-\(conversation.id)")
-            }
-        }
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.unread > 0 ? ", \(conversation.unread) unread" : (conversation.markedUnread ? ", unread" : ""))")
+        .accessibilityLabel("\(conversation.title)\(label.map { " (\($0))" } ?? "")\(conversation.isPinned ? ", pinned" : "")\(notifications.settings.isMuted(conversation.id) ? ", muted" : ""), \(preview), \(time)\(conversation.isUnread ? ", \(conversation.unreadCount) unread" : "")")
         .accessibilityAddTraits(.isButton)
     }
 

@@ -32,13 +32,15 @@ struct FilterRow<MenuContent: View>: View {
                                 .accessibilityIdentifier("\(idPrefix)-badge")
                         }
                     }
+                    // Room around the button so the badge, which hangs off its corner, is inside the menu's and the row's bounds on the first frame.
+                    .padding(.top, 6).padding(.trailing, 6)
             }
             .accessibilityLabel(activeCount == 0 ? "Filter" : "Filter, \(activeCount) active")
             .accessibilityValue(activeCount == 0 ? "" : "\(activeCount)")
             .accessibilityIdentifier("\(idPrefix)-button")
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 0).padding(.bottom, 8)
+        .padding(.top, 0).padding(.bottom, 2)
     }
 }
 

@@ -459,10 +459,9 @@ final class LimeUITests: XCTestCase {
         // Swipe right again: mark unread: the dot shows.
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
-        let dot = app.descendants(matching: .any)["unread-dot-dm:sam"]
-        XCTAssertTrue(dot.waitForExistence(timeout: 5), "marked unread: a dot")
-        XCTAssertLessThan(dot.frame.midX, app.staticTexts["row-title-dm:sam"].frame.minX, "the dot is on the left, before the avatar and name")
-        XCTAssertLessThan(dot.frame.midX, 40)
+        let badge = app.descendants(matching: .any)["count-badge-dm:sam"]
+        XCTAssertTrue(badge.waitForExistence(timeout: 5), "marked unread: a 1 badge")
+        XCTAssertFalse(app.descendants(matching: .any)["unread-dot-dm:sam"].exists, "no dot")
         // Swipe left: Mute asks for how long; Delete asks to confirm.
         app.buttons["conversation-row-dm:sam"].swipeLeft()
         XCTAssertTrue(app.buttons["swipe-delete-dm:sam"].waitForExistence(timeout: 5))
@@ -995,14 +994,13 @@ final class LimeUITests: XCTestCase {
         let app = demoApp()
         app.launch()
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
-        // Mark Sam unread by hand: the dot only. Lee has no unread, so the dock counts the one chat.
+        // Mark Sam unread by hand: it shows a 1 badge, no dot. Lee has no unread, so the dock counts the one chat.
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForExistence(timeout: 5), "marked unread: the dot")
+        XCTAssertTrue(app.descendants(matching: .any)["count-badge-dm:sam"].waitForExistence(timeout: 5), "marked unread: a 1 badge")
+        XCTAssertFalse(app.descendants(matching: .any)["unread-dot-dm:sam"].exists, "and no dot")
         XCTAssertTrue(waitForLinkBadge(app, "1"), "the link tab counts unread chats: \(linkBadge(app))")
-        // The dot hangs in the margin, left of the avatar, and rows start at the same edge as the logo.
-        let dot = app.descendants(matching: .any)["unread-dot-dm:sam"]
-        XCTAssertLessThan(dot.frame.maxX, 16, "in the margin")
+        // Rows start at the same edge as the logo.
         let lee = app.buttons["conversation-row-dm:lee"]
         XCTAssertEqual(lee.frame.minX, 0, accuracy: 1, "rows use the full width")
         let logo = app.buttons["Lime menu"]
@@ -1011,10 +1009,10 @@ final class LimeUITests: XCTestCase {
         // The logo's glass button starts at the page margin (16); its picture sits a few points inside it.
         XCTAssertEqual(avatar.frame.minX, 16, accuracy: 1, "the avatar starts at the page margin")
         XCTAssertEqual(avatar.frame.minX, logo.frame.minX, accuracy: 6, "under the logo button")
-        // Read it again: the dot and the dock badge go together.
+        // Read it again: the row badge and the dock badge go together.
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["count-badge-dm:sam"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(waitForLinkBadge(app, ""), "and the badge")
     }
 
@@ -1056,7 +1054,7 @@ final class LimeUITests: XCTestCase {
         let row = app.buttons["conversation-row-dm:sam"]
         XCTAssertTrue(row.waitForExistence(timeout: 8))
         XCTAssertTrue(row.label.contains("You reacted 👍 to “Are you coming to the staff meeting?”"), row.label)
-        XCTAssertFalse(app.descendants(matching: .any)["unread-dot-dm:sam"].exists, "a reaction does not mark the chat unread")
+        XCTAssertFalse(app.descendants(matching: .any)["count-badge-dm:sam"].exists, "a reaction does not mark the chat unread")
         XCTAssertEqual(linkBadge(app), "")
     }
 
@@ -1064,20 +1062,20 @@ final class LimeUITests: XCTestCase {
         let app = demoApp()
         app.launch()
         XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
-        // Marked unread by hand (no number), then opened and left at once.
+        // Marked unread by hand (a 1 badge), then opened and left at once.
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["count-badge-dm:sam"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitForLinkBadge(app, "1"))
         app.buttons["conversation-row-dm:sam"].tap()
         XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 5))
         goBack(app)
-        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForNonExistence(timeout: 5), "opening clears a hand-made mark")
+        XCTAssertTrue(app.descendants(matching: .any)["count-badge-dm:sam"].waitForNonExistence(timeout: 5), "opening clears a hand-made mark")
         XCTAssertTrue(waitForLinkBadge(app, ""), "and the badge follows")
         // Marked again and opened through search.
         app.buttons["conversation-row-dm:sam"].swipeRight()
         app.buttons["swipe-unread-dm:sam"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["count-badge-dm:sam"].waitForExistence(timeout: 5))
         app.buttons["messages-search-button"].tap()
         let field = app.textFields["search-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -1088,7 +1086,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 8))
         goBack(app)
         app.buttons["search-back"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["unread-dot-dm:sam"].waitForNonExistence(timeout: 5), "opened from search clears it too")
+        XCTAssertTrue(app.descendants(matching: .any)["count-badge-dm:sam"].waitForNonExistence(timeout: 5), "opened from search clears it too")
         XCTAssertTrue(waitForLinkBadge(app, ""))
     }
 

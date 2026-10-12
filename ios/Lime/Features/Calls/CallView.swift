@@ -207,7 +207,7 @@ struct CallView: View {
             } label: {
                 Label("Message", systemImage: "message").font(.headline).frame(maxWidth: .infinity, minHeight: 48)
             }
-            .buttonStyle(.borderedProminent).tint(Theme.accent)
+            .buttonStyle(.borderedProminent).tint(Theme.accent).foregroundStyle(Theme.accentInk)
             .accessibilityIdentifier("call-person-message")
             Spacer()
         }

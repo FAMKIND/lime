@@ -179,8 +179,10 @@ struct Conversation: Identifiable, Hashable, Sendable {
     var isGroup: Bool { isGroupChat || members.count > 1 }
     var subtitle: String { isGroup ? "\(members.count + 1) members" : "" }
     var lastMessage: Message? { latest ?? messages.last }
-    /// Shows the unread dot: something new, or marked unread by hand.
+    /// Bold with a number: something new, or marked unread by hand.
     var isUnread: Bool { unread > 0 || markedUnread }
+    /// The number shown: the real count, or 1 for a chat marked unread by hand.
+    var unreadCount: Int { max(unread, markedUnread ? 1 : 0) }
 }
 
 // MARK: LimeCore records to the app's models
