@@ -126,6 +126,17 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e59. **LIME-119 LANDED as `12aa63e` (pushed, 2026-10-12; PLOT.md `2aaaeb8`).**
+   - Emoji chip (a 256 list, never reorder it; vector [160, 252, 66, 95]) and Always relay calls.
+   - **Not exercised:** a real two-phone call; a relay-only call; the chip in landscape; RTL (the emoji order is forced left to right, deliberately).
+   - **LIME-120 reconciled:** ⚠ its old gate step (signing a simulator into Jean's account) would revoke Jean's phone (one active device per account), so it's replaced with test accounts only; the correction reuses the key-change flow; call ops incl. `call.unavailable` go through `send`, `lime-ctl` doesn't.
+   - **120 is NEXT after the 119 gate.**
+1e58. **ANDROID-READY (the user, 2026-10-12):**
+   - A **standing rule "core-first"**: non-UI logic goes in LimeCore; Swift = views + Apple adapters; "Android debt" is flagged in TEND.md; design tokens are shared JSON; semantic-key strings; an icon mapping; `docs/screens/` specs.
+   - **LIME-132** (after 120): an Android build + Kotlin bindings check, plus `docs/android.md`.
+   - **LIME-133** (after 117): move the Swift logic into core (`CallManager`'s signalling, status/work hours, call history rules, filters, the profile context, unread counts).
+   - **Queue:** 119 (running) → 120 → **132** → 112b → 117 → **133** → 113 → 130 → mesh → jam → 109 → push → limechat.org → TestFlight.
+1e57. **LIME-119 in progress (2026-10-12):** `call_emoji` in core (256-emoji list, a pinned test vector [160, 252, 66, 95] cross-checked in Python, 185 core tests); the chip after the timer with VoiceOver names and an explainer sheet; Always relay calls in Privacy (relay-only candidates; a clear failure with no credentials); `architecture.md` notes that links/non-contacts relay by default. **Not exercised:** real two-phone emoji and a relay-only call (the gate).
 1e56. **118c gate PASSED (the user, 2026-10-12: "works, moving on"):** system PiP starts with lime in front, so no custom tile is needed. **LIME-119 reconciled** (use 118b's stored fingerprints; the chip after the timer; Privacy settings exist; distinct from Verify in person; accessibility/RTL). **119 is NEXT.**
 1e55. **LIME-118c LANDED as `a23e463` (pushed, 2026-10-12; PLOT.md `1547e94`).** Waiting on the user's two-device gate. **If PiP doesn't start with lime in front → plot drafts the custom floating tile (LIME-118d).** Next after the gate: **LIME-119** (re-survey before sending).
 1e54. **LIME-118c in progress (2026-10-12):**
@@ -362,6 +373,15 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 - The App Store name, e.g. "lime: teacher messaging" (lowercase is allowed).
 
 ### Standing rules (also in the sections below)
+- **Core-first, for a fast Android port (the user, 2026-10-12: "build in a way that when ready we can take what we have and ready it for an Android app in a fraction of the time").** **Anything that isn't drawing a screen or calling an Apple-only API goes in LimeCore (Rust, exposed through UniFFI)**, so Android reuses it:
+  - protocols and state machines (calls, mesh, sync);
+  - rules (status/work hours, filters, grouping, call outcomes, unread counts, the profile's context rule);
+  - data formats (Markdown, emoji, test vectors);
+  - text that isn't localised UI copy.
+
+  **Swift keeps only:** SwiftUI views, and the thin adapters to Apple services (CallKit, PushKit/APNs, CoreBluetooth, AVFoundation/WebRTC media, Photos, Keychain). Every brief that adds logic says where it lives. If tend puts logic in Swift "for now", it must flag it in TEND.md under "Android debt".
+  - **Shared assets:** design tokens (colours, spacing, type scale, radii) live in one JSON file that generates both `Theme.swift` and the future Android theme; strings use **semantic keys** in Tolgee, which exports both Apple and Android formats (LIME-109); icons need an Android mapping (SF Symbols → Material Symbols) in a table kept with the tokens.
+  - **Specs from iOS:** each finished screen gets a short spec in `docs/screens/` (layout, states, accessibility, behaviour), so the Android build follows a written spec, not just the iOS code.
 - **Accessibility from day one (the user, 2026-10-12).** The bar is **WCAG 2.2 AA** plus Apple's accessibility features. **Every UI brief, visual ones included,** must:
   1. give every control a VoiceOver label (and hint where it isn't obvious), and group decorative parts as hidden;
   2. work with Dynamic Type up to the largest accessibility size (no clipped or overlapping text; wrap or scroll; one screenshot at AX3 or larger in TEND.md);
@@ -3470,7 +3490,13 @@ If the survey turns up related issues, raise them before editing.
 
 **If unsure:** if a decision isn't made here, stop and ask the user.
 
-### LIME-120 → `tend` (lime-aa) (after LIME-119): one request per send (cached device lists, with server corrections)
+### LIME-120 → `tend` (lime-aa) (NEXT; **reconciled with the code on 2026-10-12**): one request per send (cached device lists, with server corrections)
+**Reconciled 2026-10-12 (after 123/128/118b/119). These points OVERRIDE the text below:**
+- **⚠ The gate's "new device" step is WRONG today and must not be done.** `docs/api-v2.md` ~line 250: **one active phone per account**; signing in on a second device **revokes the first**, so a simulator signed in as Jean would cut off Jean's real phone. **Replace that gate step:** test the correction protocol **only in core/integration tests with throwaway test accounts** (local stack + staging test users), never on Shem's, Jean's or the iPad's accounts. On the devices the user only checks that messages and calls still work and feel quicker.
+- **Because there's one device per account today,** the 409 "missing device" case mostly arises when a contact **re-registers** (a new install or keys reset). That case already triggers the key-change notice; the correction must reuse that flow, not add a second one. Design the cache and `expect` for **many devices per user** anyway (device linking is coming); test with test accounts that simulate it.
+- **What still goes through `send`:** messages, reactions, replies, group ops, **call ops** (offer/answer/candidates/end, **`call.unavailable` from 128**). **Not** `lime-ctl` (118b), which is peer to peer inside the call. **Call bubbles (123) are local** and send nothing.
+- **Core-first** applies (all of it is in core already); **accessibility** n/a (no UI except a diagnostics line).
+- The design STOP (Phase 1) stays: the user approves the protocol before building.
 **Goal:** sending a message or call op is **one** HTTP request in the normal case (down from 2–3), while key-change detection and sealed sending keep working, so call setup and messaging get about 1–2 s faster.
 
 **What plot read:**
@@ -4488,6 +4514,27 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Phase 0:** `git add PLOT.md` only, then commit; re-read PLOT.md. **Verification:** build; 0 warnings; Release clean; fix only existing tests that break (the 107-qa footer-alignment test will need its expectation updated for own messages); screenshots in TEND.md (media + caption, text only, a file + caption; light/dark); the accessibility standing rule. **Gate:** under your own message with photos and a caption, the reactions sit at the caption bubble's bottom-left corner.
 **Record:** `## LIME-131`. **Commit:** `fix(ios): visual QA batch (own-message reactions align to their bubble, …)`, trailer `Brief: LIME-131`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-132 → `tend` (lime-aa) (soon, **after 120**, small): keep LimeCore Android-ready from now on (a build + bindings check)
+**Goal:** every commit proves the core still builds for Android and its Kotlin bindings generate, so Android-readiness can't silently rot.
+**Phase 2:**
+1. Add the Android targets (`aarch64-linux-android`, `x86_64-linux-android`) and **cargo-ndk** (Homebrew/rustup; the Android NDK via the command-line tools, no Android Studio needed). If installing the NDK needs the user (a licence prompt or a large download), stop and give the user the exact steps.
+2. `core/check-android.sh`: builds the core for Android, generates the **Kotlin** UniFFI bindings, and compiles them in a minimal JVM/Kotlin harness (or at least generates them without errors); report the `.so` size.
+3. Fix anything Apple-only that leaked into the core (e.g. a `cfg(target_os = "ios")` assumption, a dependency without Android support). **SQLCipher and vodozemac must build for Android**; report if either needs a feature flag.
+4. Add `docs/android.md`: the plan (Kotlin + Jetpack Compose UI on LimeCore; ConnectionService/FCM/Android BLE/CameraX as the platform adapters) and the current "Android debt" list (logic still in Swift).
+
+**Verification:** `./core/check-android.sh` passes; core tests pass; nothing changes on iOS. **Record:** `## LIME-132`. **Commit:** `chore(core): Android build and Kotlin bindings check; docs/android.md`, trailer `Brief: LIME-132`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-133 → `tend` (lime-aa) (after 117, the end of the call series; may be split): move shared logic from Swift into LimeCore ("Android debt" payoff)
+**Goal:** the logic that crept into Swift moves into the core with UniFFI APIs and core tests, and iOS calls it, so Android gets it for free. **Candidates (Phase 1 confirms and sizes them):**
+- **the call signalling state machine** (`CallManager`: phases, timeouts, busy/unavailable/glare, the breakthrough rule, renegotiation decisions, the `lime-ctl` message handling); Swift keeps media, CallKit and PiP;
+- **status and work hours** (`StatusSettings`/`StatusPlan`: quiet now? captions);
+- **call history rules** (grouping, outcome keys, missed counting);
+- **the list filters** (124's logic);
+- **the profile context rule** (where it was opened → which chat and sender);
+- **unread counts** (incl. marked-unread = 1).
+
+**Phase 1:** inventory the non-UI Swift logic and list it with a size estimate; **stop and report** so plot can split it. **Then move items one at a time** (behaviour unchanged; the existing iOS tests must keep passing, plus new core tests). **Record:** `## LIME-133`. **Commit per item**, trailer `Brief: LIME-133`. **Push.** Stop. No /loop wakeups.
 
 ### LIME-122b → `tend` (lime-aa) (**PARKED, LATER** (the user, 2026-10-11): not in the active queue; re-plan it together with the KakaoTalk-style hero and the classroom themes when picked up): upload your own profile background photo (student-privacy check, follows the photo visibility)
 **When this is picked up, it must first add the hero** (the background filling the top with a scrim, the avatar bottom-left, the name over it; the 6 classroom themes or an avatar-colour gradient; the `profiles.profile_theme` column), which was cut from 122a. B1–B4 (2026-10-11) still stand.
