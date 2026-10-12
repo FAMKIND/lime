@@ -37,6 +37,9 @@ struct ChatView: View {
         return highlightedID == focusMessageID ? focusWords : []
     }
 
+    /// Tapping a call bubble asks whether to call back (a stray tap in class must not ring anyone).
+    @State private var callBack: CallBubble?
+
     struct ScrollRequest: Equatable { let id: String; let token = UUID() }
 
     var body: some View {
@@ -59,6 +62,15 @@ struct ChatView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("You won't get new messages from this group. Someone can add you back.")
+            }
+            .confirmSheet("Call \(conversation.title) back?", isPresented: Binding(get: { callBack != nil }, set: { if !$0 { callBack = nil } })) {
+                // The kind of the call they tapped first.
+                let videoFirst = callBack?.video ?? false
+                Button(videoFirst ? "Video call" : "Voice call") { startCall(conversation, video: videoFirst) }
+                    .accessibilityIdentifier("call-back-first")
+                Button(videoFirst ? "Voice call" : "Video call") { startCall(conversation, video: !videoFirst) }
+                    .accessibilityIdentifier("call-back-second")
+                Button("Cancel", role: .cancel) {}
             }
             .messageActions(actions, conversationID: conversationID, selection: $selection) { message in
                 store.path.append(ThreadTarget(conversationID: conversationID, rootID: message.id))
@@ -129,7 +141,7 @@ struct ChatView: View {
             ScrollView {
                 let lastOwnID = conversation.messages.last(where: { $0.isOwn && !$0.isSystem })?.id
                 LazyVStack(spacing: 0) {
-                    ForEach(ChatRow.rows(for: conversation, calls: callRecords(conversation))) { row in
+                    ForEach(ChatRow.rows(for: conversation)) { row in
                         switch row.kind {
                         case .day(let text):
                             Text(text)
@@ -145,13 +157,6 @@ struct ChatView: View {
                                 .padding(.vertical, 6).padding(.horizontal, 24)
                                 .frame(maxWidth: .infinity)
                                 .accessibilityIdentifier("system-line")
-                        case .call(let record):
-                            Label(record.line, systemImage: record.video ? "video" : (record.outcome == .missed ? "phone.arrow.down.left" : "phone"))
-                                .font(Theme.caption)
-                                .foregroundStyle(record.outcome == .missed ? Color.red : Theme.textSecondary)
-                                .padding(.vertical, 6).padding(.horizontal, 24)
-                                .frame(maxWidth: .infinity)
-                                .accessibilityIdentifier("call-line")
                         case .deletedRun(let count):
                             Text("\(count) messages deleted")
                                 .font(Theme.caption.italic())
@@ -172,6 +177,7 @@ struct ChatView: View {
                                           onOpenThread: { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) },
                                           onActions: { actions.menu = message },
                                           onShowReactions: { actions.reactors = message },
+                                          onCallBack: conversation.isGroup ? nil : { callBack = message.call },
                                           selection: selection.map { $0.contains(message.id) },
                                           onToggleSelect: { toggleSelection(message.id) })
                                 .padding(.bottom, 16)
@@ -486,11 +492,6 @@ struct ChatView: View {
             .accessibilityIdentifier("chat-call-button")
     }
 
-    private func callRecords(_ conversation: Conversation) -> [CallRecord] {
-        guard !conversation.isGroup, let peer = conversation.members.first?.id else { return [] }
-        return CallLog.shared.records(with: peer)
-    }
-
     private func startCall(_ conversation: Conversation, video: Bool) {
         guard !conversation.isGroup, !conversation.isRequest, conversation.groupEnded == nil, let peer = conversation.members.first else {
             store.comingSoon("Group calls")
@@ -623,6 +624,8 @@ struct MessageBubble: View {
     var onActions: (() -> Void)? = nil
     /// Tap the reaction cluster on the bubble's corner: the sheet of who reacted with what.
     var onShowReactions: (() -> Void)? = nil
+    /// Tapping a call bubble (the call-back question).
+    var onCallBack: (() -> Void)? = nil
     /// Select mode: `nil` outside it, otherwise whether this message is selected; tapping toggles.
     var selection: Bool? = nil
     var onToggleSelect: (() -> Void)? = nil
@@ -692,9 +695,10 @@ struct MessageBubble: View {
                         .labelStyle(.titleAndIcon)
                         .accessibilityIdentifier("forwarded-\(message.id)")
                 }
+                if let call = message.call { CallBubbleView(call: call, id: message.id, onTap: onCallBack) }
                 if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
                 if let preview = message.linkPreview { MessageLinkCard(messageID: message.id, preview: preview, isOwn: message.isOwn) }
-                if !message.text.isEmpty || message.attachments.isEmpty {
+                if message.call == nil, !message.text.isEmpty || message.attachments.isEmpty {
                     FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
                                          link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString,
                                          find: findWords.isEmpty ? nil : FindStyle(words: findWords, current: highlighted))
@@ -896,5 +900,44 @@ struct LabelSheet: View {
         .background(Theme.canvas.ignoresSafeArea())
         .presentationDetents([.medium])
         .onAppear { focused = true }
+    }
+}
+
+
+/// A call in the chat (LIME-123): a symbol, "Voice call" / "Video call" / "Missed voice call", and its length or what became of it. The
+/// same neutral bubble for both sides (the accent is for the primary action only); a missed incoming call is in the danger red.
+struct CallBubbleView: View {
+    let call: CallBubble
+    let id: String
+    var onTap: (() -> Void)?
+
+    var body: some View {
+        let tint: Color = call.isMissedIncoming ? .red : Theme.text
+        // A tap gesture, not a Button: a Button would take the touch from the bubble's long-press menu.
+        Group {
+            HStack(spacing: 12) {
+                Image(systemName: call.symbol).font(.system(size: 20))
+                    .foregroundStyle(tint)
+                    .frame(width: 40, height: 40)
+                    .background(Theme.canvas.opacity(0.6), in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(call.title).font(Theme.body.weight(.semibold)).foregroundStyle(tint)
+                        .accessibilityIdentifier("call-bubble-title")
+                    Text(call.detail).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                        .accessibilityIdentifier("call-bubble-detail")
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .frame(minWidth: 210, alignment: .leading)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .onTapGesture { onTap?() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(call.title), \(call.detail)")
+        .accessibilityHint("Calls back after asking")
+        .accessibilityIdentifier("call-bubble-\(id)")
     }
 }

@@ -157,7 +157,7 @@ struct MessageActionsHost: ViewModifier {
                     if !message.deleted, !inThread, message.state != .sending, message.state != .failed {
                         row("arrowshape.turn.up.left", "Reply", id: "reply-in-thread") { state.menu = nil; onReply(message) }
                     }
-                    if !message.deleted {
+                    if !message.deleted, message.call == nil {
                         if state.cannotForward.contains(message.id) {
                             VStack(spacing: 0) {
                                 HStack(spacing: 12) {
@@ -189,14 +189,16 @@ struct MessageActionsHost: ViewModifier {
                         }
                     }
                     // Copy: the words (a caption included), or the picture when it is a single picture without words.
-                    if !message.deleted, !message.text.isEmpty || copyableImage(message) != nil {
+                    if !message.deleted, message.call == nil, !message.text.isEmpty || copyableImage(message) != nil {
                         row("doc.on.doc", "Copy", id: "action-copy") {
                             state.menu = nil
                             if let single = copyableImage(message) { Task { if let image = await store.image(for: single) { UIPasteboard.general.image = image } } }
                             else { store.copyToPasteboard(message) }
                         }
                     }
-                    row("checkmark.circle", "Select", id: "action-select") { state.menu = nil; selection = [message.id] }
+                    if message.call == nil {
+                        row("checkmark.circle", "Select", id: "action-select") { state.menu = nil; selection = [message.id] }
+                    }
                     row("trash", "Delete", id: "action-delete", destructive: true, last: true) { state.menu = nil; state.deleting = [message] }
                 }
                 .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

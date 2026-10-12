@@ -115,6 +115,45 @@ pub struct CallHistoryRecord {
 /// The most calls kept.
 const HISTORY_KEEP: i64 = 500;
 
+/// The id of the chat message a call becomes: the same on both phones, because both have the call's id.
+pub(crate) fn call_message_id(call_id: &str) -> String {
+    format!("call:{call_id}")
+}
+
+/// A call as a message in the DM (LIME-123): a local message with the id `call:<call_id>`, sent by the caller. It is made on each phone
+/// from the call itself and **never sent**, so reactions and replies (ordinary ops that name a message id) work on it unchanged.
+/// Idempotent: the first record wins and later ones leave it (and its reactions, replies and "deleted for me") alone.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn insert_call_message(conn: &Connection, call_id: &str, peer: &str, video: bool, outgoing: bool, at_ms: i64, duration_ms: i64, outcome: &str) -> Result<(), StoreError> {
+    let conversation = format!("dm:{peer}");
+    let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)", params![conversation], |r| r.get(0)).map_err(db_err)?;
+    if !exists {
+        return Ok(());
+    }
+    let body = serde_json::json!({ "video": video, "duration_ms": duration_ms, "outcome": outcome, "outgoing": outgoing }).to_string();
+    conn.execute(
+        "INSERT OR IGNORE INTO messages (id, conversation_id, sender_id, body, sent_at, local_state) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![call_message_id(call_id), conversation, if outgoing { super::ME_ID } else { peer }, body, at_ms, if outgoing { "sent" } else { "received" }],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+/// Calls recorded before they were messages (and any whose chat did not exist yet) become messages: run when the store opens.
+pub(crate) fn backfill_call_messages(conn: &Connection) -> Result<(), StoreError> {
+    let mut statement = conn.prepare("SELECT id, peer, video, outgoing, at_ms, duration_ms, outcome FROM call_history").map_err(db_err)?;
+    let rows = statement
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?, r.get::<_, bool>(3)?, r.get::<_, i64>(4)?, r.get::<_, i64>(5)?, r.get::<_, String>(6)?)))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    drop(statement);
+    for (id, peer, video, outgoing, at, duration, outcome) in rows {
+        insert_call_message(conn, &id, &peer, video, outgoing, at, duration, &outcome)?;
+    }
+    Ok(())
+}
+
 #[uniffi::export]
 impl LimeStore {
     /// Adds a call (or replaces the one with that id). A missed incoming call starts unseen.
@@ -127,6 +166,7 @@ impl LimeStore {
         )
         .map_err(db_err)?;
         conn.execute("DELETE FROM call_history WHERE id NOT IN (SELECT id FROM call_history ORDER BY at_ms DESC LIMIT ?1)", params![HISTORY_KEEP]).map_err(db_err)?;
+        insert_call_message(&conn, &record.id, &record.peer, record.video, record.outgoing, record.at_ms, record.duration_ms, &record.outcome)?;
         Ok(())
     }
 
@@ -210,6 +250,47 @@ mod tests {
         assert_eq!(store.call_history_list().unwrap().len(), 4);
         store.call_history_clear().unwrap();
         assert!(store.call_history_list().unwrap().is_empty());
+    }
+
+    fn store_with_chat(dir: &tempfile::TempDir) -> std::sync::Arc<LimeStore> {
+        let store = LimeStore::open(dir.path().join("c.db").to_string_lossy().into_owned(), vec![7u8; 32]).unwrap();
+        store.start_dm("jean".into(), "Jean".into()).unwrap();
+        store
+    }
+
+    #[test]
+    fn a_call_becomes_one_message_in_the_dm_sent_by_the_caller_and_never_twice() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_with_chat(&dir);
+        store.call_history_add(CallHistoryRecord { video: true, duration_ms: 23_000, ..record("c1", 1_000, true, "completed") }).unwrap();
+        store.call_history_add(record("c2", 2_000, false, "missed")).unwrap();
+        store.call_history_add(record("c1", 1_000, true, "completed")).unwrap(); // the same call again
+        let messages = store.list_messages("dm:jean".into()).unwrap();
+        assert_eq!(messages.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["call:c1", "call:c2"]);
+        assert_eq!(messages[0].sender_id, None, "I called: mine");
+        assert_eq!(messages[1].sender_id.as_deref(), Some("jean"), "they called: theirs");
+        let body: serde_json::Value = serde_json::from_str(&messages[0].text).unwrap();
+        assert_eq!((body["video"].as_bool(), body["duration_ms"].as_i64(), body["outcome"].as_str()), (Some(true), Some(23_000), Some("completed")));
+        // deleting the history row (the Calls tab) leaves the chat's message; no chat, no message
+        store.call_history_delete(vec!["c1".into()]).unwrap();
+        assert_eq!(store.list_messages("dm:jean".into()).unwrap().len(), 2);
+        store.call_history_add(CallHistoryRecord { peer: "nobody".into(), ..record("c9", 3_000, true, "completed") }).unwrap();
+        assert!(store.list_messages("dm:nobody".into()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn calls_recorded_before_they_were_messages_are_backfilled_and_a_reaction_and_reply_name_a_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_with_chat(&dir);
+        // an older build's history row, with no message yet
+        store.lock().execute("INSERT INTO call_history (id, peer, peer_name, video, outgoing, at_ms, duration_ms, outcome) VALUES ('old', 'jean', 'Jean', 0, 0, 500, 0, 'missed')", []).unwrap();
+        assert!(store.list_messages("dm:jean".into()).unwrap().is_empty());
+        backfill_call_messages(&store.lock()).unwrap();
+        backfill_call_messages(&store.lock()).unwrap(); // once is enough; twice changes nothing
+        assert_eq!(store.list_messages("dm:jean".into()).unwrap().iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["call:old"]);
+        // a reply to the call message resolves its root like any message's
+        assert_eq!(crate::client::resolve_root(&store.lock(), "dm:jean", "call:old").unwrap().as_deref(), Some("call:old"));
+        assert_eq!(crate::client::resolve_root(&store.lock(), "dm:jean", "call:nope").unwrap(), None);
     }
 
     #[test]

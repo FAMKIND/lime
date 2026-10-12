@@ -88,6 +88,8 @@ final class CallManager {
     @ObservationIgnored private var draining = false
     /// Fetches the mailbox now (set by the app); used once a second while a call is ringing or connecting, in case a nudge is missed.
     @ObservationIgnored var fetchNow: (() async -> Void)?
+    /// A call has ended and was recorded (the chat shows it as a message, so the app reloads).
+    @ObservationIgnored var onFinished: (() -> Void)?
     /// How long the media path may take to come up after an answer before the call fails.
     @ObservationIgnored var connectSeconds: Double = 30
     /// How long one op may take to handle before the queue moves on.
@@ -549,6 +551,7 @@ final class CallManager {
         phase = .idle
         callID = ""; peerID = ""; startedAt = nil; pendingOffer = nil; pendingCandidates = []; remoteReady = false
         outbound = []; descriptionSent = false
+        onFinished?()
     }
 
     /// The `a=fingerprint:` value of an SDP, the DTLS key that protects the media.

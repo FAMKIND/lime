@@ -123,6 +123,7 @@ final class ConversationStore {
         let manager = CallManager(signalling: StoreSignalling(store: self), system: system, sounds: quiet ? QuietCallSounds() : SystemCallSounds(),
                                   isQuiet: { StatusSettings.shared.plan().isQuiet }, myID: { [weak self] in self?.myUserID }, makeMedia: { WebRTCMedia(manualAudio: !quiet) })
         manager.fetchNow = { [weak self] in await self?.fetchCallOps() }
+        manager.onFinished = { [weak self] in Task { @MainActor in await self?.reload() } }
         callManager = manager
         return manager
     }
@@ -809,6 +810,16 @@ final class ConversationStore {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
+        case "call-bubbles":
+            // A chat with calls in it: one I placed (video, 0:23), one they missed of mine, one of theirs I missed.
+            let at = now.addingTimeInterval(-3_000)
+            conversations[1].messages.append(Message(id: "call:d1", senderID: nil, text: "Video call · 0:23", date: at, state: .sent,
+                                                     call: CallBubble(video: true, duration: 23, outcome: .completed, mine: true)))
+            conversations[1].messages.append(Message(id: "call:d2", senderID: "sam", text: "Missed voice call", date: at.addingTimeInterval(600),
+                                                     call: CallBubble(video: false, duration: 0, outcome: .missed, mine: false)))
+            conversations[1].messages.append(Message(id: "call:d3", senderID: nil, text: "Voice call · No answer", date: at.addingTimeInterval(1_200), state: .sent,
+                                                     call: CallBubble(video: false, duration: 0, outcome: .noAnswer, mine: true)))
+            path.append("dm:sam")
         case "key-change":
             conversations[1].keyChangePending = true
             conversations[1].messages[1].state = .undelivered

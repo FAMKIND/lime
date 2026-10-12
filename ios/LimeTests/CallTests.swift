@@ -332,11 +332,4 @@ final class CallTests: XCTestCase {
         XCTAssertEqual(CallRecord.clock(252), "4:12")
         XCTAssertEqual(CallRecord.clock(3725), "1:02:05")
     }
-
-    func testChatRowsInterleaveCalls() {
-        let conversation = Conversation(id: "jean", title: "Jean", members: [Person(id: "jean", name: "Jean")], messages: [])
-        let call = CallRecord(id: "c", peerID: "jean", peerName: "Jean", video: false, outgoing: true, date: Date(), duration: 252, outcome: .completed)
-        let rows = ChatRow.rows(for: conversation, calls: [call])
-        XCTAssertTrue(rows.contains { if case .call(let r) = $0.kind { return r.line == "Voice call · 4:12" } else { return false } })
-    }
 }

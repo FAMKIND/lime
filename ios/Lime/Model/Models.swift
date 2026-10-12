@@ -55,15 +55,17 @@ struct Message: Identifiable, Hashable, Sendable {
     var threadRoot: String?
     /// When other messages reply to this one: how many, the newest, who, and what is unread.
     var thread: ThreadInfo?
+    /// A call shown as a message (LIME-123): its id is `call:<call id>`, the same on both phones.
+    var call: CallBubble?
 
     var isOwn: Bool { senderID == nil }
     /// Edit and Delete for everyone are offered on my own sent messages for a day.
     static let editWindow: TimeInterval = 24 * 3600
     func canEdit(now: Date = Date()) -> Bool {
-        isOwn && !deleted && (state == .sent || state == .sending || state == .failed) && !isSystem && now.timeIntervalSince(date) <= Self.editWindow
+        isOwn && !deleted && call == nil && (state == .sent || state == .sending || state == .failed) && !isSystem && now.timeIntervalSince(date) <= Self.editWindow
     }
     func canDeleteForEveryone(now: Date = Date()) -> Bool {
-        isOwn && !isSystem && now.timeIntervalSince(date) <= Self.editWindow && (state == .sent || state == .sending || state == .failed)
+        isOwn && !isSystem && call == nil && now.timeIntervalSince(date) <= Self.editWindow && (state == .sent || state == .sending || state == .failed)
     }
     var isSystem: Bool { state == .system }
 }
@@ -196,6 +198,10 @@ extension Message {
         forwarded = item.forwarded
         threadRoot = item.threadRoot
         linkPreview = item.linkPreview.map { LinkPreviewItem(url: $0.url, title: $0.title, site: $0.site, image: $0.image.map(AttachmentItem.init)) }
+        if item.id.hasPrefix("call:"), let bubble = CallBubble(body: item.text, mine: item.senderId == nil) {
+            call = bubble
+            text = bubble.summary   // the words the Messages row, a reply's quote and the notifications use
+        }
     }
 }
 

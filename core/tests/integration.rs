@@ -1561,3 +1561,51 @@ fn calls_keep_working_both_ways_after_a_completed_call_and_crossed_calls() {
     b.sync(transport.clone(), bob.token.clone()).unwrap();
     assert!(has(&b, &alice.id, "still there?"), "A → B text after crossed calls");
 }
+
+/// LIME-123: a missed call is a message in both chats (the same id on both phones), and a reaction and a reply naming it arrive.
+#[test]
+fn a_call_is_a_message_in_both_chats_that_can_be_reacted_to_and_replied_to_through_the_real_server() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    a.register_device(transport.clone(), alice.token.clone()).unwrap();
+    b.register_device(transport.clone(), bob.token.clone()).unwrap();
+    let chat = a.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    a.queue_text(chat, "hello".into()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    b.sync(transport.clone(), bob.token.clone()).unwrap();
+    b.accept_request(format!("dm:{}", alice.id)).unwrap();
+    b.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    a.sync(transport.clone(), alice.token.clone()).unwrap();
+
+    // Alice calls Bob and he does not answer: each phone records the same call id.
+    let record = |peer: &str, name: &str, outgoing: bool, outcome: &str| lime_core::CallHistoryRecord {
+        id: "call-1".into(), peer: peer.into(), peer_name: name.into(), video: true, outgoing, at_ms: 1_000, duration_ms: 0, outcome: outcome.into(),
+    };
+    a.call_history_add(record(&bob.id, "Bob Brown", true, "noAnswer")).unwrap();
+    b.call_history_add(record(&alice.id, "Alice Adams", false, "missed")).unwrap();
+    let call = "call:call-1";
+    assert!(a.list_messages(format!("dm:{}", bob.id)).unwrap().iter().any(|m| m.id == call && m.sender_id.is_none()), "Alice's chat: her call");
+    assert!(b.list_messages(format!("dm:{}", alice.id)).unwrap().iter().any(|m| m.id == call && m.sender_id.as_deref() == Some(alice.id.as_str())), "Bob's chat: Alice's call");
+
+    // Bob reacts 👍 and replies "sorry I missed that".
+    b.react(format!("dm:{}", alice.id), call.into(), "👍".into(), true).unwrap();
+    b.queue_reply(format!("dm:{}", alice.id), call.into(), "sorry I missed that".into()).unwrap();
+    b.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    a.sync(transport.clone(), alice.token.clone()).unwrap();
+    let alice_view = a.list_messages(format!("dm:{}", bob.id)).unwrap();
+    let on_call = alice_view.iter().find(|m| m.id == call).unwrap();
+    assert!(on_call.reactions.iter().any(|r| r.emoji == "👍"), "Alice sees Bob's 👍 on her call");
+    let thread = a.list_thread(call.into()).unwrap();
+    assert!(thread.iter().any(|m| m.text == "sorry I missed that"), "and his reply under the call");
+}

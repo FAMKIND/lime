@@ -703,6 +703,8 @@ impl LimeStore {
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;")
             .map_err(db_err)?;
         migrations::run(&conn)?;
+        // Calls recorded before they were chat messages (LIME-123) become messages.
+        calls::backfill_call_messages(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
             pickle_key: crate::keys::derive_pickle_key(key),

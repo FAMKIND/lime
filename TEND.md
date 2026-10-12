@@ -5001,3 +5001,26 @@ Ruled out: the TURN relay and `turn-credentials` (the staging integration test n
 **Tests.** `ListFilterTests` (each filter, AND combinations with Unread/Missed, the active count, the labels in use, the call filters) and `FilterRowUITests`: the filter row is above the first chat with its menu items, Groups shows only groups and the badge reads 1 then 2 and Clear filters resets and removes it, the filtered empty state, and Calls' Voice/Video/Incoming/Outgoing menu with "No calls match" and Voice + Incoming leaving Lee's calls.
 
 **Not exercised:** the By label submenu on a phone with real labels (the unit test covers the logic; the demo chats have none), the Requests item opening the list from the menu, iOS 17.
+
+
+## LIME-123
+
+**Calls appear in the chat as bubbles you can react to, reply to and delete (committed, awaiting the user's two-phone gate).** Phase 0: `PLOT.md` committed.
+
+**Phase 1 (nothing contradicted the design).**
+- `call_history.id` **is** the call id (`CallRecord.id = callID` on both phones: the caller makes it, the callee takes it from the offer), so both phones compute the same message id `call:<call_id>`; old history rows from every earlier build used the same id, so **no `call:local:` ids were needed**.
+- A call's end is recorded on each phone in `CallManager.finish` → `CallLog.add` → core `call_history_add`, for every outcome; the do-not-disturb "missed" path records the offer's call id too.
+- Reactions: `message_ops::apply` finds the target by id in `messages` (same conversation) and an id of up to 64 characters (`call:` + a UUID is 41); replies: `resolve_root` finds the root by id in `messages`. **Neither blocks a `call:` id**, and a message with no HLC sorts by its time.
+
+**Core.** `call_history_add` now also inserts the chat message (`INSERT OR IGNORE`: the first record wins, so reactions, replies and "deleted for me" are never disturbed) into `dm:<peer>`, sender = me if I called else the peer, body = a small JSON (`video`, `duration_ms`, `outcome`, `outgoing`), only when that DM exists; **calls recorded before this change are backfilled once-per-open** (idempotent) when the store opens; deleting a history row in the Calls tab leaves the chat's message. Tests: 175 core tests (the insert, idempotence, who sent it, no chat → no message, the backfill, `resolve_root` on a `call:` id), clippy 0, and a **real-server integration test (staging)**: A calls B (missed), both chats show the same `call:` message on the right side, B reacts 👍 and replies "sorry I missed that" to it, and A sees the 👍 on the call and the reply in its thread.
+
+**iOS.**
+- `Message.call` (a `CallBubble`) is set for ids starting `call:`; its words ("Video call · 0:23", "Missed voice call", "Voice call · No answer") become the message's text, so the Messages row preview, a reply's quote and the search/notification paths read like any message.
+- **The bubble** (neutral surface, no green; a symbol, the title, a second line; a missed incoming call in the danger red with `phone.arrow.down.left`/`video.slash`), mine on the right and theirs on the left with the usual time and grouping; **tap → "Call <Name> back?"** with the call's own kind first (Voice call / Video call / Cancel), a confirmation sheet (125's `ConfirmSheet`). The centred call lines are gone (`ChatRow.rows` no longer merges the history).
+- **Long-press** gives the emoji bar, Reply and Delete only (no Forward, Edit, Copy or Select); a call can only be **deleted for me** (`canDeleteForEveryone`/`canEdit` are false for it).
+- The chat reloads when a call ends (`CallManager.onFinished`).
+- Seen: a simulator screenshot of the demo chat (`-lime-demo-screen call-bubbles`): a video call 0:23 and a voice call "No answer" on the right, a red "Missed voice call" on the left.
+
+**Tests.** `CallBubbleTests` (titles, details, summaries for every outcome, the body parsing, no edit/delete-for-everyone) and `CallBubblesUITests` (side and words of each bubble, the long-press menu has the emoji bar, Reply and Delete and none of Forward/Edit/Copy/Select, tap asks to call back with the kind first, Reply opens the reply on the call).
+
+**Not exercised:** two real phones (the gate); a reaction/reply to a call whose other side never rang (a reaction waits there; a reply shows without a quote, as for a missing message); the Messages-row preview of a call on a phone; a call bubble inside a thread/reply screen is shown but tapping it there does nothing (only the chat asks to call back); group chats are unchanged.

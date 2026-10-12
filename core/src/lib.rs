@@ -26,7 +26,7 @@ pub use client::{find_user, lookup_user_by_email, DeviceInfo, FoundUser, SyncRep
 pub use store::search::{ConversationMatch, SearchHit};
 pub use store::threads::ThreadSummary;
 pub use store::link_preview::{LinkPreview, OutgoingPreview};
-pub use store::calls::CallEvent;
+pub use store::calls::{CallEvent, CallHistoryRecord};
 pub use client::calls::TurnServers;
 pub use store::status::{ContactStatus, StatusInfo};
 pub use store::storage::{ChatUsage, MediaEntry, MediaRef, StorageUsage};
