@@ -126,6 +126,14 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e31. **The user (2026-10-11): call bubbles' text is too big → folded into LIME-122a** ("Also in this brief": `Theme.body` regular, a body-sized symbol, a caption detail line, text-bubble padding). **LIME-122a SENT.**
+1e30. **LIME-123 LANDED as `f132797` (pushed, 2026-10-11; PLOT.md `dbd25bd`).**
+   - `call_history.id` is already the shared call id, so no `call:local:` ids were needed.
+   - The call message is inserted in `call_history_add`, only when the DM exists; old calls are backfilled on store open (idempotent).
+   - 175 core tests pass; the staging + local integration test (missed call → both sides → 👍 + a reply) passes.
+   - Tap → `ConfirmSheet` call back; long-press = emoji bar / Reply / Delete.
+   - **Known small gap:** a call bubble inside the thread (Replies) screen doesn't respond to a tap (only the chat asks to call back). A QA item if the user minds.
+   - **Waiting on the user's two-phone gate. Next: LIME-122a** (tend's handoff line says "LIME-122": the right ID is **122a**).
 1e29. **LIME-124 LANDED as `5a4e0a8` (pushed, 2026-10-11; PLOT.md `fcf056a`).**
    - The filter row is the first list row on both tabs: a segmented control plus a 40 pt glass button with the outline icon and a lime count badge.
    - The 8 ± 4 pt gap is measured on iOS 26. On iOS 17–25 the 76 pt margin is unchanged.
@@ -4188,6 +4196,12 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **Group details:** a **Shared** row card (Photos & videos · Files · Links with counts) opening the same lists for the whole group (as in the Design section).
 
 **No server change:** `fetch_profile` and `list_shared` in core are the only non-UI additions (as in the original text). Delete the original text's Phase 2 item 0 if present.
+
+**Also in this brief (the user, 2026-10-11, after 123; visual only, so no new tests per the standing rule): call bubbles match the chat's text size.** "The call text in the call bubbles is too big; it needs to be a similar text size to the chat text in the chat thread so it feels consistent."
+- `ChatView.swift` `CallBubbleView` (~line 909) today: the symbol at `.system(size: 20)`, the title `Theme.body.weight(.semibold)`, the detail `Theme.secondary`.
+- **Change:** the title in **`Theme.body` at regular weight** (exactly a text message's font), the symbol sized to the body text (`.font(Theme.body)`, no fixed 20 pt), the detail line in **`Theme.caption`** (like the time and footers), and **the same inner padding and corner radius as a text bubble**, so a call bubble is no taller than a two-line text message.
+- Keep the colours (the missed red), the sides and the tap/long-press behaviour.
+- Check by eye in one simulator screenshot beside a text message; fix only existing tests that break.
 
 ### LIME-122b → `tend` (lime-aa) (**PARKED, LATER** (the user, 2026-10-11): not in the active queue; re-plan it together with the KakaoTalk-style hero and the classroom themes when picked up): upload your own profile background photo (student-privacy check, follows the photo visibility)
 **When this is picked up, it must first add the hero** (the background filling the top with a scrim, the avatar bottom-left, the name over it; the 6 classroom themes or an avatar-colour gradient; the `profiles.profile_theme` column), which was cut from 122a. B1–B4 (2026-10-11) still stand.
