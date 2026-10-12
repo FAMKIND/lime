@@ -126,6 +126,16 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e33. **The user's QA + asks (2026-10-11, 6 screenshots):**
+   - **The profile header** becomes Mute · Pin/Unpin · ⋯ (Block, Delete chat; Report with 113), with Share as a row at the bottom. **→ folded into LIME-122a2 (item 6)**, which wasn't sent yet.
+   - **Visual QA → LIME-126:** the filter badge clipped on first load; the tab badge clipped in landscape; the call screen's Message button and "Tap to return to call" bar have low contrast.
+   - **The add sheet → LIME-127:** one sheet (Camera photo or video, recent photos, Photos, Files), modelled on the Claude app's "Add to session".
+   - **The call minimise button** goes in the right column under the mic **→ noted in LIME-118c.**
+   - **Queue: 122a2 → 126 → 127 → 118b → 118c → 119 → 120 → 112b → 117 → 113 → …**
+1e32. **LIME-122a LANDED as `a6f2b52` (pushed, 2026-10-11; PLOT.md `7c7bdfb`); soft cap reached, so it's partial.**
+   - **Done:** `fetch_profile` and `list_shared` (178 core tests); the profile screen (top, actions, Info | Shared | Calls, Share, ⋯ with mute); opens from a call row, the DM header and ⋯ → Profile; the call bubble text matches messages.
+   - **Left → LIME-122a2 (drafted, NEXT):** your own profile (P1); the other entry points; Group details' Shared card; ⋯ Safety number/Storage. Safety Numbers is own-key only (`KeysScreen`), so ⋯ uses the existing in-person QR verification instead. Plus the untested media drill-in.
+   - A search test broke on new demo data ("lesson") and tend reworded the demo message. Fine.
 1e31. **The user (2026-10-11): call bubbles' text is too big → folded into LIME-122a** ("Also in this brief": `Theme.body` regular, a body-sized symbol, a caption detail line, text-bubble padding). **LIME-122a SENT.**
 1e30. **LIME-123 LANDED as `f132797` (pushed, 2026-10-11; PLOT.md `dbd25bd`).**
    - `call_history.id` is already the shared call id, so no `call:local:` ids were needed.
@@ -3815,6 +3825,8 @@ If the survey turns up related issues, raise them before editing.
 
 ### LIME-118c → `tend` (lime-aa) (after LIME-118b): minimise a call into a floating tile you can move around, plus system Picture in Picture
 **The user (2026-10-11):** "it would be good to be able to, picture-in-picture style, minimise the voice or video call into a small box you can move around while you type a message to that person or others."
+**How it must behave (the user, 2026-10-11): "call minimise should work like Apple FaceTime: while you text, you can see the video box."** On a video call, minimising shows **the live video in a small floating rounded box** over the app (you keep chatting in any chat, and the box stays visible and draggable to a corner); tapping it returns to the full call. A voice call minimises to the same floating box with the avatar and timer. (In-app floating tile first; system Picture in Picture for leaving lime follows the brief's existing plan.)
+**Placement (the user, 2026-10-11, later):** "we need an icon to minimize the FaceTime feature on the right side corner under the mic". **The minimise button goes in the call screen's right-hand control column, directly under the Mute (mic) button**, same size and style as the others (`arrow.down.right.and.arrow.up.left` or `pip.enter`), on video and voice calls. Re-survey `CallView`'s controls (changed by 116f) before building.
 
 **Today** (`RootView.swift:21-26`):
 - the call is a `fullScreenCover` shown while `inCall && !minimized`;
@@ -4202,6 +4214,79 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **Change:** the title in **`Theme.body` at regular weight** (exactly a text message's font), the symbol sized to the body text (`.font(Theme.body)`, no fixed 20 pt), the detail line in **`Theme.caption`** (like the time and footers), and **the same inner padding and corner radius as a text bubble**, so a call bubble is no taller than a two-line text message.
 - Keep the colours (the missed red), the sides and the tap/long-press behaviour.
 - Check by eye in one simulator screenshot beside a text message; fix only existing tests that break.
+
+### LIME-122a2 → `tend` (lime-aa) (NEXT): finish the profile: your own profile, every avatar opens it, Group details' Shared, and the ⋯ items
+**Context:** LIME-122a (`a6f2b52`) built the core (`fetch_profile`, `list_shared`) and the profile screen, opened from a Calls row, a DM header (avatar or title) and the DM ⋯ → Profile. It stopped at the soft cap. This brief finishes 122a's scope; read 122a's text in PLOT.md for the agreed layout and decisions (P1 = A + Change status/Edit profile/Settings, Sign out in ⋯; P2 = B; P3 = A).
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push. iOS only (no core or server change expected; if one is needed, say so first).
+
+**What plot read:** tend's 122a report; `AccountScreens.swift` `KeysScreen` (**only your own key; no per-contact safety number exists**); `StorageScreens.swift` (`ChatMediaScreen`, the per-chat media/storage screen); the in-person QR verification (`Features/Invite/QRScreens.swift`).
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min.
+
+**Phase 2:**
+1. **Your own profile (P1):** your avatar in the header (on link, call and jam) opens **your profile** instead of the quick status sheet:
+   - the same layout, with actions **Change status · Edit profile · Settings** (Change status shows the existing status sheet's content; Edit profile → the existing Settings editor; Settings → `SettingsView`);
+   - ⋯ holds **Sign out** (through the existing `ConfirmSheet` and Settings' sign-out path; no new sign-out logic);
+   - no Share on your own profile, unless you have a username (then Share your own lime link; that's fine);
+   - Info shows your About and details; no Shared or Calls sections from the header.
+2. **Every other avatar opens the profile, in context (122a item 3):**
+   - group chat message avatars → that member's profile, Shared titled "Shared in <Group>";
+   - the thread (Replies) root author;
+   - Group details member rows (your own row → your profile, with Shared = what you shared in that group);
+   - Calls search People rows (the avatar/name; the voice/video buttons still call).
+   - **Not:** Messages rows (P2 = B), New Call rows (they call).
+3. **Group details: the Shared card** (Photos & videos · Files · Links, with counts and chevrons) opening the same lists as the profile's "See all", for the whole group (`list_shared` with no sender).
+4. **The ⋯ menu on someone's profile:** Mute/Unmute (done) · **Verify in person** (opens the existing QR verification for this person; replaces "Safety number", which has no per-contact screen) · **Storage** (opens `ChatMediaScreen` for your DM with them; hidden if there's no DM).
+5. **A UI test for the media drill-in** (tap a Shared media item → the viewer at that message), which 122a built but didn't test.
+6. **AMENDMENT (the user, 2026-10-11, before 122a2 was sent): the header icons and Share move.** It overrides 122a's "Header" bullet and item 4 above where they differ.
+   - **Someone's profile, top right: three glass circle buttons: Mute** (**confirmed by the user: the bell**, `bell` when not muted / `bell.slash` when muted; tapping offers the existing mute durations via `ConfirmSheet`) · **Pin/Unpin** (`pin` / `pin.slash`, pins the DM in Messages, the same action as the row swipe) · **⋯**.
+   - **The ⋯ menu:** **Share profile** (`square.and.arrow.up`; the share sheet with the lime link, P3; hidden without a username) · **Verify in person** · **Storage** · **Block** (the existing `store.block`, through `ConfirmSheet`; Unblock if already blocked) · **Delete chat** (the existing local delete, through `ConfirmSheet`). **Report** comes with LIME-113 (don't add a placeholder).
+   - **No big Share button anywhere** (the user: "move share to the 3-dot menu instead of making a big button, to keep it clean").
+   - **Your own profile:** top right **⋯** only: **Share profile** (when you have a username) · Edit profile · Settings · Sign out.
+   - Tests: Mute and Pin toggle state from the profile (Pin shows in the Messages list); ⋯ → Block shows the confirm sheet (cancel it); ⋯ → Share profile presents the share sheet.
+
+**Verification (behavioural: navigation, so real UI tests):** your header avatar opens your profile with Change status/Edit profile/Settings, and ⋯ → Sign out shows the confirm sheet (cancel it); a group message avatar opens the member's profile with "Shared in <Group>"; a Group details member row opens the profile; Group details shows the Shared card and opens a list; ⋯ → Verify in person opens the QR screen; the media drill-in. Tiered; 0 warnings; Release clean.
+
+**Gate (the user, the phone):** tap your own avatar at the top → your profile (change your status from it); tap Jean's avatar in a group → "Shared in <Group>"; Group details → Shared; Jean's profile ⋯ → Verify in person and Storage.
+
+**Record:** `## LIME-122a2` in `TEND.md`. **Commit:** `feat(ios): your own profile, every avatar opens a profile, Group details' Shared, Verify in person and Storage in the profile menu`, trailer `Brief: LIME-122a2`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-126 → `tend` (lime-aa) (after 122a2): visual QA: clipped badges, call-screen contrast (visual only: no new tests)
+**The user (2026-10-11, screenshots of link portrait and landscape, a call's person sheet, and the "Tap to return to call" bar):**
+1. **The filter button's count badge is clipped on first load:** its top-right is cut as if inside a container, then it "pops out". Find the clipping container (likely the glass `clipShape`/`glassEffect` on the button, or the `List` row's bounds at first layout). Put the badge in an overlay **outside** the clipped shape (or `.compositingGroup()` / `.zIndex` so it draws above), and give the row enough top padding that the badge is never clipped by the list row. It must look right on the very first frame.
+2. **A tab-bar badge is clipped at the bar's rounded edge in landscape** (the "2" on link in the iOS 26 inline/landscape bar). Adjust the badge for the inline layout (`UITabBarAppearance.inlineLayoutAppearance` `badgePositionAdjustment`, or the item's `badgePositionAdjustment`) so it sits fully inside the bar on a 13 mini landscape. **If the system's glass bar clips it whatever the offset, stop and report with a screenshot** rather than drawing a fake badge.
+3. **Call-screen contrast (accessibility):**
+   - the person sheet's **Message** button is white text on light lime green: use `Theme.accentInk` (dark) text and icon on `Theme.accent`, as every other green button does (≥ 4.5:1);
+   - the **"Tap to return to call · 1:31"** bar is white on light green: use `Theme.accentInk` text/icon on it (or a darker green fill with white text) so it reaches ≥ 4.5:1. Measure both and note the ratios in TEND.md.
+
+4. **Remove the green unread dot at the left of Messages rows** (the user, 2026-10-11): "font weight and the number badge communicate unread already; the green dot clashes with the green status symbol." Unread rows = **bold name and preview + the count badge** only. **A chat marked unread by hand** (no count) shows **bold + a small lime badge with no number** where the count sits (right side), so it's still visible. Update the 107-qa tests that assert the dot (behavioural tests about the unread state stay; only the dot's presence changes).
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~30 min. **Verification:** build; 0 warnings; Release clean; fix only existing tests that break; before/after screenshots in TEND.md. **Gate:** no green dot at the left of unread rows (bold + badge only; a hand-marked unread chat shows a small badge); the filter badge is whole from the first frame; the landscape tab badge is whole; the Message button and the return-to-call bar read clearly.
+**Record:** `## LIME-126`. **Commit:** `fix(ios): unclipped filter and tab badges; readable call-screen buttons`, trailer `Brief: LIME-126`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-127 → `tend` (lime-aa) (after 126): one "Add to your message" sheet: Camera, recent photos, Photos, Files
+**The user (2026-10-11):** "consolidate our add sheet. Reference the Claude example. I think of it as Photo library (could select photo or video), Camera (photo or video), Files (supported files)." Today's sheet (their screenshot): "Add to your message" with six stacked buttons: Photo Library · Take Photo · Choose Video · Record Video · Files · Cancel. The reference: the Claude app's "Add to session" sheet (a ✕, the title, "Photos" on the right; a row with a **Camera tile** followed by **recent photo thumbnails** scrolling sideways; then a card row **"Add files"**).
+
+**Goal:** the composer's "+" opens one compact sheet: **✕ · "Add to your message" · Photos**; a horizontal strip with a **Camera** tile (photo **or** video) and the most recent photos and videos (tap to attach, several allowed); then one card row **Files**. Picking from the full library (photos **or** videos together) is the **Photos** button.
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push. iOS only.
+
+**Phase 1 (read-only):** the current add sheet (`ChatComposer.swift`), the attachment pipeline (98c/98d: photos, video, files, size limits), and the Info.plist privacy strings.
+
+**Phase 2:**
+1. **The sheet:** a content-height bottom sheet in the app's sheet style (as `ConfirmSheet`/New Call), the header with ✕ on the left, the title, and **Photos** on the right.
+2. **Camera tile:** opens the camera for **photo or video** in one capture screen (`UIImagePickerController` with both media types, or the existing camera path, with mode switching).
+3. **Recent strip:** the latest ~20 photos and videos as square thumbnails (videos show their duration). **Privacy:** it needs Photos read access. Ask for it only when the sheet first opens, and support **limited access** (show only the allowed items plus a "Manage" link). If access is denied, hide the strip and keep Camera + Photos + Files. Tapping thumbnails selects them (a check), and an **Add (N)** button attaches them.
+4. **Photos button:** the system `PHPickerViewController` for **images and videos together**, multiple selection. It needs no permission.
+5. **Files row:** the existing document picker, limited to the supported types.
+6. **Remove** the old six-button list. Everything flows into the existing attachment pipeline (compression, limits, encrypted upload).
+
+**Verification (behavioural: real tests where the simulator allows):** UI tests: "+" opens the sheet with Camera, the strip (with the simulator's sample photos, when access is granted in the test setup), Photos and Files; selecting two thumbnails → Add (2) attaches both; Files opens the document picker; denied access hides the strip. Tiered; 0 warnings; Release clean.
+
+**Gate (the user, the phone):** tap "+" in a chat: one sheet with Camera, your recent photos and videos, Photos and Files; attach two recent photos at once; record a short video from Camera; attach a PDF from Files.
+
+**Record:** `## LIME-127`. **Commit:** `feat(ios): one add sheet: Camera (photo or video), recent photos, Photos, Files`, trailer `Brief: LIME-127`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ### LIME-122b → `tend` (lime-aa) (**PARKED, LATER** (the user, 2026-10-11): not in the active queue; re-plan it together with the KakaoTalk-style hero and the classroom themes when picked up): upload your own profile background photo (student-privacy check, follows the photo visibility)
 **When this is picked up, it must first add the hero** (the background filling the top with a scrim, the avatar bottom-left, the name over it; the 6 classroom themes or an avatar-colour gradient; the `profiles.profile_theme` column), which was cut from 122a. B1–B4 (2026-10-11) still stand.
