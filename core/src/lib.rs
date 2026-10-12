@@ -27,6 +27,8 @@ pub use store::search::{ConversationMatch, SearchHit};
 pub use store::threads::ThreadSummary;
 pub use store::link_preview::{LinkPreview, OutgoingPreview};
 pub use store::calls::{CallEvent, CallHistoryRecord};
+pub use store::shared::SharedKind;
+pub use client::profile::PublicProfile;
 pub use client::calls::TurnServers;
 pub use store::status::{ContactStatus, StatusInfo};
 pub use store::storage::{ChatUsage, MediaEntry, MediaRef, StorageUsage};

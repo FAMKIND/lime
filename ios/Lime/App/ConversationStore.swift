@@ -49,6 +49,8 @@ final class ConversationStore {
     /// The app's three sections (the system tab bar): link (Messages), call (Calls), jam. Each keeps its own navigation.
     enum Section: String, CaseIterable, Hashable { case link, call, jam }
     var section: Section = .link
+    /// Other people's public profiles fetched this session (shown at once on the next open, then refreshed).
+    var publicProfiles: [String: PublicProfile] = [:]
     /// The call tab's own navigation path, and its name filter (the header's search).
     var callPath = NavigationPath()
     /// The call tab's All | Missed segment and its filters (kept while the app runs).
@@ -805,6 +807,18 @@ final class ConversationStore {
         isLoaded = true
         refreshStorageState()
         statuses = ["sam": PeerStatus(state: .dnd, until: nil), "lee": PeerStatus(state: .away, until: nil)]
+        // Their public profiles, as the server would answer (UI tests and screenshots).
+        publicProfiles = [
+            "sam": PublicProfile(userId: "sam", displayName: "Sam Park", username: "sam.park", school: "Lincoln Elementary", aboutEmoji: "📚", aboutText: "Fourth grade, loves fractions"),
+            "lee": PublicProfile(userId: "lee", displayName: "Lee Wong", username: "lee.wong", school: nil, aboutEmoji: nil, aboutText: nil),
+        ]
+        // Something shared with Sam, for the profile's Shared section.
+        if let sam = conversations.firstIndex(where: { $0.id == "dm:sam" }) {
+            conversations[sam].messages.append(Message(id: "share1", senderID: "sam", text: "The week 4 plan: https://example.org/plan", date: now.addingTimeInterval(-9_000)))
+            var file = Message(id: "share2", senderID: "sam", text: "", date: now.addingTimeInterval(-9_500))
+            file.attachments = [AttachmentItem(id: "f1", mime: "application/pdf", name: "Week 4 plan.pdf", size: 240_000, width: nil, height: nil, durationMs: nil, thumb: Data(), downloaded: true)]
+            conversations[sam].messages.append(file)
+        }
         demoBlocked = [BlockedPerson(conversationId: "dm:pat", name: "Pat Doe", tone: UInt32(AvatarTone.tone(for: "pat")))]
         switch screen {
         case "requests": path.append(MessagesRoute.requests)

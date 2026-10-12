@@ -25,6 +25,7 @@ pub(crate) mod link_preview;
 pub(crate) mod storage;
 pub(crate) mod status;
 pub(crate) mod calls;
+pub(crate) mod shared;
 mod sample;
 #[cfg(test)]
 mod search_tests;

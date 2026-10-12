@@ -45,4 +45,16 @@ enum CallGrouping {
         }
         return date.formatted(Date.FormatStyle(date: .numeric, time: .omitted, locale: locale, calendar: calendar, timeZone: calendar.timeZone))
     }
+
+    /// A call's date on one short line (the profile's call rows): today "11:01 AM"; "Yesterday 11:01 AM"; else "Oct 11, 11:01 AM", with the
+    /// year only when it is not this year.
+    static func shortDate(_ date: Date, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let time = date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: calendar.timeZone))
+        if calendar.isDate(date, inSameDayAs: now) { return time }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) { return "Yesterday \(time)" }
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+        var style = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).month(.abbreviated).day()
+        if !sameYear { style = style.year() }
+        return "\(date.formatted(style)), \(time)"
+    }
 }

@@ -32,6 +32,7 @@ const POOL_LOW: u32 = 20;
 const MAX_TEXT_BYTES: usize = 30_000;
 pub(crate) mod attachments;
 pub(crate) mod calls;
+pub(crate) mod profile;
 pub(crate) mod groups;
 pub(crate) mod message_ops;
 pub(crate) mod photos;

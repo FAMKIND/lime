@@ -88,7 +88,7 @@ pub(crate) fn load_thread(conn: &Connection, root_id: &str) -> Result<Vec<Row>, 
     load(conn, "(id = ?1 OR thread_root = ?1)", root_id)
 }
 
-fn load(conn: &Connection, condition: &str, key: &str) -> Result<Vec<Row>, StoreError> {
+pub(crate) fn load(conn: &Connection, condition: &str, key: &str) -> Result<Vec<Row>, StoreError> {
     let mut statement = conn
         .prepare(&format!(
             "SELECT id, conversation_id, sender_id, body, sent_at, local_state, hlc, parents, op_id, edited, deleted

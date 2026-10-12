@@ -2871,3 +2871,16 @@ fn reactions_edits_and_deletes_work_in_a_group() {
     deliver(&bob, &transport);
     assert!(alice.store.delete_message_for_everyone(chat.clone(), other.id.clone()).is_err());
 }
+
+#[test]
+fn a_public_profile_is_fetched_and_a_missing_one_is_none() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    server.state.lock().unwrap().profiles.insert(bob.user.clone(), ("Bob B".into(), Some("bob.b".into())));
+    let found = alice.store.fetch_profile(transport.clone(), alice.token.clone(), bob.user.clone()).unwrap().expect("a profile");
+    assert_eq!(found.user_id, bob.user);
+    assert_eq!((found.display_name.as_str(), found.username.as_deref()), ("Bob B", Some("bob.b")));
+    assert_eq!(found.school, None, "fields the person did not fill, or hid, are none");
+    assert!(alice.store.fetch_profile(transport.clone(), alice.token.clone(), "00000000-0000-4000-8000-000000000000".into()).unwrap().is_none(), "404 is none");
+}

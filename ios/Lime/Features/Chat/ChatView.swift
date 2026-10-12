@@ -292,15 +292,28 @@ struct ChatView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { if conversation.isGroup && !conversation.isRequest { store.path.append(GroupTarget(conversationID: conversation.id)) } }
+        .onTapGesture {
+            if conversation.isGroup && !conversation.isRequest { store.path.append(GroupTarget(conversationID: conversation.id)) }
+            else { openProfile(conversation) }
+        }
         .accessibilityElement(children: conversation.verified ? .contain : .combine)
-        .accessibilityAddTraits(conversation.isGroup ? .isButton : [])
+        .accessibilityAddTraits(conversation.isGroup || canOpenProfile(conversation) ? .isButton : [])
         .accessibilityIdentifier("chat-title")
         .alert("Verified in person", isPresented: $showingSeal) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(sealExplanation(conversation))
         }
+    }
+
+    /// A one-to-one chat's header (the avatar or the name), and the ⋯ menu's Profile, open the person's profile.
+    private func canOpenProfile(_ conversation: Conversation) -> Bool {
+        !conversation.isGroup && !conversation.isRequest && conversation.id != store.selfChatID && conversation.members.first != nil
+    }
+
+    private func openProfile(_ conversation: Conversation) {
+        guard canOpenProfile(conversation), let person = conversation.members.first else { return }
+        store.path.append(ProfileRoute(userID: person.id, name: conversation.title, conversationID: conversation.id))
     }
 
     // MARK: Find in this chat
@@ -421,6 +434,10 @@ struct ChatView: View {
     private func moreMenu<Icon: View>(_ conversation: Conversation, @ViewBuilder label: () -> Icon) -> some View {
         let settings = notifications.settings
         return Menu {
+            if canOpenProfile(conversation) {
+                Button { openProfile(conversation) } label: { Label("Profile", systemImage: "person.crop.circle") }
+                    .accessibilityIdentifier("chat-profile")
+            }
             if settings.isMuted(conversation.id), let until = settings.activeMutes().first(where: { $0.conversationID == conversation.id })?.until {
                 Button { settings.unmute(conversation.id) } label: {
                     Label("Unmute (\(MuteText.until(until).lowercased()))", systemImage: "bell")
@@ -915,21 +932,18 @@ struct CallBubbleView: View {
         let tint: Color = call.isMissedIncoming ? .red : Theme.text
         // A tap gesture, not a Button: a Button would take the touch from the bubble's long-press menu.
         Group {
-            HStack(spacing: 12) {
-                Image(systemName: call.symbol).font(.system(size: 20))
+            // The same type and padding as a text message, so a call bubble is no taller than a two-line message.
+            HStack(spacing: 10) {
+                Image(systemName: call.symbol).font(Theme.body)
                     .foregroundStyle(tint)
-                    .frame(width: 40, height: 40)
-                    .background(Theme.canvas.opacity(0.6), in: Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(call.title).font(Theme.body.weight(.semibold)).foregroundStyle(tint)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(call.title).font(Theme.body).foregroundStyle(tint)
                         .accessibilityIdentifier("call-bubble-title")
-                    Text(call.detail).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                    Text(call.detail).font(Theme.caption).foregroundStyle(Theme.textSecondary)
                         .accessibilityIdentifier("call-bubble-detail")
                 }
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .frame(minWidth: 210, alignment: .leading)
+            .padding(.horizontal, 14).padding(.vertical, 10)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
             .contentShape(Rectangle())
         }

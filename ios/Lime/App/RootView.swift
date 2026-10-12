@@ -110,6 +110,8 @@ private struct SignedInView: View {
                     ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words)
                         .toolbar(.hidden, for: .tabBar)
                 }
+                .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
+                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
                 .navigationDestination(for: MessagesRoute.self) { route in
                     switch route {
                     case .requests: RequestsView()
@@ -123,9 +125,8 @@ private struct SignedInView: View {
         NavigationStack(path: path) {
             CallHistoryView()
                 .navigationDestination(for: CallSearchRoute.self) { _ in CallSearchScreen() }
-                .navigationDestination(for: CallGroupRoute.self) { route in
-                    CallDetailsView(route: route).toolbar(.hidden, for: .tabBar)
-                }
+                .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
+                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
         }
     }
 }

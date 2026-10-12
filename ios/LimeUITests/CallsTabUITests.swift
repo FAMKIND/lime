@@ -37,10 +37,10 @@ final class CallsTabUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Video call Sam Park"].waitForExistence(timeout: 5), "a video call's button is a video button")
         XCTAssertTrue(app.buttons["Call Lee Wong"].exists, "a voice call's button is a phone button")
         app.buttons.matching(identifier: "call-history-row").firstMatch.tap()
-        XCTAssertTrue(any(app, "call-details").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["call-details-message"].exists && app.buttons["call-details-voice"].exists && app.buttons["call-details-video"].exists)
-        XCTAssertEqual(app.staticTexts.matching(identifier: "call-detail-outcome").count, 2, "both missed calls are listed")
-        XCTAssertFalse(app.tabBars.firstMatch.isHittable, "the tab bar hides in the details, as in a chat")
+        XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 5), "a call row opens the profile")
+        XCTAssertTrue(app.buttons["profile-message"].exists && app.buttons["profile-voice"].exists && app.buttons["profile-video"].exists)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "profile-call-line").count, 2, "both missed calls are listed on the Calls section")
+        XCTAssertFalse(app.tabBars.firstMatch.isHittable, "the tab bar hides in the profile, as in a chat")
     }
 
     func testSwipeLeftDeletesARow() {

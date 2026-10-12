@@ -1,10 +1,5 @@
 import SwiftUI
 
-/// A group of calls opened from the list (the details screen finds them again by id).
-struct CallGroupRoute: Hashable {
-    let ids: [String]
-}
-
 /// Words for a call in the details list.
 extension CallRecord {
     var outcomeText: String {
@@ -37,7 +32,7 @@ struct CallRowView: View {
         let call = group.first
         let missed = group.isMissedIncoming
         HStack(spacing: 12) {
-            Button { store.callPath.append(CallGroupRoute(ids: group.records.map(\.id))) } label: {
+            Button { store.callPath.append(ProfileRoute(userID: call.peerID, name: call.peerName, callIDs: group.records.map(\.id))) } label: {
                 HStack(spacing: 12) {
                     AvatarView(person: person(call), size: avatarSize)
                     VStack(alignment: .leading, spacing: 3) {
@@ -261,67 +256,6 @@ struct CallSearchScreen: View {
 
     private func start(_ teacher: KnownTeacher, video: Bool) {
         Task { _ = await store.calls.start(peerID: teacher.person.id, name: teacher.person.name, video: video) }
-    }
-}
-
-/// One person's calls (a group from the list): who, Message · Voice · Video, and each call with its time, direction and outcome.
-struct CallDetailsView: View {
-    let route: CallGroupRoute
-    @Environment(ConversationStore.self) private var store
-    private let log = CallLog.shared
-
-    private var records: [CallRecord] { log.records.filter { route.ids.contains($0.id) } }
-
-    var body: some View {
-        ScrollView {
-            if let first = records.first {
-                VStack(spacing: 18) {
-                    AvatarView(person: Person(id: first.peerID, name: first.peerName, tone: 0), size: 96, showsStatus: true).padding(.top, 20)
-                    Text(first.peerName).font(.title2.weight(.semibold)).foregroundStyle(Theme.text)
-                    HStack(spacing: 12) {
-                        action("message", "Message", id: "call-details-message") { store.openFromNotification("dm:\(first.peerID)", thread: nil) }
-                        action("phone", "Voice", id: "call-details-voice") { Task { _ = await store.calls.start(peerID: first.peerID, name: first.peerName, video: false) } }
-                        action("video", "Video", id: "call-details-video") { Task { _ = await store.calls.start(peerID: first.peerID, name: first.peerName, video: true) } }
-                    }
-                    .padding(.horizontal, 16)
-                    VStack(spacing: 0) {
-                        ForEach(records) { record in
-                            HStack(spacing: 10) {
-                                Image(systemName: record.outgoing ? "arrow.up.right" : "arrow.down.left").font(.caption).foregroundStyle(Theme.textSecondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(record.date.formatted(date: .abbreviated, time: .shortened)).font(Theme.body).foregroundStyle(Theme.text)
-                                    Text(record.video ? "Video" : "Voice").font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                                }
-                                Spacer()
-                                Text(record.outcomeText)
-                                    .font(Theme.secondary)
-                                    .foregroundStyle(record.isMissedIncoming ? Color.red : Theme.textSecondary)
-                                    .accessibilityIdentifier("call-detail-outcome")
-                            }
-                            .padding(.horizontal, 18).frame(minHeight: 58)
-                        }
-                    }
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .padding(.horizontal, 16)
-                }
-            }
-        }
-        .background(Theme.canvas.accessibilityIdentifier("call-details"))
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func action(_ symbol: String, _ title: String, id: String, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            VStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 20))
-                Text(title).font(Theme.secondary)
-            }
-            .foregroundStyle(Theme.text)
-            .frame(maxWidth: .infinity, minHeight: 64)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(id)
     }
 }
 
