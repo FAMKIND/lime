@@ -3,14 +3,14 @@ import XCTest
 /// The 1:1 call screen (LIME-118), with no media: `-lime-demo-call voice|video` shows it in a made-up active call.
 @MainActor
 final class CallScreenUITests: XCTestCase {
-    private func app(_ kind: String) -> XCUIApplication {
+    private func app(_ kind: String, _ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-call", kind]
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-call", kind] + extra
         app.launch()
         return app
     }
 
-    private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
+    private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
 
     func testAVoiceCallHasOneRowOfControlsAndAVideoCallHasTheStack() {
         let voice = app("voice")
@@ -71,5 +71,51 @@ final class CallScreenUITests: XCTestCase {
         voice.buttons["call-name-pill"].tap()
         XCTAssertTrue(any(voice, "call-person-sheet").waitForExistence(timeout: 5))
         XCTAssertTrue(voice.buttons["call-person-message"].exists)
+    }
+
+    // MARK: LIME-118b
+
+    func testTheOtherSidesMutedStateShowsAsABadgeAndTheirCameraOffShowsTheAvatar() {
+        let muted = app("video", ["-lime-demo-call-remote-muted"])
+        XCTAssertTrue(any(muted, "call-remote-muted").waitForExistence(timeout: 10), "a muted badge by their name")
+        XCTAssertEqual(any(muted, "call-remote-muted").label, "Sam Rivera is muted")
+        muted.terminate()
+        let off = app("video", ["-lime-demo-call-remote-camera-off"])
+        XCTAssertTrue(any(off, "call-avatar").waitForExistence(timeout: 10), "their avatar, not black")
+        XCTAssertFalse(any(off, "call-remote-muted").exists)
+    }
+
+    func testAVoiceCallHasAVideoButtonThatTurnsItIntoAVideoCall() {
+        let voice = app("voice")
+        XCTAssertTrue(voice.buttons["call-start-video"].waitForExistence(timeout: 10))
+        voice.buttons["call-start-video"].tap()
+        XCTAssertTrue(any(voice, "call-controls-video").waitForExistence(timeout: 5), "the screen switches to the video layout")
+        XCTAssertFalse(any(voice, "call-controls-voice").exists)
+    }
+
+    func testTheVoiceRowFitsEveryScreenWithSixteenPointMargins() {
+        let voice = app("voice")
+        XCTAssertTrue(voice.buttons["call-start-video"].waitForExistence(timeout: 10))
+        let width = voice.windows.firstMatch.frame.width
+        let ids = ["call-start-video", "call-mute", "call-speaker", "call-route", "call-end"]
+        let frames = ids.map { any(voice, $0).frame }
+        XCTAssertGreaterThanOrEqual(frames.first!.minX, 16, "\(frames)")
+        XCTAssertLessThanOrEqual(frames.last!.maxX, width - 16, "\(frames)")
+        for (left, right) in zip(frames, frames.dropFirst()) { XCTAssertLessThanOrEqual(left.maxX, right.minX, "no overlap: \(left) \(right)") }
+    }
+
+    func testTheCallScreenFitsInLandscape() {
+        let video = app("video")
+        XCTAssertTrue(video.buttons["call-end"].waitForExistence(timeout: 10))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        sleep(2)
+        let bounds = video.windows.firstMatch.frame
+        for id in ["call-end", "call-mute", "call-video", "call-flip", "call-name-pill"] {
+            let frame = any(video, id).frame
+            XCTAssertTrue(bounds.insetBy(dx: 0, dy: 0).contains(frame), "\(id) \(frame) is inside \(bounds)")
+        }
+        let end = any(video, "call-end").frame, mute = any(video, "call-mute").frame, camera = any(video, "call-video").frame
+        XCTAssertFalse(end.intersects(mute) || mute.intersects(camera), "the stack does not overlap itself in landscape")
     }
 }

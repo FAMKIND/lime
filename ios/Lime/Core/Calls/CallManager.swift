@@ -61,6 +61,19 @@ final class CallManager {
     private(set) var showUnreachableHint = false
     /// The other side's picture has arrived (a frame was drawn).
     private(set) var remoteVideoLive = false
+    /// The other person muted their microphone / turned their camera off (told over the control channel).
+    private(set) var remoteMuted = false
+    private(set) var remoteCameraOn = true
+    /// Another app has my camera (an iPad window): my picture is paused.
+    private(set) var cameraPaused = false
+    /// The other person's picture is there to show (a frame arrived and their camera is on).
+    var remoteVideoShowing: Bool { remoteVideoLive && remoteCameraOn }
+    /// The DTLS fingerprint of the other phone's media key, from the signed offer/answer: a mid-call SDP must carry the same one.
+    @ObservationIgnored private var remoteFingerprint: String?
+    @ObservationIgnored private var renegotiating = false
+    #if DEBUG
+    @ObservationIgnored fileprivate var isDemoCall = false
+    #endif
     var media: (any CallMedia)?
 
     @ObservationIgnored private let signalling: CallSignalling
@@ -192,6 +205,7 @@ final class CallManager {
         callID = id; muted = false; speaker = video; cameraOn = true; startedAt = nil
         pendingOffer = nil; pendingCandidates = []; remoteReady = false; outbound = []; descriptionSent = false
         remoteRinging = false; showUnreachableHint = false; remoteVideoLive = false; minimized = false
+        remoteMuted = false; remoteCameraOn = true; cameraPaused = false; remoteFingerprint = nil; renegotiating = false
     }
 
     private func wire(_ media: any CallMedia) {
@@ -204,6 +218,14 @@ final class CallManager {
             self.scheduleBatch()
         }
         media.onRemoteVideo = { [weak self] live in self?.remoteVideoLive = live }
+        media.onControlOpen = { [weak self] in self?.sendState() }
+        media.onControl = { [weak self] text in Task { @MainActor in await self?.handleControl(text) } }
+        media.onCameraInterrupted = { [weak self] paused in
+            guard let self, self.inCall else { return }
+            self.cameraPaused = paused
+            self.media?.setVideo(!paused && self.cameraOn)
+            self.sendState()
+        }
         media.onConnection = { [weak self] up in
             guard let self, self.inCall else { return }
             self.diag.log("media connection \(up ? "up" : "failed")")
@@ -453,6 +475,7 @@ final class CallManager {
             stopRinging()
             armConnectTimeout()
             armAudioFallback()
+            remoteFingerprint = Self.fingerprint(in: sdp)
             try await media.apply(answer: sdp)
             diag.log("answer applied")
             remoteReady = true
@@ -510,6 +533,7 @@ final class CallManager {
             guard callID == id else { return }
             diag.log("ice servers: \(servers.count) (relay credentials \(servers.contains { $0.username != nil } ? "present" : "missing"))")
             try media.start(servers: servers, video: video)
+            remoteFingerprint = Self.fingerprint(in: offer)
             let answer = try await media.accept(offer: offer)
             guard callID == id else { return }
             descriptionSent = true
@@ -562,9 +586,112 @@ final class CallManager {
         if reason != .missed { _ = await signalling.send(peer: peer, op: "call.end", payload: ["call_id": id]) }
     }
 
-    func setMuted(_ on: Bool) { muted = on; media?.setMuted(on) }
+    func setMuted(_ on: Bool) { muted = on; media?.setMuted(on); sendState() }
     func toggleSpeaker() { speaker.toggle(); media?.setSpeaker(speaker) }
-    func toggleCamera() { cameraOn.toggle(); media?.setVideo(cameraOn) }
+    func toggleCamera() {
+        // No camera in the call yet (a voice call, or the other side started the video): turning it on adds it.
+        guard media?.hasLocalVideo == true else { Task { await startVideo() }; return }
+        cameraOn.toggle()
+        media?.setVideo(cameraOn && !cameraPaused)
+        sendState()
+    }
+
+    // MARK: The in-call control channel (LIME-118b)
+    //
+    // `lime-ctl` is a WebRTC data channel inside the call's own connection: protected by the same DTLS session whose fingerprint is
+    // bound in the signed offer/answer, peer to peer, no server. It carries small JSON messages: my state (muted, camera) and the
+    // renegotiation that turns a voice call into video. Setup and end stay on the mailbox ops.
+
+    private static let controlLimit = 64 * 1024
+
+    private func control(_ message: [String: Any]) -> Bool {
+        guard let data = try? JSONSerialization.data(withJSONObject: message), data.count <= Self.controlLimit, let text = String(data: data, encoding: .utf8) else { return false }
+        return media?.sendControl(text) ?? false
+    }
+
+    /// My microphone and camera state, sent once the channel opens and on every change.
+    func sendState() {
+        guard inCall, let media else { return }
+        let sending = video && media.hasLocalVideo && cameraOn && !cameraPaused
+        _ = control(["t": "state", "muted": muted, "camera": sending])
+    }
+
+    func handleControl(_ text: String) async {
+        guard inCall, text.utf8.count <= Self.controlLimit,
+              let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any], let type = object["t"] as? String else { return }
+        diag.log("ctl \(type)")
+        switch type {
+        case "state":
+            if let value = object["muted"] as? Bool { remoteMuted = value }
+            if let value = object["camera"] as? Bool { remoteCameraOn = value }
+        case "offer":
+            if let sdp = object["sdp"] as? String { await receivedRenegotiation(offer: sdp) }
+        case "answer":
+            if let sdp = object["sdp"] as? String { await receivedRenegotiationAnswer(sdp) }
+        default: break   // a message from a newer lime: ignored
+        }
+    }
+
+    /// Adds my camera and tells the other side (renegotiation over the control channel). A voice call becomes a video call.
+    func startVideo() async {
+        #if DEBUG
+        if isDemoCall { video = true; cameraOn = true; return }   // the demo has no media to renegotiate
+        #endif
+        guard phase == .active, let media, !renegotiating else { return }
+        let id = callID
+        do {
+            try media.addLocalVideo()
+            renegotiating = true
+            let sdp = try await media.renegotiationOffer()
+            guard callID == id else { return }
+            guard control(["t": "offer", "sdp": sdp]) else {
+                renegotiating = false
+                diag.log("renegotiation: control channel is down")
+                return
+            }
+            video = true; cameraOn = true
+            speaker = true; media.setSpeaker(true)
+            sendState()
+        } catch {
+            renegotiating = false
+            diag.log("startVideo failed: \(error)")
+        }
+    }
+
+    private func receivedRenegotiation(offer sdp: String) async {
+        guard phase == .active, let media else { return }
+        guard Self.fingerprint(in: sdp) == remoteFingerprint, remoteFingerprint != nil else {
+            diag.log("renegotiation refused: the media key changed")
+            await end(reason: .failed)
+            return
+        }
+        // Both sides adding video at once: the lower user id's offer stands, the other side's is dropped.
+        if renegotiating, let me = myID(), me < peerID { return }
+        let id = callID
+        do {
+            let answer = try await media.accept(offer: sdp)
+            guard callID == id else { return }
+            renegotiating = false
+            guard control(["t": "answer", "sdp": answer]) else { return }
+            if !video { speaker = true; media.setSpeaker(true) }
+            video = true
+            if !media.hasLocalVideo { cameraOn = false }
+            sendState()
+        } catch {
+            diag.log("renegotiation failed: \(error)")
+        }
+    }
+
+    private func receivedRenegotiationAnswer(_ sdp: String) async {
+        guard phase == .active, renegotiating, let media else { return }
+        guard Self.fingerprint(in: sdp) == remoteFingerprint, remoteFingerprint != nil else {
+            diag.log("renegotiation answer refused: the media key changed")
+            await end(reason: .failed)
+            return
+        }
+        do { try await media.apply(answer: sdp) } catch { diag.log("renegotiation answer failed: \(error)") }
+        renegotiating = false
+    }
     func flipCamera() { media?.flipCamera() }
 
     private func finish(_ outcome: CallOutcome, notify: Bool) {
@@ -639,9 +766,11 @@ final class Once {
 #if DEBUG
 extension CallManager {
     /// UI tests and screenshots (`-lime-demo-call voice|video`): the call screen with no media.
-    func demo(video: Bool, phase: CallPhase = .active) {
+    func demo(video: Bool, phase: CallPhase = .active, remoteMuted: Bool = false, remoteCameraOff: Bool = false) {
         peerID = "sam"; peerName = "Sam Rivera"; self.video = video; outgoing = true
         self.phase = phase; startedAt = Date().addingTimeInterval(-42); remoteVideoLive = false
+        self.remoteMuted = remoteMuted; remoteCameraOn = !remoteCameraOff
+        isDemoCall = true
     }
 }
 #endif

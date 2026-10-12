@@ -34,17 +34,31 @@ private final class FakeMedia: CallMedia {
     var onCandidate: ((String, String?, Int32) -> Void)?
     var onConnection: ((Bool) -> Void)?
     var onRemoteVideo: ((Bool) -> Void)?
+    var onControl: ((String) -> Void)?
+    var onControlOpen: (() -> Void)?
+    var onCameraInterrupted: ((Bool) -> Void)?
     let localView = UIView()
     let remoteView = UIView()
     var muted = false
     var closed = false
-    func start(servers: [IceServer], video: Bool) throws {}
+    var hasLocalVideo = false
+    var sentControl: [[String: Any]] = []
+    var controlUp = true
+    var videoEnabled = true
+    func sendControl(_ json: String) -> Bool {
+        guard controlUp, let object = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] else { return false }
+        sentControl.append(object)
+        return true
+    }
+    func addLocalVideo() throws { hasLocalVideo = true }
+    func renegotiationOffer() async throws -> String { "v=0\r\na=fingerprint:sha-256 AA:BB\r\n" }
+    func start(servers: [IceServer], video: Bool) throws { hasLocalVideo = video }
     func makeOffer() async throws -> String { "v=0\r\na=fingerprint:sha-256 AA:BB\r\n" }
     func accept(offer: String) async throws -> String { "v=0\r\na=fingerprint:sha-256 CC:DD\r\n" }
     func apply(answer: String) async throws {}
     func add(candidate: String, mid: String?, index: Int32) async {}
     func setMuted(_ on: Bool) { muted = on }
-    func setVideo(_ on: Bool) {}
+    func setVideo(_ on: Bool) { videoEnabled = on }
     func flipCamera() {}
     func setSpeaker(_ on: Bool) {}
     var fallbacks = 0
@@ -425,5 +439,112 @@ final class CallTests: XCTestCase {
         XCTAssertEqual(CallManager.fingerprint(in: "v=0\r\na=fingerprint:sha-256 ab:cd\r\n"), "AB:CD")
         XCTAssertEqual(CallRecord.clock(252), "4:12")
         XCTAssertEqual(CallRecord.clock(3725), "1:02:05")
+    }
+
+    // MARK: LIME-118b: the control channel
+
+    /// A call that is up: I called, they answered with a media key (`CC:DD`), the path came up.
+    private func connectedCall(video: Bool = false) async -> CallManager {
+        let m = manager()
+        _ = await m.start(peerID: "jean", name: "Jean", video: video)
+        await m.handle(event("call.answer", id: m.currentID, payload: ["sdp": "v=0\r\na=fingerprint:sha-256 CC:DD\r\n"]))
+        media.onConnection?(true)
+        XCTAssertEqual(m.phase, .active)
+        return m
+    }
+
+    private func state(_ muted: Bool, _ camera: Bool) -> String { "{\"t\":\"state\",\"muted\":\(muted),\"camera\":\(camera)}" }
+
+    func testTheOtherSidesMuteAndCameraStateArrivesOverTheControlChannel() async {
+        let m = await connectedCall(video: true)
+        XCTAssertFalse(m.remoteMuted)
+        XCTAssertTrue(m.remoteCameraOn)
+        await m.handleControl(state(true, false))
+        XCTAssertTrue(m.remoteMuted)
+        XCTAssertFalse(m.remoteCameraOn)
+        XCTAssertFalse(m.remoteVideoShowing, "their camera is off: show their avatar, not a frozen or black picture")
+        await m.handleControl(state(false, true))
+        XCTAssertFalse(m.remoteMuted)
+        XCTAssertTrue(m.remoteCameraOn)
+    }
+
+    func testUnknownOversizedAndMalformedControlMessagesAreIgnored() async {
+        let m = await connectedCall()
+        await m.handleControl("{\"t\":\"wave\",\"x\":1}")
+        await m.handleControl("not json")
+        await m.handleControl("{\"muted\":true}")
+        await m.handleControl("{\"t\":\"state\",\"muted\":true,\"pad\":\"" + String(repeating: "x", count: 70_000) + "\"}")
+        XCTAssertFalse(m.remoteMuted)
+        XCTAssertEqual(m.phase, .active)
+    }
+
+    func testMyStateIsSentWhenTheChannelOpensAndOnEveryChange() async {
+        let m = await connectedCall(video: true)
+        media.onControlOpen?()
+        XCTAssertEqual(media.sentControl.last?["t"] as? String, "state")
+        XCTAssertEqual(media.sentControl.last?["muted"] as? Bool, false)
+        XCTAssertEqual(media.sentControl.last?["camera"] as? Bool, true)
+        m.setMuted(true)
+        XCTAssertEqual(media.sentControl.last?["muted"] as? Bool, true)
+        m.toggleCamera()
+        XCTAssertEqual(media.sentControl.last?["camera"] as? Bool, false)
+        XCTAssertFalse(media.videoEnabled)
+    }
+
+    func testAVoiceCallTurnsIntoVideoOverTheControlChannelAndStaysOneCall() async {
+        let m = await connectedCall()
+        XCTAssertFalse(m.video)
+        await m.startVideo()
+        XCTAssertTrue(m.video)
+        XCTAssertTrue(media.hasLocalVideo)
+        let offer = media.sentControl.first { $0["t"] as? String == "offer" }
+        XCTAssertNotNil(offer)
+        XCTAssertTrue((offer?["sdp"] as? String ?? "").contains("AA:BB"))
+        // Their answer carries the same media key: applied. The call is still one call, recorded as a video call.
+        await m.handleControl("{\"t\":\"answer\",\"sdp\":\"v=0\\r\\na=fingerprint:sha-256 CC:DD\\r\\n\"}")
+        XCTAssertEqual(m.phase, .active)
+        await m.end()
+        XCTAssertEqual(log.records.count, 1)
+        XCTAssertTrue(log.records.first?.video ?? false, "the kind when it ended")
+        XCTAssertEqual(log.records.first?.outcome, .completed)
+    }
+
+    func testTheOtherSideAddingVideoIsAnsweredAndMyCameraStaysOff() async {
+        let m = await connectedCall()
+        await m.handleControl("{\"t\":\"offer\",\"sdp\":\"v=0\\r\\na=fingerprint:sha-256 CC:DD\\r\\n\"}")
+        XCTAssertTrue(m.video, "the screen turns to video")
+        XCTAssertFalse(m.cameraOn, "they see no picture of me until I choose to")
+        XCTAssertFalse(media.hasLocalVideo)
+        XCTAssertEqual(media.sentControl.first { $0["t"] as? String == "answer" } != nil, true)
+        // "Turn on camera" adds mine and renegotiates.
+        m.toggleCamera()
+        try? await Task.sleep(for: .seconds(0.1))
+        XCTAssertTrue(media.hasLocalVideo)
+        XCTAssertTrue(media.sentControl.contains { $0["t"] as? String == "offer" })
+    }
+
+    func testAMidCallDescriptionWithAnotherMediaKeyEndsTheCall() async {
+        let m = await connectedCall()
+        await m.handleControl("{\"t\":\"offer\",\"sdp\":\"v=0\\r\\na=fingerprint:sha-256 EE:FF\\r\\n\"}")
+        XCTAssertEqual(m.phase, .idle, "a swapped key tears the call down")
+        XCTAssertEqual(log.records.first?.outcome, .failed)
+        XCTAssertFalse(media.sentControl.contains { $0["t"] as? String == "answer" })
+
+        let again = await connectedCall()
+        await again.startVideo()
+        await again.handleControl("{\"t\":\"answer\",\"sdp\":\"v=0\\r\\na=fingerprint:sha-256 99:99\\r\\n\"}")
+        XCTAssertEqual(again.phase, .idle)
+    }
+
+    func testAnInterruptedCameraPausesMyPictureAndTellsTheOtherSide() async {
+        let m = await connectedCall(video: true)
+        media.onCameraInterrupted?(true)
+        XCTAssertTrue(m.cameraPaused)
+        XCTAssertFalse(media.videoEnabled)
+        XCTAssertEqual(media.sentControl.last?["camera"] as? Bool, false)
+        media.onCameraInterrupted?(false)
+        XCTAssertFalse(m.cameraPaused)
+        XCTAssertTrue(media.videoEnabled)
+        XCTAssertEqual(media.sentControl.last?["camera"] as? Bool, true)
     }
 }

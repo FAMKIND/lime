@@ -91,7 +91,7 @@ struct CallView: View {
     /// wider than the screen.
     @ViewBuilder
     private func blurredBackdrop(_ call: CallManager) -> some View {
-        if !(call.video && (swapped ? call.cameraOn : call.remoteVideoLive)) {
+        if !(call.video && (swapped ? call.cameraOn : call.remoteVideoShowing)) {
             AvatarView(person: person(store), size: 480).blur(radius: 60).opacity(0.5)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
@@ -102,7 +102,7 @@ struct CallView: View {
     @ViewBuilder
     private func background(_ call: CallManager, in size: CGSize) -> some View {
         // The avatar fills the screen until there is a picture to show big: the other person's video, or mine after a swap.
-        let pictureBig = call.video && (swapped ? call.cameraOn : call.remoteVideoLive)
+        let pictureBig = call.video && (swapped ? call.cameraOn : call.remoteVideoShowing)
         if !pictureBig {
             AvatarView(person: person(store), size: 160)
                 .accessibilityIdentifier("call-avatar")
@@ -121,7 +121,7 @@ struct CallView: View {
                 .clipShape(RoundedRectangle(cornerRadius: remoteBig ? 0 : 14))
                 .offset(x: remoteBig ? 0 : tileOrigin.x + drag.width, y: remoteBig ? 0 : tileOrigin.y + drag.height)
                 .zIndex(remoteBig ? 0 : 2)
-                .opacity(remoteBig && !call.remoteVideoLive && call.media != nil ? 0 : 1)
+                .opacity(remoteBig && !call.remoteVideoShowing && call.media != nil ? 0 : 1)
             if call.cameraOn {
                 layer(call.media?.localView, placeholder: Color(white: 0.35), id: "call-self-view")
                     .frame(width: remoteBig ? tile.width : size.width, height: remoteBig ? tile.height : size.height)
@@ -187,11 +187,28 @@ struct CallView: View {
             }
             .accessibilityLabel("\(call.peerName), details")
             .accessibilityIdentifier("call-name-pill")
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(call.statusText(at: context.date)).monospacedDigit()
-                    .font(.subheadline).foregroundStyle(.white.opacity(0.85))
-                    .padding(.leading, 8)
-                    .accessibilityIdentifier("call-status")
+            HStack(spacing: 8) {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(call.statusText(at: context.date)).monospacedDigit()
+                        .font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                        .accessibilityIdentifier("call-status")
+                }
+                if call.remoteMuted && call.phase == .active {
+                    Label("Muted", systemImage: "mic.slash.fill").labelStyle(.titleAndIcon)
+                        .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.2), in: Capsule())
+                        .accessibilityLabel("\(call.peerName) is muted")
+                        .accessibilityIdentifier("call-remote-muted")
+                }
+            }
+            .padding(.leading, 8)
+            .onChange(of: call.remoteMuted) { _, muted in
+                UIAccessibility.post(notification: .announcement, argument: "\(call.peerName) \(muted ? "muted" : "unmuted")")
+            }
+            if call.cameraPaused {
+                Text("Your camera is paused while lime is in a window")
+                    .font(.footnote).foregroundStyle(.white.opacity(0.85)).padding(.leading, 8)
+                    .accessibilityIdentifier("call-camera-paused")
             }
         }
     }
@@ -250,7 +267,9 @@ struct CallView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("call-controls-video")
         } else {
-            HStack(spacing: 22) {
+            // Four 56 pt buttons and a 64 pt End: on a 375 pt phone the gaps are 12, not 22, so the margins stay above 16.
+            HStack(spacing: 12) {
+                toggle("video.fill", "Video", on: false, id: "call-start-video") { Task { await call.startVideo() } }
                 toggle(call.muted ? "mic.slash.fill" : "mic.fill", "Mute", on: call.muted, id: "call-mute") { call.setMuted(!call.muted) }
                 toggle("speaker.wave.2.fill", "Speaker", on: call.speaker, id: "call-speaker") { call.toggleSpeaker() }
                 routeButton(call)

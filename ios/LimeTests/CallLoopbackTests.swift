@@ -15,14 +15,23 @@ private final class PairMedia: CallMedia {
     var onCandidate: ((String, String?, Int32) -> Void)?
     var onConnection: ((Bool) -> Void)?
     var onRemoteVideo: ((Bool) -> Void)?
+    var onControl: ((String) -> Void)?
+    var onControlOpen: (() -> Void)?
+    var onCameraInterrupted: ((Bool) -> Void)?
+    var hasLocalVideo = false
+    var fingerprint = "AA:BB"
+    weak var peer: PairMedia?
+    func sendControl(_ json: String) -> Bool { guard let peer else { return false }; let deliver = peer.onControl; Task { @MainActor in deliver?(json) }; return true }
+    func addLocalVideo() throws { hasLocalVideo = true }
+    func renegotiationOffer() async throws -> String { "v=0\r\na=fingerprint:sha-256 \(fingerprint)\r\n" }
     let localView = UIView(), remoteView = UIView()
     var haveLocal = false, haveRemote = false, closed = false
     var candidates: [String] = []
     var connectsWhenReady = true
 
-    func start(servers: [IceServer], video: Bool) throws {}
-    func makeOffer() async throws -> String { describe("AA:BB") }
-    func accept(offer: String) async throws -> String { haveRemote = true; return describe("CC:DD") }
+    func start(servers: [IceServer], video: Bool) throws { hasLocalVideo = video }
+    func makeOffer() async throws -> String { describe(fingerprint) }
+    func accept(offer: String) async throws -> String { haveRemote = true; return describe(fingerprint) }
     func apply(answer: String) async throws { haveRemote = true; maybeConnect() }
     func add(candidate: String, mid: String?, index: Int32) async { candidates.append(candidate) }
     func setMuted(_ on: Bool) {}
@@ -110,6 +119,36 @@ final class CallLoopbackTests: XCTestCase {
             XCTAssertEqual(b.phase, .idle)
             XCTAssertTrue(mediaA.closed && mediaB.closed)
         }
+    }
+
+    func testAVoiceCallBecomesVideoForBothThroughTheControlChannelAndTheOtherSideCanTurnOnItsCamera() async {
+        mediaB.fingerprint = "CC:DD"
+        mediaA.peer = mediaB; mediaB.peer = mediaA
+        let (a, b) = pair()
+        await connect(a, b)
+        XCTAssertFalse(a.video || b.video)
+        mediaA.onControlOpen?(); mediaB.onControlOpen?()
+        // Alice taps Video.
+        await a.startVideo()
+        await wait { b.video }
+        XCTAssertTrue(a.video && b.video, "both screens switch to video")
+        XCTAssertTrue(mediaA.hasLocalVideo)
+        XCTAssertFalse(mediaB.hasLocalVideo, "Bob's camera stays off until he turns it on")
+        XCTAssertFalse(b.cameraOn)
+        await wait { !a.remoteCameraOn }
+        XCTAssertFalse(a.remoteCameraOn, "Alice sees Bob's camera is off")
+        XCTAssertTrue(b.remoteCameraOn, "Bob sees Alice's camera")
+        // Bob turns his camera on.
+        b.toggleCamera()
+        await wait { mediaB.hasLocalVideo && a.remoteCameraOn }
+        XCTAssertTrue(mediaB.hasLocalVideo)
+        XCTAssertTrue(a.remoteCameraOn)
+        // Alice mutes: Bob sees it.
+        a.setMuted(true)
+        await wait { b.remoteMuted }
+        XCTAssertTrue(b.remoteMuted)
+        await a.end()
+        await wait { a.phase == .idle && b.phase == .idle }
     }
 
     func testAThirtyCandidateCallIsOnlyAFewOps() async {

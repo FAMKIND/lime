@@ -53,7 +53,7 @@ struct LimeApp: App {
                     }
                     if let at = arguments.firstIndex(of: "-lime-demo-call"), at + 1 < arguments.count {
                         try? await Task.sleep(for: .seconds(1))
-                        store.calls.demo(video: arguments[at + 1] == "video")
+                        store.calls.demo(video: arguments[at + 1] == "video", remoteMuted: arguments.contains("-lime-demo-call-remote-muted"), remoteCameraOff: arguments.contains("-lime-demo-call-remote-camera-off"))
                     }
                     if ProcessInfo.processInfo.arguments.contains("-lime-callkit-selftest") {
                         try? await Task.sleep(for: .seconds(2))

@@ -19,10 +19,24 @@ protocol CallMedia: AnyObject {
     var onConnection: ((Bool) -> Void)? { get set }
     /// The other side's picture started (`true`: a frame arrived) or is gone.
     var onRemoteVideo: ((Bool) -> Void)? { get set }
+    /// A message arrived on the in-call control channel `lime-ctl` (JSON text).
+    var onControl: ((String) -> Void)? { get set }
+    /// The control channel opened (on either side).
+    var onControlOpen: (() -> Void)? { get set }
+    /// The camera was taken away (`true`: another app has it, as in a window on an iPad) or came back.
+    var onCameraInterrupted: ((Bool) -> Void)? { get set }
     var localView: UIView { get }
     var remoteView: UIView { get }
+    /// Whether a camera track is already part of the call.
+    var hasLocalVideo: Bool { get }
 
     func start(servers: [IceServer], video: Bool) throws
+    /// Sends a message on the control channel; `false` when it is not open.
+    func sendControl(_ json: String) -> Bool
+    /// Adds my camera to a call that has none (a voice call turning into video, or turning my camera on after the other side's).
+    func addLocalVideo() throws
+    /// An offer for changing a call that is already up (no new ICE gathering).
+    func renegotiationOffer() async throws -> String
     func makeOffer() async throws -> String
     func accept(offer: String) async throws -> String
     func apply(answer: String) async throws
@@ -44,6 +58,11 @@ final class WebRTCMedia: NSObject, CallMedia {
     var onCandidate: ((String, String?, Int32) -> Void)?
     var onConnection: ((Bool) -> Void)?
     var onRemoteVideo: ((Bool) -> Void)?
+    var onControl: ((String) -> Void)?
+    var onControlOpen: (() -> Void)?
+    var onCameraInterrupted: ((Bool) -> Void)?
+    private var control: RTCDataChannel?
+    private var interruptionObservers: [NSObjectProtocol] = []
     private lazy var remoteSlot = RemoteVideoSlot()
     private var statsTask: Task<Void, Never>?
     let localView: UIView = RTCMTLVideoView(frame: .zero)
@@ -58,6 +77,7 @@ final class WebRTCMedia: NSObject, CallMedia {
     private var audioTrack: RTCAudioTrack?
     private var videoTrack: RTCVideoTrack?
     private var capturer: RTCCameraVideoCapturer?
+    var hasLocalVideo: Bool { videoTrack != nil }
     private var front = true
     private var wantsVideo = false
 
@@ -114,18 +134,61 @@ final class WebRTCMedia: NSObject, CallMedia {
         let audioSource = Self.factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
         let audio = Self.factory.audioTrack(with: audioSource, trackId: "lime-audio")
         audioTrack = audio
-        connection.add(audio, streamIds: ["lime"])
+        // Audio and video get different stream ids: WebRTC syncs tracks that share one, so a stalled picture would make the sound wait (LIME-118b).
+        connection.add(audio, streamIds: ["lime-audio-stream"])
 
-        if video {
-            let source = Self.factory.videoSource()
-            let capturer = RTCCameraVideoCapturer(delegate: source)
-            self.capturer = capturer
-            let track = Self.factory.videoTrack(with: source, trackId: "lime-video")
-            videoTrack = track
-            connection.add(track, streamIds: ["lime"])
-            track.add(localView as! RTCMTLVideoView)
-            startCapture()
-        }
+        if video { try addLocalVideo() }
+    }
+
+    func addLocalVideo() throws {
+        guard let connection else { throw CallMediaError.notStarted }
+        guard videoTrack == nil else { return }
+        let source = Self.factory.videoSource()
+        let capturer = RTCCameraVideoCapturer(delegate: source)
+        self.capturer = capturer
+        let track = Self.factory.videoTrack(with: source, trackId: "lime-video")
+        videoTrack = track
+        wantsVideo = true
+        connection.add(track, streamIds: ["lime-video-stream"])
+        track.add(localView as! RTCMTLVideoView)
+        startCapture()
+        observeInterruptions(of: capturer.captureSession)
+    }
+
+    /// Another app has the camera (an iPad window, a call): say so, and say when it is back.
+    private func observeInterruptions(of session: AVCaptureSession) {
+        let center = NotificationCenter.default
+        interruptionObservers = [
+            center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: .main) { [weak self] note in
+                let reason = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int).flatMap(AVCaptureSession.InterruptionReason.init(rawValue:))
+                MainActor.assumeIsolated {
+                    CallDiagnostics.shared.log("camera interrupted: \(reason.map { String($0.rawValue) } ?? "?")")
+                    if reason == .videoDeviceNotAvailableWithMultipleForegroundApps || reason == .videoDeviceInUseByAnotherClient { self?.onCameraInterrupted?(true) }
+                }
+            },
+            center.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: session, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    CallDiagnostics.shared.log("camera interruption ended")
+                    self?.onCameraInterrupted?(false)
+                }
+            },
+        ]
+    }
+
+    // MARK: The control channel
+
+    func sendControl(_ json: String) -> Bool {
+        guard let control, control.readyState == .open, let data = json.data(using: .utf8) else { return false }
+        return control.sendData(RTCDataBuffer(data: data, isBinary: false))
+    }
+
+    private func makeControlChannel(_ connection: RTCPeerConnection) {
+        guard control == nil else { return }
+        let configuration = RTCDataChannelConfiguration()
+        configuration.isOrdered = true
+        guard let channel = connection.dataChannel(forLabel: "lime-ctl", configuration: configuration) else { return }
+        channel.delegate = self
+        control = channel
     }
 
     private func startCapture() {
@@ -142,10 +205,19 @@ final class WebRTCMedia: NSObject, CallMedia {
 
     func makeOffer() async throws -> String {
         guard let connection else { throw CallMediaError.notStarted }
+        makeControlChannel(connection)   // before the offer, so it is in the SDP
         let constraints = RTCMediaConstraints(mandatoryConstraints: ["OfferToReceiveAudio": "true", "OfferToReceiveVideo": wantsVideo ? "true" : "false"], optionalConstraints: nil)
         let offer = try await connection.offer(for: constraints)
         try await connection.setLocalDescription(offer)
         return await gathered(connection, fallback: offer.sdp)
+    }
+
+    func renegotiationOffer() async throws -> String {
+        guard let connection else { throw CallMediaError.notStarted }
+        let constraints = RTCMediaConstraints(mandatoryConstraints: ["OfferToReceiveAudio": "true", "OfferToReceiveVideo": "true"], optionalConstraints: nil)
+        let offer = try await connection.offer(for: constraints)
+        try await connection.setLocalDescription(offer)
+        return connection.localDescription?.sdp ?? offer.sdp
     }
 
     /// Waits (at most 2.5 s) for ICE gathering to finish, then returns the local description *with its candidates inside*, so the
@@ -265,6 +337,9 @@ final class WebRTCMedia: NSObject, CallMedia {
     /// Tears everything down in the order WebRTC needs: stop the camera and wait for it, take the views off the tracks, then close.
     func close() {
         statsTask?.cancel(); statsTask = nil
+        interruptionObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        interruptionObservers = []
+        control?.delegate = nil; control?.close(); control = nil
         remoteSlot.clear()
         let capturer = capturer, connection = connection, videoTrack = videoTrack
         audioTrack?.isEnabled = false
@@ -320,7 +395,16 @@ extension WebRTCMedia: RTCPeerConnectionDelegate {
         Task { @MainActor in onCandidate?(sdp, mid, index) }
     }
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
+        guard dataChannel.label == "lime-ctl" else { return }
+        nonisolated(unsafe) let channel = dataChannel
+        Task { @MainActor in
+            self.control = channel
+            channel.delegate = self
+            CallDiagnostics.shared.log("control channel received")
+            if channel.readyState == .open { self.onControlOpen?() }
+        }
+    }
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams mediaStreams: [RTCMediaStream]) {
         let track = rtpReceiver.track as? RTCVideoTrack
         let kind = rtpReceiver.track?.kind ?? "?"
@@ -331,6 +415,21 @@ extension WebRTCMedia: RTCPeerConnectionDelegate {
     }
 }
 
+
+extension WebRTCMedia: RTCDataChannelDelegate {
+    nonisolated func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+        let open = dataChannel.readyState == .open
+        Task { @MainActor in
+            CallDiagnostics.shared.log("control channel \(open ? "open" : "state \(dataChannel.readyState.rawValue)")")
+            if open { self.onControlOpen?() }
+        }
+    }
+
+    nonisolated func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
+        guard !buffer.isBinary, buffer.data.count <= 64 * 1024, let text = String(data: buffer.data, encoding: .utf8) else { return }
+        Task { @MainActor in self.onControl?(text) }
+    }
+}
 
 /// A flag readable from any thread.
 final class AtomicFlag: @unchecked Sendable {
