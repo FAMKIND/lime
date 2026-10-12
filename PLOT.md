@@ -126,6 +126,16 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e44. **LIME-127 LANDED as `c3814df` (pushed, 2026-10-12; PLOT.md `443468f`).** One add sheet (Camera, the recent strip with multi-select, Photos, Files).
+   - **Not exercised in the simulator:** a real library video export (`PHAssetResourceManager.writeData`); a real camera capture; the first-install permission prompt; Manage under limited access; iCloud-only photos; a Photos-picker selection → attach; a PDF through Files.
+   - **So the phone gate covers all of it.** **Next: LIME-128.**
+1e43. **ORDER (the user, 2026-10-12): "deprioritize it [LIME-129, the jam polish]; the list we had has more priority."** **The authoritative queue:**
+   1. **127** (the add sheet; tend is running it now: Phase 0 `443468f`);
+   2. **128** (Do Not Disturb for calls);
+   3. **the call work:** 118b → 118c → 119 → 120 → 112b → 117;
+   4. **the launch path:** 113 → offline messaging + emergency mode → **110 jam (fold LIME-129's three jam-page tweaks into it)** → 109 Spanish → push (November) → limechat.org + the compliance pack → TestFlight.
+   - **LIME-129 is parked**, to be done with 110 (or sooner only if the user asks).
+1e42. (Superseded by 1e43 on order) **jam polish (the user, 2026-10-12) → LIME-129 (drafted, a small visual batch):** "jam" always lowercase ("jam is coming"); drop the "Teachers learn best…" line; the big icon's stroke as thin as the tab icon's. **BRAND RULE extended: "jam" is lowercase too**, like "lime". **Queue: 127 → 129 → 128 → 118b → …** (129 is ~15 min; tend can do it right after 127).
 1e41. **LIME-126b LANDED as `15eb61b` (pushed, 2026-10-12; PLOT.md `a8d926f`).**
    - **Your profile:** Status (radio-waves, one line); Sign out is a red row at the bottom, out of ⋯; Edit profile opens the editor (the Settings sheet now opens with its start screen chosen).
    - **Jam:** the coming-soon page with Notify me stored on the phone.
@@ -4326,6 +4336,15 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Phase 0:** `git add PLOT.md` only, then commit; **re-read PLOT.md after that commit** and confirm items 5 and 6 are in it. ~30 min. **Verification:** item 5 is partly behavioural (update the 122a2 tests for Sign out's place and Edit profile → the editor); item 6 is visual (no new tests). Build; 0 warnings; Release clean. **Gate:** see LIME-126's gate (the Jam and profile parts).
 **Record:** `## LIME-126b`. **Commit:** `feat(ios): your profile (Status, Sign out at the bottom, Edit profile opens the editor); Jam "coming soon" page with Notify me`, trailer `Brief: LIME-126b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-129 → `tend` (lime-aa) (**PARKED by the user, 2026-10-12: do it with LIME-110, the jam MVP**): the jam page polish (visual only: no new tests)
+**The user (2026-10-12), after 126b:**
+1. **"jam" is always lowercase** (brand rule, like "lime"; the tab label already is): the page title becomes **"jam is coming"**, and every user-facing "Jam" on that page and in any string that names the feature becomes "jam" (code identifiers unchanged). (LIME-110's Jam MVP follows the same rule; the full string sweep stays in LIME-109.)
+2. **Remove the last line** of the subtext ("Teachers learn best by watching teachers teach."). The subtext is just **"A space for teachers to share lessons, stories and videos."**
+3. **The large `book.pages` graphic's line thickness matches the other icons** (the tab bar's `book.pages`): at about 80 pt the regular weight draws much heavier strokes, so set a lighter symbol weight (`.fontWeight(.ultraLight)` or `.thin`, whichever looks closest to the tab icon's stroke when compared side by side in a screenshot).
+
+**Phase 0:** `git add PLOT.md` only, then commit; re-read PLOT.md. ~15 min. **Verification:** build; 0 warnings; Release clean; fix only the Jam page test's expected strings; one screenshot in TEND.md beside the tab bar. **Gate:** "jam is coming", one line of subtext, and the big icon's lines look as thin as the tab icon's.
+**Record:** `## LIME-129`. **Commit:** `fix(ios): jam page: lowercase jam, shorter subtext, lighter icon`, trailer `Brief: LIME-129`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ### LIME-127 → `tend` (lime-aa) (after 126b): one "Add to your message" sheet: Camera, recent photos, Photos, Files
 **The user (2026-10-11):** "consolidate our add sheet. Reference the Claude example. I think of it as Photo library (could select photo or video), Camera (photo or video), Files (supported files)." Today's sheet (their screenshot): "Add to your message" with six stacked buttons: Photo Library · Take Photo · Choose Video · Record Video · Files · Cancel. The reference: the Claude app's "Add to session" sheet (a ✕, the title, "Photos" on the right; a row with a **Camera tile** followed by **recent photo thumbnails** scrolling sideways; then a card row **"Add files"**).
