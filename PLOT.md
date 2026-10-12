@@ -126,6 +126,28 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e52. **118c → APPLE'S FACETIME PATTERN (the user, 2026-10-12):** minimise a video call = **iOS system Picture in Picture**, started from lime in the foreground and kept when leaving (stash/resize/drag/tap like FaceTime over Messages); a voice call = the system green pill / Dynamic Island (a slim lime bar only if the pill isn't shown in the foreground). The custom in-app tile is the fallback only if PiP can't start in the foreground.
+1e51. **118b gate passed (the user, 2026-10-12: "all looks good, moving on")**, but **no "logs" were sent**, so the jitter-buffer fix is unverified by numbers; ask for logs if audio ever lags. **LIME-118c reconciled** (Minimise under Mute in the video column; top right on voice; the tile replaces the return bar; keep the 118b/128 paths). **118c is NEXT.**
+1e50. **LIME-118b LANDED as `f854ded` (pushed, 2026-10-12; PLOT.md `5bb2e46`).**
+   - **The audio-delay cause was found:** audio and video shared `streamIds: ["lime"]`, so WebRTC lip-synced the audio to a stalled video. The fix (separate stream ids) is **NOT verified**: it needs the user's two-device call + "logs" (plot checks the jitter buffer ≤ 200 ms and the drift while both flow).
+   - `lime-ctl` data channel: state (Muted badge, avatar when the camera is off, VoiceOver announcements); voice → video renegotiation over it (Video first in the voice row, gaps 12); the fingerprint check ends the call on a mismatch; iPad camera interruption note; SE/landscape screenshots.
+   - **Not exercised:** a real call; glare (both tap Video); the person sheet in landscape.
+   - **Next after the gate + logs: LIME-118c.**
+1e49. **ACCESSIBILITY FROM DAY ONE (the user, 2026-10-12):** a new **standing rule** (WCAG 2.2 AA + Apple features, checked in every UI brief) and **LIME-130 (drafted): an audit and fixes of everything built, before TestFlight**, in the launch path after 113.
+   - The European Accessibility Act + ADA are noted for the lawyer.
+   - 118b onward follow the rule.
+1e48. **Translation tooling (the user asked about Mozilla Data Collective, then "check tolgee", 2026-10-12):**
+   - **Mozilla Data Collective is a dataset platform (Common Voice), not a UI-translation tool.** The model to copy is Mozilla's Pontoon volunteer approach.
+   - **Tolgee checked (docs):** supports Apple `.xcstrings` (plurals; `%@`/`%lld` placeholders mapped to ICU; `%E` unsupported; device variations not mentioned); Apache-2.0 core with proprietary `ee/` directories; CLI/API for git sync; MT via our own DeepL/Google/OpenAI keys; self-host with Docker.
+   - **Plans:** free cloud is limited to 1,000 strings; free self-hosted is capped at **10 seats** with no granular permissions; the Community Edition builds without `ee/`; a **free plan for open-source projects (needs a public repo)**; nonprofit special pricing (contact).
+   - **Plot's lean:** Tolgee; self-hosted free (≤ 10 reviewers) for launch, then the open-source plan once the repo is public (ties to the pending MIT/AGPL licence decision).
+   - **109 must use semantic keys** (e.g. `call.unavailable.dnd`), not English-as-key.
+   - **Open with the user:** the licence + publish timing.
+1e47. **LANGUAGES (the user, 2026-10-12):** asked about launching with 10 languages instead of only Spanish. **DECIDED: right-to-left at launch; the user has reviewers.** Plot's plan:
+   - LIME-109 becomes **"many languages + RTL"**: String Catalogs, locale formats, layouts robust to +30% text, **RTL** (leading/trailing everywhere, the direction glyphs, bidi chat text, the A–Z index per script, Arabic-aware search normalisation in core, the composer's lists), an AI draft → native review workflow, and automated screenshots per locale incl. the RTL pseudolanguage.
+   - The extra cost is about 1–2 tend runs plus reviewers.
+   - **Open with the user:** the RTL language (lean **Arabic**; Urdu's Nastaliq is a second wave) and the language list (suggested: English, Spanish, Portuguese, French, Hindi, Bahasa Indonesia, Arabic, Bengali, Swahili, Filipino).
+   - **Proposed standing rule once 109 is drafted:** leading/trailing, never left/right; every UI brief checks an RTL screenshot.
 1e46. **LIME-128 LANDED as `809f5f2` (pushed, 2026-10-12; PLOT.md `4c9ea7c`).** Full suite 438 on the 13 mini; 181 core tests.
    - **Not exercised:** two real devices (the gate); whether iOS Focus blocks the breakthrough ring; mixed builds (an old build ignores the op and rings out 45 s); the work-hours note only in tests.
    - **LIME-118b reconciled** with the current code (the voice row gets Video first; leave room under Mute for 118c's minimise; don't touch the 128 unavailable paths; an upgraded call is recorded as video; item 6 visual-only). **118b is NEXT.**
@@ -331,6 +353,15 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 - The App Store name, e.g. "lime: teacher messaging" (lowercase is allowed).
 
 ### Standing rules (also in the sections below)
+- **Accessibility from day one (the user, 2026-10-12).** The bar is **WCAG 2.2 AA** plus Apple's accessibility features. **Every UI brief, visual ones included,** must:
+  1. give every control a VoiceOver label (and hint where it isn't obvious), and group decorative parts as hidden;
+  2. work with Dynamic Type up to the largest accessibility size (no clipped or overlapping text; wrap or scroll; one screenshot at AX3 or larger in TEND.md);
+  3. keep text and icons at **≥ 4.5:1** contrast (≥ 3:1 for large text and UI glyphs), measured, in light and dark;
+  4. keep tap targets **≥ 44 pt**;
+  5. **never use colour alone** (a missed call is red *and* has its arrow and words; a status has a shape or label, not just a dot);
+  6. respect **Reduce Motion** (no parallax or slides; cross-fades instead), **Reduce Transparency** (glass becomes solid) and **Increase Contrast**.
+
+  The visual-change rule still means no new UI tests for looks; the accessibility checks are by screenshot and Accessibility Inspector, noted in TEND.md. **LIME-130 (the audit, below) covers what's already built.**
 - **Visual changes: no new UI tests (the user, 2026-10-11).** "It doesn't need to always test on changes like adding padding around the entire call screen; those are visual changes I can test each build run." For padding, spacing, sizes, colours, icons, fonts, fades and layout polish: **no new UI or unit tests**; build, 0 warnings, Release clean, fix only existing tests that break, optionally one screenshot in TEND.md. **Keep real tests for behaviour:** data, core, sync, encryption, ops, navigation, filters, anything that can silently break. Briefs should say which kind they are.
 - Tend Phase 0: `git add PLOT.md` only.
 - Tiered iOS tests (full on the 13 mini, changed tests on SE/18 Pro); **~15 min per failing test, ~60 min per brief**.
@@ -3885,6 +3916,19 @@ If the survey turns up related issues, raise them before editing.
 **How it must behave (the user, 2026-10-11): "call minimise should work like Apple FaceTime: while you text, you can see the video box."** On a video call, minimising shows **the live video in a small floating rounded box** over the app (you keep chatting in any chat, and the box stays visible and draggable to a corner); tapping it returns to the full call. A voice call minimises to the same floating box with the avatar and timer. (In-app floating tile first; system Picture in Picture for leaving lime follows the brief's existing plan.)
 **Placement (the user, 2026-10-11, later):** "we need an icon to minimize the FaceTime feature on the right side corner under the mic". **The minimise button goes in the call screen's right-hand control column, directly under the Mute (mic) button**, same size and style as the others (`arrow.down.right.and.arrow.up.left` or `pip.enter`), on video and voice calls. Re-survey `CallView`'s controls (changed by 116f) before building.
 
+**Reconciled 2026-10-12 (plot re-read `CallView.swift`, `RootView.swift` and `CallManager.swift` at `f854ded`). These points OVERRIDE the text below where they differ:**
+- **The minimise button's place (the user's decision): in the video call's right-hand column directly under Mute.** The column becomes **Camera · Mute · Minimise · route · End** (~`CallView.swift` 234–237). **Ignore Phase 2 item 1's "top-left, next to the name pill".**
+- **Voice calls:** the controls are a centred row (Video · Mute · Speaker · route · End, gaps 12, from 118b), with no room for a sixth button on the SE. **Put Minimise as a glass circle at the top right of the voice screen, on the name pill's row.** (On a voice → video upgrade it moves into the column under Mute.)
+- **The "Tap to return to call" bar** (`RootView.swift` 23–26; 126 gave it dark text) **is replaced by the floating tile.** Remove it once the tile works; the person sheet's "Message" minimises into the tile.
+- **118b's `lime-ctl` state** (`remoteMuted`, `remoteCameraOn`) feeds the tile's muted badge and the avatar-when-camera-off; **don't break the 118b and 128 call paths** (keep their tests green).
+- **The standing rules apply:** accessibility (the tile is one element with Mute/End actions, ≥ 44 pt targets, Reduce Motion = no spring animation when snapping; it already says "Accessibility") and the visual-change rule for pure layout.
+- **FOLLOW APPLE'S FACETIME PATTERN (the user, 2026-10-12): "follow Apple's pattern for minimizing FaceTime video to Messages while your video is up."** This **changes the approach**: **use iOS's system Picture in Picture for video calls**, inside and outside lime, rather than a custom in-app tile:
+  - **Video call, Minimise** (the button under Mute; also the person sheet's "Message", and opening any chat from the call): start **system PiP** (`AVPictureInPictureController` with `AVPictureInPictureVideoCallViewController`, the remote video as sample buffers) **while lime stays in the foreground**, then dismiss the full call screen. The video floats over lime exactly like FaceTime's over Messages: the user can **stash it to the screen edge, pinch to resize, drag it anywhere, and tap it** to restore lime's full call screen. **Leaving lime** keeps the same PiP (automatic from inline).
+  - **Your camera:** while lime is in the foreground your camera keeps running in PiP; in the background it needs the multitasking-camera entitlement (paid account). Without it, pause your video in the background and send `camera: false` (the other side sees your avatar); note the entitlement in `docs/release-checklist.md`.
+  - **Voice call, Minimise:** like FaceTime Audio, **no floating window**. The call continues with iOS's own green call pill / Dynamic Island (CallKit shows it); tapping it returns to the call. Remove lime's "Tap to return to call" bar if the system pill is shown in lime too; **if not (lime is foreground), keep a slim lime return bar** (it already has the accessible dark-on-lime contrast from 126).
+  - **The custom in-app tile in Phase 2 becomes the FALLBACK only**: build it **only if Phase 1 finds system PiP can't start with lime in the foreground** on iOS 17+ (report first). The system PiP window has only the system's controls (return and close); **mute/end stay on the full call screen**, as in third-party video PiP. Note that in TEND.md.
+  - **Phase 1's stop now asks:** can PiP start in the foreground on iOS 17 and 26; what's needed for the sample-buffer path from WebRTC; and the camera behaviour in PiP (foreground and background).
+
 **Today** (`RootView.swift:21-26`):
 - the call is a `fullScreenCover` shown while `inCall && !minimized`;
 - LIME-118's "Message" action sets `minimized` and shows a **"Tap to return to call · 0:42" bar**;
@@ -4396,6 +4440,29 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Gate (the user, two devices):** set your status to Do Not Disturb; call yourself from the iPad → the iPad says "Shem has Do Not Disturb on" within a couple of seconds and stops; your Calls tab shows "Silenced · Do Not Disturb"; call again within 3 minutes → your phone rings.
 
 **Record:** `## LIME-128`. **Commit:** `feat: calls respect Do Not Disturb and work hours openly (the caller is told, silenced calls are labelled, a repeated call within 3 minutes rings)`, trailer `Brief: LIME-128`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-130 → `tend` (lime-aa) (in the launch path, **before TestFlight**; may be split by area): the accessibility audit and fixes for everything already built
+**The user (2026-10-12):** "don't forget accessibility from day one." The standing rule covers new work; this brief brings the existing app up to the same bar.
+
+**Goal:** every screen of the iOS app meets WCAG 2.2 AA and works fully with VoiceOver, Dynamic Type (to the largest size), Voice Control, Switch Control, Reduce Motion, Reduce Transparency, Increase Contrast and Differentiate Without Color; the App Store's Accessibility Nutrition Label can be filled in honestly.
+
+**Phase 1 (read-only, report first):** run Xcode's **Accessibility Inspector audit** on every screen (sign-in, Messages, a chat with every message kind incl. call bubbles, threads, the composer and add sheet, Calls, New Call, the call screen (incoming, voice, video, minimised), profiles, Group details, Settings, the status sheet, jam). List each finding with the screen, the issue and the WCAG criterion in TEND.md. **Stop and report before fixing** if the list is long, so plot can split it.
+
+**Phase 2 (fix), by priority:**
+1. **VoiceOver:** labels, values and hints; reading order in chat (sender, message, time, reactions, delivery state as one element with actions); custom rotor actions on messages (Reply, React, Delete) and on call bubbles; announcements for incoming calls, call-state changes, "<Name> muted", toasts and the unavailable note; the call screen fully operable.
+2. **Dynamic Type:** every screen at the accessibility sizes (rows grow, headers wrap, the tab bar's large-content viewer, the filter row, the call controls, the profile's cards).
+3. **Contrast and colour:** measure all pairs in light/dark (the muted greys, the status colours, red text on canvas); add shape or words wherever colour alone carries meaning (the green "available" dot, the red missed call, the unread state).
+4. **Motion and transparency:** Reduce Motion (fades, the call tile, parallax), Reduce Transparency (every `limeGlass`/glass effect falls back to a solid surface), Increase Contrast (borders on glass).
+5. **Voice Control:** visible names for icon-only buttons match their labels ("Tap filter", "Tap call back").
+6. **Media:** a **transcript** for voice messages via on-device speech recognition (iOS `SFSpeechRecognizer` on-device; nothing leaves the phone), shown under the voice bubble on request; video messages: on-device captions later (note it).
+
+**Verification:** the audit re-run shows no remaining issues (or each is listed with a reason); UI tests for the VoiceOver message actions and the call screen's labels (behavioural); Dynamic Type screenshots per screen at AX5 in TEND.md. Tiered; 0 warnings; Release clean.
+
+**Gate (the user):** turn on VoiceOver and send a message, react, reply and answer a call; set the largest text size and use Messages, a chat, Calls and your profile; turn on Reduce Transparency and Reduce Motion.
+
+**Legal note for the lawyer (worldwide launch):** the **European Accessibility Act** (in force since June 2025) covers electronic communications services and their apps in the EU, and the ADA applies in the US. Add accessibility to the GDPR/compliance pack review.
+
+**Record:** `## LIME-130`. **Commit:** `feat(ios): accessibility audit fixes (VoiceOver, Dynamic Type, contrast, motion, transparency, voice transcripts)`, trailer `Brief: LIME-130`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ### LIME-122b → `tend` (lime-aa) (**PARKED, LATER** (the user, 2026-10-11): not in the active queue; re-plan it together with the KakaoTalk-style hero and the classroom themes when picked up): upload your own profile background photo (student-privacy check, follows the photo visibility)
 **When this is picked up, it must first add the hero** (the background filling the top with a scrim, the avatar bottom-left, the name over it; the 6 classroom themes or an avatar-colour gradient; the `profiles.profile_theme` column), which was cut from 122a. B1–B4 (2026-10-11) still stand.
