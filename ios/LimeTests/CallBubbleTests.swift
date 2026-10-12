@@ -40,4 +40,17 @@ final class CallBubbleTests: XCTestCase {
         XCTAssertFalse(message.canDeleteForEveryone(), "a call is never sent, so it can only be deleted for me")
         XCTAssertFalse(message.canEdit())
     }
+
+    func testSilencedAndUnavailableCallsSayWhy() {
+        let dnd = CallBubble(video: false, duration: 0, outcome: .missedDnd, mine: false)
+        XCTAssertEqual(dnd.title, "Missed voice call")
+        XCTAssertEqual(dnd.detail, "Silenced \u{00B7} Do Not Disturb")
+        XCTAssertTrue(dnd.isMissedIncoming)
+        let hours = CallBubble(video: true, duration: 0, outcome: .missedHours, mine: false)
+        XCTAssertEqual(hours.detail, "Silenced \u{00B7} Work hours")
+        let mineUnavailable = CallBubble(video: false, duration: 0, outcome: .unavailable, mine: true)
+        XCTAssertEqual(mineUnavailable.detail, "Unavailable")
+        XCTAssertFalse(mineUnavailable.isMissedIncoming)
+        XCTAssertEqual(mineUnavailable.summary, "Voice call \u{00B7} Unavailable")
+    }
 }

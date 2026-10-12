@@ -128,4 +128,11 @@ final class StatusSettings {
     }
 
     func plan(now: Date = Date()) -> StatusPlan { StatusPlan.make(manual: manual, hours: hours, now: now) }
+
+    /// Why calls do not ring right now: I set Do Not Disturb by hand, or I am outside my work hours. `nil` when they ring.
+    func quietCallReason(now: Date = Date()) -> CallQuietReason? {
+        guard plan(now: now).isQuiet else { return nil }
+        if let manual, manual.state == .dnd, manual.until.map({ now < $0 }) ?? true { return .dnd }
+        return .workHours
+    }
 }

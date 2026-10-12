@@ -5,7 +5,8 @@ import XCTest
 @MainActor
 private final class FakeSignalling: CallSignalling {
     var sent: [(peer: String, op: String)] = []
-    func send(peer: String, op: String, payload: [String: Any]) async -> Bool { sent.append((peer, op)); return true }
+    var payloads: [[String: Any]] = []
+    func send(peer: String, op: String, payload: [String: Any]) async -> Bool { sent.append((peer, op)); payloads.append(payload); return true }
     func iceServers() async -> [IceServer] { [] }
 }
 
@@ -74,10 +75,14 @@ final class CallTests: XCTestCase {
     private var media = FakeMedia()
     private var log = CallLog(defaults: UserDefaults(suiteName: "lime.test.calls.\(UUID().uuidString)")!)
     private var quiet = false
+    private var quietWhy: CallQuietReason = .dnd
+    private var clock = Date(timeIntervalSince1970: 1_000_000)
 
     private func manager() -> CallManager {
-        let m = CallManager(signalling: signalling, system: system, log: log, isQuiet: { [unowned self] in quiet }, makeMedia: { [unowned self] in media })
+        let m = CallManager(signalling: signalling, system: system, log: log, now: { [unowned self] in clock },
+                            quietReason: { [unowned self] in quiet ? quietWhy : nil }, makeMedia: { [unowned self] in media })
         m.ringSeconds = 0.2
+        m.unavailableSeconds = 0.05
         return m
     }
 
@@ -140,6 +145,95 @@ final class CallTests: XCTestCase {
         XCTAssertEqual(m.phase, .idle)
         XCTAssertEqual(system.incoming, 0)
         XCTAssertEqual(log.records.first?.line, "Missed call")
+        XCTAssertEqual(log.records.first?.outcome, .missedDnd)
+    }
+
+    // MARK: LIME-128: Do Not Disturb and work hours, openly
+
+    func testASilencedOfferTellsTheCallerWhyAndIsLabelled() async {
+        quiet = true
+        let m = manager()
+        await m.handle(event("call.offer", payload: ["sdp": "v=0"]))
+        XCTAssertEqual(signalling.sent.map(\.op), ["call.unavailable"])
+        XCTAssertEqual(signalling.sent.first?.peer, "jean")
+        XCTAssertEqual(signalling.payloads.first?["reason"] as? String, "dnd")
+        XCTAssertEqual(signalling.payloads.first?["call_id"] as? String, "c1")
+        XCTAssertEqual(log.records.first?.outcome.silencedNote, "Silenced \u{00B7} Do Not Disturb")
+        XCTAssertTrue(log.records.first?.isMissedIncoming ?? false, "still a missed incoming call: red, in the Missed filter")
+        XCTAssertEqual(log.missedUnseen, 1, "and the badge counts it")
+
+        quietWhy = .workHours
+        clock = clock.addingTimeInterval(600)
+        await m.handle(event("call.offer", id: "c2", payload: ["sdp": "v=0"]))
+        XCTAssertEqual(signalling.payloads.last?["reason"] as? String, "work_hours")
+        XCTAssertEqual(log.records.first?.outcome, .missedHours)
+        XCTAssertEqual(log.records.first?.outcome.silencedNote, "Silenced \u{00B7} Work hours")
+    }
+
+    func testTheCallerSeesWhyForAMomentThenTheCallEndsAsUnavailable() async {
+        let m = manager()
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        await m.handle(event("call.unavailable", id: m.currentID, payload: ["reason": "dnd"]))
+        XCTAssertEqual(m.phase, .outgoing, "the call screen stays for a moment")
+        XCTAssertEqual(m.statusText(), "Jean has Do Not Disturb on")
+        try? await Task.sleep(for: .seconds(0.3))
+        XCTAssertEqual(m.phase, .idle)
+        XCTAssertEqual(log.records.first?.outcome, .unavailable)
+        XCTAssertEqual(log.records.first?.line, "Unavailable")
+        XCTAssertFalse(log.records.first?.isMissedIncoming ?? true, "my own call: not a missed call")
+        XCTAssertEqual(log.missedUnseen, 0)
+
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        await m.handle(event("call.unavailable", id: m.currentID, payload: ["reason": "work_hours"]))
+        XCTAssertEqual(m.statusText(), "Jean is outside work hours")
+        await m.end()
+        XCTAssertEqual(m.phase, .idle)
+        XCTAssertEqual(log.records.first?.outcome, .unavailable, "hanging up during the message is still unavailable")
+    }
+
+    func testAnUnavailableForAnotherCallIsIgnored() async {
+        let m = manager()
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        await m.handle(event("call.unavailable", id: "someone-elses", payload: ["reason": "dnd"]))
+        XCTAssertEqual(m.statusText(), "Calling…")
+    }
+
+    func testASecondCallWithinThreeMinutesRingsDespiteDoNotDisturb() async {
+        quiet = true
+        let m = manager()
+        await m.handle(event("call.offer", id: "c1", payload: ["sdp": "v=0"]))
+        XCTAssertEqual(m.phase, .idle)
+        // A different caller is still silenced.
+        await m.handle(CallEventInfo(op: "call.offer", callID: "x1", peerID: "sam", peerName: "Sam", payload: ["sdp": "v=0"]))
+        XCTAssertEqual(m.phase, .idle)
+        XCTAssertEqual(system.incoming, 0)
+        // Jean again, two minutes later: it rings.
+        clock = clock.addingTimeInterval(120)
+        await m.handle(event("call.offer", id: "c2", payload: ["sdp": "v=0"]))
+        XCTAssertEqual(m.phase, .incoming)
+        XCTAssertEqual(system.incoming, 1)
+        XCTAssertEqual(signalling.sent.filter { $0.op == "call.unavailable" }.count, 2, "the repeated call was not turned away")
+    }
+
+    func testACallAfterThreeMinutesIsSilencedAgain() async {
+        quiet = true
+        let m = manager()
+        await m.handle(event("call.offer", id: "c1", payload: ["sdp": "v=0"]))
+        clock = clock.addingTimeInterval(181)
+        await m.handle(event("call.offer", id: "c2", payload: ["sdp": "v=0"]))
+        XCTAssertEqual(m.phase, .idle)
+        XCTAssertEqual(system.incoming, 0)
+        XCTAssertEqual(log.records.count, 2)
+    }
+
+    func testTheMissedFilterCountsSilencedCallsAndNotUnavailable() {
+        let silenced = CallRecord(id: "a", peerID: "jean", peerName: "Jean", video: false, outgoing: false, date: clock, duration: 0, outcome: .missedDnd)
+        let hours = CallRecord(id: "b", peerID: "jean", peerName: "Jean", video: false, outgoing: false, date: clock, duration: 0, outcome: .missedHours)
+        let unavailable = CallRecord(id: "c", peerID: "jean", peerName: "Jean", video: false, outgoing: true, date: clock, duration: 0, outcome: .unavailable)
+        XCTAssertTrue(silenced.isMissedIncoming && hours.isMissedIncoming)
+        XCTAssertFalse(unavailable.isMissedIncoming)
+        XCTAssertEqual(CallOutcome(rawValue: "missed_dnd"), .missedDnd, "stored as missed_dnd, and older records stay missed")
+        XCTAssertEqual(CallOutcome(rawValue: "missed"), .missed)
     }
 
     func testSecondCallerHearsBusy() async {

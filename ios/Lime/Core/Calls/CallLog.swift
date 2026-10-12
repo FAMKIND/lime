@@ -3,6 +3,27 @@ import Foundation
 /// How a call ended, for the chat's call line and the Calls list.
 enum CallOutcome: String, Codable, Sendable {
     case completed, missed, declined, noAnswer, busy, failed
+    /// An incoming call this phone did not ring for: Do Not Disturb, or outside work hours (LIME-128).
+    case missedDnd = "missed_dnd", missedHours = "missed_hours"
+    /// A call I placed to someone who was in Do Not Disturb or outside work hours.
+    case unavailable
+
+    /// Counts as a missed incoming call (the Missed filter and the badge).
+    var isMissed: Bool { self == .missed || self == .missedDnd || self == .missedHours }
+    /// "Silenced · Do Not Disturb" / "Silenced · Work hours" for a call this phone did not ring for.
+    var silencedNote: String? {
+        switch self {
+        case .missedDnd: "Silenced \u{00B7} Do Not Disturb"
+        case .missedHours: "Silenced \u{00B7} Work hours"
+        default: nil
+        }
+    }
+}
+
+/// Why this phone is not ringing.
+enum CallQuietReason: String, Sendable {
+    case dnd, workHours = "work_hours"
+    var outcome: CallOutcome { self == .dnd ? .missedDnd : .missedHours }
 }
 
 /// One call, kept on this phone (Calls tab and the chat's timeline).
@@ -26,6 +47,8 @@ struct CallRecord: Identifiable, Codable, Equatable, Sendable {
         case .noAnswer: return "No answer"
         case .busy: return "\(peerName) was busy"
         case .failed: return "\(kind) failed"
+        case .missedDnd, .missedHours: return outgoing ? "No answer" : "Missed \(video ? "video " : "")call"
+        case .unavailable: return "Unavailable"
         }
     }
 
@@ -88,7 +111,7 @@ final class CallLog {
         } else {
             records.removeAll { $0.id == record.id }
             records.insert(record, at: 0)
-            if !record.outgoing && record.outcome == .missed { missedUnseen += 1 }
+            if !record.outgoing && record.outcome.isMissed { missedUnseen += 1 }
         }
     }
 
@@ -147,7 +170,7 @@ extension CallLog {
             make("d4", "lee", "Lee Wong", video: false, outgoing: false, minutesAgo: 26 * 60, seconds: 61, .completed),
             make("d3", "sam", "Sam Park", video: true, outgoing: true, minutesAgo: 4, seconds: 252, .completed),
             make("d2", "lee", "Lee Wong", video: false, outgoing: false, minutesAgo: 2, seconds: 0, .missed),
-            make("d1", "lee", "Lee Wong", video: false, outgoing: false, minutesAgo: 1, seconds: 0, .missed),
+            make("d1", "lee", "Lee Wong", video: false, outgoing: false, minutesAgo: 1, seconds: 0, .missedDnd),
         ] { add(record) }
         // A long list (`-lime-demo-calls-many`): enough older calls to scroll.
         if many {

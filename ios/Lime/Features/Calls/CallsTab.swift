@@ -6,6 +6,8 @@ extension CallRecord {
         switch outcome {
         case .completed: Self.clock(duration)
         case .missed: outgoing ? "No answer" : "Missed"
+        case .missedDnd, .missedHours: outgoing ? "No answer" : (outcome.silencedNote ?? "Missed")
+        case .unavailable: "Unavailable"
         case .declined: "Declined"
         case .noAnswer: "No answer"
         case .busy: "Busy"
@@ -36,19 +38,25 @@ struct CallRowView: View {
                 HStack(spacing: 12) {
                     AvatarView(person: person(call), size: avatarSize)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(call.peerName + (group.count > 1 ? " (\(group.count))" : ""))
-                            .font(Theme.title.weight(.semibold))
-                            .foregroundStyle(missed ? Color.red : Theme.text)
-                            .lineLimit(1)
-                            .accessibilityIdentifier("call-row-name")
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(call.peerName + (group.count > 1 ? " (\(group.count))" : ""))
+                                .font(Theme.title.weight(.semibold))
+                                .foregroundStyle(missed ? Color.red : Theme.text)
+                                .lineLimit(1)
+                                .accessibilityIdentifier("call-row-name")
+                            Spacer(minLength: 4)
+                            Text(CallGrouping.timeLabel(call.date)).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                        }
                         HStack(spacing: 5) {
                             Image(systemName: call.outgoing ? "arrow.up.right" : "arrow.down.left").font(.caption)
                             Text(call.video ? "Video" : "Voice")
                         }
                         .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                        if let note = call.outcome.silencedNote ?? (call.outcome == .unavailable ? "Unavailable" : nil) {
+                            Text(note).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("call-row-note")
+                        }
                     }
-                    Spacer(minLength: 8)
-                    Text(CallGrouping.timeLabel(call.date)).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                 }
                 .contentShape(Rectangle())
             }

@@ -2,7 +2,7 @@ import Foundation
 
 extension CallRecord {
     /// An incoming call that was missed (or silenced by Do Not Disturb or work hours).
-    var isMissedIncoming: Bool { !outgoing && outcome == .missed }
+    var isMissedIncoming: Bool { !outgoing && outcome.isMissed }
 }
 
 /// Consecutive calls with the same person, of the same kind, on the same day, that were all missed or all not missed: one row with a

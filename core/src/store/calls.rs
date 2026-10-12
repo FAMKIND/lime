@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use super::{db_err, LimeStore, StoreError};
 
-pub(crate) const OPS: [&str; 7] = ["call.offer", "call.answer", "call.ice", "call.end", "call.busy", "call.decline", "call.ringing"];
+pub(crate) const OPS: [&str; 8] = ["call.offer", "call.answer", "call.ice", "call.end", "call.busy", "call.decline", "call.ringing", "call.unavailable"];
 
 /// An offer older than this is not rung.
 pub(crate) const OFFER_MAX_AGE_MS: i64 = 90_000;
@@ -53,6 +53,10 @@ pub(crate) fn validate(op_type: &str, payload: &Value) -> Option<String> {
             });
             (single || batch).then_some(())?;
         }
+        // The callee will not ring (Do Not Disturb or outside work hours) and says which (LIME-128).
+        "call.unavailable" => {
+            payload.get("reason").and_then(Value::as_str).filter(|r| matches!(*r, "dnd" | "work_hours"))?;
+        }
         _ => {}
     }
     Some(call_id.to_owned())
@@ -72,7 +76,7 @@ pub(crate) fn push(conn: &Connection, peer: &str, op_type: &str, call_id: &str, 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CallEvent {
     pub peer: String,
-    /// `call.offer`, `call.answer`, `call.ice`, `call.end`, `call.busy`, `call.decline` or `call.ringing` (the callee's phone is ringing).
+    /// `call.offer`, `call.answer`, `call.ice`, `call.end`, `call.busy`, `call.decline`, `call.ringing` (the callee's phone is ringing) or `call.unavailable` (the callee is in Do Not Disturb or outside work hours: `reason` is `dnd` or `work_hours`).
     pub op: String,
     pub call_id: String,
     /// The op's payload as JSON (the SDP, the candidate...).
@@ -108,7 +112,7 @@ pub struct CallHistoryRecord {
     pub outgoing: bool,
     pub at_ms: i64,
     pub duration_ms: i64,
-    /// `completed`, `missed`, `declined`, `noAnswer`, `busy` or `failed`.
+    /// `completed`, `missed`, `missed_dnd`, `missed_hours`, `declined`, `noAnswer`, `busy`, `unavailable` or `failed`.
     pub outcome: String,
 }
 
@@ -211,7 +215,7 @@ impl LimeStore {
     pub fn call_history_missed_unseen_count(&self) -> Result<u32, StoreError> {
         let count: i64 = self
             .lock()
-            .query_row("SELECT COUNT(*) FROM call_history WHERE outgoing = 0 AND outcome = 'missed' AND seen = 0", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM call_history WHERE outgoing = 0 AND outcome IN ('missed', 'missed_dnd', 'missed_hours') AND seen = 0", [], |r| r.get(0))
             .map_err(db_err)?;
         Ok(count as u32)
     }
@@ -291,6 +295,25 @@ mod tests {
         // a reply to the call message resolves its root like any message's
         assert_eq!(crate::client::resolve_root(&store.lock(), "dm:jean", "call:old").unwrap().as_deref(), Some("call:old"));
         assert_eq!(crate::client::resolve_root(&store.lock(), "dm:jean", "call:nope").unwrap(), None);
+    }
+
+    #[test]
+    fn unavailable_names_why_the_callee_will_not_ring() {
+        assert_eq!(validate("call.unavailable", &json!({ "call_id": "c-1", "reason": "dnd" })).as_deref(), Some("c-1"));
+        assert!(validate("call.unavailable", &json!({ "call_id": "c-1", "reason": "work_hours" })).is_some());
+        assert!(validate("call.unavailable", &json!({ "call_id": "c-1", "reason": "bored" })).is_none());
+        assert!(validate("call.unavailable", &json!({ "call_id": "c-1" })).is_none());
+        assert!(is_call_op("call.unavailable"));
+    }
+
+    #[test]
+    fn silenced_calls_count_as_missed_and_unavailable_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LimeStore::open(dir.path().join("calls.db").to_string_lossy().into_owned(), vec![7u8; 32]).unwrap();
+        store.call_history_add(record("a", 100, false, "missed_dnd")).unwrap();
+        store.call_history_add(record("b", 200, false, "missed_hours")).unwrap();
+        store.call_history_add(record("c", 300, true, "unavailable")).unwrap();
+        assert_eq!(store.call_history_missed_unseen_count().unwrap(), 2);
     }
 
     #[test]

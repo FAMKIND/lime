@@ -2761,6 +2761,21 @@ fn only_the_owner_deletes_a_group_for_everyone_and_it_becomes_read_only_while_cl
 }
 
 #[test]
+fn a_callee_who_will_not_ring_tells_the_caller_why() {
+    let server = FakeServer::new();
+    let (alice, alice_transport) = party(&server, "alice", 1);
+    let (bob, bob_transport) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &alice_transport);
+    bob.store.send_call_signal(bob_transport.clone(), bob.token.clone(), alice.user.clone(), "call.unavailable".into(), serde_json::json!({ "call_id": "call-9", "reason": "dnd" }).to_string()).unwrap();
+    assert!(bob.store.send_call_signal(bob_transport.clone(), bob.token.clone(), alice.user.clone(), "call.unavailable".into(), serde_json::json!({ "call_id": "call-9", "reason": "tired" }).to_string()).is_err(), "only a known reason");
+    sync(&alice, &alice_transport);
+    let events = alice.store.take_call_events().unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!((events[0].op.as_str(), events[0].call_id.as_str(), events[0].peer.as_str()), ("call.unavailable", "call-9", bob.user.as_str()));
+    assert!(events[0].payload.contains("\"dnd\""));
+}
+
+#[test]
 fn call_signalling_reaches_an_accepted_contact_and_a_swapped_media_key_or_a_stranger_is_refused() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);

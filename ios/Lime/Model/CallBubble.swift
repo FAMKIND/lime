@@ -19,7 +19,7 @@ struct CallBubble: Hashable, Sendable {
     }
 
     /// A missed incoming call (shown in the danger red).
-    var isMissedIncoming: Bool { !mine && outcome == .missed }
+    var isMissedIncoming: Bool { !mine && outcome.isMissed }
     var kind: String { video ? "video" : "voice" }
 
     /// "Voice call", "Video call", "Missed voice call".
@@ -30,6 +30,8 @@ struct CallBubble: Hashable, Sendable {
         switch outcome {
         case .completed: CallRecord.clock(duration)
         case .missed: mine ? "Cancelled" : "Missed"
+        case .missedDnd, .missedHours: mine ? "Cancelled" : (outcome.silencedNote ?? "Missed")
+        case .unavailable: "Unavailable"
         case .noAnswer: "No answer"
         case .declined: "Declined"
         case .busy: "Busy"

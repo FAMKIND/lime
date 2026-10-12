@@ -67,7 +67,16 @@ final class CallManager {
     @ObservationIgnored let system: CallSystem
     @ObservationIgnored private let makeMedia: () -> any CallMedia
     @ObservationIgnored private let log: CallLog
-    @ObservationIgnored private let isQuiet: () -> Bool
+    /// Why this phone will not ring right now (Do Not Disturb or outside work hours), or `nil`.
+    @ObservationIgnored private let quietReason: () -> CallQuietReason?
+    /// A person who called while this phone was silenced, and when: a second call from them within `breakthroughSeconds` rings.
+    @ObservationIgnored private var silencedAt: [String: Date] = [:]
+    @ObservationIgnored var breakthroughSeconds: TimeInterval = 180
+    /// How long the caller sees "<Name> has Do Not Disturb on" before the call screen closes.
+    @ObservationIgnored var unavailableSeconds: Double = 2
+    @ObservationIgnored private var unavailableTask: Task<Void, Never>?
+    /// Set on the caller's side once the other phone said it will not ring: shown under the name until the call closes.
+    private(set) var unavailableNote: String?
     @ObservationIgnored private let myID: () -> String?
     @ObservationIgnored private let sounds: CallSounds
     /// Where the sound is going, for the call screen.
@@ -109,12 +118,13 @@ final class CallManager {
     @ObservationIgnored var ringSeconds: Double = 45
 
     init(signalling: CallSignalling, system: CallSystem, log: CallLog = .shared, now: @escaping () -> Date = Date.init,
-         sounds: CallSounds = QuietCallSounds(), isQuiet: @escaping () -> Bool = { false }, myID: @escaping () -> String? = { nil }, makeMedia: @escaping () -> any CallMedia) {
+         sounds: CallSounds = QuietCallSounds(), isQuiet: @escaping () -> Bool = { false }, quietReason: (() -> CallQuietReason?)? = nil, myID: @escaping () -> String? = { nil }, makeMedia: @escaping () -> any CallMedia) {
         self.signalling = signalling
         self.system = system
         self.log = log
         self.now = now
-        self.isQuiet = isQuiet
+        // `isQuiet` alone (older callers, tests) means Do Not Disturb.
+        self.quietReason = quietReason ?? { isQuiet() ? .dnd : nil }
         self.myID = myID
         self.sounds = sounds
         self.makeMedia = makeMedia
@@ -130,7 +140,7 @@ final class CallManager {
     func statusText(at date: Date = Date()) -> String {
         switch phase {
         case .idle: return ""
-        case .outgoing: return remoteRinging ? "Ringing…" : "Calling…"
+        case .outgoing: return unavailableNote ?? (remoteRinging ? "Ringing…" : "Calling…")
         case .incoming: return video ? "lime video call" : "lime voice call"
         case .connecting: return "Connecting…"
         case .active: return CallRecord.clock(date.timeIntervalSince(startedAt ?? date))
@@ -356,6 +366,7 @@ final class CallManager {
             showUnreachableHint = false
         case "call.answer": await receivedAnswer(event)
         case "call.ice": await receivedCandidate(event)
+        case "call.unavailable": receivedUnavailable(event)
         case "call.end", "call.decline", "call.busy":
             guard event.callID == callID, event.peerID == peerID, inCall else { return }
             let reason: Reason = event.op == "call.busy" ? .busy : (event.op == "call.decline" ? .declined : (phase == .incoming ? .missed : .remoteEnded))
@@ -380,10 +391,18 @@ final class CallManager {
             }
         }
         guard let sdp = event.payload["sdp"] as? String else { return }
-        // Do Not Disturb or outside work hours: no ring; it is a missed call.
-        if isQuiet() {
-            log.add(CallRecord(id: event.callID, peerID: event.peerID, peerName: event.peerName, video: video, outgoing: false, date: now(), duration: 0, outcome: .missed))
-            return
+        // Do Not Disturb or outside work hours: no ring. It is a missed call here, labelled with why, and the caller is told at once.
+        // A second call from the same person within three minutes rings anyway (an emergency gets through).
+        if let reason = quietReason() {
+            if let before = silencedAt[event.peerID], now().timeIntervalSince(before) < breakthroughSeconds {
+                silencedAt[event.peerID] = nil
+                diag.log("repeated call: rings despite \(reason.rawValue)")
+            } else {
+                silencedAt[event.peerID] = now()
+                log.add(CallRecord(id: event.callID, peerID: event.peerID, peerName: event.peerName, video: video, outgoing: false, date: now(), duration: 0, outcome: reason.outcome))
+                _ = await signalling.send(peer: event.peerID, op: "call.unavailable", payload: ["call_id": event.callID, "reason": reason.rawValue])
+                return
+            }
         }
         begin(peerID: event.peerID, name: event.peerName, video: video, outgoing: false, id: event.callID)
         pendingOffer = sdp
@@ -406,6 +425,23 @@ final class CallManager {
                     Task { _ = await self.signalling.send(peer: peer, op: "call.ringing", payload: ["call_id": id]) }
                 }
             }
+        }
+    }
+
+    /// The other phone will not ring (Do Not Disturb or outside work hours): say so for a moment, then close.
+    private func receivedUnavailable(_ event: CallEventInfo) {
+        guard phase == .outgoing, event.callID == callID, event.peerID == peerID, unavailableNote == nil else { return }
+        let note = (event.payload["reason"] as? String) == CallQuietReason.workHours.rawValue ? "\(peerName) is outside work hours" : "\(peerName) has Do Not Disturb on"
+        unavailableNote = note
+        showUnreachableHint = false
+        stopRinging()
+        ringTimeout?.cancel()
+        hintWatch?.cancel()
+        let id = callID
+        unavailableTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(self?.unavailableSeconds ?? 2))
+            guard let self, !Task.isCancelled, self.callID == id else { return }
+            self.finish(.unavailable, notify: true)
         }
     }
 
@@ -521,7 +557,7 @@ final class CallManager {
         if phase == .incoming && reason == .hungUp { await decline(); return }
         // Tear down first and tell the other phone afterwards: a second end (the call screen and the system's End button) then finds nothing to end.
         let id = callID, peer = peerID
-        let outcome = reason.outcome(wasActive: phase == .active)
+        let outcome = unavailableNote != nil ? CallOutcome.unavailable : reason.outcome(wasActive: phase == .active)
         finish(outcome, notify: true)
         if reason != .missed { _ = await signalling.send(peer: peer, op: "call.end", payload: ["call_id": id]) }
     }
@@ -534,6 +570,7 @@ final class CallManager {
     private func finish(_ outcome: CallOutcome, notify: Bool) {
         guard inCall else { return }
         diag.log("finish \(outcome.rawValue)")
+        unavailableTask?.cancel(); unavailableTask = nil; unavailableNote = nil
         stopRinging()
         // The end tone: for any call this phone placed or answered (not for a call it never rang for).
         if outgoing || startedAt != nil || outcome == .declined { sounds.playEnd() }

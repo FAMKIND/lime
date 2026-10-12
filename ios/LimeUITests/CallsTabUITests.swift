@@ -19,6 +19,16 @@ final class CallsTabUITests: XCTestCase {
 
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
 
+    func testASilencedCallSaysWhyOnItsRowAndStaysInMissed() {
+        let app = app()
+        openCalls(app)
+        let note = any(app, "call-row-note")
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertEqual(note.label, "Silenced \u{00B7} Do Not Disturb")
+        app.segmentedControls.buttons["Missed"].tap()
+        XCTAssertTrue(any(app, "call-row-note").waitForExistence(timeout: 5), "a silenced call is still a missed call")
+    }
+
     func testAllAndMissedFiltersAndGroupedRows() {
         let app = app()
         openCalls(app)
