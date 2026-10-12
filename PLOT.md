@@ -126,6 +126,15 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e37. **LIME-122a2 LANDED as `168e296` (pushed, 2026-10-12; PLOT.md `6bc363b`).**
+   - Your profile is opened from the header avatar on every tab (Change status · Edit profile · Settings; ⋯ Share/Edit/Settings/Sign out).
+   - Every other avatar opens a profile (not Messages or New Call rows); Group details' Shared card.
+   - Someone's header: Mute (bell) · Pin · ⋯ (Share profile, Verify in person, Storage, Block, Delete chat).
+   - Full suite 422 on the 13 mini; changed tests on SE/18 Pro; 0 warnings; 7 new UI tests.
+   - `profile-username` was renamed `profile-handle` on the profile screen; closing Settings now returns to your profile.
+   - **Not exercised:** a real share, a completed QR scan, "Shared in <Group>" end to end, the thread-author and Calls-search wiring.
+   - **NOTE: the active tend session is listed as "LIME-87 re-read from PLOT.md" [ebb1f2]** (its first prompt's title); it is lime-aa. Plot mistook it for stale on 2026-10-12; don't close it.
+   - **Next: LIME-126.**
 1e36. **CONFIRMED (the user, 2026-10-12): "test checks out, it works"**: with the status Available, calls between the phone and the iPad ring normally, so the Do Not Disturb diagnosis was right; LIME-128 stays as drafted. Tend is mid-122a2 (Phase 0 `eac52c9`, code uncommitted).
 1e35. **Call "bug" (the user, 2026-10-12) = Do Not Disturb by design (LIME-111 silences quietly, the caller isn't told). DECIDED: yes to all three fixes → LIME-128 (drafted): tell the caller (`call.unavailable`), label silenced calls, and a repeated call within 3 min rings.** **Queue: 122a2 → 126 → 127 → 128 → 118b → 118c → 119 → 120 → 112b → 117 → 113 → …** To test calls meanwhile: the user sets their status to Available and checks the iPad account's status and work hours.
 1e34. **DECIDED (the user, 2026-10-12):**
