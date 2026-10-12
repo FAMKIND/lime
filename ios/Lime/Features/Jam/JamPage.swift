@@ -8,20 +8,29 @@ struct JamPage: View {
     var body: some View {
         @Bindable var store = store
         return NavigationStack(path: $store.jamPath) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Image(systemName: "book").font(.system(size: 44)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
-                    Text("A place for teachers to share what works: posts, articles and recordings, by teachers, for teachers. Coming soon.")
-                        .font(Theme.body).foregroundStyle(Theme.text)
-                        .accessibilityIdentifier("jam-text")
-                    Toggle(isOn: $notify) {
-                        Text("Notify me").font(Theme.body).foregroundStyle(Theme.text)
-                    }
-                    .tint(Theme.accent)
-                    .accessibilityIdentifier("jam-notify")
+            VStack(spacing: 14) {
+                Image(systemName: "book.pages").font(.system(size: 80, weight: .regular)).foregroundStyle(Theme.textSecondary)
+                    .padding(.bottom, 10).accessibilityHidden(true)
+                Text("Jam is coming").font(.title.weight(.bold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
+                    .accessibilityIdentifier("jam-title")
+                Text("A space for teachers to share lessons, stories and videos. Teachers learn best by watching teachers teach.")
+                    .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("jam-text")
+                Button { notify.toggle() } label: {
+                    Text(notify ? "We\u{2019}ll let you know \u{2713}" : "Notify me")
+                        .font(Theme.title).foregroundStyle(notify ? Theme.text : Theme.accentInk)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(notify ? Theme.surface : Theme.accent, in: Capsule())
                 }
-                .padding(24)
+                .buttonStyle(.plain)
+                .padding(.top, 14)
+                .accessibilityValue(notify ? "On" : "Off")
+                .accessibilityIdentifier("jam-notify")
             }
+            .padding(.horizontal, 32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, 60)
             .background(Theme.canvas)
             .navigationBarTitleDisplayMode(.inline)
             .rootHeader(searchID: "jam-search-button") { store.jamSearching = true }

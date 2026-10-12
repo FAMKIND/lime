@@ -67,8 +67,16 @@ final class TabBarUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["jam"].waitForExistence(timeout: 10))
         app.tabBars.buttons["jam"].tap()
         XCTAssertTrue(app.staticTexts["jam-text"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["jam-text"].label.contains("Coming soon"))
-        XCTAssertTrue(any(app, "jam-notify").exists)
+        XCTAssertTrue(app.staticTexts["jam-text"].label.contains("Teachers learn best"))
+        XCTAssertTrue(app.staticTexts["Jam is coming"].exists)
+        let notify = app.buttons["jam-notify"]
+        XCTAssertTrue(notify.exists)
+        if notify.label.contains("let you know") { notify.tap() }   // left on by an earlier run
+        XCTAssertEqual(notify.label, "Notify me")
+        notify.tap()
+        XCTAssertTrue(app.buttons["jam-notify"].label.contains("let you know"), "the button flips")
+        app.buttons["jam-notify"].tap()
+        XCTAssertEqual(app.buttons["jam-notify"].label, "Notify me", "and flips back")
         XCTAssertFalse(app.staticTexts["Jam is coming soon"].exists, "no banner")
     }
 

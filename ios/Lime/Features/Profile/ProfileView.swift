@@ -29,6 +29,11 @@ enum SharedKindKey: String, Hashable { case media, files, links
     var kind: SharedKind { switch self { case .media: .media; case .files: .files; case .links: .links } }
 }
 
+struct SettingsLaunch: Identifiable {
+    let id = UUID()
+    let start: SettingsRoute?
+}
+
 struct ProfileView: View {
     let route: ProfileRoute
     @Environment(ConversationStore.self) private var store
@@ -39,8 +44,8 @@ struct ProfileView: View {
     @State private var confirmingDelete = false
     @State private var confirmingSignOut = false
     @State private var showStatus = false
-    @State private var showSettings = false
-    @State private var settingsStart: SettingsRoute?
+    /// Settings as a sheet, opened on the root or straight on a screen (Edit profile).
+    @State private var settingsLaunch: SettingsLaunch?
     @State private var verifying = false
     @State private var showStorage = false
     @State private var section: Section = .info
@@ -104,6 +109,16 @@ struct ProfileView: View {
                 case .shared: shared
                 case .calls: callsList
                 }
+                if route.isMe {
+                    SettingsCard {
+                        Button { confirmingSignOut = true } label: {
+                            SettingsRowLabel(symbol: "rectangle.portrait.and.arrow.right", title: "Sign out", showsDivider: false, destructive: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("profile-sign-out")
+                    }
+                    .padding(.top, 12)
+                }
             }
             .padding(.horizontal, 16).padding(.bottom, 40)
         }
@@ -119,8 +134,8 @@ struct ProfileView: View {
                 if saved { Task { await store.setLabel(labelText, for: route.userID) } }
             }
         }
-        .sheet(isPresented: $showStatus) { StatusSheet(openSettings: { showStatus = false; settingsStart = nil; showSettings = true }) }
-        .sheet(isPresented: $showSettings) { SettingsView(startAt: settingsStart) }
+        .sheet(isPresented: $showStatus) { StatusSheet(openSettings: { showStatus = false; settingsLaunch = SettingsLaunch(start: nil) }) }
+        .sheet(item: $settingsLaunch) { SettingsView(startAt: $0.start) }
         .sheet(isPresented: $verifying) { NavigationStack { ScanQRScreen(closeSheet: { verifying = false }) }.presentationDetents([.large]) }
         .sheet(isPresented: $showStorage) { NavigationStack { ChatMediaScreen(conversationID: "dm:\(route.userID)") }.presentationDetents([.large]) }
         .confirmSheet("Mute \(displayName)", isPresented: $confirmingMute) {
@@ -200,16 +215,16 @@ struct ProfileView: View {
     /// Your own profile: Change status, Edit profile, Settings.
     private var myActions: some View {
         HStack(spacing: 12) {
-            card("moon", "Change status", id: "profile-change-status") { showStatus = true }
-            card("pencil", "Edit profile", id: "profile-edit") { settingsStart = .profile; showSettings = true }
-            card("gearshape", "Settings", id: "profile-settings") { settingsStart = nil; showSettings = true }
+            card("dot.radiowaves.left.and.right", "Status", id: "profile-change-status") { showStatus = true }
+            card("pencil", "Edit profile", id: "profile-edit") { settingsLaunch = SettingsLaunch(start: .profile) }
+            card("gearshape", "Settings", id: "profile-settings") { settingsLaunch = SettingsLaunch(start: nil) }
         }
     }
 
     private func card(_ symbol: String, _ title: String, id: String, perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
             VStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 20))
+                Image(systemName: symbol).font(.system(size: 20)).frame(height: 24)
                 Text(title).font(Theme.secondary)
             }
             .foregroundStyle(Theme.text)
@@ -247,10 +262,8 @@ struct ProfileView: View {
                     .accessibilityIdentifier("profile-share")
             }
             if route.isMe {
-                Button { settingsStart = .profile; showSettings = true } label: { Label("Edit profile", systemImage: "pencil") }
-                Button { settingsStart = nil; showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
-                Button(role: .destructive) { confirmingSignOut = true } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right") }
-                    .accessibilityIdentifier("profile-sign-out")
+                Button { settingsLaunch = SettingsLaunch(start: .profile) } label: { Label("Edit profile", systemImage: "pencil") }
+                Button { settingsLaunch = SettingsLaunch(start: nil) } label: { Label("Settings", systemImage: "gearshape") }
             } else if accepted {
                 Button { verifying = true } label: { Label("Verify in person", systemImage: "qrcode.viewfinder") }
                     .accessibilityIdentifier("profile-verify")

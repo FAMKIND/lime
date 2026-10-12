@@ -69,8 +69,9 @@ final class ProfileUITests: XCTestCase {
         XCTAssertTrue(app.buttons["profile-change-status"].exists && app.buttons["profile-edit"].exists && app.buttons["profile-settings"].exists)
         XCTAssertFalse(app.buttons["profile-message"].exists, "no Message / Voice / Video on your own profile")
         XCTAssertFalse(app.buttons["profile-mute"].exists && app.buttons["profile-pin"].exists, "the bell and pin are for someone else's profile")
-        app.buttons["profile-more"].tap()
-        XCTAssertTrue(app.buttons["profile-sign-out"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["profile-change-status"].label, "Status", "one short word, on one line")
+        for _ in 0..<4 where !app.buttons["profile-sign-out"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["profile-sign-out"].waitForExistence(timeout: 5), "Sign out is at the bottom of the profile")
         app.buttons["profile-sign-out"].tap()
         XCTAssertTrue(app.buttons["profile-sign-out-confirm"].firstMatch.waitForExistence(timeout: 5), "the same confirmation as Settings")
         app.buttons["Cancel"].firstMatch.tap()
@@ -170,5 +171,14 @@ final class ProfileUITests: XCTestCase {
         XCTAssertTrue(cell.waitForExistence(timeout: 5), "a media cell")
         cell.tap()
         XCTAssertTrue(any(app, "attachment-viewer").waitForExistence(timeout: 8), "the viewer opens")
+    }
+
+    func testEditProfileOpensTheProfileEditorItself() {
+        let app = app()
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.buttons["profile-edit"].waitForExistence(timeout: 8))
+        app.buttons["profile-edit"].tap()
+        XCTAssertTrue(app.buttons["profile-about"].waitForExistence(timeout: 8), "the Edit Profile screen, not the Settings root")
+        XCTAssertFalse(app.buttons["settings-profile"].exists)
     }
 }

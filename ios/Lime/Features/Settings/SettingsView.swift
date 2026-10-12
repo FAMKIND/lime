@@ -17,16 +17,16 @@ struct SettingsView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.dismiss) private var dismiss
-    @State private var path: [SettingsRoute] = []
+    @State private var path: [SettingsRoute]
     @State private var confirmingSignOut = false
     /// Open straight on this screen (the profile's Edit profile).
-    var startAt: SettingsRoute? = nil
-    @State private var startedOnce = false
+    init(startAt: SettingsRoute? = nil) {
+        _path = State(initialValue: startAt.map { [$0] } ?? [])
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
             root
-                .onAppear { if let startAt, path.isEmpty, !startedOnce { startedOnce = true; path = [startAt] } }
                 .navigationDestination(for: SettingsRoute.self) { route in
                     switch route {
                     case .profile: ProfileSettingsScreen()
@@ -51,7 +51,7 @@ struct SettingsView: View {
         .tint(Theme.text)
         .background(Theme.canvas.ignoresSafeArea())
         #if DEBUG
-        .task { path = Self.route(from: store.demoSettingsRoute) }
+        .task { if !store.demoSettingsRoute.isEmpty { path = Self.route(from: store.demoSettingsRoute) } }
         #endif
     }
 

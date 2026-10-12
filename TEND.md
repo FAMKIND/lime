@@ -5068,3 +5068,16 @@ Phase 0: `PLOT.md` committed first.
 4. **Unread dot removed.** An unread row is bold name and preview plus the count badge. `Conversation.unreadCount = max(unread, 1 if marked unread)`: a chat marked unread by hand shows a "1" badge (even if the last message is mine), no number-less badge, no dot; opening clears it; the tab badge (unread chats) and the stored flag are unchanged. The row's accessibility label now says "N unread". Existing UI tests that asserted the dot (`unread-dot-dm:sam`) now expect `count-badge-dm:sam` and no dot; `QARoundTests` gained the `unreadCount` cases.
 
 **Before screenshots:** not taken (I only captured the after state); the before was described in the brief. **Not exercised:** the clipped state itself (the filter badge's first frame is only seen after the fix); the landscape tab badge with a two-digit count; a real phone.
+
+
+## LIME-126b (your profile: Status, Sign out at the bottom, Edit profile opens the editor; the Jam "coming soon" page)
+
+Phase 0: `PLOT.md` committed first and items 5 and 6 re-read from it. (126 itself had been built from a PLOT.md saved before they were added.)
+
+**Your profile (item 5).** The first card is **Status** with `dot.radiowaves.left.and.right` (one line; id unchanged, `profile-change-status`); the three icons sit in a fixed 24 pt box so the labels line up. **Sign out** is a red row in a card at the bottom of your profile (like Group details' Leave group), still through the same `ConfirmSheet` and `session.signOut()`; the ⋯ menu keeps Share profile (with a username) · Edit profile · Settings. **Edit profile opens the Edit Profile screen itself**, from the card and from ⋯. **Cause of "it opens Settings":** the Settings sheet was built before `settingsStart` was set, so its start screen was always empty. Settings is now presented with `.sheet(item:)` (`SettingsLaunch`), and `SettingsView(startAt:)` sets its path in `init`. I also stopped the DEBUG demo `.task` from resetting the path when no demo route is set. Seen: simulator screenshot of the profile (Status · Edit profile · Settings, Details, Sign out) and the editor test below.
+
+**The Jam tab (item 6, visual).** Centred block: `book.pages` at 80 pt in `Theme.textSecondary`, "Jam is coming" (title, bold), the subtext (body, secondary, three lines), then one full-width capsule button: **Notify me** (accent green, dark text) → **We'll let you know ✓** (neutral surface) and back; stored on the phone only (`@AppStorage lime.jamNotify`, the same key as before). The block is vertically centred between the header and the tab bar. Seen in simulator screenshots of both states.
+
+**Tests.** Updated: the profile test (Status label, Sign out found at the bottom of the profile, still asks and cancels) and the Jam test (new words, the button flips and flips back). New: `testEditProfileOpensTheProfileEditorItself`. Full suite on the 13 mini; the profile and Jam tests on SE and 18 Pro.
+
+**Not exercised:** the "Jam is open" one-time notice for people who tapped Notify me (only the choice is stored, as the brief said); Dynamic Type at the largest sizes on the Jam page; no before screenshots.
