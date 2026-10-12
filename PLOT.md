@@ -126,6 +126,12 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e41. **LIME-126b LANDED as `15eb61b` (pushed, 2026-10-12; PLOT.md `a8d926f`).**
+   - **Your profile:** Status (radio-waves, one line); Sign out is a red row at the bottom, out of ⋯; Edit profile opens the editor (the Settings sheet now opens with its start screen chosen).
+   - **Jam:** the coming-soon page with Notify me stored on the phone.
+   - Full suite 423 on the 13 mini.
+   - **Not built:** the one-time "Jam is open" notice (only the choice is stored; that's for when Jam ships, LIME-110). Largest Dynamic Type not checked.
+   - **Next: LIME-127.**
 1e40. **LIME-126 LANDED as `c4422b2` (pushed, 2026-10-12; PLOT.md `8db8604`) WITHOUT items 5 and 6** (its Phase 0 PLOT.md predates them).
    - **Built:** no unread dot (bold + count; marked unread = "1"); the filter badge no longer clipped (6 pt of padding); call-screen contrast 1.53:1 → 11.44:1 (dark text on lime).
    - **The landscape tab badge was not reproduced** on the 13 mini simulator ("1" inside the bar, overlapping the label's end), so nothing changed; waiting on a phone screenshot if it still clips.
