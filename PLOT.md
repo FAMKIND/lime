@@ -126,6 +126,27 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e36. **CONFIRMED (the user, 2026-10-12): "test checks out, it works"**: with the status Available, calls between the phone and the iPad ring normally, so the Do Not Disturb diagnosis was right; LIME-128 stays as drafted. Tend is mid-122a2 (Phase 0 `eac52c9`, code uncommitted).
+1e35. **Call "bug" (the user, 2026-10-12) = Do Not Disturb by design (LIME-111 silences quietly, the caller isn't told). DECIDED: yes to all three fixes → LIME-128 (drafted): tell the caller (`call.unavailable`), label silenced calls, and a repeated call within 3 min rings.** **Queue: 122a2 → 126 → 127 → 128 → 118b → 118c → 119 → 120 → 112b → 117 → 113 → …** To test calls meanwhile: the user sets their status to Available and checks the iPad account's status and work hours.
+1e34. **DECIDED (the user, 2026-10-12):**
+   - **Compliance: WORLDWIDE FROM THE START** ("the teacher crisis is global"). GDPR (and similar laws) must be met **before TestFlight**, not after a US-only phase. (A nonprofit is not exempt from GDPR.) Consequences for the plan (DESIGN-12, GDPR, to be written as briefs and a readiness pack):
+     1. **A GDPR readiness pack for the lawyer** (plot drafts it):
+        - a data inventory / record of processing;
+        - a retention schedule;
+        - the providers (sub-processors) list with locations and transfer basis (Supabase, Resend, Hetzner, Migadu, deSEC, Apple; LiveKit self-hosted);
+        - DPIAs for **Jam** (server-readable posts, student content risk) and **mesh** (Bluetooth proximity);
+        - a breach plan (72 h);
+        - a draft privacy policy;
+        - the EU representative (Art. 27).
+     2. **Data location:** decide between an EU Supabase project for EU users and transfer safeguards (SCCs / the EU-US Data Privacy Framework) for a single US region. Same question for the TURN relay (a Hetzner EU location for EU users). **Plot must check each provider's DPA, DPF status and EU regions first** (not yet verified).
+     3. **Product items folded into existing briefs:**
+        - **113:** account deletion purges server data within a stated time;
+        - **114b compliance pack:** data export, retention jobs (logs, deleted accounts, waitlist), a privacy page in Settings, consent records for the waitlist, 18+;
+        - **110 Jam:** the privacy check, takedown, moderation;
+        - **the mesh design:** the DPIA input;
+        - **limechat.org:** no trackers, so no cookie banner.
+     4. **Sign the DPAs** (an existing open item) before TestFlight.
+   - **Call bubbles inside reply threads** (a tap does nothing there): **leave as is; prioritise later.**
 1e33. **The user's QA + asks (2026-10-11, 6 screenshots):**
    - **The profile header** becomes Mute · Pin/Unpin · ⋯ (Block, Delete chat; Report with 113), with Share as a row at the bottom. **→ folded into LIME-122a2 (item 6)**, which wasn't sent yet.
    - **Visual QA → LIME-126:** the filter badge clipped on first load; the tab badge clipped in landscape; the call screen's Message button and "Tap to return to call" bar have low contrast.
@@ -4260,9 +4281,9 @@ If the survey turns up related issues, raise them before editing. If a decision 
    - the person sheet's **Message** button is white text on light lime green: use `Theme.accentInk` (dark) text and icon on `Theme.accent`, as every other green button does (≥ 4.5:1);
    - the **"Tap to return to call · 1:31"** bar is white on light green: use `Theme.accentInk` text/icon on it (or a darker green fill with white text) so it reaches ≥ 4.5:1. Measure both and note the ratios in TEND.md.
 
-4. **Remove the green unread dot at the left of Messages rows** (the user, 2026-10-11): "font weight and the number badge communicate unread already; the green dot clashes with the green status symbol." Unread rows = **bold name and preview + the count badge** only. **A chat marked unread by hand** (no count) shows **bold + a small lime badge with no number** where the count sits (right side), so it's still visible. Update the 107-qa tests that assert the dot (behavioural tests about the unread state stay; only the dot's presence changes).
+4. **Remove the green unread dot at the left of Messages rows** (the user, 2026-10-11): "font weight and the number badge communicate unread already; the green dot clashes with the green status symbol." Unread rows = **bold name and preview + the count badge** only. **A chat marked unread by hand counts as 1 unread** (the user, 2026-10-11: "when you swipe to mark as unread, why don't we just make the last message unread; then you don't need a special badge"): it shows **bold + a "1" badge** exactly like a chat with one new message, even if the last message is mine. Opening it clears it as today; the tab badge (unread chats) is unchanged. **No number-less badge and no dot.** Keep the stored "marked unread" flag as is; only how it's shown changes (count = max(real unread, 1) when marked). Update the 107-qa tests that assert the dot or the dot-only state (this changes behaviour, so adjust those tests to expect the "1" badge).
 
-**Phase 0:** `git add PLOT.md` only, then commit. ~30 min. **Verification:** build; 0 warnings; Release clean; fix only existing tests that break; before/after screenshots in TEND.md. **Gate:** no green dot at the left of unread rows (bold + badge only; a hand-marked unread chat shows a small badge); the filter badge is whole from the first frame; the landscape tab badge is whole; the Message button and the return-to-call bar read clearly.
+**Phase 0:** `git add PLOT.md` only, then commit. ~30 min. **Verification:** build; 0 warnings; Release clean; fix only existing tests that break; before/after screenshots in TEND.md. **Gate:** no green dot at the left of unread rows (bold + badge only; swipe → Unread on a read chat shows bold + "1"); the filter badge is whole from the first frame; the landscape tab badge is whole; the Message button and the return-to-call bar read clearly.
 **Record:** `## LIME-126`. **Commit:** `fix(ios): unclipped filter and tab badges; readable call-screen buttons`, trailer `Brief: LIME-126`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ### LIME-127 → `tend` (lime-aa) (after 126): one "Add to your message" sheet: Camera, recent photos, Photos, Files
@@ -4287,6 +4308,30 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Gate (the user, the phone):** tap "+" in a chat: one sheet with Camera, your recent photos and videos, Photos and Files; attach two recent photos at once; record a short video from Camera; attach a PDF from Files.
 
 **Record:** `## LIME-127`. **Commit:** `feat(ios): one add sheet: Camera (photo or video), recent photos, Photos, Files`, trailer `Brief: LIME-127`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-128 → `tend` (lime-aa) (after 127, before 118b): Do Not Disturb and work hours for calls: tell the caller, label silenced calls, and let a repeated call through
+**The user (2026-10-12, screenshots: Shem's Calls tab with his status "z" = Do Not Disturb, and the iPad stuck on "Calling… may be off or lime closed"):** "bug: calling the iPad from Shem's phone, the iPad only shows missed calls while the call was ringing." **Plot's finding:** this is LIME-111's design. `CallManager` (~line 384): `if isQuiet() { log … outcome: .missed; return }`, where `isQuiet` = `StatusSettings.shared.plan().isQuiet` (Do Not Disturb, or outside work hours). The silenced phone logs a missed call at once and **sends nothing back**, so the caller rings until the 45 s timeout. **DECIDED (the user): yes to all three fixes below.**
+
+**Goal:** a call to someone in Do Not Disturb or outside work hours ends within a second or two on the caller's side with a clear reason; the silenced person sees why each call didn't ring; and a second call from the same person within 3 minutes rings anyway (an emergency breakthrough, like iOS's "Repeated calls").
+
+**Capabilities assumed:** edit files, run commands, simulators, commit and push. A new call op through the existing encrypted call-op channel; **no server change** (call ops are opaque to the server). Core only if the outcome needs storing (see item 4).
+
+**Phase 0:** `git add PLOT.md` only, then commit. ~60 min.
+
+**Phase 1 (read-only):** the incoming-offer path in `CallManager`, how `call.busy` is sent and handled (the model for the new op), `CallRecord.outcome` and its text, the call bubble's detail text (123), and the Calls tab's Missed filter and badge.
+
+**Phase 2:**
+1. **Tell the caller (a new op `call.unavailable`):** when an incoming offer is silenced, the callee immediately sends `call.unavailable { call_id, reason: "dnd" | "work_hours" }` (like `call.busy`). The caller's `CallManager` ends the call at once and shows, for about 2 s before closing, **"<Name> has Do Not Disturb on"** or **"<Name> is outside work hours"**. The caller's record: outcome **Unavailable** (bubble/history detail "Unavailable", missed-style red? **no**: grey, it's not my missed call).
+2. **Label silenced calls for the person in Do Not Disturb:** the missed record carries the reason; history rows and the call bubble's detail read **"Silenced · Do Not Disturb"** / **"Silenced · Work hours"** (still red as a missed incoming call, still counted by Missed and the badge).
+3. **Repeated-call breakthrough:** if the **same person** calls again **within 3 minutes** of a silenced call, the second call **rings normally** (CallKit as usual) despite Do Not Disturb or work hours. Remember the last silenced call time per caller in memory (it doesn't need to survive a relaunch). If iOS's own Focus still blocks CallKit's ring, the existing "incoming refused → missed" path applies; note it in TEND.md (lime can't override a system Focus).
+4. **Storing the reason:** extend the outcome values (e.g. `missed_dnd`, `missed_hours`, `unavailable`) so they survive in `call_history` and the call message; old records stay `missed`. The Missed filter and the badge treat `missed_dnd`/`missed_hours` as missed; `unavailable` is not missed.
+5. **Settings → Notifications** (or the Status sheet): one line of help: "When you're on Do Not Disturb or outside work hours, calls don't ring and callers are told. If someone calls twice within 3 minutes, the second call rings."
+
+**Verification (behavioural: real tests):** CallManager unit tests with fakes: a quiet incoming offer sends `call.unavailable` with the right reason and logs `missed_dnd`; the caller receiving `call.unavailable` ends with `unavailable` and shows the reason; a second offer from the same peer within 3 minutes rings, after 3 minutes it's silenced again, and a different caller is still silenced; the Missed filter counts `missed_dnd` and not `unavailable`. The integration test if call ops are covered there (A calls a quiet B: A ends within ~2 s with "unavailable"). Tiered; 0 warnings; Release clean.
+
+**Gate (the user, two devices):** set your status to Do Not Disturb; call yourself from the iPad → the iPad says "Shem has Do Not Disturb on" within a couple of seconds and stops; your Calls tab shows "Silenced · Do Not Disturb"; call again within 3 minutes → your phone rings.
+
+**Record:** `## LIME-128`. **Commit:** `feat: calls respect Do Not Disturb and work hours openly (the caller is told, silenced calls are labelled, a repeated call within 3 minutes rings)`, trailer `Brief: LIME-128`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ### LIME-122b → `tend` (lime-aa) (**PARKED, LATER** (the user, 2026-10-11): not in the active queue; re-plan it together with the KakaoTalk-style hero and the classroom themes when picked up): upload your own profile background photo (student-privacy check, follows the photo visibility)
 **When this is picked up, it must first add the hero** (the background filling the top with a scrim, the avatar bottom-left, the name over it; the 6 classroom themes or an avatar-colour gradient; the `profiles.profile_theme` column), which was cut from 122a. B1–B4 (2026-10-11) still stand.
