@@ -14,6 +14,13 @@ enum CallPhase: Equatable, Sendable {
     case active
 }
 
+/// Settings → Privacy → "Always relay calls" (LIME-119): off unless chosen; kept on this phone.
+enum CallPrivacy {
+    static let alwaysRelayKey = "lime.alwaysRelayCalls"
+    static var alwaysRelay: Bool { UserDefaults.standard.bool(forKey: alwaysRelayKey) }
+    static let relayUnavailable = "Can\u{2019}t reach lime\u{2019}s relay. Turn off Always relay calls to call directly."
+}
+
 /// What the call needs from the rest of the app: Lime's encrypted channel to the other phone, and the relay's credentials.
 @MainActor
 protocol CallSignalling: AnyObject {
@@ -67,6 +74,13 @@ final class CallManager {
     private(set) var remoteCameraOn = true
     /// Another app has my camera (an iPad window): my picture is paused.
     private(set) var cameraPaused = false
+    /// The four emoji both people compare once the call is up (empty before that).
+    private(set) var verificationEmoji: [CallEmoji] = []
+    /// Something to tell the person after the call screen has gone (shown by the app).
+    var notice: String?
+    /// Always relay calls: asked when each call starts.
+    @ObservationIgnored var alwaysRelay: () -> Bool = { false }
+    @ObservationIgnored private var localFingerprint: String?
     /// The other person's picture is there to show (a frame arrived and their camera is on).
     var remoteVideoShowing: Bool { remoteVideoLive && remoteCameraOn }
     /// The DTLS fingerprint of the other phone's media key, from the signed offer/answer: a mid-call SDP must carry the same one.
@@ -192,9 +206,18 @@ final class CallManager {
             let servers = await signalling.iceServers()
             guard callID == id else { return false }
             diag.log("ice servers: \(servers.count) (relay credentials \(servers.contains { $0.username != nil } ? "present" : "missing"))")
-            try media.start(servers: servers, video: video)
+            let relay = alwaysRelay()
+            if relay && !servers.contains(where: { $0.username != nil }) {
+                // No relay credentials: say so; never fall back to a direct call the person asked not to make.
+                diag.log("always relay: no relay credentials")
+                notice = CallPrivacy.relayUnavailable
+                finish(.failed, notify: true)
+                return false
+            }
+            try media.start(servers: servers, video: video, relayOnly: relay)
             let sdp = try await media.makeOffer()
             guard callID == id else { return false }
+            localFingerprint = Self.fingerprint(in: sdp)
             descriptionSent = true // from here on a candidate is late: it is not in this SDP
             let began = Date()
             let sent = await signalling.send(peer: peerID, op: "call.offer", payload: ["call_id": callID, "video": video, "sdp": sdp, "fingerprint": Self.fingerprint(in: sdp) ?? ""])
@@ -220,7 +243,7 @@ final class CallManager {
         callID = id; muted = false; speaker = video; cameraOn = true; startedAt = nil
         pendingOffer = nil; pendingCandidates = []; remoteReady = false; outbound = []; descriptionSent = false
         remoteRinging = false; showUnreachableHint = false; remoteVideoLive = false; minimized = false
-        remoteMuted = false; remoteCameraOn = true; cameraPaused = false; backgrounded = false; remoteFingerprint = nil; renegotiating = false; pictureInPictureActive = false
+        remoteMuted = false; remoteCameraOn = true; cameraPaused = false; backgrounded = false; remoteFingerprint = nil; localFingerprint = nil; verificationEmoji = []; renegotiating = false; pictureInPictureActive = false
     }
 
     private func wire(_ media: any CallMedia) {
@@ -246,6 +269,7 @@ final class CallManager {
             self.diag.log("media connection \(up ? "up" : "failed")")
             if up {
                 if self.phase != .active {
+                    self.updateVerificationEmoji()
                     self.phase = .active
                     self.startedAt = self.now()
                     self.ringTimeout?.cancel()
@@ -547,10 +571,18 @@ final class CallManager {
             let servers = await signalling.iceServers()
             guard callID == id else { return }
             diag.log("ice servers: \(servers.count) (relay credentials \(servers.contains { $0.username != nil } ? "present" : "missing"))")
-            try media.start(servers: servers, video: video)
+            let relay = alwaysRelay()
+            if relay && !servers.contains(where: { $0.username != nil }) {
+                diag.log("always relay: no relay credentials")
+                notice = CallPrivacy.relayUnavailable
+                await end(reason: .failed)
+                return
+            }
+            try media.start(servers: servers, video: video, relayOnly: relay)
             remoteFingerprint = Self.fingerprint(in: offer)
             let answer = try await media.accept(offer: offer)
             guard callID == id else { return }
+            localFingerprint = Self.fingerprint(in: answer)
             descriptionSent = true
             remoteReady = true
             pendingOffer = nil
@@ -609,6 +641,13 @@ final class CallManager {
         cameraOn.toggle()
         media?.setVideo(cameraOn && !cameraHeld)
         sendState()
+    }
+
+    /// The four emoji from this call's two media keys (core `call_emoji`): the caller's key is the one in the offer, the callee's the one
+    /// in the answer. The same stored fingerprints the mid-call key check uses.
+    private func updateVerificationEmoji() {
+        guard let local = localFingerprint, let remote = remoteFingerprint else { verificationEmoji = []; return }
+        verificationEmoji = callEmoji(callId: callID, fpCaller: outgoing ? local : remote, fpCallee: outgoing ? remote : local)
     }
 
     // MARK: Minimising (LIME-118c)
@@ -816,6 +855,7 @@ extension CallManager {
         peerID = "sam"; peerName = "Sam Rivera"; self.video = video; outgoing = true
         self.phase = phase; startedAt = Date().addingTimeInterval(-42); remoteVideoLive = false
         self.remoteMuted = remoteMuted; remoteCameraOn = !remoteCameraOff
+        verificationEmoji = callEmoji(callId: "demo-call", fpCaller: "AB:CD:EF:01:23:45:67:89", fpCallee: "01:23:45:67:89:AB:CD:EF")
         isDemoCall = true
     }
 }

@@ -140,6 +140,7 @@ struct PrivacyScreen: View {
     @State private var blockedCount: Int?
     @State private var confirmClearCalls = false
     @AppStorage(LinkPreviewSetting.key) private var linkPreviews = true
+    @AppStorage(CallPrivacy.alwaysRelayKey) private var alwaysRelay = false
 
     var body: some View {
         SettingsPage(title: "Privacy") {
@@ -155,6 +156,15 @@ struct PrivacyScreen: View {
                 .padding(.horizontal, 18).frame(minHeight: 58)
                 .accessibilityIdentifier("privacy-link-previews")
             }
+            SettingsCard {
+                Toggle(isOn: $alwaysRelay) {
+                    Text("Always relay calls").font(Theme.body).foregroundStyle(Theme.text)
+                }
+                .tint(Theme.accent)
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                .accessibilityIdentifier("privacy-always-relay")
+            }
+            SettingsFootnote(text: "Hides your IP address from the person you\u{2019}re calling. Calls may be a little slower.")
             SettingsCard {
                 Button { confirmClearCalls = true } label: {
                     SettingsRowLabel(symbol: "phone.badge.minus", title: "Clear call history", showsDivider: false)

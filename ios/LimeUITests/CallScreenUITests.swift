@@ -151,4 +151,29 @@ final class CallScreenUITests: XCTestCase {
         bar.tap()
         XCTAssertTrue(voice.buttons["call-end"].waitForExistence(timeout: 5), "back on the full call screen")
     }
+
+    // MARK: LIME-119
+
+    func testTheEmojiChipShowsFourEmojiAndOpensTheExplanation() {
+        let call = app("video")
+        let chip = any(call, "call-emoji")
+        XCTAssertTrue(chip.waitForExistence(timeout: 10))
+        XCTAssertTrue(chip.label.hasPrefix("Encrypted call. Emoji: "), chip.label)
+        XCTAssertEqual(chip.label.dropFirst("Encrypted call. Emoji: ".count).split(separator: ",").count, 4, "four names for VoiceOver: \(chip.label)")
+        XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "a big enough target")
+        chip.tap()
+        XCTAssertTrue(any(call, "call-emoji-sheet").waitForExistence(timeout: 5))
+        XCTAssertTrue(any(call, "call-emoji-explanation").label.contains("same 4 emoji"))
+        XCTAssertTrue(any(call, "call-emoji-explanation").label.contains("end-to-end encrypted"))
+        XCTAssertTrue(any(call, "call-emoji-large").label.hasPrefix("Emoji: "))
+    }
+
+    func testTheEmojiChipFitsBesideTheTimerAndMutedBadgeOnEveryScreen() {
+        let call = app("voice", ["-lime-demo-call-remote-muted"])
+        XCTAssertTrue(any(call, "call-emoji").waitForExistence(timeout: 10))
+        let width = call.windows.firstMatch.frame.width
+        let chip = any(call, "call-emoji").frame, badge = any(call, "call-remote-muted").frame, status = any(call, "call-status").frame
+        XCTAssertFalse(chip.intersects(badge) || chip.intersects(status), "chip \(chip) badge \(badge) status \(status)")
+        XCTAssertLessThanOrEqual(badge.maxX, width - 16, "nothing runs off the right edge")
+    }
 }

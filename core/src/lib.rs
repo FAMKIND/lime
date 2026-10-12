@@ -6,6 +6,7 @@
 //! The public FFI surface is [`core_version`], [`encryption_self_test`] and the encrypted
 //! local store [`LimeStore`] (LIME-90). No secret material crosses the FFI or is logged.
 
+mod call_emoji;
 mod client;
 mod format;
 mod keys;
@@ -19,6 +20,7 @@ mod client_tests;
 #[cfg(test)]
 mod testing;
 
+pub use call_emoji::{call_emoji, CallEmoji};
 pub use format::{Block, ListItem, Span};
 pub use client::groups::{GroupDetails, GroupMemberInfo};
 pub use client::attachments::{OutgoingAttachment, TransferProgress};

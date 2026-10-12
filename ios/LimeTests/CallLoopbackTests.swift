@@ -29,7 +29,7 @@ private final class PairMedia: CallMedia {
     var candidates: [String] = []
     var connectsWhenReady = true
 
-    func start(servers: [IceServer], video: Bool) throws { hasLocalVideo = video }
+    func start(servers: [IceServer], video: Bool, relayOnly: Bool) throws { hasLocalVideo = video }
     func makeOffer() async throws -> String { describe(fingerprint) }
     func accept(offer: String) async throws -> String { haveRemote = true; return describe(fingerprint) }
     func apply(answer: String) async throws { haveRemote = true; maybeConnect() }
@@ -149,6 +149,15 @@ final class CallLoopbackTests: XCTestCase {
         XCTAssertTrue(b.remoteMuted)
         await a.end()
         await wait { a.phase == .idle && b.phase == .idle }
+    }
+
+    func testBothPhonesShowTheSameFourEmoji() async {
+        mediaB.fingerprint = "CC:DD"
+        let (a, b) = pair()
+        await connect(a, b)
+        XCTAssertEqual(a.verificationEmoji.count, 4)
+        XCTAssertEqual(a.verificationEmoji, b.verificationEmoji, "caller and callee compute the same four")
+        XCTAssertEqual(a.verificationEmoji, callEmoji(callId: a.currentID, fpCaller: "AA:BB", fpCallee: "CC:DD"))
     }
 
     func testAThirtyCandidateCallIsOnlyAFewOps() async {

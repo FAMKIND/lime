@@ -33,6 +33,7 @@ struct CallView: View {
     @State private var controlsVisible = true
     @State private var fadeTask: Task<Void, Never>?
     @State private var showPerson = false
+    @State private var showEmoji = false
 
     private let tile = CGSize(width: 108, height: 148)
 
@@ -90,6 +91,7 @@ struct CallView: View {
             .onChange(of: call.video) { _, _ in preparePictureInPicture(call) }
         }
         .sheet(isPresented: $showPerson) { personSheet(call) }
+        .sheet(isPresented: $showEmoji) { emojiSheet(call) }
         .preferredColorScheme(.dark)
     }
 
@@ -203,6 +205,22 @@ struct CallView: View {
                         .font(.subheadline).foregroundStyle(.white.opacity(0.85))
                         .accessibilityIdentifier("call-status")
                 }
+                if !call.verificationEmoji.isEmpty && call.phase == .active {
+                    Button { showEmoji = true } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "lock.fill").font(.caption2)
+                            // The same order, left to right, for both people (so they compare the same way), whatever the language.
+                            HStack(spacing: 2) { ForEach(Array(call.verificationEmoji.enumerated()), id: \.offset) { Text($1.emoji).font(.callout) } }
+                                .environment(\.layoutDirection, .leftToRight)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Encrypted call. Emoji: \(call.verificationEmoji.map(\.name).joined(separator: ", "))")
+                    .accessibilityHint("Opens how to check it")
+                    .accessibilityIdentifier("call-emoji")
+                }
                 if call.remoteMuted && call.phase == .active {
                     Label("Muted", systemImage: "mic.slash.fill").labelStyle(.titleAndIcon)
                         .font(.caption.weight(.semibold)).foregroundStyle(.white)
@@ -221,6 +239,29 @@ struct CallView: View {
                     .accessibilityIdentifier("call-camera-paused")
             }
         }
+    }
+
+    private func emojiSheet(_ call: CallManager) -> some View {
+        VStack(spacing: 18) {
+            Image(systemName: "lock.fill").font(.title2).foregroundStyle(.white.opacity(0.8)).padding(.top, 28).accessibilityHidden(true)
+            HStack(spacing: 14) {
+                ForEach(Array(call.verificationEmoji.enumerated()), id: \.offset) { Text($1.emoji).font(.system(size: 52)) }
+            }
+            .environment(\.layoutDirection, .leftToRight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Emoji: \(call.verificationEmoji.map(\.name).joined(separator: ", "))")
+            .accessibilityIdentifier("call-emoji-large")
+            Text("If you both see these same 4 emoji, in this order, your call is end-to-end encrypted and no one is in between. Read them to each other.")
+                .font(.body).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.9))
+                .accessibilityIdentifier("call-emoji-explanation")
+            Text("They belong to this call only. They are different from Verify in person, which checks a person\u{2019}s account.")
+                .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.6))
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .presentationDetents([.height(380)])
+        // (An identifier on the container would replace the children's own.)
+        .background(Color.clear.accessibilityIdentifier("call-emoji-sheet"))
     }
 
     private func personSheet(_ call: CallManager) -> some View {

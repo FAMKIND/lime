@@ -16,6 +16,9 @@ struct RootView: View {
                 SignedInView()
             }
         }
+        .alert("Call", isPresented: Binding(get: { store.calls.notice != nil }, set: { if !$0 { store.calls.notice = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(store.calls.notice ?? "") }
         .overlay(alignment: .top) { ComingSoonBanner() }
         .overlay(alignment: .top) { IncomingBannerView() }
         .fullScreenCover(isPresented: Binding(get: { store.calls.inCall && !store.calls.minimized }, set: { _ in })) { CallView() }

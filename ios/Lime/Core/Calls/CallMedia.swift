@@ -30,7 +30,8 @@ protocol CallMedia: AnyObject {
     /// Whether a camera track is already part of the call.
     var hasLocalVideo: Bool { get }
 
-    func start(servers: [IceServer], video: Bool) throws
+    /// `relayOnly`: gather and send only relay candidates (Always relay calls), so the other phone never sees my address.
+    func start(servers: [IceServer], video: Bool, relayOnly: Bool) throws
     /// Sends a message on the control channel; `false` when it is not open.
     func sendControl(_ json: String) -> Bool
     /// Adds my camera to a call that has none (a voice call turning into video, or turning my camera on after the other side's).
@@ -106,7 +107,7 @@ final class WebRTCMedia: NSObject, CallMedia {
         rtc.audioSessionDidDeactivate(session)
     }
 
-    func start(servers: [IceServer], video: Bool) throws {
+    func start(servers: [IceServer], video: Bool, relayOnly: Bool) throws {
         let rtc = RTCAudioSession.sharedInstance()
         rtc.useManualAudio = manualAudio
         if !manualAudio { rtc.isAudioEnabled = true }
@@ -118,6 +119,7 @@ final class WebRTCMedia: NSObject, CallMedia {
         configuration.bundlePolicy = .maxBundle
         configuration.rtcpMuxPolicy = .require
         configuration.tcpCandidatePolicy = .disabled
+        configuration.iceTransportPolicy = relayOnly ? .relay : .all
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: ["DtlsSrtpKeyAgreement": "true"])
         guard let connection = Self.factory.peerConnection(with: configuration, constraints: constraints, delegate: self) else { throw CallMediaError.failed }
         self.connection = connection

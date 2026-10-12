@@ -5,9 +5,10 @@ import XCTest
 @MainActor
 private final class FakeSignalling: CallSignalling {
     var sent: [(peer: String, op: String)] = []
+    var servers: [IceServer] = []
     var payloads: [[String: Any]] = []
     func send(peer: String, op: String, payload: [String: Any]) async -> Bool { sent.append((peer, op)); payloads.append(payload); return true }
-    func iceServers() async -> [IceServer] { [] }
+    func iceServers() async -> [IceServer] { servers }
 }
 
 @MainActor
@@ -52,7 +53,8 @@ private final class FakeMedia: CallMedia {
     }
     func addLocalVideo() throws { hasLocalVideo = true }
     func renegotiationOffer() async throws -> String { "v=0\r\na=fingerprint:sha-256 AA:BB\r\n" }
-    func start(servers: [IceServer], video: Bool) throws { hasLocalVideo = video }
+    var relayOnly: Bool?
+    func start(servers: [IceServer], video: Bool, relayOnly: Bool) throws { hasLocalVideo = video; self.relayOnly = relayOnly }
     func makeOffer() async throws -> String { "v=0\r\na=fingerprint:sha-256 AA:BB\r\n" }
     func accept(offer: String) async throws -> String { "v=0\r\na=fingerprint:sha-256 CC:DD\r\n" }
     func apply(answer: String) async throws {}
@@ -103,6 +105,7 @@ final class CallTests: XCTestCase {
     private var log = CallLog(defaults: UserDefaults(suiteName: "lime.test.calls.\(UUID().uuidString)")!)
     private var quiet = false
     private var quietWhy: CallQuietReason = .dnd
+    private var relay = false
     private var clock = Date(timeIntervalSince1970: 1_000_000)
 
     private func manager() -> CallManager {
@@ -110,6 +113,7 @@ final class CallTests: XCTestCase {
                             quietReason: { [unowned self] in quiet ? quietWhy : nil }, makeMedia: { [unowned self] in media })
         m.ringSeconds = 0.2
         m.unavailableSeconds = 0.05
+        m.alwaysRelay = { [unowned self] in relay }
         return m
     }
 
@@ -637,5 +641,59 @@ final class CallTests: XCTestCase {
         NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
         XCTAssertTrue(media.videoEnabled)
         XCTAssertEqual(media.sentControl.last?["camera"] as? Bool, true)
+    }
+
+    // MARK: LIME-119: Always relay calls and the verification emoji
+
+    private let relayServer = IceServer(urls: ["turn:turn.example.org:3478"], username: "u", credential: "c")
+
+    func testAlwaysRelayMakesTheCallRelayOnlyAndOffLeavesItDirect() async {
+        signalling.servers = [relayServer]
+        relay = true
+        let m = manager()
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        XCTAssertEqual(media.relayOnly, true, "only relay candidates are gathered and sent")
+        XCTAssertEqual(signalling.sent.map(\.op), ["call.offer"])
+        await m.end()
+
+        relay = false
+        media.relayOnly = nil
+        _ = await m.start(peerID: "jean", name: "Jean", video: false)
+        XCTAssertEqual(media.relayOnly, false)
+    }
+
+    func testTheCalleeAppliesItsOwnRelaySettingNotTheCallers() async {
+        signalling.servers = [relayServer]
+        relay = true   // mine; the caller's setting is its own
+        let m = manager()
+        await m.handle(event("call.offer", payload: ["sdp": "v=0\r\na=fingerprint:sha-256 AA:BB\r\n"]))
+        await m.accept()
+        XCTAssertEqual(media.relayOnly, true)
+    }
+
+    func testAlwaysRelayWithNoRelayCredentialsFailsClearlyAndNeverCallsDirectly() async {
+        signalling.servers = [IceServer(urls: ["stun:turn.example.org:3478"], username: nil, credential: nil)]   // what the app falls back to
+        relay = true
+        let m = manager()
+        let started = await m.start(peerID: "jean", name: "Jean", video: false)
+        XCTAssertFalse(started)
+        XCTAssertEqual(m.phase, .idle)
+        XCTAssertEqual(m.notice, "Can\u{2019}t reach lime\u{2019}s relay. Turn off Always relay calls to call directly.")
+        XCTAssertTrue(signalling.sent.isEmpty, "no offer, so no address is revealed")
+        XCTAssertNil(media.relayOnly, "no direct attempt either")
+        XCTAssertEqual(log.records.first?.outcome, .failed)
+    }
+
+    func testTheEmojiAppearOnceConnectedAndAreTheSameForBothSidesInputs() async {
+        let m = await connectedCall()
+        XCTAssertEqual(m.verificationEmoji.count, 4)
+        // The caller's key (AA:BB, in the offer) and the callee's (CC:DD, in the answer): the same four the core gives for them.
+        let expected = callEmoji(callId: m.currentID, fpCaller: "AA:BB", fpCallee: "CC:DD")
+        XCTAssertEqual(m.verificationEmoji, expected)
+        XCTAssertNotEqual(m.verificationEmoji, callEmoji(callId: m.currentID, fpCaller: "AA:BB", fpCallee: "EE:FF"), "another key, other emoji")
+        // A voice -> video renegotiation keeps the same key, so the emoji do not change.
+        let before = m.verificationEmoji
+        await m.startVideo()
+        XCTAssertEqual(m.verificationEmoji, before)
     }
 }
