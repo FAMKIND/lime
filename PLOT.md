@@ -126,6 +126,15 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e56. **118c gate PASSED (the user, 2026-10-12: "works, moving on"):** system PiP starts with lime in front, so no custom tile is needed. **LIME-119 reconciled** (use 118b's stored fingerprints; the chip after the timer; Privacy settings exist; distinct from Verify in person; accessibility/RTL). **119 is NEXT.**
+1e55. **LIME-118c LANDED as `a23e463` (pushed, 2026-10-12; PLOT.md `1547e94`).** Waiting on the user's two-device gate. **If PiP doesn't start with lime in front → plot drafts the custom floating tile (LIME-118d).** Next after the gate: **LIME-119** (re-survey before sending).
+1e54. **LIME-118c in progress (2026-10-12):**
+   - Minimise under Mute starts system PiP in the foreground; leaving lime starts it too.
+   - Voice: a top-right glass circle → the slim return bar (no window).
+   - **Tend's deviation:** in landscape the video controls run along the bottom (the 5-button column was taller than 375 pt).
+   - Own camera pauses in the background (entitlement noted in the release checklist).
+   - **PiP not tested on a real call.** If it can't start in the foreground, Minimise falls back to the slim bar and **the custom tile would be a follow-up brief** (not built).
+1e53. **LIME-131 started (a visual QA batch; the user adds "future updates" items here):** item 1 = reactions under MY messages align to the bottom-left of their own bubble (caption/text), not the wider media group; others' side unchanged. Sent when it's worth a run (after the call series, or sooner if the user asks).
 1e52. **118c → APPLE'S FACETIME PATTERN (the user, 2026-10-12):** minimise a video call = **iOS system Picture in Picture**, started from lime in the foreground and kept when leaving (stash/resize/drag/tap like FaceTime over Messages); a voice call = the system green pill / Dynamic Island (a slim lime bar only if the pill isn't shown in the foreground). The custom in-app tile is the fallback only if PiP can't start in the foreground.
 1e51. **118b gate passed (the user, 2026-10-12: "all looks good, moving on")**, but **no "logs" were sent**, so the jitter-buffer fix is unverified by numbers; ask for logs if audio ever lags. **LIME-118c reconciled** (Minimise under Mute in the video column; top right on voice; the tile replaces the return bar; keep the 118b/128 paths). **118c is NEXT.**
 1e50. **LIME-118b LANDED as `f854ded` (pushed, 2026-10-12; PLOT.md `5bb2e46`).**
@@ -3395,7 +3404,14 @@ From the published designs and source as plot knows them; not re-verified on the
 7. **Element Call** (LiveKit + per-sender keys over to-device) confirms 112b; its known weak spot is the black video until keys arrive, which 112b covers ("Connecting securely…").
 8. **Avoid:** RingRTC (AGPL, unsupported outside Signal); MTProto-style custom crypto.
 
-### LIME-119 → `tend` (lime-aa) (after LIME-118): emoji call verification + "Always relay calls"
+### LIME-119 → `tend` (lime-aa) (NEXT; **reconciled with the code on 2026-10-12**): emoji call verification + "Always relay calls"
+**Reconciled 2026-10-12 (after 118b/118c/128):**
+- **Fingerprints:** 118b already **remembers the remote DTLS fingerprint** from the signed offer/answer (for the mid-call key check). Use that same stored value (and the local one) for `call_emoji`, so the emoji, the renegotiation check and the signed SDP all agree. **A renegotiation (voice → video) keeps the same fingerprint, so the emoji don't change mid-call;** if one ever did differ, 118b already ends the call.
+- **Placement on the call screen:** the header now holds the name pill, the status/timer line, the **"Muted" badge** (118b) and the **unavailable note** (128). Put the lock + 4 emoji chip **on the status line's row, after the timer**, compact; in **landscape** (118c moved the video controls to the bottom) check it doesn't collide. The chip is **not** shown in the PiP window (system-drawn).
+- **Settings → Privacy** exists (`AccountScreens.swift`: Blocked, Safety Numbers); add **"Always relay calls"** there with the footer as written.
+- **"Verify in person" (QR) is a different thing** (it verifies a person's account key); the call emoji verify **this call's** media keys. Keep both; the emoji sheet's text says "this call".
+- **Standing rules:** accessibility (VoiceOver reads the emoji's names, e.g. "Encrypted call. Emoji: fox, cactus, balloon, lemon"; the chip ≥ 44 pt tall as a target; not colour-only) and leading/trailing (RTL: the emoji keep the same order for both people, so they compare left to right on both phones and say so).
+
 **Goal:** both people on a 1:1 call can confirm by eye that the call is end-to-end encrypted with nobody in between (4 matching emoji), and anyone can choose to hide their IP address from the other person by always relaying.
 
 **Capabilities assumed:** edit files, run commands, simulators, commit and push.
@@ -4463,6 +4479,15 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Legal note for the lawyer (worldwide launch):** the **European Accessibility Act** (in force since June 2025) covers electronic communications services and their apps in the EU, and the ADA applies in the US. Add accessibility to the GDPR/compliance pack review.
 
 **Record:** `## LIME-130`. **Commit:** `feat(ios): accessibility audit fixes (VoiceOver, Dynamic Type, contrast, motion, transparency, voice transcripts)`, trailer `Brief: LIME-130`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-131 → `tend` (lime-aa) (a visual QA batch: collect items here; send after the call series or when it's worth a run; visual only: no new tests)
+**Items so far:**
+1. **Reactions under MY messages sit at the bottom-left edge of the bubble they belong to** (the user, 2026-10-12, a screenshot of a group chat: four photos "+7" with the caption "Autumn adventured", reactions ❤️ 😮). Today the reaction chips on a right-side (own) message start at the **message group's** leading edge, the left edge of the wider photo grid (107-qa's rule "chips start at the group's leading edge"), so under a narrower caption bubble they float left of it. **Change for own messages only:** the chips start at the **leading (left) edge of the last bubble in the message** (the caption/text bubble, or the media grid if there's no caption), aligned to its bottom-left corner, just under it; the time stays at the trailing edge. **Others' (left-side) messages are fine; leave them.** RTL: the rule mirrors (leading/trailing, never left/right).
+
+2. **A recognisable speaker control on video calls** (the user, 2026-10-12: "during a video call I couldn't find a button to turn on speakerphone"). Today the video column's audio control (`CallView.routeButton`, ~line 266) is the **system `RoutePicker` with the AirPlay-style glyph**; video calls already default to the speaker (`speaker = video`, `.defaultToSpeaker`). **Change it to FaceTime's pattern:** the button shows a **speaker glyph** (`speaker.wave.2.fill` when the speaker is on, `speaker.fill` when it's the earpiece; a headphones/AirPods glyph when a Bluetooth route is active). **No Bluetooth route available:** tapping **toggles speaker ↔ earpiece** (`toggleSpeaker`). **Bluetooth available:** tapping opens the system route picker (iPhone · Speaker · the headphones), as today. The VoiceOver label stays "Audio output, now <route>". Voice calls keep their separate Speaker toggle and route button. (Small behaviour: add a unit test for the toggle-vs-picker decision.)
+
+**Phase 0:** `git add PLOT.md` only, then commit; re-read PLOT.md. **Verification:** build; 0 warnings; Release clean; fix only existing tests that break (the 107-qa footer-alignment test will need its expectation updated for own messages); screenshots in TEND.md (media + caption, text only, a file + caption; light/dark); the accessibility standing rule. **Gate:** under your own message with photos and a caption, the reactions sit at the caption bubble's bottom-left corner.
+**Record:** `## LIME-131`. **Commit:** `fix(ios): visual QA batch (own-message reactions align to their bubble, …)`, trailer `Brief: LIME-131`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
 ### LIME-122b → `tend` (lime-aa) (**PARKED, LATER** (the user, 2026-10-11): not in the active queue; re-plan it together with the KakaoTalk-style hero and the classroom themes when picked up): upload your own profile background photo (student-privacy check, follows the photo visibility)
 **When this is picked up, it must first add the hero** (the background filling the top with a scrim, the avatar bottom-left, the name over it; the 6 classroom themes or an avatar-colour gradient; the `profiles.profile_theme` column), which was cut from 122a. B1–B4 (2026-10-11) still stand.
