@@ -126,6 +126,8 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e65. **134 gate PASSED (the user, 2026-10-13: "all clear, minor glitches").** → **LIME-135 (drafted, NEXT before 132):** the PiP is black when their camera is off (should be their photo); the minimise/Stage Manager transitions sometimes flip or snap. **Screen sharing (asked):** answered as research only. iOS = a ReplayKit Broadcast Upload Extension (a separate process, ~50 MB memory cap, frames to the app via an app group; FaceTime's SharePlay screen share isn't open to other apps); Android = MediaProjection + a foreground service. LiveKit (112b) supports both. Estimated about 2 tend runs on iOS after 112b. It may need the paid Apple account (app groups/extension; not verified). It needs a privacy step for teachers (a warning that notifications and student info can show). **Already planned in v3 / PD sessions; plot's lean: after 112b + 117, before the PD-session work.** **Queue: 135 → 132 → 112b → 117 → 133 → 113 → 130 → …**
+1e64. **LIME-134 LANDED as `b389ef1` (pushed, 2026-10-12; PLOT.md `8ff0683`).** Cause: the `LazyVStack` + `.defaultScrollAnchor(.bottom)` opened on unlaid rows (reproduced on the SE); fix = an eager `VStack` up to 150 rows plus a settle `scrollTo("bottom")` at 0/120/350 ms; the video layers are a full-screen overlay, the controls stay in the safe area. `ChatOpensUITests` passes on the 13 mini + SE. **Gap: the TEND.md record and the commit don't state the full suite, 0 warnings or Release clean**; ask tend at the start of the next run. **Residual risk: chats over 150 rows are still lazy.** Waiting on the user's gate (ten *opens*, not ten different chats: reopen the same real chats, one right after a call, the iPad window, the longest real chat). The stray `public/assets/Logomark-outline.svg` + `signin-teachers.mp4` (untracked since 2026-09-30) stayed out of the commit; the user decides. **Next: LIME-132** (re-survey first).
 1e63. **120 gate (the user, 2026-10-12): video and sound smooth** (the 118b audio-sync fix holds in practice; no "logs" sent). **Two bugs → LIME-134 (drafted, NEXT before 132):** chats sometimes open blank until scrolled (an older, intermittent bug; phone + iPad window); the video doesn't fill the screen at the bottom (likely 116f's safe-area pin). **LIME-131 gets item 3:** the call bubble's detail wraps mid-phrase. **Queue: 134 → 132 → 112b → 117 → 133 → 113 → 130 → …**
 1e62. **LIME-120 DEPLOYED to staging (2026-10-12, 20:45):**
    - Migration `20261012100000_claim_for_devices.sql`, then all 29 functions; no login or secret needed (CLI already logged in; `~/.lime/staging.env`).
@@ -423,6 +425,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 - Green = only the primary action; no dividers/arrows on lists (Settings keeps its chevrons).
 - The QA intake: small items go into the next QA brief; features get their own brief.
 - Tend is the session **lime-aa**; relay prompts there.
+- **Tend's handoff label is "For plot:"** (the user, 2026-10-12). Tend had been heading its end-of-run report "For tend:", but that report goes to plot (the user pastes it here). Every brief's Record step says: "end with a paragraph headed **For plot:** (what landed, the commit, the gate, what wasn't exercised)".
 
 ### Gather
 **Tend: commit this file as written; do not edit it** (it happens as Phase 0 of the next brief).
@@ -4556,6 +4559,52 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Phase 0:** `git add PLOT.md` only, then commit; re-read PLOT.md. ~60 min. **Verification:** the Bug 1 test; build; 0 warnings; Release clean; the full suite on the 13 mini. **Gate (the user):** open ten chats in a row (incl. right after a call and on the iPad window): none is blank; a video call fills the screen to the bottom edge in portrait and landscape.
 **Record:** `## LIME-134`. **Commit:** `fix(ios): chats never open blank; video calls fill the screen edge to edge`, trailer `Brief: LIME-134`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-135 → `tend` (lime-aa) (NEXT, before 132; drafted 2026-10-13): the minimised video call shows their photo when the camera is off, and its transitions are smooth
+**Goal:** a minimised video call (system PiP) never shows a black window, and minimising/restoring/resizing it (also in an iPad Stage Manager window) is one continuous motion, with no flip, jump or resize snap.
+
+**The user (2026-10-13, after the 134 gate passed, "all clear"):** (1) "when your camera is off and someone minimised your screen to chat, the screen is black; it should be their profile photo." (2) "the transitions were a little choppy, e.g. the thumbnail sometimes flipped horizontally when minimising to the chat, or in Stage Manager; under a second, but I'm really particular about this being smooth, lightning fast and trusted."
+
+**Plot's survey (`ios/Lime/Core/Calls/CallPiP.swift`, `CallManager.swift`, `CallView.swift`):**
+- The PiP window's content is `AVPictureInPictureVideoCallViewController` → `PiPDisplayView` (an `AVSampleBufferDisplayLayer`, **`backgroundColor = .black`**), fed only remote frames. Nothing there reads `CallManager.remoteCameraOn`; the full-screen `CallView` already swaps to `AvatarView` when `!remoteVideoShowing` (lines ~116–146), the PiP doesn't. A disabled WebRTC track sends black frames or none, so the window is black.
+- The content controller is any `UIView`, so an avatar can sit over the layer (e.g. `AvatarView` in a `UIHostingController`, or a plain image view).
+- **Likely transition causes (unproven; plot couldn't see it):**
+  - `preferredContentSize` starts at a fixed **480×640** and only changes after a frame arrives, so the window opens at one aspect and snaps;
+  - the rotation reaches `PiPDisplayView` through an async `Task { @MainActor }` hop **after** frames are already enqueued, so the first frames can draw unrotated;
+  - the source view (the full-screen picture, aspect-fill) and the PiP layer (`.resizeAspect`) differ, so the system's zoom animation has to jump between them;
+  - nothing mirrors frames, so a true horizontal flip would come from the 90/270 rotation landing late, or from the source view's snapshot. **Phase 1 must find which.**
+
+**Scope:** `CallPiP.swift`, the PiP wiring in `CallManager.swift`, and `CallView.swift` only if the source view's gravity or frame is the cause. **Not:** the call signalling, `lime-ctl`, the call screen's layout (116f/134), the voice-call slim bar, screen sharing (not built; see 1e65).
+
+**Phase 0:** `git add PLOT.md` only, commit; re-read PLOT.md. Also report: **did LIME-134's full suite pass, with 0 warnings and Release clean?** (Not stated in its record.)
+
+**Phase 1 (diagnose; report before fixing):** for each cause above, say whether it's real (logs or simulator recordings of the PiP start/stop with the demo call; `xcrun simctl io booted recordVideo`, then step through the frames). Say what you could not reproduce without two real phones.
+
+**Phase 2 (fix):**
+1. **Camera off → their photo.** When `remoteCameraOn == false` (or no remote frame has arrived yet, or none for ~1 s), the PiP shows the same avatar as the call screen (their photo, or initials on their tone), centred on the call screen's background colour, **never black**. Cross-fade in and out (~0.2 s; instant under Reduce Motion). Flush the layer when the camera goes off so a frozen last frame doesn't show. VoiceOver: the window's content reads "<name>, camera off".
+2. **Smooth transitions.**
+   - Before starting PiP, set `preferredContentSize` and the layer's rotation **synchronously** from the last known remote frame size/rotation (keep them on the main actor before `startPictureInPicture()`), with no 480×640 placeholder once a frame is known;
+   - apply rotation changes in the same layout pass as the frame (no late hop);
+   - match the source view's content to what the PiP shows (same gravity and aspect) so the system's animation has nothing to jump between;
+   - restoring returns to the full call screen with no flash, black frame or re-layout.
+   - Kept: PiP starting with lime in front and when leaving (118c), tap to return, the system close button, Minimise under Mute.
+3. Log `pip content size`, `pip rotation applied`, `pip avatar shown/hidden` in Call diagnostics (no names or IPs).
+
+**Core-first:** nothing here is logic for Android (pure Apple PiP adapter); no Android debt.
+
+**Accessibility:** the avatar state has its VoiceOver label; Reduce Motion = no cross-fade; no colour-only state.
+
+**Kind:** visual + one behaviour. Add **one unit test** (camera off → the PiP content shows the avatar; on → video) using the fake PiP/`demo(remoteCameraOff:)`; **no new UI tests for the motion** (the visual rule).
+
+**Verification:** the unit test; build; 0 warnings; Release clean; the full suite on the 13 mini; simulator recordings of minimise → restore, and the camera-off avatar, described in TEND.md.
+
+**Gate (the user, two phones + iPad):**
+1. Jean turns her camera off, you minimise → her photo, not black.
+2. Minimise and restore 5 times, portrait and landscape: no flip, jump or snap.
+3. The same in an iPad Stage Manager window, also resizing the window.
+4. If anything still flips, send a screen recording (Control Center → Screen Recording).
+
+**Record:** `## LIME-135` in TEND.md, ending with a paragraph headed **For plot:** (what landed, the commit, the gate, what wasn't exercised). **Commit:** `fix(ios): minimised calls show their photo when the camera is off; smooth PiP transitions`, trailer `Brief: LIME-135`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. If Phase 1 finds a cause outside this scope, stop and ask the user.
 
 ### LIME-132 → `tend` (lime-aa) (after 134, small): keep LimeCore Android-ready from now on (a build + bindings check)
 **Goal:** every commit proves the core still builds for Android and its Kotlin bindings generate, so Android-readiness can't silently rot.
