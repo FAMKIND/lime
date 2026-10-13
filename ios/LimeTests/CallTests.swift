@@ -717,4 +717,18 @@ final class CallTests: XCTestCase {
         m.preparePictureInPicture(sourceView: UIView())
         XCTAssertTrue(late.showsAvatar || late.prepared == 0, "a new window starts on the photo")
     }
+
+    /// The window's photo is plain UIKit: the system moves it into its own window, where a SwiftUI avatar that needs the app's
+    /// environment (the status badge wants the `ConversationStore`) has none and traps (the crash minimising a video call).
+    func testThePictureInPicturePhotoIsPlainUIKitThatDrawsWithoutTheAppEnvironment() {
+        let view = PiPAvatarView(person: Person(id: "jean", name: "Jean Park"))
+        view.frame = CGRect(x: 0, y: 0, width: 160, height: 213)
+        view.layoutIfNeeded()
+        XCTAssertEqual(view.accessibilityLabel, "Jean Park, camera off")
+        XCTAssertTrue(view.isAccessibilityElement)
+        let circle = view.subviews.first
+        XCTAssertEqual(circle?.frame.width ?? 0, 80, accuracy: 0.5, "half the window, centred")
+        XCTAssertEqual(circle?.frame.midX ?? 0, 80, accuracy: 0.5)
+        XCTAssertTrue(view.subviews.first?.subviews.contains { ($0 as? UILabel)?.text == "JP" } ?? false, "their initials when there is no photo")
+    }
 }

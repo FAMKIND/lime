@@ -162,7 +162,7 @@ final class CallPictureInPicture: NSObject, CallPiP, AVPictureInPictureControlle
     private var controller: AVPictureInPictureController?
     private var renderer: PiPFrameRenderer?
     /// Their photo (or initials), over the picture, for when the camera is off or no frame is coming.
-    private var avatarHost: UIHostingController<PiPAvatar>?
+    private var avatarView: PiPAvatarView?
     private var cameraOff = false
     private var framesStopped = false
     private var avatarShown = false
@@ -248,28 +248,25 @@ final class CallPictureInPicture: NSObject, CallPiP, AVPictureInPictureControlle
     }
 
     private func installAvatar(_ person: Person) {
-        guard avatarHost == nil else { return }
-        let host = UIHostingController(rootView: PiPAvatar(person: person))
-        host.view.backgroundColor = .clear
-        host.view.frame = contentController.view.bounds
-        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        host.view.alpha = 0
-        contentController.addChild(host)
-        contentController.view.addSubview(host.view)
-        host.didMove(toParent: contentController)
-        avatarHost = host
+        guard avatarView == nil else { return }
+        let view = PiPAvatarView(person: person)
+        view.frame = contentController.view.bounds
+        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.alpha = 0
+        contentController.view.addSubview(view)
+        avatarView = view
     }
 
     /// Their photo shows while their camera is off or no frame is arriving, and the video while it is: a short cross-fade (none with
     /// Reduce Motion).
     private func refreshAvatar() {
         let show = cameraOff || framesStopped
-        guard show != avatarShown, let host = avatarHost else { return }
+        guard show != avatarShown, let view = avatarView else { return }
         avatarShown = show
         if show { renderer?.clear() }
         CallDiagnostics.shared.log("pip avatar \(show ? "shown" : "hidden")")
         let animate = !UIAccessibility.isReduceMotionEnabled
-        UIView.animate(withDuration: animate ? 0.2 : 0) { host.view.alpha = show ? 1 : 0 }
+        UIView.animate(withDuration: animate ? 0.2 : 0) { view.alpha = show ? 1 : 0 }
     }
 
     nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
@@ -292,17 +289,45 @@ final class CallPictureInPicture: NSObject, CallPiP, AVPictureInPictureControlle
 }
 
 /// What the window shows while their camera is off: their photo (or initials on their colour), centred on the call screen's dark.
-private struct PiPAvatar: View {
-    let person: Person
+/// Plain UIKit on purpose: the system moves this view into its own window, where a SwiftUI view that reads the app's environment
+/// (the status badge in `AvatarView` needs the `ConversationStore`) has none and traps ("No Observable object of type
+/// ConversationStore found": the crash LIME-135-fix found when minimising).
+final class PiPAvatarView: UIView {
+    private let circle = UIView()
+    private let photo = UIImageView()
+    private let initials = UILabel()
 
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Color(white: 0.08)
-                AvatarView(person: person, size: max(40, min(geo.size.width, geo.size.height) * 0.5))
-            }
+    @MainActor init(person: Person) {
+        super.init(frame: .zero)
+        backgroundColor = UIColor(white: 0.08, alpha: 1)
+        circle.clipsToBounds = true
+        addSubview(circle)
+        if let image = AvatarCache.shared.image(for: person.id) {
+            photo.image = image
+            photo.contentMode = .scaleAspectFill
+            circle.addSubview(photo)
+        } else {
+            circle.backgroundColor = UIColor(Theme.avatar(person.tone))
+            initials.text = person.initials
+            initials.textAlignment = .center
+            initials.textColor = UIColor(red: 0.075, green: 0.106, blue: 0.09, alpha: 1)
+            initials.adjustsFontSizeToFitWidth = true
+            initials.minimumScaleFactor = 0.6
+            circle.addSubview(initials)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(person.name), camera off")
+        isAccessibilityElement = true
+        accessibilityLabel = "\(person.name), camera off"
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let side = max(40, min(bounds.width, bounds.height) * 0.5)
+        circle.frame = CGRect(x: (bounds.width - side) / 2, y: (bounds.height - side) / 2, width: side, height: side)
+        circle.layer.cornerRadius = side / 2
+        photo.frame = circle.bounds
+        initials.frame = circle.bounds
+        initials.font = .systemFont(ofSize: side * 0.36, weight: .medium)
     }
 }
