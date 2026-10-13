@@ -47,6 +47,10 @@ Modules: `keys` (the Olm account and master key), `protocol` (the signed op and 
 
 **Transport.** The platform's network is a UniFFI callback interface, so the protocol (what to call, signing, encrypting, state) stays in Rust while Swift (`URLSession`) and later Kotlin (OkHttp) make the requests. `request(method, path, headers, body)` is blocking and returns a status and a body; a network failure is a `TransportError`. The platform adds the base URL and the public `apikey` header; the user's token is passed in by the platform per call and the core never stores passwords or tokens. See `ios/Lime/Core/Network/URLSessionTransport.swift`.
 
+## Android
+
+`./core/check-android.sh` proves the core builds for Android (arm64-v8a and x86_64 `.so`) and that its Kotlin bindings generate and compile; see [`docs/android.md`](../docs/android.md) for the plan, the tooling it needs and the rule for names exposed through UniFFI.
+
 ## Integration tests
 
 `tests/integration.rs` runs against a real Supabase stack with two throwaway accounts (created and deleted through the admin API): register both, look up by email, send, check that the server's copy is ciphertext, sync, decrypt, reply, acknowledge, send again on the established sessions, and survive a restart; plus a test that a ciphertext tampered with on the server is not stored.
