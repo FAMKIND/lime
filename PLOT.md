@@ -126,6 +126,30 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e63. **120 gate (the user, 2026-10-12): video and sound smooth** (the 118b audio-sync fix holds in practice; no "logs" sent). **Two bugs → LIME-134 (drafted, NEXT before 132):** chats sometimes open blank until scrolled (an older, intermittent bug; phone + iPad window); the video doesn't fill the screen at the bottom (likely 116f's safe-area pin). **LIME-131 gets item 3:** the call bubble's detail wraps mid-phrase. **Queue: 134 → 132 → 112b → 117 → 133 → 113 → 130 → …**
+1e62. **LIME-120 DEPLOYED to staging (2026-10-12, 20:45):**
+   - Migration `20261012100000_claim_for_devices.sql`, then all 29 functions; no login or secret needed (CLI already logged in; `~/.lime/staging.env`).
+   - The staging integration test (throwaway accounts) passed: **a warm send = 1 request**; the stale-cache 409 → key-change flow works on staging.
+   - Mac → staging warm sends: **median 835 ms** (685–839) plus **one 5.4 s outlier** (watch it: if phones see multi-second sends, investigate the edge function's cold starts). No before/after number.
+   - Waiting on the user's phone gate + "logs". **Next: LIME-132.**
+1e61. **LIME-120 LANDED as `fe8f64f` (pushed, 2026-10-12).**
+   - `send` with `expect` (the access key is checked first; 409/410 with the current devices + master-key hash); `keys-claim` gets `device_ids` (a migration); core migration 26 = the device cache; a second mismatch fails, not loops; an old server → the old 2-request path.
+   - 55 Deno + 192 core + 20 integration tests pass (local, throwaway users).
+   - **NOT deployed to staging yet:** waiting on the user's "go" (the migration first, then the functions). Then the phone gate + "logs" (requests: 1).
+   - **Next after the gate: LIME-132 (Android check), then 112b (re-survey first).**
+1e60. **LIME-120 Phase 1 (tend, Phase 0 `d68017d`; nothing built):**
+   - **Today:** a send = `users-devices` + `send` (2 requests; 3 with `keys-claim` on a first message); key-change detection lives in `users-devices` (the master-key compare → `KeyMismatch`).
+   - **Privacy leak found:** the authenticated `users-devices` before a SEALED send tells the server "X looked up Y" on every message; caching removes it.
+   - **Bugs found:** `keys-claim` burns a one-time key for every device, even those with a session; a sealed send to a revoked or unknown device returns 403 = "wrong access key", so the core marks the contact denied (a stale cache would mislabel contacts).
+   - Group ops do their own per-member lookups (`groups.rs:477`), out of scope → **LIME-120b later**.
+   - **Plot's recommended design (awaiting the user's approval):**
+     1. An encrypted cache of devices + master key per contact.
+     2. `send` with `expect`; the server **checks the access key first**, then compares; on a mismatch it stores nothing and returns 409 **with the current device list + master key** (410 revoked).
+     3. The client updates the cache, runs the existing key-change flow, claims keys only for session-less devices, and retries once.
+     4. The `keys-claim` fix.
+     5. No `expect` = the old behaviour.
+   - Test accounts only. The user's paste was cut off; asked for the rest.
+   - **APPROVED (the user, 2026-10-12, by asking for the build prompt): build plot's recommended design (points 1–5 above), group ops excluded (→ 120b).**
 1e59. **LIME-119 LANDED as `12aa63e` (pushed, 2026-10-12; PLOT.md `2aaaeb8`).**
    - Emoji chip (a 256 list, never reorder it; vector [160, 252, 66, 95]) and Always relay calls.
    - **Not exercised:** a real two-phone call; a relay-only call; the chip in landscape; RTL (the emoji order is forced left to right, deliberately).
@@ -4512,10 +4536,28 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 2. **A recognisable speaker control on video calls** (the user, 2026-10-12: "during a video call I couldn't find a button to turn on speakerphone"). Today the video column's audio control (`CallView.routeButton`, ~line 266) is the **system `RoutePicker` with the AirPlay-style glyph**; video calls already default to the speaker (`speaker = video`, `.defaultToSpeaker`). **Change it to FaceTime's pattern:** the button shows a **speaker glyph** (`speaker.wave.2.fill` when the speaker is on, `speaker.fill` when it's the earpiece; a headphones/AirPods glyph when a Bluetooth route is active). **No Bluetooth route available:** tapping **toggles speaker ↔ earpiece** (`toggleSpeaker`). **Bluetooth available:** tapping opens the system route picker (iPhone · Speaker · the headphones), as today. The VoiceOver label stays "Audio output, now <route>". Voice calls keep their separate Speaker toggle and route button. (Small behaviour: add a unit test for the toggle-vs-picker decision.)
 
+3. **The call bubble's detail line wraps mid-phrase** (the user's screenshot, 2026-10-12): a missed video call bubble reads "Silenced · Do / Not Disturb" on two lines. Keep the detail on **one line** at default size: let the bubble grow to fit it (up to the normal max bubble width), and if it still can't fit, wrap at the "·" (so "Silenced ·" / "Do Not Disturb"), never inside "Do Not Disturb". At accessibility sizes, wrapping is fine.
+
 **Phase 0:** `git add PLOT.md` only, then commit; re-read PLOT.md. **Verification:** build; 0 warnings; Release clean; fix only existing tests that break (the 107-qa footer-alignment test will need its expectation updated for own messages); screenshots in TEND.md (media + caption, text only, a file + caption; light/dark); the accessibility standing rule. **Gate:** under your own message with photos and a caption, the reactions sit at the caption bubble's bottom-left corner.
 **Record:** `## LIME-131`. **Commit:** `fix(ios): visual QA batch (own-message reactions align to their bubble, …)`, trailer `Brief: LIME-131`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
-### LIME-132 → `tend` (lime-aa) (soon, **after 120**, small): keep LimeCore Android-ready from now on (a build + bindings check)
+### LIME-134 → `tend` (lime-aa) (NEXT, before 132): two bugs: chats sometimes open blank until scrolled; the video call isn't full screen
+**The user (2026-10-12, screenshots from the 13 mini and the iPad in a Stage Manager window), after 120:** "video and sound was smooth; the video was cut off at the bottom instead of being full screen. Loading the chat window, even before this, sometimes the chat loads blank until you drag/scroll." Screenshots: a DM ("FAM") opens showing only the header and the composer (blank in between, with the keyboard up and down); after a drag the messages appear; the iPad shows the same blank chat in a window.
+
+**Bug 1: a chat opens blank until the list is scrolled (intermittent; older than the call work).**
+- **Phase 1 (diagnose, report the cause before fixing):** reproduce it (open chats repeatedly: short and long, with and without the keyboard, after returning from a call, in an iPad window, on iOS 26 and 18). Inspect how `ChatView`'s list opens at the newest message (`ScrollViewReader`/`scrollTo`, `defaultScrollAnchor(.bottom)`, `scrollPosition`, a `LazyVStack` inside a `ScrollView`, any `onAppear` timing). A common iOS 26 cause: a lazy stack laid out before its content arrives, then scrolled to an id that isn't materialised, leaving an empty viewport until a scroll forces layout. Check whether messages load asynchronously after the first frame.
+- **Fix:** render the newest messages on the first frame (e.g. load before the first layout, or anchor the bottom with `defaultScrollAnchor(.bottom)` and avoid an early `scrollTo` on unmaterialised ids, or scroll after the data is in place), so a chat is **never blank** on open. Keep: opening at the newest message, the find/reply jump-to-message, the unread position.
+- **Test (behavioural):** a UI test opening several chats in a row (short and long; after a call; with the keyboard shown) asserts the last message is hittable without any scroll; a unit test if the cause is a loading race.
+
+**Bug 2: the video call's picture stops short of the bottom edge.**
+- **Likely cause (confirm):** 116f pinned the call screen to `geo.size` (the safe area), so the remote/local video layers and the blurred background now end above the home indicator. **The controls must stay inside the safe area (116f's fix), but the video and background must fill the whole screen, edge to edge, under the status bar and the home indicator**, in portrait and landscape (118c's bottom controls), on the 13 mini, SE, 18 Pro and the iPad (also in a Stage Manager window).
+- **Fix:** size the video/background layers from the full screen (`ignoresSafeArea()` on those layers only, or a `GeometryReader` read outside the safe area), keep the controls' safe-area padding and 16 pt margins.
+- **Visual check** (no new UI tests per the visual rule): screenshots of a video call in portrait and landscape showing the picture to every edge and the controls inside.
+
+**Phase 0:** `git add PLOT.md` only, then commit; re-read PLOT.md. ~60 min. **Verification:** the Bug 1 test; build; 0 warnings; Release clean; the full suite on the 13 mini. **Gate (the user):** open ten chats in a row (incl. right after a call and on the iPad window): none is blank; a video call fills the screen to the bottom edge in portrait and landscape.
+**Record:** `## LIME-134`. **Commit:** `fix(ios): chats never open blank; video calls fill the screen edge to edge`, trailer `Brief: LIME-134`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
+
+### LIME-132 → `tend` (lime-aa) (after 134, small): keep LimeCore Android-ready from now on (a build + bindings check)
 **Goal:** every commit proves the core still builds for Android and its Kotlin bindings generate, so Android-readiness can't silently rot.
 **Phase 2:**
 1. Add the Android targets (`aarch64-linux-android`, `x86_64-linux-android`) and **cargo-ndk** (Homebrew/rustup; the Android NDK via the command-line tools, no Android Studio needed). If installing the NDK needs the user (a licence prompt or a large download), stop and give the user the exact steps.
