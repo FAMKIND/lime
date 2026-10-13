@@ -17,7 +17,7 @@ final class StoreSignalling: CallSignalling {
             try await Task.detached(priority: .userInitiated) {
                 try core.sendCallSignal(transport: link.transport, authToken: token, peerUserId: peer, opType: op, payload: json)
             }.value
-            diag.log("send \(op) ok \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+            diag.log("send \(op) ok \(Int(Date().timeIntervalSince(started) * 1000)) ms, requests: \(core.lastSendRequests())")
             return true
         } catch {
             diag.log("send \(op) FAILED \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(error)")

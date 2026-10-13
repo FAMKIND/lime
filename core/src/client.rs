@@ -429,6 +429,12 @@ pub enum Verification {
 
 #[uniffi::export]
 impl LimeStore {
+    /// How many HTTP requests the last send took (one with a warm device cache, more when it had to look up devices, claim keys or
+    /// be corrected): shown in the call diagnostics.
+    pub fn last_send_requests(&self) -> u32 {
+        self.last_send_requests.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Compares the fingerprint from a QR code scanned in person with the master key the server
     /// serves for `user_id`. On a match the person is marked "verified in person".
     pub fn verify_in_person(
@@ -482,6 +488,8 @@ impl LimeStore {
 struct PeerDevice {
     device_id: String,
     identity_key: String,
+    signing_key: String,
+    master_signature: String,
 }
 
 impl LimeStore {
@@ -647,6 +655,13 @@ impl LimeStore {
     /// and sends it: **sealed** (no user token; `access` is the access key made from the recipient's
     /// delivery key) when `delivery_key` is given, **identified** otherwise. Returns the hashes of what was
     /// sent. A sealed send the server refuses (403) is `SendError::Denied`: the recipient rotated their key.
+    ///
+    /// **One request in the normal case (LIME-120).** The recipient's devices come from the encrypted cache, not from a lookup; the
+    /// send says what it holds (`expect`) and the server, after checking the access key, compares it with the live devices. A
+    /// difference stores nothing and the server's answer (409, or 410 for a revoked device) carries the current devices and master
+    /// key: the cache is corrected (a changed master key goes through the usual key-change flow) and the send is tried once more.
+    /// A server that does not check (no `checked` in its answer) makes the cache untrusted, so an old server is never left with a
+    /// cache nobody validates.
     #[allow(clippy::too_many_arguments)] // the call's context (network, caller, keys) and the op
     fn send_op(
         &self,
@@ -658,109 +673,235 @@ impl LimeStore {
         op: Op,
         delivery_key: Option<&[u8]>,
     ) -> Result<Vec<String>, SendError> {
-        // 1. The recipient's devices, each vouched for by their master key.
-        let devices = self.recipient_devices(transport, token, recipient)?;
+        let mut requests = 0u32;
+        let result = self.send_op_counted(transport, token, state, me, recipient, op, delivery_key, &mut requests);
+        self.last_send_requests.store(requests, std::sync::atomic::Ordering::Relaxed);
+        result
+    }
 
-        // 2. A session per device; claim a one-time key for each device that has none.
-        let mut sessions = Vec::new();
-        let mut needs_claim = Vec::new();
-        for device in &devices {
-            let existing =
-                self.with_conn(|conn| load_sessions(conn, &self.pickle_key, recipient))?;
-            match existing
-                .into_iter()
-                .find(|s| s.peer_identity_key == device.identity_key)
-            {
-                Some(stored) => sessions.push((device.clone(), stored.session)),
-                None => needs_claim.push(device.clone()),
-            }
-        }
-        if !needs_claim.is_empty() {
-            let claimed = self.claim_keys(transport, token, recipient)?;
-            for device in needs_claim {
-                let Some(one_time_key) = claimed.get(&device.device_id) else {
-                    continue;
-                };
-                let identity = Curve25519PublicKey::from_base64(&device.identity_key)
-                    .map_err(|_| StoreError::BadMessage)?;
-                let one_time = Curve25519PublicKey::from_base64(one_time_key)
-                    .map_err(|_| StoreError::BadMessage)?;
-                let session = state
-                    .account
-                    .create_outbound_session(SessionConfig::version_1(), identity, one_time)
-                    .map_err(|_| StoreError::BadMessage)?;
-                sessions.push((device, session));
-            }
-        }
-        if sessions.is_empty() {
-            return Err(StoreError::NoRecipientKeys.into());
-        }
-
-        // 3. The signed op, wrapped with this device's certificate.
-        let inner = SealedInner {
-            sender_user: me.to_owned(),
-            sender_device: state.device_id.clone(),
-            sender_cert: state.cert(),
-            op,
-        }
-        .to_bytes();
-
-        // 4. One Olm ciphertext per recipient device.
-        let mut updated = Vec::new();
-        let mut hashes = Vec::new();
-        for (device, mut session) in sessions {
-            let encrypted = session
-                .encrypt(&inner)
-                .map_err(|_| StoreError::BadMessage)?;
-            let (kind, bytes) = encrypted.to_parts();
-            let mut wire = vec![kind as u8];
-            wire.extend_from_slice(&bytes);
-            hashes.push(hex_sha256(&wire));
-            let (status, _) = match delivery_key {
-                // Sealed: no Authorization header at all, so the request carries nothing about the sender.
-                Some(key) => call(
-                    transport,
-                    None,
-                    "send",
-                    &json!({
-                        "ciphertext": vodozemac::base64_encode(&wire),
-                        "recipients": [{ "to_device": device.device_id, "access": { "sealed": delivery::access_key_b64(key) } }],
-                    }),
-                )?,
-                None => call(
-                    transport,
-                    Some(token),
-                    "send",
-                    &json!({
-                        "ciphertext": vodozemac::base64_encode(&wire),
-                        "recipients": [{ "to_device": device.device_id, "access": { "identified": true } }],
-                    }),
-                )?,
+    #[allow(clippy::too_many_arguments)]
+    fn send_op_counted(
+        &self,
+        transport: &Arc<dyn Transport>,
+        token: &str,
+        state: &mut AccountState,
+        me: &str,
+        recipient: &str,
+        op: Op,
+        delivery_key: Option<&[u8]>,
+        requests: &mut u32,
+    ) -> Result<Vec<String>, SendError> {
+        let mut corrected = false;
+        loop {
+            // 1. The recipient's devices, each vouched for by their master key: from the cache, else from the server.
+            let (master, devices) = match self.cached_devices(recipient)? {
+                Some(cached) => cached,
+                None => {
+                    *requests += 1;
+                    let devices = self.recipient_devices(transport, token, recipient)?;
+                    let master = self.pinned_master(recipient)?;
+                    (master, devices)
+                }
             };
-            if delivery_key.is_some() && status == 403 {
-                return Err(SendError::Denied);
-            }
-            check(status)?;
-            updated.push((device, session));
-        }
 
-        // 5. Remember the sessions: their ratchets moved.
-        let now = now_ms();
-        self.with_conn(|conn| {
-            for (device, session) in &updated {
-                save_session(
-                    conn,
-                    &self.pickle_key,
-                    recipient,
-                    &device.device_id,
-                    &device.identity_key,
-                    session,
-                    now,
-                )?;
+            // 2. A session per device; claim a one-time key only for the devices that have none.
+            let mut existing = self.with_conn(|conn| load_sessions(conn, &self.pickle_key, recipient))?;
+            let mut sessions = Vec::new();
+            let mut needs_claim = Vec::new();
+            for device in &devices {
+                match existing.iter().position(|s| s.peer_identity_key == device.identity_key) {
+                    Some(at) => sessions.push((device.clone(), existing.remove(at).session)),
+                    None => needs_claim.push(device.clone()),
+                }
             }
-            save_account(conn, &self.pickle_key, state)
+            if !needs_claim.is_empty() {
+                *requests += 1;
+                let wanted: Vec<String> = needs_claim.iter().map(|d| d.device_id.clone()).collect();
+                let claimed = self.claim_keys(transport, token, recipient, &wanted)?;
+                let now = now_ms();
+                for device in needs_claim {
+                    let Some(one_time_key) = claimed.get(&device.device_id) else {
+                        continue;
+                    };
+                    let identity = Curve25519PublicKey::from_base64(&device.identity_key).map_err(|_| StoreError::BadMessage)?;
+                    let one_time = Curve25519PublicKey::from_base64(one_time_key).map_err(|_| StoreError::BadMessage)?;
+                    let session = state
+                        .account
+                        .create_outbound_session(SessionConfig::version_1(), identity, one_time)
+                        .map_err(|_| StoreError::BadMessage)?;
+                    // Kept at once: if this send turns out stale and is retried, the claimed key is not lost.
+                    self.with_conn(|conn| {
+                        save_session(conn, &self.pickle_key, recipient, &device.device_id, &device.identity_key, &session, now)
+                    })?;
+                    sessions.push((device, session));
+                }
+            }
+            if sessions.is_empty() {
+                return Err(StoreError::NoRecipientKeys.into());
+            }
+
+            // 3. The signed op, wrapped with this device's certificate.
+            let inner = SealedInner {
+                sender_user: me.to_owned(),
+                sender_device: state.device_id.clone(),
+                sender_cert: state.cert(),
+                op: op.clone(),
+            }
+            .to_bytes();
+
+            // 4. One Olm ciphertext per recipient device, each sent with what I hold about the recipient's devices.
+            let mut ids: Vec<String> = devices.iter().map(|d| d.device_id.clone()).collect();
+            ids.sort();
+            let expect = json!({ recipient: { "devices": ids, "master": hex_sha256(master.as_bytes()) } });
+            let mut updated = Vec::new();
+            let mut hashes = Vec::new();
+            let mut stale = None;
+            for (device, mut session) in sessions {
+                let encrypted = session.encrypt(&inner).map_err(|_| StoreError::BadMessage)?;
+                let (kind, bytes) = encrypted.to_parts();
+                let mut wire = vec![kind as u8];
+                wire.extend_from_slice(&bytes);
+                hashes.push(hex_sha256(&wire));
+                let access = match delivery_key {
+                    Some(key) => json!({ "sealed": delivery::access_key_b64(key) }),
+                    None => json!({ "identified": true }),
+                };
+                let request = json!({
+                    "ciphertext": vodozemac::base64_encode(&wire),
+                    "recipients": [{ "to_device": device.device_id, "access": access }],
+                    "expect": expect,
+                });
+                *requests += 1;
+                // Sealed: no Authorization header at all, so the request carries nothing about the sender.
+                let (status, body) = call(transport, if delivery_key.is_some() { None } else { Some(token) }, "send", &request)?;
+                if delivery_key.is_some() && status == 403 {
+                    return Err(SendError::Denied);
+                }
+                if status == 409 || status == 410 {
+                    stale = Some(body);
+                    break;
+                }
+                check(status)?;
+                if body.get("checked").and_then(Value::as_bool) != Some(true) {
+                    // This server does not check `expect` (an older one): do not keep a cache nobody validates.
+                    self.with_conn(|conn| clear_peer_devices(conn, recipient))?;
+                }
+                updated.push((device, session));
+            }
+            if let Some(body) = stale {
+                if corrected {
+                    // Stale twice in one send: let the next attempt (the queue retries) start afresh.
+                    self.with_conn(|conn| clear_peer_devices(conn, recipient))?;
+                    return Err(StoreError::Unavailable.into());
+                }
+                corrected = true;
+                self.apply_correction(recipient, &body)?;
+                continue;
+            }
+
+            // 5. Remember the sessions: their ratchets moved.
+            let now = now_ms();
+            self.with_conn(|conn| {
+                for (device, session) in &updated {
+                    save_session(conn, &self.pickle_key, recipient, &device.device_id, &device.identity_key, session, now)?;
+                }
+                save_account(conn, &self.pickle_key, state)
+            })?;
+            return Ok(hashes);
+        }
+    }
+
+    /// The server said what I held about `recipient`'s devices is out of date (409), or names revoked ones (410), and sent the current
+    /// devices and master key. A changed master key is the usual key-change flow (the send waits for them to be trusted); otherwise
+    /// the cache becomes what the server says (its certificates checked, as for any lookup).
+    fn apply_correction(&self, recipient: &str, body: &Value) -> Result<(), StoreError> {
+        let entry = body
+            .get("stale")
+            .and_then(Value::as_array)
+            .and_then(|list| list.iter().find(|e| e.get("user_id").and_then(Value::as_str) == Some(recipient)));
+        match entry {
+            Some(entry) => {
+                let master = entry.get("master_key").and_then(Value::as_str).ok_or(StoreError::NoRecipientKeys)?;
+                let devices = self.verified_devices(recipient, master, entry.get("devices"))?;
+                if devices.is_empty() {
+                    self.with_conn(|conn| clear_peer_devices(conn, recipient))?;
+                    return Err(StoreError::NoRecipientKeys);
+                }
+                self.with_conn(|conn| store_peer_devices(conn, recipient, &devices))
+            }
+            None => {
+                // Only revoked devices were named: drop them from what I hold.
+                let revoked: Vec<&str> = body.get("revoked").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+                self.with_conn(|conn| {
+                    for id in revoked {
+                        conn.execute("DELETE FROM peer_devices WHERE user_id = ?1 AND device_id = ?2", params![recipient, id]).map_err(db_err)?;
+                    }
+                    Ok(())
+                })
+            }
+        }
+    }
+
+    /// The master key remembered for `user_id` (the one the cached devices were verified under).
+    fn pinned_master(&self, user_id: &str) -> Result<String, StoreError> {
+        self.with_conn(|conn| {
+            conn.query_row("SELECT master_key FROM peers WHERE user_id = ?1", params![user_id], |r| r.get(0)).map_err(|_| StoreError::NoRecipientKeys)
+        })
+    }
+
+    /// `recipient`'s devices from the cache with the master key they were verified under; `None` when nothing is cached (or the
+    /// pinned key is gone), so the caller asks the server.
+    fn cached_devices(&self, user_id: &str) -> Result<Option<(String, Vec<PeerDevice>)>, StoreError> {
+        self.with_conn(|conn| {
+            let master: Option<String> = conn
+                .query_row("SELECT master_key FROM peers WHERE user_id = ?1", params![user_id], |r| r.get(0))
+                .optional()
+                .map_err(db_err)?;
+            let Some(master) = master else { return Ok(None) };
+            let mut statement = conn
+                .prepare("SELECT device_id, identity_key, signing_key, master_signature FROM peer_devices WHERE user_id = ?1 ORDER BY device_id")
+                .map_err(db_err)?;
+            let devices: Vec<PeerDevice> = statement
+                .query_map(params![user_id], |r| {
+                    Ok(PeerDevice { device_id: r.get(0)?, identity_key: r.get(1)?, signing_key: r.get(2)?, master_signature: r.get(3)? })
+                })
+                .map_err(db_err)?
+                .collect::<Result<_, _>>()
+                .map_err(db_err)?;
+            Ok(if devices.is_empty() { None } else { Some((master, devices)) })
+        })
+    }
+
+    /// The devices in a server list whose cross-signature verifies under `master`, with `master` pinned (a different key than the
+    /// one remembered records the key change and fails with `KeyMismatch`: the usual flow).
+    fn verified_devices(&self, user_id: &str, master: &str, list: Option<&Value>) -> Result<Vec<PeerDevice>, StoreError> {
+        self.with_conn(|conn| match pin_master_key(conn, user_id, master) {
+            Err(StoreError::KeyMismatch) => {
+                record_key_change(conn, user_id, master)?;
+                Err(StoreError::KeyMismatch)
+            }
+            other => other,
         })?;
-        Ok(hashes)
+        let mut devices = Vec::new();
+        for entry in list.and_then(Value::as_array).ok_or(StoreError::BadMessage)? {
+            let text = |k: &str| entry.get(k).and_then(Value::as_str).map(str::to_owned);
+            let (Some(device_id), Some(identity_key), Some(signing_key), Some(master_signature)) =
+                (text("device_id"), text("identity_key"), text("signing_key"), text("master_signature"))
+            else {
+                continue;
+            };
+            let cert = SenderCert {
+                device_id: device_id.clone(),
+                identity_key: identity_key.clone(),
+                signing_key: signing_key.clone(),
+                master_key: master.to_owned(),
+                master_signature: master_signature.clone(),
+            };
+            if cert.verify() {
+                devices.push(PeerDevice { device_id, identity_key, signing_key, master_signature });
+            }
+        }
+        Ok(devices)
     }
 
     // ------------------------------------------------------------ the delivery key
@@ -971,78 +1112,38 @@ impl LimeStore {
             .unwrap_or(0) as u32)
     }
 
-    /// The recipient's devices whose cross-signature verifies, with their master key pinned.
+    /// The recipient's devices whose cross-signature verifies, with their master key pinned, fetched from the server (and kept in the
+    /// cache for the next send).
     fn recipient_devices(
         &self,
         transport: &Arc<dyn Transport>,
         token: &str,
         user_id: &str,
     ) -> Result<Vec<PeerDevice>, StoreError> {
-        let (status, body) = call(
-            transport,
-            Some(token),
-            "users-devices",
-            &json!({ "user_id": user_id }),
-        )?;
+        let (status, body) = call(transport, Some(token), "users-devices", &json!({ "user_id": user_id }))?;
         check(status)?;
-        let master = body
-            .get("master_key")
-            .and_then(Value::as_str)
-            .ok_or(StoreError::NoRecipientKeys)?;
-        self.with_conn(|conn| match pin_master_key(conn, user_id, master) {
-            Err(StoreError::KeyMismatch) => {
-                record_key_change(conn, user_id, master)?;
-                Err(StoreError::KeyMismatch)
-            }
-            other => other,
-        })?;
-        let mut devices = Vec::new();
-        for entry in body
-            .get("devices")
-            .and_then(Value::as_array)
-            .ok_or(StoreError::BadMessage)?
-        {
-            let text = |k: &str| entry.get(k).and_then(Value::as_str).map(str::to_owned);
-            let (Some(device_id), Some(identity_key), Some(signing_key), Some(master_signature)) = (
-                text("device_id"),
-                text("identity_key"),
-                text("signing_key"),
-                text("master_signature"),
-            ) else {
-                continue;
-            };
-            let cert = SenderCert {
-                device_id: device_id.clone(),
-                identity_key: identity_key.clone(),
-                signing_key,
-                master_key: master.to_owned(),
-                master_signature,
-            };
-            if cert.verify() {
-                devices.push(PeerDevice {
-                    device_id,
-                    identity_key,
-                });
-            }
-        }
+        let master = body.get("master_key").and_then(Value::as_str).ok_or(StoreError::NoRecipientKeys)?;
+        let devices = self.verified_devices(user_id, master, body.get("devices"))?;
         if devices.is_empty() {
             return Err(StoreError::NoRecipientKeys);
         }
+        self.with_conn(|conn| store_peer_devices(conn, user_id, &devices))?;
         Ok(devices)
     }
 
-    /// One-time keys claimed for a user's devices: device id to key.
+    /// One-time keys claimed for the named devices of a user (only the ones that need a session): device id to key.
     fn claim_keys(
         &self,
         transport: &Arc<dyn Transport>,
         token: &str,
         user_id: &str,
+        device_ids: &[String],
     ) -> Result<std::collections::HashMap<String, String>, StoreError> {
         let (status, body) = call(
             transport,
             Some(token),
             "keys-claim",
-            &json!({ "user_id": user_id }),
+            &json!({ "user_id": user_id, "device_ids": device_ids }),
         )?;
         check(status)?;
         let mut claimed = std::collections::HashMap::new();
@@ -1521,6 +1622,25 @@ fn record_key_change(conn: &Connection, user_id: &str, new_master_key: &str) -> 
         params![user_id, new_master_key],
     )
     .map_err(db_err)?;
+    Ok(())
+}
+
+/// Replaces what is held about `user_id`'s devices (the cache; each was verified under the pinned master key).
+fn store_peer_devices(conn: &Connection, user_id: &str, devices: &[PeerDevice]) -> Result<(), StoreError> {
+    let now = now_ms();
+    conn.execute("DELETE FROM peer_devices WHERE user_id = ?1", params![user_id]).map_err(db_err)?;
+    for d in devices {
+        conn.execute(
+            "INSERT INTO peer_devices (user_id, device_id, identity_key, signing_key, master_signature, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![user_id, d.device_id, d.identity_key, d.signing_key, d.master_signature, now],
+        )
+        .map_err(db_err)?;
+    }
+    Ok(())
+}
+
+fn clear_peer_devices(conn: &Connection, user_id: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM peer_devices WHERE user_id = ?1", params![user_id]).map_err(db_err)?;
     Ok(())
 }
 

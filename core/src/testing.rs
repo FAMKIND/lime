@@ -15,6 +15,12 @@ pub(crate) struct ServerState {
     /// device id to (user, identity key, signing key, master signature)
     pub devices: HashMap<String, (String, String, String, String)>,
     pub masters: HashMap<String, String>,
+    /// device id to its user, for devices a key reset revoked (a sealed sender can still be told: LIME-120)
+    pub revoked: HashMap<String, String>,
+    /// The Edge Function of every request, in order (a test of how many requests a send takes).
+    pub functions: Vec<String>,
+    /// Behave like a server from before LIME-120: ignore `expect` and never say `checked`.
+    pub ignore_expect: bool,
     pub one_time_keys: HashMap<String, Vec<(String, String)>>,
     /// (cursor, to_device, ciphertext, identified, sender)
     pub mailbox: Vec<(i64, String, String, bool, Option<String>)>,
@@ -161,6 +167,7 @@ impl Transport for FakeServer {
         };
         let mut state = self.state.lock().unwrap();
         state.calls += 1;
+        state.functions.push(function.clone());
 
         match function.as_str() {
             "devices-register" => {
@@ -176,6 +183,7 @@ impl Transport for FakeServer {
                         .map(|(id, _)| id.clone())
                         .collect();
                     for id in &old {
+                        state.revoked.insert(id.clone(), user.clone());
                         let gone: Vec<_> = state.mailbox.iter().filter(|m| &m.1 == id).cloned().collect();
                         for item in gone {
                             if let (true, Some(sender)) = (item.3, item.4.clone()) {
@@ -231,10 +239,15 @@ impl Transport for FakeServer {
             }
             "keys-claim" => {
                 let target = text("user_id");
+                // `device_ids` (LIME-120) limits the claim to the devices that need a session.
+                let only: Option<Vec<String>> = body
+                    .get("device_ids")
+                    .and_then(Value::as_array)
+                    .map(|list| list.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect());
                 let ids: Vec<String> = state
                     .devices
                     .iter()
-                    .filter(|(_, d)| d.0 == target)
+                    .filter(|(id, d)| d.0 == target && only.as_ref().is_none_or(|only| only.contains(id)))
                     .map(|(id, _)| id.clone())
                     .collect();
                 let mut out = Vec::new();
@@ -261,24 +274,71 @@ impl Transport for FakeServer {
                     .cloned()
                     .unwrap_or_default();
                 if user.is_empty() { state.sends_without_token += 1 } else { state.sends_with_token += 1 }
-                // All or nothing: check every recipient's access before storing anything.
+                // All or nothing: check every recipient's access before storing anything (the key first, as the real server does).
+                let checking = body.get("expect").is_some() && !state.ignore_expect;
+                let mut revoked_named: Vec<String> = Vec::new();
                 for r in &recipients {
+                    let device = r["to_device"].as_str().unwrap_or_default().to_owned();
                     let identified = r["access"]["identified"].as_bool() == Some(true);
+                    let revoked = state.revoked.contains_key(&device);
                     if identified {
                         if user.is_empty() {
                             return respond(401, json!({ "error": "unauthorized" }));
                         }
+                        if revoked {
+                            if !checking {
+                                return respond(404, json!({ "error": "unknown_device" }));
+                            }
+                            revoked_named.push(device);
+                        }
                         continue;
                     }
-                    let device = r["to_device"].as_str().unwrap_or_default();
-                    let owner = state.devices.get(device).map(|d| d.0.clone());
+                    let owner = state.devices.get(&device).map(|d| d.0.clone()).or_else(|| state.revoked.get(&device).cloned());
                     let presented = r["access"]["sealed"].as_str().and_then(|k| vodozemac::base64_decode(k).ok());
                     let hash: Option<String> = presented
                         .filter(|k| k.len() == 16)
                         .map(|k| sha2::Sha256::digest(&k).iter().map(|b| format!("{b:02x}")).collect());
                     let stored = owner.and_then(|o| state.delivery_access.get(&o).cloned());
-                    if hash.is_none() || hash != stored {
+                    if hash.is_none() || hash != stored || (revoked && !checking) {
                         return respond(403, json!({ "error": "access_denied" }));
+                    }
+                    if revoked {
+                        revoked_named.push(device);
+                    }
+                }
+                if checking {
+                    let mut stale = Vec::new();
+                    let mut only_revoked = true;
+                    for (user_id, expected) in body["expect"].as_object().cloned().unwrap_or_default() {
+                        let mut live: Vec<(String, (String, String, String, String))> = state
+                            .devices
+                            .iter()
+                            .filter(|(_, d)| d.0 == user_id)
+                            .map(|(id, d)| (id.clone(), d.clone()))
+                            .collect();
+                        live.sort_by(|a, b| a.0.cmp(&b.0));
+                        let expected_ids: Vec<String> = expected["devices"].as_array().cloned().unwrap_or_default().iter().filter_map(|v| v.as_str().map(str::to_owned)).collect();
+                        let master = state.masters.get(&user_id).cloned();
+                        let master_hash: String = master.as_ref().map(|m| sha2::Sha256::digest(m.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()).unwrap_or_default();
+                        let missing: Vec<&String> = live.iter().map(|d| &d.0).filter(|id| !expected_ids.contains(id)).collect();
+                        let extra: Vec<&String> = expected_ids.iter().filter(|id| !live.iter().any(|d| &d.0 == *id)).collect();
+                        let master_changed = expected["master"].as_str() != Some(master_hash.as_str());
+                        if missing.is_empty() && extra.is_empty() && !master_changed {
+                            continue;
+                        }
+                        if !missing.is_empty() || master_changed {
+                            only_revoked = false;
+                        }
+                        stale.push(json!({
+                            "user_id": user_id,
+                            "master_key": master,
+                            "devices": live.iter().map(|(id, d)| json!({ "device_id": id, "identity_key": d.1, "signing_key": d.2, "master_signature": d.3 })).collect::<Vec<_>>(),
+                            "missing": missing, "extra": extra, "master_changed": master_changed,
+                        }));
+                    }
+                    if !stale.is_empty() || !revoked_named.is_empty() {
+                        let status = if only_revoked { 410 } else { 409 };
+                        return respond(status, json!({ "error": if only_revoked { "devices_revoked" } else { "devices_changed" }, "stale": stale, "revoked": revoked_named }));
                     }
                 }
                 for r in recipients {
@@ -294,7 +354,7 @@ impl Transport for FakeServer {
                         identified.then(|| user.clone()),
                     ));
                 }
-                respond(200, json!({ "stored": 1, "duplicates": 0 }))
+                respond(200, json!({ "stored": 1, "duplicates": 0, "checked": checking }))
             }
             "avatar" => {
                 state.clock += 1;

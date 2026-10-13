@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -2898,4 +2898,189 @@ fn a_public_profile_is_fetched_and_a_missing_one_is_none() {
     assert_eq!((found.display_name.as_str(), found.username.as_deref()), ("Bob B", Some("bob.b")));
     assert_eq!(found.school, None, "fields the person did not fill, or hid, are none");
     assert!(alice.store.fetch_profile(transport.clone(), alice.token.clone(), "00000000-0000-4000-8000-000000000000".into()).unwrap().is_none(), "404 is none");
+}
+
+// ---------------------------------------------------------------- LIME-120: one request per send
+
+fn requests_of(server: &Arc<FakeServer>) -> Vec<String> {
+    server.state.lock().unwrap().functions.clone()
+}
+
+fn forget_requests(server: &Arc<FakeServer>) {
+    server.state.lock().unwrap().functions.clear();
+}
+
+/// A second device for `owner`'s account that holds the SAME master key (what device linking will make): the server knows it, with a
+/// valid cross-signature and some one-time keys; the test cannot read its mail, only count it.
+fn add_linked_device(server: &Arc<FakeServer>, owner: &Party) -> String {
+    let first = owner.store.load_or_create_account().unwrap();
+    let mut second = crate::keys::AccountState::create();
+    second.master = vodozemac::Ed25519SecretKey::from_slice(&first.master.to_bytes());
+    second.account.generate_one_time_keys(3);
+    let cert = second.cert();
+    let mut state = server.state.lock().unwrap();
+    state.devices.insert(cert.device_id.clone(), (owner.user.clone(), cert.identity_key, cert.signing_key, cert.master_signature));
+    state.one_time_keys.insert(
+        cert.device_id.clone(),
+        second.account.one_time_keys().into_iter().map(|(id, key)| (id.to_base64(), key.to_base64())).collect(),
+    );
+    cert.device_id
+}
+
+/// What a key reset does to a device on the server.
+fn revoke(server: &Arc<FakeServer>, user: &str, device: &str) {
+    let mut state = server.state.lock().unwrap();
+    state.devices.remove(device);
+    state.revoked.insert(device.to_owned(), user.to_owned());
+}
+
+#[test]
+fn a_send_with_a_warm_device_cache_is_one_request_and_the_first_is_three() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    forget_requests(&server);
+    say(&alice, &bob, &transport, "first");
+    assert_eq!(requests_of(&server), ["users-devices", "keys-claim", "send"], "no cache and no session yet");
+    assert_eq!(alice.store.last_send_requests(), 3);
+
+    forget_requests(&server);
+    say(&alice, &bob, &transport, "second");
+    assert_eq!(requests_of(&server), ["send"], "the devices come from the cache and the session exists");
+    assert_eq!(alice.store.last_send_requests(), 1);
+    assert_eq!(server.mailbox_len(&bob.device), 2);
+    // The cache is in the encrypted store, so it survives a restart of the app.
+    sync(&bob, &transport);
+    assert_eq!(texts(&bob, &alice), vec!["first", "second"]);
+}
+
+#[test]
+fn a_sealed_send_is_one_request_with_no_token_and_no_lookup_that_names_the_sender() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    // The first sealed call op looks the contact up once; after that nothing about the sender reaches the server.
+    let signal = |id: &str| {
+        let payload = serde_json::json!({ "call_id": id }).to_string();
+        alice.store.send_call_signal(transport.clone(), alice.token.clone(), bob.user.clone(), "call.end".into(), payload).unwrap();
+    };
+    signal("call-1");
+    let (sealed_before, identified_before) = {
+        let state = server.state.lock().unwrap();
+        (state.sends_without_token, state.sends_with_token)
+    };
+    forget_requests(&server);
+    signal("call-2");
+    assert_eq!(requests_of(&server), ["send"], "no users-devices (which carried the sender's token) before a sealed send");
+    let state = server.state.lock().unwrap();
+    assert_eq!(state.sends_without_token, sealed_before + 1, "it went sealed: no Authorization header");
+    assert_eq!(state.sends_with_token, identified_before);
+    assert_eq!(alice.store.last_send_requests(), 1);
+}
+
+#[test]
+fn a_new_device_for_a_contact_is_a_409_then_one_claim_for_just_that_device_and_a_retry() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "first");
+    let claimable_before = server.state.lock().unwrap().one_time_keys.get(&bob.device).map_or(0, Vec::len);
+
+    let linked = add_linked_device(&server, &bob);
+    forget_requests(&server);
+    say(&alice, &bob, &transport, "now two devices");
+    assert_eq!(
+        requests_of(&server),
+        ["send", "keys-claim", "send", "send"],
+        "stale at once (nothing stored), the new device's key claimed, then one send per device"
+    );
+    assert_eq!(server.mailbox_len(&linked), 1, "the new device gets it");
+    assert_eq!(server.mailbox_len(&bob.device), 2, "so does the old one, once");
+    let claimable_after = server.state.lock().unwrap().one_time_keys.get(&bob.device).map_or(0, Vec::len);
+    assert_eq!(claimable_before, claimable_after, "no key was burned for the device that already had a session");
+
+    // And the cache is corrected: the next send is a plain one request per device.
+    forget_requests(&server);
+    say(&alice, &bob, &transport, "again");
+    assert_eq!(requests_of(&server), ["send", "send"]);
+}
+
+#[test]
+fn a_revoked_device_is_dropped_from_the_cache_and_the_send_is_retried_without_a_lookup() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "first");
+    let linked = add_linked_device(&server, &bob);
+    say(&alice, &bob, &transport, "two devices");
+    assert_eq!(server.mailbox_len(&linked), 1);
+
+    revoke(&server, "bob", &linked);
+    forget_requests(&server);
+    say(&alice, &bob, &transport, "one device again");
+    let log = requests_of(&server);
+    assert!(!log.contains(&"users-devices".to_string()), "a 410 carries what is needed: {log:?}");
+    assert_eq!(server.mailbox_len(&linked), 1, "nothing more reached the revoked device");
+    assert_eq!(server.mailbox_len(&bob.device), 3);
+    forget_requests(&server);
+    say(&alice, &bob, &transport, "steady");
+    assert_eq!(requests_of(&server), ["send"], "the cache is down to the one live device");
+}
+
+#[test]
+fn a_changed_master_key_goes_through_the_key_change_flow_and_waits_for_the_new_key_to_be_trusted() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "first");
+    // Bob's keys are replaced: his old device is revoked, a new device with a new master key exists.
+    let (bob2, _) = bob_with_new_keys(&server);
+    let id = format!("dm:{}", bob2.user);
+    alice.store.queue_text(id.clone(), "are you there?".into()).unwrap();
+    forget_requests(&server);
+    assert!(matches!(alice.store.deliver_queued(transport.clone(), alice.token.clone()), Err(crate::StoreError::KeyMismatch)));
+    assert_eq!(requests_of(&server), ["send"], "the 409 came with the new key: no extra lookup, and nothing was stored");
+    assert_eq!(server.mailbox_len(&bob2.device), 0);
+    assert!(conversation(&alice, &bob2).unwrap().key_change_pending, "the usual notice, not a second one");
+
+    // Trusting the new key drops what was cached under the old one; the next send learns the new devices and delivers.
+    alice.store.trust_new_key(id).unwrap();
+    assert_eq!(alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap(), 1);
+    assert_eq!(sync(&bob2, &transport).received, 1);
+}
+
+#[test]
+fn a_server_that_does_not_check_expect_never_leaves_a_cache_nobody_validates() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    server.state.lock().unwrap().ignore_expect = true;
+    say(&alice, &bob, &transport, "first");
+    forget_requests(&server);
+    say(&alice, &bob, &transport, "second");
+    assert_eq!(requests_of(&server), ["users-devices", "send"], "no `checked` in its answer: the old behaviour, a lookup each time");
+    // A new device is found by that lookup, as it always was.
+    let linked = add_linked_device(&server, &bob);
+    forget_requests(&server);
+    say(&alice, &bob, &transport, "third");
+    assert!(requests_of(&server).contains(&"users-devices".to_string()));
+    assert_eq!(server.mailbox_len(&linked), 1);
+}
+
+#[test]
+fn a_send_that_is_stale_twice_in_a_row_fails_cleanly_instead_of_looping() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    say(&alice, &bob, &transport, "first");
+    // The server keeps disagreeing with the correction it gave: it names a revoked device that is still on the list it serves.
+    let linked = add_linked_device(&server, &bob);
+    server.state.lock().unwrap().revoked.insert(linked.clone(), "bob".into());
+    forget_requests(&server);
+    let result = alice.store.send_text_identified(transport.clone(), alice.token.clone(), bob.user.clone(), "loop?".into());
+    assert!(result.is_err());
+    assert!(requests_of(&server).len() <= 8, "one retry at most: {:?}", requests_of(&server));
+    // (This server is contradicting itself, so one device's request may have gone through before the other's was refused; a recipient
+    // de-duplicates by op id, so a repeat never shows twice.)
 }

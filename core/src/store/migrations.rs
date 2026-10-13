@@ -410,6 +410,17 @@ const MIGRATIONS: &[&str] = &[
          seen      INTEGER NOT NULL DEFAULT 0
      );
      CREATE INDEX call_history_by_time ON call_history (at_ms);",
+    // 26 (LIME-120): each contact's devices as last served by the server, so a send needs no lookup. The master key they were
+    // verified under is the pinned one in `peers`. A send says what it holds (`expect`) and the server corrects it when it is stale.
+    "CREATE TABLE peer_devices (
+         user_id          TEXT NOT NULL,
+         device_id        TEXT NOT NULL,
+         identity_key     TEXT NOT NULL,
+         signing_key      TEXT NOT NULL,
+         master_signature TEXT NOT NULL,
+         updated_at       INTEGER NOT NULL,
+         PRIMARY KEY (user_id, device_id)
+     );",
 ];
 
 /// The schema version this build writes.

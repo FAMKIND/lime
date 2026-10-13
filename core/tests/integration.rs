@@ -1609,3 +1609,62 @@ fn a_call_is_a_message_in_both_chats_that_can_be_reacted_to_and_replied_to_throu
     let thread = a.list_thread(call.into()).unwrap();
     assert!(thread.iter().any(|m| m.text == "sorry I missed that"), "and his reply under the call");
 }
+
+/// LIME-120: a send with a warm device cache is ONE request through the real server (sealed and identified), the answer says the
+/// server checked `expect`, and a new phone for the recipient (a key reset) is corrected from the 409/410 with no extra lookup.
+/// Throwaway accounts only. The timings go to stderr (`--nocapture`).
+#[test]
+fn a_send_is_one_request_with_a_warm_device_cache_and_a_stale_cache_is_corrected_by_the_server() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let [alice, bob] = &accounts;
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (store(&dir, "a.db", 1), store(&dir, "b.db", 2));
+    a.register_device(transport.clone(), alice.token.clone()).unwrap();
+    b.register_device(transport.clone(), bob.token.clone()).unwrap();
+
+    // First message: a lookup, a key claim and the send. Then, accepted both ways, every send is one request.
+    let chat = a.start_dm(bob.id.clone(), "Bob".into()).unwrap();
+    a.queue_text(chat.clone(), "hello".into()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    // (`last_send_requests` is the last send of the pass, which may be the delivery-key share that follows: only warm sends are asserted.)
+    b.sync(transport.clone(), bob.token.clone()).unwrap();
+    b.accept_request(format!("dm:{}", alice.id)).unwrap();
+    b.deliver_queued(transport.clone(), bob.token.clone()).unwrap();
+    a.sync(transport.clone(), alice.token.clone()).unwrap();
+
+    let mut times = Vec::new();
+    for i in 0..6 {
+        a.queue_text(chat.clone(), format!("warm {i}")).unwrap();
+        let started = std::time::Instant::now();
+        a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+        times.push(started.elapsed().as_millis());
+        assert_eq!(a.last_send_requests(), 1, "warm cache, existing session: one request");
+    }
+    let payload = json!({ "call_id": "c-warm" }).to_string();
+    a.send_call_signal(transport.clone(), alice.token.clone(), bob.id.clone(), "call.end".into(), payload).unwrap();
+    assert_eq!(a.last_send_requests(), 1, "a sealed call op too");
+    times.sort_unstable();
+    eprintln!("warm identified sends (ms, sorted): {times:?}; median {} ms", times[times.len() / 2]);
+    assert_eq!(b.sync(transport.clone(), bob.token.clone()).unwrap().received, 6);
+
+    // Bob's phone is replaced (new keys): Alice's cache is stale. The server says so with the new devices and key; the core runs the
+    // usual key-change flow (no second notice, no extra lookup), and after she trusts it the next send is one request again.
+    let b2 = store(&dir, "b2.db", 3);
+    b2.register_device(transport.clone(), bob.token.clone()).unwrap();
+    a.queue_text(chat.clone(), "to the new phone".into()).unwrap();
+    assert!(matches!(a.deliver_queued(transport.clone(), alice.token.clone()), Err(lime_core::StoreError::KeyMismatch)));
+    assert_eq!(a.last_send_requests(), 1, "the 409 carried the new key and devices");
+    assert!(a.list_conversations().unwrap()[0].key_change_pending);
+    a.trust_new_key(chat.clone()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(b2.sync(transport.clone(), bob.token.clone()).unwrap().received >= 1, true);
+    a.queue_text(chat.clone(), "steady again".into()).unwrap();
+    a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(a.last_send_requests(), 1);
+}

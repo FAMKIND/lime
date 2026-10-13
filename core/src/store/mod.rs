@@ -229,6 +229,8 @@ pub struct LimeStore {
     pub(crate) lock_wait_ms: std::sync::atomic::AtomicU64,
     /// Mailbox items downloaded since the app last asked (call diagnostics).
     pub(crate) downloaded: std::sync::atomic::AtomicU32,
+    /// How many HTTP requests the last send took (a send with a warm device cache is one): call diagnostics.
+    pub(crate) last_send_requests: std::sync::atomic::AtomicU32,
 }
 
 pub(crate) fn db_err(_: rusqlite::Error) -> StoreError {
@@ -448,6 +450,8 @@ impl LimeStore {
             params![peer],
         )
         .map_err(db_err)?;
+        // The devices I held for them were verified under the old key: the next send fetches them afresh.
+        conn.execute("DELETE FROM peer_devices WHERE user_id = ?1", params![peer]).map_err(db_err)?;
         conn.execute(
             "UPDATE pending_inbound SET reason = 'new' WHERE sender_user = ?1 AND reason = 'key_mismatch'",
             params![peer],
@@ -713,6 +717,7 @@ impl LimeStore {
             fetch_lock: Mutex::new(()),
             lock_wait_ms: std::sync::atomic::AtomicU64::new(0),
             downloaded: std::sync::atomic::AtomicU32::new(0),
+            last_send_requests: std::sync::atomic::AtomicU32::new(0),
         })
     }
 }
