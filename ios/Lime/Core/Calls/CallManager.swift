@@ -656,7 +656,8 @@ final class CallManager {
     func preparePictureInPicture(sourceView: UIView) {
         guard video, inCall, let media else { return }
         if pip == nil { pip = makePictureInPicture?(media); wirePictureInPicture() }
-        pip?.prepare(sourceView: sourceView)
+        pip?.prepare(sourceView: sourceView, person: Person(id: peerID, name: peerName))
+        pip?.setRemoteCameraOff(!remoteCameraOn)
     }
 
     private func wirePictureInPicture() {
@@ -707,7 +708,7 @@ final class CallManager {
         switch type {
         case "state":
             if let value = object["muted"] as? Bool { remoteMuted = value }
-            if let value = object["camera"] as? Bool { remoteCameraOn = value }
+            if let value = object["camera"] as? Bool { remoteCameraOn = value; pip?.setRemoteCameraOff(!value) }
         case "offer":
             if let sdp = object["sdp"] as? String { await receivedRenegotiation(offer: sdp) }
         case "answer":

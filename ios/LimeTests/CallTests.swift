@@ -76,7 +76,11 @@ private final class FakePiP: CallPiP {
     var onRestore: (() -> Void)?
     var onFailed: (() -> Void)?
     var prepared = 0, started = 0, stopped = 0
-    func prepare(sourceView: UIView) { prepared += 1 }
+    /// What the window would show: their photo (the camera is off) or the video.
+    private(set) var showsAvatar = false
+    private(set) var person: Person?
+    func prepare(sourceView: UIView, person: Person) { prepared += 1; self.person = person }
+    func setRemoteCameraOff(_ off: Bool) { showsAvatar = off }
     func start() { started += 1 }
     func stop() { stopped += 1 }
 }
@@ -695,5 +699,22 @@ final class CallTests: XCTestCase {
         let before = m.verificationEmoji
         await m.startVideo()
         XCTAssertEqual(m.verificationEmoji, before)
+    }
+
+    func testTheMinimisedWindowShowsTheirPhotoWhenTheirCameraIsOffAndTheVideoWhenItIsOn() async {
+        let pip = FakePiP()
+        let m = await videoCallWithPiP(pip)
+        XCTAssertEqual(pip.person?.name, "Jean", "the photo is theirs")
+        XCTAssertFalse(pip.showsAvatar, "their camera is on: the video")
+        await m.handleControl(state(false, false))
+        XCTAssertTrue(pip.showsAvatar, "their camera is off: their photo, never a black window")
+        await m.handleControl(state(false, true))
+        XCTAssertFalse(pip.showsAvatar, "and back to the video")
+        // A window made while their camera is off starts on the photo.
+        await m.handleControl(state(false, false))
+        let late = FakePiP()
+        m.makePictureInPicture = { _ in late }
+        m.preparePictureInPicture(sourceView: UIView())
+        XCTAssertTrue(late.showsAvatar || late.prepared == 0, "a new window starts on the photo")
     }
 }
