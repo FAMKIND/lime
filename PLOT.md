@@ -126,6 +126,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e72. **LIME-132b PAUSED mid-Phase 2 (tend, 2026-10-13 12:12; uncommitted in the tree).** The `.so` builds for arm64-v8a (6.8 MB) and x86_64 (7.5 MB) with `crate-type` unchanged; SQLCipher needed only `bundled-sqlcipher-vendored-openssl` behind a `cfg(target_os = "android")` block; vodozemac needed nothing; Kotlin is generated from the non-stripped `.a`. **The blocker:** `Block::List` shadows Kotlin's `List`. **DECIDED (the user): option C, a separate rename brief first → LIME-136 (drafted, NEXT)**, then 132b resumes with no patch. **Plot first leaned A (fold it in); the user rightly asked why, given C's cleaner history.** Plot's lean broke its own "one change per brief" rule. **Proposed standing rule** (goes into `docs/android.md` via 132b): no UniFFI-exposed type or variant named `List`, `Map`, `Set`, `String`, `Int`, `Unit` or `Result`.
 1e71. **135 gate PASSED (the user, 2026-10-13: "works").** The calls series' polish is done. **→ LIME-132b (drafted, NEXT; supersedes 132).** The survey found no JDK/NDK/kotlinc/cargo-ndk, no `cdylib`, SQLCipher needing OpenSSL on Android, and `strip = true` vs UniFFI metadata. The user must install the JDK and accept the SDK licences (tend stops for it). **Queue: 132b → 112b (re-survey first) → 117 → 133 → 113 → 130 → …**
 1e70. **LIME-135-fix LANDED as `1a88002` (pushed, 2026-10-13; PLOT.md `3d8120f`).** Full suite 471 on the 13 mini, 0 warnings, Release clean; minimise confirmed working on the 13 mini + iPad. **Waiting on the rest of the 135 gate** (the photo with their camera off, 5× restore portrait/landscape, Stage Manager, the flip). **Next after the gate: LIME-132** (re-survey first).
 1e69. **LIME-135-fix: cause FOUND and fixed (tend, 2026-10-13; uncommitted while its checks run).** The stack (13 mini, `--console`, a real call): `Fatal error: No Observable object of type ConversationStore found`. 135's PiP photo was a `UIHostingController` around `AvatarView`, whose `.statusBadge` modifier reads `@Environment(ConversationStore.self)`; the system-hosted PiP window has no environment → a trap on the first render (the other side saw "call failed"). The fix = plain-UIKit `PiPAvatarView`; all of 135 kept; a unit test lays it out with no environment. The user confirms minimise works on the 13 mini + iPad. **Still open in the gate:** the photo when their camera is off, 5× restore in portrait/landscape, Stage Manager, the flip. **Plot's miss:** plot ruled `AvatarView` out by grepping only its own file; the environment read was in its modifier. Lesson: check what a view's modifiers read, not just its body. Device notes: a wedged phone made `devicectl install` hang 15+ min (healthy ≈ 5 s; `-v` shows progress); a crash with PiP up froze the old phone's system UI until a force restart.
@@ -4653,7 +4654,34 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-135-fix` in TEND.md, with the stack (or "not captured") and the cause, ending with a paragraph headed **For plot:**. **Commit:** `fix(ios): minimising a video call no longer crashes`, trailer `Brief: LIME-135-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Anything outside this scope: stop and ask the user.
 
-### LIME-132b → `tend` (lime-aa) (NEXT; drafted 2026-10-13; supersedes LIME-132 below): prove LimeCore builds for Android and its Kotlin bindings generate, on every run
+### LIME-136 → `tend` (lime-aa) (NEXT, before 132b finishes; drafted 2026-10-13): rename `Block::List` to `Block::ItemList`
+**Goal:** the core's formatting `Block` enum has no variant named like a Kotlin/Swift built-in type, so the Kotlin bindings compile with no patch; iOS behaves exactly as before.
+
+**Why (found by 132b, 2026-10-13):** UniFFI turns `Block::List` (`core/src/format.rs:41`) into a Kotlin nested `data class List`, which shadows `kotlin.collections.List` inside the sealed class, so `List<Span>`/`List<ListItem>` don't resolve. `kotlinc`: "no type arguments expected for 'data class List : Block'". Hand-qualifying fixed it in a scratch copy. **The user chose a separate brief (option C) over folding it into 132b or patching the generated Kotlin.** Name: `ItemList` (it covers bulleted and numbered lists, so not "Bullets").
+
+**Plot's survey:** `Block::List` appears 5 times in `core/src`. Swift uses `.list` at `ios/Lime/Features/Chat/MessageText.swift:27` (and maybe `:74`; check whether that one is `Block` or another enum) and `ios/Lime/Features/Chat/Composer/ComposerDocument.swift:131, 232`. `Block` derives only `Debug, Clone, PartialEq, Eq, uniffi::Enum`: **not serialised**, so no stored data or wire format changes and no migration.
+
+**⚠ The working tree holds 132b's uncommitted work** (`core/Cargo.toml`, `core/Cargo.lock`, `core/rust-toolchain.toml`, `core/check-android.sh`, `core/android-check/`). **Leave it as it is, and don't stage it.** Commit with explicit paths only. Also never stage `public/assets/*`.
+
+**Scope:** `core/src/format.rs` (and any core test that names the variant), `ios/Lime/Core/Generated/*` (regenerated by `./core/build-ios.sh`, not hand-edited), the Swift uses above. **Not:** anything else.
+
+**Phase 0:** `git add PLOT.md` only, commit; re-read PLOT.md.
+
+**The change:** rename the variant `List { items }` → `ItemList { items }` and its uses in the core; run `./core/build-ios.sh`; update the Swift `case .list` → `case .itemList` (and `.list(items:)` → `.itemList(items:)`). No other change. Doc comments stay as they are ("Consecutive list lines.").
+
+**Kind:** a rename (behaviour unchanged); no new tests.
+
+**Verification:**
+- `cargo test` in `core/` passes: 192, the same as before;
+- the iOS app builds with 0 warnings and Release clean; the full suite on the 13 mini passes (the formatting and composer tests cover lists);
+- `git diff --stat` for the commit lists only `format.rs` (plus any core test file), `Generated/`, the 2 Swift files and TEND.md;
+- `grep -rn 'Block::List\|case \.list\b' core/src ios/Lime` → no matches (excluding unrelated `.list()` calls like `CallLog`'s `backing.list()`).
+
+**Gate (the user):** in a chat, send a message with a bulleted list and a numbered list (also nested), and type one in the composer: they look and behave exactly as before.
+
+**Record:** `## LIME-136` in TEND.md, ending with **For plot:**. **Commit (explicit paths):** `refactor(core): rename Block::List to Block::ItemList (Kotlin bindings)`, trailer `Brief: LIME-136`, plus the attribution trailer. **Push.** Stop. Then **132b resumes** in a later prompt, against the clean bindings, with no sed patch. No /loop wakeups.
+
+### LIME-132b → `tend` (lime-aa) (resumes after LIME-136; drafted 2026-10-13; supersedes LIME-132 below): prove LimeCore builds for Android and its Kotlin bindings generate, on every run
 **Goal:** one script, `core/check-android.sh`, proves the core builds for Android (arm64 + x86_64) and its Kotlin bindings generate and compile; iOS is unchanged.
 
 **Plot's survey (2026-10-13), facts the old brief missed:**
