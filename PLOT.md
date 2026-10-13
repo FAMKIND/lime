@@ -126,6 +126,9 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e71. **135 gate PASSED (the user, 2026-10-13: "works").** The calls series' polish is done. **→ LIME-132b (drafted, NEXT; supersedes 132).** The survey found no JDK/NDK/kotlinc/cargo-ndk, no `cdylib`, SQLCipher needing OpenSSL on Android, and `strip = true` vs UniFFI metadata. The user must install the JDK and accept the SDK licences (tend stops for it). **Queue: 132b → 112b (re-survey first) → 117 → 133 → 113 → 130 → …**
+1e70. **LIME-135-fix LANDED as `1a88002` (pushed, 2026-10-13; PLOT.md `3d8120f`).** Full suite 471 on the 13 mini, 0 warnings, Release clean; minimise confirmed working on the 13 mini + iPad. **Waiting on the rest of the 135 gate** (the photo with their camera off, 5× restore portrait/landscape, Stage Manager, the flip). **Next after the gate: LIME-132** (re-survey first).
+1e69. **LIME-135-fix: cause FOUND and fixed (tend, 2026-10-13; uncommitted while its checks run).** The stack (13 mini, `--console`, a real call): `Fatal error: No Observable object of type ConversationStore found`. 135's PiP photo was a `UIHostingController` around `AvatarView`, whose `.statusBadge` modifier reads `@Environment(ConversationStore.self)`; the system-hosted PiP window has no environment → a trap on the first render (the other side saw "call failed"). The fix = plain-UIKit `PiPAvatarView`; all of 135 kept; a unit test lays it out with no environment. The user confirms minimise works on the 13 mini + iPad. **Still open in the gate:** the photo when their camera is off, 5× restore in portrait/landscape, Stage Manager, the flip. **Plot's miss:** plot ruled `AvatarView` out by grepping only its own file; the environment read was in its modifier. Lesson: check what a view's modifiers read, not just its body. Device notes: a wedged phone made `devicectl install` hang 15+ min (healthy ≈ 5 s; `-v` shows progress); a crash with PiP up froze the old phone's system UI until a force restart.
 1e68. **135 gate FAILED (the user, 2026-10-13): "minimised crashed both devices."** The 13 mini's log ends inside `start()` (after `applyCurrent`, before `pip started`); no `.ips`. **→ LIME-135-fix (drafted, NEXT, urgent):** get the stack on the USB phone with the user placing one call; bisect the 4 suspects; **revert 135's PiP code if not found in ~30 min.** 132 waits.
 1e67. **LIME-135 LANDED as `4ad9a8a` (pushed, 2026-10-13; PLOT.md `011af4b`).** Full suite 470 on the 13 mini, CallTests on SE/18 Pro, 0 warnings, Release clean. PiP not seen on any screen (simulator); waiting on the user's two-phone + iPad gate. **Next after the gate: LIME-132** (re-survey first). (PLOT.md shows modified only because plot wrote 1e66/1e67 after Phase 0; the next Phase 0 commits it.)
 1e66. **LIME-135 built, not committed yet (tend, 2026-10-13 ~00:24; checks running).** **134 confirmed:** full suite 469 pass, 0 warnings, Release clean, chat + call-screen tests on SE/18 Pro. **135:** avatar on camera off or after 1 s with no frame (0.2 s cross-fade, layer flushed, VoiceOver "<name>, camera off"); size + rotation set from the last frame before start; **frames held after a rotation change until it's applied** (watch at the gate: a brief freeze when the phone turns?); PiP now aspect-fills like the call screen (FaceTime-like; it may crop the edges of their picture); diagnostics lines; 1 unit test. **Diagnosis:** black window, the 480×640 opening and the late rotation are real in code; no mirroring anywhere, so the late rotation is the likeliest "flip" (unconfirmed). **Nothing seen on a screen** (the simulator can't run PiP without a real call): the gate is the only proof. Waiting on tend's final "For plot:" + commit.
@@ -428,6 +431,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 - Green = only the primary action; no dividers/arrows on lists (Settings keeps its chevrons).
 - The QA intake: small items go into the next QA brief; features get their own brief.
 - Tend is the session **lime-aa**; relay prompts there.
+- **No SwiftUI that reads the app's environment inside a system-hosted window** (PiP, anything iOS shows in its own window) (LIME-135-fix, 2026-10-13: `AvatarView`'s status badge read `ConversationStore` and crashed every minimise). Use plain UIKit there, or a SwiftUI view with no `@Environment` reads anywhere in its modifiers. Briefs touching PiP or system UI say so.
 - **Tend's handoff label is "For plot:"** (the user, 2026-10-12). Tend had been heading its end-of-run report "For tend:", but that report goes to plot (the user pastes it here). Every brief's Record step says: "end with a paragraph headed **For plot:** (what landed, the commit, the gate, what wasn't exercised)".
 
 ### Gather
@@ -4649,7 +4653,58 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-135-fix` in TEND.md, with the stack (or "not captured") and the cause, ending with a paragraph headed **For plot:**. **Commit:** `fix(ios): minimising a video call no longer crashes`, trailer `Brief: LIME-135-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Anything outside this scope: stop and ask the user.
 
-### LIME-132 → `tend` (lime-aa) (after 134, small): keep LimeCore Android-ready from now on (a build + bindings check)
+### LIME-132b → `tend` (lime-aa) (NEXT; drafted 2026-10-13; supersedes LIME-132 below): prove LimeCore builds for Android and its Kotlin bindings generate, on every run
+**Goal:** one script, `core/check-android.sh`, proves the core builds for Android (arm64 + x86_64) and its Kotlin bindings generate and compile; iOS is unchanged.
+
+**Plot's survey (2026-10-13), facts the old brief missed:**
+- **Nothing Android is installed:** no Android SDK/NDK (`ANDROID_HOME` unset), **no Java runtime** (`/usr/bin/java` is only the macOS stub), no `kotlinc`, no `cargo-ndk`; `rustup` has only the Apple targets. Homebrew and perl exist; 258 GB free.
+- `core/rust-toolchain.toml` pins 1.99.0 with `targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim"]`.
+- `core/Cargo.toml`: `crate-type = ["staticlib", "lib"]`, so there is **no `cdylib`** (Android needs a `.so`).
+- `rusqlite` uses `bundled-sqlcipher`. **SQLCipher needs a crypto library: on Apple it can use CommonCrypto, on Android it needs OpenSSL**, which is likely `bundled-sqlcipher-vendored-openssl` for Android only. **Unverified: tend confirms by building.**
+- The release profile has `strip = true`; the iOS script generates Swift from the **`.a`** in UniFFI library mode (`build-ios.sh:29`). A stripped `.so` may lose UniFFI's metadata, so generate Kotlin from a non-stripped artifact.
+- No `cfg(target_os…)` in `core/src`. TEND.md has **no "Android debt" entries yet**: the debt list comes from LIME-133's list in PLOT.md.
+
+**Capabilities assumed:** edit files, run commands, use the network (Homebrew, rustup, crates, sdkmanager), commit and push. **What needs the user:** the JDK installer (Mac password) and **accepting the Android SDK licences: the user does this, not tend.**
+
+**Scope:** `core/check-android.sh` (new), `core/rust-toolchain.toml` (targets), `core/Cargo.toml` (Android-only dependency features; `crate-type` only if needed, see 2), a minimal Kotlin harness under `core/android-check/` (new), `docs/android.md` (new), `core/README.md` (one paragraph). **Not:** anything under `ios/`, `build-ios.sh`'s output, `supabase/`, `public/`.
+
+**Phase 0:** `git add PLOT.md` only, commit; re-read PLOT.md.
+
+**Phase 1 (tooling; stop for the user):**
+- Install what needs no password or licence: `cargo-ndk`, `kotlin` (Homebrew), the two rustup targets.
+- Then **stop and give the user one Terminal block** to run:
+  - `brew install --cask temurin` (asks for the Mac password);
+  - `brew install --cask android-commandlinetools`;
+  - `sdkmanager --licenses` (they read and accept);
+  - `sdkmanager "ndk;<version>"`, with **the latest stable NDK, which tend reads from `sdkmanager --list`** and states;
+  - the `ANDROID_HOME`/`ANDROID_NDK_HOME` lines for `~/.zprofile`.
+- Resume when the user says "done".
+
+**Phase 2:**
+1. **The toolchain:** add `aarch64-linux-android` and `x86_64-linux-android` to `rust-toolchain.toml`'s targets. (rustup fetches them once; check that `./core/build-ios.sh` still works and isn't slower beyond that.)
+2. **The `.so`:** prefer building the cdylib from the script **without changing `crate-type`** (`cargo ndk -t arm64-v8a -t x86_64 rustc --release --lib --crate-type cdylib`, or the equivalent). Only if that can't work, add `"cdylib"` to `crate-type` and prove the iOS build and the app are unchanged (the same xcframework, `ios/Lime` builds, 0 warnings).
+3. **SQLCipher + vodozemac on Android:** make them build with Android-only features (e.g. `[target.'cfg(target_os = "android")'.dependencies] rusqlite = { …, features = ["bundled-sqlcipher-vendored-openssl"] }`), **leaving the Apple build's features as they are**. Report the exact feature used and why. If vodozemac or any crate needs more than a feature flag, stop and ask the user.
+4. **The Kotlin bindings:** generate with the existing `uniffi-bindgen` (library mode) from a **non-stripped** artifact. The Kotlin is platform-independent, so the host or iOS-sim `.a` is fine if the `.so` is stripped. Then **compile them** with `kotlinc` against JNA (download the jar in the script, cached under `core/target/`) in `core/android-check/`: one tiny `Main.kt` that references a few core types. **Compile only**: running needs an Android device or emulator, not in scope.
+5. `core/check-android.sh`: one command doing 2–4; it prints each `.so`'s size and exits non-zero on any failure. It must fail fast with a clear message if the NDK/JDK is missing.
+6. `docs/android.md`:
+   - the plan (Kotlin + Jetpack Compose on LimeCore; the platform adapters: ConnectionService/Telecom for calls, FCM for push, Android BLE for mesh, CameraX/WebRTC for media, Keystore for keys, the system PiP);
+   - how to run the check;
+   - the **Android debt** list, copied from LIME-133 (CallManager's signalling, status/work hours, call history rules, filters, the profile context, unread counts), plus anything tend finds;
+   - the **"no app-environment SwiftUI in system windows"** lesson's Android twin (PiP views take explicit data).
+7. `core/README.md`: one paragraph pointing to the script.
+
+**Kind:** tooling + docs. No UI, no new app tests.
+
+**Verification:**
+- `./core/check-android.sh` passes; report both `.so` sizes and the Kotlin compile;
+- `cargo test` in `core/` passes (the same count as before);
+- `./core/build-ios.sh`, then the iOS app builds with 0 warnings and Release clean; **no file under `ios/` changes** (including `Generated/`; if the generated Swift changes, stop and say why).
+
+**Gate:** none on a device; plot reviews tend's report (the features used, the sizes, whether `crate-type` changed).
+
+**Record:** `## LIME-132b` in TEND.md, ending with a paragraph headed **For plot:**. **Commit:** `chore(core): Android build and Kotlin bindings check; docs/android.md`, trailer `Brief: LIME-132b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. If the survey turns up anything Apple-only inside the core, raise it before changing it.
+
+### LIME-132 → `tend` (lime-aa) (after 134, small) (SUPERSEDED by LIME-132b above): keep LimeCore Android-ready from now on (a build + bindings check)
 **Goal:** every commit proves the core still builds for Android and its Kotlin bindings generate, so Android-readiness can't silently rot.
 **Phase 2:**
 1. Add the Android targets (`aarch64-linux-android`, `x86_64-linux-android`) and **cargo-ndk** (Homebrew/rustup; the Android NDK via the command-line tools, no Android Studio needed). If installing the NDK needs the user (a licence prompt or a large download), stop and give the user the exact steps.
