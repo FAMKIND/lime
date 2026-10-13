@@ -98,6 +98,12 @@ final class ConversationStore {
     #if DEBUG
     /// Debug builds only (`-lime-demo-chat`): made-up conversations that live in memory, for screenshots and UI tests.
     private(set) var isDemo = false
+    /// Debug demo: a message that "arrives" in a chat that is open (LIME-134: a reload right after the chat opened).
+    func demoReceive(_ conversationID: String, text: String) {
+        guard let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        conversations[index].messages.append(Message(id: "arrived-\(conversations[index].messages.count)", senderID: conversations[index].members.first?.id, text: text, date: Date()))
+    }
+
     /// Debug demo: my photo and who may see it (no server).
     /// Debug demo: the decrypted bytes of the demo attachments, by id, and whether the composer opens with drafts.
     var demoAttachmentData: [String: Data] = [:]
@@ -828,6 +834,18 @@ final class ConversationStore {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
+        case "chat-long":
+            // A long chat (LIME-134): messages of every height, for opening it again and again.
+            let pat = Person(id: "pat", name: "Pat Doe")
+            let words = ["Fractions", "recess", "the bus", "field trip forms", "parent night", "the new schedule", "reading groups", "a substitute"]
+            var messages: [Message] = []
+            for i in 1...60 {
+                let body = (0..<(1 + (i * 7) % 5)).map { k in words[(i * 3 + k) % words.count] }.joined(separator: ", ")
+                let text = "Message \(i): \(body)" + (i % 9 == 0 ? ". Could you also look at the long list of things for Friday, because it has a lot of lines and wraps over several rows." : "")
+                messages.append(Message(id: "m\(i)", senderID: i % 3 == 0 ? nil : "pat", text: text, date: Date().addingTimeInterval(Double(i - 61) * 1_800), state: i % 3 == 0 ? .sent : .received))
+            }
+            conversations.insert(Conversation(id: "dm:long", title: pat.name, members: [pat], messages: messages), at: 0)
+            path.append("dm:long")
         case "call-bubbles":
             // A chat with calls in it: one I placed (video, 0:23), one they missed of mine, one of theirs I missed.
             let at = now.addingTimeInterval(-3_000)

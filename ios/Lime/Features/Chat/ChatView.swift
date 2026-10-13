@@ -139,9 +139,101 @@ struct ChatView: View {
     private func messageScroll(_ conversation: Conversation, top: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
+                let rows = ChatRow.rows(for: conversation)
                 let lastOwnID = conversation.messages.last(where: { $0.isOwn && !$0.isSystem })?.id
-                LazyVStack(spacing: 0) {
-                    ForEach(ChatRow.rows(for: conversation)) { row in
+                // A chat that fits in memory is laid out whole, so its height is known and it opens at the newest message every
+                // time. A lazy stack estimates the height of the rows it has not drawn, and `defaultScrollAnchor(.bottom)` then lands
+                // in a region that was never laid out (a blank chat until you drag) or at the top (LIME-134). Only a very long chat
+                // stays lazy, and it is scrolled to the bottom again once its rows have been drawn.
+                Group {
+                    if rows.count <= Self.eagerRows {
+                        VStack(spacing: 0) { chatRows(rows, in: conversation, lastOwnID: lastOwnID) }
+                    } else {
+                        LazyVStack(spacing: 0) { chatRows(rows, in: conversation, lastOwnID: lastOwnID) }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, top)
+                .padding(.bottom, 8)
+            }
+            .accessibilityIdentifier("chat-scroll")
+            .environment(\.chatConversationID, conversationID)
+            .linkOpening()
+            .attachmentPresenting()
+            .scrollDismissesKeyboard(.interactively)
+            .defaultScrollAnchor(.bottom)
+            .task(id: conversationID) {
+                // Opening a chat: once its rows have been laid out, settle at the newest message. `defaultScrollAnchor` alone is not
+                // enough on every iOS version (a chat pushed at launch opened at its top on iOS 18); this is a no-op when it worked.
+                // Not for a search result's jump to a message.
+                guard focusMessageID == nil else { return }
+                for delay in [0, 120, 350] {
+                    try? await Task.sleep(for: .milliseconds(delay))
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
+            .onChange(of: verticalSizeClass) { _, _ in
+                Task { try? await Task.sleep(for: .milliseconds(250)); proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .refreshable { await store.pullToRefresh() }
+            .onChange(of: scrollRequest) { _, request in
+                guard let request else { return }
+                withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(request.id, anchor: .center) }
+            }
+            #if DEBUG
+            .task {
+                // Screenshots: the composer with some text selected, so the toolbar is up.
+                guard store.demoCompose else { return }
+                try? await Task.sleep(for: .milliseconds(600))
+                guard let view = composerModel.textView else { return }
+                view.attributedText = ComposerDocument.attributed(fromMarkdown: "Ok I have Unit 7 ready for review")
+                composerModel.didEdit()
+                view.becomeFirstResponder()
+                view.selectedRange = (view.text as NSString).range(of: "Unit 7")
+            }
+            #endif
+            #if DEBUG
+            .task {
+                // A message arrives just after the chat opens (the test of a chat that must not open blank).
+                guard store.isDemo, ProcessInfo.processInfo.arguments.contains("-lime-demo-arrival") else { return }
+                try? await Task.sleep(for: .milliseconds(350))
+                store.demoReceive(conversationID, text: "Arrived while open")
+            }
+            #endif
+            #if DEBUG
+            .task {
+                // Screenshots: open with the find bar already typed.
+                if let typed = store.demoQuery, focusMessageID == nil { startFinding(); findQuery = typed }
+            }
+            #endif
+            .task {
+                // Opened from a search result: land on the message, highlight it, then let it fade.
+                guard let focusMessageID else { return }
+                try? await Task.sleep(for: .milliseconds(250))
+                highlightedID = focusMessageID
+                scrollRequest = ScrollRequest(id: focusMessageID)
+                try? await Task.sleep(for: .seconds(4))
+                if highlightedID == focusMessageID && !finding { withAnimation { highlightedID = nil } }
+            }
+            .onChange(of: conversation.messages.count) {
+                withAnimation { proxy.scrollTo("bottom") }
+                // A message that arrives while the chat is open is read.
+                Task { await store.markRead(conversationID) }
+            }
+            .task { await store.markRead(conversationID) }
+            // Opening a chat looks for a new photo of the people in it (at most once a minute each).
+            .task { await store.refreshPhotos(of: store.conversation(conversationID)?.members.map(\.id) ?? []) }
+            .onAppear { notifications.viewing = ViewingTarget(conversationID: conversationID) }
+            .onDisappear { if notifications.viewing == ViewingTarget(conversationID: conversationID) { notifications.viewing = nil } }
+        }
+    }
+
+    /// Above this many rows a chat is laid out lazily.
+    private static let eagerRows = 150
+
+    @ViewBuilder
+    private func chatRows(_ rows: [ChatRow], in conversation: Conversation, lastOwnID: String?) -> some View {
+                    ForEach(rows) { row in
                         switch row.kind {
                         case .day(let text):
                             Text(text)
@@ -185,63 +277,6 @@ struct ChatView: View {
                         }
                     }
                     Color.clear.frame(height: 1).id("bottom")
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, top)
-                .padding(.bottom, 8)
-            }
-            .accessibilityIdentifier("chat-scroll")
-            .environment(\.chatConversationID, conversationID)
-            .linkOpening()
-            .attachmentPresenting()
-            .scrollDismissesKeyboard(.interactively)
-            .defaultScrollAnchor(.bottom)
-            .onChange(of: verticalSizeClass) { _, _ in
-                Task { try? await Task.sleep(for: .milliseconds(250)); proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            .refreshable { await store.pullToRefresh() }
-            .onChange(of: scrollRequest) { _, request in
-                guard let request else { return }
-                withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(request.id, anchor: .center) }
-            }
-            #if DEBUG
-            .task {
-                // Screenshots: the composer with some text selected, so the toolbar is up.
-                guard store.demoCompose else { return }
-                try? await Task.sleep(for: .milliseconds(600))
-                guard let view = composerModel.textView else { return }
-                view.attributedText = ComposerDocument.attributed(fromMarkdown: "Ok I have Unit 7 ready for review")
-                composerModel.didEdit()
-                view.becomeFirstResponder()
-                view.selectedRange = (view.text as NSString).range(of: "Unit 7")
-            }
-            #endif
-            #if DEBUG
-            .task {
-                // Screenshots: open with the find bar already typed.
-                if let typed = store.demoQuery, focusMessageID == nil { startFinding(); findQuery = typed }
-            }
-            #endif
-            .task {
-                // Opened from a search result: land on the message, highlight it, then let it fade.
-                guard let focusMessageID else { return }
-                try? await Task.sleep(for: .milliseconds(250))
-                highlightedID = focusMessageID
-                scrollRequest = ScrollRequest(id: focusMessageID)
-                try? await Task.sleep(for: .seconds(4))
-                if highlightedID == focusMessageID && !finding { withAnimation { highlightedID = nil } }
-            }
-            .onChange(of: conversation.messages.count) {
-                withAnimation { proxy.scrollTo("bottom") }
-                // A message that arrives while the chat is open is read.
-                Task { await store.markRead(conversationID) }
-            }
-            .task { await store.markRead(conversationID) }
-            // Opening a chat looks for a new photo of the people in it (at most once a minute each).
-            .task { await store.refreshPhotos(of: store.conversation(conversationID)?.members.map(\.id) ?? []) }
-            .onAppear { notifications.viewing = ViewingTarget(conversationID: conversationID) }
-            .onDisappear { if notifications.viewing == ViewingTarget(conversationID: conversationID) { notifications.viewing = nil } }
-        }
     }
 
     private func sealExplanation(_ conversation: Conversation) -> String {

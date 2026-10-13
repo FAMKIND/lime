@@ -42,7 +42,17 @@ struct CallView: View {
         GeometryReader { geo in
             ZStack {
                 background(call, in: geo.size)
-                if call.video { videoLayers(call, in: geo.size) }
+                if call.video {
+                    // The picture fills the whole screen. It is an overlay on a safe-area-sized clear view, moved back by the insets, so
+                    // it can be bigger than the screen's safe area without making the header and the controls (which stay inside it) move.
+                    let full = screen(of: geo)
+                    Color.clear.frame(width: geo.size.width, height: geo.size.height)
+                        .overlay(alignment: .topLeading) {
+                            videoLayers(call, in: full, safe: geo.safeAreaInsets)
+                                .frame(width: full.width, height: full.height, alignment: .topLeading)
+                                .offset(x: -geo.safeAreaInsets.leading, y: -geo.safeAreaInsets.top)
+                        }
+                }
                 VStack(alignment: .leading, spacing: 6) {
                     header(call)
                     if call.phase == .outgoing && call.showUnreachableHint {
@@ -123,8 +133,8 @@ struct CallView: View {
     }
 
     @ViewBuilder
-    private func videoLayers(_ call: CallManager, in size: CGSize) -> some View {
-        let tileOrigin = origin(of: corner, in: size)
+    private func videoLayers(_ call: CallManager, in size: CGSize, safe: EdgeInsets) -> some View {
+        let tileOrigin = origin(of: corner, in: size, safe: safe)
         // Two fixed views, laid out as the big picture or as the tile (a UIView cannot move between parents).
         let remoteBig = !swapped
         ZStack(alignment: .topLeading) {
@@ -151,13 +161,12 @@ struct CallView: View {
                 .offset(x: tileOrigin.x + drag.width, y: tileOrigin.y + drag.height)
                 .gesture(DragGesture().onChanged { drag = $0.translation }.onEnded { value in
                     let end = CGPoint(x: tileOrigin.x + value.translation.width + tile.width / 2, y: tileOrigin.y + value.translation.height + tile.height / 2)
-                    withAnimation(.spring(duration: 0.3)) { corner = nearest(to: end, in: size); drag = .zero }
+                    withAnimation(.spring(duration: 0.3)) { corner = nearest(to: end, in: size, safe: safe); drag = .zero }
                 })
                 .onTapGesture { withAnimation { swapped.toggle() }; showControls() }
                 .accessibilityIdentifier("call-tile-handle")
                 .accessibilityLabel("Swap the pictures")
         }
-        .ignoresSafeArea()
     }
 
     @ViewBuilder
@@ -165,19 +174,29 @@ struct CallView: View {
         if let view { VideoSurface { view }.accessibilityIdentifier(id) } else { placeholder.accessibilityIdentifier(id) }
     }
 
-    private func origin(of corner: Corner, in size: CGSize) -> CGPoint {
+    /// The whole screen, edge to edge: the picture and the background fill it under the status bar and the home indicator (the
+    /// controls stay inside the safe area). `geo` is the safe area's size, so the insets are added back.
+    private func screen(of geo: GeometryProxy) -> CGSize {
+        CGSize(width: geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing,
+               height: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
+    }
+
+    /// The tile's corners, in screen coordinates (the video layers start at the top-left of the whole screen); the margins are from
+    /// the safe area's edges so the tile never sits under the status bar or the controls.
+    private func origin(of corner: Corner, in size: CGSize, safe: EdgeInsets) -> CGPoint {
         let margin: CGFloat = 16, top: CGFloat = 70, bottom: CGFloat = 110
+        let left = safe.leading + margin, right = safe.trailing + margin
         switch corner {
-        case .topLeading: return CGPoint(x: margin, y: top + 50)
-        case .topTrailing: return CGPoint(x: size.width - tile.width - margin, y: top)
-        case .bottomLeading: return CGPoint(x: margin, y: size.height - tile.height - bottom)
-        case .bottomTrailing: return CGPoint(x: size.width - tile.width - margin - 70, y: size.height - tile.height - bottom)
+        case .topLeading: return CGPoint(x: left, y: top + 50)
+        case .topTrailing: return CGPoint(x: size.width - tile.width - right, y: top)
+        case .bottomLeading: return CGPoint(x: left, y: size.height - tile.height - bottom - safe.bottom)
+        case .bottomTrailing: return CGPoint(x: size.width - tile.width - right - 70, y: size.height - tile.height - bottom - safe.bottom)
         }
     }
 
-    private func nearest(to point: CGPoint, in size: CGSize) -> Corner {
+    private func nearest(to point: CGPoint, in size: CGSize, safe: EdgeInsets) -> Corner {
         Corner.allCases.min { lhs, rhs in
-            let a = origin(of: lhs, in: size), b = origin(of: rhs, in: size)
+            let a = origin(of: lhs, in: size, safe: safe), b = origin(of: rhs, in: size, safe: safe)
             let da = hypot(a.x + tile.width / 2 - point.x, a.y + tile.height / 2 - point.y)
             let db = hypot(b.x + tile.width / 2 - point.x, b.y + tile.height / 2 - point.y)
             return da < db
