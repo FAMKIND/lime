@@ -71,7 +71,7 @@ enum MessageRender {
         parseMessageMarkdown(text: markdown).map { block in
             switch block {
             case .paragraph(let spans): .paragraph(spans)
-            case .list(let items): .list(items)
+            case .itemList(let items): .list(items)
             case .code(let text): .code(text)
             }
         }

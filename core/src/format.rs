@@ -38,7 +38,7 @@ pub enum Block {
     /// Lines of text; a newline inside is a line break.
     Paragraph { spans: Vec<Span> },
     /// Consecutive list lines.
-    List { items: Vec<ListItem> },
+    ItemList { items: Vec<ListItem> },
     /// A fenced code block: shown verbatim in a monospaced face.
     Code { text: String },
 }
@@ -75,7 +75,7 @@ pub fn parse(text: &str) -> Vec<Block> {
                 items.push(ListItem { level, ordered, number, spans: parse_inline(rest) });
                 i += 1;
             }
-            blocks.push(Block::List { items });
+            blocks.push(Block::ItemList { items });
         } else if line.trim().is_empty() {
             i += 1;
         } else {
@@ -423,7 +423,7 @@ pub fn plain_text(text: &str) -> String {
     for block in parse(text) {
         match block {
             Block::Paragraph { spans } => lines.push(spans.iter().map(|s| s.text.as_str()).collect()),
-            Block::List { items } => {
+            Block::ItemList { items } => {
                 let mut counters = [0u32; 2];
                 for item in items {
                     let marker = if item.ordered {
@@ -480,7 +480,7 @@ pub fn serialize(blocks: &[Block]) -> String {
                     parts.push(text);
                 }
             }
-            Block::List { items } => {
+            Block::ItemList { items } => {
                 let mut counters = [0u32; 2];
                 let mut lines = Vec::new();
                 for item in items {
@@ -791,7 +791,7 @@ mod tests {
     #[test]
     fn lists_have_two_levels_and_numbers() {
         let blocks = parse("- one\n- two\n  - nested\n1. first\n2. second");
-        let Block::List { items } = &blocks[0] else { panic!("{blocks:?}") };
+        let Block::ItemList { items } = &blocks[0] else { panic!("{blocks:?}") };
         assert_eq!(items.len(), 5);
         assert_eq!((items[0].level, items[0].ordered), (0, false));
         assert_eq!((items[2].level, items[2].ordered), (1, false));
@@ -803,7 +803,7 @@ mod tests {
         assert!(matches!(parse("      - too deep")[0], Block::Paragraph { .. }));
         assert_eq!(plain_text("3. start at three\n4. next"), "3. start at three\n4. next");
         // Items carry inline styles.
-        let Block::List { items } = &parse("- a **b**")[0] else { panic!() };
+        let Block::ItemList { items } = &parse("- a **b**")[0] else { panic!() };
         assert_eq!(items[0].spans, vec![s("a "), b("b")]);
     }
 

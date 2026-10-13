@@ -128,7 +128,7 @@ enum ComposerDocument {
             if !paragraph.isEmpty { blocks.append(.paragraph(spans: paragraph)); paragraph = [] }
         }
         func flushList() {
-            if !listItems.isEmpty { blocks.append(.list(items: listItems)); listItems = [] }
+            if !listItems.isEmpty { blocks.append(.itemList(items: listItems)); listItems = [] }
         }
         func flushCode() {
             if !codeLines.isEmpty { blocks.append(.code(text: codeLines.joined(separator: "\n"))); codeLines = [] }
@@ -229,7 +229,7 @@ enum ComposerDocument {
                 for (n, line) in lines.enumerated() {
                     append(String(line) + (n < lines.count - 1 ? "\n" : ""), [.limeBlock: BlockKind.code.rawValue])
                 }
-            case .list(let items):
+            case .itemList(let items):
                 var counters = [0, 0]
                 for (n, item) in items.enumerated() {
                     let slot = Int(min(item.level, 1))
