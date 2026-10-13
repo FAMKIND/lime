@@ -126,6 +126,9 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e68. **135 gate FAILED (the user, 2026-10-13): "minimised crashed both devices."** The 13 mini's log ends inside `start()` (after `applyCurrent`, before `pip started`); no `.ips`. **→ LIME-135-fix (drafted, NEXT, urgent):** get the stack on the USB phone with the user placing one call; bisect the 4 suspects; **revert 135's PiP code if not found in ~30 min.** 132 waits.
+1e67. **LIME-135 LANDED as `4ad9a8a` (pushed, 2026-10-13; PLOT.md `011af4b`).** Full suite 470 on the 13 mini, CallTests on SE/18 Pro, 0 warnings, Release clean. PiP not seen on any screen (simulator); waiting on the user's two-phone + iPad gate. **Next after the gate: LIME-132** (re-survey first). (PLOT.md shows modified only because plot wrote 1e66/1e67 after Phase 0; the next Phase 0 commits it.)
+1e66. **LIME-135 built, not committed yet (tend, 2026-10-13 ~00:24; checks running).** **134 confirmed:** full suite 469 pass, 0 warnings, Release clean, chat + call-screen tests on SE/18 Pro. **135:** avatar on camera off or after 1 s with no frame (0.2 s cross-fade, layer flushed, VoiceOver "<name>, camera off"); size + rotation set from the last frame before start; **frames held after a rotation change until it's applied** (watch at the gate: a brief freeze when the phone turns?); PiP now aspect-fills like the call screen (FaceTime-like; it may crop the edges of their picture); diagnostics lines; 1 unit test. **Diagnosis:** black window, the 480×640 opening and the late rotation are real in code; no mirroring anywhere, so the late rotation is the likeliest "flip" (unconfirmed). **Nothing seen on a screen** (the simulator can't run PiP without a real call): the gate is the only proof. Waiting on tend's final "For plot:" + commit.
 1e65. **134 gate PASSED (the user, 2026-10-13: "all clear, minor glitches").** → **LIME-135 (drafted, NEXT before 132):** the PiP is black when their camera is off (should be their photo); the minimise/Stage Manager transitions sometimes flip or snap. **Screen sharing (asked):** answered as research only. iOS = a ReplayKit Broadcast Upload Extension (a separate process, ~50 MB memory cap, frames to the app via an app group; FaceTime's SharePlay screen share isn't open to other apps); Android = MediaProjection + a foreground service. LiveKit (112b) supports both. Estimated about 2 tend runs on iOS after 112b. It may need the paid Apple account (app groups/extension; not verified). It needs a privacy step for teachers (a warning that notifications and student info can show). **Already planned in v3 / PD sessions; plot's lean: after 112b + 117, before the PD-session work.** **Queue: 135 → 132 → 112b → 117 → 133 → 113 → 130 → …**
 1e64. **LIME-134 LANDED as `b389ef1` (pushed, 2026-10-12; PLOT.md `8ff0683`).** Cause: the `LazyVStack` + `.defaultScrollAnchor(.bottom)` opened on unlaid rows (reproduced on the SE); fix = an eager `VStack` up to 150 rows plus a settle `scrollTo("bottom")` at 0/120/350 ms; the video layers are a full-screen overlay, the controls stay in the safe area. `ChatOpensUITests` passes on the 13 mini + SE. **Gap: the TEND.md record and the commit don't state the full suite, 0 warnings or Release clean**; ask tend at the start of the next run. **Residual risk: chats over 150 rows are still lazy.** Waiting on the user's gate (ten *opens*, not ten different chats: reopen the same real chats, one right after a call, the iPad window, the longest real chat). The stray `public/assets/Logomark-outline.svg` + `signin-teachers.mp4` (untracked since 2026-09-30) stayed out of the commit; the user decides. **Next: LIME-132** (re-survey first).
 1e63. **120 gate (the user, 2026-10-12): video and sound smooth** (the 118b audio-sync fix holds in practice; no "logs" sent). **Two bugs → LIME-134 (drafted, NEXT before 132):** chats sometimes open blank until scrolled (an older, intermittent bug; phone + iPad window); the video doesn't fill the screen at the bottom (likely 116f's safe-area pin). **LIME-131 gets item 3:** the call bubble's detail wraps mid-phrase. **Queue: 134 → 132 → 112b → 117 → 133 → 113 → 130 → …**
@@ -4605,6 +4608,46 @@ If the survey turns up related issues, raise them before editing. If a decision 
 4. If anything still flips, send a screen recording (Control Center → Screen Recording).
 
 **Record:** `## LIME-135` in TEND.md, ending with a paragraph headed **For plot:** (what landed, the commit, the gate, what wasn't exercised). **Commit:** `fix(ios): minimised calls show their photo when the camera is off; smooth PiP transitions`, trailer `Brief: LIME-135`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. If Phase 1 finds a cause outside this scope, stop and ask the user.
+
+### LIME-135-fix → `tend` (lime-aa) (NEXT, urgent; drafted 2026-10-13): minimising a video call crashes lime (since `4ad9a8a`)
+**Goal:** minimising a video call never crashes, and 135's photo-when-camera-off + smooth window are kept (or, if the crash can't be found in time, 135's PiP changes are reverted so calls are safe again).
+
+**The user (2026-10-13 morning):** "minimised crashed both devices" (the 13 mini + most likely the iPad; Jean's phone has no call today).
+
+**Plot's evidence (`/tmp/lime-calllogs9/shem.log`, the 13 mini's call diagnostics, pulled over USB):** the 07:36 call:
+- `pip prepared` 07:36:51.348;
+- `pip content size` / `rotation applied 90` on each size change; `rotation applied 180` at 07:37:07 (their phone in landscape, turned the other way);
+- `pip avatar shown` 07:37:18.851 (their frames stopped: the other device had most likely just crashed on its own minimise);
+- `ice state 5` 07:37:22;
+- then **`pip content size 1280x720` + `pip rotation applied 180` at 07:37:25.0, with no frames arriving**: that's `start()` → `applyCurrent()`. **The log ends there: no `pip started`, no `pip failed`.** So lime died inside `start()` / `startPictureInPicture()` or straight after.
+- **No `.ips` crash report** on the 13 mini for today (likely run from Xcode, which catches it), so **there is no stack yet**. Before 135, PiP started and stopped fine many times (21:53–21:55, 00:03–00:05 the day before).
+
+**Suspects, all new in `4ad9a8a` (`CallPiP.swift`):**
+1. the **`UIHostingController` added as a child of `AVPictureInPictureVideoCallViewController`** (`installAvatar`): the system re-hosts that controller when PiP starts;
+2. `apply()` (`display.layoutIfNeeded()` + a `preferredContentSize` change) run **synchronously right before `startPictureInPicture()`**;
+3. `renderer.flush(removingDisplayedImage:)` on the main thread racing `enqueue` on the WebRTC thread;
+4. a Swift concurrency isolation trap (`MainActor.assumeIsolated` in the Timer, the `@Sendable` apply/done closures).
+
+**Scope:** `CallPiP.swift` and its call sites in `CallManager.swift` only. **Not:** anything else in calls.
+
+**Phase 0:** `git add PLOT.md` only, commit; re-read PLOT.md.
+
+**Phase 1 (get the stack; report it before fixing):**
+- The 13 mini is on USB. Install the current Debug build and launch it with the console attached (`xcrun devicectl device process launch --console …`, or lldb). **Ask the user to place one video call to it** (from the iPad or Jean's phone) and tap Minimise. Capture the exception or trap message and the top frames.
+- Also collect any `.ips` that appears (`devicectl … --domain-type systemCrashLogs`).
+- If no stack comes, bisect on the device, one suspect at a time (each a quick rebuild, the user taps Minimise once):
+  - the avatar as a plain `UIImageView`/`UILabel` instead of `UIHostingController`;
+  - no `applyCurrent()` in `start()` (set the size only from the frame path);
+  - drop frames while the avatar shows instead of `flush` racing `enqueue`.
+- **Time-box: ~30 min for Phase 1.** If the cause still isn't found, **revert 4ad9a8a's `CallPiP.swift` + `CallManager.swift` changes** (`git revert` the code, keep TEND.md's record), check that minimise works on the device again, commit as `revert(ios): LIME-135 PiP changes (minimise crashed)`, push, and stop.
+
+**Phase 2 (fix the proven cause):** keep the photo-when-camera-off, the sizing from the last frame and the held rotation, unless one of them *is* the cause; then say which one went and why. Prefer plain UIKit views inside the PiP content controller. Add **one guard against a repeat if it can be tested** (e.g. a unit test on the fake PiP for the call order); otherwise say so.
+
+**Verification:** on the 13 mini with a real call: minimise → the window appears; restore; minimise again ×3; their camera off → their photo; no crash. Plus the full suite on the 13 mini, 0 warnings, Release clean.
+
+**Gate (the user):** two devices: minimise/restore 5× each side, portrait + landscape, their camera off → their photo, the iPad Stage Manager window. No crash.
+
+**Record:** `## LIME-135-fix` in TEND.md, with the stack (or "not captured") and the cause, ending with a paragraph headed **For plot:**. **Commit:** `fix(ios): minimising a video call no longer crashes`, trailer `Brief: LIME-135-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Anything outside this scope: stop and ask the user.
 
 ### LIME-132 → `tend` (lime-aa) (after 134, small): keep LimeCore Android-ready from now on (a build + bindings check)
 **Goal:** every commit proves the core still builds for Android and its Kotlin bindings generate, so Android-readiness can't silently rot.
