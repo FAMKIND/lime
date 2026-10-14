@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-112c** (LIME-145 landed as `0954560`). Then (FaceTime-style minimise + your own tile), then **LIME-146** (header call icon with a count + the live call card + the invite sheet), then LIME-139 (the first mesh brief). (The order changed 2026-10-15: the user wants the call UI clear sooner; 112b-fix passed its gate.) *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-146** (REVISED 2026-10-15: read its item 0 first: a circular lime Liquid Glass call button, no pill, no "You"). Then **LIME-148** (FaceTime-style group layout: landscape, iPad windows, minimise in the controls), then LIME-147 (group-call emoji) if the user agrees, then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). Previously: (FaceTime-style minimise + your own tile), then **LIME-146** (header call icon with a count + the live call card + the invite sheet), then LIME-139 (the first mesh brief). (The order changed 2026-10-15: the user wants the call UI clear sooner; 112b-fix passed its gate.) *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -147,6 +147,18 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e100. **The user (2026-10-15 12:44–12:47, screenshots):**
+   - the iPad's Stage Manager group call is squashed (thin cropped tiles; the chevron under the "•••"; no Minimise in the controls) → **LIME-148 (drafted: FaceTime-style adaptive layout)**;
+   - screen share → **LIME-149 note** (waits for the paid account: App Groups; plot believes a Personal Team can't use them; unverified);
+   - **the header:** no pill; a circular lime glass call button like the "+", with a count, and no "You" → **LIME-146 item 0** (146 not started, so the amendment is in time).
+   - **Queue: 146 → 148 → 147? → 139 (mesh) …; 149 in November.**
+1e99. **LIME-112c LANDED as `6595619` (pushed, 2026-10-15; PLOT.md `39bf51a`).**
+   - **Built:** speaker PiP (2 s hold, photo when the camera is off or the key is missing, never black, plain UIKit); minimise opens the group chat + a "Return to call" pill + a slim bar with the group/count/timer; voice joins publish no camera (+ Voice/Video on the ring banner); your own tile uses your name + photo; 480p on mobile data via `NWPathMonitor`. 1:1 code untouched.
+   - **Tests:** unit 343 + UI 186 pass; 0 warnings; Release clean.
+   - **Risks to check on phones:**
+     - LiveKit may stop the speaker's track while no tile is on screen, so **a frozen window**. The fix if so: port 1:1's 1 s no-frame watchdog;
+     - a camera-restart gap when the network changes.
+   - **Gate (3 devices):** the brief's 7 points + a voice join into a video call. **NEXT: 146.**
 1e98. **The user (2026-10-15):**
    - joining a video group call as **voice** turned the camera on: a bug → **folded into LIME-112c item 7** (112c not started);
    - "no emoji encryption on group calls" → **LIME-147 design note** (emoji from the hash of everyone's current media keys; after 146 unless the user wants it sooner).
@@ -4926,6 +4938,49 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-138` in TEND.md, ending with **For plot:**. **Commit:** `docs: lime stays MIT; Android open-source reuse map; third-party licences for Android`, trailer `Brief: LIME-138`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Explicit paths; never `public/assets/*`.
 
+### LIME-148 → `tend` (lime-aa) (after LIME-146; drafted 2026-10-15): group call layout like FaceTime: responsive tiles, landscape, iPad windows, and the minimise control everywhere
+**Goal:** a group call looks right on every shape of screen (portrait, landscape, the SE, an iPad full-screen or in a small Stage Manager window): tiles keep a sensible video shape and fill the space, rotate smoothly, and Minimise is always reachable.
+
+**The user (2026-10-15, an iPad screenshot at 12:44 in a Stage Manager window):** "landscape needs iOS/Android FaceTime patterns, for responsive video thumbnails and landscape rotation, minimise (and share screen) for group calls." **Seen in the screenshot:**
+- the top two tiles are squashed into thin strips (cropped faces) while the bottom tile is tall, so the grid ignores the window's shape;
+- the call's minimise chevron at the top left sits **under Stage Manager's "•••" window control**;
+- the controls row has no Minimise;
+- the window leaves most of the screen black.
+
+**The change (FaceTime's patterns):**
+1. **An adaptive grid** computed from the available size and the tile count: choose the columns × rows that make the **largest tiles at a video shape** (16:9 / 9:16 by orientation, each video aspect-filling its tile with a little crop allowed, never squashed). FaceTime-like:
+   - **2 people** side by side in landscape, stacked in portrait;
+   - **3:** the speaker large + 2 small, or a balanced grid when there's room;
+   - **4:** 2 × 2;
+   - **more:** a grid up to 9, then speaker view (112b's rule above 12 stays);
+   - **your own tile is a small floating self-view** in a corner (draggable to any corner, like FaceTime), not a grid tile, once 3+ people are in.
+2. **Rotation:** the layout re-flows with the rotation (a cross-fade; none with Reduce Motion); the camera's orientation follows the device; landscape uses 118c's bottom control row; tiles never sit under the notch / Dynamic Island / home indicator (safe areas), while the video backgrounds may reach the edges (134's pattern).
+3. **iPad + Stage Manager + Split View:** use the **window's** size, not the screen's. **Keep our controls clear of the system's window controls** (the "•••" at the top centre / left): the header leaves the top safe-area inset plus the window-controls margin (UIKit's `UIWindowScene` layout guide / `.safeAreaInset`). Resizing the window re-flows live.
+4. **Minimise is always reachable:** the chevron stays at the top left where the system allows, **and** a Minimise button joins the controls row (as 1:1 has under Mute, 118c) in every orientation.
+5. Controls ≥ 44 pt; they scroll or wrap if they don't fit (the SE in landscape); VoiceOver order: the header, the tiles (speaker first), the controls.
+
+**Scope:** `GroupCallView.swift` (+ a small layout helper type with pure functions, unit-tested), `GroupCallManager` only if the active speaker needs exposing. **Not:** the 1:1 call screen, the core, LiveKit's settings.
+
+**Kind:**
+- the layout function is behaviour, so **unit-test it**: given a size + count → a frame per tile, never squashed (each tile's aspect within 0.75–1.78 of the video's), all inside the safe area, none under the window controls;
+- the look is visual (screenshots in TEND.md: 13 mini portrait/landscape, SE landscape, iPad full screen, iPad Stage Manager small window, with 2/3/4 people via a demo seed).
+
+**Gate (the user, 3 devices incl. the iPad in Stage Manager):**
+1. rotate during a 3-person call → tiles re-flow, no squashed faces;
+2. resize the iPad window → it re-flows; nothing under the "•••";
+3. Minimise from the controls row in landscape.
+
+**Record:** `## LIME-148` with **For plot:**. **Commit:** `feat(ios): group call layout like FaceTime (adaptive tiles, landscape, iPad windows, minimise in the controls)`, trailer `Brief: LIME-148`. The rest per the standing rules.
+
+### LIME-149 (DRAFT NOTE, waits for the paid Apple account, November): screen sharing in group calls
+**The user (2026-10-15):** "share screen for group calls".
+- **iOS needs a Broadcast Upload Extension** (ReplayKit) to share the whole screen, i.e. other apps. It runs as a separate process with a ~50 MB memory cap and passes frames to lime through an **App Group**. LiveKit's Swift SDK supports exactly this (a broadcast extension target + `RPSystemBroadcastPickerView`).
+- **⚠ App Groups aren't available to a free Personal Team** (the extension can't share with the app), so **this waits for the paid account in November**.
+- **Privacy for teachers:** before starting, a sheet explains that everything on screen is shared, notifications included (student names, messages); the sharer sees a red recording indicator; viewers see a "<Name> is sharing" tile, shown large.
+- **The E2EE holds:** the screen track is encrypted with the same per-sender key.
+- **Android later:** MediaProjection + a foreground service (LiveKit Android supports it).
+- **About 2 tend runs.** Draft fully when the account exists.
+
 ### LIME-147 (DESIGN NOTE, the user's ask 2026-10-15: "I don't see our emoji encryption on group calls"): the 4-emoji check for group calls
 **Why there's none:** 112b left it out on purpose. The 1:1 emoji (119) come from the two phones' DTLS fingerprints, which are end to end in a P2P call. **In a group call each phone's DTLS ends at the media server**, so those fingerprints prove nothing about the other people.
 
@@ -4962,6 +5017,12 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Today:** a plain green pill with a video icon in the group header, and a grey call bubble "<Name> started a call · Join".
 
 **Sketch for when it's drafted:**
+0. **⚑ REVISED AGAIN (the user, 2026-10-15 12:47, screenshots): this wins over item 1 below.**
+   - **Remove the green video pill under the group's avatars and name entirely** ("no need for two icons").
+   - **While a call is live, the call button in the top right becomes its own circular button** with **Liquid Glass in lime green, like the "+" add button on Messages/link** (Android: the default circular tonal button), holding a **video icon** (or a phone icon for a voice call) + the round count badge. It sits **beside** the search/⋯ capsule (taking the phone icon's place, so the capsule keeps search and ⋯).
+   - Tap = join, or return to the call. When no call is live, it's the ordinary phone icon in the capsule again.
+   - Reduce Transparency means solid lime; contrast ≥ 3:1 for the glyph.
+   - **The card copy never says "You"** (the user dislikes "you" in the UI): your own card reads "Call started · Join" / "Call ended · 0:38", others' "<Name> started a call".
 1. **The header (REVISED by the user, 2026-10-15):** **no pill under the group's name.** Instead, while a call is live, **the call button in the top-right capsule turns into the call's own icon (video or phone) in lime green, with a count badge** ("video icon · 3"). Tapping it **joins** (or returns to the call you're in) directly; the normal Voice/Video menu comes back when no call is on. Not colour alone: the icon changes and the number shows; VoiceOver reads "Join video call, 3 people". The badge uses the round-badge rule (115 item 4).
 2. **The live call card in the chat:** "A call is happening" + a **LIVE** tag (words, not colour alone) + "Jean and Lee are there" + their avatars + a **Join call** button; it turns into the ordinary "Call ended · 3:20" bubble when the call ends.
 3. **An invite sheet** when someone starts a call in a group you're in, and lime is open but you're elsewhere: "3 people are in a call · <group> · avatars · Dismiss / Join" (replaces 112c's >10 banner idea for all sizes; keeps CallKit ringing for ≤ 10).
