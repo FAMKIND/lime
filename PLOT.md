@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-145 (keep every Olm session per peer: a message-loss bug found in 112b-fix).** Then **LIME-112c** (FaceTime-style minimise + your own tile), then **LIME-146** (header call icon with a count + the live call card + the invite sheet), then LIME-139 (the first mesh brief). (The order changed 2026-10-15: the user wants the call UI clear sooner; 112b-fix passed its gate.) *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-112c** (LIME-145 landed as `0954560`). Then (FaceTime-style minimise + your own tile), then **LIME-146** (header call icon with a count + the live call card + the invite sheet), then LIME-139 (the first mesh brief). (The order changed 2026-10-15: the user wants the call UI clear sooner; 112b-fix passed its gate.) *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -147,6 +147,18 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e98. **The user (2026-10-15):**
+   - joining a video group call as **voice** turned the camera on: a bug → **folded into LIME-112c item 7** (112c not started);
+   - "no emoji encryption on group calls" → **LIME-147 design note** (emoji from the hash of everyone's current media keys; after 146 unless the user wants it sooner).
+   - **Tend's confusion:** after 145, tend asked for post-145 logs instead of starting 112c (the user's gate had passed). **Tell tend "begin tending LIME-112c"**; plot pulls logs over USB itself, so tend doesn't need the user to export them.
+1e97. **145 gate PASSED (the user, 2026-10-15: "works, moving on");** no logs pulled, so the pending counts weren't checked (check them the next time "logs" comes up). **NEXT: 112c.**
+1e96. **LIME-145 LANDED as `0954560` (pushed, 2026-10-15; PLOT.md `950e104`).**
+   - Every Olm session is kept (≤ 5 per peer device, LRU eviction); a send uses the session that last decrypted from that peer; migration 28 fills `session_id` lazily (the pickles are encrypted).
+   - cargo 212 with none ignored (both 112b-fix glare tests pass); a new 1:1 glare test that failed first; integration 21 incl. the 3-core call test; unit 336; 0 warnings; Release clean.
+   - **Megolm doesn't have the bug** (inbound sessions are stored by session id).
+   - Losses from before this are permanent.
+   - **Gate:** the next 3-device call + normal chatting; **plot pulls logs and checks the `pending` counts** (Shem had `invalid=8` before; there should be no new `no_session`).
+   - **NEXT: 112c.**
 1e95. **112b-fix gate PASSED (the user, 2026-10-15, 9:32–9:34): "texting and group call working successfully";** dropping out and rejoining a live call also tried (worked, by implication). **Not yet reported:** the seconds to first video, the mute/camera labels, Always relay, answering from the lock screen, the 1:1 regression after a group call.
    - **Asks:**
      - your own tile shows a "Y" initial and "You": use your profile photo and your name → **folded into LIME-112c (item 6)**;
@@ -4914,6 +4926,16 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-138` in TEND.md, ending with **For plot:**. **Commit:** `docs: lime stays MIT; Android open-source reuse map; third-party licences for Android`, trailer `Brief: LIME-138`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Explicit paths; never `public/assets/*`.
 
+### LIME-147 (DESIGN NOTE, the user's ask 2026-10-15: "I don't see our emoji encryption on group calls"): the 4-emoji check for group calls
+**Why there's none:** 112b left it out on purpose. The 1:1 emoji (119) come from the two phones' DTLS fingerprints, which are end to end in a P2P call. **In a group call each phone's DTLS ends at the media server**, so those fingerprints prove nothing about the other people.
+
+**What would be meaningful:** the media keys. Each participant's sender key travels over Olm (lime's E2EE), so if every phone computes 4 emoji from `SHA-256("lime-group-call-emoji-v1" || call_id || the sorted (participant id, SHA-256(current key)) pairs)` (all participants, current indexes), then **everyone sees the same 4 emoji exactly when every phone holds the same keys for the same people**. A substituted key, or a hidden extra participant, changes them on someone's screen.
+- The emoji change whenever someone joins or leaves (a rekey), so the chip says "changes when people join or leave".
+- It uses 119's 256-emoji list and the same chip after the timer, plus an explainer sheet.
+- **Core-first:** the computation and its test vector go in core.
+
+**Plot's lean:** build it, as its own small brief **after LIME-146** (it depends on stable key handling, which 112b-fix/145 just gave). **Ask the user** whether it should come sooner.
+
 ### LIME-146 → `tend` (lime-aa) (SCHEDULED right after LIME-112c; the user, 2026-10-15: "the header icon and the chat huddle bubble can be sooner, so it's not confusing"): live group calls shown like Slack huddles
 **Goal:** while a group call is live it's obvious and one tap to join: the header's call button shows it (a green icon + count), the chat shows one live call card with who's there and a Join button, and an invite sheet appears if you're elsewhere in lime.
 
@@ -5000,6 +5022,10 @@ If the survey turns up related issues, raise them before editing. If a decision 
    - ~~groups over 10 people: an in-app banner~~ **moved to LIME-146's invite sheet** (2026-10-15);
    - **anything the 112b-fix gate turns up** (plot adds it here before sending).
 
+7. **Joining as voice (the user, 2026-10-15; a bug):** joining a **video** group call with **Voice** (from the menu, the call card or the header) joined with the camera on. **Fix:**
+   - joining as voice publishes **no camera track** (camera off, your photo on your tile) until you turn the camera on in the call;
+   - the same for answering a ringing video group call: offer **Join with video / Join with voice** where the ring UI allows it (the in-app banner/sheet); CallKit's answer = as the call was started;
+   - **a test:** a voice join into a video call publishes audio only.
 6. **Your own tile (the user, 2026-10-15):** with your camera off it shows **your profile photo** (from your profile, as everywhere else), **not a "Y" initial**, and the label is **your name, not "You"** ("we don't use 'you' anywhere else"). The same in the people list and in the minimised window.
 
 **Scope:** `GroupCallManager.swift`, `GroupCallMedia.swift`, `GroupCallView.swift`, a new `GroupCallPiP.swift` (or a shared generalisation of `CallPiP.swift`, without touching 1:1 behaviour), `ChatView.swift` (the header pill), their tests. **Not:** the 1:1 call code paths (only shared, behaviour-preserving extraction), the core, the server.
