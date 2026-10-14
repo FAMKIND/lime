@@ -40,25 +40,48 @@ final class GroupCallManagerTests: XCTestCase {
     final class FakeMedia: GroupCallMedia {
         var onEvent: (@MainActor (GroupMediaEvent) -> Void)?
         var keys: [String: (Data, Int)] = [:]
-        var connectArgs: (identity: String, relayOnly: Bool, camera: Bool)?
+        var connectArgs: (identity: String, relayOnly: Bool, camera: Bool, low: Bool)?
+        private(set) var lowBandwidth: [Bool] = []
+        var tracks: [String: AnyObject] = [:]
         var connectError: Error?
         private(set) var disconnected = false, microphone: [Bool] = []
         func setKey(_ key: Data, participant: String, index: Int) { keys[participant] = (key, index) }
-        func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool) async throws {
+        func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool, lowBandwidth: Bool) async throws {
             if let connectError { throw connectError }
-            connectArgs = (identity, relayOnly, camera)
+            connectArgs = (identity, relayOnly, camera, lowBandwidth)
         }
+        func setLowBandwidth(_ on: Bool) async { lowBandwidth.append(on) }
         func setMicrophone(_ on: Bool) async { microphone.append(on) }
         func setCamera(_ on: Bool) async {}
         func flipCamera() async {}
         func disconnect() async { disconnected = true }
-        func videoTrack(for participant: String) -> AnyObject? { nil }
+        func videoTrack(for participant: String) -> AnyObject? { tracks[participant] }
+    }
+
+    final class FakePiP: GroupPiP {
+        var isPossible = true
+        var onStarted: (() -> Void)?, onStopped: (() -> Void)?, onRestore: (() -> Void)?, onFailed: (() -> Void)?
+        private(set) var prepared = 0, started = 0, stopped = 0
+        private(set) var shown: [(person: String, track: Bool, picture: Bool)] = []
+        func prepare(sourceView: UIView, person: Person) { prepared += 1 }
+        func show(person: Person, track: AnyObject?, pictureShowing: Bool) { shown.append((person.name, track != nil, pictureShowing)) }
+        func start() { started += 1; onStarted?() }
+        func stop() { stopped += 1 }
+    }
+
+    final class FakeNetwork: GroupCallNetwork {
+        var isCellular = false
+        var onChange: ((Bool) -> Void)?
+        private(set) var started = false
+        func start() { started = true }
+        func stop() { started = false }
     }
 
     private func make(core: FakeCore = FakeCore(), otherCall: Bool = false, quiet: CallQuietReason? = nil) -> (GroupCallManager, FakeCore, FakeMedia, QuietCallSystem) {
         let media = FakeMedia()
         let system = QuietCallSystem()
-        let manager = GroupCallManager(core: core, system: system, quietReason: { quiet }, isOtherCallActive: { otherCall }, makeMedia: { media })
+        let manager = GroupCallManager(core: core, system: system, quietReason: { quiet }, isOtherCallActive: { otherCall },
+                                       me: { Person(id: "u-me", name: "Shem Chung") }, makeMedia: { media })
         return (manager, core, media, system)
     }
 
@@ -109,7 +132,7 @@ final class GroupCallManagerTests: XCTestCase {
         core.others = [GroupCallParticipant(participant: bob, userId: "bob", name: "Bob")]
         let (manager, _, media, _) = make(core: core)
         _ = await manager.start(conversationID: "grp:g1", title: "T", video: true)
-        XCTAssertEqual(manager.tiles.map(\.name), ["You", "Bob"])
+        XCTAssertEqual(manager.tiles.map(\.name), ["Shem Chung", "Bob"])
         XCTAssertFalse(manager.tiles[1].secured, "no key yet: \"Connecting securely\", no picture")
         manager.handle([event("key", participant: bob, key: Data(repeating: 5, count: 32), index: 2)])
         XCTAssertEqual(media.keys[bob]?.1, 2)
@@ -127,14 +150,14 @@ final class GroupCallManagerTests: XCTestCase {
         let (manager, core, _, _) = make()
         _ = await manager.start(conversationID: "grp:g1", title: "T", video: false)
         manager.handle([event("joined", participant: bob)])
-        XCTAssertEqual(manager.tiles.map(\.name), ["You", "Bob"])
+        XCTAssertEqual(manager.tiles.map(\.name), ["Shem Chung", "Bob"])
         manager.handle([event("left", participant: bob)])
-        XCTAssertEqual(manager.tiles.map(\.name), ["You"])
+        XCTAssertEqual(manager.tiles.map(\.name), ["Shem Chung"])
         manager.handle(media: .participantConnected(bob))
         manager.handle(media: .participantDisconnected(bob))
         try? await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(core.gone, [bob], "a participant the media server says is gone counts as having left")
-        XCTAssertEqual(manager.tiles.map(\.name), ["You"])
+        XCTAssertEqual(manager.tiles.map(\.name), ["Shem Chung"])
         await manager.leave()
     }
 
@@ -290,5 +313,153 @@ final class GroupCallManagerTests: XCTestCase {
         manager.handle([event("key_rejected", participant: bob, reason: "not_owner")])
         XCTAssertTrue(CallDiagnostics.shared.lines.last?.contains("rejected: not_owner") ?? false)
         await manager.leave()
+    }
+
+    // MARK: LIME-112c
+
+    func testJoiningAVideoCallAsVoicePublishesNoCamera() async {
+        let (manager, core, media, _) = make()
+        XCTAssertTrue(core.info.video, "the call is a video call")
+        _ = await manager.start(conversationID: "grp:g1", title: "T", video: false)
+        XCTAssertEqual(media.connectArgs?.camera, false, "Voice from the menu: audio only, whatever kind of call is on")
+        XCTAssertFalse(manager.cameraOn)
+        XCTAssertTrue(manager.video, "it is still the video call for the others")
+        await manager.leave()
+        let (second, _, media2, _) = make()
+        _ = await second.join(callID: core.info.callId, conversationID: "grp:g1", title: "T", video: true, withVideo: false)
+        XCTAssertEqual(media2.connectArgs?.camera, false, "Voice from the call card or the header")
+        await second.leave()
+        let (third, _, media3, _) = make()
+        _ = await third.join(callID: core.info.callId, conversationID: "grp:g1", title: "T", video: true)
+        XCTAssertEqual(media3.connectArgs?.camera, true, "a plain join is as the call was started")
+        await third.leave()
+    }
+
+    func testAnsweringARingingVideoCallAsVoiceHasNoCamera() async {
+        let (manager, _, media, _) = make()
+        manager.handle([event("started", user: "alice", name: "Alice", ring: true)])
+        await manager.acceptIncoming(withVideo: false)
+        XCTAssertEqual(media.connectArgs?.camera, false)
+        await manager.leave()
+        let (system, _, media2, _) = make()
+        system.handle([event("started", user: "alice", name: "Alice", ring: true)])
+        await system.acceptIncoming(fromSystem: true)
+        XCTAssertEqual(media2.connectArgs?.camera, true, "the system's Answer is as the call was started")
+        await system.leave()
+    }
+
+    func testMyOwnTileHasMyNameAndMyPhotoNotYou() async {
+        let (manager, _, _, _) = make()
+        _ = await manager.start(conversationID: "grp:g1", title: "T", video: true)
+        XCTAssertEqual(manager.tiles.first?.name, "Shem Chung")
+        XCTAssertEqual(manager.tiles.first?.userID, "u-me", "so the same photo as everywhere else is used")
+        XCTAssertTrue(manager.tiles.first?.isMe ?? false)
+        await manager.leave()
+    }
+
+    private func pipCall(speakers: Int = 2) async -> (GroupCallManager, FakePiP, FakeMedia, FakeCore, () -> Date, (TimeInterval) -> Void) {
+        let core = FakeCore()
+        core.others = (0..<speakers).map { GroupCallParticipant(participant: String(format: "%032x", $0 + 1), userId: "u\($0)", name: ["Bob", "Carol", "Dee"][$0]) }
+        var clock = Date(timeIntervalSince1970: 5_000)
+        let media = FakeMedia()
+        let pip = FakePiP()
+        let manager = GroupCallManager(core: core, system: QuietCallSystem(), now: { clock }, me: { Person(id: "u-me", name: "Shem Chung") }, makeMedia: { media })
+        manager.makePictureInPicture = { pip }
+        _ = await manager.start(conversationID: "grp:g1", title: "Grade 4 Team", video: true)
+        media.onEvent?(.connection(connected: true, error: nil))
+        manager.preparePictureInPicture(sourceView: UIView())
+        return (manager, pip, media, core, { clock }, { clock = clock.addingTimeInterval($0) })
+    }
+
+    func testTheWindowFollowsTheSpeakerWithAHoldAndIgnoresMe() async {
+        let (manager, pip, _, core, _, advance) = await pipCall()
+        let bob = core.others[0].participant, carol = core.others[1].participant
+        let me = manager.tiles[0].id
+        XCTAssertEqual(pip.prepared, 1)
+        manager.handle(media: .speaking([bob]))
+        XCTAssertEqual(pip.shown.last?.person, "Bob")
+        advance(1)
+        manager.handle(media: .speaking([carol]))
+        XCTAssertEqual(pip.shown.last?.person, "Bob", "a new speaker within the 2 s hold does not move the window")
+        advance(2)
+        manager.handle(media: .speaking([carol]))
+        XCTAssertEqual(pip.shown.last?.person, "Carol", "after the hold it follows")
+        manager.handle(media: .speaking([me]))
+        XCTAssertEqual(pip.shown.last?.person, "Carol", "when I am the one speaking it keeps the last other speaker")
+        manager.handle(media: .speaking([]))
+        XCTAssertEqual(pip.shown.last?.person, "Carol", "and when nobody is speaking")
+        await manager.leave()
+    }
+
+    func testTheWindowShowsThePhotoWhenTheCameraIsOffOrTheKeyIsMissingAndNeverNothing() async {
+        let (manager, pip, media, core, _, _) = await pipCall(speakers: 1)
+        let bob = core.others[0].participant
+        media.tracks[bob] = NSObject()
+        manager.handle(media: .speaking([bob]))
+        XCTAssertEqual(pip.shown.last?.person, "Bob")
+        XCTAssertEqual(pip.shown.last?.picture, false, "his key has not arrived: his photo, not undecrypted video")
+        manager.handle([GroupCallEvent(kind: "key", callId: core.info.callId, conversationId: "grp:g1", userId: "u0", name: "Bob", participant: bob, video: true, ring: false,
+                                       key: Data(repeating: 5, count: 32), keyIndex: 0, durationMs: 0, reason: "")])
+        manager.handle(media: .camera(participant: bob, on: false))
+        XCTAssertEqual(pip.shown.last?.picture, false, "his camera is off: his photo")
+        manager.handle(media: .camera(participant: bob, on: true))
+        XCTAssertEqual(pip.shown.last?.picture, true, "key and camera: his picture")
+        XCTAssertEqual(pip.shown.last?.track, true)
+        manager.handle([event("left", participant: bob)])
+        manager.refreshPiP()
+        XCTAssertEqual(pip.shown.last?.person, "Grade 4 Team", "nobody else yet: the group's own avatar, never an empty window")
+        XCTAssertEqual(pip.shown.last?.picture, false)
+        await manager.leave()
+    }
+
+    func testMinimiseOpensTheChatAndAVideoCallFloatsWhileAVoiceCallKeepsTheBar() async {
+        let (manager, pip, _, core, _, _) = await pipCall()
+        var opened: [String] = []
+        manager.onMinimize = { opened.append($0) }
+        manager.minimize()
+        XCTAssertEqual(opened, ["grp:g1"], "the group's chat opens so the person can type")
+        XCTAssertEqual(pip.started, 1)
+        XCTAssertTrue(manager.pictureInPictureActive)
+        XCTAssertTrue(manager.minimized)
+        pip.onRestore?()
+        XCTAssertFalse(manager.minimized, "tapping the window brings the call screen back")
+        XCTAssertFalse(manager.pictureInPictureActive)
+        await manager.leave()
+        XCTAssertEqual(pip.stopped, 1, "leaving the call closes the window")
+        // A voice call has no window: the slim bar.
+        let voice = FakeCore()
+        voice.info = GroupCallInfo(callId: core.info.callId, conversationId: "grp:g1", room: core.info.room, video: false, startedBy: "alice", startedByName: "Alice", startedAtMs: 0, participantCount: 0, joined: false)
+        let media = FakeMedia()
+        let manager2 = GroupCallManager(core: voice, system: QuietCallSystem(), makeMedia: { media })
+        let pip2 = FakePiP()
+        manager2.makePictureInPicture = { pip2 }
+        var opened2: [String] = []
+        manager2.onMinimize = { opened2.append($0) }
+        _ = await manager2.start(conversationID: "grp:g1", title: "T", video: false)
+        media.onEvent?(.connection(connected: true, error: nil))
+        manager2.preparePictureInPicture(sourceView: UIView())
+        manager2.minimize()
+        XCTAssertEqual(opened2, ["grp:g1"], "a voice call opens the chat too")
+        XCTAssertTrue(manager2.minimized)
+        XCTAssertEqual(pip2.started, 0, "no picture, no window")
+        await manager2.leave()
+    }
+
+    func testMobileDataSends480pAndWiFiGoesBackTo720p() async {
+        let network = FakeNetwork()
+        network.isCellular = true
+        let media = FakeMedia()
+        let manager = GroupCallManager(core: FakeCore(), system: QuietCallSystem(), network: network, makeMedia: { media })
+        _ = await manager.start(conversationID: "grp:g1", title: "T", video: true)
+        XCTAssertEqual(media.connectArgs?.low, true, "on mobile data at the start: 480p")
+        XCTAssertTrue(network.started)
+        network.onChange?(false)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(media.lowBandwidth, [false], "Wi-Fi: back to 720p")
+        network.onChange?(true)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(media.lowBandwidth, [false, true])
+        await manager.leave()
+        XCTAssertFalse(network.started)
     }
 }

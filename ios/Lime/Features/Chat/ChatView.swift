@@ -306,7 +306,17 @@ struct ChatView: View {
                     }
                 }
                 if conversation.isGroup {
-                    if let live = liveCall(conversation) {
+                    if store.groupCalls.inCall && store.groupCalls.conversationID == conversation.id {
+                        // I am in this group's call: the pill brings the full call screen back.
+                        Button { store.groupCalls.minimized = false } label: {
+                            Label("Return to call \u{00B7} \(store.groupCalls.tiles.count) in call", systemImage: "phone.fill")
+                                .font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                                .padding(.horizontal, 10).padding(.vertical, 3).background(Theme.accent, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Return to the call, \(store.groupCalls.tiles.count) in it")
+                        .accessibilityIdentifier("chat-return-to-call")
+                    } else if let live = liveCall(conversation) {
                         // A call is on: a Join pill with how many are in it (words and an icon, not colour alone).
                         Button { joinGroupCall(live, conversation) } label: {
                             Label("Join \u{00B7} \(live.participantCount) in call", systemImage: live.video ? "video.fill" : "phone.fill")

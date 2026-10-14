@@ -8,6 +8,8 @@ import SwiftUI
 struct GroupCallView: View {
     @Environment(ConversationStore.self) private var store
     @State private var showPeople = false
+    /// A clear view over the whole screen that system Picture in Picture grows its window from.
+    @State private var pipAnchor: UIView?
 
     private var call: GroupCallManager { store.groupCalls }
 
@@ -28,15 +30,25 @@ struct GroupCallView: View {
         }
         .background(Color(red: 0.07, green: 0.08, blue: 0.07).ignoresSafeArea())
         .preferredColorScheme(.dark)
+        .background(PiPAnchor { pipAnchor = $0 })
         .sheet(isPresented: $showPeople) { GroupPeopleSheet() }
+        .onAppear { preparePiP() }
+        .onChange(of: call.phase) { _, _ in preparePiP() }
+        .onChange(of: call.video) { _, _ in preparePiP() }
+        .onChange(of: pipAnchor) { _, _ in preparePiP() }
         .accessibilityIdentifier("group-call-screen")
+    }
+
+    private func preparePiP() {
+        guard call.video, let pipAnchor else { return }
+        call.preparePictureInPicture(sourceView: pipAnchor)
     }
 
     // MARK: Header
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            Button { call.minimized = true } label: {
+            Button { call.minimize() } label: {
                 Image(systemName: "chevron.down").font(.system(size: 18, weight: .semibold)).frame(width: 44, height: 44)
             }
             .accessibilityLabel("Minimise call").accessibilityIdentifier("group-call-minimise")
@@ -166,7 +178,7 @@ struct GroupTileView: View {
         HStack(spacing: 6) {
             if tile.muted { Image(systemName: "mic.slash.fill").font(.caption) }
             else if tile.speaking { Image(systemName: "waveform").font(.caption) }
-            Text(tile.isMe ? "You" : tile.name).font(.footnote.weight(.semibold)).lineLimit(1)
+            Text(tile.name).font(.footnote.weight(.semibold)).lineLimit(1)
             if tile.muted { Text("Muted").font(.caption2) }
         }
         .foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 4)
@@ -200,7 +212,7 @@ struct GroupTileView: View {
         // Speaking is also shown by a ring (and by the waveform and the words), not by colour alone.
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white, lineWidth: tile.speaking ? 3 : 0))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(tile.isMe ? "You" : tile.name)
+        .accessibilityLabel(tile.name)
         .accessibilityValue(stateWords)
         .accessibilityIdentifier("group-tile-\(tile.id)")
     }
@@ -219,7 +231,8 @@ struct GroupTileView: View {
     }
 
     private var initials: some View {
-        let person = Person(id: tile.userID.isEmpty ? tile.id : tile.userID, name: tile.isMe ? "You" : tile.name, tone: abs(tile.id.hashValue) % 8)
+        // Their photo (mine on my own tile), or their initials on their colour: the same as everywhere else in lime.
+        let person = Person(id: tile.userID.isEmpty ? tile.id : tile.userID, name: tile.name)
         return AvatarView(person: person, size: large ? 120 : 64)
             // Its photo is shown (or initials on its colour) with no status badge here.
     }
@@ -234,7 +247,7 @@ struct GroupPeopleSheet: View {
         NavigationStack {
             List(store.groupCalls.tiles) { tile in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(tile.isMe ? "You" : tile.name).font(.body)
+                    Text(tile.name).font(.body)
                     Text(detail(tile)).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .accessibilityElement(children: .combine)
@@ -269,7 +282,12 @@ struct GroupIncomingBanner: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Decline") { store.groupCalls.declineIncoming() }
                     .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("group-call-decline")
-                Button("Join") { Task { await store.groupCalls.acceptIncoming() } }
+                if ring.video {
+                    // A video call: join with the camera or with sound only.
+                    Button("Voice") { Task { await store.groupCalls.acceptIncoming(withVideo: false) } }
+                        .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("group-call-join-voice")
+                }
+                Button(ring.video ? "Video" : "Join") { Task { await store.groupCalls.acceptIncoming(withVideo: ring.video) } }
                     .buttonStyle(.borderedProminent).tint(Theme.accent).foregroundStyle(Theme.accentInk)
                     .frame(minHeight: 44).accessibilityIdentifier("group-call-join")
             }
@@ -280,4 +298,17 @@ struct GroupIncomingBanner: View {
             .accessibilityIdentifier("group-call-incoming")
         }
     }
+}
+
+/// A clear, full-size view whose UIKit view is handed to the manager: system Picture in Picture opens its window from it.
+private struct PiPAnchor: UIViewRepresentable {
+    let ready: (UIView) -> Void
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async { ready(view) }
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) {}
 }

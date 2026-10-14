@@ -24,7 +24,9 @@ protocol GroupCallMedia: AnyObject {
     /// Sets a participant's sender key (the frame encryption), my own included. Safe before `connect`.
     func setKey(_ key: Data, participant: String, index: Int)
     /// Connects to the room with the token, through the given relay (and only through it when `relayOnly`).
-    func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool) async throws
+    func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool, lowBandwidth: Bool) async throws
+    /// Mobile data: send 480p instead of 720p (restarts the camera with the new size when it is on). Wi-Fi: back to 720p.
+    func setLowBandwidth(_ on: Bool) async
     func setMicrophone(_ on: Bool) async
     func setCamera(_ on: Bool) async
     func flipCamera() async
@@ -53,13 +55,19 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
         if participant != myIdentity, !myIdentity.isEmpty { onEvent?(.sendIndexReset(Int(myKeyIndex))) }
     }
 
-    func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool) async throws {
+    private var lowBandwidth = false
+    private var cameraOptions: CameraCaptureOptions {
+        lowBandwidth ? CameraCaptureOptions(dimensions: Dimensions(width: 848, height: 480), fps: 24) : CameraCaptureOptions(dimensions: .h720_169, fps: 30)
+    }
+
+    func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool, lowBandwidth: Bool) async throws {
         myIdentity = identity
+        self.lowBandwidth = lowBandwidth
         let relay = ConnectOptions(
             iceServers: iceServers.map { LiveKit.IceServer(urls: $0.urls, username: $0.username, credential: $0.credential) },
             iceTransportPolicy: relayOnly ? .relay : .all)
         let options = RoomOptions(
-            defaultCameraCaptureOptions: CameraCaptureOptions(dimensions: .h720_169, fps: 30),
+            defaultCameraCaptureOptions: cameraOptions,
             adaptiveStream: true,
             dynacast: true,
             encryptionOptions: EncryptionOptions(keyProvider: keyProvider, encryptionType: .gcm))
@@ -67,11 +75,20 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
         self.room = room
         try await room.connect(url: url, token: token, connectOptions: relay, roomOptions: options)
         if microphone { _ = try? await room.localParticipant.setMicrophone(enabled: true) }
-        if camera { _ = try? await room.localParticipant.setCamera(enabled: true) }
+        if camera { _ = try? await room.localParticipant.setCamera(enabled: true, captureOptions: cameraOptions) }
     }
 
     func setMicrophone(_ on: Bool) async { _ = try? await room?.localParticipant.setMicrophone(enabled: on) }
-    func setCamera(_ on: Bool) async { _ = try? await room?.localParticipant.setCamera(enabled: on) }
+    func setCamera(_ on: Bool) async { _ = try? await room?.localParticipant.setCamera(enabled: on, captureOptions: on ? cameraOptions : nil) }
+
+    func setLowBandwidth(_ on: Bool) async {
+        guard on != lowBandwidth else { return }
+        lowBandwidth = on
+        guard let participant = room?.localParticipant, participant.isCameraEnabled() else { return }
+        // A new capture size needs a new capture: off and on again (a brief gap for the others).
+        _ = try? await participant.setCamera(enabled: false)
+        _ = try? await participant.setCamera(enabled: true, captureOptions: cameraOptions)
+    }
 
     func flipCamera() async {
         guard let track = room?.localParticipant.firstCameraPublication?.track as? LocalVideoTrack,

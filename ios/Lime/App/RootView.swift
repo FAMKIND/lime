@@ -27,10 +27,11 @@ struct RootView: View {
         } message: { Text(store.groupCalls.notice ?? "") }
         .fullScreenCover(isPresented: Binding(get: { store.groupCalls.inCall && !store.groupCalls.minimized }, set: { _ in })) { GroupCallView() }
         .overlay(alignment: .top) {
-            if store.groupCalls.inCall && store.groupCalls.minimized {
+            if store.groupCalls.inCall && store.groupCalls.minimized && !store.groupCalls.pictureInPictureActive {
                 Button { store.groupCalls.minimized = false } label: {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Label("Tap to return to group call \u{00B7} \(CallRecord.clock(context.date.timeIntervalSince(store.groupCalls.startedAt ?? context.date)))", systemImage: "phone.fill")
+                        Label("Return to \(store.groupCalls.title) \u{00B7} \(store.groupCalls.tiles.count) in call \u{00B7} \(CallRecord.clock(context.date.timeIntervalSince(store.groupCalls.startedAt ?? context.date)))", systemImage: "phone.fill")
+                            .lineLimit(1)
                             .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accentInk)
                             .frame(maxWidth: .infinity, minHeight: 36).background(Theme.accent)
                     }
@@ -85,6 +86,17 @@ private struct SignedInView: View {
             if index < sections.count, sections[index] == store.section { store.select(sections[index]) }
         })
         .sheet(isPresented: $explaining) { NotificationExplainerSheet() }
+        .onAppear {
+            // Minimising a group call opens that group's chat (unless it is already open), so the person can type while talking.
+            let store = store, notifications = notifications
+            store.groupCalls.onMinimize = { conversationID in
+                guard notifications.viewing?.conversationID != conversationID else { return }
+                store.select(.link)
+                var path = NavigationPath()
+                path.append(conversationID)
+                store.path = path
+            }
+        }
         .task {
             // Once, after signing in: why Lime would like to notify, before the system's prompt.
             await notifications.refreshAuthorization()

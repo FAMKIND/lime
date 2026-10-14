@@ -151,8 +151,10 @@ final class ConversationStore {
         let manager = GroupCallManager(core: StoreGroupCallCore(store: self), system: calls.system,
                                        quietReason: { StatusSettings.shared.quietCallReason() },
                                        isOtherCallActive: { [weak self] in self?.calls.inCall ?? false },
+                                       me: { [weak self] in self?.meProvider() },
+                                       network: quiet ? nil : SystemGroupCallNetwork(),
                                        makeMedia: { LiveKitGroupMedia() })
-        _ = quiet
+        if !quiet { manager.makePictureInPicture = { GroupCallPictureInPicture() } }
         manager.alwaysRelay = { CallPrivacy.alwaysRelay }
         manager.fetchNow = { [weak self] in await self?.fetchCallOps() }
         manager.onFinished = { [weak self] in Task { @MainActor in await self?.reload() } }

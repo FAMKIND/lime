@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Observation
+import UIKit
 
 /// What a group call needs from LimeCore and the signed-in session. The rules (who may start, join or be sent a key, when keys change,
 /// when a call is over) are all in the core; this only asks and obeys. The real one is `StoreGroupCallCore`; tests use a fake.
@@ -91,6 +92,20 @@ final class GroupCallManager {
     @ObservationIgnored private var keyed: Set<String> = []
     @ObservationIgnored private var decrypting: [String: Bool] = [:]
     @ObservationIgnored private var busy = false
+    /// Who I am (the name and photo on my own tile; never "You").
+    @ObservationIgnored private let me: () -> Person?
+    /// System Picture in Picture of the active speaker (a video call); nil in tests and the demo.
+    @ObservationIgnored var makePictureInPicture: (() -> (any GroupPiP)?)?
+    @ObservationIgnored private var pip: (any GroupPiP)?
+    private(set) var pictureInPictureActive = false
+    @ObservationIgnored private let network: GroupCallNetwork?
+    /// Who the window shows now, and since when (a new speaker waits `speakerHoldSeconds` so it does not flicker), and the last other person who spoke.
+    @ObservationIgnored private var pipSubject: String?
+    @ObservationIgnored private var pipSubjectSince = Date.distantPast
+    @ObservationIgnored private var lastOtherSpeaker: String?
+    @ObservationIgnored var speakerHoldSeconds: Double = 2
+    /// Minimise was pressed: the app opens the group's chat (so the person can type while talking).
+    @ObservationIgnored var onMinimize: ((String) -> Void)?
     /// When each remote tile was first seen without a working key, and who has been asked for it again.
     @ObservationIgnored private var stuckSince: [String: Date] = [:]
     @ObservationIgnored private var asked: Set<String> = []
@@ -98,8 +113,11 @@ final class GroupCallManager {
     @ObservationIgnored var keyRetrySeconds: Double = 5
 
     init(core: GroupCallCore, system: CallSystem, quietReason: @escaping () -> CallQuietReason? = { nil },
-         isOtherCallActive: @escaping () -> Bool = { false }, now: @escaping () -> Date = Date.init, makeMedia: @escaping () -> any GroupCallMedia) {
+         isOtherCallActive: @escaping () -> Bool = { false }, now: @escaping () -> Date = Date.init,
+         me: @escaping () -> Person? = { nil }, network: GroupCallNetwork? = nil, makeMedia: @escaping () -> any GroupCallMedia) {
         self.core = core
+        self.me = me
+        self.network = network
         self.system = system
         self.quietReason = quietReason
         self.isOtherCallActive = isOtherCallActive
@@ -150,7 +168,7 @@ final class GroupCallManager {
         do {
             let info = try await core.start(conversationID: conversationID, video: video)
             diag.log("group call: start video=\(video), \(info.participantCount) in it")
-            return await joinInternal(info: info, title: title)
+            return await joinInternal(info: info, title: title, camera: video)
         } catch {
             diag.log("group call: start refused (\(error))")
             notice = "Couldn\u{2019}t start the call. Check that you\u{2019}re still in this group."
@@ -160,7 +178,7 @@ final class GroupCallManager {
 
     /// Joins a live call (the chat's Join, a ring answered).
     @discardableResult
-    func join(callID: String, conversationID: String, title: String, video: Bool) async -> Bool {
+    func join(callID: String, conversationID: String, title: String, video: Bool, withVideo: Bool? = nil) async -> Bool {
         guard phase == .idle, !busy else { return false }
         if isOtherCallActive() { notice = "End your current call to join this one."; return false }
         busy = true
@@ -168,10 +186,11 @@ final class GroupCallManager {
         dismissIncoming()
         let info = core.activeCall(conversationID: conversationID)
         guard let info, info.callId == callID else { notice = "That call has ended."; return false }
-        return await joinInternal(info: info, title: title)
+        // Joining as voice publishes no camera until the camera is turned on in the call; by default a join is as the call was started.
+        return await joinInternal(info: info, title: title, camera: withVideo ?? info.video)
     }
 
-    private func joinInternal(info: GroupCallInfo, title: String) async -> Bool {
+    private func joinInternal(info: GroupCallInfo, title: String, camera wantsCamera: Bool) async -> Bool {
         let joined: GroupCallJoin
         do { joined = try await core.join(callID: info.callId) } catch {
             diag.log("group call: join refused (\(error))")
@@ -191,10 +210,11 @@ final class GroupCallManager {
         stuckSince = [:]
         asked = []
         myParticipant = joined.participant
-        tiles = [Tile(id: joined.participant, userID: "", name: "You", isMe: true, secured: true)]
+        let myself = me()
+        tiles = [Tile(id: joined.participant, userID: myself?.id ?? "", name: myself?.name ?? "Me", isMe: true, secured: true)]
         for other in joined.participants { tiles.append(Tile(id: other.participant, userID: other.userId, name: other.name, isMe: false)) }
         // Many people: speaker view, and the camera starts off.
-        cameraOn = info.video && tiles.count <= Self.gridLimit
+        cameraOn = wantsCamera && info.video && tiles.count <= Self.gridLimit
         diag.log("group call: joined as \(joined.participant.prefix(4))…, \(joined.participants.count) already in, key index \(joined.keyIndex)")
         system.reportOutgoing(callID: Self.systemID(callID), name: title, video: video)
         let media = makeMedia()
@@ -221,8 +241,16 @@ final class GroupCallManager {
             return false
         }
         do {
+            let low = network?.isCellular ?? false
+            if low { diag.log("group call: on mobile data: sending 480p") }
             try await media.connect(url: token.url, token: token.token, identity: joined.participant, iceServers: servers, relayOnly: relay,
-                                    microphone: true, camera: cameraOn)
+                                    microphone: true, camera: cameraOn, lowBandwidth: low)
+            network?.onChange = { [weak self] cellular in
+                guard let self, self.phase != .idle else { return }
+                self.diag.log("group call: network is \(cellular ? "mobile data: 480p" : "Wi-Fi: 720p")")
+                Task { await self.media?.setLowBandwidth(cellular) }
+            }
+            network?.start()
         } catch {
             diag.log("group call: connect failed (\(error))")
             if phase != .idle { notice = "Couldn\u{2019}t connect to the call."; await finish(notify: true) }
@@ -234,10 +262,11 @@ final class GroupCallManager {
     // MARK: Ringing
 
     /// The incoming ring was answered (lime's Join or the system's Accept).
-    func acceptIncoming(fromSystem: Bool = false) async {
+    func acceptIncoming(fromSystem: Bool = false, withVideo: Bool? = nil) async {
         guard let ring = incoming else { return }
         if !fromSystem { system.requestAnswer(callID: Self.systemID(ring.callID)) }
-        _ = await join(callID: ring.callID, conversationID: ring.conversationID, title: ring.title, video: ring.video)
+        // The system's Answer is as the call was started; the in-app banner can say video or voice.
+        _ = await join(callID: ring.callID, conversationID: ring.conversationID, title: ring.title, video: ring.video, withVideo: withVideo)
     }
 
     func declineIncoming() {
@@ -367,14 +396,18 @@ final class GroupCallManager {
             update(id) { $0.muted = muted }
         case .camera(let id, let on):
             update(id) { $0.cameraOn = on }
+            refreshPiP()
         case .speaking(let ids):
             for index in tiles.indices { tiles[index].speaking = ids.contains(tiles[index].id) }
+            if let other = tiles.first(where: { $0.speaking && !$0.isMe }) { lastOtherSpeaker = other.id }
+            refreshPiP()
         case .secured(let id, let ok, let state):
             diag.log("group call: frame cryptor \(id.prefix(4))… \(state)")
             decrypting[id] = ok
             refreshSecured(id)
         case .tracks:
             picturesVersion += 1
+            refreshPiP()
         case .sendIndexReset(let index):
             diag.log("group call: send index reset to \(index)")
         }
@@ -390,6 +423,61 @@ final class GroupCallManager {
             if !tile.isMe { tile.secured = keyed.contains(id) && decrypting[id] != false }
         }
         picturesVersion += 1
+        refreshPiP()
+    }
+
+    // MARK: Picture in Picture (LIME-112c)
+
+    /// Makes the window ready for a video call (the call screen's anchor view must be on screen).
+    func preparePictureInPicture(sourceView: UIView) {
+        guard video, inCall else { return }
+        if pip == nil, let made = makePictureInPicture?() {
+            pip = made
+            made.onStarted = { [weak self] in self?.pictureInPictureActive = true; self?.minimized = true }
+            made.onStopped = { [weak self] in self?.pictureInPictureActive = false }
+            made.onRestore = { [weak self] in self?.pictureInPictureActive = false; self?.minimized = false }
+            made.onFailed = { [weak self] in self?.minimized = true }
+        }
+        pip?.prepare(sourceView: sourceView, person: pipPerson(for: chooseSubject()))
+        refreshPiP()
+    }
+
+    /// Minimise (the call screen's button): the group's chat opens so the person can type while talking; a video call floats in system
+    /// Picture in Picture, a voice call (or a video call that cannot) leaves the full screen and keeps the slim bar to return by.
+    func minimize() {
+        onMinimize?(conversationID)
+        if video, phase == .active, let pip, pip.isPossible { pip.start() } else { minimized = true }
+    }
+
+    /// Who the window shows: the person speaking (not me), kept for `speakerHoldSeconds` before it moves to someone else; when nobody else
+    /// is speaking the one shown stays, else the last other speaker, else the first other person; nobody else yet: the group itself.
+    private func chooseSubject() -> String? {
+        let others = tiles.filter { !$0.isMe }
+        guard !others.isEmpty else { return nil }
+        let current = others.first { $0.id == pipSubject }
+        let speaking = others.first { $0.speaking }
+        if let speaking, speaking.id != current?.id {
+            if current == nil || now().timeIntervalSince(pipSubjectSince) >= speakerHoldSeconds { return speaking.id }
+        }
+        if let current { return current.id }
+        if let last = lastOtherSpeaker, others.contains(where: { $0.id == last }) { return last }
+        return (others.first { $0.secured && $0.cameraOn } ?? others[0]).id
+    }
+
+    private func pipPerson(for id: String?) -> Person {
+        guard let id, let tile = tiles.first(where: { $0.id == id }) else { return Person(id: conversationID, name: title) }
+        return Person(id: tile.userID.isEmpty ? tile.id : tile.userID, name: tile.name)
+    }
+
+    /// Points the window at the right person with the right picture (their video, or their photo when their camera is off or their key
+    /// has not arrived: never a black window).
+    func refreshPiP() {
+        guard let pip else { return }
+        let id = chooseSubject()
+        if id != pipSubject { pipSubject = id; pipSubjectSince = now() }
+        let tile = tiles.first { $0.id == id }
+        let pictureShowing = (tile?.secured ?? false) && (tile?.cameraOn ?? false) && video
+        pip.show(person: pipPerson(for: id), track: id.flatMap { media?.videoTrack(for: $0) }, pictureShowing: pictureShowing)
     }
 
     // MARK: In the call
@@ -422,6 +510,9 @@ final class GroupCallManager {
         let media = self.media
         diag.log("group call: leaving")
         poller?.cancel()
+        network?.stop()
+        pip?.stop(); pip = nil; pictureInPictureActive = false
+        pipSubject = nil; lastOtherSpeaker = nil
         phase = .idle
         self.media = nil
         tiles = []
@@ -443,6 +534,7 @@ final class GroupCallManager {
                 guard let self, !Task.isCancelled, self.phase != .idle else { return }
                 await self.fetchNow?()
                 await self.pump()
+                self.refreshPiP()
             }
         }
     }
