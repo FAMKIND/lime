@@ -13,6 +13,8 @@ extension NSAttributedString.Key {
     static let limeLevel = NSAttributedString.Key("lime.level")
     /// On a numbered item's marker, when the run was started at a number other than 1 ("3. " typed at a line's start).
     static let limeStart = NSAttributedString.Key("lime.start")
+    /// On the characters of a list marker ("• ", "2. ") and nowhere else, so a marker that an edit has cut in half can be told from the words.
+    static let limeMarker = NSAttributedString.Key("lime.marker")
 }
 
 enum InlineFormat: CaseIterable {
@@ -252,6 +254,7 @@ enum ComposerDocument {
                     let kind: BlockKind = item.ordered ? .number : .bullet
                     let attributes: [NSAttributedString.Key: Any] = [.limeBlock: kind.rawValue, .limeLevel: slot]
                     var markerAttributes = attributes
+                    markerAttributes[.limeMarker] = true
                     if item.ordered, fromOne[n] == "1.", markers[n] != "1." { markerAttributes[.limeStart] = Int(markers[n].dropLast()) }
                     append(markers[n] + " ", markerAttributes)
                     appendSpans(item.spans, block: attributes)
@@ -372,7 +375,7 @@ enum ComposerDocument {
                 let level = blockKind(in: text, at: original.location) == nil ? 0 : listLevel(in: text, at: original.location)
                 let marker = kind == .bullet ? bulletMarker(level: level) : "1. "
                 let attributes: [NSAttributedString.Key: Any] = [.limeBlock: kind.rawValue, .limeLevel: level]
-                text.insert(NSAttributedString(string: marker, attributes: attributes), at: paragraph.location)
+                text.insert(NSAttributedString(string: marker, attributes: attributes.merging([.limeMarker: true]) { $1 }), at: paragraph.location)
                 text.addAttributes(attributes, range: NSRange(location: paragraph.location, length: paragraph.length + marker.utf16.count))
                 if paragraph.location <= selectionStart { selectionStart += marker.utf16.count }
                 if paragraph.location < selectionEnd || selection.length == 0 { selectionEnd += marker.utf16.count }
@@ -475,7 +478,7 @@ enum ComposerDocument {
         let level = listLevel(in: text, at: paragraph.location)
         let attributes: [NSAttributedString.Key: Any] = [.limeBlock: kind.rawValue, .limeLevel: level]
         let next = NSMutableAttributedString(string: "\n", attributes: attributes)
-        next.append(NSAttributedString(string: kind == .bullet ? bulletMarker(level: level) : "1. ", attributes: attributes))
+        next.append(NSAttributedString(string: kind == .bullet ? bulletMarker(level: level) : "1. ", attributes: attributes.merging([.limeMarker: true]) { $1 }))
         text.replaceCharacters(in: selection, with: next)
         selection = NSRange(location: selection.location + next.length, length: 0)
         renumber(text); restyle(text)
@@ -588,7 +591,7 @@ enum ComposerDocument {
         let oldMarker = marker.map { text.attributedSubstring(from: $0) }
         let newKind: BlockKind = trigger.ordered ? .number : .bullet
         let markerText = trigger.ordered ? "\(trigger.number). " : bulletMarker(level: level)
-        var markerAttributes: [NSAttributedString.Key: Any] = [.limeBlock: newKind.rawValue, .limeLevel: level]
+        var markerAttributes: [NSAttributedString.Key: Any] = [.limeBlock: newKind.rawValue, .limeLevel: level, .limeMarker: true]
         if trigger.ordered, trigger.number != 1 { markerAttributes[.limeStart] = Int(trigger.number) }
         // The marker and the typed marker go; the new marker comes; the rest of the paragraph becomes the item's text.
         text.replaceCharacters(in: NSRange(location: paragraph.location, length: selection.location - paragraph.location),
@@ -630,5 +633,94 @@ enum ComposerDocument {
         renumber(text)
         restyle(text)
         return true
+    }
+
+    // MARK: Deleting
+
+    /// The marker rules for a delete (what the text view's delegate does before UIKit deletes). They apply only to a
+    /// delete that lies entirely inside one list marker: a single Backspace at the start of an item's text steps a
+    /// nested item out one level, and any other such delete removes the marker (the item becomes plain text).
+    /// Returns true when it handled the deletion itself and the text view must not delete. Any wider delete (a
+    /// selection, Select All, Cut) is the text view's own, followed by `cleanUpAfterEdit`.
+    static func handleMarkerDelete(in storage: NSMutableAttributedString, range: NSRange, selection: inout NSRange) -> Bool {
+        guard range.length > 0, storage.length > 0 else { return false }
+        let paragraph = paragraphs(in: storage, covering: NSRange(location: range.location, length: 0))[0]
+        guard let marker = markerRange(in: storage, paragraph: paragraph), NSIntersectionRange(marker, range) == range else { return false }
+        if range.length == 1, range.location == NSMaxRange(marker) - 1, listLevel(in: storage, at: paragraph.location) > 0 {
+            selection = shiftLevel(in: storage, selection: NSRange(location: NSMaxRange(marker), length: 0), indent: false)
+            return true
+        }
+        storage.deleteCharacters(in: marker)
+        let rest = NSRange(location: paragraph.location, length: max(paragraph.length - marker.length, 0))
+        storage.removeAttribute(.limeBlock, range: rest)
+        storage.removeAttribute(.limeLevel, range: rest)
+        selection = NSRange(location: paragraph.location, length: 0)
+        return true
+    }
+
+    /// After an edit the text view made itself (a selection deleted, two lines joined): makes the list attributes
+    /// consistent. Marker characters that are not a whole marker at the start of their paragraph go (no half "1"
+    /// or stray bullet); a paragraph that starts as a list item is one item throughout, at its first part's level and
+    /// kind; list attributes left on text that does not start a list item are cleared. Returns the selection,
+    /// moved for what was removed.
+    static func cleanUpAfterEdit(_ text: NSMutableAttributedString, selection: NSRange) -> NSRange {
+        let string = text.string as NSString
+        guard string.length > 0 else { return selection }
+        var removals: [NSRange] = []
+        // Marker characters outside a whole marker at the start of a list paragraph.
+        var whole: [NSRange] = []
+        var location = 0
+        while location < string.length {
+            let paragraph = string.paragraphRange(for: NSRange(location: location, length: 0))
+            if blockKind(in: text, at: paragraph.location) != .code, let marker = markerRange(in: text, paragraph: paragraph),
+               text.attribute(.limeMarker, at: marker.location, effectiveRange: nil) != nil {
+                whole.append(marker)
+            }
+            location = NSMaxRange(paragraph)
+        }
+        text.enumerateAttribute(.limeMarker, in: NSRange(location: 0, length: string.length)) { value, run, _ in
+            guard value != nil else { return }
+            var pending = run
+            for marker in whole {
+                let overlap = NSIntersectionRange(marker, pending)
+                guard overlap.length > 0 else { continue }
+                if overlap.location > pending.location { removals.append(NSRange(location: pending.location, length: overlap.location - pending.location)) }
+                pending = NSRange(location: NSMaxRange(overlap), length: NSMaxRange(pending) - NSMaxRange(overlap))
+                if pending.length == 0 { break }
+            }
+            if pending.length > 0 { removals.append(pending) }
+        }
+        var moved = selection
+        // Only characters a marker is made of are removed; anything else that wrongly carries the marker attribute
+        // (typed words never should) keeps its place and just loses the attribute.
+        let markerCharacters = CharacterSet(charactersIn: "•◦▪. ").union(CharacterSet(charactersIn: "0123456789"))
+        var index = removals.count
+        while index > 0 {
+            index -= 1
+            let range = removals[index]
+            let removable = (text.string as NSString).substring(with: range).unicodeScalars.allSatisfy { markerCharacters.contains($0) }
+            if removable {
+                text.deleteCharacters(in: range)
+                if range.location < moved.location { moved.location -= min(range.length, moved.location - range.location) }
+            } else {
+                text.removeAttribute(.limeMarker, range: range)
+            }
+        }
+        // Every paragraph is plain, code, or one list item.
+        let after = text.string as NSString
+        location = 0
+        while location < after.length {
+            let paragraph = after.paragraphRange(for: NSRange(location: location, length: 0))
+            let kind = blockKind(in: text, at: paragraph.location)
+            if kind == .bullet || kind == .number, markerRange(in: text, paragraph: paragraph) != nil {
+                let level = text.attribute(.limeLevel, at: paragraph.location, effectiveRange: nil) as Any
+                text.addAttributes([.limeBlock: kind!.rawValue, .limeLevel: level], range: paragraph)
+            } else if kind != .code {
+                text.removeAttribute(.limeBlock, range: paragraph)
+                text.removeAttribute(.limeLevel, range: paragraph)
+            }
+            location = NSMaxRange(paragraph)
+        }
+        return moved
     }
 }

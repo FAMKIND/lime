@@ -338,23 +338,11 @@ struct RichComposerField: UIViewRepresentable {
             }
             // Deleting into a list marker takes the whole marker (the item becomes plain text).
             if text.isEmpty, range.length > 0 {
-                for paragraph in ComposerDocument.paragraphs(in: storage, covering: range) {
-                    if let marker = ComposerDocument.markerRange(in: storage, paragraph: paragraph),
-                       NSIntersectionRange(marker, range).length > 0, range.location < NSMaxRange(marker) {
-                        // Backspace at the start of a nested item's text steps it out one level; at level 0 it removes the marker.
-                        if range.length == 1, range.location == NSMaxRange(marker) - 1, ComposerDocument.listLevel(in: storage, at: paragraph.location) > 0 {
-                            textView.selectedRange = ComposerDocument.shiftLevel(in: storage, selection: NSRange(location: NSMaxRange(marker), length: 0), indent: false)
-                            changed(textView)
-                            return false
-                        }
-                        storage.deleteCharacters(in: marker)
-                        let rest = NSRange(location: paragraph.location, length: max(paragraph.length - marker.length, 0))
-                        storage.removeAttribute(.limeBlock, range: rest)
-                        storage.removeAttribute(.limeLevel, range: rest)
-                        textView.selectedRange = NSRange(location: paragraph.location, length: 0)
-                        changed(textView)
-                        return false
-                    }
+                var selection = range
+                if ComposerDocument.handleMarkerDelete(in: storage, range: range, selection: &selection) {
+                    textView.selectedRange = selection
+                    changed(textView)
+                    return false
                 }
             }
             return true
@@ -363,7 +351,9 @@ struct RichComposerField: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) { changed(textView) }
 
         private func changed(_ textView: UITextView) {
-            let selection = textView.selectedRange
+            // An edit UIKit made itself (a selection deleted or cut, two lines joined) may leave half a marker or
+            // list attributes on plain words: tidy them first.
+            let selection = ComposerDocument.cleanUpAfterEdit(textView.textStorage, selection: textView.selectedRange)
             ComposerDocument.renumber(textView.textStorage)
             ComposerDocument.restyle(textView.textStorage)
             if textView.selectedRange != selection { textView.selectedRange = selection }
@@ -389,7 +379,15 @@ struct RichComposerField: UIViewRepresentable {
                     }
                 }
             }
-            if selection.length == 0 { setTyping(textView, caret: selection.location) }
+            if selection.length == 0 { setTyping(textView, caret: selection.location) } else {
+                // What replaces a selection is typed words, never a marker.
+                updating = true
+                var typing = textView.typingAttributes
+                typing[.limeMarker] = nil
+                typing[.limeStart] = nil
+                textView.typingAttributes = typing
+                updating = false
+            }
             model.hasSelection = selection.length > 0
             model.refresh()
         }

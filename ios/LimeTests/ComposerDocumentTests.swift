@@ -409,3 +409,117 @@ final class ComposerNestedListTests: XCTestCase {
         XCTAssertEqual(MessageRender.numbered(items).map(\.marker), ["•", "◦", "▪", "1.", "1."])
     }
 }
+
+/// LIME-137-fix: deleting a selection removes exactly the selected text; the single-Backspace marker rules stay.
+/// `delete` plays what the text view's delegate and UIKit do for a delete (Select All + Delete, Cut, a drag selection).
+final class ComposerDeletionTests: XCTestCase {
+    private func text(_ markdown: String) -> NSMutableAttributedString { ComposerDocument.attributed(fromMarkdown: markdown) }
+
+    @discardableResult
+    private func delete(_ text: NSMutableAttributedString, _ range: NSRange) -> NSRange {
+        var selection = range
+        if ComposerDocument.handleMarkerDelete(in: text, range: range, selection: &selection) {
+            ComposerDocument.renumber(text); ComposerDocument.restyle(text)
+            return selection
+        }
+        text.deleteCharacters(in: range)
+        selection = ComposerDocument.cleanUpAfterEdit(text, selection: NSRange(location: range.location, length: 0))
+        ComposerDocument.renumber(text)
+        ComposerDocument.restyle(text)
+        return selection
+    }
+
+    private func range(of needle: String, in text: NSAttributedString, offset: Int = 0) -> Int {
+        (text.string as NSString).range(of: needle).location + offset
+    }
+
+    func testSelectAllOverAThreeLevelOutlineLeavesNothing() {
+        let t = text("- a\n  - b\n    - c")
+        let selection = delete(t, NSRange(location: 0, length: t.length))
+        XCTAssertEqual(t.string, "")
+        XCTAssertEqual(selection.location, 0)
+        XCTAssertNil(ComposerDocument.typingAttributes(in: t, caret: 0)[.limeBlock], "the next character typed is plain")
+        XCTAssertEqual(ComposerDocument.markdown(from: t), "")
+    }
+
+    func testSelectAllOverNumberedAndMixedListsLeavesNothing() {
+        let t = text("1. one\n2. two\n\n- x\n- y\n\ntrailing words")
+        delete(t, NSRange(location: 0, length: t.length))
+        XCTAssertEqual(t.string, "")
+    }
+
+    func testAMiddleToMiddleSelectionLeavesOneItemAtTheFirstItemsLevelAndKind() {
+        let t = text("- alpha\n  - beta\n    - gamma")
+        let start = range(of: "pha", in: t)
+        let end = range(of: "mma", in: t)
+        delete(t, NSRange(location: start, length: end - start))
+        XCTAssertEqual(t.string, "• almma")
+        XCTAssertEqual(ComposerDocument.markdown(from: t), "- almma")
+        for index in 0..<t.length {
+            XCTAssertEqual(ComposerDocument.listLevel(in: t, at: index), 0, "every character at \(index) is at item 1's level")
+            XCTAssertTrue(ComposerDocument.blockKind(in: t, at: index) == .bullet)
+        }
+        let numbered = text("1. one\n2. two\n3. three")
+        let from = range(of: "ne", in: numbered)
+        let to = range(of: "ree", in: numbered)
+        delete(numbered, NSRange(location: from, length: to - from))
+        XCTAssertEqual(numbered.string, "1. oree")
+        XCTAssertEqual(ComposerDocument.markdown(from: numbered), "1. oree")
+    }
+
+    func testASelectionFromPlainTextIntoAListLeavesPlainTextAndNoStrayMarker() {
+        let t = text("intro\n\n- one\n- two")
+        let start = range(of: "tro", in: t)
+        let end = range(of: "wo", in: t)
+        delete(t, NSRange(location: start, length: end - start))
+        XCTAssertEqual(t.string, "inwo")
+        XCTAssertNil(ComposerDocument.blockKind(in: t, at: 0))
+        XCTAssertNil(ComposerDocument.blockKind(in: t, at: 3), "the list attributes of what was left are cleared")
+        XCTAssertEqual(ComposerDocument.markdown(from: t), "inwo")
+    }
+
+    func testASelectionThatStartsInsideAMarkerLeavesNoHalfMarker() {
+        let t = text("- a\n- b")
+        delete(t, NSRange(location: 1, length: t.length - 1))
+        XCTAssertEqual(t.string, "", "the stray bullet is not left behind")
+        let numbered = text("1. a\n2. b")
+        delete(numbered, NSRange(location: 1, length: numbered.length - 1))
+        XCTAssertEqual(numbered.string, "")
+    }
+
+    func testASelectionThatEndsInsideALaterMarkerLeavesNoHalfMarker() {
+        let t = text("- one\n- two")
+        let start = range(of: "ne", in: t)
+        let end = range(of: "• two", in: t, offset: 1) // after the bullet, before its space
+        delete(t, NSRange(location: start, length: end - start))
+        XCTAssertEqual(ComposerDocument.markdown(from: t), "- otwo", "item two's half marker is not kept as text")
+        XCTAssertFalse(t.string.contains("•\u{20}") && t.string.hasSuffix("• two"))
+    }
+
+    func testBackspaceOverTheLineBreakJoinsTwoItemsWithoutAStrayMarker() {
+        let t = text("- a\n- b")
+        let newline = range(of: "\n", in: t)
+        delete(t, NSRange(location: newline, length: 1))
+        XCTAssertEqual(t.string, "• ab")
+        XCTAssertEqual(ComposerDocument.markdown(from: t), "- ab")
+    }
+
+    func testASingleBackspaceAtTheStartOfAnItemStillFollowsTheMarkerRules() {
+        let nested = text("- a\n  - b\n    - c")
+        let cStart = range(of: "c", in: nested)
+        delete(nested, NSRange(location: cStart - 1, length: 1))
+        XCTAssertEqual(ComposerDocument.markdown(from: nested), "- a\n  - b\n  - c", "a nested item steps out one level")
+        let top = text("- a\n- b")
+        let bStart = range(of: "b", in: top)
+        delete(top, NSRange(location: bStart - 1, length: 1))
+        XCTAssertEqual(top.string, "• a\nb", "a level-0 item loses its marker")
+        XCTAssertEqual(ComposerDocument.markdown(from: top), "- a\n\nb")
+    }
+
+    func testSelectingJustTheMarkerRemovesTheMarker() {
+        let t = text("1. one\n2. two")
+        delete(t, NSRange(location: 0, length: 3))
+        XCTAssertEqual(t.string, "one\n1. two")
+        XCTAssertNil(ComposerDocument.blockKind(in: t, at: 0))
+    }
+}

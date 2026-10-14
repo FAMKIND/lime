@@ -1542,6 +1542,28 @@ final class LimeUITests: XCTestCase {
         }
     }
 
+    func testSelectAllThenDeleteOrCutRemovesEveryListItem() {
+        let app = demoApp()
+        app.launch()
+        let field = openComposer(app)
+        field.typeText("- a\n\tb\n\tc")
+        XCTAssertEqual(field.value as? String, "- a\n  - b\n    - c", "setup: a three-level outline")
+        selectAll(field, in: app)
+        field.typeText(XCUIKeyboardKey.delete.rawValue)
+        XCTAssertEqual(field.value as? String ?? "", "", "Select All + Delete removes the whole outline, not one marker")
+        // Plain text typed afterwards is plain.
+        field.typeText("plain")
+        XCTAssertEqual(field.value as? String, "plain")
+        // Cut goes through the same path.
+        field.clearAndType("- one\n\ttwo")
+        XCTAssertEqual(field.value as? String, "- one\n  - two")
+        selectAll(field, in: app)
+        let cut = app.menuItems["Cut"]
+        XCTAssertTrue(cut.waitForExistence(timeout: 3))
+        cut.tap()
+        XCTAssertEqual(field.value as? String ?? "", "", "Cut removes the whole selection")
+    }
+
     func testALinkIsAddedThroughTheSheetAndABadOneIsRefused() {
         let app = demoApp()
         app.launch()
