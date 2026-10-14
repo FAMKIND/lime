@@ -3,6 +3,26 @@ import AVKit
 import LiveKit
 import UIKit
 
+/// Who the window is about: one person, or (nobody else has spoken, or is there) the group itself, drawn like the chat's own avatar.
+enum PiPSubject: Equatable {
+    case person(Person)
+    case group(id: String, name: String, emoji: String?, members: [Person])
+
+    var key: String {
+        switch self {
+        case .person(let person): "p:\(person.id)"
+        case .group(let id, _, _, _): "g:\(id)"
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .person(let person): person.name
+        case .group(_, let name, _, _): name
+        }
+    }
+}
+
 /// What a group call needs from system Picture in Picture (LIME-112c): the active speaker in iOS's floating window, like FaceTime over
 /// Messages. The window is never black: when the speaker's camera is off or their key has not arrived it shows their photo. Tests use a fake.
 @MainActor
@@ -14,9 +34,10 @@ protocol GroupPiP: AnyObject {
     var onRestore: (() -> Void)? { get set }
     var onFailed: (() -> Void)? { get set }
     /// Makes it ready (also automatically when lime is left): `sourceView` is on the call screen and must be on screen.
-    func prepare(sourceView: UIView, person: Person)
-    /// What the window shows now: `track` (the speaker's picture) when `pictureShowing`, else `person`'s photo (or initials).
-    func show(person: Person, track: AnyObject?, pictureShowing: Bool)
+    func prepare(sourceView: UIView, subject: PiPSubject)
+    /// What the window shows now: `track` (the speaker's picture) when `pictureShowing`, else the subject's photo (or initials; a group's
+    /// photo, emoji or cluster of members' photos).
+    func show(subject: PiPSubject, track: AnyObject?, pictureShowing: Bool)
     func start()
     func stop()
 }
@@ -94,8 +115,8 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
     private let contentController = AVPictureInPictureVideoCallViewController()
     private var controller: AVPictureInPictureController?
     private var renderer: GroupPiPFrameRenderer?
-    private var avatarView: PiPAvatarView?
-    private var avatarPerson: Person?
+    private var avatarView: UIView?
+    private var avatarKey: String?
     private var track: (any VideoTrack)?
     private var avatarShown = false
     private static let placeholder = CGSize(width: 360, height: 480)
@@ -116,9 +137,9 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
 
     var isPossible: Bool { AVPictureInPictureController.isPictureInPictureSupported() && (controller?.isPictureInPicturePossible ?? false) }
 
-    func prepare(sourceView: UIView, person: Person) {
+    func prepare(sourceView: UIView, subject: PiPSubject) {
         guard controller == nil, AVPictureInPictureController.isPictureInPictureSupported() else { return }
-        show(person: person, track: nil, pictureShowing: false)
+        show(subject: subject, track: nil, pictureShowing: false)
         let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView, contentViewController: contentController)
         let controller = AVPictureInPictureController(contentSource: source)
         controller.canStartPictureInPictureAutomaticallyFromInline = true
@@ -127,17 +148,21 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
         CallDiagnostics.shared.log("group pip prepared")
     }
 
-    func show(person: Person, track newTrack: AnyObject?, pictureShowing: Bool) {
-        // The photo: replaced when the person changes (plain UIKit: nothing here reads the app's environment).
-        if avatarPerson?.id != person.id {
+    func show(subject: PiPSubject, track newTrack: AnyObject?, pictureShowing: Bool) {
+        // The photo: replaced when the subject changes (plain UIKit: nothing here reads the app's environment).
+        if avatarKey != subject.key {
             avatarView?.removeFromSuperview()
-            let view = PiPAvatarView(person: person)
+            let view: UIView
+            switch subject {
+            case .person(let person): view = PiPAvatarView(person: person)
+            case .group(let id, let name, let emoji, let members): view = PiPGroupAvatarView(groupID: id, name: name, emoji: emoji, members: members)
+            }
             view.frame = contentController.view.bounds
             view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             view.alpha = avatarShown ? 1 : 0
             contentController.view.addSubview(view)
             avatarView = view
-            avatarPerson = person
+            avatarKey = subject.key
         }
         // The picture: attached to the speaker's track, and taken off the previous one.
         let wanted = pictureShowing ? (newTrack as? any VideoTrack) : nil
@@ -150,7 +175,7 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
         let showAvatar = !pictureShowing || wanted == nil
         guard showAvatar != avatarShown, let view = avatarView else { return }
         avatarShown = showAvatar
-        CallDiagnostics.shared.log("group pip \(showAvatar ? "photo" : "picture") for \(person.id.prefix(4))…")
+        CallDiagnostics.shared.log("group pip \(showAvatar ? "photo" : "picture")")
         let animate = !UIAccessibility.isReduceMotionEnabled
         UIView.animate(withDuration: animate ? 0.2 : 0) { view.alpha = showAvatar ? 1 : 0 }
     }
@@ -202,5 +227,100 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
                                                 restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
         nonisolated(unsafe) let done = completionHandler
         Task { @MainActor in self.onRestore?(); done(true) }
+    }
+}
+
+/// A group's picture for the window when nobody else is there or has spoken: the group's photo, else its emoji, else the same cluster of up
+/// to four members' photos the chat and Messages show (initials only for a member with no photo). Plain UIKit, like `PiPAvatarView`: the system
+/// moves this view into its own window, where a SwiftUI view that reads the app's environment would trap.
+final class PiPGroupAvatarView: UIView {
+    private let circle = UIView()
+    private var members: [(circle: UIView, photo: UIImageView?, label: UILabel?)] = []
+    private let photo = UIImageView()
+    private let emojiLabel = UILabel()
+
+    @MainActor init(groupID: String, name: String, emoji: String?, members people: [Person]) {
+        super.init(frame: .zero)
+        backgroundColor = UIColor(white: 0.08, alpha: 1)
+        circle.clipsToBounds = true
+        addSubview(circle)
+        if let image = AvatarCache.shared.image(for: groupID) {
+            photo.image = image
+            photo.contentMode = .scaleAspectFill
+            circle.addSubview(photo)
+        } else if let emoji {
+            circle.backgroundColor = UIColor(white: 1, alpha: 0.12)
+            emojiLabel.text = emoji
+            emojiLabel.textAlignment = .center
+            circle.addSubview(emojiLabel)
+        } else {
+            circle.clipsToBounds = false
+            let shown = people.count > 4 ? Array(people.prefix(3)) : Array(people.prefix(4))
+            for person in shown { addMember(person) }
+            if people.count > shown.count { addMore(people.count - shown.count) }
+        }
+        isAccessibilityElement = true
+        accessibilityLabel = name
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// How many member circles are drawn (a test reads it): photos or initials for each, plus "+N".
+    var clusterCount: Int { members.count }
+    var showsGroupPhoto: Bool { photo.superview != nil }
+    var showsEmoji: Bool { emojiLabel.superview != nil }
+
+    @MainActor private func addMember(_ person: Person) {
+        let holder = UIView()
+        holder.clipsToBounds = true
+        if let image = AvatarCache.shared.image(for: person.id) {
+            let view = UIImageView(image: image)
+            view.contentMode = .scaleAspectFill
+            holder.addSubview(view)
+            members.append((holder, view, nil))
+        } else {
+            holder.backgroundColor = UIColor(Theme.avatar(person.tone))
+            let label = UILabel()
+            label.text = person.initials
+            label.textAlignment = .center
+            label.textColor = UIColor(red: 0.075, green: 0.106, blue: 0.09, alpha: 1)
+            label.adjustsFontSizeToFitWidth = true
+            holder.addSubview(label)
+            members.append((holder, nil, label))
+        }
+        circle.addSubview(holder)
+    }
+
+    @MainActor private func addMore(_ extra: Int) {
+        let holder = UIView()
+        holder.clipsToBounds = true
+        holder.backgroundColor = UIColor(white: 1, alpha: 0.18)
+        let label = UILabel()
+        label.text = "+\(extra)"
+        label.textAlignment = .center
+        label.textColor = .white
+        label.adjustsFontSizeToFitWidth = true
+        holder.addSubview(label)
+        members.append((holder, nil, label))
+        circle.addSubview(holder)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let side = max(60, min(bounds.width, bounds.height) * 0.6)
+        circle.frame = CGRect(x: (bounds.width - side) / 2, y: (bounds.height - side) / 2, width: side, height: side)
+        circle.layer.cornerRadius = photo.superview != nil || emojiLabel.superview != nil ? side / 2 : 0
+        photo.frame = circle.bounds
+        emojiLabel.frame = circle.bounds
+        emojiLabel.font = .systemFont(ofSize: side * 0.5)
+        let d = side * 0.52, o = side * 0.24
+        for (index, member) in members.enumerated() {
+            let cx = side / 2 + (index % 2 == 0 ? -o : o), cy = side / 2 + (index < 2 ? -o : o)
+            member.circle.frame = CGRect(x: cx - d / 2, y: cy - d / 2, width: d, height: d)
+            member.circle.layer.cornerRadius = d / 2
+            member.photo?.frame = member.circle.bounds
+            member.label?.frame = member.circle.bounds
+            member.label?.font = .systemFont(ofSize: d * 0.38, weight: .medium)
+        }
     }
 }

@@ -51,7 +51,12 @@ struct CallRowView: View {
                 if isGroupCall(call) { openOrJoin(call) } else { store.callPath.append(ProfileRoute(userID: call.peerID, name: call.peerName, callIDs: group.records.map(\.id))) }
             } label: {
                 HStack(spacing: 12) {
-                    AvatarView(person: person(call), size: avatarSize)
+                    if isGroupCall(call), let chat = store.conversation(call.peerID) {
+                        // A group call shows the group as the chat does: its photo, else its members' photos.
+                        ConversationAvatar(conversation: chat, size: avatarSize)
+                    } else {
+                        AvatarView(person: person(call), size: avatarSize)
+                    }
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(call.peerName + (group.count > 1 ? " (\(group.count))" : ""))

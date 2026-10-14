@@ -63,8 +63,9 @@ final class GroupCallManagerTests: XCTestCase {
         var onStarted: (() -> Void)?, onStopped: (() -> Void)?, onRestore: (() -> Void)?, onFailed: (() -> Void)?
         private(set) var prepared = 0, started = 0, stopped = 0
         private(set) var shown: [(person: String, track: Bool, picture: Bool)] = []
-        func prepare(sourceView: UIView, person: Person) { prepared += 1 }
-        func show(person: Person, track: AnyObject?, pictureShowing: Bool) { shown.append((person.name, track != nil, pictureShowing)) }
+        private(set) var subjects: [PiPSubject] = []
+        func prepare(sourceView: UIView, subject: PiPSubject) { prepared += 1 }
+        func show(subject: PiPSubject, track: AnyObject?, pictureShowing: Bool) { subjects.append(subject); shown.append((subject.name, track != nil, pictureShowing)) }
         func start() { started += 1; onStarted?() }
         func stop() { stopped += 1 }
     }
@@ -533,5 +534,72 @@ final class GroupCallManagerTests: XCTestCase {
         XCTAssertEqual(LiveCardWords.who(["Jean Park"], count: 3), "Jean is there and 2 others")
         XCTAssertFalse(LiveCardWords.spoken(who: "Jean is there", video: true).contains("You"))
         XCTAssertEqual(LiveCardWords.spoken(who: "Jean is there", video: false), "Voice call in progress. Jean is there. Join")
+    }
+
+    // MARK: LIME-146b
+
+    func testTheCallCircleSaysJoinOrReturnWithoutACount() {
+        XCTAssertEqual(LiveCallButton.label(video: true, returning: false), "Join video call")
+        XCTAssertEqual(LiveCallButton.label(video: false, returning: false), "Join voice call")
+        XCTAssertEqual(LiveCallButton.label(video: true, returning: true), "Return to call")
+        XCTAssertFalse(LiveCallButton.label(video: true, returning: false).contains("people"), "no count on the button: the card has it")
+    }
+
+    func testTappingACallBubbleNeverCallsOnePersonInAGroup() {
+        let live = CallBubble(video: true, duration: 0, outcome: .completed, mine: false, isGroup: true, live: true, startedBy: "alice")
+        let ended = CallBubble(video: true, duration: 60, outcome: .completed, mine: false, isGroup: true, live: false, startedBy: "alice")
+        let oneToOne = CallBubble(video: false, duration: 5, outcome: .completed, mine: true)
+        XCTAssertEqual(CallBubbleTap.action(isGroup: true, call: live), .join, "a live card joins in one tap")
+        XCTAssertEqual(CallBubbleTap.action(isGroup: true, call: ended), .callGroupAgain, "an ended group call asks to call the group again")
+        XCTAssertEqual(CallBubbleTap.action(isGroup: true, call: oneToOne), .callGroupAgain, "an old one-to-one bubble in a group never calls a person either")
+        XCTAssertEqual(CallBubbleTap.action(isGroup: false, call: oneToOne), .callBack, "in a DM: the call-back question as before")
+    }
+
+    func testAloneInMyOwnCallTheCardWaitsForOthers() {
+        XCTAssertEqual(LiveCardWords.who([], count: 1, iAmIn: true), "Waiting for others")
+        XCTAssertEqual(LiveCardWords.who([], count: 0, iAmIn: true), "Waiting for others")
+        XCTAssertEqual(LiveCardWords.who([], count: 1, iAmIn: false), "1 person is there", "someone else's card is unchanged")
+        XCTAssertEqual(LiveCardWords.who(["Jean Park"], count: 2, iAmIn: true), "Jean is there and 1 other")
+    }
+
+    func testTheWindowShowsTheGroupAsTheChatDoesWhenNobodyElseIsThere() async {
+        let members = [Person(id: "u1", name: "Jean Park"), Person(id: "u2", name: "Lee Wu")]
+        let core = FakeCore()
+        let media = FakeMedia()
+        let pip = FakePiP()
+        let manager = GroupCallManager(core: core, system: QuietCallSystem(), makeMedia: { media })
+        manager.groupLook = { id in id == "grp:g1" ? ("🍎", members) : nil }
+        manager.makePictureInPicture = { pip }
+        _ = await manager.start(conversationID: "grp:g1", title: "Grade 4 Team", video: true)
+        media.onEvent?(.connection(connected: true, error: nil))
+        manager.preparePictureInPicture(sourceView: UIView())
+        manager.refreshPiP()
+        XCTAssertEqual(pip.subjects.last, .group(id: "grp:g1", name: "Grade 4 Team", emoji: "🍎", members: members))
+        await manager.leave()
+    }
+
+    @MainActor func testTheWindowsGroupPictureUsesPhotosAndInitialsOnlyForMembersWithNone() {
+        let cache = AvatarCache.shared
+        cache.reset()
+        defer { cache.reset() }
+        func jpeg() -> Data { UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).jpegData(withCompressionQuality: 1) { UIColor.green.setFill(); $0.fill(CGRect(x: 0, y: 0, width: 8, height: 8)) } }
+        // A group photo wins.
+        cache.set(jpeg(), for: "grp:g1")
+        let photo = PiPGroupAvatarView(groupID: "grp:g1", name: "G", emoji: "🍎", members: [Person(id: "a", name: "A B")])
+        XCTAssertTrue(photo.showsGroupPhoto)
+        XCTAssertFalse(photo.showsEmoji)
+        cache.set(nil, for: "grp:g1")
+        // Else the emoji.
+        let emoji = PiPGroupAvatarView(groupID: "grp:g1", name: "G", emoji: "🍎", members: [Person(id: "a", name: "A B")])
+        XCTAssertTrue(emoji.showsEmoji)
+        // Else a cluster of up to four members: photos for those who have one, initials for the rest.
+        cache.set(jpeg(), for: "a")
+        let four = (0..<4).map { Person(id: ["a", "b", "c", "d"][$0], name: "P\($0) Q") }
+        let cluster = PiPGroupAvatarView(groupID: "grp:g1", name: "G", emoji: nil, members: four)
+        XCTAssertEqual(cluster.clusterCount, 4)
+        XCTAssertFalse(cluster.showsGroupPhoto || cluster.showsEmoji)
+        let many = PiPGroupAvatarView(groupID: "grp:g1", name: "G", emoji: nil, members: (0..<7).map { Person(id: "m\($0)", name: "M\($0) N") })
+        XCTAssertEqual(many.clusterCount, 4, "three members and the +4 slot, like the chat's cluster")
+        XCTAssertEqual(cluster.accessibilityLabel, "G")
     }
 }

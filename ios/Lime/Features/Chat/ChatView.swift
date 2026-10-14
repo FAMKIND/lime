@@ -63,7 +63,7 @@ struct ChatView: View {
             } message: {
                 Text("You won't get new messages from this group. Someone can add you back.")
             }
-            .confirmSheet("Call \(conversation.title) back?", isPresented: Binding(get: { callBack != nil }, set: { if !$0 { callBack = nil } })) {
+            .confirmSheet(conversation.isGroup ? "Call \(conversation.title) again?" : "Call \(conversation.title) back?", isPresented: Binding(get: { callBack != nil }, set: { if !$0 { callBack = nil } })) {
                 // The kind of the call they tapped first.
                 let videoFirst = callBack?.video ?? false
                 Button(videoFirst ? "Video call" : "Voice call") { startCall(conversation, video: videoFirst) }
@@ -112,9 +112,11 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { titlePill(conversation) }
-            // While a group call is live, its own round button comes first, beside the capsule.
-            ToolbarItem(placement: .topBarTrailing) { if selection == nil { liveCallButton(conversation) } }
-                .sharedBackgroundVisibility(.hidden)
+            // The call button is always its own circle (glass; lime while a group call is live) beside the capsule.
+            ToolbarItem(placement: .topBarTrailing) { if selection == nil { callCircle(conversation) } }
+                .sharedBackgroundVisibility(headerCall(conversation) == nil ? .visible : .hidden)
+            // A fixed gap, so the system does not merge the call circle's glass with the capsule's: they stay two shapes.
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
             // One item (so one glass pill), with the icons close together.
             ToolbarItem(placement: .topBarTrailing) {
                 if selection != nil { cancelSelectButton } else { toolGroup(conversation) }
@@ -460,7 +462,13 @@ struct ChatView: View {
 
             Spacer(minLength: 0)
 
-            if selection == nil { liveCallButton(conversation) }
+            if selection == nil {
+                if headerCall(conversation) == nil {
+                    callCircle(conversation).limeGlass(in: Circle())
+                } else {
+                    callCircle(conversation)
+                }
+            }
 
             Group {
                 if selection != nil { cancelSelectButton } else { toolGroup(conversation) }
@@ -534,8 +542,6 @@ struct ChatView: View {
     private func toolGroup(_ conversation: Conversation) -> some View {
         HStack(spacing: -6) {
             toolIcon("magnifyingglass", label: "Search in chat", id: "chat-search-button") { startFinding() }
-            // While a group call is live its own button (beside this capsule) takes the phone icon's place.
-            if headerCall(conversation) == nil { callMenu(conversation) }
             moreMenu(conversation) { ToolIconLabel(symbol: "ellipsis") }
         }
     }
@@ -547,18 +553,21 @@ struct ChatView: View {
         return store.groupCalls.core.activeCall(conversationID: conversation.id)
     }
 
-    /// While a call is live: a circular lime Liquid Glass button (like the "+" on Messages) with a video or phone icon and the count.
-    /// Tap joins, or returns to the call I am in. Words and a number, not colour alone: VoiceOver reads "Join video call, 3 people".
+    /// The call button is always its own circle beside the search/⋯ capsule, in every chat, so a call starting never rearranges the header:
+    /// the ordinary phone menu (a glass circle) with no call, and the same circle turned lime with the call's own icon while a group call is
+    /// live (tap joins, or returns to the call I am in). No count here: the card in the chat has it.
     @ViewBuilder
-    private func liveCallButton(_ conversation: Conversation) -> some View {
+    private func callCircle(_ conversation: Conversation) -> some View {
         if let live = headerCall(conversation) {
-            LiveCallButton(video: live.video, count: Int(live.participantCount), returning: store.groupCalls.inCall && store.groupCalls.conversationID == conversation.id) {
+            LiveCallButton(video: live.video, returning: store.groupCalls.inCall && store.groupCalls.conversationID == conversation.id) {
                 if store.groupCalls.inCall && store.groupCalls.conversationID == conversation.id {
                     store.groupCalls.minimized = false
                 } else {
                     joinGroupCall(live, conversation)
                 }
             }
+        } else {
+            callMenu(conversation)
         }
     }
 
@@ -576,7 +585,9 @@ struct ChatView: View {
 
     /// The live call card's button joins the call while it is on, or returns to it when I am already in it.
     private func groupCallTap(_ message: Message, _ conversation: Conversation) -> (() -> Void)? {
-        guard let call = message.call, call.isGroup, call.live, message.id.hasPrefix("call:") else { return nil }
+        guard let call = message.call, message.id.hasPrefix("call:") else { return nil }
+        // An ended group call never calls one person: it asks whether to call the group again (the same sheet as a call back).
+        guard CallBubbleTap.action(isGroup: true, call: call) == .join else { return { callBack = call } }
         let callID = String(message.id.dropFirst(5))
         return {
             if store.groupCalls.inCall && store.groupCalls.conversationID == conversation.id { store.groupCalls.minimized = false; return }
@@ -1040,7 +1051,7 @@ struct CallBubbleView: View {
         let people = summary?.people ?? []
         let count = Int(summary?.info.participantCount ?? 0)
         let returning = store.groupCalls.inCall && store.groupCalls.conversationID == conversationID
-        let who = LiveCardWords.who(people.map(\.name), count: count)
+        let who = LiveCardWords.who(people.map(\.name), count: count, iAmIn: returning)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 // LIVE in words (no pulsing: Reduce Motion needs nothing).
@@ -1106,7 +1117,9 @@ struct CallBubbleView: View {
 /// The words of a live call card and the invite sheet.
 enum LiveCardWords {
     /// "Jean is there", "Jean and Lee are there", "Jean, Lee and 2 others are there"; just a count when the names are not known.
-    static func who(_ names: [String], count: Int) -> String {
+    static func who(_ names: [String], count: Int, iAmIn: Bool = false) -> String {
+        // Alone in my own call: not "1 person is there" (that is me).
+        if iAmIn && names.isEmpty && count <= 1 { return "Waiting for others" }
         let firsts = names.map { $0.split(separator: " ").first.map(String.init) ?? $0 }
         switch (firsts.count, count) {
         case (0, 0): return "Nobody is there yet"
@@ -1123,10 +1136,10 @@ enum LiveCardWords {
     static func spoken(who: String, video: Bool) -> String { "\(video ? "Video" : "Voice") call in progress. \(who). Join" }
 }
 
-/// The header's own call button while a group call is live (LIME-146).
+/// The header's call circle while a group call is live (LIME-146b): the same circle as the phone button, turned lime, with the call's icon.
+/// No count (the card in the chat has it). Words and an icon, not colour alone: VoiceOver reads "Join video call" or "Return to call".
 struct LiveCallButton: View {
     let video: Bool
-    let count: Int
     let returning: Bool
     let action: () -> Void
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -1143,15 +1156,23 @@ struct LiveCallButton: View {
                     glyph.frame(width: 44, height: 44).background(Circle().fill(.ultraThinMaterial)).background(Theme.accent.opacity(0.8), in: Circle())
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                CountBadge(count: count, size: 18, font: Theme.caption.weight(.bold))
-                    .overlay(Capsule().stroke(Theme.canvas, lineWidth: 1.5))
-                    .offset(x: 6, y: -4)
-            }
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(returning ? "Return to" : "Join") \(video ? "video" : "voice") call, \(count) \(count == 1 ? "person" : "people")")
+        .accessibilityLabel(LiveCallButton.label(video: video, returning: returning))
         .accessibilityIdentifier("chat-live-call-button")
+    }
+
+    nonisolated static func label(video: Bool, returning: Bool) -> String { returning ? "Return to call" : (video ? "Join video call" : "Join voice call") }
+}
+
+/// What tapping a call bubble does (LIME-146b). A group's live card joins in one tap; an ended group call never calls one person: it asks
+/// whether to call the group again; a one-to-one bubble keeps the call-back question.
+enum CallBubbleTap: Equatable {
+    case join, callGroupAgain, callBack, nothing
+
+    static func action(isGroup: Bool, call: CallBubble) -> CallBubbleTap {
+        if isGroup { return call.isGroup && call.live ? .join : .callGroupAgain }
+        return call.isGroup ? .nothing : .callBack
     }
 }

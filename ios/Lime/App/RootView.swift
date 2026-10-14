@@ -27,19 +27,8 @@ struct RootView: View {
             Button("OK", role: .cancel) {}
         } message: { Text(store.groupCalls.notice ?? "") }
         .fullScreenCover(isPresented: Binding(get: { store.groupCalls.inCall && !store.groupCalls.minimized }, set: { _ in })) { GroupCallView() }
-        .overlay(alignment: .top) {
-            if store.groupCalls.inCall && store.groupCalls.minimized && !store.groupCalls.pictureInPictureActive {
-                Button { store.groupCalls.minimized = false } label: {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Label("Return to \(store.groupCalls.title) \u{00B7} \(store.groupCalls.tiles.count) in call \u{00B7} \(CallRecord.clock(context.date.timeIntervalSince(store.groupCalls.startedAt ?? context.date)))", systemImage: "phone.fill")
-                            .lineLimit(1)
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accentInk)
-                            .frame(maxWidth: .infinity, minHeight: 36).background(Theme.accent)
-                    }
-                }
-                .accessibilityIdentifier("group-call-return-bar")
-            }
-        }
+        // No slim return bar for a group call (LIME-146b): it covered the chat's header. The ways back are the lime call circle in that chat, the
+        // live card, and (for video) the floating window; the 1:1 voice bar below is unchanged.
         .fullScreenCover(isPresented: Binding(get: { store.calls.inCall && !store.calls.minimized }, set: { _ in })) { CallView() }
         .overlay(alignment: .top) {
             if store.calls.inCall && store.calls.minimized && !store.calls.pictureInPictureActive {

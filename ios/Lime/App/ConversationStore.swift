@@ -158,6 +158,7 @@ final class ConversationStore {
         manager.alwaysRelay = { CallPrivacy.alwaysRelay }
         manager.fetchNow = { [weak self] in await self?.fetchCallOps() }
         manager.onFinished = { [weak self] in Task { @MainActor in await self?.reload() } }
+        manager.groupLook = { [weak self] id in self?.conversation(id).map { ($0.emoji, $0.members) } }
         groupCallManager = manager
         return manager
     }

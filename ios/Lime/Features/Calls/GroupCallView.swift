@@ -326,6 +326,7 @@ struct GroupInviteSheet: View {
             let count = Int(summary?.info.participantCount ?? 0)
             VStack(spacing: 14) {
                 Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5).padding(.top, 8)
+                if let chat = store.conversation(invite.conversationID) { ConversationAvatar(conversation: chat, size: 56) }
                 Text(count == 1 ? "1 person is in a call" : (count == 0 ? "A call has started" : "\(count) people are in a call"))
                     .font(Theme.title).foregroundStyle(Theme.text).multilineTextAlignment(.center)
                 Text(invite.title).font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)

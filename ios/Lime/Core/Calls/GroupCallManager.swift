@@ -107,6 +107,8 @@ final class GroupCallManager {
     @ObservationIgnored var isViewingChat: (String) -> Bool = { _ in false }
     /// Who I am (the name and photo on my own tile; never "You").
     @ObservationIgnored private let me: () -> Person?
+    /// How the group looks (its emoji and members) for the window's group picture; set by the app.
+    @ObservationIgnored var groupLook: (String) -> (emoji: String?, members: [Person])? = { _ in nil }
     /// System Picture in Picture of the active speaker (a video call); nil in tests and the demo.
     @ObservationIgnored var makePictureInPicture: (() -> (any GroupPiP)?)?
     @ObservationIgnored private var pip: (any GroupPiP)?
@@ -490,7 +492,7 @@ final class GroupCallManager {
             made.onRestore = { [weak self] in self?.pictureInPictureActive = false; self?.minimized = false }
             made.onFailed = { [weak self] in self?.minimized = true }
         }
-        pip?.prepare(sourceView: sourceView, person: pipPerson(for: chooseSubject()))
+        pip?.prepare(sourceView: sourceView, subject: pipSubjectValue(for: chooseSubject()))
         refreshPiP()
     }
 
@@ -516,9 +518,13 @@ final class GroupCallManager {
         return (others.first { $0.secured && $0.cameraOn } ?? others[0]).id
     }
 
-    private func pipPerson(for id: String?) -> Person {
-        guard let id, let tile = tiles.first(where: { $0.id == id }) else { return Person(id: conversationID, name: title) }
-        return Person(id: tile.userID.isEmpty ? tile.id : tile.userID, name: tile.name)
+    private func pipSubjectValue(for id: String?) -> PiPSubject {
+        guard let id, let tile = tiles.first(where: { $0.id == id }) else {
+            // Nobody else yet: the group itself, as the chat shows it (photo, emoji, or its members' photos).
+            let look = groupLook(conversationID)
+            return .group(id: conversationID, name: title, emoji: look?.emoji, members: look?.members ?? [])
+        }
+        return .person(Person(id: tile.userID.isEmpty ? tile.id : tile.userID, name: tile.name))
     }
 
     /// Points the window at the right person with the right picture (their video, or their photo when their camera is off or their key
@@ -529,7 +535,7 @@ final class GroupCallManager {
         if id != pipSubject { pipSubject = id; pipSubjectSince = now() }
         let tile = tiles.first { $0.id == id }
         let pictureShowing = (tile?.secured ?? false) && (tile?.cameraOn ?? false) && video
-        pip.show(person: pipPerson(for: id), track: id.flatMap { media?.videoTrack(for: $0) }, pictureShowing: pictureShowing)
+        pip.show(subject: pipSubjectValue(for: id), track: id.flatMap { media?.videoTrack(for: $0) }, pictureShowing: pictureShowing)
     }
 
     // MARK: In the call

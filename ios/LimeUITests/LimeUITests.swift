@@ -577,8 +577,10 @@ final class LimeUITests: XCTestCase {
         let search = app.buttons["chat-search-button"], call = app.buttons["chat-call-button"], more = app.buttons["chat-more"]
         XCTAssertTrue(search.waitForExistence(timeout: 10))
         XCTAssertTrue(call.exists && more.exists)
-        XCTAssertLessThanOrEqual(call.frame.midX - search.frame.midX, 42, "closer than the old 44 pt")
-        XCTAssertLessThanOrEqual(more.frame.midX - call.frame.midX, 42)
+        // LIME-146b: the call button is always its own circle, beside a search and ⋯ capsule whose two icons sit closer than the old 44 pt.
+        XCTAssertLessThanOrEqual(more.frame.midX - search.frame.midX, 42, "search and ⋯ sit close together in their own capsule")
+        XCTAssertLessThan(call.frame.midX, search.frame.midX, "the call circle is separate, before the capsule")
+        XCTAssertGreaterThanOrEqual(search.frame.midX - call.frame.midX, 44, "and not inside it: a full target away")
         // Every target is a full 44 pt wide (they overlap a little, which is how the icons sit closer).
         for button in [search, call, more] { XCTAssertGreaterThanOrEqual(button.frame.width, 43.5, "a finger target is at least 44 pt wide") }
         search.tap()
