@@ -2,6 +2,27 @@
 
 Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execution record.
 
+## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
+Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
+
+**▶ NEXT FOR TEND: LIME-112b-fix (group calls stuck on "Connecting securely…")**, then LIME-139 (signed access). **If 139 is already running, finish and commit it first, then 112b-fix.** After 112b passes its gate, plot drafts **LIME-112c** (group PiP, 480p, the >10 notice, gate findings). *Plot keeps this line current.*
+
+**The user's words:**
+- **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
+- **"done tending"** (in plot's window) = plot reads TEND.md's newest "For plot:" and git, then reports to the user and updates the NEXT line.
+
+A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of this:
+1. **Re-read the brief** from this file, including any "RECONCILED" or "⚑" notes at its top (they win where they differ).
+2. **Phase 0:** `git add PLOT.md` only, then commit `chore: update PLOT.md`. Never stage anything else in that commit.
+3. **Commit with explicit paths only.** **Never commit `public/assets/*`** (two stray files, the user's to decide). Leave others' uncommitted files alone.
+4. **The soft cap is ~60 min**, or **~120 min when the brief asks for the full UI suite** (it takes ~53 min). At the cap, report rather than push on.
+5. **Tests:** run with signing on (`CODE_SIGNING_ALLOWED=NO` breaks the Keychain tests). Tiered: the full suite on the 13 mini, changed tests on SE/18 Pro. 0 warnings; Release clean.
+6. **The record:** `## LIME-XX` in TEND.md, ending with a paragraph headed **"For plot:"** (what landed, the commit, the gate, what wasn't exercised, decisions needed). **Plot reads it from TEND.md**, so the user doesn't paste it.
+7. **Commit message:** as the brief gives it, trailer `Brief: LIME-XX` plus the attribution trailer. **Push.** Then **stop for the user's check**. **No /loop wakeups.**
+8. **The user only, in tend's own window, never via a relayed message:** anything on a live server (SSH, installs, ports), secrets, staging deploys/migrations, accounts, DNS, or money. Stop and ask the user directly.
+9. Anything the brief didn't decide: stop and ask the user, not plot.
+10. The other standing rules (core-first, accessibility, the visual-change rule, no app-environment SwiftUI in system windows, no UniFFI names `List`/`Map`/`Set`/`String`/`Int`/`Unit`/`Result`) are under "### Standing rules" below.
+
 ## ▶ START HERE: session-end note (plot, 2026-10-10, context handoff)
 
 **Read this first. It supersedes the 2026-10-05 note below.** Details live in the sections below; search for the IDs.
@@ -126,6 +147,63 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e93. **DESIGN-13 (the mesh v1 design pass) started 2026-10-15: see "### DESIGN-13" below.** It covers 4 user decisions (M1–M4), 2 protocol findings, and a 5-brief plan (LIME-139…143).
+1e92. **LIME-112b Phases 3–5 LANDED as `b765767` (core) + `aac22a9` (iOS, docs, acks), pushed 2026-10-15.**
+   - **Core-first held:** the whole state machine is in core (`group.call.start/join/key/leave`; 8 new tests, 205 total; forged keys ignored; rekey on any leave or removal). `GroupCallManager` is a thin LiveKit + CallKit adapter (12 unit tests).
+   - The rest: Join pill, chat lines, Calls tab rows, a Groups section in New Call, ring ≤ 10 with DND, the a11y wording; 333 unit + 186 UI pass; 0 warnings.
+   - **Gaps vs the brief → 112c:**
+     - (1) **group PiP not built** (reconciled point 4 asked for it; minimise = a return bar);
+     - (2) the >10 notice;
+     - (3) 480p on mobile data;
+     - (4) **the CallKit audio router from Phase 1 was NOT built.** LiveKit runs its own automatic audio session, and `didActivate` goes only to stasel's engine. **Plot's top risk:** a group call answered from the system call screen may have no audio or fight the session (cf. the 111-fix4 history);
+     - (5) **two WebRTC builds define the same ObjC category (`RTCDevice` on `UIDevice`)**: undefined which one wins, so **the 1:1 calls are re-tested at the gate**.
+   - **Not measured:** join → first video, phone CPU, the same-host hairpin with Always relay.
+   - **Gate (the user, 2 phones + iPad, a group of 3):**
+     1. start video; the others ring → join; note the seconds to first video;
+     2. mute/camera off show icon + words;
+     3. one leaves, the others continue;
+     4. Always relay on one phone → still connects;
+     5. answer from the lock screen (CallKit) → audio both ways;
+     6. **a 1:1 voice + video call + minimise after a group call** (regression);
+     7. "logs".
+   - **Plot meanwhile: the mesh design pass** (the user moved offline messaging ahead of 137b/c).
+1e91. **LIME-112b Phase 2 LANDED as `c10beda` (pushed, 2026-10-15).**
+   - **The server is live:** LiveKit 1.13.9 + Caddy on `lime-turn-1`; `https://sfu.limechat.org` answers 200; 443/7881/UDP media reachable from outside (**no Hetzner Cloud Firewall**).
+   - coturn's renewal is now webroot via Caddy (dry run passed). The first run failed because `/var/www` is mode 700, so the ACME root moved to `/var/lib/lime-acme`.
+   - **Load test (from the user's Mac, all publish + all subscribe, 720p simulcast):** 10 people ≈ a quarter of one core, 190 MB, 37 Mbps out (the home uplink limited the 10-person run, so it's a floor). Per participant ≈ 2–3% of a core, 15–20 MB RAM. **Egress grows with the square of the video senders**, so size by egress.
+   - **Tend's sizing:** a speaker-view 100-person room ≈ 150 Mbps out; CCX23 enough for one, CCX33 headroom for several rooms; CPX11 fine for 3–10.
+   - **⚠ The README says "20 TB per server per month"** but US plans include only 1–8 TB (costgoat). Correct it when sizing.
+   - **Not yet:** the hairpin test (needs a phone with Always relay, in Phase 4). **The user's steps:** the Supabase secrets pipe (`infra/sfu/README.md`) + deploying `livekit-token` to staging. **Then Phases 3–5** (core ops, iOS, docs).
+   - **ORDER CHANGE (the user, 2026-10-15): "offline messaging before the visual list changes".** Mesh v1 (+ emergency mode) moves ahead of 137b/137c. **Mesh needs plot's design pass first** (inputs: architecture §7, DESIGN-01 §4, DESIGN-06 bitchat notes, `docs/spike-ble.md` §5b, the rules in "### Where things stand" item 4, **a separable module for a future mesh SDK** (1e84), the DPIA). **Queue: 112b Phases 3–5 (tend) ∥ mesh design pass (plot) → mesh v1 → 137b → 137c → 117 → 133 → 113 → 130 …; 138 any time.**
+1e90. **PAUSED overnight (2026-10-14): LIME-112b Phase 2 is half done, nothing committed.**
+   - **Written (uncommitted in the tree):** `infra/sfu/setup.sh` + `README.md`, `supabase/functions/livekit-token/`, `_shared/livekit.ts`, 2 test files (local stack 58/58).
+   - **Tend was blocked by Claude Code from running the install on `lime-turn-1`** (judged a production deploy), so nothing ran on the server. Tend refused the relayed go-ahead and asked for the user's own; the memory now says plot doesn't send prompts itself.
+   - **Plot reviewed `setup.sh`: safe to run.** It only adds ufw rules, uses a checksum-pinned LiveKit, never prints secrets, and stops before starting LiveKit if the certbot dry run fails.
+   - **Watch:**
+     - (a) a failed dry run leaves coturn's renewal on webroot; fix it before the cert's expiry;
+     - (b) whether `bind_addresses: 127.0.0.1` also binds LiveKit's RTC 7881/UDP media; the outside port test decides.
+   - **Next (the user, in the morning, in tend's window):** `! ssh root@178.156.199.1 'bash -s' < infra/sfu/setup.sh`, then "ran it". Tend then:
+     - tests the ports from outside;
+     - sets up the Supabase secrets pipe;
+     - runs the load test at 3/6/10 (the secret may need a user-run command on the server);
+     - commits and pushes.
+   - **Still queued after 112b:** 137b, 137c, 138 (docs), 117, 133.
+1e89. **SFU sizing for 50–100 (the user asked about cost, 2026-10-14):**
+   - LiveKit's benchmark: 150 pubs/150 subs at 720p on 16 cores ≈ 85% CPU. Lime's design is lighter (camera off >12, speaker view, simulcast).
+   - **Estimate: CCX23 (4 dedicated vCPU/16 GB) ≈ 50 people; CCX33 (8/32 GB) ≈ 100 with headroom.** EU list prices €85.99 / €138.49 a month (costgoat, Sept 2026). **US/Ashburn prices are unverified** (sources conflict: €141 to about $184 for a CCX33), and the US includes only 1–8 TB of traffic (overage about €1/TB). The user checks the console.
+   - Egress estimate: about 90 GB per 1-hour 100-person session.
+   - **Plot's lean:** stay on CPX11 through 112b, size from `lk load-test`, then choose an always-on CCX23 or an hourly CCX33 per PD session (automation later).
+1e88. **LIME-112b Phase 1 done (tend, `a89bacc`; Phase 0 `9005aed`).**
+   - **All 3 assumptions hold:** LiveKit Swift SDK 2.17.0 brings its own renamed WebRTC and a 2nd Rust lib, and links cleanly beside stasel + LimeCore; per-participant keys via `BaseKeyProvider(isSharedKey: false)`; external TURN.
+   - **App size +21.6 MB** uncompressed. **Follow-up idea, not briefed:** move 1:1 onto LiveKitWebRTC and drop stasel (−11.6 MB); it touches 118b/c/119/135, so it needs its own brief + a two-phone gate.
+   - **The server:** 1.5 GB free RAM, so a 10-person test fits; expect ~15–20 video or a few dozen voice participants per room. **100 needs the dedicated server (D1 = A) later.**
+   - **Approved by plot:**
+     - client-side TURN via `ConnectOptions` with our `turn-credentials` (no coturn secret in LiveKit's config; `.relay` for Always relay);
+     - Caddy on 80/443, with certbot for coturn moved from standalone to webroot (a dry run first);
+     - groups tested at 3–4 people first.
+   - **Phase 4 watch-items:** a CallKit audio router between the two engines (the one real shared-code job); `setKey` moves our send index; the same-host hairpin (a relay-only phone → coturn → the SFU on the same IP).
+   - **DNS resolves publicly (checked 2026-10-14).** The user checks the Hetzner Cloud Firewall (likely none attached), then tend continues Phase 2.
+1e87. **DNS: `sfu.limechat.org` A → 178.156.199.1 added in deSEC by the user (2026-10-14), ahead of 112b's Phase 1 stop.** deSEC's own server answers; public resolvers were still empty minutes later (likely caching plot's earlier "doesn't exist" lookup), which clears within the negative-cache time (≤ 1 h). **Tell tend at its Phase 1 stop that the DNS is already in.**
 1e86. **137-fix gate PASSED on the phone (the user, 2026-10-14: "good on phone")**, Undo included (taken as covered; the iPad wasn't tested; Xcode had a stale paused session from the old PiP crash plus a Wi-Fi timeout to the iPad). The user asks to move on to group calls. **LIME-112b RECONCILED** (10 points at its top: core-first, accessibility, the 1:1 paths kept, group PiP/Always relay/DND, call bubbles + filters, measure the join time, a ~120 min cap, MIT, the CPX11 memory check, "For plot:"). **Open with the user: the order of 112b vs 137b/137c/138.**
 1e85. **LIME-137-fix LANDED as `34ab5e1` (pushed, 2026-10-13; PLOT.md `f26dc40`).** Cause confirmed with tests that failed first (7 of 9 unit tests, plus the new UI test). The marker rule now runs only for a delete wholly inside one marker; wider deletes are UIKit's own, followed by a clean-up pass; a new `.limeMarker` attribute marks marker characters (**future marker code must set it**). Full suite 321 unit + 185 UI pass; 0 warnings; Release clean. A visible change: Backspace across two items now joins them cleanly.
    - **⚠ Not met: the brief's "Undo restores the selection in one step."** The clean-up edits the text storage directly, outside the undo manager, so Undo after a delete is untested and could misbehave (a wrong restore, or even a crash from a stale undo stack).
@@ -4822,6 +4900,177 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Gate:** none on a device; plot reviews the report.
 
 **Record:** `## LIME-138` in TEND.md, ending with **For plot:**. **Commit:** `docs: lime stays MIT; Android open-source reuse map; third-party licences for Android`, trailer `Brief: LIME-138`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Explicit paths; never `public/assets/*`.
+
+### LIME-112b-fix → `tend` (lime-aa) (NEXT after LIME-139, or before it if 139 hasn't started; drafted 2026-10-15): group calls stuck on "Connecting securely…"
+**Goal:** in a 3-person group call every tile shows the person's picture and sound within a few seconds of joining, and the diagnostics show exactly where a key stops when one doesn't arrive.
+
+**The user's gate (2026-10-15, 08:32, Shem's 13 mini + Jean's 12 mini + the iPad, group "Jean, Shem & FAM"):** "all phones the same thing: rang, but still connecting after a couple of minutes". Each phone shows its own camera, the others' tiles with **the right names**, "3", and **"Connecting securely…" for every remote tile**.
+
+**Plot's read of the 3 call logs** (`/tmp/lime-calllogs10/{shem,jean,ipad}.log`):
+- **Ringing, CallKit and audio activation worked:** `callkit reporting incoming` → `callkit answer` → `callkit audio activated` on Jean and the iPad. That's a good sign for the audio-router risk (1e92 item 4).
+- **The joins worked:** Shem started at 08:31:59 and connected at 08:32:02; the iPad joined at 08:32:12 ("1 already in") and connected 5.1 s later; Jean joined at 08:32:18 and connected 4.2 s later. **The remote tiles carry the right names, so `group.call.join` ops were received and mapped.**
+- **No log line on any phone about a key being sent, received, accepted, rejected or given to LiveKit.** The brief asked for "key index per participant" lines; only each phone's own "key index 0" at join appears. Each phone did download several ops during the call ("downloaded 1, stored 0" ×4–5 between 08:32:02 and 08:32:26), so ops are arriving; **whether they're keys, and what the core did with them, is invisible.**
+- **The core lock stalls fetches:** "waited 5163 ms for the core lock" (iPad), 3962 ms (Jean), 1710 ms (Shem). A group op send probably holds the lock across its HTTP (the 111-fix2 residual, plus group ops' per-member device lookups, LIME-120b).
+- **Likely causes (unproven; Phase 1 decides):**
+  - (a) a key that arrives **before** the sender's `join` is ignored ("a key only from the participant's owner / for a known participant") **with no buffering**, so it's never retried;
+  - (b) keys not sent at all on join (the "every current participant sends its key to the newcomer" path not firing);
+  - (c) the core accepts the key but the event doesn't reach `GroupCallManager`, or `setKey` is called with a **participant id that isn't the LiveKit identity** the SDK uses (e.g. a prefix, a different encoding, or the user id);
+  - (d) the key index: the sender encrypts at its own index but the receiver set the key at another, or the send-index reset (the Phase 1 quirk) overwrote it;
+  - (e) E2EE turned on with a different `EncryptionType`/ratchet setting on each side.
+
+**Scope:** `core/src/client/group_calls.rs`, `core/src/store/group_calls.rs`, `GroupCallManager.swift`, `GroupCallMedia.swift`, `StoreGroupCallCore.swift`, `GroupCallView.swift` (only the label overlap below), their tests. **Not:** the server, the 1:1 call code, LIME-120b.
+
+**Phase 0** per the standing rules. **If LIME-139 is mid-run, finish and commit it first.**
+
+**Phase 1 (diagnose; report the cause before fixing):**
+1. **Add diagnostics** (no keys, no IPs; participant ids as 4-char prefixes):
+   - `group call: key sent → <n> people (index i)`;
+   - `key received from <p> (index i)`, plus `accepted`, or `rejected: <reason>` (unknown call / unknown participant / not owner / not in call / stale index);
+   - `setKey <p> index i (LiveKit identity <q>)`;
+   - each remote participant's **frame cryptor state** changes (`new`/`ok`/`missingKey`/`decryptionFailed`/`keyRatcheted`/`internalError`);
+   - `send index reset to i`.
+2. **Reproduce without phones:** a **3-core integration test through local Supabase** (throwaway accounts; like the 1:1 call tests): A starts, B joins, C joins, in **every order of arrival** of join and key ops (incl. a key before its join). Assert each core ends with the other two keys at the right index and emits the events. Add a unit test in Swift with the fake media asserting `setKey` gets **the same identity string LiveKit uses for that participant**.
+3. Report which of (a)–(e) (or something else) is the cause, with the evidence.
+
+**Phase 2 (fix the proven cause(s)):**
+- If (a): **buffer** keys for a not-yet-known participant per call (bounded, e.g. 16 per call, dropped when the call ends) and apply them when the join arrives; and/or have the newcomer re-request keys once after connecting.
+- **A safety net either way:** if a remote tile stays `missingKey` for > 5 s, the phone asks that participant to resend its current key once (a small `group.call.key_request` op, Olm to that person; the rules as for keys).
+- Fix the others as found.
+- **The lock:** if a group op send holds the core lock across its HTTP, prepare under the lock and send after (as the 111-fix2 note proposed), **only if it's what delays keys**; otherwise note it for 120b.
+
+**Also (visual, no new tests):** on a "Connecting securely…" tile the name pill overlaps the status text ("FAM" over "Connecting securely…", see the user's screenshot). Put the status above the name pill, or the spinner + status centred and the name pill below, with no overlap at the largest Dynamic Type.
+
+**Kind:** behaviour → the integration + unit tests above are the guard.
+
+**Verification:** `cargo test`, `./core/check-android.sh`, the integration test, iOS unit tests + the group-call UI test; 0 warnings; Release clean. The full UI suite isn't needed unless shared files changed; say which.
+
+**Gate (the user, 3 devices):**
+1. a 3-person video call: every tile shows picture + sound within ~5 s of each join; note the seconds;
+2. someone leaves and rejoins → back within ~5 s;
+3. then the rest of the 112b gate (mute/camera labels, Always relay, the lock screen answer, the 1:1 regression), then "logs".
+
+**Record:** `## LIME-112b-fix` in TEND.md with **For plot:**. **Commit:** `fix: group call keys reach every participant (no stuck "Connecting securely")`, trailer `Brief: LIME-112b-fix`. The rest per the standing rules.
+
+### DESIGN-13 (plot, 2026-10-15): offline mesh v1 + emergency mode
+**Goal of mesh v1:** when there's no internet, lime phones pass sealed lime messages (1:1 and group, text only) to each other over Bluetooth, and any lime phone that reaches the internet first uploads them; emergency mode sends "I'm safe / I need help" to a chosen group and keeps the phone awake to deliver it.
+
+**Inputs read:**
+- `docs/spike-ble.md` (all of it);
+- `architecture.md` §7;
+- `api-v2.md` §4/§8;
+- `supabase/functions/send/index.ts` (the access model);
+- `core/src/transport.rs`;
+- DESIGN-01 §4;
+- DESIGN-06 (bitchat);
+- the MESH v1 DESIGN RULES (1e…, "plot, final");
+- 103/103b/103c;
+- 1e84 (a separable mesh module for a future SDK);
+- the "jam"/positioning notes on emergency mode.
+
+**Already decided (carried in, not reopened):**
+- **who relays:** any lime phone relays (D6 = A);
+- **what's carried:** text only;
+- **carry limits:** a 48 h carry; TTL 7 hops, capped to ~5 when dense; 10–220 ms jitter; an LRU seen-set; spray-and-wait copies (4, cap 8); a ~100-per-peer outbox cap; trust tiers (accepted contacts get more relay slots);
+- **privacy on the air:** padding to buckets (256/512/1024/2048 B, then 4 KiB steps); rotating ephemeral BLE identities; no human-readable announcements and no neighbour lists;
+- **the link:** GATT to meet + L2CAP to move (GATT fallback); one link per pair (the lower id initiates); resumable per-envelope acks; handle "service changed";
+- **app lifecycle:** Nearby mode; emergency turns it on; flush everything on every wake; no timers that need a suspended app;
+- **the promise:** "delivered when phones meet and at least one is awake", never "prompt between two locked phones", never "works when swiped away";
+- **no bitchat wire compatibility;**
+- **a first contact offline needs a QR scan;**
+- **emergency messages break through DND** (the flag is reserved for emergency mode).
+
+**Two protocol findings from this pass (plot decides; flag both for the pre-launch security review):**
+1. **⚠ The delivery key would leak to strangers.** Today a sealed send carries `access: { sealed: <access_key> }`, and the server compares its hash (`send/index.ts`). Over the mesh, every relay phone would see that access key, a **reusable capability**: a stranger's phone could then send that person unlimited sealed messages, skipping message requests. **Fix (in LIME-139):**
+   - the per-recipient delivery key becomes an **Ed25519 key pair**: accepted contacts hold the private half (shared as today); the server stores the public half;
+   - a sealed send carries **a signature over the hash of that exact ciphertext + `to_device`** instead of the key;
+   - a relay can only re-post that one message (and the server deduplicates it);
+   - online sends switch too (one model); old clients keep the hash path during a short overlap.
+2. **⚠ The on-air recipient tag vs the relay upload.** DESIGN-06 hides `to_device` on the air behind a daily rotating tag (HMAC(recipient key, UTC day)), but a relay that reaches the internet must tell the server which mailbox to use. **Fix (in LIME-139):** each mesh packet carries
+   - (a) the rotating tag, so a nearby **recipient** recognises its own mail;
+   - (b) a **routing header sealed to the server's public key** (`to_device`, using the same sealed-box primitive the core already has, or X25519 + AES-GCM), so a **relay** can upload it to a new `mesh-drop` endpoint without learning who it's for.
+
+   Bystanders see neither. The server learns the recipient (as it does today) and the relaying phone's IP (not the sender's).
+
+**Plot's other design calls (not user decisions):**
+- **A separable core module** `core/mesh/` (its own crate in a Cargo workspace, MIT, no dependency on lime's account/server code). It holds envelope framing, padding, tags, store-carry-forward, dedupe, budgets, summaries, and a `MeshLink` trait the platform implements (CoreBluetooth now, Android BLE later). This makes a mesh SDK possible later (1e84).
+- **Group messages over the mesh:** per-device envelopes, as the server uses (a 30-person staff group ≈ 30 small padded envelopes; fine). One-to-many packing is a later optimisation.
+- **Message status** (honest, in words + icon): "Waiting for signal" → "Passed to a nearby phone" → "Delivered" (from the recipient's ack, which travels back by mesh or server).
+- **A simulation harness in core:** N virtual phones, scripted meetings and sleeps, so store-carry-forward is tested without radios, and the same harness serves Android.
+- **iOS only for v1** (Android uses the same crate when its app exists).
+- **DPIA inputs:** proximity, rotating ids, no location, the 48 h carry, what relays store (opaque padded blobs only), Erase lime from this phone.
+
+**DECISIONS FOR THE USER:**
+- **M1. Relaying in the background (coverage vs battery).** The spike's upper bound: a locked receiver lost 10 points in 6.3 h with pickups (≈ 1.6%/h, not the radio alone).
+  - **A.** On by default with a low-duty background scan, a Settings switch "Help pass on nearby messages", and the field test (LIME-143) measures the real cost before launch. *Pro:* the mesh only works with density. *Con:* some battery for everyone.
+  - **B.** Only while you're offline or in Nearby/emergency mode. *Pro:* no battery cost day to day. *Con:* few relays exist when needed, so the mesh rarely reaches anyone beyond the room.
+  - **C.** Off by default, opt-in. *Con:* worst coverage.
+  - **Plot's lean: A**, with the number reported before launch; switch to B if it's over ~2–3% a day.
+- **M2. When Nearby mode turns on** (it keeps lime awake; more battery).
+  - **A.** A manual switch only.
+  - **B.** Manual, **plus an offer when you send with no signal** ("No signal: keep lime awake to send to people nearby?").
+  - **C.** Automatic whenever offline.
+  - **Plot's lean: B** (honest and in context; C would surprise people with battery drain).
+- **M3. What emergency mode is in v1.**
+  - **A.** One tap: "I'm safe" or "I need help" + an optional short note, to your emergency group; it breaks through DND, turns Nearby mode on, and asks you to keep the phone awake and plugged in if you can. **No location.**
+  - **B.** A, plus optional location shared with that group.
+  - **C.** Defer emergency mode until after mesh v1.
+  - **Plot's lean: A.** Location around schools and minors is a safety + GDPR risk; a typed "Room 204" is enough.
+- **M4. Who gets the emergency message.**
+  - **A.** One "emergency group" you choose in advance (a set-up prompt, changeable).
+  - **B.** Choose at the moment.
+  - **C.** Every group you're in.
+  - **Plot's lean: A** (no decisions under stress; C spams).
+
+**DECIDED (the user, 2026-10-15): M1 = A, M2 = B, M3 = A, M4 = A plus "you can also choose at the moment"** (the emergency group is the default; a "Send to: <group> · Change" lets you pick others at send time).
+- **The user's question on M3: "could we learn from what teachers have done in past emergencies?"** → **RESEARCH-01 (plot, before LIME-143's emergency UX is drafted):** real school emergencies (lockdowns and the Standard Response Protocol's "Locks, Lights, Out of Sight"; evacuations; wildfires; hurricanes; earthquakes/tsunamis) and what teachers did and lacked in communication.
+  - **An early flag to verify:** in a lockdown, **a phone making a sound can reveal where people are hiding**, so "breaks through DND" may need to mean "shows on the lock screen silently" for lockdown messages. **Teachers also report student headcounts/status**: consider "I'm safe · 24 students · Room 204".
+- **The user asked: "meeting someone for the first time who has lime, does offline still need a QR?"** Plot's answer:
+  - **Not for people you already share a group with:** the core caches group members' keys, so a staff-group colleague you've never DMed is reachable offline.
+  - **A true stranger** needs their keys, and there's no server, so the keys must come over Bluetooth. **The risk:** anyone nearby can claim to be "Jean".
+  - The safe alternative to QR, if wanted later: **"Meet nearby"**: both people open the screen, see each other, and **compare 4 emoji** (the 119 call-emoji idea) to confirm. Not in v1 unless the user asks.
+
+**Brief plan (each after the last; IDs reserved; renumbered 2026-10-15 to keep one change per brief):**
+- **LIME-139:** **signed access** (finding 1), server + core, which **also improves online sends**. Drafted below.
+- **LIME-140:** core: the `core/mesh` crate (framing, padding, rotating tags, the sealed routing header (finding 2), store-carry-forward, budgets, dedupe, summaries, the `MeshLink` trait) + the `mesh-drop` endpoint + the server's routing key pair (a user step: the secret) + the simulation harness. No radios.
+- **LIME-141:** iOS: the CoreBluetooth `MeshLink` adapter (GATT meet, L2CAP move, one link per pair, resume, service-changed), the Bluetooth permission explainer, the Nearby status.
+- **LIME-142:** wiring: the outbox sends via the mesh when offline; carried envelopes upload via `mesh-drop`; receiving over the mesh; the message statuses; flush on every wake; state restoration; the M1 Settings switch.
+- **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
+- **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
+
+### LIME-139 → `tend` (lime-aa) (NEXT; drafted 2026-10-15): signed access: a sealed send proves the delivery key without revealing it
+**Goal:** a sealed send carries a signature that's valid only for that ciphertext and recipient device, instead of the reusable delivery key, so a phone that carries the message (a future mesh relay, or anyone who captures a request) can't reuse it to message that person.
+
+**Why (DESIGN-13, finding 1):**
+- today `access = { sealed: <access_key> }` and the server compares `SHA-256(access_key)` with `delivery_access.access_key_hash` (`supabase/functions/send/index.ts`, `delivery-access-set`; `api-v2.md` §4);
+- **the access key is a reusable capability**, and over the mesh every relay would see it.
+
+**The design (plot's; flag it for the pre-launch security review):**
+1. **Keep the 32-byte delivery key and its sharing exactly as today** (`delivery_key.share`, rotation on block, unblock, the accept flows): **no change to who holds what.**
+2. **Both sides derive an Ed25519 signing key pair** from it: `seed = HKDF-SHA256(delivery_key, info = "lime-access-sign-v1")` → an Ed25519 key pair. Use the core's existing Ed25519 (vodozemac's or `ed25519-dalek`, whichever is already in `Cargo.lock`; **report which**; no new crypto library if avoidable).
+3. **The owner uploads the public key** with `delivery-access-set` (a new field `access_public_key`, 32 bytes base64, stored in a new nullable column on `delivery_access`; migration), alongside the existing hash. **Same timing as today:** on registration, on rotation, and "an upload that didn't get through is repeated before the next send" (also on the first launch after updating).
+4. **A sealed send** becomes `access = { signed: <base64 Ed25519 signature> }` over `"lime-access-v2" || SHA-256(ciphertext) || to_device (16 raw UUID bytes)`. The request still has **no Authorization header**.
+5. **The server** (`send`): for `signed`, look up the recipient user's `access_public_key` and verify. **No key on file, or verification fails → 403** (exactly as a wrong key today, so the app's silent identified fallback still works). **Keep accepting `sealed` (the hash) during the overlap**, so older builds on the test phones still work. Log nothing new.
+6. **The client always sends `signed`** for a sealed send and treats a 403 as today: the silent identified fallback, then sealed again once the contact shares a new key. A contact still on an old build has no public key on file, so the first send to them falls back to identified once. That's acceptable pre-launch (only test phones); say in the report whether you saw it.
+7. **Retire `sealed`:** not in this brief. Add a dated note in `api-v2.md` §4 ("remove the hash path once every device has updated; before TestFlight") and a line in `docs/release-checklist.md`.
+
+**Scope:**
+- **Server:** `supabase/functions/send`, `delivery-access-set`, `_shared` if needed, one migration, tests.
+- **Core:** `core/src/store/delivery.rs`, `core/src/client.rs` (and `client/groups.rs` if group fan-out builds access there), tests.
+- **Docs:** `docs/api-v2.md` §4, `docs/release-checklist.md`.
+- **Not:** the mesh crate, iOS UI (only `Generated/` via `./core/build-ios.sh` if an exported signature changes), delivery key sharing/rotation logic, identified sends.
+
+**Kind:** security behaviour → real tests:
+- **Core:** derivation vectors (a fixed delivery key → a fixed public key and signature, pinned as a test vector for Android, like 119's emoji vector); signing binds the ciphertext and `to_device` (a changed byte fails); rotation produces a new key pair.
+- **Server (Deno):** a valid signature → 200; a signature replayed with a different ciphertext or `to_device` → 403; no public key on file → 403; the old `sealed` path still works; batches mixing recipients.
+- **Integration (local, throwaway accounts):** A and B accept each other; A sends sealed-signed → B receives; B blocks A → A's signed send 403 → the silent identified fallback → still "Sent"; unblock → signed works again.
+
+**Verification:** `cargo test` (count up from 205); `./core/check-android.sh`; `./supabase/test.sh` (count up from 58) and the integration test; the iOS build with 0 warnings + the unit tests (the full UI suite is not needed: no UI change; say so).
+
+**User steps (tend stops and asks; it never does these itself):** the migration + function deploy to staging (`./supabase/deploy-staging.sh`) after the user's go; then the user's phones update.
+
+**Gate (the user, after the deploy and installing on both phones + iPad):** messages between accepted contacts still send and arrive both ways; block/unblock still behaves (a blocked person's message is hidden, "Sent" on their side); **plot pulls the logs** if anything looks off.
+
+**Record:** `## LIME-139` in TEND.md, ending with **For plot:**. **Commit:** `feat: signed access for sealed sends (the delivery key never leaves the phone)`, trailer `Brief: LIME-139`. The rest per the standing rules.
 
 ### LIME-137c → `tend` (lime-aa) (after LIME-137b; drafted 2026-10-13): a list keeps the marker you typed (dash, bullet or number)
 **Goal:** typing `- ` makes a **dash** list, `• ` or `* ` makes a **bullet** list, `1. ` makes a **numbered** list. The list keeps that style in the composer, in the sent bubble, on the recipient's phone and when edited, on every platform.
