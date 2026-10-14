@@ -1529,6 +1529,19 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(bubble.waitForExistence(timeout: 5), "the bubble shows the words, with the markers gone")
     }
 
+    func testATypedOutlineWithTabShowsThreeLevelsInTheBubble() {
+        let app = demoApp()
+        app.launch()
+        let field = openComposer(app)
+        field.typeText("- a\n\tb\n\tc")
+        XCTAssertEqual(field.value as? String, "- a\n  - b\n    - c", "typing - starts a list; Tab indents each item one level")
+        app.buttons["send-button"].tap()
+        for (marker, word) in [("•", "a"), ("◦", "b"), ("▪", "c")] {
+            let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", marker, word)).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "the bubble shows \(marker) \(word)")
+        }
+    }
+
     func testALinkIsAddedThroughTheSheetAndABadOneIsRefused() {
         let app = demoApp()
         app.launch()

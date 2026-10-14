@@ -191,3 +191,221 @@ final class ComposerDocumentTests: XCTestCase {
         XCTAssertEqual(messagePlainText(text: ComposerDocument.markdown(from: text)), "Hi team\n• one\n• two")
     }
 }
+
+/// LIME-137: lists that start as you type, three levels, Indent / Outdent, and Return / Backspace in nested lists.
+/// `Typist` plays the keystrokes the text view's delegate would see, calling the same functions.
+final class ComposerNestedListTests: XCTestCase {
+    private final class Typist {
+        let text = NSMutableAttributedString()
+        var selection = NSRange(location: 0, length: 0)
+        var started: ComposerDocument.AutoStart?
+
+        func type(_ string: String) {
+            for character in string {
+                insert(String(character))
+            }
+        }
+
+        private func insert(_ character: String) {
+            let pending = started
+            started = nil
+            if character == " ", let auto = ComposerDocument.autoStart(in: text, selection: &selection) {
+                started = auto
+                return
+            }
+            if character == "\n", ComposerDocument.handleReturn(in: text, selection: &selection) { return }
+            _ = pending
+            let attributes = ComposerDocument.typingAttributes(in: text, caret: selection.location)
+            text.replaceCharacters(in: selection, with: NSAttributedString(string: character, attributes: attributes))
+            selection = NSRange(location: selection.location + character.utf16.count, length: 0)
+            ComposerDocument.renumber(text)
+            ComposerDocument.restyle(text)
+        }
+
+        /// Backspace the way the delegate handles it at the start of an item's text.
+        func backspace() {
+            if let auto = started, auto.caret == selection.location {
+                started = nil
+                if ComposerDocument.undoAutoStart(auto, in: text, selection: &selection) { return }
+            }
+            started = nil
+            let paragraph = ComposerDocument.paragraphs(in: text, covering: selection)[0]
+            if let marker = ComposerDocument.markerRange(in: text, paragraph: paragraph), selection.location == NSMaxRange(marker) {
+                if ComposerDocument.listLevel(in: text, at: paragraph.location) > 0 {
+                    selection = ComposerDocument.shiftLevel(in: text, selection: selection, indent: false)
+                } else {
+                    text.deleteCharacters(in: marker)
+                    let rest = NSRange(location: paragraph.location, length: max(paragraph.length - marker.length, 0))
+                    text.removeAttribute(.limeBlock, range: rest)
+                    text.removeAttribute(.limeLevel, range: rest)
+                    selection = NSRange(location: paragraph.location, length: 0)
+                }
+                ComposerDocument.renumber(text)
+                ComposerDocument.restyle(text)
+                return
+            }
+            guard selection.location > 0 else { return }
+            text.deleteCharacters(in: NSRange(location: selection.location - 1, length: 1))
+            selection = NSRange(location: selection.location - 1, length: 0)
+        }
+
+        func indent(_ indent: Bool = true) {
+            selection = ComposerDocument.shiftLevel(in: text, selection: selection, indent: indent)
+        }
+
+        var string: String { text.string }
+        var markdown: String { ComposerDocument.markdown(from: text) }
+    }
+
+    func testTypingAMarkerAndASpaceStartsAList() {
+        for (typed, shown, markdown) in [("- ", "• x", "- x"), ("* ", "• x", "- x"), ("• ", "• x", "- x"), ("1. ", "1. x", "1. x"), ("3. ", "3. x", "3. x"), ("  - ", "◦ x", "  - x")] {
+            let t = Typist()
+            t.type(typed + "x")
+            XCTAssertEqual(t.string, shown, typed)
+            XCTAssertEqual(t.markdown, markdown, typed)
+            XCTAssertNotNil(ComposerDocument.blockKind(in: t.text, at: 0), typed)
+        }
+    }
+
+    func testANumberedListStartsAtTheTypedNumberAndCountsOn() {
+        let t = Typist()
+        t.type("3. one\ntwo")
+        XCTAssertEqual(t.string, "3. one\n4. two")
+        XCTAssertEqual(t.markdown, "3. one\n4. two")
+    }
+
+    func testThingsThatLookLikeAMarkerStayText() {
+        for typed in ["-5", "1.5 x", "a - b", "text 1. more", "-- x", "1234567890. x"] {
+            let t = Typist()
+            t.type(typed)
+            XCTAssertEqual(t.string, typed, typed)
+            XCTAssertNil(ComposerDocument.blockKind(in: t.text, at: 0), typed)
+        }
+    }
+
+    func testNothingStartsInsideACodeBlock() {
+        let t = Typist()
+        t.text.append(NSAttributedString(string: "code", attributes: [.limeBlock: BlockKind.code.rawValue]))
+        t.selection = NSRange(location: 4, length: 0)
+        t.type(" - ")
+        XCTAssertEqual(t.string, "code - ")
+        XCTAssertTrue(ComposerDocument.blockKind(in: t.text, at: 0) == .code)
+    }
+
+    func testBackspaceRightAfterTheConversionGivesBackWhatWasTyped() {
+        let t = Typist()
+        t.type("- ")
+        XCTAssertEqual(t.string, "• ")
+        t.backspace()
+        XCTAssertEqual(t.string, "- ")
+        XCTAssertNil(ComposerDocument.blockKind(in: t.text, at: 0), "the paragraph is plain again")
+        XCTAssertEqual(t.selection.location, 2)
+        // Any other keystroke first commits the list.
+        let u = Typist()
+        u.type("1. a")
+        u.selection = NSRange(location: 3, length: 0)
+        u.backspace()
+        XCTAssertEqual(u.string, "a", "after other typing, Backspace at the start removes the marker as before")
+    }
+
+    func testATypedMarkerInsideAListSwitchesTheKindAndBackspaceRestoresIt() {
+        let t = Typist()
+        t.type("- one\n1. ")
+        XCTAssertEqual(t.string, "• one\n1. ", "a numbered marker typed in a bulleted list switches that item")
+        XCTAssertTrue(ComposerDocument.blockKind(in: t.text, at: 6) == .number)
+        t.backspace()
+        XCTAssertEqual(t.string, "• one\n• 1. ", "undo returns the item and the typed text")
+        XCTAssertTrue(ComposerDocument.blockKind(in: t.text, at: 6) == .bullet)
+    }
+
+    func testAThreeLevelOutlineByTyping() {
+        let t = Typist()
+        t.type("- a\n")
+        t.indent()
+        t.type("b\n")
+        t.indent()
+        t.type("c")
+        XCTAssertEqual(t.string, "• a\n◦ b\n▪ c")
+        XCTAssertEqual(t.markdown, "- a\n  - b\n    - c")
+        // The level 2 item cannot go deeper.
+        t.indent()
+        XCTAssertEqual(t.markdown, "- a\n  - b\n    - c")
+        XCTAssertEqual(ComposerDocument.markdown(from: ComposerDocument.attributed(fromMarkdown: t.markdown)), t.markdown)
+    }
+
+    func testIndentIsLimitedByTheItemAbove() {
+        let t = Typist()
+        t.type("- a")
+        t.indent()
+        XCTAssertEqual(t.markdown, "- a", "the first item cannot be indented")
+        t.type("\nb")
+        t.indent()
+        t.indent()
+        XCTAssertEqual(t.markdown, "- a\n  - b", "one deeper than the item above, at most")
+        t.indent(false)
+        XCTAssertEqual(t.markdown, "- a\n- b")
+        t.indent(false)
+        XCTAssertEqual(t.markdown, "- a\n- b", "outdent stops at level 0")
+        let state = ComposerDocument.state(in: t.text, selection: t.selection, typing: [:])
+        XCTAssertTrue(state.inList)
+        XCTAssertTrue(state.canIndent)
+        XCTAssertFalse(state.canOutdent)
+    }
+
+    func testIndentAppliesToEveryItemInTheSelection() {
+        let text = ComposerDocument.attributed(fromMarkdown: "- a\n- b\n- c")
+        let all = NSRange(location: 0, length: text.length)
+        _ = ComposerDocument.shiftLevel(in: text, selection: all, indent: true)
+        XCTAssertEqual(ComposerDocument.markdown(from: text), "- a\n  - b\n  - c", "the first item has nothing above; the others go one in")
+        XCTAssertFalse(ComposerDocument.state(in: NSAttributedString(string: "plain"), selection: NSRange(location: 0, length: 0), typing: [:]).inList)
+    }
+
+    func testReturnContinuesTheLevelAndAnEmptyNestedItemStepsOut() {
+        let t = Typist()
+        t.type("1. a\n")
+        t.indent()
+        t.type("b\n")
+        XCTAssertEqual(t.string, "1. a\n1. b\n2. ", "the next item has the same level and kind, counted per level")
+        let last = (t.string as NSString).range(of: "2. ").location
+        XCTAssertEqual(ComposerDocument.listLevel(in: t.text, at: last), 1)
+        t.type("\n") // Return on the empty nested item
+        XCTAssertEqual(ComposerDocument.listLevel(in: t.text, at: last), 0, "steps back out one level")
+        XCTAssertEqual(t.string, "1. a\n1. b\n2. ")
+        XCTAssertEqual(t.selection.location, t.text.length, "the caret stays after the marker")
+        t.type("\n") // Return on the empty top item ends the list
+        XCTAssertEqual(t.string, "1. a\n1. b\n")
+        XCTAssertNil(ComposerDocument.typingAttributes(in: t.text, caret: t.text.length)[.limeBlock], "the next line is plain text again")
+        XCTAssertEqual(t.markdown, "1. a\n  1. b")
+    }
+
+    func testBackspaceAtTheStartOfANestedItemOutdentsThenRemovesTheMarker() {
+        let text = ComposerDocument.attributed(fromMarkdown: "- a\n  - b\n    - c")
+        let t = Typist()
+        t.text.append(text)
+        t.selection = NSRange(location: t.text.length, length: 0)
+        t.selection = NSRange(location: (t.string as NSString).range(of: "c").location, length: 0)
+        t.backspace()
+        XCTAssertEqual(t.markdown, "- a\n  - b\n  - c", "level 3 steps out to level 2")
+        t.selection = NSRange(location: (t.string as NSString).range(of: "c").location, length: 0)
+        t.backspace()
+        t.selection = NSRange(location: (t.string as NSString).range(of: "c").location, length: 0)
+        XCTAssertEqual(t.markdown, "- a\n  - b\n- c")
+        t.backspace()
+        XCTAssertEqual(t.string, "• a\n◦ b\nc", "at level 0 the marker goes (as before)")
+    }
+
+    func testMarkersAndNumbersAcrossThreeLevelsSurviveMarkdown() {
+        let markdown = "1. a\n  1. b\n    1. c\n    2. d\n  2. e\n2. f\n  1. g"
+        let text = ComposerDocument.attributed(fromMarkdown: markdown)
+        XCTAssertEqual(text.string, "1. a\n1. b\n1. c\n2. d\n2. e\n2. f\n1. g")
+        XCTAssertEqual(ComposerDocument.markdown(from: text), markdown)
+        let bullets = ComposerDocument.attributed(fromMarkdown: "- a\n  - b\n    - c")
+        XCTAssertEqual(bullets.string, "• a\n◦ b\n▪ c")
+    }
+
+    func testTheBubbleUsesTheCoresMarkers() {
+        let blocks = MessageRender.blocks("- a\n  - b\n    - c\n1. x\n  1. y")
+        guard case .list(let items)? = blocks.first else { return XCTFail("\(blocks)") }
+        XCTAssertEqual(MessageRender.numbered(items).map(\.marker), ["•", "◦", "▪", "1.", "1."])
+    }
+}

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The formatting toolbar that sits above the keyboard (Notion and Gmail's pattern): a floating glass
 /// capsule that scrolls sideways when the items do not fit, and a separate round ✕ at the right end.
-/// Items: B, I, U, S, link, code, bulleted list, numbered list. Each shows whether it is on for the
+/// Items: B, I, U, S, link, code, bulleted list, numbered list, and (inside a list) Outdent and Indent. Each shows whether it is on for the
 /// selection or the caret.
 struct FormattingToolbar: View {
     let model: RichComposerModel
@@ -19,6 +19,10 @@ struct FormattingToolbar: View {
                     symbol("chevron.left.forwardslash.chevron.right", on: model.format.code, id: "fmt-code", label: "Code") { model.toggleCode() }
                     symbol("list.bullet", on: model.format.bullets, id: "fmt-bullets", label: "Bulleted list") { model.toggleList(.bullet) }
                     symbol("list.number", on: model.format.numbers, id: "fmt-numbers", label: "Numbered list") { model.toggleList(.number) }
+                    if model.format.inList {
+                        shift("decrease.indent", id: "fmt-outdent", label: "Outdent", enabled: model.format.canOutdent) { model.shiftList(indent: false) }
+                        shift("increase.indent", id: "fmt-indent", label: "Indent", enabled: model.format.canIndent) { model.shiftList(indent: true) }
+                    }
                 }
                 .padding(.horizontal, 6)
             }
@@ -48,6 +52,19 @@ struct FormattingToolbar: View {
         item(on: on, id: id, label: label, action: action) {
             Image(systemName: name).font(.system(size: 17)).foregroundStyle(Theme.text)
         }
+    }
+
+    /// Indent and Outdent: shown only inside a list, dimmed (not hidden) when they cannot change anything.
+    private func shift(_ name: String, id: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: name).font(.system(size: 17)).foregroundStyle(Theme.text)
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
     }
 
     private func item<Content: View>(on: Bool, id: String, label: String, action: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {

@@ -31,7 +31,9 @@ struct FormattedMessageText: View {
                                     Text(row.marker).font(Theme.body).foregroundStyle(ink).frame(minWidth: 14, alignment: .trailing)
                                     Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed, find: find)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                                 }
-                                .padding(.leading, CGFloat(row.item.level) * 18)
+                                .padding(.leading, CGFloat(min(row.item.level, maxListLevel())) * 18)
+                                .accessibilityElement(children: .combine)
+                                .accessibilityValue(row.item.level > 0 ? "level \(row.item.level + 1) of \(maxListLevel() + 1)" : "")
                             }
                         }
                     case .code(let text):
@@ -77,18 +79,9 @@ enum MessageRender {
         }
     }
 
-    /// A list's rows with their markers: a bullet, or the number counting on from the first of a run.
+    /// A list's rows with their markers, from the core's rule: "•", "◦", "▪" by level, and numbers counted per level.
     static func numbered(_ items: [ListItem]) -> [(marker: String, item: ListItem)] {
-        var counters = [0, 0]
-        return items.map { item in
-            let level = Int(min(item.level, 1))
-            if item.ordered {
-                counters[level] = counters[level] == 0 ? Int(max(item.number, 1)) : counters[level] + 1
-                return ("\(counters[level]).", item)
-            }
-            counters[level] = 0
-            return ("•", item)
-        }
+        Array(zip(listMarkers(items: items), items)).map { (marker: $0, item: $1) }
     }
 
     /// One run of text with its styles. A link is its own green plus an underline (and a tint while pressed);

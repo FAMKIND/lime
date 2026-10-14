@@ -98,6 +98,15 @@ final class RichComposerModel {
         didEdit()
     }
 
+    /// Indent or Outdent (the toolbar and Tab / Shift-Tab): every list item the selection touches.
+    func shiftList(indent: Bool) {
+        guard let textView else { return }
+        textView.selectedRange = ComposerDocument.shiftLevel(in: textView.textStorage, selection: textView.selectedRange, indent: indent)
+        ComposerDocument.restyle(textView.textStorage)
+        textView.typingAttributes = ComposerDocument.typingAttributes(in: textView.textStorage, caret: textView.selectedRange.location)
+        didEdit()
+    }
+
     func toggleCode() {
         guard let textView else { return }
         textView.selectedRange = ComposerDocument.toggleCode(in: textView.textStorage, selection: textView.selectedRange)
@@ -170,6 +179,21 @@ enum LinkInput {
 final class ComposerTextView: UITextView {
     static let plainTypingAttributes: [NSAttributedString.Key: Any] = [.font: ComposerDocument.baseFont(), .foregroundColor: UIColor.label]
     private var accessory: UIView?
+    weak var model: RichComposerModel?
+
+    /// Tab and Shift-Tab on a hardware keyboard indent and outdent inside a list; elsewhere Tab does what it did.
+    override var keyCommands: [UIKeyCommand]? {
+        let inherited = super.keyCommands ?? []
+        guard ComposerDocument.state(in: textStorage, selection: selectedRange, typing: [:]).inList else { return inherited }
+        let indent = UIKeyCommand(title: "Indent", action: #selector(indentList), input: "\t", modifierFlags: [])
+        let outdent = UIKeyCommand(title: "Outdent", action: #selector(outdentList), input: "\t", modifierFlags: .shift)
+        indent.wantsPriorityOverSystemBehavior = true
+        outdent.wantsPriorityOverSystemBehavior = true
+        return [indent, outdent] + inherited
+    }
+
+    @objc private func indentList() { model?.shiftList(indent: true) }
+    @objc private func outdentList() { model?.shiftList(indent: false) }
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
@@ -241,6 +265,7 @@ struct RichComposerField: UIViewRepresentable {
         view.accessibilityLabel = "Message"
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         model.textView = view
+        view.model = model
         return view
     }
 
@@ -264,6 +289,8 @@ struct RichComposerField: UIViewRepresentable {
         var model: RichComposerModel
         /// Setting the typing attributes or the selection ourselves must not run the handlers again.
         private var updating = false
+        /// An automatic list start that Backspace can still undo (any other edit or caret move clears it).
+        private var autoStart: ComposerDocument.AutoStart?
         init(_ model: RichComposerModel) { self.model = model }
 
         private func setTyping(_ textView: UITextView, caret: Int) {
@@ -274,6 +301,32 @@ struct RichComposerField: UIViewRepresentable {
 
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
             let storage = textView.textStorage
+            let pending = autoStart
+            autoStart = nil
+            // Tab typed as text (an external keyboard, or a test) indents inside a list; elsewhere it is a tab.
+            if text == "\t", ComposerDocument.state(in: storage, selection: range, typing: [:]).inList {
+                model.shiftList(indent: true)
+                return false
+            }
+            // A space that completes "- ", "* ", "• " or "1. " at the start of a paragraph starts a list.
+            if text == " ", range.length == 0 {
+                var selection = range
+                if let started = ComposerDocument.autoStart(in: storage, selection: &selection) {
+                    autoStart = started
+                    textView.selectedRange = selection
+                    changed(textView)
+                    return false
+                }
+            }
+            // Backspace straight after an automatic start gives back what was typed.
+            if let pending, text.isEmpty, range.length == 1, range.location == pending.caret - 1 {
+                var selection = range
+                if ComposerDocument.undoAutoStart(pending, in: storage, selection: &selection) {
+                    textView.selectedRange = selection
+                    changed(textView)
+                    return false
+                }
+            }
             // Return inside a list starts the next item (or, on an empty item, ends the list).
             if text == "\n", range.length == 0 {
                 var selection = range
@@ -288,6 +341,12 @@ struct RichComposerField: UIViewRepresentable {
                 for paragraph in ComposerDocument.paragraphs(in: storage, covering: range) {
                     if let marker = ComposerDocument.markerRange(in: storage, paragraph: paragraph),
                        NSIntersectionRange(marker, range).length > 0, range.location < NSMaxRange(marker) {
+                        // Backspace at the start of a nested item's text steps it out one level; at level 0 it removes the marker.
+                        if range.length == 1, range.location == NSMaxRange(marker) - 1, ComposerDocument.listLevel(in: storage, at: paragraph.location) > 0 {
+                            textView.selectedRange = ComposerDocument.shiftLevel(in: storage, selection: NSRange(location: NSMaxRange(marker), length: 0), indent: false)
+                            changed(textView)
+                            return false
+                        }
                         storage.deleteCharacters(in: marker)
                         let rest = NSRange(location: paragraph.location, length: max(paragraph.length - marker.length, 0))
                         storage.removeAttribute(.limeBlock, range: rest)
@@ -314,6 +373,7 @@ struct RichComposerField: UIViewRepresentable {
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard !updating else { return }
+            if let started = autoStart, textView.selectedRange != NSRange(location: started.caret, length: 0) { autoStart = nil }
             // The caret never sits inside a list marker.
             let selection = textView.selectedRange
             if selection.length == 0 {

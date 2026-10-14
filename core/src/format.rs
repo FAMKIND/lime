@@ -2,7 +2,7 @@
 //!
 //! The subset is exactly: **bold** (`**x**`), *italic* (`*x*`), underline (`__x__`, a Lime extension: it works inside words too, so a message typed by hand as snake__case__name would underline; the composer escapes every underscore it writes),
 //! strikethrough (`~~x~~`), inline `code`, fenced code blocks, bulleted (`- `) and numbered (`1. `)
-//! lists with one nesting level, and links (`[text](url)`, http, https and mailto only). Everything
+//! lists with up to three levels (0 to 2), and links (`[text](url)`, http, https and mailto only). Everything
 //! else is plain text: nothing here rejects a message, unknown syntax is just text. A backslash
 //! before an ASCII punctuation mark makes it literal.
 //!
@@ -23,7 +23,7 @@ pub struct Span {
     pub link: Option<String>,
 }
 
-/// One item of a list. `level` is 0, or 1 for a nested item.
+/// One item of a list. `level` is 0, or 1 or 2 for a nested item (at most [`MAX_LIST_LEVEL`]).
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ListItem {
     pub level: u32,
@@ -44,6 +44,9 @@ pub enum Block {
 }
 
 const NESTED_INDENT: usize = 2;
+
+/// The deepest list level (levels are 0 to 2: three in all).
+pub const MAX_LIST_LEVEL: u32 = 2;
 
 fn is_punct(c: char) -> bool {
     c.is_ascii_punctuation()
@@ -108,6 +111,11 @@ fn is_fence_close(line: &str, fence: usize) -> bool {
     trimmed.len() >= fence && trimmed.chars().all(|c| c == '`')
 }
 
+/// The list level for a line's leading spaces: 0-1 spaces is level 0, 2-3 is 1, 4 or more is 2.
+fn level_for_indent(spaces: usize) -> u32 {
+    ((spaces / NESTED_INDENT) as u32).min(MAX_LIST_LEVEL)
+}
+
 /// `(level, ordered, number, text after the marker)` for a list line.
 fn list_item(line: &str) -> Option<(u32, bool, u32, &str)> {
     let (indent, rest) = if let Some(rest) = line.strip_prefix('\t') {
@@ -116,10 +124,7 @@ fn list_item(line: &str) -> Option<(u32, bool, u32, &str)> {
         let spaces = line.len() - line.trim_start_matches(' ').len();
         (spaces, &line[spaces..])
     };
-    if indent > 4 {
-        return None;
-    }
-    let level = u32::from(indent >= NESTED_INDENT);
+    let level = level_for_indent(indent);
     if let Some(after) = rest.strip_prefix("- ").or_else(|| rest.strip_prefix("* ")) {
         let after = after.trim_start();
         return (!after.is_empty()).then_some((level, false, 0, after));
@@ -424,17 +429,10 @@ pub fn plain_text(text: &str) -> String {
         match block {
             Block::Paragraph { spans } => lines.push(spans.iter().map(|s| s.text.as_str()).collect()),
             Block::ItemList { items } => {
-                let mut counters = [0u32; 2];
-                for item in items {
-                    let marker = if item.ordered {
-                        let level = item.level.min(1) as usize;
-                        counters[level] = if counters[level] == 0 { item.number.max(1) } else { counters[level] + 1 };
-                        format!("{}. ", counters[level])
-                    } else {
-                        "• ".to_owned()
-                    };
-                    let indent = if item.level > 0 { "  " } else { "" };
-                    lines.push(format!("{indent}{marker}{}", item.spans.iter().map(|s| s.text.as_str()).collect::<String>()));
+                let markers = list_marker_strings(&items);
+                for (item, marker) in items.iter().zip(markers) {
+                    let indent = "  ".repeat(item.level.min(MAX_LIST_LEVEL) as usize);
+                    lines.push(format!("{indent}{marker} {}", item.spans.iter().map(|s| s.text.as_str()).collect::<String>()));
                 }
             }
             Block::Code { text } => lines.push(text),
@@ -481,16 +479,13 @@ pub fn serialize(blocks: &[Block]) -> String {
                 }
             }
             Block::ItemList { items } => {
-                let mut counters = [0u32; 2];
+                let numbers = list_numbers(items);
                 let mut lines = Vec::new();
-                for item in items {
-                    let level = item.level.min(1) as usize;
-                    let marker = if item.ordered {
-                        counters[level] += 1;
-                        format!("{}. ", counters[level])
-                    } else {
-                        counters[level] = 0;
-                        "- ".to_owned()
+                for (item, number) in items.iter().zip(numbers) {
+                    let level = item.level.min(MAX_LIST_LEVEL) as usize;
+                    let marker = match number {
+                        Some(n) => format!("{n}. "),
+                        None => "- ".to_owned(),
                     };
                     let indent = " ".repeat(level * NESTED_INDENT);
                     // A line break inside an item would end it: it becomes a space.
@@ -661,6 +656,53 @@ fn write_code(text: &str) -> String {
     }
 }
 
+// ---------------------------------------------------------------- list rules (one rule for every platform)
+
+/// The number each item shows: `Some(n)` for a numbered item, `None` for a bullet. A level counts on from
+/// the first number written for its run; a bullet at a level, or going back up to a shallower item, starts
+/// the deeper levels' counting again.
+fn list_numbers(items: &[ListItem]) -> Vec<Option<u32>> {
+    let mut counters = [0u32; MAX_LIST_LEVEL as usize + 1];
+    items
+        .iter()
+        .map(|item| {
+            let level = item.level.min(MAX_LIST_LEVEL) as usize;
+            for deeper in &mut counters[level + 1..] {
+                *deeper = 0;
+            }
+            if item.ordered {
+                counters[level] = if counters[level] == 0 { item.number.max(1) } else { counters[level] + 1 };
+                Some(counters[level])
+            } else {
+                counters[level] = 0;
+                None
+            }
+        })
+        .collect()
+}
+
+const BULLETS: [&str; 3] = ["•", "◦", "▪"];
+
+fn list_marker_strings(items: &[ListItem]) -> Vec<String> {
+    list_numbers(items)
+        .into_iter()
+        .zip(items)
+        .map(|(number, item)| match number {
+            Some(n) => format!("{n}."),
+            None => BULLETS[item.level.min(MAX_LIST_LEVEL) as usize].to_owned(),
+        })
+        .collect()
+}
+
+/// What typing a list marker at the start of a paragraph means.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ListTrigger {
+    pub level: u32,
+    pub ordered: bool,
+    /// The number typed, for a numbered list (0 for a bullet).
+    pub number: u32,
+}
+
 // ---------------------------------------------------------------- the FFI
 
 /// Text to blocks (the app draws these).
@@ -685,6 +727,48 @@ pub fn message_plain_text(text: String) -> String {
 #[uniffi::export]
 pub fn normalise_message_markdown(text: String) -> String {
     normalise(&text)
+}
+
+/// The marker each item shows: "•", "◦", "▪" by level for bullets, "N." for numbers (counted per level).
+#[uniffi::export]
+pub fn list_markers(items: Vec<ListItem>) -> Vec<String> {
+    list_marker_strings(&items)
+}
+
+/// Does the text before the cursor, in one paragraph, complete a list marker the user just typed? True only
+/// when it is optional spaces, then `-`, `*` or `•`, or up to 9 digits and a `.`, then exactly one space,
+/// and nothing else (so `-5`, `1.5`, and a marker with text after it do not start a list).
+#[uniffi::export]
+pub fn list_trigger(line_start: String) -> Option<ListTrigger> {
+    let spaces = line_start.len() - line_start.trim_start_matches(' ').len();
+    let rest = line_start[spaces..].strip_suffix(' ')?;
+    let level = level_for_indent(spaces);
+    if matches!(rest, "-" | "*" | "•") {
+        return Some(ListTrigger { level, ordered: false, number: 0 });
+    }
+    let digits = rest.strip_suffix('.')?;
+    if !digits.is_empty() && digits.len() <= 9 && digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Some(ListTrigger { level, ordered: true, number: digits.parse().ok()? });
+    }
+    None
+}
+
+/// The deepest list level (2).
+#[uniffi::export]
+pub fn max_list_level() -> u32 {
+    MAX_LIST_LEVEL
+}
+
+/// The level an item takes when indented or outdented. An item is at most one level deeper than the item
+/// above it (level 0 if there is none) and no deeper than [`MAX_LIST_LEVEL`]; outdenting stops at 0.
+#[uniffi::export]
+pub fn list_level_after(previous_level: Option<u32>, level: u32, indent: bool) -> u32 {
+    if indent {
+        let deepest = previous_level.map_or(0, |p| p + 1).min(MAX_LIST_LEVEL);
+        (level + 1).min(deepest)
+    } else {
+        level.saturating_sub(1)
+    }
 }
 
 #[cfg(test)]
@@ -789,22 +873,100 @@ mod tests {
     }
 
     #[test]
-    fn lists_have_two_levels_and_numbers() {
+    fn lists_have_three_levels_and_numbers() {
         let blocks = parse("- one\n- two\n  - nested\n1. first\n2. second");
         let Block::ItemList { items } = &blocks[0] else { panic!("{blocks:?}") };
         assert_eq!(items.len(), 5);
         assert_eq!((items[0].level, items[0].ordered), (0, false));
         assert_eq!((items[2].level, items[2].ordered), (1, false));
         assert_eq!((items[3].ordered, items[3].number, items[4].number), (true, 1, 2));
-        assert_eq!(plain_text("- a\n- b\n1. x\n2. y\n  - n"), "• a\n• b\n1. x\n2. y\n  • n");
+        assert_eq!(plain_text("- a\n- b\n1. x\n2. y\n  - n"), "• a\n• b\n1. x\n2. y\n  ◦ n");
         assert_eq!(parse("* star item").len(), 1);
         assert!(matches!(parse("-no space")[0], Block::Paragraph { .. }));
         assert!(matches!(parse("- ")[0], Block::Paragraph { .. }), "an empty item is text");
-        assert!(matches!(parse("      - too deep")[0], Block::Paragraph { .. }));
+        let deep = parse("- a\n  - b\n    - c\n          - far deeper");
+        let Block::ItemList { items } = &deep[0] else { panic!("{deep:?}") };
+        assert_eq!(items.iter().map(|i| i.level).collect::<Vec<_>>(), vec![0, 1, 2, 2], "deeper than level 2 stays a level-2 list line");
+        assert_eq!(parse("\t- tab")[0], parse("  - tab")[0], "a tab is one level");
+        assert_eq!(parse(" - one space")[0], parse("- one space")[0]);
+        assert_eq!(plain_text("- a\n  - b\n    - c"), "• a\n  ◦ b\n    ▪ c");
         assert_eq!(plain_text("3. start at three\n4. next"), "3. start at three\n4. next");
         // Items carry inline styles.
         let Block::ItemList { items } = &parse("- a **b**")[0] else { panic!() };
         assert_eq!(items[0].spans, vec![s("a "), b("b")]);
+    }
+
+    fn item(level: u32, ordered: bool, number: u32) -> ListItem {
+        ListItem { level, ordered, number, spans: vec![s("x")] }
+    }
+
+    #[test]
+    fn three_levels_round_trip() {
+        let text = "- a\n  - b\n    - c\n  - d\n- e\n1. one\n  1. nested\n    1. deep\n    2. deeper\n  2. back\n2. two";
+        assert_eq!(normalise(text), text);
+        let again = serialize(&parse(text));
+        assert_eq!(parse(&again), parse(text));
+        // Over-deep levels in blocks are written at the deepest level.
+        assert_eq!(serialize(&[Block::ItemList { items: vec![item(9, false, 0)] }]), "    - x");
+    }
+
+    #[test]
+    fn an_old_client_reads_level_two_as_level_one() {
+        // The parser before LIME-137: indent 2-4 is level 1, more than 4 is not a list line.
+        fn old_level(line: &str) -> Option<u32> {
+            let spaces = line.len() - line.trim_start_matches(' ').len();
+            (spaces <= 4).then_some(u32::from(spaces >= 2))
+        }
+        let written = serialize(&[Block::ItemList { items: vec![item(0, false, 0), item(1, false, 0), item(2, false, 0)] }]);
+        let levels: Vec<Option<u32>> = written.lines().map(old_level).collect();
+        assert_eq!(levels, vec![Some(0), Some(1), Some(1)], "level 3 flattens to level 2 on old clients, and is never lost");
+    }
+
+    #[test]
+    fn markers_count_per_level_and_reset() {
+        let bullets = list_markers(vec![item(0, false, 0), item(1, false, 0), item(2, false, 0)]);
+        assert_eq!(bullets, vec!["•", "◦", "▪"]);
+        let numbers = list_markers(vec![
+            item(0, true, 1), item(1, true, 1), item(1, true, 1), item(2, true, 5), item(2, true, 1),
+            item(1, true, 7), item(0, true, 1), item(1, true, 1),
+        ]);
+        // The first number written starts a level; deeper counters restart when a shallower item comes.
+        assert_eq!(numbers, vec!["1.", "1.", "2.", "5.", "6.", "3.", "2.", "1."]);
+        // A bullet at a level interrupts that level's numbering; the next number starts again from what it wrote.
+        let mixed = list_markers(vec![item(0, true, 3), item(0, false, 0), item(0, true, 3), item(0, true, 3)]);
+        assert_eq!(mixed, vec!["3.", "•", "3.", "4."]);
+        assert_eq!(list_markers(vec![]), Vec::<String>::new());
+    }
+
+    #[test]
+    fn typing_a_marker_triggers_a_list_only_when_it_is_the_whole_line_start() {
+        let t = |s: &str| list_trigger(s.into());
+        let bullet = |level| Some(ListTrigger { level, ordered: false, number: 0 });
+        assert_eq!(t("- "), bullet(0));
+        assert_eq!(t("* "), bullet(0));
+        assert_eq!(t("• "), bullet(0));
+        assert_eq!(t("  - "), bullet(1));
+        assert_eq!(t("    • "), bullet(2));
+        assert_eq!(t("1. "), Some(ListTrigger { level: 0, ordered: true, number: 1 }));
+        assert_eq!(t("3. "), Some(ListTrigger { level: 0, ordered: true, number: 3 }));
+        assert_eq!(t("  12. "), Some(ListTrigger { level: 1, ordered: true, number: 12 }));
+        for no in ["-", "-5", "- 5", "1.5", "1.5 ", "1. a", "a - ", "text - ", "-  ", "1 ", ". ", "1234567890. ", "-- ", "a1. ", "", " ", "1.. "] {
+            assert_eq!(t(no), None, "{no:?}");
+        }
+    }
+
+    #[test]
+    fn indent_and_outdent_stay_inside_the_bounds() {
+        assert_eq!(max_list_level(), 2);
+        assert_eq!(list_level_after(None, 0, true), 0, "nothing above: cannot indent");
+        assert_eq!(list_level_after(Some(0), 0, true), 1);
+        assert_eq!(list_level_after(Some(0), 1, true), 1, "one deeper than the item above at most");
+        assert_eq!(list_level_after(Some(1), 1, true), 2);
+        assert_eq!(list_level_after(Some(2), 2, true), 2, "never deeper than 2");
+        assert_eq!(list_level_after(Some(5), 0, true), 1);
+        assert_eq!(list_level_after(Some(2), 2, false), 1);
+        assert_eq!(list_level_after(Some(0), 0, false), 0, "outdent floors at 0");
+        assert_eq!(list_level_after(None, 0, false), 0);
     }
 
     #[test]

@@ -11,6 +11,8 @@ extension NSAttributedString.Key {
     /// On every character of a paragraph that is a list item or a code line: "bullet", "number" or "code".
     static let limeBlock = NSAttributedString.Key("lime.block")
     static let limeLevel = NSAttributedString.Key("lime.level")
+    /// On a numbered item's marker, when the run was started at a number other than 1 ("3. " typed at a line's start).
+    static let limeStart = NSAttributedString.Key("lime.start")
 }
 
 enum InlineFormat: CaseIterable {
@@ -23,10 +25,22 @@ enum BlockKind: String { case bullet, number, code }
 struct FormattingState: Equatable {
     var bold = false, italic = false, underline = false, strike = false, code = false
     var link = false, bullets = false, numbers = false
+    /// The caret or selection touches a list item (the Indent and Outdent buttons show), and whether each can change anything.
+    var inList = false, canIndent = false, canOutdent = false
 }
 
 enum ComposerDocument {
     static let bulletMarker = "• "
+    /// The bullet for a level, from the core's marker rule ("•", "◦", "▪"), with the space after it.
+    static func bulletMarker(level: Int) -> String {
+        listMarkers(items: [ListItem(level: UInt32(max(0, min(level, 2))), ordered: false, number: 0, spans: [])])[0] + " "
+    }
+    private static let bulletGlyphs: [String] = (0...2).map { bulletMarker(level: $0) }
+
+    static func listLevel(in text: NSAttributedString, at location: Int) -> Int {
+        guard location < text.length else { return 0 }
+        return min((text.attribute(.limeLevel, at: location, effectiveRange: nil) as? Int) ?? 0, Int(maxListLevel()))
+    }
 
     // MARK: Fonts
 
@@ -108,7 +122,8 @@ enum ComposerDocument {
         let string = text.string as NSString
         let line = string.substring(with: paragraph)
         if kind == .bullet {
-            return line.hasPrefix(bulletMarker) ? NSRange(location: paragraph.location, length: bulletMarker.utf16.count) : nil
+            guard let glyph = bulletGlyphs.first(where: { line.hasPrefix($0) }) else { return nil }
+            return NSRange(location: paragraph.location, length: glyph.utf16.count)
         }
         var digits = 0
         for scalar in line.unicodeScalars { if scalar.properties.numericType != nil && scalar.isASCII { digits += 1 } else { break } }
@@ -142,7 +157,6 @@ enum ComposerDocument {
             location = NSMaxRange(line)
         }
         if string.hasSuffix("\n") { lines.append(NSRange(location: string.length, length: 0)) }
-        var counters = [0, 0]
         for line in lines {
             var content = line
             if content.length > 0, string.substring(with: NSRange(location: NSMaxRange(content) - 1, length: 1)) == "\n" { content.length -= 1 }
@@ -155,12 +169,12 @@ enum ComposerDocument {
                 let kind = blockKind(in: text, at: line.location)!
                 let marker = markerRange(in: text, paragraph: line)
                 if let marker { content = NSRange(location: NSMaxRange(marker), length: max(NSMaxRange(content) - NSMaxRange(marker), 0)) }
-                let level = (text.attribute(.limeLevel, at: line.location, effectiveRange: nil) as? Int) ?? 0
+                let level = listLevel(in: text, at: line.location)
                 let ordered = kind == .number
-                let slot = min(level, 1)
-                counters[slot] = ordered ? counters[slot] + 1 : 0
+                // The number as written; the core counts on from the first of a run, per level.
+                let number = marker.flatMap { UInt32((text.string as NSString).substring(with: $0).filter(\.isNumber)) } ?? 1
                 let spans = spans(in: text, range: content)
-                if !spans.isEmpty { listItems.append(ListItem(level: UInt32(min(level, 1)), ordered: ordered, number: UInt32(max(counters[slot], 1)), spans: spans)) }
+                if !spans.isEmpty { listItems.append(ListItem(level: UInt32(level), ordered: ordered, number: ordered ? max(number, 1) : 0, spans: spans)) }
             case nil:
                 flushList(); flushCode()
                 if content.length == 0 {
@@ -230,13 +244,16 @@ enum ComposerDocument {
                     append(String(line) + (n < lines.count - 1 ? "\n" : ""), [.limeBlock: BlockKind.code.rawValue])
                 }
             case .itemList(let items):
-                var counters = [0, 0]
+                let markers = listMarkers(items: items)
+                // The same list counted from 1: an item that begins a run at another number remembers it.
+                let fromOne = listMarkers(items: items.map { ListItem(level: $0.level, ordered: $0.ordered, number: 1, spans: []) })
                 for (n, item) in items.enumerated() {
-                    let slot = Int(min(item.level, 1))
+                    let slot = Int(min(item.level, maxListLevel()))
                     let kind: BlockKind = item.ordered ? .number : .bullet
-                    counters[slot] = item.ordered ? (counters[slot] == 0 ? Int(max(item.number, 1)) : counters[slot] + 1) : 0
                     let attributes: [NSAttributedString.Key: Any] = [.limeBlock: kind.rawValue, .limeLevel: slot]
-                    append(item.ordered ? "\(counters[slot]). " : bulletMarker, attributes)
+                    var markerAttributes = attributes
+                    if item.ordered, fromOne[n] == "1.", markers[n] != "1." { markerAttributes[.limeStart] = Int(markers[n].dropLast()) }
+                    append(markers[n] + " ", markerAttributes)
                     appendSpans(item.spans, block: attributes)
                     if n < items.count - 1 { append("\n", attributes) }
                 }
@@ -282,6 +299,11 @@ enum ComposerDocument {
         let touched = paragraphs(in: text, covering: selection).map { blockKind(in: text, at: $0.location) }
         state.bullets = !touched.isEmpty && touched.allSatisfy { $0 == .bullet }
         state.numbers = !touched.isEmpty && touched.allSatisfy { $0 == .number }
+        state.inList = touched.contains { $0 == .bullet || $0 == .number }
+        if state.inList {
+            state.canIndent = shiftedLevels(in: text, selection: selection, indent: true).contains { $0.from != $0.to }
+            state.canOutdent = shiftedLevels(in: text, selection: selection, indent: false).contains { $0.from != $0.to }
+        }
         return state
     }
 
@@ -346,8 +368,10 @@ enum ComposerDocument {
                 text.removeAttribute(.limeBlock, range: paragraph)
                 text.removeAttribute(.limeLevel, range: paragraph)
             } else {
-                let marker = kind == .bullet ? bulletMarker : "1. "
-                let attributes: [NSAttributedString.Key: Any] = [.limeBlock: kind.rawValue, .limeLevel: 0]
+                // An item switching kind keeps its level.
+                let level = blockKind(in: text, at: original.location) == nil ? 0 : listLevel(in: text, at: original.location)
+                let marker = kind == .bullet ? bulletMarker(level: level) : "1. "
+                let attributes: [NSAttributedString.Key: Any] = [.limeBlock: kind.rawValue, .limeLevel: level]
                 text.insert(NSAttributedString(string: marker, attributes: attributes), at: paragraph.location)
                 text.addAttributes(attributes, range: NSRange(location: paragraph.location, length: paragraph.length + marker.utf16.count))
                 if paragraph.location <= selectionStart { selectionStart += marker.utf16.count }
@@ -363,32 +387,36 @@ enum ComposerDocument {
         return NSRange(location: selectionStart, length: selectionEnd - selectionStart)
     }
 
-    /// Makes the numbers of every numbered run count 1, 2, 3 (after an insert or a delete).
+    /// Makes every list marker show what the core's rule says: bullets by level, and numbers counting per level
+    /// (a run counts from 1, or from the number it was started at). Run after an insert, a delete or a level change.
     static func renumber(_ text: NSMutableAttributedString) {
-        var counters = [0, 0]
-        var location = 0
-        var changed = true
-        while changed {
-            changed = false
-            counters = [0, 0]
-            location = 0
-            while location < text.length {
-                let paragraph = (text.string as NSString).paragraphRange(for: NSRange(location: location, length: 0))
-                let kind = blockKind(in: text, at: paragraph.location)
-                let level = min((text.attribute(.limeLevel, at: paragraph.location, effectiveRange: nil) as? Int) ?? 0, 1)
-                if kind == .number, let marker = markerRange(in: text, paragraph: paragraph) {
-                    counters[level] += 1
-                    let wanted = "\(counters[level]). "
-                    if (text.string as NSString).substring(with: marker) != wanted {
-                        text.replaceCharacters(in: marker, with: NSAttributedString(string: wanted, attributes: text.attributes(at: marker.location, effectiveRange: nil)))
-                        changed = true
-                        break
-                    }
-                } else if kind != .number {
-                    counters[level] = 0
-                }
-                location = NSMaxRange(paragraph)
+        let string = text.string as NSString
+        var run: [(marker: NSRange, kind: BlockKind, level: Int, start: Int)] = []
+        var edits: [(NSRange, String)] = []
+        func flush() {
+            guard !run.isEmpty else { return }
+            let items = run.map { ListItem(level: UInt32($0.level), ordered: $0.kind == .number, number: UInt32(max($0.start, 1)), spans: []) }
+            for (entry, marker) in zip(run, listMarkers(items: items)) {
+                let wanted = marker + " "
+                if string.substring(with: entry.marker) != wanted { edits.append((entry.marker, wanted)) }
             }
+            run = []
+        }
+        var location = 0
+        while location < string.length {
+            let paragraph = string.paragraphRange(for: NSRange(location: location, length: 0))
+            if let kind = blockKind(in: text, at: paragraph.location), kind != .code, let marker = markerRange(in: text, paragraph: paragraph) {
+                let start = (text.attribute(.limeStart, at: marker.location, effectiveRange: nil) as? Int) ?? 1
+                run.append((marker, kind, listLevel(in: text, at: paragraph.location), start))
+            } else {
+                flush()
+            }
+            location = NSMaxRange(paragraph)
+        }
+        flush()
+        // From the end, so the earlier ranges stay valid.
+        for (range, wanted) in edits.reversed() {
+            text.replaceCharacters(in: range, with: NSAttributedString(string: wanted, attributes: text.attributes(at: range.location, effectiveRange: nil)))
         }
     }
 
@@ -429,8 +457,13 @@ enum ComposerDocument {
         else { return false }
         guard let marker = markerRange(in: text, paragraph: paragraph) else { return false }
         let contentLength = paragraph.length - marker.length - (text.string.hasSuffix("\n") && NSMaxRange(paragraph) == text.length ? 0 : (hasNewline(text, paragraph) ? 1 : 0))
+        if contentLength <= 0, listLevel(in: text, at: paragraph.location) > 0 {
+            // An empty nested item: Return steps back out one level.
+            selection = shiftLevel(in: text, selection: selection, indent: false)
+            return true
+        }
         if contentLength <= 0 {
-            // An empty item: Return ends the list.
+            // An empty top-level item: Return ends the list.
             text.deleteCharacters(in: marker)
             let rest = NSRange(location: paragraph.location, length: max(paragraph.length - marker.length, 0))
             text.removeAttribute(.limeBlock, range: rest)
@@ -439,10 +472,10 @@ enum ComposerDocument {
             renumber(text); restyle(text)
             return true
         }
-        let level = (text.attribute(.limeLevel, at: paragraph.location, effectiveRange: nil) as? Int) ?? 0
+        let level = listLevel(in: text, at: paragraph.location)
         let attributes: [NSAttributedString.Key: Any] = [.limeBlock: kind.rawValue, .limeLevel: level]
         let next = NSMutableAttributedString(string: "\n", attributes: attributes)
-        next.append(NSAttributedString(string: kind == .bullet ? bulletMarker : "1. ", attributes: attributes))
+        next.append(NSAttributedString(string: kind == .bullet ? bulletMarker(level: level) : "1. ", attributes: attributes))
         text.replaceCharacters(in: selection, with: next)
         selection = NSRange(location: selection.location + next.length, length: 0)
         renumber(text); restyle(text)
@@ -456,5 +489,146 @@ enum ComposerDocument {
     private static func blockKindForEmptyTail(_ text: NSAttributedString, _ selection: NSRange) -> BlockKind? {
         guard text.length > 0, selection.location == text.length else { return nil }
         return blockKind(in: text, at: text.length - 1)
+    }
+
+    // MARK: Nesting: Indent and Outdent
+
+    private static func allParagraphs(in text: NSAttributedString) -> [NSRange] {
+        let string = text.string as NSString
+        var result: [NSRange] = []
+        var location = 0
+        while location < string.length {
+            let paragraph = string.paragraphRange(for: NSRange(location: location, length: 0))
+            result.append(paragraph)
+            location = NSMaxRange(paragraph)
+        }
+        if string.length == 0 || string.hasSuffix("\n") { result.append(NSRange(location: string.length, length: 0)) }
+        return result
+    }
+
+    /// The level each list paragraph the selection touches would take, by the core's indent rule (an item is at
+    /// most one level deeper than the item above it, and at most level 2).
+    static func shiftedLevels(in text: NSAttributedString, selection: NSRange, indent: Bool) -> [(paragraph: NSRange, from: Int, to: Int)] {
+        let touched = Set(paragraphs(in: text, covering: selection).map(\.location))
+        var previous: Int?
+        var result: [(NSRange, Int, Int)] = []
+        for paragraph in allParagraphs(in: text) {
+            guard let kind = blockKind(in: text, at: paragraph.location), kind == .bullet || kind == .number else { previous = nil; continue }
+            let level = listLevel(in: text, at: paragraph.location)
+            if touched.contains(paragraph.location) {
+                let target = Int(listLevelAfter(previousLevel: previous.map { UInt32($0) }, level: UInt32(level), indent: indent))
+                result.append((paragraph, level, target))
+                previous = target
+            } else {
+                previous = level
+            }
+        }
+        return result
+    }
+
+    /// Indents or outdents every list item the selection touches. Returns the new selection (the same places in
+    /// the same words; the markers may change length).
+    static func shiftLevel(in text: NSMutableAttributedString, selection: NSRange, indent: Bool) -> NSRange {
+        let changes = shiftedLevels(in: text, selection: selection, indent: indent).filter { $0.from != $0.to }
+        guard !changes.isEmpty else { return selection }
+        let start = anchor(in: text, at: selection.location)
+        let end = anchor(in: text, at: NSMaxRange(selection))
+        for change in changes { text.addAttribute(.limeLevel, value: change.to, range: change.paragraph) }
+        renumber(text)
+        restyle(text)
+        let from = location(for: start, in: text)
+        return NSRange(location: from, length: max(location(for: end, in: text) - from, 0))
+    }
+
+    /// A place in the text as (paragraph number, characters past the marker), so it survives markers changing length.
+    private static func anchor(in text: NSAttributedString, at location: Int) -> (index: Int, offset: Int) {
+        let paragraphs = allParagraphs(in: text)
+        let index = paragraphs.lastIndex { $0.location <= location } ?? 0
+        let paragraph = paragraphs[index]
+        let contentStart = markerRange(in: text, paragraph: paragraph).map(NSMaxRange) ?? paragraph.location
+        return (index, max(location - contentStart, 0))
+    }
+
+    private static func location(for anchor: (index: Int, offset: Int), in text: NSAttributedString) -> Int {
+        let paragraphs = allParagraphs(in: text)
+        let paragraph = paragraphs[min(anchor.index, paragraphs.count - 1)]
+        let contentStart = markerRange(in: text, paragraph: paragraph).map(NSMaxRange) ?? paragraph.location
+        return min(contentStart + anchor.offset, text.length)
+    }
+
+    // MARK: Lists that start as you type
+
+    /// What an automatic list start replaced, so Backspace straight after it can give the typed text back.
+    struct AutoStart {
+        let paragraphStart: Int
+        /// The text the person typed, with its space ("- ", "3. ").
+        let typed: String
+        /// The marker the item had before (a typed marker inside a list switches the item's kind), or nil for plain text.
+        let oldMarker: NSAttributedString?
+        /// Where the caret was left (just after the new marker).
+        let caret: Int
+    }
+
+    /// Called as a space is about to be typed at a caret. When the text before it in the paragraph is exactly a
+    /// list marker (the core's `listTrigger`), the typed marker becomes a list item and this returns what it did;
+    /// otherwise it does nothing and returns nil. Not in a code block. Inside a list item the item switches kind
+    /// and keeps its level.
+    static func autoStart(in text: NSMutableAttributedString, selection: inout NSRange) -> AutoStart? {
+        guard selection.length == 0 else { return nil }
+        let paragraph = paragraphs(in: text, covering: selection)[0]
+        let kind = blockKind(in: text, at: paragraph.location)
+        guard kind != .code else { return nil }
+        let marker = markerRange(in: text, paragraph: paragraph)
+        let contentStart = marker.map(NSMaxRange) ?? paragraph.location
+        guard selection.location >= contentStart else { return nil }
+        let string = text.string as NSString
+        let before = string.substring(with: NSRange(location: contentStart, length: selection.location - contentStart))
+        guard !before.contains("\n"), let trigger = listTrigger(lineStart: before + " ") else { return nil }
+        let level = marker == nil ? Int(trigger.level) : listLevel(in: text, at: paragraph.location)
+        let oldMarker = marker.map { text.attributedSubstring(from: $0) }
+        let newKind: BlockKind = trigger.ordered ? .number : .bullet
+        let markerText = trigger.ordered ? "\(trigger.number). " : bulletMarker(level: level)
+        var markerAttributes: [NSAttributedString.Key: Any] = [.limeBlock: newKind.rawValue, .limeLevel: level]
+        if trigger.ordered, trigger.number != 1 { markerAttributes[.limeStart] = Int(trigger.number) }
+        // The marker and the typed marker go; the new marker comes; the rest of the paragraph becomes the item's text.
+        text.replaceCharacters(in: NSRange(location: paragraph.location, length: selection.location - paragraph.location),
+                               with: NSAttributedString(string: markerText, attributes: markerAttributes))
+        let item = (text.string as NSString).paragraphRange(for: NSRange(location: paragraph.location, length: 0))
+        text.addAttributes([.limeBlock: newKind.rawValue, .limeLevel: level], range: item)
+        let caret = paragraph.location + markerText.utf16.count
+        selection = NSRange(location: caret, length: 0)
+        renumber(text)
+        restyle(text)
+        let after = (text.string as NSString).paragraphRange(for: NSRange(location: paragraph.location, length: 0))
+        let newMarker = markerRange(in: text, paragraph: after)
+        selection = NSRange(location: newMarker.map(NSMaxRange) ?? caret, length: 0)
+        return AutoStart(paragraphStart: paragraph.location, typed: before + " ", oldMarker: oldMarker, caret: selection.location)
+    }
+
+    /// Undoes `autoStart` (Backspace straight after it): the typed text comes back, as plain text, and the item
+    /// is what it was before. Returns false (and changes nothing) when the text is no longer as it was left.
+    static func undoAutoStart(_ auto: AutoStart, in text: NSMutableAttributedString, selection: inout NSRange) -> Bool {
+        guard auto.paragraphStart <= text.length else { return false }
+        let paragraph = (text.string as NSString).paragraphRange(for: NSRange(location: auto.paragraphStart, length: 0))
+        guard let marker = markerRange(in: text, paragraph: paragraph), NSMaxRange(marker) == auto.caret else { return false }
+        let literal = NSAttributedString(string: auto.typed)
+        if let old = auto.oldMarker {
+            let oldAttributes = old.attributes(at: 0, effectiveRange: nil)
+            text.replaceCharacters(in: marker, with: old)
+            let item = (text.string as NSString).paragraphRange(for: NSRange(location: auto.paragraphStart, length: 0))
+            text.addAttributes([.limeBlock: oldAttributes[.limeBlock] as Any, .limeLevel: oldAttributes[.limeLevel] as Any], range: item)
+            text.insert(literal, at: auto.paragraphStart + old.length)
+            selection = NSRange(location: auto.paragraphStart + old.length + literal.length, length: 0)
+        } else {
+            text.deleteCharacters(in: marker)
+            let item = (text.string as NSString).paragraphRange(for: NSRange(location: auto.paragraphStart, length: 0))
+            text.removeAttribute(.limeBlock, range: item)
+            text.removeAttribute(.limeLevel, range: item)
+            text.insert(literal, at: auto.paragraphStart)
+            selection = NSRange(location: auto.paragraphStart + literal.length, length: 0)
+        }
+        renumber(text)
+        restyle(text)
+        return true
     }
 }

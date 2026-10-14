@@ -12,8 +12,8 @@ The text of a Lime message is **Markdown, from a small fixed subset**, carried i
 | Strikethrough | `~~struck~~` | |
 | Inline code | `` `code` `` | One line. ``` ``a ` b`` ``` (a longer run of backticks) lets code hold a backtick. |
 | Code block | a line of ```` ``` ````, the code, a line of ```` ``` ```` | Shown verbatim in a monospaced face, scrolling sideways. An unclosed block runs to the end. |
-| Bulleted list | `- item` (or `* item`) | One nesting level: indent the nested item by two spaces. |
-| Numbered list | `1. item` | The app counts on from the first number of a run. |
+| Bulleted list | `- item` (or `* item`) | Up to three levels (LIME-137): indent each level by two spaces (a tab is one level; four or more spaces is level 3). Shown as •, ◦, ▪. Clients before LIME-137 read level 3 as level 2. |
+| Numbered list | `1. item` | The app counts on from the first number of a run, separately for each level; a bullet, or going back up to a shallower item, starts the deeper levels again. The same rule is the core's `list_markers`. |
 | Link | `[text](https://…)` | **http, https and mailto only**, with something after the scheme. Anything else stays text. |
 | Literal character | `\*` | A backslash before ASCII punctuation makes it literal. |
 
