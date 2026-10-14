@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-112b-fix (group calls stuck on "Connecting securely…")**, then LIME-139 (signed access). **If 139 is already running, finish and commit it first, then 112b-fix.** After 112b passes its gate, plot drafts **LIME-112c** (group PiP, 480p, the >10 notice, gate findings). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-145 (keep every Olm session per peer: a message-loss bug found in 112b-fix).** Then **LIME-112c** (FaceTime-style minimise + your own tile), then **LIME-146** (header call icon with a count + the live call card + the invite sheet), then LIME-139 (the first mesh brief). (The order changed 2026-10-15: the user wants the call UI clear sooner; 112b-fix passed its gate.) *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -147,6 +147,19 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e95. **112b-fix gate PASSED (the user, 2026-10-15, 9:32–9:34): "texting and group call working successfully";** dropping out and rejoining a live call also tried (worked, by implication). **Not yet reported:** the seconds to first video, the mute/camera labels, Always relay, answering from the lock screen, the 1:1 regression after a group call.
+   - **Asks:**
+     - your own tile shows a "Y" initial and "You": use your profile photo and your name → **folded into LIME-112c (item 6)**;
+     - the header's video pill + the live call card should look like **Slack huddles** (avatars, LIVE, Join; an invite sheet) → **LIME-146, a FUTURE UPDATE (unscheduled)**;
+     - **revised:** no pill under the name; the top-right call icon goes green with a count badge and joins on tap (146 item 1).
+1e94. **LIME-112b-fix LANDED as `5c59d6f` (pushed, 2026-10-15; PLOT.md `e3ea730`).**
+   - **The cause:** core keys were unpadded base64, which Swift's `Data(base64Encoded:)` rejects, so **no key ever reached LiveKit** (the test failed first; the fake core had used padded text). The fix: keys cross the FFI as raw bytes.
+   - **A second bug:** a key that overtook its join was never answered. Fixed.
+   - **Added:** full key diagnostics; the 5 s `group.call.key_request` safety net; the tile label overlap fixed.
+   - Checks: cargo 207 (1 ignored); unit 336; 0 warnings; Release clean (after `xcodegen` regenerated a stale project).
+   - **⚠ Found: Olm session glare loses messages** (one session row per peer, overwritten). **Plot's call: fix now → LIME-145 (drafted, NEXT)**, before 139.
+   - **The user can run the 112b-fix gate now, in parallel.** If a tile still sticks on a pair that never messaged before, that's glare (145).
+   - The lock waits (1.7–5.2 s) are left for 120b. `ios/Config/Info-Debug.plist` shows modified (probably from `xcodegen`), not committed.
 1e93. **DESIGN-13 (the mesh v1 design pass) started 2026-10-15: see "### DESIGN-13" below.** It covers 4 user decisions (M1–M4), 2 protocol findings, and a 5-brief plan (LIME-139…143).
 1e92. **LIME-112b Phases 3–5 LANDED as `b765767` (core) + `aac22a9` (iOS, docs, acks), pushed 2026-10-15.**
    - **Core-first held:** the whole state machine is in core (`group.call.start/join/key/leave`; 8 new tests, 205 total; forged keys ignored; rekey on any leave or removal). `GroupCallManager` is a thin LiveKit + CallKit adapter (12 unit tests).
@@ -4900,6 +4913,112 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Gate:** none on a device; plot reviews the report.
 
 **Record:** `## LIME-138` in TEND.md, ending with **For plot:**. **Commit:** `docs: lime stays MIT; Android open-source reuse map; third-party licences for Android`, trailer `Brief: LIME-138`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Explicit paths; never `public/assets/*`.
+
+### LIME-146 → `tend` (lime-aa) (SCHEDULED right after LIME-112c; the user, 2026-10-15: "the header icon and the chat huddle bubble can be sooner, so it's not confusing"): live group calls shown like Slack huddles
+**Goal:** while a group call is live it's obvious and one tap to join: the header's call button shows it (a green icon + count), the chat shows one live call card with who's there and a Join button, and an invite sheet appears if you're elsewhere in lime.
+
+**Build items 1–4 below.** Item 3 **replaces LIME-112c's ">10 banner"** (112c drops it).
+
+**Scope:** `ChatView.swift` (the header + the live card), `CallBubble.swift`, `GroupCallManager.swift` (state only), a new invite sheet view, their tests. **Not:** the core rules (participants and call state already come from core), the 1:1 call UI.
+
+**Kind:**
+- behaviour (unit/UI tests: the header button joins/returns, the card turns into "Call ended", only **one** live card per call (the old "started a call" bubble is replaced, not duplicated), the sheet's Dismiss/Join, no sheet while you're in that chat or already in a call);
+- visual (no tests for looks).
+
+**Gate (the user, 3 devices):**
+1. start a group call → the others see the green icon with "1", then "2", "3" as people join;
+2. tap it → joined;
+3. the chat shows one live card with avatars and Join;
+4. the call ends → the card becomes "Call ended · <duration>";
+5. someone elsewhere in lime gets the sheet.
+
+**Record:** `## LIME-146` with **For plot:**. **Commit:** `feat(ios): live group calls: header call button with count, live call card, invite sheet`, trailer `Brief: LIME-146`. The rest per the standing rules.
+
+**The design (items):**
+**The user:** "improve the video icon that shows in the group chat header, as well as the card for an existing call… would be cool to do something like this inside the chat bubble. Add to future updates." References: Slack huddles (a header pill with the participants' avatars + an icon + a count; an in-chat card "A huddle is happening · LIVE · Ryan is already there · [avatar] Join huddle"; a bottom sheet "4 people are in a huddle · #sales · avatars · Dismiss / Join").
+
+**Today:** a plain green pill with a video icon in the group header, and a grey call bubble "<Name> started a call · Join".
+
+**Sketch for when it's drafted:**
+1. **The header (REVISED by the user, 2026-10-15):** **no pill under the group's name.** Instead, while a call is live, **the call button in the top-right capsule turns into the call's own icon (video or phone) in lime green, with a count badge** ("video icon · 3"). Tapping it **joins** (or returns to the call you're in) directly; the normal Voice/Video menu comes back when no call is on. Not colour alone: the icon changes and the number shows; VoiceOver reads "Join video call, 3 people". The badge uses the round-badge rule (115 item 4).
+2. **The live call card in the chat:** "A call is happening" + a **LIVE** tag (words, not colour alone) + "Jean and Lee are there" + their avatars + a **Join call** button; it turns into the ordinary "Call ended · 3:20" bubble when the call ends.
+3. **An invite sheet** when someone starts a call in a group you're in, and lime is open but you're elsewhere: "3 people are in a call · <group> · avatars · Dismiss / Join" (replaces 112c's >10 banner idea for all sizes; keeps CallKit ringing for ≤ 10).
+4. **Accessibility:** VoiceOver reads "Call in progress with Jean and Lee, Join"; Reduce Motion means no pulsing LIVE.
+5. **Android:** the participants and the call-state rules already come from core; specs in `docs/screens/`.
+
+### LIME-145 → `tend` (lime-aa) (NEXT; drafted 2026-10-15): keep every Olm session per peer, so phones that first contact each other at the same moment don't lose messages
+**Goal:** when two devices start an Olm session with each other at the same time ("glare"), neither loses the other's messages or call keys; both of LIME-112b-fix's `#[ignore]`d tests pass.
+
+**Found by tend in LIME-112b-fix (2026-10-15), with deterministic tests:**
+- `olm_sessions` keeps **one row per (peer, peer key)**, and `save_session` does `ON CONFLICT … DO UPDATE SET session_pickle`. So when A and B each create an outbound session to the other before either has read the other's first message, **each phone replaces its own outbound session with the inbound one it creates from the other's pre-key message**;
+- the other side's next normal Olm message, under the replaced session, can then never be decrypted: it sits in `pending_inbound` as `no_session` **forever**;
+- it hits group calls (everyone joining at once) and **any two people who start a first chat at the same moment.** A silent message-loss bug in core messaging, so **plot's call: fix it now**, before more features build on sessions.
+
+**The design (Matrix's rule, which vodozemac is built for):**
+1. **Migration 28:** rebuild `olm_sessions` keyed by **(peer device key, session_id)**: `session_id` from vodozemac's `Session::session_id()`; old rows are filled lazily on first load (or in the migration if pickles can be read there; report which).
+2. **`save_session`** inserts or updates **by session_id**; it never overwrites a different session.
+3. **Decrypt:** a normal (non-pre-key) message tries **all** of that peer's sessions (the loop already supports this; check), the most recently used first. A pre-key message that matches an existing session (vodozemac's `session_id` / `matches`) uses it, else creates a new one, **added** alongside the others.
+4. **Encrypt:** use the peer's session that **most recently received or decrypted a message**, falling back to the newest created. That's Matrix's rule, and it makes both sides converge on one session after glare.
+5. **Cap: keep ≤ 5 sessions per peer device**, evicting the least recently used (never the one just chosen for encrypt).
+6. **Stuck items:** after the migration, retry `pending_inbound` items in `no_session` once against all sessions; report how many resolve on the test phones (old losses may be unrecoverable: say so plainly).
+7. **Un-ignore** `everyone_joining_before_anyone_reads_still_ends_with_every_key_everywhere` and `a_group_call_of_three_exchanges_sender_keys_through_the_real_server_in_any_order`; **add** a 1:1 glare test (A and B send their first messages at the same time; both see both messages, and later messages flow both ways).
+
+**Scope:**
+- **Core:** `core/src/store/` (the session storage + migration), the Olm encrypt/decrypt paths in `core/src/client*.rs`/`protocol`, tests;
+- **Docs:** `docs/api-v2.md` (one paragraph on the session rules), `docs/data-model.md` if it lists `olm_sessions`.
+- **Not:** Megolm sessions (check whether `group_sessions` has the same overwrite pattern; **report**, don't change), the server, iOS beyond `Generated/` if an exported type changes.
+
+**Kind:** core protocol → real tests (above), plus the migration tested on a copy of an old-schema store.
+
+**Verification:**
+- `cargo test` (the 2 previously ignored tests now pass; the count is up from 207);
+- `./core/check-android.sh`;
+- the local-server integration suite (20 + the 3-core test);
+- the iOS unit tests, 0 warnings, Release clean (the full UI suite isn't needed: no UI).
+
+**Gate:** the user's next 3-device group call (112b-fix's gate) and normal chatting. Plot reads "logs": no new `no_session` pending items.
+
+**Record:** `## LIME-145` with **For plot:**. **Commit:** `fix(core): keep every Olm session per peer (no message loss when two phones first contact each other at once)`, trailer `Brief: LIME-145`. The rest per the standing rules.
+
+### LIME-112c → `tend` (lime-aa) (after LIME-112b-fix passes its gate; drafted 2026-10-15): minimise a group call like FaceTime, and 112b's other gaps
+**Goal:** during a group call you can minimise it and use lime: a group video call floats in system Picture in Picture (the active speaker) and a group voice call shrinks to the slim bar, exactly as 1:1 calls do (118c). Minimising lands you in that group's chat so you can type while you talk.
+
+**The user (2026-10-15):** "add into groups minimise FaceTime, so you can type and FaceTime/voice call."
+
+**The change:**
+1. **Video: system PiP of the active speaker**, reusing 118c/135's `CallPictureInPicture` patterns:
+   - LiveKit's sample-buffer renderer feeds the `AVSampleBufferDisplayLayer` (tend's 112b note);
+   - **it switches to whoever is speaking** (a cross-fade; none with Reduce Motion), with a 2 s hold so it doesn't flicker;
+   - **when that person's camera is off, or their key hasn't arrived, 135's plain-UIKit `PiPAvatarView` shows their profile photo** (initials on their colour if they have none). **The window is never black** (the user re-confirmed this, 2026-10-15): when *you* are the one speaking, it keeps the last other speaker; when everyone's camera is off, it shows the current speaker's photo, or the group's avatar if nobody has spoken yet;
+   - **standing rule: no SwiftUI reading the app's environment inside the PiP window;**
+   - it starts from lime in front (Minimise under Mute, as 1:1) and when leaving lime; tap returns to the full call screen; the system close button leaves PiP, not the call.
+2. **Voice: the same slim return bar / system call pill as 1:1 voice** (118c), showing the group name + "3 in call" + the timer.
+3. **Minimise opens the group's chat** (if you weren't already in it), so you can type at once. The group header's **Join pill** becomes **"Return to call"** while you're in it.
+4. **One call at a time still holds** (a 1:1 call while minimised in a group call → "End your current call to …?").
+5. **112b's other gaps:**
+   - **480p on mobile data** (Wi-Fi keeps 720p; switch when the network changes);
+   - ~~groups over 10 people: an in-app banner~~ **moved to LIME-146's invite sheet** (2026-10-15);
+   - **anything the 112b-fix gate turns up** (plot adds it here before sending).
+
+6. **Your own tile (the user, 2026-10-15):** with your camera off it shows **your profile photo** (from your profile, as everywhere else), **not a "Y" initial**, and the label is **your name, not "You"** ("we don't use 'you' anywhere else"). The same in the people list and in the minimised window.
+
+**Scope:** `GroupCallManager.swift`, `GroupCallMedia.swift`, `GroupCallView.swift`, a new `GroupCallPiP.swift` (or a shared generalisation of `CallPiP.swift`, without touching 1:1 behaviour), `ChatView.swift` (the header pill), their tests. **Not:** the 1:1 call code paths (only shared, behaviour-preserving extraction), the core, the server.
+
+**Kind:**
+- behaviour (unit tests with the fake PiP: start/stop/restore; active-speaker switching with the hold; the avatar when the camera is off or a key is missing; minimise opens the chat; one call at a time);
+- visual (no new UI tests for looks);
+- **the 1:1 PiP regression tests must still pass.**
+
+**Gate (the user, 3 devices):**
+1. a group video call → Minimise → the speaker floats; the chat is open; type and send while talking;
+2. the speaker changes → the window follows;
+3. a camera off → their photo;
+4. tap the window → back;
+5. a group voice call → Minimise → the bar; type;
+6. a 1:1 call still minimises as before;
+7. on mobile data the picture is 480p (from "logs").
+
+**Record:** `## LIME-112c` with **For plot:**. **Commit:** `feat(ios): minimise group calls like FaceTime (PiP of the speaker, voice bar), 480p on mobile data`, trailer `Brief: LIME-112c`. The rest per the standing rules.
 
 ### LIME-112b-fix → `tend` (lime-aa) (NEXT after LIME-139, or before it if 139 hasn't started; drafted 2026-10-15): group calls stuck on "Connecting securely…"
 **Goal:** in a 3-person group call every tile shows the person's picture and sound within a few seconds of joining, and the diagnostics show exactly where a key stops when one doesn't arrive.
