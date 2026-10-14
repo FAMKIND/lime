@@ -126,6 +126,41 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e78. **LIME-132b LANDED as `267af9e` (pushed, 2026-10-13).** `check-android.sh` passes (arm64-v8a 6.8 MB, x86_64 7.5 MB; Kotlin compiles against JNA with no patch); one Android-only feature (`bundled-sqlcipher-vendored-openssl`); `crate-type` unchanged; nothing else Apple-only in core. cargo 192; full suite 299 unit + 183 UI pass (covers 136's list UI tests); 0 warnings; Release clean. **Not covered:** no Android run (no app module), no CI job (CI would need the NDK + JDK). **The full UI suite takes ~53 min**, so briefs asking for it need a soft cap above 60 min (137's prompt allows ~90). Tend suggested 133 next; **the user's queue keeps 137 next** (133 is after 117). **Next: LIME-137.**
+1e77. **The security/privacy/trust overview doc (the user, 2026-10-13, "to read on the go", iOS + Android + future Microsoft):** https://claude.ai/code/artifact/1cf5779f-8f1d-4863-bf8c-934eb69b278e. It covers the promise, how it works (a status table + a data-flow diagram), what the server can/can't see, a platform-by-platform table (iOS/Android/Windows), mesh, trust + the GDPR checklist, and the gaps before TestFlight. Built from `docs/architecture.md` + PLOT.md. **Unverified in it:** the C# UniFFI generator, Windows key storage/BLE background. Update it when push, mesh or multi-device land.
+1e76. **ANDROID REUSE (the user, 2026-10-13: "to speed up the Android build, leverage open-source Android messaging apps, security, Bluetooth open-source tech").** Plot checked the licences via the GitHub API on 2026-10-13:
+   - **Permissive (we can use or copy the code):**
+     - `matrix-org/matrix-rust-sdk` (Apache-2.0: how a Rust core + UniFFI ships to Android);
+     - `android/socialite` (Apache-2.0, Google's Compose chat sample);
+     - `livekit/client-sdk-android` (Apache-2.0, for 112b on Android);
+     - `GetStream/webrtc-android` (Apache-2.0, prebuilt WebRTC);
+     - `nordicsemi/Kotlin-BLE-Library` + `Android-BLE-Library` (BSD-3);
+     - `UnifiedPush/android-connector` (Apache-2.0; last push 2025-07, so check it's still maintained);
+     - **`permissionlesstech/bitchat` (iOS, Unlicense, i.e. public domain: its mesh protocol can be ported into core freely)**;
+     - `berty/berty` + `weshnet` (Apache-2.0/MIT dual; BLE + offline);
+     - AndroidX `core-telecom` (Apache-2.0).
+   - **Copyleft (read for patterns, don't copy code while lime is MIT):**
+     - Signal-Android, Molly, libsignal, RingRTC (AGPL-3.0);
+     - **Element X Android (AGPL-3.0: the closest architecture to ours, a Rust SDK via UniFFI + Compose)**;
+     - **bitchat-android is GPL-3.0** (unlike its iOS twin);
+     - Briar (GPL-3.0).
+   - **The catch:** copyleft code copied into **LimeCore would also ship on iOS**. Signal can ship AGPL on the App Store because it owns its copyright; third-party GPL code in our App Store binary is the known conflict (VLC 2011). So any copyleft reuse belongs only in Android-only layers, and only if lime is AGPL. **This hangs on the long-pending licence decision (MIT vs AGPL)**, and on the white-label enterprise idea (AGPL would need dual licensing + a CLA). A lawyer item.
+   - **Plot's lean:** stay MIT; use the permissive set directly, and the copyleft apps as design references (patterns and approach aren't copyrightable; code is). Port bitchat iOS's protocol into core for mesh.
+   - **→ a small docs brief (LIME-138, not drafted)**: the reuse map in `docs/android.md`, after 132b lands. Asked the user: L1 (licence: MIT / AGPL / dual).
+1e75. **DECIDED (the user, 2026-10-13): nested lists D1 = 3 levels, D2 = yes (buttons + Tab + Backspace outdents), D3 = yes (after 132b).** The Return question went unanswered: plot used the Notes behaviour, and the user confirms at the gate. **→ LIME-137 (drafted).** It includes auto-start from typed markers, and the numbering and trigger rules move to core (it also pays off 3 Swift counter copies). **Queue: 132b (running) → 137 → 112b (re-survey first) → 117 → 133 → 113 → 130 → …**
+1e74. **LIME-136 gate PASSED (the user, 2026-10-13: "looks good, lists work").** **New ask: "add back indenting so we can do nested lists."** Survey:
+   - the core already parses/writes **one nesting level** (`ListItem.level` 0/1, `NESTED_INDENT = 2` spaces; `format.rs:26, 46, 122`);
+   - the bubble renders it (`MessageText.swift:34`, 18 pt per level), and the composer draws it (`ComposerDocument.swift:67–71`, `.limeLevel`);
+   - **but the composer has no way to set a level**: LIME-100's known limit "no indent key"; the toolbar has only Bulleted/Numbered. "Back" = the web composer's Indent/Outdent (DESIGN-04).
+   - **Open with the user → then draft LIME-137:** D1 depth (lean: 3 levels, 0–2: old clients flatten deeper items to level 1, so it degrades gracefully, though it's a core grammar change) vs keep 1 level (iOS only); D2 controls (lean: Indent/Outdent buttons in the toolbar that show only inside a list item, plus Tab/Shift-Tab on a hardware keyboard, plus Backspace at an item's start outdents before it removes the marker); D3 timing (lean: right after 132b, before 112b; ~1 run).
+   - **Added (the user, 2026-10-13): typing "-", "•" or "1." should start a list "magically"; "Return on a list should make an indented list".** Survey (`ComposerDocument.handleReturn`, line 425): **Return already continues a list at the same level, and Return on an empty item ends the list**; there is **no auto-start** from typed markers today. Plot's proposal for 137:
+     - **auto-start** at a paragraph's start: `- `, `* `, `• ` → bulleted; `1. ` (any number) → numbered, starting at that number; leading spaces → the level. The trigger is the space after the marker; never inside a code block.
+     - **Backspace right after the conversion undoes it** (back to the literal text, as in Notes/Docs).
+     - **The trigger rule lives in core** (reuse `format.rs`'s `list_item`; core-first).
+     - **Return on an empty nested item outdents one level**; at the top level it ends the list.
+     - Paste stays as is (out of scope).
+     - Asked the user whether "Return → indented list" means this or something else.
+1e73. **LIME-136 LANDED as `e630919` (pushed, 2026-10-13; PLOT.md `ce7ea12`).** 6 renames in `format.rs`, `.itemList` in `ComposerDocument.swift` + `MessageText.swift:74`; `MessageText.swift:27/:66` stay `.list` (Swift's own `MessageRender.DrawnBlock`). `ios/Lime/Core/Generated` is **gitignored** (regenerated, not committed). cargo test 192, 0 warnings, Release clean. **Deviation: only the unit tests ran (299, 10 skipped); the UI tests didn't, although the brief asked for the full suite** → 132b's resume prompt asks for the full suite. Tend's notes: run unit tests with signing on (`CODE_SIGNING_ALLOWED=NO` → Keychain -34018 failures that look like regressions); a grep for `.list` over-counts. The user's list check is pending. **132b resumes next** (its files are untouched and unstaged).
 1e72. **LIME-132b PAUSED mid-Phase 2 (tend, 2026-10-13 12:12; uncommitted in the tree).** The `.so` builds for arm64-v8a (6.8 MB) and x86_64 (7.5 MB) with `crate-type` unchanged; SQLCipher needed only `bundled-sqlcipher-vendored-openssl` behind a `cfg(target_os = "android")` block; vodozemac needed nothing; Kotlin is generated from the non-stripped `.a`. **The blocker:** `Block::List` shadows Kotlin's `List`. **DECIDED (the user): option C, a separate rename brief first → LIME-136 (drafted, NEXT)**, then 132b resumes with no patch. **Plot first leaned A (fold it in); the user rightly asked why, given C's cleaner history.** Plot's lean broke its own "one change per brief" rule. **Proposed standing rule** (goes into `docs/android.md` via 132b): no UniFFI-exposed type or variant named `List`, `Map`, `Set`, `String`, `Int`, `Unit` or `Result`.
 1e71. **135 gate PASSED (the user, 2026-10-13: "works").** The calls series' polish is done. **→ LIME-132b (drafted, NEXT; supersedes 132).** The survey found no JDK/NDK/kotlinc/cargo-ndk, no `cdylib`, SQLCipher needing OpenSSL on Android, and `strip = true` vs UniFFI metadata. The user must install the JDK and accept the SDK licences (tend stops for it). **Queue: 132b → 112b (re-survey first) → 117 → 133 → 113 → 130 → …**
 1e70. **LIME-135-fix LANDED as `1a88002` (pushed, 2026-10-13; PLOT.md `3d8120f`).** Full suite 471 on the 13 mini, 0 warnings, Release clean; minimise confirmed working on the 13 mini + iPad. **Waiting on the rest of the 135 gate** (the photo with their camera off, 5× restore portrait/landscape, Stage Manager, the flip). **Next after the gate: LIME-132** (re-survey first).
@@ -4654,7 +4689,94 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-135-fix` in TEND.md, with the stack (or "not captured") and the cause, ending with a paragraph headed **For plot:**. **Commit:** `fix(ios): minimising a video call no longer crashes`, trailer `Brief: LIME-135-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Anything outside this scope: stop and ask the user.
 
-### LIME-136 → `tend` (lime-aa) (NEXT, before 132b finishes; drafted 2026-10-13): rename `Block::List` to `Block::ItemList`
+### LIME-137 → `tend` (lime-aa) (after 132b, before 112b; drafted 2026-10-13): nested lists to 3 levels, Indent/Outdent, lists that start as you type
+**Goal:** a teacher can write a 3-level outline in the composer by typing (`- `, `1. `), Return, Tab/Indent/Outdent and Backspace, the way Notes and Google Docs behave, and every lime client shows it correctly (old clients flatten level 3 to level 2).
+
+**The user (2026-10-13):** "add back indenting so we can do nested lists"; "once someone types a '-' or a '•', '1.' it should magically start a list; same for pressing return on a list." **DECIDED: D1 = 3 levels (0–2); D2 = Indent/Outdent buttons shown only inside a list + Tab/Shift-Tab + Backspace outdents first; D3 = after 132b.** "Return on a list" is taken as Notes behaviour (it continues at the same level; on an empty nested item it outdents; on an empty top item it ends the list); the user wasn't explicit, so they judge it at the gate.
+
+**Plot's survey:**
+- **Core** `core/src/format.rs`:
+  - one nesting level: `ListItem.level` 0/1 (doc comment line 26, module doc line 5); `NESTED_INDENT = 2` (line 46);
+  - `list_item()` (line 112) maps indent ≥ 2 → level 1, and **indent > 4 → not a list line**;
+  - the writer indents `level * NESTED_INDENT` (line 495) and the plain-text writer `"  "` (line 436);
+  - numbering counters clamp `level.min(1)` (lines 430, 487);
+  - the test `lists_have_two_levels_and_numbers` (line 792).
+- **Swift:**
+  - the bubble: `MessageText.swift:34` (18 pt per level) and `:82–89` (its own counters `[0, 0]`, `min(level, 1)`);
+  - the composer: `ComposerDocument.swift`: `.limeLevel`, the restyle (67–71: 18 pt per level, +20 hang), the builder (145–163, counters `[0, 0]`, `min(level, 1)`), `attributed(from:)` (233–238), and `handleReturn` (425: Return continues at the same level; an empty item ends the list);
+  - `RichComposer.swift:287` (Backspace into a marker removes it);
+  - `FormattingToolbar.swift:20–21` (only Bulleted/Numbered buttons).
+- **No auto-start** from typed markers exists. **Numbering is implemented 4 times** (core ×2, the bubble, the composer): Android debt.
+- **Old clients:** a level-2 item written with 4 spaces parses as level 1 on today's parser (indent ≤ 4), so they degrade gracefully with no break.
+
+**Scope:** `core/src/format.rs` (+ its tests), `docs/message-format.md`, `ComposerDocument.swift`, `RichComposer.swift`, `FormattingToolbar.swift`, `MessageText.swift`, their tests, and `Generated/` via `./core/build-ios.sh`. **Not:** the wire format beyond deeper indentation, paste handling, other formatting, the `public/` web app.
+
+**Pre-condition:** LIME-132b is committed and pushed. If its files are still uncommitted in the tree, stop and ask the user.
+
+**Phase 0:** `git add PLOT.md` only, commit; re-read PLOT.md.
+
+**Phase 1: core (core-first; these become the one rule for iOS and Android):**
+1. **Three levels:**
+   - `level` is 0–2; written as `level * 2` spaces;
+   - the parser maps indent 0–1 → 0, 2–3 → 1, 4–5 → 2, a tab → 1; **> 5 → still a list line at level 2** (no longer plain text);
+   - update the doc comments, `docs/message-format.md` and the test (rename it, e.g. `lists_have_three_levels_and_numbers`);
+   - a test: a level-2 line written by the new serializer parses as level 1 under the old rule (document it as the old-client behaviour).
+2. **One numbering rule** (exported): `list_markers(items: Vec<ListItem>) -> Vec<String>` returns each item's marker:
+   - bullets by level: **"•", "◦", "▪"**;
+   - numbers count per level, starting from the first item's written number; a level's counter resets when a shallower item or a bullet at that level interrupts it, and deeper counters reset when you go back up.
+   - The core's own two counter sites use it too.
+3. **The typing trigger** (exported): `list_trigger(line_start: String) -> Option<ListTrigger { level, ordered, number }>`:
+   - true only when the **whole text before the cursor** in the paragraph is optional spaces + `-`/`*`/`•` + one space, or digits (≤ 9) + `.` + one space;
+   - so `-5`, `1.5`, `- ` mid-line, and text already after the marker don't trigger.
+4. **Indent rules** (exported): `max_list_level() -> u32` (2) and `list_level_after(previous_level: Option<u32>, level: u32, indent: bool) -> u32`:
+   - an item can be at most one level deeper than the item above it (no previous item → 0) and no deeper than 2;
+   - outdent floors at 0.
+5. **Tests:** parse/serialize/normalise round trips at 3 levels; marker numbering with resets; the trigger's positive and negative cases (incl. inside a code fence: the composer checks the block kind, and core gets the line only); the indent bounds. `cargo test` count goes up from 192.
+
+**Phase 2: iOS** (Swift = only the text-system adapter; it calls the core for every rule above):
+1. **Auto-start:**
+   - typing the space that completes a trigger at a paragraph's start (not in a code block) replaces the typed marker with the list marker and makes the paragraph a list item (level from the trigger; a numbered list starts at the typed number);
+   - **Backspace immediately after the conversion undoes it** (the literal typed text returns, and the paragraph is plain); any other keystroke first commits it;
+   - a bulleted trigger typed inside a numbered list (and vice versa) switches that item's kind.
+2. **Return:** continues at the same level and kind (as today). **On an empty item at level > 0 it outdents one level**; on an empty top item it ends the list (as today).
+3. **Indent/Outdent:**
+   - two toolbar buttons (`increase.indent`, `decrease.indent`; labels "Indent", "Outdent") **shown only while the cursor or selection is in a list item**, after Numbered list;
+   - each applies to every list paragraph in the selection, using `list_level_after`; disabled (not hidden) when it can't apply;
+   - **Tab / Shift-Tab** on a hardware keyboard do the same inside a list (`UIKeyCommand`s, discoverable in the ⌘ overlay, titles "Indent"/"Outdent"); outside a list Tab behaves as it does today.
+4. **Backspace at the start of an item's text** (the cursor right after the marker): **at level > 0 it outdents one level**; at level 0 it removes the marker (as today).
+5. **Rendering:**
+   - the bubble and the composer use `list_markers` and the 3 levels (18 pt per level as today; the hang indent unchanged);
+   - remove the Swift counters (`MessageText.swift:82–89`, `ComposerDocument.swift:145–163, 233–238`) in favour of the core call;
+   - `attributed(fromMarkdown:)` (editing a sent message) keeps the levels.
+
+**Accessibility:**
+- the buttons have labels, 44 pt targets, and the disabled state reads "dimmed";
+- each list row in a bubble reads its marker, then the text, then "level 2/3" as its accessibility value at levels > 0;
+- Dynamic Type at AX3: deep items still wrap (no clipping) at 3 × 18 pt;
+- RTL: indents are leading (they mirror), and `increase.indent`/`decrease.indent` use their automatic RTL forms;
+- Reduce Motion: no animation is added.
+
+**Kind:** behaviour → real tests:
+- the core tests above;
+- iOS unit tests on `ComposerDocument` for each typed path (auto-start for `- `, `* `, `• `, `3. ` and the nested `  - `; no trigger for `-5`/`1.5`/mid-line/in code; the Backspace undo; Return continue / outdent / end; Indent/Outdent bounds; Backspace outdent; a round trip to Markdown and back at 3 levels);
+- **one UI test:** type `- a`, Return, Tab, `b`, Return, Tab, `c`, send → the bubble shows 3 levels with "•", "◦", "▪".
+- **The toolbar's look: no new UI test** (the visual rule); one screenshot (SE, with the buttons shown) in TEND.md.
+
+**Verification:**
+- `cargo test` (count up from 192) and `./core/check-android.sh` (from 132b) pass;
+- the full suite on the 13 mini (unit + UI, signing on), the changed tests on SE/18 Pro, 0 warnings, Release clean;
+- `grep -n 'min(level, 1)\|min(item.level, 1)\|counters = \[0, 0\]' ios/Lime` → no matches.
+
+**Gate (the user):**
+1. type `- ` and `1. ` at a line's start → a list; `-5` stays text; Backspace right after the conversion → back to your text;
+2. build a 3-level outline with Return + Tab (iPad keyboard) and with the Indent/Outdent buttons (phone);
+3. Return on an empty sub-item steps back out; Return on an empty top item ends the list;
+4. send it → the bubble shows •/◦/▪ and the numbers per level; edit the sent message → the levels come back;
+5. **Return behaviour: is this what you meant?**
+
+**Record:** `## LIME-137` in TEND.md, ending with **For plot:**. **Commit:** `feat: nested lists to 3 levels, indent/outdent, lists start as you type`, trailer `Brief: LIME-137`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Anything the brief didn't decide (e.g. the toolbar doesn't fit on the SE): stop and ask the user.
+
+### LIME-136 → `tend` (lime-aa) (DONE as `e630919`; was NEXT, before 132b finishes; drafted 2026-10-13): rename `Block::List` to `Block::ItemList`
 **Goal:** the core's formatting `Block` enum has no variant named like a Kotlin/Swift built-in type, so the Kotlin bindings compile with no patch; iOS behaves exactly as before.
 
 **Why (found by 132b, 2026-10-13):** UniFFI turns `Block::List` (`core/src/format.rs:41`) into a Kotlin nested `data class List`, which shadows `kotlin.collections.List` inside the sealed class, so `List<Span>`/`List<ListItem>` don't resolve. `kotlinc`: "no type arguments expected for 'data class List : Block'". Hand-qualifying fixed it in a scratch copy. **The user chose a separate brief (option C) over folding it into 132b or patching the generated Kotlin.** Name: `ItemList` (it covers bulleted and numbered lists, so not "Bullets").
