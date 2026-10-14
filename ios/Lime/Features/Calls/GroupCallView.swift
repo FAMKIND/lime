@@ -312,3 +312,54 @@ private struct PiPAnchor: UIViewRepresentable {
     }
     func updateUIView(_ view: UIView, context: Context) {}
 }
+
+/// "3 people are in a call", offered when a call starts in one of my groups and lime is open but elsewhere (LIME-146): the group, who is
+/// there, and Dismiss or Join. (A group that rings shows the incoming banner instead; this is for the ones that do not ring.)
+struct GroupInviteSheet: View {
+    @Environment(ConversationStore.self) private var store
+
+    var body: some View {
+        let _ = store.groupCalls.changes
+        if let invite = store.groupCalls.invite {
+            let summary = store.groupCalls.liveSummary(conversationID: invite.conversationID)
+            let people = summary?.people ?? []
+            let count = Int(summary?.info.participantCount ?? 0)
+            VStack(spacing: 14) {
+                Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5).padding(.top, 8)
+                Text(count == 1 ? "1 person is in a call" : (count == 0 ? "A call has started" : "\(count) people are in a call"))
+                    .font(Theme.title).foregroundStyle(Theme.text).multilineTextAlignment(.center)
+                Text(invite.title).font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                if !people.isEmpty {
+                    HStack(spacing: -10) {
+                        ForEach(people.prefix(6)) { person in AvatarView(person: person, size: 44).overlay(Circle().stroke(Theme.canvas, lineWidth: 2)) }
+                    }
+                }
+                Text(LiveCardWords.who(people.map(\.name), count: count)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 12) {
+                    Button { store.groupCalls.dismissInvite() } label: {
+                        Text("Dismiss").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                            .frame(maxWidth: .infinity, minHeight: 48).background(Theme.surface, in: Capsule())
+                    }
+                    .accessibilityIdentifier("group-invite-dismiss")
+                    Button { Task { await store.groupCalls.acceptInvite() } } label: {
+                        Text("Join").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                            .frame(maxWidth: .infinity, minHeight: 48).background(Theme.accent, in: Capsule())
+                    }
+                    .accessibilityIdentifier("group-invite-join")
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 8)
+                if invite.video {
+                    Button("Join with voice only") { Task { await store.groupCalls.acceptInvite(withVideo: false) } }
+                        .font(Theme.secondary).frame(minHeight: 44).accessibilityIdentifier("group-invite-join-voice")
+                }
+            }
+            .padding(.horizontal, 20).padding(.bottom, 16)
+            .presentationDetents([.height(invite.video ? 340 : 300), .medium])
+            .presentationBackground(Theme.canvas)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("group-invite-sheet")
+        }
+    }
+}

@@ -112,7 +112,10 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { titlePill(conversation) }
-            // One item (so one glass pill), with the three icons close together.
+            // While a group call is live, its own round button comes first, beside the capsule.
+            ToolbarItem(placement: .topBarTrailing) { if selection == nil { liveCallButton(conversation) } }
+                .sharedBackgroundVisibility(.hidden)
+            // One item (so one glass pill), with the icons close together.
             ToolbarItem(placement: .topBarTrailing) {
                 if selection != nil { cancelSelectButton } else { toolGroup(conversation) }
             }
@@ -270,6 +273,7 @@ struct ChatView: View {
                                           onActions: { actions.menu = message },
                                           onShowReactions: { actions.reactors = message },
                                           onCallBack: conversation.isGroup ? groupCallTap(message, conversation) : { callBack = message.call },
+                                          conversationID: conversation.id,
                                           onAvatarTap: conversation.isGroup ? { if let who = store.person(message.senderID, in: conversation) { store.openProfile(ProfileRoute(userID: who.id, name: who.name, conversationID: conversation.id)) } } : nil,
                                           selection: selection.map { $0.contains(message.id) },
                                           onToggleSelect: { toggleSelection(message.id) })
@@ -306,32 +310,10 @@ struct ChatView: View {
                     }
                 }
                 if conversation.isGroup {
-                    if store.groupCalls.inCall && store.groupCalls.conversationID == conversation.id {
-                        // I am in this group's call: the pill brings the full call screen back.
-                        Button { store.groupCalls.minimized = false } label: {
-                            Label("Return to call \u{00B7} \(store.groupCalls.tiles.count) in call", systemImage: "phone.fill")
-                                .font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.accentInk)
-                                .padding(.horizontal, 10).padding(.vertical, 3).background(Theme.accent, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Return to the call, \(store.groupCalls.tiles.count) in it")
-                        .accessibilityIdentifier("chat-return-to-call")
-                    } else if let live = liveCall(conversation) {
-                        // A call is on: a Join pill with how many are in it (words and an icon, not colour alone).
-                        Button { joinGroupCall(live, conversation) } label: {
-                            Label("Join \u{00B7} \(live.participantCount) in call", systemImage: live.video ? "video.fill" : "phone.fill")
-                                .font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.accentInk)
-                                .padding(.horizontal, 10).padding(.vertical, 3).background(Theme.accent, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Join the call, \(live.participantCount) in it")
-                        .accessibilityIdentifier("chat-join-call")
-                    } else {
-                        Text(conversation.subtitle)
-                            .font(Theme.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
-                    }
+                    Text(conversation.subtitle)
+                        .font(Theme.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
                 } else if let person = conversation.members.first, person.label == nil, let status = store.status(of: person.id), let words = StatusPlan.caption(state: status.state, until: status.until) {
                     Text(words)
                         .font(Theme.caption)
@@ -478,6 +460,8 @@ struct ChatView: View {
 
             Spacer(minLength: 0)
 
+            if selection == nil { liveCallButton(conversation) }
+
             Group {
                 if selection != nil { cancelSelectButton } else { toolGroup(conversation) }
             }
@@ -550,8 +534,31 @@ struct ChatView: View {
     private func toolGroup(_ conversation: Conversation) -> some View {
         HStack(spacing: -6) {
             toolIcon("magnifyingglass", label: "Search in chat", id: "chat-search-button") { startFinding() }
-            callMenu(conversation)
+            // While a group call is live its own button (beside this capsule) takes the phone icon's place.
+            if headerCall(conversation) == nil { callMenu(conversation) }
             moreMenu(conversation) { ToolIconLabel(symbol: "ellipsis") }
+        }
+    }
+
+    /// The call that is on in this group, for the header's own call button (nil: the ordinary phone menu).
+    private func headerCall(_ conversation: Conversation) -> GroupCallInfo? {
+        _ = store.groupCalls.changes
+        guard conversation.isGroup, !conversation.isRequest, conversation.groupEnded == nil else { return nil }
+        return store.groupCalls.core.activeCall(conversationID: conversation.id)
+    }
+
+    /// While a call is live: a circular lime Liquid Glass button (like the "+" on Messages) with a video or phone icon and the count.
+    /// Tap joins, or returns to the call I am in. Words and a number, not colour alone: VoiceOver reads "Join video call, 3 people".
+    @ViewBuilder
+    private func liveCallButton(_ conversation: Conversation) -> some View {
+        if let live = headerCall(conversation) {
+            LiveCallButton(video: live.video, count: Int(live.participantCount), returning: store.groupCalls.inCall && store.groupCalls.conversationID == conversation.id) {
+                if store.groupCalls.inCall && store.groupCalls.conversationID == conversation.id {
+                    store.groupCalls.minimized = false
+                } else {
+                    joinGroupCall(live, conversation)
+                }
+            }
         }
     }
 
@@ -567,18 +574,12 @@ struct ChatView: View {
             .accessibilityIdentifier("chat-call-button")
     }
 
-    /// The call that is on in this group, if any (the core says; read again whenever a call event or a reload comes).
-    private func liveCall(_ conversation: Conversation) -> GroupCallInfo? {
-        _ = store.groupCalls.changes
-        guard conversation.isGroup, conversation.groupEnded == nil, !store.groupCalls.inCall else { return nil }
-        return store.groupCalls.core.activeCall(conversationID: conversation.id)
-    }
-
-    /// Tapping "<Name> started a call · Join" in a group joins the call while it is on.
+    /// The live call card's button joins the call while it is on, or returns to it when I am already in it.
     private func groupCallTap(_ message: Message, _ conversation: Conversation) -> (() -> Void)? {
         guard let call = message.call, call.isGroup, call.live, message.id.hasPrefix("call:") else { return nil }
         let callID = String(message.id.dropFirst(5))
         return {
+            if store.groupCalls.inCall && store.groupCalls.conversationID == conversation.id { store.groupCalls.minimized = false; return }
             if let live = store.groupCalls.core.activeCall(conversationID: conversation.id), live.callId == callID { joinGroupCall(live, conversation) }
         }
     }
@@ -723,6 +724,8 @@ struct MessageBubble: View {
     var onShowReactions: (() -> Void)? = nil
     /// Tapping a call bubble (the call-back question).
     var onCallBack: (() -> Void)? = nil
+    /// The chat this bubble is in (a group's live call card looks up who is in the call).
+    var conversationID: String = ""
     /// Tapping a sender's avatar (in a group): their profile.
     var onAvatarTap: (() -> Void)? = nil
     /// Select mode: `nil` outside it, otherwise whether this message is selected; tapping toggles.
@@ -801,7 +804,7 @@ struct MessageBubble: View {
                         .labelStyle(.titleAndIcon)
                         .accessibilityIdentifier("forwarded-\(message.id)")
                 }
-                if let call = message.call { CallBubbleView(call: call, id: message.id, callerName: sender?.name, onTap: onCallBack) }
+                if let call = message.call { CallBubbleView(call: call, id: message.id, conversationID: conversationID, callerName: sender?.name, onTap: onCallBack) }
                 if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
                 if let preview = message.linkPreview { MessageLinkCard(messageID: message.id, preview: preview, isOwn: message.isOwn) }
                 if message.call == nil, !message.text.isEmpty || message.attachments.isEmpty {
@@ -1015,14 +1018,66 @@ struct LabelSheet: View {
 struct CallBubbleView: View {
     let call: CallBubble
     let id: String
+    /// The chat this is in (a group's live card asks who is in the call).
+    var conversationID: String = ""
     /// Who started a group call (the title says "<Name> started a call").
     var callerName: String?
     var onTap: (() -> Void)?
+    @Environment(ConversationStore.self) private var store
 
     var body: some View {
+        if call.isGroup && call.live {
+            liveCard
+        } else {
+            ordinary
+        }
+    }
+
+    /// A group call that is on: one card that shows who is there and joins in one tap; it becomes "Call ended · 3:20" when the call ends.
+    private var liveCard: some View {
+        _ = store.groupCalls.changes
+        let summary = store.groupCalls.liveSummary(conversationID: conversationID)
+        let people = summary?.people ?? []
+        let count = Int(summary?.info.participantCount ?? 0)
+        let returning = store.groupCalls.inCall && store.groupCalls.conversationID == conversationID
+        let who = LiveCardWords.who(people.map(\.name), count: count)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                // LIVE in words (no pulsing: Reduce Motion needs nothing).
+                Text("LIVE").font(Theme.caption.weight(.bold)).foregroundStyle(Theme.accentInk)
+                    .padding(.horizontal, 7).padding(.vertical, 2).background(Theme.accent, in: Capsule())
+                    .accessibilityIdentifier("call-card-live")
+                Image(systemName: call.video ? "video.fill" : "phone.fill").font(Theme.body).foregroundStyle(Theme.text)
+                Text(call.title(startedBy: callerName)).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                    .accessibilityIdentifier("call-bubble-title")
+            }
+            if !people.isEmpty {
+                HStack(spacing: -8) {
+                    ForEach(people.prefix(5)) { person in
+                        AvatarView(person: person, size: 28).overlay(Circle().stroke(Theme.surface, lineWidth: 2))
+                    }
+                }
+            }
+            Text(who).font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("call-card-who")
+            Button(action: { onTap?() }) {
+                Text(returning ? "Return to call" : "Join call").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                    .frame(maxWidth: .infinity, minHeight: 44).background(Theme.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("call-card-join")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .frame(maxWidth: 300, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(LiveCardWords.spoken(who: who, video: call.video))
+        .accessibilityIdentifier("call-bubble-\(id)")
+    }
+
+    private var ordinary: some View {
         let tint: Color = call.isMissedIncoming ? .red : Theme.text
         // A tap gesture, not a Button: a Button would take the touch from the bubble's long-press menu.
-        Group {
+        return Group {
             // The same type and padding as a text message, so a call bubble is no taller than a two-line message.
             HStack(spacing: 10) {
                 Image(systemName: call.symbol).font(Theme.body)
@@ -1030,8 +1085,8 @@ struct CallBubbleView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(call.title(startedBy: callerName)).font(Theme.body).foregroundStyle(tint)
                         .accessibilityIdentifier("call-bubble-title")
-                    Text(call.chatDetail).font(call.isGroup && call.live ? Theme.caption.weight(.semibold) : Theme.caption)
-                        .foregroundStyle(call.isGroup && call.live ? Theme.text : Theme.textSecondary)
+                    Text(call.chatDetail).font(Theme.caption)
+                        .foregroundStyle(Theme.textSecondary)
                         .accessibilityIdentifier("call-bubble-detail")
                 }
             }
@@ -1043,7 +1098,60 @@ struct CallBubbleView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel("\(call.title(startedBy: callerName)), \(call.chatDetail)")
-        .accessibilityHint(call.isGroup ? (call.live ? "Joins the call" : "") : "Calls back after asking")
+        .accessibilityHint(call.isGroup ? "" : "Calls back after asking")
         .accessibilityIdentifier("call-bubble-\(id)")
+    }
+}
+
+/// The words of a live call card and the invite sheet.
+enum LiveCardWords {
+    /// "Jean is there", "Jean and Lee are there", "Jean, Lee and 2 others are there"; just a count when the names are not known.
+    static func who(_ names: [String], count: Int) -> String {
+        let firsts = names.map { $0.split(separator: " ").first.map(String.init) ?? $0 }
+        switch (firsts.count, count) {
+        case (0, 0): return "Nobody is there yet"
+        case (0, 1): return "1 person is there"
+        case (0, _): return "\(count) people are there"
+        case (1, _): return "\(firsts[0]) is there" + (count > 1 ? " and \(count - 1) other\(count - 1 == 1 ? "" : "s")" : "")
+        case (2, _) where count <= 2: return "\(firsts[0]) and \(firsts[1]) are there"
+        default:
+            let others = max(count - 2, firsts.count - 2)
+            return "\(firsts[0]), \(firsts[1]) and \(others) other\(others == 1 ? "" : "s") are there"
+        }
+    }
+
+    static func spoken(who: String, video: Bool) -> String { "\(video ? "Video" : "Voice") call in progress. \(who). Join" }
+}
+
+/// The header's own call button while a group call is live (LIME-146).
+struct LiveCallButton: View {
+    let video: Bool
+    let count: Int
+    let returning: Bool
+    let action: () -> Void
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        let glyph = Image(systemName: video ? "video.fill" : "phone.fill").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.accentInk)
+        Button(action: action) {
+            Group {
+                if reduceTransparency {
+                    glyph.frame(width: 44, height: 44).background(Theme.accent, in: Circle())
+                } else if #available(iOS 26, *) {
+                    glyph.frame(width: 44, height: 44).glassEffect(.regular.tint(Theme.accent.opacity(0.7)).interactive(), in: Circle())
+                } else {
+                    glyph.frame(width: 44, height: 44).background(Circle().fill(.ultraThinMaterial)).background(Theme.accent.opacity(0.8), in: Circle())
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                CountBadge(count: count, size: 18, font: Theme.caption.weight(.bold))
+                    .overlay(Capsule().stroke(Theme.canvas, lineWidth: 1.5))
+                    .offset(x: 6, y: -4)
+            }
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(returning ? "Return to" : "Join") \(video ? "video" : "voice") call, \(count) \(count == 1 ? "person" : "people")")
+        .accessibilityIdentifier("chat-live-call-button")
     }
 }

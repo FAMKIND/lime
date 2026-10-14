@@ -22,6 +22,7 @@ struct RootView: View {
         .overlay(alignment: .top) { ComingSoonBanner() }
         .overlay(alignment: .top) { IncomingBannerView() }
         .overlay(alignment: .top) { GroupIncomingBanner() }
+        .sheet(isPresented: Binding(get: { store.groupCalls.invite != nil && !store.groupCalls.inCall }, set: { if !$0 { store.groupCalls.dismissInvite() } })) { GroupInviteSheet() }
         .alert("Group call", isPresented: Binding(get: { store.groupCalls.notice != nil }, set: { if !$0 { store.groupCalls.notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(store.groupCalls.notice ?? "") }
@@ -89,6 +90,7 @@ private struct SignedInView: View {
         .onAppear {
             // Minimising a group call opens that group's chat (unless it is already open), so the person can type while talking.
             let store = store, notifications = notifications
+            store.groupCalls.isViewingChat = { notifications.viewing?.conversationID == $0 }
             store.groupCalls.onMinimize = { conversationID in
                 guard notifications.viewing?.conversationID != conversationID else { return }
                 store.select(.link)

@@ -51,6 +51,14 @@ final class GroupCallManager {
         let video: Bool
     }
 
+    /// A call someone started in a group while lime is open but elsewhere (no ring: a big group, or not rung): the invite sheet.
+    struct Invite: Equatable {
+        let callID: String
+        let conversationID: String
+        let title: String
+        let video: Bool
+    }
+
     private(set) var phase: Phase = .idle
     private(set) var callID = ""
     private(set) var conversationID = ""
@@ -62,6 +70,7 @@ final class GroupCallManager {
     private(set) var speakerOn = false
     private(set) var startedAt: Date?
     private(set) var incoming: Incoming?
+    private(set) var invite: Invite?
     /// Bumped when a tile's picture may have changed (the SwiftUI tile looks the track up again).
     private(set) var picturesVersion = 0
     /// Bumped whenever a call event arrives (the chat's Join pill and bubble read the core again).
@@ -92,6 +101,10 @@ final class GroupCallManager {
     @ObservationIgnored private var keyed: Set<String> = []
     @ObservationIgnored private var decrypting: [String: Bool] = [:]
     @ObservationIgnored private var busy = false
+    /// Who is in each live call that this phone has heard about (from the core's join and leave events), by participant.
+    @ObservationIgnored private var roster: [String: [String: Person]] = [:]
+    /// Whether that group's chat is the screen the person is looking at (set by the app): no invite sheet over it.
+    @ObservationIgnored var isViewingChat: (String) -> Bool = { _ in false }
     /// Who I am (the name and photo on my own tile; never "You").
     @ObservationIgnored private let me: () -> Person?
     /// System Picture in Picture of the active speaker (a video call); nil in tests and the demo.
@@ -197,6 +210,8 @@ final class GroupCallManager {
             notice = "Couldn\u{2019}t join the call."
             return false
         }
+        invite = nil
+        for other in joined.participants where other.userId != "" { roster[info.callId, default: [:]][other.participant] = Person(id: other.userId, name: other.name) }
         callID = info.callId
         conversationID = info.conversationId
         self.title = title
@@ -280,6 +295,31 @@ final class GroupCallManager {
         incoming = nil
     }
 
+    /// A call started in a group of mine and nothing rang for it: if lime is open, idle, not silenced and the person is not already looking at
+    /// that chat, a sheet offers Dismiss or Join (only while the call is still live).
+    private func offerInvite(for event: GroupCallEvent) {
+        guard phase == .idle, incoming == nil, invite == nil, !isOtherCallActive(), quietReason() == nil, !isViewingChat(event.conversationId),
+              let live = core.activeCall(conversationID: event.conversationId), live.callId == event.callId else { return }
+        invite = Invite(callID: event.callId, conversationID: event.conversationId, title: core.title(of: event.conversationId), video: event.video)
+        diag.log("group call: invite sheet")
+    }
+
+    func dismissInvite() { invite = nil }
+
+    /// Join from the invite sheet (as the call was started, or as voice).
+    func acceptInvite(withVideo: Bool? = nil) async {
+        guard let invite else { return }
+        self.invite = nil
+        _ = await join(callID: invite.callID, conversationID: invite.conversationID, title: invite.title, video: invite.video, withVideo: withVideo)
+    }
+
+    /// The call that is on in a group, and who is in it (the people the phone has heard join; the count is the core's).
+    func liveSummary(conversationID: String) -> (info: GroupCallInfo, people: [Person])? {
+        guard let info = core.activeCall(conversationID: conversationID) else { return nil }
+        let people = (roster[info.callId] ?? [:]).values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return (info, people)
+    }
+
     private func ring(for event: GroupCallEvent) {
         guard event.ring, phase == .idle, incoming == nil, !isOtherCallActive() else { return }
         if let reason = quietReason() {
@@ -340,9 +380,21 @@ final class GroupCallManager {
     func handle(_ events: [GroupCallEvent]) {
         if !events.isEmpty { changes += 1 }
         for event in events {
+            // Who is in a call, for the chat's live card and the invite sheet (any call in any of my groups).
+            switch event.kind {
+            case "joined" where !event.userId.isEmpty:
+                roster[event.callId, default: [:]][event.participant] = Person(id: event.userId, name: event.name)
+            case "left":
+                roster[event.callId]?[event.participant] = nil
+            case "ended":
+                roster[event.callId] = nil
+                if invite?.callID == event.callId { invite = nil }
+            default:
+                break
+            }
             switch event.kind {
             case "started":
-                ring(for: event)
+                if event.ring { ring(for: event) } else { offerInvite(for: event) }
             case "ended":
                 if incoming?.callID == event.callId { system.reportEnded(callID: Self.systemID(event.callId), answeredOrOutgoing: false); dismissIncoming() }
                 if event.callId == callID, phase != .idle { Task { await self.finish(notify: true, tellCore: false) } }

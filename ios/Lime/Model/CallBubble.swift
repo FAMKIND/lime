@@ -30,7 +30,8 @@ struct CallBubble: Hashable, Sendable {
     /// The title in a chat, given the name of whoever started a group call.
     func title(startedBy name: String?) -> String {
         guard isGroup else { return title }
-        if live { return mine ? "You started a call" : "\(name ?? "Someone") started a call" }
+        // Never "You": my own card reads "Call started", someone else's "<Name> started a call".
+        if live { return mine ? "Call started" : "\(name ?? "Someone") started a call" }
         return "Call ended"
     }
 

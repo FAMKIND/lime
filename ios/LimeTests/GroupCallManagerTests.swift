@@ -257,7 +257,7 @@ final class GroupCallManagerTests: XCTestCase {
         XCTAssertEqual(live?.chatDetail, "Join")
         XCTAssertEqual(live?.live, true)
         let mine = CallBubble(body: #"{"video":false,"duration_ms":0,"outcome":"live","outgoing":true,"group":true,"started_by":"me"}"#, mine: true)
-        XCTAssertEqual(mine?.title(startedBy: nil), "You started a call")
+        XCTAssertEqual(mine?.title(startedBy: nil), "Call started", "never \"You\"")
         let ended = CallBubble(body: #"{"video":true,"duration_ms":1390000,"outcome":"completed","outgoing":false,"group":true,"started_by":"alice"}"#, mine: false)
         XCTAssertEqual(ended?.title(startedBy: "Alice"), "Call ended")
         XCTAssertEqual(ended?.chatDetail, "23:10")
@@ -461,5 +461,77 @@ final class GroupCallManagerTests: XCTestCase {
         XCTAssertEqual(media.lowBandwidth, [false, true])
         await manager.leave()
         XCTAssertFalse(network.started)
+    }
+
+    // MARK: LIME-146
+
+    func testACallThatDoesNotRingOffersTheInviteSheetOnlyWhenLimeIsOpenIdleAndElsewhere() async {
+        let (manager, _, _, _) = make()
+        manager.handle([event("started", user: "alice", name: "Alice", ring: false)])
+        XCTAssertEqual(manager.invite?.conversationID, "grp:g1")
+        XCTAssertEqual(manager.invite?.title, "Grade 4 Team")
+        manager.dismissInvite()
+        XCTAssertNil(manager.invite)
+        // Looking at that chat already: no sheet.
+        let (viewing, _, _, _) = make()
+        viewing.isViewingChat = { $0 == "grp:g1" }
+        viewing.handle([event("started", user: "alice", name: "Alice", ring: false)])
+        XCTAssertNil(viewing.invite, "no sheet over the chat the call is in")
+        // Already in a call, or silenced: no sheet.
+        let (busy, _, _, _) = make(otherCall: true)
+        busy.handle([event("started", user: "alice", name: "Alice", ring: false)])
+        XCTAssertNil(busy.invite, "no sheet while in a call")
+        let (quiet, _, _, _) = make(quiet: .workHours)
+        quiet.handle([event("started", user: "alice", name: "Alice", ring: false)])
+        XCTAssertNil(quiet.invite, "work hours and Do Not Disturb silence it")
+        // A group that rings shows the ring, not the sheet.
+        let (ringing, _, _, _) = make()
+        ringing.handle([event("started", user: "alice", name: "Alice", ring: true)])
+        XCTAssertNil(ringing.invite)
+        XCTAssertNotNil(ringing.incoming)
+        // The call ends before it is answered: the sheet goes.
+        let (ended, _, _, _) = make()
+        ended.handle([event("started", user: "alice", name: "Alice", ring: false)])
+        ended.handle([event("ended")])
+        XCTAssertNil(ended.invite)
+    }
+
+    func testJoiningFromTheInviteSheetJoinsAndClearsItAndVoiceHasNoCamera() async {
+        let (manager, core, media, _) = make()
+        manager.handle([event("started", user: "alice", name: "Alice", ring: false)])
+        await manager.acceptInvite(withVideo: false)
+        XCTAssertNil(manager.invite)
+        XCTAssertEqual(core.joined, 1)
+        XCTAssertEqual(media.connectArgs?.camera, false, "Join with voice only")
+        await manager.leave()
+        let (second, core2, media2, _) = make()
+        second.handle([event("started", user: "alice", name: "Alice", ring: false)])
+        await second.acceptInvite()
+        XCTAssertEqual(core2.joined, 1)
+        XCTAssertEqual(media2.connectArgs?.camera, true, "Join: as the call was started")
+        await second.leave()
+    }
+
+    func testTheLiveCardKnowsWhoIsThereFromTheJoinAndLeaveEvents() async {
+        let (manager, _, _, _) = make()
+        let carol = String(repeating: "33", count: 16)
+        manager.handle([event("joined", participant: bob, user: "u-bob", name: "Bob Brown"), event("joined", participant: carol, user: "u-carol", name: "Carol Clark")])
+        XCTAssertEqual(manager.liveSummary(conversationID: "grp:g1")?.people.map(\.name), ["Bob Brown", "Carol Clark"])
+        manager.handle([event("left", participant: bob, user: "u-bob")])
+        XCTAssertEqual(manager.liveSummary(conversationID: "grp:g1")?.people.map(\.name), ["Carol Clark"])
+        manager.handle([event("ended")])
+        XCTAssertEqual(manager.liveSummary(conversationID: "grp:g1")?.people.count, 0, "the card forgets a call that ended")
+    }
+
+    func testTheLiveCardWordsNameWhoIsThereAndNeverSayYou() {
+        XCTAssertEqual(LiveCardWords.who([], count: 0), "Nobody is there yet")
+        XCTAssertEqual(LiveCardWords.who([], count: 1), "1 person is there")
+        XCTAssertEqual(LiveCardWords.who([], count: 3), "3 people are there")
+        XCTAssertEqual(LiveCardWords.who(["Jean Park"], count: 1), "Jean is there")
+        XCTAssertEqual(LiveCardWords.who(["Jean Park", "Lee Wu"], count: 2), "Jean and Lee are there")
+        XCTAssertEqual(LiveCardWords.who(["Jean Park", "Lee Wu", "Sam Ito"], count: 4), "Jean, Lee and 2 others are there")
+        XCTAssertEqual(LiveCardWords.who(["Jean Park"], count: 3), "Jean is there and 2 others")
+        XCTAssertFalse(LiveCardWords.spoken(who: "Jean is there", video: true).contains("You"))
+        XCTAssertEqual(LiveCardWords.spoken(who: "Jean is there", video: false), "Voice call in progress. Jean is there. Join")
     }
 }
