@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-146b** (the user's 146 gate: the call button is always its own circle, green when live, no badge; remove the group return bar; photo group avatars; ended bubbles). Then **LIME-148** (FaceTime-style group layout: no scrolling, landscape, iPad windows, minimise in the controls), then LIME-147 (group-call emoji) if the user agrees, then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-148** (LIME-146b landed as `4933848`). Then (FaceTime-style group layout: no scrolling, landscape, iPad windows, minimise in the controls), then **LIME-150** (a minimised mini grid of up to 4; starts with a device spike), then **LIME-147** (group-call emoji, APPROVED), then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -147,6 +147,13 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e103. **LIME-146b LANDED as `4933848` (pushed, 2026-10-15; PLOT.md `57c4490`).**
+   - **Built:** the call button is always its own circle (lime + icon only when live, no badge); no group return bar; photo group avatars everywhere (+ a plain-UIKit `PiPGroupAvatarView`); the "Call <group> again?" sheet in groups; "Waiting for others".
+   - **Tests:** unit 352 + UI 186 (one header UI test updated for the new layout).
+   - **Decisions for the user:**
+     - (a) **the 1:1 voice bar was kept:** the system's status-bar pill shows only outside lime (unverified on a phone). Plot: fine;
+     - (b) **a minimised group *voice* call now has no way back** except that group's chat. **DECIDED A (the user): the slim bar comes back only when you're not in that group's chat → folded into LIME-148 item 00.**
+   - **NEXT: 148.** Tend's Phase 0 for 146b predates the Element notes, 150 and 147's approval, so 148's Phase 0 commits them.
 1e102. **146 gate: "works, a few minor glitches" (the user, 2026-10-15, 5 screenshots)** → **LIME-146b (drafted, NEXT):**
    - the call button is always its own circle (green when live), with search + ⋯ together;
    - no count badge;
@@ -4972,7 +4979,7 @@ If the survey turns up related issues, raise them before editing. If a decision 
    - in a **group**, tapping an **ended** group-call bubble must **not** call one person. Show the confirm sheet "Call <group> again? · Voice · Video · Cancel" (starts a new group call);
    - in a **DM**, keep 123's "call back" sheet;
    - a **live** card's Join stays one tap;
-   - **plot's reading of the user's note:** if the user meant something else (e.g. old bubbles shouldn't do anything), the gate tells.
+   - **CONFIRMED by the user (2026-10-15):** "when you tap a previously ended call bubble you should be able to call Jean, Shem & FAM again" (the group, never one person).
 5. **"1 person is there" when you're alone in the call** reads oddly on your own card: say "Waiting for others" when only you are in it.
 
 **Scope:** `ChatView.swift` (the header), `RootView.swift` (the bar), the call bubble/card views, `CallsTab.swift`, `GroupCallPiP.swift` (+ a UIKit composite avatar), the invite sheet, their tests. **Not:** the core, the call layout (148).
@@ -4999,7 +5006,23 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - the window leaves most of the screen black.
 
 **The change (FaceTime's patterns):**
+00. **Folded in from 146b (the user chose A, 2026-10-15):** a minimised **group voice call** (and a group video call that can't float) shows lime's slim return bar ("Return to <group> · N in call · timer") **only when you're NOT in that group's chat**. Inside it, the lime call circle is the way back, so they never overlap. The same rule as the 1:1 voice bar. **Tests:** the bar shows on the Messages list and other chats; it's hidden in that group's chat; hidden while the video window is up.
 0. **Never scroll (the user, 2026-10-15: "landscape: still have to scroll to see the 3rd video card; it should resize to smaller cards that fit the screen").** Every tile, up to 9, fits the visible area at once in every orientation; tiles shrink rather than scroll. **Plot's reference note:** iOS has no built-in call grid (FaceTime's isn't public API), so we compute it. **LiveKit's own open-source Swift example app** (Apache-2.0, permissive) has an adaptive participant grid we may read and borrow from. **Element Call/Element X are AGPL: read for patterns only, never copy** (the MIT rule, 1e83).
+0b. **What to borrow (plot reviewed both, 2026-10-15, at the user's ask):**
+   - **LiveKit `components-swift` (Apache-2.0: may use or copy, credit it in `THIRD_PARTY.md`)**: `LazyHorVGrid`, `HorVStack`, `ParticipantView`, `VideoTrackView`, `ConnectionQualityIndicatorView`. Use it as a dependency or adapt the files; report which.
+   - **Element Call (AGPL-3.0: patterns only, never its code; `src/grid/`, `src/state/layout-types.ts`):**
+     - (1) **the layout is chosen from the container's size, not the window's**, with four "window modes": normal / narrow / flat (a short landscape strip) / pip;
+     - (2) **named layouts**:
+       - **grid** (everyone equal);
+       - **spotlight-portrait** (the speaker large on top, a strip of the others below);
+       - **spotlight-landscape** (the speaker large, the strip at the side);
+       - **spotlight-expanded** (the speaker fills, your self-view floats);
+       - **one-on-one mobile** (the other person edge to edge + your floating self-view);
+       - **pip**;
+     - (3) **a user switch between grid and spotlight** (the "layout switch");
+     - (4) **a screen share always takes the spotlight** (for 149);
+     - (5) **edge-to-edge only where there's one main video.**
+   - **Adopt these for lime:** the same mode-from-container rule (covers iPad windows); grid for ≤ 4 in normal mode; spotlight-landscape in flat/landscape with 3+ (fits without scrolling); a **Grid/Speaker toggle** in the controls (an icon + a label, VoiceOver "Layout: Grid"); a floating self-view in spotlight/one-on-one. Write the rules as a pure function plus a short spec in `docs/screens/group-call.md`, so Android's layout matches.
 1. **An adaptive grid** computed from the available size and the tile count: choose the columns × rows that make the **largest tiles at a video shape** (16:9 / 9:16 by orientation, each video aspect-filling its tile with a little crop allowed, never squashed). FaceTime-like:
    - **2 people** side by side in landscape, stacked in portrait;
    - **3:** the speaker large + 2 small, or a balanced grid when there's room;
@@ -5024,6 +5047,45 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-148` with **For plot:**. **Commit:** `feat(ios): group call layout like FaceTime (adaptive tiles, landscape, iPad windows, minimise in the controls)`, trailer `Brief: LIME-148`. The rest per the standing rules.
 
+### LIME-150 → `tend` (lime-aa) (after LIME-148; drafted 2026-10-15): a minimised group call shows a small grid of up to 4 people
+**Goal:** minimise a group call of up to 4 people and the floating window shows **all of them in a mini grid** (the current window divided into 2 or 4 tiles), so a teacher can see everyone while typing. Larger calls show the 3 most recent speakers + a "+N" tile.
+
+**The user (2026-10-15):** "minimise a group call with 4 people and have a minimised 4-person grid replacing the one card with a grid of 4. Think of taking the current thumbnail and dividing it by 4, to talk to teachers and write something at the same time."
+
+**Why it should work (and what to prove first):**
+- 112c's window is an `AVPictureInPictureVideoCallViewController`, whose content is **our own UIKit views** (today one `AVSampleBufferDisplayLayer` + 135's `PiPAvatarView` over it), so **four** sample-buffer layers in a grid are the same mechanism.
+- **Unproven:** that iOS keeps rendering 4 live layers smoothly while lime is in the background, the CPU/battery cost of decoding 4 small streams, and that LiveKit keeps all 4 tracks flowing at thumbnail size (adaptive stream) with no tiles on screen.
+- **Phase 1 is a device spike** (two phones + the iPad + one simulator account or a 4th device; else 3 people + yourself) that measures fps per tile and CPU% in the window, foreground and background, before Phase 2. **If it can't run smoothly, keep 112c's speaker window and report.**
+
+**The design:**
+1. **The window's layout uses LIME-148's layout function in its "pip" mode** (Element's pattern, 148 item 0b), so the in-call grid and the mini grid follow one set of rules.
+   - **1 other person:** that person fills the window;
+   - **2:** side by side or stacked (by the window's shape);
+   - **3:** a 2 × 2 with the 4th cell as your self-view **or** empty (**report which reads better**; plot leans self-view, like FaceTime's grid);
+   - **4:** 2 × 2;
+   - **5+:** the 3 most recent speakers + a "+N" tile.
+2. **Each tile:** live video (aspect-fill), or **the person's profile photo** (`PiPAvatarView`, never black, never initials when a photo exists, plain UIKit, the no-SwiftUI-in-system-windows rule), plus a small name label; **the current speaker gets a lime ring + their label in bold** (not colour alone).
+3. **Your own self-view:** off in the mini grid by default, except as the 4th cell for a 3-person call (above).
+4. **A choice:** a "Minimised view: Grid · Speaker" setting (in the call's ⋯ or in Settings → Calls; default **Grid** up to 4, **Speaker** above). The setting is remembered.
+5. **The window's size:** prefer a 4:3 or square preferred content size for a grid (the user can still resize); the speaker view keeps 112c's sizing.
+6. **Kept:** tap returns to the full call; the system close button ends PiP, not the call; minimise opens the group chat (112c); 1:1 PiP unchanged.
+
+**Scope:** `GroupCallPiP.swift` (several renderers/layers), `GroupCallManager.swift` (which participants are shown; the speaker ring), LIME-148's layout function (its pip mode), Settings or the call's ⋯ for the choice, tests. **Not:** the 1:1 PiP, the core.
+
+**Kind:**
+- behaviour: unit tests with the fake window for which people show for 1–6 participants, the +N tile, the speaker ring following the speaker, photos when the camera is off or a key is missing, the setting;
+- **the spike's numbers in TEND.md**;
+- the looks are visual (screenshots of 2, 3, 4, 6 people).
+
+**Gate (the user, 4 people if possible, or 3):**
+1. minimise → everyone in a mini grid; type in the chat meanwhile;
+2. the speaker ring moves as people talk;
+3. a camera off → their photo;
+4. switch to Speaker view in the setting;
+5. the battery after 15 min (from "logs").
+
+**Record:** `## LIME-150` with **For plot:**. **Commit:** `feat(ios): minimised group calls show a mini grid of up to 4 people`, trailer `Brief: LIME-150`. The rest per the standing rules.
+
 ### LIME-149 (DRAFT NOTE, waits for the paid Apple account, November): screen sharing in group calls
 **The user (2026-10-15):** "share screen for group calls".
 - **iOS needs a Broadcast Upload Extension** (ReplayKit) to share the whole screen, i.e. other apps. It runs as a separate process with a ~50 MB memory cap and passes frames to lime through an **App Group**. LiveKit's Swift SDK supports exactly this (a broadcast extension target + `RPSystemBroadcastPickerView`).
@@ -5041,7 +5103,37 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - It uses 119's 256-emoji list and the same chip after the timer, plus an explainer sheet.
 - **Core-first:** the computation and its test vector go in core.
 
-**Plot's lean:** build it, as its own small brief **after LIME-146** (it depends on stable key handling, which 112b-fix/145 just gave). **Ask the user** whether it should come sooner.
+**APPROVED by the user (2026-10-15). It runs after LIME-150, before the mesh. The brief:**
+
+**Goal:** everyone in a group call can confirm, by comparing 4 emoji, that every phone holds the same media keys for the same people, so nobody hidden is listening and no key was swapped.
+
+**The change:**
+1. **Core (`core/src/call_emoji.rs`, beside 119's):** `group_call_emoji(call_id, participants: Vec<(participant_id, key_bytes)>) -> Vec<u16>` (4 indexes into 119's fixed 256-emoji list):
+   - `SHA-256("lime-group-call-emoji-v1" || call_id || for each participant sorted by participant id: participant_id || SHA-256(current key))`, then the first 4 bytes as indexes;
+   - **include your own participant and key**; use each participant's **current** key (after rekeys);
+   - **a pinned test vector** (fixed ids + keys → fixed emoji), cross-checked in Python like 119, for Android.
+2. **The core exposes the inputs:** whatever `GroupCallManager` needs to call it (the current key per participant is already known on the Swift side for `setKey`; prefer computing from the core's own stored keys, so Swift never assembles the input itself). **Report which.**
+3. **iOS:** **the same chip as 1:1 (119), after the timer**, with the same explainer sheet, reworded for groups:
+   - "Compare these 4 with everyone in the call. If you all see the same 4, nobody else can see or hear the call."
+   - "They change when someone joins or leaves, so compare again."
+   - **It recomputes on every key change**; a brief fade when they change (none with Reduce Motion);
+   - **"Waiting for everyone's keys…" in the chip while any participant's key hasn't arrived** (no emoji until all keys are in);
+   - VoiceOver reads the emoji names (119's names);
+   - the emoji order is forced left to right in RTL (as 119).
+4. **It doesn't prove identity** (who each person is): the explainer says to use Verify in person for that.
+
+**Scope:** `core/src/call_emoji.rs` + its exports + tests, `GroupCallManager.swift`, `GroupCallView.swift` (the chip), the shared chip/sheet views from 119, `docs/architecture.md` ("Group calls: as built": remove "no emoji verification in groups" from the honest limits, add how it works), tests. **Not:** the 1:1 emoji, the server.
+
+**Kind:**
+- behaviour: core tests (the vector; order-independence: the same input in any order gives the same emoji; any key change or an extra participant changes them); Swift unit tests (recompute on join/leave/rekey; "waiting" until all keys are in);
+- the chip's look is visual.
+
+**Gate (the user, 3 devices):**
+1. the same 4 emoji on all three;
+2. someone leaves and rejoins → new emoji, still the same on all;
+3. the explainer reads well.
+
+**Record:** `## LIME-147` with **For plot:**. **Commit:** `feat: 4-emoji check for group calls (from everyone's media keys)`, trailer `Brief: LIME-147`. The rest per the standing rules.
 
 ### LIME-146 → `tend` (lime-aa) (SCHEDULED right after LIME-112c; the user, 2026-10-15: "the header icon and the chat huddle bubble can be sooner, so it's not confusing"): live group calls shown like Slack huddles
 **Goal:** while a group call is live it's obvious and one tap to join: the header's call button shows it (a green icon + count), the chat shows one live call card with who's there and a Join button, and an invite sheet appears if you're elsewhere in lime.
