@@ -345,6 +345,7 @@ impl LimeStore {
             let inner_text = String::from_utf8(inner.to_bytes()).map_err(|_| StoreError::BadMessage)?;
             groups::insert_op(conn, group_id, &op.op_id, &op.op_type, me, &op.hlc, &op.parents, &op.payload, &inner_text, now)?;
             let after = groups::rebuild(conn, group_id, me, now)?.state;
+            crate::store::group_calls::on_membership_changed(conn, group_id, me, now)?;
             // Everyone who was in the group, and everyone who is: the removed person needs to hear it too.
             let mut audience: Vec<String> = before.users();
             for user in after.users() {
@@ -626,6 +627,8 @@ impl LimeStore {
         match op.op_type.as_str() {
             "group.session" => self.store_group_session(conn, group_id, sender, &cert.device_id, &op.payload),
             "group.history" => self.apply_group_history(conn, me, sender, group_id, &op.payload, now),
+            // A group call op (LIME-112b): the rules are in `store::group_calls`.
+            call_op if crate::store::group_calls::is_group_call_op(call_op) => crate::store::group_calls::apply(conn, me, sender, &cert.device_id, group_id, op, now),
             other => {
                 let Some(kind) = Kind::parse(other, &op.payload) else { return Ok(()) };
                 if matches!(kind, Kind::Create { .. }) && op.op_id != group_id {
@@ -634,6 +637,8 @@ impl LimeStore {
                 let text = String::from_utf8(inner.to_bytes()).map_err(|_| StoreError::BadMessage)?;
                 groups::insert_op(conn, group_id, &op.op_id, &op.op_type, sender, &op.hlc, &op.parents, &op.payload, &text, now)?;
                 groups::rebuild(conn, group_id, me, now)?;
+                // Someone removed or gone from the group is out of any call it has on (and the others re-key).
+                crate::store::group_calls::on_membership_changed(conn, group_id, me, now)?;
                 Ok(())
             }
         }

@@ -451,6 +451,7 @@ impl Transport for FakeServer {
                     _ => respond(400, json!({ "error": "bad_request" })),
                 }
             }
+            "livekit-token" => respond(200, json!({ "url": "wss://sfu.example.org", "token": format!("t.{user}"), "ttl": 600 })),
             "turn-credentials" => respond(200, json!({ "urls": ["turn:turn.example.org:3478?transport=udp"], "username": format!("9999999999:{user}"), "credential": "c2VjcmV0", "ttl": 3600 })),
             "blob" => {
                 state.clock += 1;

@@ -421,6 +421,51 @@ const MIGRATIONS: &[&str] = &[
          updated_at       INTEGER NOT NULL,
          PRIMARY KEY (user_id, device_id)
      );",
+    // 27 (LIME-112b): group calls. A call (`call_id`, in a group), who is in it, what I still owe the others (keys and call ops, sent
+    // over Olm), and what the app has not taken yet. My own sender key lives here (the store is encrypted); other people's keys are
+    // only ever in `group_call_events`, until the app takes them.
+    "CREATE TABLE group_calls (
+         call_id        TEXT PRIMARY KEY,
+         group_id       TEXT NOT NULL,
+         room           TEXT NOT NULL,
+         video          INTEGER NOT NULL,
+         started_by     TEXT NOT NULL,
+         started_at     INTEGER NOT NULL,
+         ended_at       INTEGER,
+         rang           INTEGER NOT NULL DEFAULT 0,
+         joined         INTEGER NOT NULL DEFAULT 0,
+         joined_at      INTEGER,
+         my_participant TEXT,
+         my_key         BLOB,
+         my_key_index   INTEGER NOT NULL DEFAULT 0
+     );
+     CREATE INDEX group_calls_by_group ON group_calls (group_id);
+     CREATE TABLE group_call_participants (
+         call_id     TEXT NOT NULL,
+         participant TEXT NOT NULL,
+         user_id     TEXT NOT NULL,
+         device_id   TEXT NOT NULL,
+         joined_at   INTEGER NOT NULL,
+         left_at     INTEGER,
+         PRIMARY KEY (call_id, participant)
+     );
+     CREATE TABLE group_call_outbox (
+         id      INTEGER PRIMARY KEY AUTOINCREMENT,
+         call_id TEXT NOT NULL,
+         to_user TEXT NOT NULL,
+         op_type TEXT NOT NULL,
+         payload TEXT NOT NULL
+     );
+     CREATE TABLE group_call_events (
+         id              INTEGER PRIMARY KEY AUTOINCREMENT,
+         kind            TEXT NOT NULL,
+         call_id         TEXT NOT NULL,
+         conversation_id TEXT NOT NULL,
+         user_id         TEXT NOT NULL,
+         participant     TEXT NOT NULL,
+         payload         TEXT NOT NULL,
+         at              INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

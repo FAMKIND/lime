@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -3083,4 +3083,257 @@ fn a_send_that_is_stale_twice_in_a_row_fails_cleanly_instead_of_looping() {
     assert!(requests_of(&server).len() <= 8, "one retry at most: {:?}", requests_of(&server));
     // (This server is contradicting itself, so one device's request may have gone through before the other's was refused; a recipient
     // de-duplicates by op id, so a repeat never shows twice.)
+}
+
+// ---------------------------------------------------------------- group calls (LIME-112b)
+
+fn gc_flush(p: &Party, transport: &Arc<dyn Transport>) {
+    p.store.deliver_group_call_ops(transport.clone(), p.token.clone()).unwrap();
+}
+
+/// Everyone sends what they owe, then everyone reads, twice (a join makes keys that make nothing more).
+fn gc_settle(all: &[&Party], transport: &Arc<dyn Transport>) {
+    for _ in 0..2 {
+        for p in all {
+            gc_flush(p, transport);
+        }
+        for p in all {
+            sync(p, transport);
+        }
+    }
+}
+
+fn gc_events(p: &Party) -> Vec<crate::GroupCallEvent> {
+    p.store.take_group_call_events().unwrap()
+}
+
+fn keys_for(events: &[crate::GroupCallEvent]) -> Vec<(String, u32, String)> {
+    events.iter().filter(|e| e.kind == "key").map(|e| (e.participant.clone(), e.key_index, e.key.clone().unwrap())).collect()
+}
+
+/// A group of three whose members have all accepted it (so it rings and can be joined).
+fn call_team(server: &Arc<FakeServer>) -> (Party, Party, Party, Arc<dyn Transport>, String) {
+    let (alice, bob, carol, transport, chat) = team(server);
+    for p in [&bob, &carol] {
+        p.store.accept_request(chat.clone()).unwrap();
+    }
+    (alice, bob, carol, transport, chat)
+}
+
+#[test]
+fn a_call_is_started_rung_and_written_into_the_chat_on_every_phone() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    assert_eq!((call.conversation_id.as_str(), call.video, call.participant_count, call.joined), (chat.as_str(), true, 0, false));
+    assert_eq!((call.room.len(), call.call_id.len()), (64, 64), "32 random bytes each, as hex");
+    assert_ne!(call.room, call.call_id);
+    assert_eq!(alice.store.start_group_call(chat.clone(), true).unwrap().call_id, call.call_id, "a second start returns the call that is on");
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    for p in [&bob, &carol] {
+        let events = gc_events(p);
+        let started = events.iter().find(|e| e.kind == "started").expect("the start arrived");
+        assert_eq!((started.call_id.as_str(), started.ring, started.video, started.user_id.as_str()), (call.call_id.as_str(), true, true, "alice"));
+        assert_eq!(p.store.active_group_call(chat.clone()).unwrap().unwrap().call_id, call.call_id);
+        let line = p.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.id == format!("call:{}", call.call_id)).expect("the chat line");
+        assert!(line.text.contains("\"outcome\":\"live\"") && line.text.contains("\"group\":true"), "{}", line.text);
+    }
+    // A group in Requests does not ring.
+    let server2 = FakeServer::new();
+    let (alice2, bob2, _carol2, transport2, chat2) = team(&server2);
+    alice2.store.start_group_call(chat2.clone(), false).unwrap();
+    gc_flush(&alice2, &transport2);
+    sync(&bob2, &transport2);
+    assert!(!gc_events(&bob2).iter().find(|e| e.kind == "started").unwrap().ring, "waiting in Requests: no ring");
+    assert!(bob2.store.join_group_call(alice2.store.active_group_call(chat2).unwrap().unwrap().call_id).is_err(), "and no joining until it is accepted");
+}
+
+#[test]
+fn people_who_join_swap_their_own_sender_keys_over_olm_and_each_key_is_the_owners() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    gc_events(&bob);
+    let b = bob.store.join_group_call(call.call_id.clone()).unwrap();
+    assert_eq!(b.participants.len(), 1, "Alice was in already");
+    assert_eq!(b.participants[0].participant, a.participant);
+    assert_eq!(b.participants[0].name, "alice");
+    assert_ne!(a.key, b.key, "each person has their own key");
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    // Alice learns Bob's key and Bob learns Alice's: each from the one who owns it.
+    let at_alice = gc_events(&alice);
+    assert!(at_alice.iter().any(|e| e.kind == "joined" && e.participant == b.participant && e.user_id == "bob"));
+    assert_eq!(keys_for(&at_alice), vec![(b.participant.clone(), 0, b.key.clone())]);
+    let at_bob = gc_events(&bob);
+    assert_eq!(keys_for(&at_bob), vec![(a.participant.clone(), 0, a.key.clone())]);
+    // Carol is in the group but not in the call: she hears about the joins and gets no key.
+    let at_carol = gc_events(&carol);
+    assert!(at_carol.iter().filter(|e| e.kind == "joined").count() == 2 && keys_for(&at_carol).is_empty(), "{at_carol:?}");
+    // One call at a time on this phone.
+    assert!(bob.store.join_group_call(call.call_id.clone()).is_err(), "already in it");
+    let other = bob.store.create_group("Other".into(), None, vec!["alice".into()]).unwrap();
+    assert!(bob.store.start_group_call(other, false).is_err(), "no second call while in one");
+    // The server only ever held ciphertext: the sender key never appears in it.
+    let state = server.state.lock().unwrap();
+    for item in state.mailbox.iter() {
+        assert!(!item.2.contains(&a.key) && !item.2.contains(&b.key));
+    }
+}
+
+#[test]
+fn when_someone_leaves_everyone_still_in_makes_a_new_key_and_the_one_who_left_gets_none() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let b = bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let c = carol.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        gc_events(p);
+    }
+    bob.store.leave_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let at_alice = gc_events(&alice);
+    let at_carol = gc_events(&carol);
+    assert!(at_alice.iter().any(|e| e.kind == "left" && e.participant == b.participant));
+    // Carol gets Alice's new key (index 1) and Alice gets Carol's: both different from the first keys.
+    let carol_keys = keys_for(&at_carol);
+    assert_eq!(carol_keys.len(), 1, "{at_carol:?}");
+    assert_eq!((carol_keys[0].0.as_str(), carol_keys[0].1), (a.participant.as_str(), 1));
+    assert_ne!(carol_keys[0].2, a.key, "a new key, not the old one");
+    let alice_keys = keys_for(&at_alice);
+    assert_eq!((alice_keys.len(), alice_keys[0].0.as_str(), alice_keys[0].1), (1, c.participant.as_str(), 1));
+    assert_ne!(alice_keys[0].2, c.key);
+    // Bob, who left, hears nothing more: no key, however many people leave or join.
+    assert!(keys_for(&gc_events(&bob)).is_empty());
+    carol.store.leave_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert!(keys_for(&gc_events(&bob)).is_empty(), "still nothing for Bob after Carol leaves");
+    assert!(carol.store.active_group_call(chat.clone()).unwrap().is_some(), "Alice is still in it");
+    // The call ends when the last person leaves: the chat line, the history and an event say so.
+    alice.store.leave_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert!(gc_events(&alice).iter().any(|e| e.kind == "ended"));
+    for p in [&alice, &bob, &carol] {
+        assert!(p.store.active_group_call(chat.clone()).unwrap().is_none());
+        let line = p.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.id == format!("call:{}", call.call_id)).unwrap();
+        assert!(line.text.contains("\"outcome\":\"completed\""), "{}", line.text);
+    }
+    let history = alice.store.call_history_list().unwrap();
+    assert_eq!((history[0].id.as_str(), history[0].peer.as_str(), history[0].outcome.as_str(), history[0].outgoing), (call.call_id.as_str(), chat.as_str(), "completed", true));
+}
+
+#[test]
+fn a_member_removed_from_the_group_is_out_of_the_call_and_gets_no_new_keys() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        p.store.join_group_call(call.call_id.clone()).ok();
+    }
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        gc_events(p);
+    }
+    alice.store.remove_group_member(chat.clone(), "carol".into()).unwrap();
+    deliver(&alice, &transport);
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let at_bob = gc_events(&bob);
+    assert!(at_bob.iter().any(|e| e.kind == "left" && e.user_id == "carol"), "treated as having left the call: {at_bob:?}");
+    let new_keys = keys_for(&at_bob);
+    assert!(new_keys.iter().any(|k| k.1 >= 1), "Bob gets Alice's new key: {new_keys:?}");
+    // Carol (removed) is sent no key: none after her removal.
+    assert!(keys_for(&gc_events(&carol)).iter().all(|k| k.1 == 0), "no key with a new index for the removed member");
+    // And she cannot start or join calls in that group any more.
+    assert!(carol.store.start_group_call(chat.clone(), false).is_err());
+}
+
+#[test]
+fn calls_are_refused_in_a_group_that_has_ended_for_me() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    bob.store.leave_group_call("0".repeat(64)).ok();
+    bob.store.leave_group(chat.clone()).unwrap();
+    assert!(bob.store.start_group_call(chat.clone(), false).is_err(), "I left the group");
+    deliver(&bob, &transport);
+    let call = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert!(bob.store.join_group_call(call.call_id.clone()).is_err());
+    alice.store.delete_group(chat.clone()).unwrap();
+    deliver(&alice, &transport);
+    sync(&carol, &transport);
+    assert!(carol.store.start_group_call(chat.clone(), false).is_err(), "the owner deleted it");
+}
+
+#[test]
+fn a_participant_the_media_server_reports_gone_counts_as_having_left() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let b = bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    gc_events(&alice);
+    alice.store.group_call_participant_gone(call.call_id.clone(), b.participant.clone()).unwrap();
+    assert!(gc_events(&alice).iter().any(|e| e.kind == "left" && e.participant == b.participant));
+    // Her own id is not "gone", and the key was renewed for whoever remains (nobody else here).
+    alice.store.group_call_participant_gone(call.call_id.clone(), a.participant.clone()).unwrap();
+    assert_eq!(alice.store.active_group_call(chat).unwrap().unwrap().participant_count, 1);
+}
+
+#[test]
+fn a_group_call_token_comes_from_the_function_and_only_a_big_group_does_not_ring() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let token = alice.store.fetch_livekit_token(transport, alice.token.clone(), "ab".repeat(32), "cd".repeat(16)).unwrap().unwrap();
+    assert_eq!((token.url.as_str(), token.ttl_seconds), ("wss://sfu.example.org", 600));
+    assert!(crate::group_call_rings(2) && crate::group_call_rings(10) && !crate::group_call_rings(11) && !crate::group_call_rings(100));
+}
+
+#[test]
+fn a_forged_key_op_is_ignored_unless_it_is_from_a_member_for_their_own_participant() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let b = bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    gc_events(&bob);
+    let group_id = chat.strip_prefix("grp:").unwrap().to_owned();
+    let key = vodozemac::base64_encode([7u8; 32]);
+    let op = |participant: &str, call_id: &str| crate::protocol::Op {
+        op_id: "x".into(),
+        op_type: "group.call.key".into(),
+        conversation_id: chat.clone(),
+        hlc: "0".into(),
+        parents: vec![],
+        payload: serde_json::json!({ "call_id": call_id, "participant": participant, "key": key, "index": 3 }),
+        sig: String::new(),
+    };
+    let apply = |sender: &str, device: &str, op: &crate::protocol::Op| {
+        let conn = bob.store.lock();
+        crate::store::group_calls::apply(&conn, "bob", sender, device, &group_id, op, crate::store::now_ms()).unwrap();
+    };
+    // Carol (a member, not in the call) names Alice's participant: not hers.
+    apply("carol", "carol-device", &op(&a.participant, &call.call_id));
+    // A stranger names Bob's own call: not a member.
+    apply("mallory", "m-device", &op("ee".repeat(16).as_str(), &call.call_id));
+    // A key for a call nobody knows.
+    apply("alice", "alice-device", &op(&a.participant, &"9".repeat(64)));
+    // Alice's own participant, but from the wrong device.
+    apply("alice", "some-other-device", &op(&a.participant, &call.call_id));
+    assert!(keys_for(&gc_events(&bob)).is_empty(), "none of those became a key");
+    let _ = b;
 }
