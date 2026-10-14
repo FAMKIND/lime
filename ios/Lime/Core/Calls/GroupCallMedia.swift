@@ -10,9 +10,11 @@ enum GroupMediaEvent: Sendable, Equatable {
     case camera(participant: String, on: Bool)
     case speaking([String])
     /// The frame encryption for this participant works (their key arrived and decrypts) or does not (yet).
-    case secured(participant: String, ok: Bool)
+    case secured(participant: String, ok: Bool, state: String)
     /// A track appeared or went: the tile's picture may have changed.
     case tracks(participant: String)
+    /// After someone else's key was set, the provider's send index was put back to mine (for the diagnostics).
+    case sendIndexReset(Int)
 }
 
 /// What a group call needs from the media engine. The real one is LiveKit (below); tests use a fake, since simulators cannot make a real call.
@@ -48,6 +50,7 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
         }
         // `setKey` moves the provider's one "current index" (what this phone sends with): someone else's key must not change it.
         keyProvider.setCurrentKeyIndex(myKeyIndex)
+        if participant != myIdentity, !myIdentity.isEmpty { onEvent?(.sendIndexReset(Int(myKeyIndex))) }
     }
 
     func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool) async throws {
@@ -166,6 +169,7 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
         let owner = ([room.localParticipant] as [Participant] + Array(room.remoteParticipants.values)).first { $0.trackPublications.keys.contains(sid) }
         guard let id = owner?.identity?.stringValue else { return }
         let ok = state == .ok || state == .key_ratcheted
-        Task { @MainActor in self.emit(.secured(participant: id, ok: ok)) }
+        let name = state.toString()
+        Task { @MainActor in self.emit(.secured(participant: id, ok: ok, state: name)) }
     }
 }

@@ -3107,7 +3107,7 @@ fn gc_events(p: &Party) -> Vec<crate::GroupCallEvent> {
     p.store.take_group_call_events().unwrap()
 }
 
-fn keys_for(events: &[crate::GroupCallEvent]) -> Vec<(String, u32, String)> {
+fn keys_for(events: &[crate::GroupCallEvent]) -> Vec<(String, u32, Vec<u8>)> {
     events.iter().filter(|e| e.kind == "key").map(|e| (e.participant.clone(), e.key_index, e.key.clone().unwrap())).collect()
 }
 
@@ -3179,7 +3179,7 @@ fn people_who_join_swap_their_own_sender_keys_over_olm_and_each_key_is_the_owner
     // The server only ever held ciphertext: the sender key never appears in it.
     let state = server.state.lock().unwrap();
     for item in state.mailbox.iter() {
-        assert!(!item.2.contains(&a.key) && !item.2.contains(&b.key));
+        assert!(!item.2.contains(&vodozemac::base64_encode(&a.key)) && !item.2.contains(&vodozemac::base64_encode(&b.key)));
     }
 }
 
@@ -3336,4 +3336,113 @@ fn a_forged_key_op_is_ignored_unless_it_is_from_a_member_for_their_own_participa
     apply("alice", "some-other-device", &op(&a.participant, &call.call_id));
     assert!(keys_for(&gc_events(&bob)).is_empty(), "none of those became a key");
     let _ = b;
+}
+
+#[test]
+fn keys_are_raw_bytes_for_the_app_and_a_refused_key_says_why() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    assert_eq!(a.key.len(), 32, "a key is 32 raw bytes: no text encoding for a platform to get wrong (LIME-112b-fix)");
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    // Bob has not joined: a key reaching him is refused with a reason (the diagnostics show it).
+    gc_events(&bob);
+    let group_id = chat.strip_prefix("grp:").unwrap().to_owned();
+    let op = |call_id: &str, participant: &str, key: serde_json::Value| crate::protocol::Op {
+        op_id: "x".into(),
+        op_type: "group.call.key".into(),
+        conversation_id: chat.clone(),
+        hlc: "0".into(),
+        parents: vec![],
+        payload: serde_json::json!({ "call_id": call_id, "participant": participant, "key": key, "index": 1 }),
+        sig: String::new(),
+    };
+    let apply = |p: &Party, me: &str, sender: &str, op: &crate::protocol::Op| {
+        let conn = p.store.lock();
+        crate::store::group_calls::apply(&conn, me, sender, "alice-device", &group_id, op, crate::store::now_ms()).unwrap();
+    };
+    let good = serde_json::json!(vodozemac::base64_encode([3u8; 32]));
+    apply(&bob, "bob", "alice", &op(&call.call_id, &a.participant, good.clone()));
+    assert_eq!(gc_events(&bob).iter().find(|e| e.kind == "key_rejected").map(|e| e.reason.clone()), Some("not_in_call".to_string()));
+    let b = bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    gc_events(&bob);
+    apply(&bob, "bob", "alice", &op(&"9".repeat(64), &a.participant, good.clone()));
+    apply(&bob, "bob", "alice", &op(&call.call_id, &a.participant, serde_json::json!("short")));
+    apply(&bob, "bob", "carol", &op(&call.call_id, &a.participant, good.clone()));
+    let reasons: Vec<String> = gc_events(&bob).into_iter().filter(|e| e.kind == "key_rejected").map(|e| e.reason).collect();
+    assert_eq!(reasons, vec!["unknown_call", "bad_key", "not_owner"]);
+    let _ = b;
+}
+
+#[test]
+fn a_key_that_arrives_before_the_senders_join_is_kept_and_a_stuck_tile_can_ask_again() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    let b = bob.store.join_group_call(call.call_id.clone()).unwrap();
+    // Carol joins and her key to Alice goes out before Alice has read Carol's join: send everything first, read after, in reverse order.
+    gc_flush(&alice, &transport);
+    gc_flush(&bob, &transport);
+    reverse_mailbox(&server, &alice.device);
+    reverse_mailbox(&server, &bob.device);
+    sync(&alice, &transport);
+    sync(&bob, &transport);
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let at_alice = gc_events(&alice);
+    let at_bob = gc_events(&bob);
+    assert!(keys_for(&at_alice).iter().any(|k| k.0 == b.participant && k.2 == b.key), "Alice has Bob's key even when it overtook his join: {at_alice:?}");
+    assert!(keys_for(&at_bob).iter().any(|k| k.0 == a.participant && k.2 == a.key), "and Bob has Alice's: {at_bob:?}");
+    // The safety net: Bob asks Alice again, and gets her current key once more.
+    bob.store.request_group_call_key(call.call_id.clone(), a.participant.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let again = keys_for(&gc_events(&bob));
+    assert_eq!(again.len(), 1, "{again:?}");
+    assert_eq!((again[0].0.as_str(), again[0].2.clone()), (a.participant.as_str(), a.key.clone()));
+    // Nobody can ask for someone else's key on a stranger's behalf: a request for a participant that is not mine is ignored.
+    carol.store.request_group_call_key(call.call_id.clone(), a.participant.clone()).ok();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert!(keys_for(&gc_events(&carol)).is_empty(), "Carol is not in the call: no key for her");
+}
+
+#[test]
+#[ignore = "Olm glare: two phones that start a session with each other at the same moment each lose their own outbound session, because olm_sessions keeps one row per peer key (LIME-112b-fix: needs the user's decision to change that)"]
+fn everyone_joining_before_anyone_reads_still_ends_with_every_key_everywhere() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        gc_events(p);
+    }
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    let b = bob.store.join_group_call(call.call_id.clone()).unwrap();
+    let c = carol.store.join_group_call(call.call_id.clone()).unwrap();
+    // Nobody has read anyone's join yet: all sends cross.
+    for p in [&alice, &bob, &carol] {
+        gc_flush(p, &transport);
+    }
+    for _ in 0..4 {
+        for p in [&alice, &bob, &carol] {
+            sync(p, &transport);
+        }
+        for p in [&alice, &bob, &carol] {
+            gc_flush(p, &transport);
+        }
+    }
+    let want = |me: &str, keys: Vec<(String, u32, Vec<u8>)>, others: [(&crate::GroupCallJoin, &str); 2]| {
+        for (other, who) in others {
+            assert!(keys.iter().any(|k| k.0 == other.participant && k.2 == other.key), "{me} has {who}'s key: {:?}", keys.iter().map(|k| (k.0[..4].to_string(), k.1)).collect::<Vec<_>>());
+        }
+    };
+    want("alice", keys_for(&gc_events(&alice)), [(&b, "bob"), (&c, "carol")]);
+    want("bob", keys_for(&gc_events(&bob)), [(&a, "alice"), (&c, "carol")]);
+    want("carol", keys_for(&gc_events(&carol)), [(&a, "alice"), (&b, "bob")]);
+    for p in [&alice, &bob, &carol] {
+        assert_eq!(p.store.pending_summary().unwrap(), "", "nothing is left waiting");
+    }
 }

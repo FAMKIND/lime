@@ -42,14 +42,20 @@ final class StoreGroupCallCore: GroupCallCore {
         return await StoreSignalling(store: store).iceServers()
     }
 
-    func deliver() async {
-        guard let store, let core = store.core, let link = store.link else { return }
+    func deliver() async -> GroupCallSendReport? {
+        guard let store, let core = store.core, let link = store.link else { return nil }
         do {
             let token = try await link.token()
-            try await Task.detached(priority: .userInitiated) { try core.deliverGroupCallOps(transport: link.transport, authToken: token) }.value
+            return try await Task.detached(priority: .userInitiated) { try core.deliverGroupCallOps(transport: link.transport, authToken: token) }.value
         } catch {
             diag.log("group call: sending failed (\(error))")
+            return nil
         }
+    }
+
+    func requestKey(callID: String, participant: String) async {
+        guard let core = store?.core else { return }
+        _ = try? await Task.detached(priority: .userInitiated) { try core.requestGroupCallKey(callId: callID, participant: participant) }.value
     }
 
     func takeEvents() -> [GroupCallEvent] {

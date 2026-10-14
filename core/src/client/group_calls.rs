@@ -34,15 +34,15 @@ pub struct GroupCallJoin {
     pub call: GroupCallInfo,
     /// This phone's random LiveKit identity.
     pub participant: String,
-    /// This phone's first sender key (32 bytes, base64) and its index: the only key material that crosses to the app, for the frame encryption.
-    pub key: String,
+    /// This phone's first sender key (32 raw bytes, not text, so no encoding can go wrong on any platform) and its index: the only key material that crosses to the app, for the frame encryption.
+    pub key: Vec<u8>,
     pub key_index: u32,
     /// Who is in the call already (their keys arrive as `key` events).
     pub participants: Vec<GroupCallParticipant>,
 }
 
 /// Something the app must act on. `kind`: `started` (a call began: `ring` says whether to ring, `video`), `joined` and `left`
-/// (`participant`, `user_id`), `key` (`participant`'s sender key, base64, and its index: set it in the frame encryption), `ended`.
+/// (`participant`, `user_id`), `key` (`participant`'s sender key as raw bytes and its index: set it in the frame encryption), `key_rejected` (`reason`: a key was refused, for the diagnostics), `ended`.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct GroupCallEvent {
     pub kind: String,
@@ -53,9 +53,21 @@ pub struct GroupCallEvent {
     pub participant: String,
     pub video: bool,
     pub ring: bool,
-    pub key: Option<String>,
+    pub key: Option<Vec<u8>>,
     pub key_index: u32,
     pub duration_ms: i64,
+    /// For `key_rejected`: why the core refused a key (`unknown_call`, `not_in_call`, `bad_key`, `not_owner`, `participant_left`, ...). No key material.
+    pub reason: String,
+}
+
+/// What one pass of `deliver_group_call_ops` did (for the call diagnostics): how many ops went, how many of them were keys (and the index of the
+/// last), and how many wait because a person's key changed.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct GroupCallSendReport {
+    pub sent: u32,
+    pub keys_sent: u32,
+    pub waiting: u32,
+    pub last_key_index: u32,
 }
 
 /// A short-lived token for the LiveKit server (see `supabase/functions/livekit-token`).
@@ -117,7 +129,7 @@ impl LimeStore {
             Ok(GroupCallJoin {
                 call: info(conn, &me, &call)?,
                 participant: joined.participant,
-                key: vodozemac::base64_encode(&joined.key),
+                key: joined.key.clone(),
                 key_index: joined.index,
                 participants,
             })
@@ -182,9 +194,10 @@ impl LimeStore {
                     participant,
                     video: payload.get("video").and_then(Value::as_bool).unwrap_or(false),
                     ring: payload.get("ring").and_then(Value::as_bool).unwrap_or(false),
-                    key: payload.get("key").and_then(Value::as_str).map(str::to_owned),
+                    key: payload.get("key").and_then(Value::as_str).and_then(|k| vodozemac::base64_decode(k).ok()),
                     key_index: payload.get("index").and_then(Value::as_u64).unwrap_or(0) as u32,
                     duration_ms: payload.get("duration_ms").and_then(Value::as_i64).unwrap_or(0),
+                    reason: payload.get("reason").and_then(Value::as_str).unwrap_or_default().to_owned(),
                 }
             })
             .collect())
@@ -192,11 +205,12 @@ impl LimeStore {
 
     /// Sends what this phone owes the others (starts, joins, keys, leaves), oldest first. A person whose key changed waits; one with no
     /// devices is dropped; a network failure stops the pass and the rest stays queued. Call it after every action and after `sync`.
-    pub fn deliver_group_call_ops(&self, transport: Arc<dyn Transport>, auth_token: String) -> Result<(), StoreError> {
+    pub fn deliver_group_call_ops(&self, transport: Arc<dyn Transport>, auth_token: String) -> Result<GroupCallSendReport, StoreError> {
         let _guard = self.lock_protocol();
         let mut state = self.load_or_create_account()?;
         let me = state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
         let rows = self.with_conn(rules::outbox)?;
+        let mut report = GroupCallSendReport { sent: 0, keys_sent: 0, waiting: 0, last_key_index: 0 };
         for (id, call_id, recipient, op_type, payload) in rows {
             let group_id = self.with_conn(|conn| Ok(rules::call_row(conn, &call_id)?.map(|c| c.group_id)))?;
             let (Some(group_id), Ok(payload)) = (group_id, serde_json::from_str::<Value>(&payload)) else {
@@ -220,15 +234,30 @@ impl LimeStore {
                 sig: String::new(),
             };
             op.sig = state.account.sign(op.signing_bytes()).to_base64();
+            let is_key = op.op_type == "group.call.key";
+            let index = op.payload.get("index").and_then(Value::as_u64).unwrap_or(0) as u32;
             match self.send_to_user(&transport, &auth_token, &mut state, &me, &recipient, op) {
                 Ok(()) | Err(StoreError::NoRecipientKeys) => {
                     let _ = self.with_conn(|conn| rules::dequeue(conn, id));
+                    report.sent += 1;
+                    if is_key {
+                        report.keys_sent += 1;
+                        report.last_key_index = index;
+                    }
                 }
-                Err(StoreError::KeyMismatch) => continue,
+                Err(StoreError::KeyMismatch) => report.waiting += 1,
                 Err(error) => return Err(error),
             }
         }
-        Ok(())
+        Ok(report)
+    }
+
+    /// A tile has been stuck without a key: asks the owner of `participant` to send their current key again (queued; `deliver_group_call_ops` sends it).
+    pub fn request_group_call_key(&self, call_id: String, participant: String) -> Result<(), StoreError> {
+        let _guard = self.lock_protocol();
+        let state = self.load_or_create_account()?;
+        let me = state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
+        self.with_conn(|conn| rules::local_request_key(conn, &me, &call_id, &participant))
     }
 
     /// Asks the server for a join token for a call's room (a signed-in session only). `None` when group calls are not set up there yet.

@@ -9,6 +9,9 @@ final class GroupCallManagerTests: XCTestCase {
         var info = GroupCallInfo(callId: String(repeating: "ab", count: 32), conversationId: "grp:g1", room: String(repeating: "cd", count: 32), video: true,
                                  startedBy: "alice", startedByName: "Alice", startedAtMs: 0, participantCount: 0, joined: false)
         var others: [GroupCallParticipant] = []
+        var joinKey = Data(repeating: 9, count: 32)
+        var requested: [String] = []
+        var report = GroupCallSendReport(sent: 0, keysSent: 0, waiting: 0, lastKeyIndex: 0)
         var token: LiveKitToken? = LiveKitToken(url: "wss://sfu.example.org", token: "t", ttlSeconds: 600)
         var servers = [IceServer(urls: ["turn:turn.example.org:3478"], username: "u", credential: "c")]
         var queued: [GroupCallEvent] = []
@@ -21,13 +24,14 @@ final class GroupCallManagerTests: XCTestCase {
         }
         func join(callID: String) async throws -> GroupCallJoin {
             joined += 1
-            return GroupCallJoin(call: info, participant: String(repeating: "11", count: 16), key: Data(repeating: 9, count: 32).base64EncodedString(), keyIndex: 0, participants: others)
+            return GroupCallJoin(call: info, participant: String(repeating: "11", count: 16), key: joinKey, keyIndex: 0, participants: others)
         }
         func leave(callID: String) async { left.append(callID) }
         func participantGone(callID: String, participant: String) async { gone.append(participant) }
         func token(room: String, participant: String) async -> LiveKitToken? { token }
         func iceServers() async -> [IceServer] { servers }
-        func deliver() async { delivered += 1 }
+        func deliver() async -> GroupCallSendReport? { delivered += 1; return report }
+        func requestKey(callID: String, participant: String) async { requested.append(participant) }
         func takeEvents() -> [GroupCallEvent] { defer { queued = [] }; return queued }
         func activeCall(conversationID: String) -> GroupCallInfo? { info }
         func title(of conversationID: String) -> String { "Grade 4 Team" }
@@ -58,9 +62,9 @@ final class GroupCallManagerTests: XCTestCase {
         return (manager, core, media, system)
     }
 
-    private func event(_ kind: String, participant: String = "", user: String = "bob", name: String = "Bob", key: String? = nil, index: UInt32 = 0, ring: Bool = false, call: String? = nil) -> GroupCallEvent {
+    private func event(_ kind: String, participant: String = "", user: String = "bob", name: String = "Bob", key: Data? = nil, index: UInt32 = 0, ring: Bool = false, call: String? = nil, reason: String = "") -> GroupCallEvent {
         GroupCallEvent(kind: kind, callId: call ?? String(repeating: "ab", count: 32), conversationId: "grp:g1", userId: user, name: name, participant: participant,
-                       video: true, ring: ring, key: key, keyIndex: index, durationMs: 0)
+                       video: true, ring: ring, key: key, keyIndex: index, durationMs: 0, reason: reason)
     }
 
     private let bob = String(repeating: "22", count: 16)
@@ -107,13 +111,13 @@ final class GroupCallManagerTests: XCTestCase {
         _ = await manager.start(conversationID: "grp:g1", title: "T", video: true)
         XCTAssertEqual(manager.tiles.map(\.name), ["You", "Bob"])
         XCTAssertFalse(manager.tiles[1].secured, "no key yet: \"Connecting securely\", no picture")
-        manager.handle([event("key", participant: bob, key: Data(repeating: 5, count: 32).base64EncodedString(), index: 2)])
+        manager.handle([event("key", participant: bob, key: Data(repeating: 5, count: 32), index: 2)])
         XCTAssertEqual(media.keys[bob]?.1, 2)
         XCTAssertEqual(media.keys[bob]?.0, Data(repeating: 5, count: 32))
         XCTAssertTrue(manager.tiles[1].secured, "the key arrived and nothing says it fails")
-        manager.handle(media: .secured(participant: bob, ok: false))
+        manager.handle(media: .secured(participant: bob, ok: false, state: "decryption_failed"))
         XCTAssertFalse(manager.tiles[1].secured, "undecryptable media is never shown")
-        manager.handle(media: .secured(participant: bob, ok: true))
+        manager.handle(media: .secured(participant: bob, ok: true, state: "ok"))
         XCTAssertTrue(manager.tiles[1].secured)
         XCTAssertTrue(manager.tiles[0].secured, "my own tile")
         await manager.leave()
@@ -239,5 +243,52 @@ final class GroupCallManagerTests: XCTestCase {
         let oneToOne = CallBubble(body: #"{"video":true,"duration_ms":23000,"outcome":"completed","outgoing":true}"#, mine: true)
         XCTAssertEqual(oneToOne?.title, "Video call")
         XCTAssertEqual(oneToOne?.chatDetail, "0:23")
+    }
+
+    func testAKeyTheCoreHandsOverAsRawBytesReachesTheMediaEngineAndSecuresTheTile() async {
+        // LIME-112b-fix: the core used to hand keys over as base64 text without padding, which Swift's decoder refuses, so no key ever
+        // reached the SDK and every tile stayed on "Connecting securely". Keys are raw bytes now: nothing to decode.
+        XCTAssertNil(Data(base64Encoded: Data(repeating: 5, count: 32).base64EncodedString().replacingOccurrences(of: "=", with: "")), "the trap, for the record")
+        let core = FakeCore()
+        core.others = [GroupCallParticipant(participant: bob, userId: "bob", name: "Bob")]
+        let (manager, _, media, _) = make(core: core)
+        _ = await manager.start(conversationID: "grp:g1", title: "T", video: true)
+        XCTAssertEqual(media.keys[String(repeating: "11", count: 16)]?.0, Data(repeating: 9, count: 32), "my own key reaches the SDK")
+        manager.handle([event("key", participant: bob, key: Data(repeating: 5, count: 32), index: 1)])
+        XCTAssertEqual(media.keys[bob]?.0, Data(repeating: 5, count: 32), "Bob's key reaches the SDK under his own LiveKit identity")
+        XCTAssertTrue(manager.tiles[1].secured)
+        manager.handle([event("key", participant: bob, key: Data(repeating: 5, count: 31), index: 1)])
+        XCTAssertEqual(media.keys[bob]?.0.count, 32, "a key that is not 32 bytes is ignored")
+        await manager.leave()
+    }
+
+    func testATileStuckWithoutAKeyAsksItsOwnerOnceToSendItAgain() async {
+        let core = FakeCore()
+        core.others = [GroupCallParticipant(participant: bob, userId: "bob", name: "Bob")]
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let media = FakeMedia()
+        let manager = GroupCallManager(core: core, system: QuietCallSystem(), now: { clock }, makeMedia: { media })
+        _ = await manager.start(conversationID: "grp:g1", title: "T", video: true)
+        manager.checkStuckTiles()
+        clock = clock.addingTimeInterval(4)
+        manager.checkStuckTiles()
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(core.requested.isEmpty, "not before five seconds")
+        clock = clock.addingTimeInterval(2)
+        manager.checkStuckTiles()
+        manager.checkStuckTiles()
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(core.requested, [bob], "once, for the one who is stuck")
+        manager.handle([event("key", participant: bob, key: Data(repeating: 5, count: 32), index: 0)])
+        XCTAssertTrue(manager.tiles[1].secured)
+        await manager.leave()
+    }
+
+    func testARefusedKeyIsLoggedWithItsReason() async {
+        let (manager, _, _, _) = make()
+        _ = await manager.start(conversationID: "grp:g1", title: "T", video: false)
+        manager.handle([event("key_rejected", participant: bob, reason: "not_owner")])
+        XCTAssertTrue(CallDiagnostics.shared.lines.last?.contains("rejected: not_owner") ?? false)
+        await manager.leave()
     }
 }

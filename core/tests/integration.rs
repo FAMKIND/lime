@@ -1668,3 +1668,87 @@ fn a_send_is_one_request_with_a_warm_device_cache_and_a_stale_cache_is_corrected
     a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
     assert_eq!(a.last_send_requests(), 1);
 }
+
+#[test]
+#[ignore = "Olm glare (see client_tests everyone_joining_before_anyone_reads...): fails until olm_sessions keeps more than one session per peer"]
+fn a_group_call_of_three_exchanges_sender_keys_through_the_real_server_in_any_order() {
+    let admin = Admin::from_env();
+    let transport = admin.transport();
+    let accounts = [admin.create_account(), admin.create_account(), admin.create_account()];
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in &accounts {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    for (i, (account, name)) in accounts.iter().zip(["Ann Adams", "Bo Brown", "Cy Clark"]).enumerate() {
+        admin.give_profile(account, name, &format!("c{i}{}", &suffix[..8]));
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let stores: Vec<_> = (0..3).map(|i| store(&dir, &format!("c{i}.db"), 20 + i as u8)).collect();
+    for (s, a) in stores.iter().zip(&accounts) {
+        s.register_device(transport.clone(), a.token.clone()).unwrap();
+    }
+    let sync = |i: usize| stores[i].sync(transport.clone(), accounts[i].token.clone()).unwrap();
+    let deliver = |i: usize| stores[i].deliver_queued(transport.clone(), accounts[i].token.clone()).unwrap();
+    let send_calls = |i: usize| {
+        let report = stores[i].deliver_group_call_ops(transport.clone(), accounts[i].token.clone()).unwrap();
+        eprintln!("phone {i} sent {report:?}");
+        report
+    };
+    let keys_at = |i: usize| -> Vec<(String, u32, Vec<u8>)> {
+        let events = stores[i].take_group_call_events().unwrap();
+        eprintln!("phone {i} events: {:?}", events.iter().map(|e| format!("{}:{}:{}", e.kind, e.participant.get(..4).unwrap_or(""), e.reason)).collect::<Vec<_>>());
+        events.into_iter().filter(|e| e.kind == "key").map(|e| (e.participant, e.key_index, e.key.unwrap())).collect()
+    };
+    let chat = stores[0].create_group("Call test".into(), None, vec![accounts[1].id.clone(), accounts[2].id.clone()]).unwrap();
+    deliver(0);
+    sync(1);
+    sync(2);
+    stores[1].accept_request(chat.clone()).unwrap();
+    stores[2].accept_request(chat.clone()).unwrap();
+
+    // Ann starts; the others read it. Then everybody joins BEFORE anyone reads anything (keys can overtake joins), and only then all read.
+    let call = stores[0].start_group_call(chat.clone(), true).unwrap();
+    send_calls(0);
+    sync(1);
+    sync(2);
+    let a = stores[0].join_group_call(call.call_id.clone()).unwrap();
+    let b = stores[1].join_group_call(call.call_id.clone()).unwrap();
+    let c = stores[2].join_group_call(call.call_id.clone()).unwrap();
+    for i in 0..3 {
+        send_calls(i);
+    }
+    for _ in 0..3 {
+        for i in 0..3 {
+            sync(i);
+        }
+        for i in 0..3 {
+            send_calls(i);
+        }
+    }
+    for i in 0..3 {
+        eprintln!("phone {i} pending: [{}]", stores[i].pending_summary().unwrap());
+    }
+    for (me, mine, others) in [(0, &a, [(&b, 1usize), (&c, 2usize)]), (1, &b, [(&a, 0), (&c, 2)]), (2, &c, [(&a, 0), (&b, 1)])] {
+        let keys = keys_at(me);
+        for (other, who) in others {
+            assert!(keys.iter().any(|k| k.0 == other.participant && k.2 == other.key), "phone {me} has the key of phone {who} ({}); it has {:?}", &other.participant[..4], keys.iter().map(|k| (k.0[..4].to_string(), k.1)).collect::<Vec<_>>());
+        }
+        assert!(!keys.iter().any(|k| k.0 == mine.participant), "nobody is sent their own key back");
+    }
+    // Cy leaves: Ann and Bo renew their keys for each other (index 1), and Cy is sent nothing.
+    stores[2].leave_group_call(call.call_id.clone()).unwrap();
+    for _ in 0..3 {
+        for i in 0..3 {
+            send_calls(i);
+        }
+        for i in 0..3 {
+            sync(i);
+        }
+    }
+    let at_ann = keys_at(0);
+    let at_bo = keys_at(1);
+    assert!(at_ann.iter().any(|k| k.0 == b.participant && k.1 == 1 && k.2 != b.key), "Bo's new key reached Ann: {at_ann:?}");
+    assert!(at_bo.iter().any(|k| k.0 == a.participant && k.1 == 1 && k.2 != a.key), "Ann's new key reached Bo: {at_bo:?}");
+    assert!(keys_at(2).is_empty(), "Cy, who left, hears nothing more");
+}

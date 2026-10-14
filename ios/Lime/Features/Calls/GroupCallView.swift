@@ -156,20 +156,43 @@ struct GroupTileView: View {
         return parts.joined(separator: ", ")
     }
 
+    private var track: LiveKit.VideoTrack? {
+        guard tile.secured, video, tile.cameraOn else { return nil }
+        return store.groupCalls.videoTrack(for: tile.id) as? LiveKit.VideoTrack
+    }
+
+    /// Their name and state, as a pill (a crossed microphone and "Muted", or a waveform when speaking).
+    private var namePill: some View {
+        HStack(spacing: 6) {
+            if tile.muted { Image(systemName: "mic.slash.fill").font(.caption) }
+            else if tile.speaking { Image(systemName: "waveform").font(.caption) }
+            Text(tile.isMe ? "You" : tile.name).font(.footnote.weight(.semibold)).lineLimit(1)
+            if tile.muted { Text("Muted").font(.caption2) }
+        }
+        .foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 4)
+        .background(.black.opacity(0.55), in: Capsule()).padding(6)
+    }
+
     var body: some View {
         // A read of the pictures version makes a tile look its track up again when one changes.
         let _ = store.groupCalls.picturesVersion
-        ZStack(alignment: .bottomLeading) {
-            Color.white.opacity(0.10)
-            picture
-            HStack(spacing: 6) {
-                if tile.muted { Image(systemName: "mic.slash.fill").font(.caption) }
-                else if tile.speaking { Image(systemName: "waveform").font(.caption) }
-                Text(tile.isMe ? "You" : tile.name).font(.footnote.weight(.semibold)).lineLimit(1)
-                if tile.muted { Text("Muted").font(.caption2) }
+        Group {
+            if let track {
+                // A picture fills the tile and the name sits on it.
+                ZStack(alignment: .bottomLeading) {
+                    Color.white.opacity(0.10)
+                    SwiftUIVideoView(track, layoutMode: .fill, mirrorMode: tile.isMe ? .mirror : .auto)
+                    namePill
+                }
+            } else {
+                // No picture: the status (or the photo) takes the room above and the name pill sits below it, so they never overlap,
+                // however large the text.
+                VStack(spacing: 0) {
+                    picture.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    namePill.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(Color.white.opacity(0.10))
             }
-            .foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 4)
-            .background(.black.opacity(0.55), in: Capsule()).padding(6)
         }
         .aspectRatio(large ? nil : 3.0 / 4.0, contentMode: .fit)
         .frame(maxWidth: .infinity, maxHeight: large ? .infinity : nil)
@@ -187,10 +210,9 @@ struct GroupTileView: View {
             VStack(spacing: 6) {
                 ProgressView().tint(.white)
                 Text("Connecting securely\u{2026}").font(.footnote).foregroundStyle(.white.opacity(0.85)).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(8)
-        } else if video, tile.cameraOn, let track = store.groupCalls.videoTrack(for: tile.id) as? LiveKit.VideoTrack {
-            SwiftUIVideoView(track, layoutMode: .fill, mirrorMode: tile.isMe ? .mirror : .auto)
         } else {
             initials
         }

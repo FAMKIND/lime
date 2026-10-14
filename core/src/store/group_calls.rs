@@ -3,9 +3,10 @@
 //! here**, so Android gets it for free. The phones' media is end-to-end encrypted with a key per sender; the keys travel only inside
 //! Olm-encrypted group ops, so the SFU and the server only ever see ciphertext.
 //!
-//! Four signed ops ride the group conversation (`grp:<id>`), like `group.session`: `group.call.start` (a call id, a room, video or
+//! Five signed ops ride the group conversation (`grp:<id>`), like `group.session`: `group.call.start` (a call id, a room, video or
 //! not), `group.call.join` (the random LiveKit identity this phone uses), `group.call.key` (that participant's sender key and its
-//! index; sent only to the people in the call) and `group.call.leave`. Rules, all enforced on receive:
+//! index; sent only to the people in the call), `group.call.key_request` (a safety net: "send me your current key again", from a person
+//! in the call to the owner of one participant) and `group.call.leave`. Rules, all enforced on receive:
 //!
 //! - only a **current member** of the group (and only while this phone is in the group, and the group has not ended for me) can start,
 //!   join, send a key or leave;
@@ -34,7 +35,7 @@ const LIVE_WITHOUT_PEOPLE_MS: i64 = 120_000;
 const MAX_PARTICIPANTS: i64 = 100;
 const KEY_INDEX_MAX: u64 = 1_000_000;
 
-pub(crate) const OPS: [&str; 4] = ["group.call.start", "group.call.join", "group.call.key", "group.call.leave"];
+pub(crate) const OPS: [&str; 5] = ["group.call.start", "group.call.join", "group.call.key", "group.call.key_request", "group.call.leave"];
 
 pub(crate) fn is_group_call_op(op_type: &str) -> bool {
     OPS.contains(&op_type)
@@ -145,6 +146,17 @@ fn push_event(conn: &Connection, kind: &str, call: &CallRow, user: &str, partici
     conn.execute(
         "INSERT INTO group_call_events (kind, call_id, conversation_id, user_id, participant, payload, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![kind, call.call_id, groups::conversation_id(&call.group_id), user, participant, payload.to_string(), now],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+/// Something the app should know that is not a state change: a key that was refused and why (for the call diagnostics; no key material).
+#[allow(clippy::too_many_arguments)]
+fn push_note(conn: &Connection, kind: &str, call_id: &str, group_id: &str, user: &str, participant: &str, payload: Value, now: i64) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT INTO group_call_events (kind, call_id, conversation_id, user_id, participant, payload, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![kind, call_id, groups::conversation_id(group_id), user, participant, payload.to_string(), now],
     )
     .map_err(db_err)?;
     Ok(())
@@ -326,11 +338,15 @@ pub(crate) fn apply(conn: &Connection, me: &str, sender: &str, device: &str, gro
             }
         }
         "group.call.key" => {
-            let Some(call) = call_row(conn, &call_id)?.filter(|c| c.group_id == group_id && c.ended_at.is_none() && c.joined) else { return Ok(()) };
-            let Some(participant) = text("participant").filter(|p| is_hex(p, 16, 64)) else { return Ok(()) };
+            let reject = |reason: &str, participant: &str| push_note(conn, "key_rejected", &call_id, group_id, sender, participant, json!({ "reason": reason }), now);
+            let Some(call) = call_row(conn, &call_id)?.filter(|c| c.group_id == group_id && c.ended_at.is_none()) else { return reject("unknown_call", "") };
+            let Some(participant) = text("participant").filter(|p| is_hex(p, 16, 64)) else { return reject("bad_participant", "") };
+            if !call.joined {
+                return reject("not_in_call", &participant);
+            }
             let key = text("key").and_then(|k| vodozemac::base64_decode(k).ok()).filter(|k| k.len() == 32);
             let index = op.payload.get("index").and_then(Value::as_u64).filter(|i| *i <= KEY_INDEX_MAX);
-            let (Some(key), Some(index)) = (key, index) else { return Ok(()) };
+            let (Some(key), Some(index)) = (key, index) else { return reject("bad_key", &participant) };
             // The participant must be this sender's: known and theirs, or claimed now by this first signed op that names it.
             let owner: Option<(String, String, Option<i64>)> = conn
                 .query_row("SELECT user_id, device_id, left_at FROM group_call_participants WHERE call_id = ?1 AND participant = ?2", params![call_id, participant], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
@@ -338,15 +354,29 @@ pub(crate) fn apply(conn: &Connection, me: &str, sender: &str, device: &str, gro
                 .map_err(db_err)?;
             match owner {
                 Some((user, dev, left)) if user == sender && dev == device && left.is_none() => {}
-                Some(_) => return Ok(()),
+                Some((_, _, Some(_))) => return reject("participant_left", &participant),
+                Some(_) => return reject("not_owner", &participant),
                 None => {
                     if !add_participant(conn, &call, &participant, sender, device, now)? {
-                        return Ok(());
+                        return reject("call_full", &participant);
                     }
                     push_event(conn, "joined", &call, sender, &participant, json!({}), now)?;
+                    // First sighting of this person (their key overtook their join): they get my key too, as a join would have sent it.
+                    enqueue_my_key_to(conn, &call, sender)?;
                 }
             }
             push_event(conn, "key", &call, sender, &participant, json!({ "key": vodozemac::base64_encode(&key), "index": index }), now)?;
+        }
+        "group.call.key_request" => {
+            // "Send me your current key again": from a person in the call, for the participant that is mine.
+            let Some(call) = call_row(conn, &call_id)?.filter(|c| c.group_id == group_id && c.ended_at.is_none() && c.joined) else { return Ok(()) };
+            let Some(wanted) = text("participant").filter(|p| is_hex(p, 16, 64)) else { return Ok(()) };
+            if call.my_participant.as_deref() != Some(wanted.as_str()) {
+                return Ok(());
+            }
+            if active_participants(conn, &call_id)?.iter().any(|(_, user)| user == sender) {
+                enqueue_my_key_to(conn, &call, sender)?;
+            }
         }
         "group.call.leave" => {
             let Some(call) = call_row(conn, &call_id)?.filter(|c| c.group_id == group_id && c.ended_at.is_none()) else { return Ok(()) };
@@ -514,6 +544,18 @@ pub(crate) fn local_participant_gone(conn: &Connection, me: &str, call_id: &str,
     rotate_my_key(conn, &call, me)?;
     finish_if_empty(conn, &call, me, now)?;
     Ok(())
+}
+
+/// Asks the owner of `participant` to send me their current key again (a tile stuck without one): queued for them only.
+pub(crate) fn local_request_key(conn: &Connection, me: &str, call_id: &str, participant: &str) -> Result<(), StoreError> {
+    let call = call_row(conn, call_id)?.filter(|c| c.ended_at.is_none() && c.joined).ok_or(StoreError::Rejected)?;
+    let owner: Option<String> = conn
+        .query_row("SELECT user_id FROM group_call_participants WHERE call_id = ?1 AND participant = ?2 AND left_at IS NULL", params![call_id, participant], |r| r.get(0))
+        .optional()
+        .map_err(db_err)?;
+    let state = groups::state_of(conn, &call.group_id)?;
+    let Some(owner) = owner.filter(|u| u != me && state.is_member(u)) else { return Ok(()) };
+    enqueue(conn, call_id, &owner, "group.call.key_request", &json!({ "call_id": call_id, "participant": participant }))
 }
 
 /// `(id, call_id, to_user, op_type, payload)` for each op still owed.

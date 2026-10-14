@@ -12,8 +12,10 @@ protocol GroupCallCore: AnyObject {
     func participantGone(callID: String, participant: String) async
     func token(room: String, participant: String) async -> LiveKitToken?
     func iceServers() async -> [IceServer]
-    /// Sends what this phone owes the others (starts, joins, keys, leaves).
-    func deliver() async
+    /// Sends what this phone owes the others (starts, joins, keys, leaves); says what went.
+    func deliver() async -> GroupCallSendReport?
+    /// A tile is stuck without a key: asks its owner to send it again (once per participant per call).
+    func requestKey(callID: String, participant: String) async
     func takeEvents() -> [GroupCallEvent]
     func activeCall(conversationID: String) -> GroupCallInfo?
     func title(of conversationID: String) -> String
@@ -89,6 +91,11 @@ final class GroupCallManager {
     @ObservationIgnored private var keyed: Set<String> = []
     @ObservationIgnored private var decrypting: [String: Bool] = [:]
     @ObservationIgnored private var busy = false
+    /// When each remote tile was first seen without a working key, and who has been asked for it again.
+    @ObservationIgnored private var stuckSince: [String: Date] = [:]
+    @ObservationIgnored private var asked: Set<String> = []
+    /// A tile still without a key after this long asks its owner once to send it again.
+    @ObservationIgnored var keyRetrySeconds: Double = 5
 
     init(core: GroupCallCore, system: CallSystem, quietReason: @escaping () -> CallQuietReason? = { nil },
          isOtherCallActive: @escaping () -> Bool = { false }, now: @escaping () -> Date = Date.init, makeMedia: @escaping () -> any GroupCallMedia) {
@@ -181,6 +188,8 @@ final class GroupCallManager {
         speakerOn = false
         keyed = []
         decrypting = [:]
+        stuckSince = [:]
+        asked = []
         myParticipant = joined.participant
         tiles = [Tile(id: joined.participant, userID: "", name: "You", isMe: true, secured: true)]
         for other in joined.participants { tiles.append(Tile(id: other.participant, userID: other.userId, name: other.name, isMe: false)) }
@@ -191,10 +200,12 @@ final class GroupCallManager {
         let media = makeMedia()
         self.media = media
         media.onEvent = { [weak self] event in self?.handle(media: event) }
-        if let key = Data(base64Encoded: joined.key) { media.setKey(key, participant: joined.participant, index: Int(joined.keyIndex)) }
+        // The key is raw bytes from the core (never text: the core's base64 has no padding, which Swift's decoder refuses).
+        media.setKey(joined.key, participant: joined.participant, index: Int(joined.keyIndex))
+        diag.log("group call: setKey me \(joined.participant.prefix(4))… index \(joined.keyIndex) (LiveKit identity \(joined.participant.prefix(4))…)")
         startPolling()
         // My join and my key go out now (they are what the others wait for), while the connection comes up.
-        Task { await core.deliver() }
+        Task { await deliverAndLog() }
         guard let token = await core.token(room: info.room, participant: joined.participant) else {
             diag.log("group call: no token (not configured)")
             notice = "Group calls aren\u{2019}t available yet."
@@ -267,8 +278,34 @@ final class GroupCallManager {
 
     /// Sends what is owed, then handles what arrived. The app calls this after every fetch; a call also does it once a second.
     func pump() async {
-        await core.deliver()
+        await deliverAndLog()
         handle(core.takeEvents())
+        checkStuckTiles()
+    }
+
+    private func deliverAndLog() async {
+        guard let report = await core.deliver(), report.sent > 0 || report.waiting > 0 else { return }
+        diag.log("group call: sent \(report.sent) ops (\(report.keysSent) keys, last index \(report.lastKeyIndex)), \(report.waiting) waiting")
+    }
+
+    /// A remote tile that has had no working key for `keyRetrySeconds` asks its owner, once, to send it again.
+    func checkStuckTiles() {
+        guard phase != .idle else { return }
+        let current = now()
+        for tile in tiles where !tile.isMe {
+            if tile.secured {
+                stuckSince[tile.id] = nil
+            } else if let since = stuckSince[tile.id] {
+                if current.timeIntervalSince(since) >= keyRetrySeconds, !asked.contains(tile.id) {
+                    asked.insert(tile.id)
+                    diag.log("group call: asking \(tile.id.prefix(4))… for their key again")
+                    let call = callID, id = tile.id
+                    Task { await core.requestKey(callID: call, participant: id); await deliverAndLog() }
+                }
+            } else {
+                stuckSince[tile.id] = current
+            }
+        }
     }
 
     func handle(_ events: [GroupCallEvent]) {
@@ -292,11 +329,13 @@ final class GroupCallManager {
                 tiles.removeAll { $0.id == event.participant }
                 keyed.remove(event.participant)
             case "key" where event.callId == callID:
-                guard let encoded = event.key, let key = Data(base64Encoded: encoded) else { continue }
+                guard let key = event.key, key.count == 32 else { diag.log("group call: key from \(event.participant.prefix(4))… is not 32 bytes: ignored"); continue }
                 media?.setKey(key, participant: event.participant, index: Int(event.keyIndex))
                 keyed.insert(event.participant)
-                diag.log("group call: key index \(event.keyIndex) from \(event.participant.prefix(4))…")
+                diag.log("group call: key received from \(event.participant.prefix(4))… (index \(event.keyIndex)) accepted; setKey \(event.participant.prefix(4))… (LiveKit identity \(event.participant.prefix(4))…)")
                 refreshSecured(event.participant)
+            case "key_rejected" where event.callId == callID || callID.isEmpty:
+                diag.log("group call: key from \(event.participant.prefix(4))… rejected: \(event.reason)")
             default:
                 break
             }
@@ -323,18 +362,21 @@ final class GroupCallManager {
             tiles.removeAll { $0.id == id }
             keyed.remove(id)
             let call = callID
-            Task { await core.participantGone(callID: call, participant: id); await core.deliver() }
+            Task { await core.participantGone(callID: call, participant: id); _ = await core.deliver() }
         case .microphone(let id, let muted):
             update(id) { $0.muted = muted }
         case .camera(let id, let on):
             update(id) { $0.cameraOn = on }
         case .speaking(let ids):
             for index in tiles.indices { tiles[index].speaking = ids.contains(tiles[index].id) }
-        case .secured(let id, let ok):
+        case .secured(let id, let ok, let state):
+            diag.log("group call: frame cryptor \(id.prefix(4))… \(state)")
             decrypting[id] = ok
             refreshSecured(id)
         case .tracks:
             picturesVersion += 1
+        case .sendIndexReset(let index):
+            diag.log("group call: send index reset to \(index)")
         }
     }
 
@@ -389,7 +431,7 @@ final class GroupCallManager {
         speakerOn = false
         if notify { system.reportEnded(callID: Self.systemID(id), answeredOrOutgoing: true) }
         await media?.disconnect()
-        if tellCore { await core.leave(callID: id); await core.deliver() }
+        if tellCore { await core.leave(callID: id); _ = await core.deliver() }
         onFinished?()
     }
 

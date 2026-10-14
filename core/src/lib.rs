@@ -23,7 +23,7 @@ mod testing;
 pub use call_emoji::{call_emoji, CallEmoji};
 pub use format::{Block, ListItem, Span};
 pub use client::groups::{GroupDetails, GroupMemberInfo};
-pub use client::group_calls::{group_call_rings, GroupCallEvent, GroupCallInfo, GroupCallJoin, GroupCallParticipant, LiveKitToken};
+pub use client::group_calls::{group_call_rings, GroupCallEvent, GroupCallInfo, GroupCallJoin, GroupCallParticipant, GroupCallSendReport, LiveKitToken};
 pub use client::attachments::{OutgoingAttachment, TransferProgress};
 pub use client::{find_user, lookup_user_by_email, DeviceInfo, FoundUser, SyncReport, Verification};
 pub use store::search::{ConversationMatch, SearchHit};
