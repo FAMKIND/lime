@@ -323,3 +323,26 @@ A teacher's QR code is `https://limechat.org/u/<username>?k=<20 hex digits>`: th
 ### 12.1 Calls in the chat (LIME-123)
 
 A call is shown in the DM as a message with the id `call:<call_id>` (the id both phones already share from the signalling). Each phone makes this message itself when the call ends (any outcome); **it is never sent**. The sender is the caller. Reactions (`reaction.toggle`) and replies (`thread_root`) are the ordinary ops and name that id, so they work on a call unchanged; if the other phone never learned of the call, a reaction waits and a reply shows without its quote. Delete is "for me" only (a call is not edited or deleted for everyone).
+
+### 12.2 Group calls (LIME-112b)
+
+A call inside a group goes through Lime's own LiveKit server (`sfu.limechat.org`, `infra/sfu/`): an SFU that forwards each person's audio and video once to everyone. The media is **end-to-end encrypted by the phones with a key per sender** (LiveKit's frame encryption in per-participant mode), and the keys travel only inside Olm-encrypted group ops, so the SFU, Caddy and the server only ever see ciphertext. All the rules below are in LimeCore (`core/src/store/group_calls.rs`); the app is an adapter over the LiveKit SDK and CallKit.
+
+**Four signed ops** on the group conversation (`grp:<id>`), sent per person over Olm (sealed where possible), like `group.session`. (They are named `group.call.*` so they travel as group ops; the brief called them `call.start` and so on.)
+
+- `group.call.start { call_id, room, video }`: `call_id` and `room` are each 32 random bytes as hex. It writes the chat line "<Name> started a call · Join" (a local message `call:<call_id>` with `group: true`, never sent). Anyone in the group can start.
+- `group.call.join { call_id, participant }`: `participant` is the random 16-byte LiveKit identity this phone uses (never the user id). It maps the participant to this member and device, for names and tiles.
+- `group.call.key { call_id, participant, key, index }`: that participant's sender key (32 bytes, base64) and its index. Sent only to the people in the call. On a join, every phone in the call sends its current key to the newcomer, and the newcomer sends its own to everyone in the call.
+- `group.call.leave { call_id, participant }`.
+
+**Rules, enforced on receive and tested** (`client_tests.rs`):
+
+- only a **current group member's** device can start, join, send a key or leave, and only while this phone is in the group and the group has not ended for it (a left or deleted group, LIME-115, refuses calls);
+- a key is accepted only for a **known call in that group**, **from the person who owns that participant** (the first signed op that names a participant claims it for its sender and device; a later op for it from anyone else is ignored), and only while this phone is in the call;
+- **when anyone leaves** (a `group.call.leave`, the media server reporting them gone, or the group removing them), every phone still in the call makes a **new key with the next index** and sends it only to the people still in the call and still in the group; a member removed from the group, or who leaves it, gets no new keys and is treated as having left the call;
+- one active call at a time on a phone; the call **ends when nobody is in it**, which writes "Call ended · 23:10" and a call-history row (a call I was in is `completed`; a rung one I never joined is `missed`);
+- a group of **up to 10 people rings** (the core says `ring`, the app silences it for Do Not Disturb and work hours, no `call.unavailable` is sent to a group); a larger group, or one still waiting in Requests, gets the chat line only.
+
+**`POST /functions/v1/livekit-token`** (verified session, 20 requests/minute): body `{room, participant}`, where `room` is the call's 64-hex id (holding it is the capability; there is no server-side membership) and `participant` is 16 to 64 hex characters; returns `{url, token, ttl}`, a LiveKit HS256 access token with join, publish, subscribe and data only (no admin, no recording) valid 10 minutes to join. Stores and logs nothing, never the room. `503 not_configured` until `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and `LIVEKIT_URL` are set (`infra/sfu/README.md`).
+
+**On the phone:** `start_group_call`, `join_group_call` (returns this phone's identity and first key), `leave_group_call`, `group_call_participant_gone`, `active_group_call`, `take_group_call_events` (`started`, `joined`, `left`, `key`, `ended`), `deliver_group_call_ops` (sends what is owed; keep calling it after `sync`), `fetch_livekit_token`, `group_call_rings`. Schema: migration 27 (`group_calls`, `group_call_participants`, `group_call_outbox`, `group_call_events`).

@@ -7,23 +7,42 @@ struct CallBubble: Hashable, Sendable {
     let outcome: CallOutcome
     /// I placed the call.
     let mine: Bool
+    /// A group call (LIME-112b): "<Name> started a call · Join" while it is on, then "Call ended · 23:10". `startedBy` is the starter's user id.
+    let isGroup: Bool
+    let live: Bool
+    let startedBy: String?
 
-    init(video: Bool, duration: TimeInterval, outcome: CallOutcome, mine: Bool) {
+    init(video: Bool, duration: TimeInterval, outcome: CallOutcome, mine: Bool, isGroup: Bool = false, live: Bool = false, startedBy: String? = nil) {
         self.video = video; self.duration = duration; self.outcome = outcome; self.mine = mine
+        self.isGroup = isGroup; self.live = live; self.startedBy = startedBy
     }
 
     init?(body: String, mine: Bool) {
         guard let data = body.data(using: .utf8), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let outcome = (json["outcome"] as? String).flatMap(CallOutcome.init(rawValue:)) else { return nil }
-        self.init(video: (json["video"] as? Bool) ?? false, duration: Double((json["duration_ms"] as? Int) ?? 0) / 1000, outcome: outcome, mine: mine)
+              let raw = json["outcome"] as? String else { return nil }
+        let isGroup = (json["group"] as? Bool) ?? false
+        let live = isGroup && raw == "live"
+        guard let outcome = CallOutcome(rawValue: live ? CallOutcome.completed.rawValue : raw) else { return nil }
+        self.init(video: (json["video"] as? Bool) ?? false, duration: Double((json["duration_ms"] as? Int) ?? 0) / 1000, outcome: outcome, mine: mine,
+                  isGroup: isGroup, live: live, startedBy: json["started_by"] as? String)
     }
 
+    /// The title in a chat, given the name of whoever started a group call.
+    func title(startedBy name: String?) -> String {
+        guard isGroup else { return title }
+        if live { return mine ? "You started a call" : "\(name ?? "Someone") started a call" }
+        return "Call ended"
+    }
+
+    /// The second line in a chat: "Join" while a group call is on.
+    var chatDetail: String { isGroup && live ? "Join" : detail }
+
     /// A missed incoming call (shown in the danger red).
-    var isMissedIncoming: Bool { !mine && outcome.isMissed }
+    var isMissedIncoming: Bool { !isGroup && !mine && outcome.isMissed }
     var kind: String { video ? "video" : "voice" }
 
     /// "Voice call", "Video call", "Missed voice call".
-    var title: String { isMissedIncoming ? "Missed \(kind) call" : (video ? "Video call" : "Voice call") }
+    var title: String { isGroup ? (live ? "Group call" : "Call ended") : (isMissedIncoming ? "Missed \(kind) call" : (video ? "Video call" : "Voice call")) }
 
     /// The second line: the length, or what became of it.
     var detail: String {
@@ -42,6 +61,7 @@ struct CallBubble: Hashable, Sendable {
     /// One line for the Messages row and a reply's quote: "Video call · 0:23", "Missed voice call", "Voice call · No answer".
     var summary: String {
         if isMissedIncoming { return title }
+        if isGroup && live { return "Group call \u{00B7} Join" }
         return "\(title) \u{00B7} \(detail)"
     }
 

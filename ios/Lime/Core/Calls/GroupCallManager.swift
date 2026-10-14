@@ -1,0 +1,407 @@
+import AVFoundation
+import Foundation
+import Observation
+
+/// What a group call needs from LimeCore and the signed-in session. The rules (who may start, join or be sent a key, when keys change,
+/// when a call is over) are all in the core; this only asks and obeys. The real one is `StoreGroupCallCore`; tests use a fake.
+@MainActor
+protocol GroupCallCore: AnyObject {
+    func start(conversationID: String, video: Bool) async throws -> GroupCallInfo
+    func join(callID: String) async throws -> GroupCallJoin
+    func leave(callID: String) async
+    func participantGone(callID: String, participant: String) async
+    func token(room: String, participant: String) async -> LiveKitToken?
+    func iceServers() async -> [IceServer]
+    /// Sends what this phone owes the others (starts, joins, keys, leaves).
+    func deliver() async
+    func takeEvents() -> [GroupCallEvent]
+    func activeCall(conversationID: String) -> GroupCallInfo?
+    func title(of conversationID: String) -> String
+}
+
+/// One group call at a time (LIME-112b). A thin adapter: LimeCore decides everything about the call and its keys; LiveKit carries the
+/// media (end to end encrypted with a key per sender, so the server only forwards ciphertext); CallKit rings and shows the system call.
+@MainActor
+@Observable
+final class GroupCallManager {
+    enum Phase: Equatable { case idle, connecting, active }
+
+    /// One person's tile.
+    struct Tile: Identifiable, Equatable {
+        let id: String            // the participant (the random LiveKit identity)
+        var userID: String
+        var name: String
+        var isMe: Bool
+        var muted = false
+        var cameraOn = false
+        var speaking = false
+        /// Their key has arrived and their media decrypts: until then the tile says "Connecting securely…" and shows no picture.
+        var secured = false
+    }
+
+    /// A group call that is ringing here.
+    struct Incoming: Equatable {
+        let callID: String
+        let conversationID: String
+        let title: String
+        let callerName: String
+        let video: Bool
+    }
+
+    private(set) var phase: Phase = .idle
+    private(set) var callID = ""
+    private(set) var conversationID = ""
+    private(set) var title = ""
+    private(set) var video = false
+    private(set) var tiles: [Tile] = []
+    private(set) var muted = false
+    private(set) var cameraOn = false
+    private(set) var speakerOn = false
+    private(set) var startedAt: Date?
+    private(set) var incoming: Incoming?
+    /// Bumped when a tile's picture may have changed (the SwiftUI tile looks the track up again).
+    private(set) var picturesVersion = 0
+    /// Bumped whenever a call event arrives (the chat's Join pill and bubble read the core again).
+    private(set) var changes = 0
+    var minimized = false
+    var notice: String?
+    /// More than 12 people: speaker view and camera off by default.
+    var speakerViewByDefault: Bool { tiles.count > Self.gridLimit }
+    static let gridLimit = 12
+
+    @ObservationIgnored let core: GroupCallCore
+    @ObservationIgnored private let system: CallSystem
+    @ObservationIgnored private let makeMedia: () -> any GroupCallMedia
+    @ObservationIgnored private let quietReason: () -> CallQuietReason?
+    @ObservationIgnored private let isOtherCallActive: () -> Bool
+    @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private let diag = CallDiagnostics.shared
+    @ObservationIgnored var alwaysRelay: () -> Bool = { false }
+    /// Fetches the mailbox now (set by the app); once a second while a call is on, in case a nudge is missed.
+    @ObservationIgnored var fetchNow: (() async -> Void)?
+    /// A call ended or I left (the chat line changed, so the app reloads).
+    @ObservationIgnored var onFinished: (() -> Void)?
+    @ObservationIgnored var ringSeconds: Double = 45
+    @ObservationIgnored private var media: (any GroupCallMedia)?
+    @ObservationIgnored private var poller: Task<Void, Never>?
+    @ObservationIgnored private var ringTimeout: Task<Void, Never>?
+    @ObservationIgnored private var myParticipant = ""
+    @ObservationIgnored private var keyed: Set<String> = []
+    @ObservationIgnored private var decrypting: [String: Bool] = [:]
+    @ObservationIgnored private var busy = false
+
+    init(core: GroupCallCore, system: CallSystem, quietReason: @escaping () -> CallQuietReason? = { nil },
+         isOtherCallActive: @escaping () -> Bool = { false }, now: @escaping () -> Date = Date.init, makeMedia: @escaping () -> any GroupCallMedia) {
+        self.core = core
+        self.system = system
+        self.quietReason = quietReason
+        self.isOtherCallActive = isOtherCallActive
+        self.now = now
+        self.makeMedia = makeMedia
+        // The system call screen's buttons also reach the one-to-one calls: each handler passes on what is not about a group call.
+        let answer = system.onAnswer, end = system.onEnd, mute = system.onMute
+        system.onAnswer = { [weak self] id in
+            Task { @MainActor in
+                if let self, self.incoming.map({ Self.systemID($0.callID) }) == id { await self.acceptIncoming(fromSystem: true) } else { answer?(id) }
+            }
+        }
+        system.onEnd = { [weak self] id in
+            Task { @MainActor in
+                if let self, id == Self.systemID(self.callID), self.phase != .idle { await self.leave() }
+                else if let self, self.incoming.map({ Self.systemID($0.callID) }) == id { self.dismissIncoming() }
+                else { end?(id) }
+            }
+        }
+        system.onMute = { [weak self] id, muted in
+            Task { @MainActor in
+                if let self, id == Self.systemID(self.callID), self.phase != .idle { await self.setMuted(muted) } else { mute?(id, muted) }
+            }
+        }
+    }
+
+    var inCall: Bool { phase != .idle }
+
+    /// The picture of a participant for the tile (the media engine's video track), or nil. Only the SwiftUI tile looks inside.
+    func videoTrack(for participant: String) -> AnyObject? { media?.videoTrack(for: participant) }
+
+    /// The id CallKit knows a group call by: the first 128 bits of the call id, as a UUID.
+    nonisolated static func systemID(_ callID: String) -> String {
+        let hex = Array(callID.prefix(32))
+        guard hex.count == 32 else { return callID }
+        let text = String(hex)
+        return "\(text.prefix(8))-\(text.dropFirst(8).prefix(4))-\(text.dropFirst(12).prefix(4))-\(text.dropFirst(16).prefix(4))-\(text.dropFirst(20))"
+    }
+
+    // MARK: Starting and joining
+
+    /// Starts a call in a group (or joins the one that is on) and connects. `false` when another call is going or the core refuses.
+    @discardableResult
+    func start(conversationID: String, title: String, video: Bool) async -> Bool {
+        guard phase == .idle, !busy, !isOtherCallActive() else { notice = "End your current call to start another."; return false }
+        busy = true
+        defer { busy = false }
+        do {
+            let info = try await core.start(conversationID: conversationID, video: video)
+            diag.log("group call: start video=\(video), \(info.participantCount) in it")
+            return await joinInternal(info: info, title: title)
+        } catch {
+            diag.log("group call: start refused (\(error))")
+            notice = "Couldn\u{2019}t start the call. Check that you\u{2019}re still in this group."
+            return false
+        }
+    }
+
+    /// Joins a live call (the chat's Join, a ring answered).
+    @discardableResult
+    func join(callID: String, conversationID: String, title: String, video: Bool) async -> Bool {
+        guard phase == .idle, !busy else { return false }
+        if isOtherCallActive() { notice = "End your current call to join this one."; return false }
+        busy = true
+        defer { busy = false }
+        dismissIncoming()
+        let info = core.activeCall(conversationID: conversationID)
+        guard let info, info.callId == callID else { notice = "That call has ended."; return false }
+        return await joinInternal(info: info, title: title)
+    }
+
+    private func joinInternal(info: GroupCallInfo, title: String) async -> Bool {
+        let joined: GroupCallJoin
+        do { joined = try await core.join(callID: info.callId) } catch {
+            diag.log("group call: join refused (\(error))")
+            notice = "Couldn\u{2019}t join the call."
+            return false
+        }
+        callID = info.callId
+        conversationID = info.conversationId
+        self.title = title
+        video = info.video
+        phase = .connecting
+        startedAt = nil
+        muted = false
+        speakerOn = false
+        keyed = []
+        decrypting = [:]
+        myParticipant = joined.participant
+        tiles = [Tile(id: joined.participant, userID: "", name: "You", isMe: true, secured: true)]
+        for other in joined.participants { tiles.append(Tile(id: other.participant, userID: other.userId, name: other.name, isMe: false)) }
+        // Many people: speaker view, and the camera starts off.
+        cameraOn = info.video && tiles.count <= Self.gridLimit
+        diag.log("group call: joined as \(joined.participant.prefix(4))…, \(joined.participants.count) already in, key index \(joined.keyIndex)")
+        system.reportOutgoing(callID: Self.systemID(callID), name: title, video: video)
+        let media = makeMedia()
+        self.media = media
+        media.onEvent = { [weak self] event in self?.handle(media: event) }
+        if let key = Data(base64Encoded: joined.key) { media.setKey(key, participant: joined.participant, index: Int(joined.keyIndex)) }
+        startPolling()
+        // My join and my key go out now (they are what the others wait for), while the connection comes up.
+        Task { await core.deliver() }
+        guard let token = await core.token(room: info.room, participant: joined.participant) else {
+            diag.log("group call: no token (not configured)")
+            notice = "Group calls aren\u{2019}t available yet."
+            await finish(notify: true)
+            return false
+        }
+        let servers = await core.iceServers()
+        let relay = alwaysRelay()
+        if relay && !servers.contains(where: { $0.username != nil }) {
+            diag.log("group call: always relay, no relay credentials")
+            notice = CallPrivacy.relayUnavailable
+            await finish(notify: true)
+            return false
+        }
+        do {
+            try await media.connect(url: token.url, token: token.token, identity: joined.participant, iceServers: servers, relayOnly: relay,
+                                    microphone: true, camera: cameraOn)
+        } catch {
+            diag.log("group call: connect failed (\(error))")
+            if phase != .idle { notice = "Couldn\u{2019}t connect to the call."; await finish(notify: true) }
+            return false
+        }
+        return true
+    }
+
+    // MARK: Ringing
+
+    /// The incoming ring was answered (lime's Join or the system's Accept).
+    func acceptIncoming(fromSystem: Bool = false) async {
+        guard let ring = incoming else { return }
+        if !fromSystem { system.requestAnswer(callID: Self.systemID(ring.callID)) }
+        _ = await join(callID: ring.callID, conversationID: ring.conversationID, title: ring.title, video: ring.video)
+    }
+
+    func declineIncoming() {
+        guard let ring = incoming else { return }
+        system.reportEnded(callID: Self.systemID(ring.callID), answeredOrOutgoing: false)
+        dismissIncoming()
+    }
+
+    func dismissIncoming() {
+        ringTimeout?.cancel()
+        incoming = nil
+    }
+
+    private func ring(for event: GroupCallEvent) {
+        guard event.ring, phase == .idle, incoming == nil, !isOtherCallActive() else { return }
+        if let reason = quietReason() {
+            diag.log("group call: silenced (\(reason.rawValue)); the chat line still shows it")
+            return
+        }
+        let title = core.title(of: event.conversationId)
+        incoming = Incoming(callID: event.callId, conversationID: event.conversationId, title: title, callerName: event.name, video: event.video)
+        diag.log("group call: ringing")
+        system.reportIncoming(callID: Self.systemID(event.callId), name: "\(event.name) \u{00B7} \(title)", video: event.video) { [weak self] refusal in
+            if let refusal { self?.diag.log("group call: system refused the ring (\(refusal))") }
+        }
+        ringTimeout?.cancel()
+        let id = event.callId
+        ringTimeout = Task { [weak self] in
+            guard let seconds = self?.ringSeconds else { return }
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self, self.incoming?.callID == id else { return }
+            self.system.reportEnded(callID: Self.systemID(id), answeredOrOutgoing: false)
+            self.incoming = nil
+        }
+    }
+
+    // MARK: Events from the core
+
+    /// Sends what is owed, then handles what arrived. The app calls this after every fetch; a call also does it once a second.
+    func pump() async {
+        await core.deliver()
+        handle(core.takeEvents())
+    }
+
+    func handle(_ events: [GroupCallEvent]) {
+        if !events.isEmpty { changes += 1 }
+        for event in events {
+            switch event.kind {
+            case "started":
+                ring(for: event)
+            case "ended":
+                if incoming?.callID == event.callId { system.reportEnded(callID: Self.systemID(event.callId), answeredOrOutgoing: false); dismissIncoming() }
+                if event.callId == callID, phase != .idle { Task { await self.finish(notify: true, tellCore: false) } }
+                onFinished?()
+            case "joined" where event.callId == callID:
+                if let index = tiles.firstIndex(where: { $0.id == event.participant }) {
+                    tiles[index].userID = event.userId
+                    tiles[index].name = event.name
+                } else if event.participant != myParticipant {
+                    tiles.append(Tile(id: event.participant, userID: event.userId, name: event.name, isMe: false))
+                }
+            case "left" where event.callId == callID:
+                tiles.removeAll { $0.id == event.participant }
+                keyed.remove(event.participant)
+            case "key" where event.callId == callID:
+                guard let encoded = event.key, let key = Data(base64Encoded: encoded) else { continue }
+                media?.setKey(key, participant: event.participant, index: Int(event.keyIndex))
+                keyed.insert(event.participant)
+                diag.log("group call: key index \(event.keyIndex) from \(event.participant.prefix(4))…")
+                refreshSecured(event.participant)
+            default:
+                break
+            }
+        }
+    }
+
+    // MARK: Events from the media engine
+
+    func handle(media event: GroupMediaEvent) {
+        switch event {
+        case .connection(let connected, let error):
+            if connected, phase == .connecting {
+                phase = .active
+                startedAt = now()
+                system.reportConnected(callID: Self.systemID(callID))
+                diag.log("group call: connected")
+            } else if !connected, phase != .idle {
+                diag.log("group call: connection lost \(error ?? "")")
+                if error != nil || phase == .active { notice = "The call connection was lost."; Task { await self.finish(notify: true) } }
+            }
+        case .participantConnected(let id):
+            if !tiles.contains(where: { $0.id == id }) { tiles.append(Tile(id: id, userID: "", name: "Someone", isMe: false)) }
+        case .participantDisconnected(let id):
+            tiles.removeAll { $0.id == id }
+            keyed.remove(id)
+            let call = callID
+            Task { await core.participantGone(callID: call, participant: id); await core.deliver() }
+        case .microphone(let id, let muted):
+            update(id) { $0.muted = muted }
+        case .camera(let id, let on):
+            update(id) { $0.cameraOn = on }
+        case .speaking(let ids):
+            for index in tiles.indices { tiles[index].speaking = ids.contains(tiles[index].id) }
+        case .secured(let id, let ok):
+            decrypting[id] = ok
+            refreshSecured(id)
+        case .tracks:
+            picturesVersion += 1
+        }
+    }
+
+    private func update(_ id: String, _ change: (inout Tile) -> Void) {
+        if let index = tiles.firstIndex(where: { $0.id == id }) { change(&tiles[index]) }
+    }
+
+    /// A person's picture shows only once their key has arrived and their media decrypts.
+    private func refreshSecured(_ id: String) {
+        update(id) { tile in
+            if !tile.isMe { tile.secured = keyed.contains(id) && decrypting[id] != false }
+        }
+        picturesVersion += 1
+    }
+
+    // MARK: In the call
+
+    func setMuted(_ on: Bool) async {
+        muted = on
+        update(myParticipant) { $0.muted = on }
+        await media?.setMicrophone(!on)
+    }
+
+    func toggleCamera() async {
+        cameraOn.toggle()
+        update(myParticipant) { $0.cameraOn = cameraOn }
+        await media?.setCamera(cameraOn)
+    }
+
+    func flipCamera() async { await media?.flipCamera() }
+
+    func toggleSpeaker() {
+        speakerOn.toggle()
+        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(speakerOn ? .speaker : .none)
+    }
+
+    /// Hang up.
+    func leave() async { await finish(notify: true) }
+
+    private func finish(notify: Bool, tellCore: Bool = true) async {
+        guard phase != .idle || !callID.isEmpty else { return }
+        let id = callID
+        let media = self.media
+        diag.log("group call: leaving")
+        poller?.cancel()
+        phase = .idle
+        self.media = nil
+        tiles = []
+        callID = ""
+        startedAt = nil
+        minimized = false
+        speakerOn = false
+        if notify { system.reportEnded(callID: Self.systemID(id), answeredOrOutgoing: true) }
+        await media?.disconnect()
+        if tellCore { await core.leave(callID: id); await core.deliver() }
+        onFinished?()
+    }
+
+    private func startPolling() {
+        poller?.cancel()
+        poller = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled, self.phase != .idle else { return }
+                await self.fetchNow?()
+                await self.pump()
+            }
+        }
+    }
+}

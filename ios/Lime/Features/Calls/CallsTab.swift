@@ -25,16 +25,31 @@ struct CallRowView: View {
     @Environment(ConversationStore.self) private var store
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 52
 
+    /// A group's call: its history row carries the group's conversation id (LIME-112b).
+    private func isGroupCall(_ call: CallRecord) -> Bool { call.peerID.hasPrefix("grp:") }
+
+    private func openOrJoin(_ call: CallRecord) {
+        guard let live = store.groupCalls.core.activeCall(conversationID: call.peerID) else { return }
+        Task { _ = await store.groupCalls.join(callID: live.callId, conversationID: call.peerID, title: call.peerName, video: live.video) }
+    }
+
+    private func startAgain(_ call: CallRecord) {
+        Task { _ = await store.groupCalls.start(conversationID: call.peerID, title: call.peerName, video: call.video) }
+    }
+
     /// The person as the chats know them (their colour and label), or a plain one.
     private func person(_ call: CallRecord) -> Person {
-        store.conversations.first { !$0.isGroup && $0.members.first?.id == call.peerID }?.members.first ?? Person(id: call.peerID, name: call.peerName, tone: 0)
+        if isGroupCall(call) { return Person(id: call.peerID, name: call.peerName, tone: abs(call.peerID.hashValue) % 8) }
+        return store.conversations.first { !$0.isGroup && $0.members.first?.id == call.peerID }?.members.first ?? Person(id: call.peerID, name: call.peerName, tone: 0)
     }
 
     var body: some View {
         let call = group.first
         let missed = group.isMissedIncoming
         HStack(spacing: 12) {
-            Button { store.callPath.append(ProfileRoute(userID: call.peerID, name: call.peerName, callIDs: group.records.map(\.id))) } label: {
+            Button {
+                if isGroupCall(call) { openOrJoin(call) } else { store.callPath.append(ProfileRoute(userID: call.peerID, name: call.peerName, callIDs: group.records.map(\.id))) }
+            } label: {
                 HStack(spacing: 12) {
                     AvatarView(person: person(call), size: avatarSize)
                     VStack(alignment: .leading, spacing: 3) {
@@ -62,7 +77,9 @@ struct CallRowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("call-history-row")
-            Button { Task { _ = await store.calls.start(peerID: call.peerID, name: call.peerName, video: call.video) } } label: {
+            Button {
+                if isGroupCall(call) { startAgain(call) } else { Task { _ = await store.calls.start(peerID: call.peerID, name: call.peerName, video: call.video) } }
+            } label: {
                 Image(systemName: call.video ? "video" : "phone").font(.system(size: 17))
                     .foregroundStyle(Theme.text).frame(width: 40, height: 40)
                     .background(Theme.surface, in: Circle())
@@ -279,6 +296,11 @@ struct NewCallSheet: View {
     private var people: [KnownTeacher] { KnownTeachers.from(store.conversations).filter { $0.id != store.selfChatID } }
     private var sections: [KnownTeachers.Section] { KnownTeachers.sections(people, filter: query) }
     private var typed: String { query.trimmingCharacters(in: .whitespaces) }
+    /// My groups (not waiting in Requests, not ended), by name; the search narrows them like it does people.
+    private var groupChats: [Conversation] {
+        store.conversations.filter { $0.isGroup && !$0.isRequest && $0.groupEnded == nil && (typed.isEmpty || $0.title.localizedCaseInsensitiveContains(typed)) }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
 
     var body: some View {
         NavigationStack(path: $route) {
@@ -327,7 +349,23 @@ struct NewCallSheet: View {
                                     .padding(.trailing, 28)
                                 }
                             }
-                            if sections.isEmpty {
+                            if !groupChats.isEmpty {
+                                Text("Groups")
+                                    .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                                    .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4)
+                                    .accessibilityAddTraits(.isHeader)
+                                ForEach(groupChats) { group in
+                                    HStack(spacing: 8) {
+                                        Text(group.title).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+                                            .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 20)
+                                        circle("phone", "Voice call \(group.title)", id: "new-call-group-voice-\(group.id)") { callGroup(group, video: false) }
+                                        circle("video", "Video call \(group.title)", id: "new-call-group-video-\(group.id)") { callGroup(group, video: true) }
+                                    }
+                                    .frame(minHeight: 56)
+                                    .padding(.trailing, 28)
+                                }
+                            }
+                            if sections.isEmpty && groupChats.isEmpty {
                                 Text(typed.isEmpty ? "People you message will appear here. Find someone by their username." : "No one you message matches.")
                                     .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                                     .padding(.horizontal, 24).padding(.top, 20)
@@ -368,6 +406,11 @@ struct NewCallSheet: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
+    }
+
+    private func callGroup(_ group: Conversation, video: Bool) {
+        dismiss()
+        Task { _ = await store.groupCalls.start(conversationID: group.id, title: group.title, video: video) }
     }
 
     private func call(_ teacher: KnownTeacher, video: Bool) {

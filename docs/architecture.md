@@ -203,3 +203,17 @@ DESIGN-01's order, **as amended by the user on 2026-10-05: mesh v1 comes before 
 ### Calls: as built (LIME-111)
 
 1:1 voice and video over WebRTC (stasel/WebRTC), DTLS-SRTP between the phones; media goes peer to peer, or through a self-hosted coturn at `turn.limechat.org` (`infra/turn/`) which only sees ciphertext. Signalling is Lime's own encrypted control ops (`core/src/client/calls.rs`); the app's `CallManager` is a small state machine over injectable signalling, system (CallKit) and media. History is local to the phone (`CallLog`). Calls ring only while Lime is open or recently open (no PushKit yet).
+
+
+### Group calls: as built (LIME-112b)
+
+Calls in a lime group go through one self-hosted LiveKit server (`infra/sfu/`, `sfu.limechat.org`, today on the same CPX11 as coturn, Caddy in front). It is an SFU: each phone sends its audio and video once, the server forwards it. **The media is end-to-end encrypted by the phones** using LiveKit's per-participant frame encryption, with **a key per sender**: each phone makes a random 32-byte key when it joins, and the key travels only to the people in the call, inside Olm-encrypted group ops (`group.call.key`, `docs/api-v2.md` §12.2). When anyone leaves, every phone still in the call makes a new key (next index) and sends it only to those still in the call, so someone who left cannot read on. A participant whose key has not arrived shows "Connecting securely…" and no picture. The rules (who may start, join and be sent a key, key renewal, when a call ends, the 10-person ring cut-off) are in LimeCore, so Android gets them for free; the iOS `GroupCallManager` is a thin adapter over the LiveKit SDK and CallKit. TURN for the phones is Lime's coturn, handed to the SDK by the app (with time-limited credentials); **Always relay calls** sets the relay-only transport policy, so the SFU never sees the phone's address. A short-lived join token comes from the `livekit-token` Edge Function (the room is the call's random 64-hex id; the identity is a random per-call id, never the user id).
+
+**Honest limits.**
+
+- The SFU (and anyone watching its network) sees **IP addresses** (unless Always relay is on), **timing, who connects when, the number of people in a room, and packet sizes**; never the media, and never names or the group's identity (the room is a random id). The Edge Function sees that a signed-in account asked for a token, not which group.
+- Anyone who holds the current key of a participant could forge that participant's stream; per-sender keys limit that to people in the call, and a leaver is cut off at the next key. The **sender-key exchange is flagged for the pre-launch external security review**, like the rest of the call key handling.
+- A member can share what they see and hear, as in any call: end-to-end encryption protects the media from the server, not from the people in the call.
+- Emoji verification (1:1 calls) is **not** done for groups.
+- A person's phone sees the identities (random per-call ids) of the others in the room; names come from the signed `group.call.join` ops, which only group members can send.
+- The SFU is a single small server today: availability and capacity are limited (`infra/sfu/README.md`: about 3-10 people per room comfortably; a dedicated server for 50-100).

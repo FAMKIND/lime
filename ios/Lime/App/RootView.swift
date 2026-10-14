@@ -21,6 +21,23 @@ struct RootView: View {
         } message: { Text(store.calls.notice ?? "") }
         .overlay(alignment: .top) { ComingSoonBanner() }
         .overlay(alignment: .top) { IncomingBannerView() }
+        .overlay(alignment: .top) { GroupIncomingBanner() }
+        .alert("Group call", isPresented: Binding(get: { store.groupCalls.notice != nil }, set: { if !$0 { store.groupCalls.notice = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(store.groupCalls.notice ?? "") }
+        .fullScreenCover(isPresented: Binding(get: { store.groupCalls.inCall && !store.groupCalls.minimized }, set: { _ in })) { GroupCallView() }
+        .overlay(alignment: .top) {
+            if store.groupCalls.inCall && store.groupCalls.minimized {
+                Button { store.groupCalls.minimized = false } label: {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Label("Tap to return to group call \u{00B7} \(CallRecord.clock(context.date.timeIntervalSince(store.groupCalls.startedAt ?? context.date)))", systemImage: "phone.fill")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                            .frame(maxWidth: .infinity, minHeight: 36).background(Theme.accent)
+                    }
+                }
+                .accessibilityIdentifier("group-call-return-bar")
+            }
+        }
         .fullScreenCover(isPresented: Binding(get: { store.calls.inCall && !store.calls.minimized }, set: { _ in })) { CallView() }
         .overlay(alignment: .top) {
             if store.calls.inCall && store.calls.minimized && !store.calls.pictureInPictureActive {

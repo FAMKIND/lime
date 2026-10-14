@@ -647,6 +647,21 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(row.exists, "still signed in")
     }
 
+    func testAGroupChatsCallButtonStartsAGroupCallAndSaysWhyWhenItCannot() {
+        let app = threadApp("group")
+        app.launch()
+        let call = app.buttons["chat-call-button"]
+        XCTAssertTrue(call.waitForExistence(timeout: 10), "the group header has the call button")
+        call.tap()
+        XCTAssertTrue(app.buttons["chat-call-voice"].waitForExistence(timeout: 5), "Voice and Video are offered")
+        XCTAssertTrue(app.buttons["chat-call-video"].exists)
+        app.buttons["chat-call-voice"].tap()
+        // This demo group is not a real one (no group ops, no media server), so the call is refused with an explanation, not a "coming soon".
+        XCTAssertTrue(app.alerts["Group call"].waitForExistence(timeout: 10), "a group call is asked for and answered")
+        XCTAssertFalse(app.staticTexts["Group calls are coming soon"].exists)
+        app.alerts["Group call"].buttons["OK"].tap()
+    }
+
     func testAGroupsPictureCanBeEditedFromItsDetailsAsAnEmojiOrAPhoto() {
         let app = threadApp("group-details")
         app.launch()

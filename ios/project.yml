@@ -23,6 +23,11 @@ packages:
   WebRTC:
     url: https://github.com/stasel/WebRTC.git
     exactVersion: "152.0.0"
+  # LiveKit's client SDK (Apache-2.0), for group calls (LIME-112b). It brings its own renamed WebRTC (LiveKitWebRTC), so it lives next to
+  # stasel/WebRTC above, which the one-to-one calls keep using.
+  LiveKit:
+    url: https://github.com/livekit/client-sdk-swift.git
+    exactVersion: "2.17.0"
 targets:
   Lime:
     type: application
@@ -41,6 +46,7 @@ targets:
       # SQLCipher (inside LimeCore) uses Apple's CommonCrypto and the Security framework.
       - sdk: Security.framework
       - package: WebRTC
+      - package: LiveKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.famkind.lime   # placeholder; confirm before registering with Apple

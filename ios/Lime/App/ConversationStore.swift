@@ -140,6 +140,26 @@ final class ConversationStore {
         return manager
     }
 
+    /// The one group call at a time (LIME-112b): a thin adapter over LimeCore's group call rules, LiveKit and CallKit.
+    @ObservationIgnored private var groupCallManager: GroupCallManager?
+    var groupCalls: GroupCallManager {
+        if let groupCallManager { return groupCallManager }
+        var quiet = false
+        #if DEBUG
+        quiet = ProcessInfo.processInfo.arguments.contains("-lime-skip-sign-in") || ProcessInfo.processInfo.arguments.contains("-lime-fake-auth")
+        #endif
+        let manager = GroupCallManager(core: StoreGroupCallCore(store: self), system: calls.system,
+                                       quietReason: { StatusSettings.shared.quietCallReason() },
+                                       isOtherCallActive: { [weak self] in self?.calls.inCall ?? false },
+                                       makeMedia: { LiveKitGroupMedia() })
+        _ = quiet
+        manager.alwaysRelay = { CallPrivacy.alwaysRelay }
+        manager.fetchNow = { [weak self] in await self?.fetchCallOps() }
+        manager.onFinished = { [weak self] in Task { @MainActor in await self?.reload() } }
+        groupCallManager = manager
+        return manager
+    }
+
     /// A light fetch while a call is ringing or connecting: the mailbox and the call ops, nothing else, and never skipped because a
     /// full sync is running.
     func fetchCallOps() async {
@@ -160,6 +180,7 @@ final class ConversationStore {
 
     /// Hands the call ops that arrived to the call manager (after a sync).
     func deliverCallEvents() async {
+        await deliverGroupCallEvents()
         guard let core, let events = try? core.takeCallEvents(), !events.isEmpty else { return }
         let infos = events.map { event -> CallEventInfo in
             let payload = (try? JSONSerialization.jsonObject(with: Data(event.payload.utf8))) as? [String: Any] ?? [:]
@@ -168,6 +189,12 @@ final class ConversationStore {
         }
         // Handled in the call manager's own queue, not inside this sync, so a slow step never holds up the next fetch.
         Task { @MainActor in await calls.handle(infos) }
+    }
+
+    /// Sends what a group call owes the others and hands the group call news to its manager (after a sync).
+    func deliverGroupCallEvents() async {
+        guard core != nil, link != nil else { return }
+        await groupCalls.pump()
     }
 
     /// Accepted conversations (the Messages list) and strangers' first messages (the Requests list).

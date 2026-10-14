@@ -269,7 +269,7 @@ struct ChatView: View {
                                           onOpenThread: { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) },
                                           onActions: { actions.menu = message },
                                           onShowReactions: { actions.reactors = message },
-                                          onCallBack: conversation.isGroup ? nil : { callBack = message.call },
+                                          onCallBack: conversation.isGroup ? groupCallTap(message, conversation) : { callBack = message.call },
                                           onAvatarTap: conversation.isGroup ? { if let who = store.person(message.senderID, in: conversation) { store.openProfile(ProfileRoute(userID: who.id, name: who.name, conversationID: conversation.id)) } } : nil,
                                           selection: selection.map { $0.contains(message.id) },
                                           onToggleSelect: { toggleSelection(message.id) })
@@ -306,10 +306,22 @@ struct ChatView: View {
                     }
                 }
                 if conversation.isGroup {
-                    Text(conversation.subtitle)
-                        .font(Theme.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
+                    if let live = liveCall(conversation) {
+                        // A call is on: a Join pill with how many are in it (words and an icon, not colour alone).
+                        Button { joinGroupCall(live, conversation) } label: {
+                            Label("Join \u{00B7} \(live.participantCount) in call", systemImage: live.video ? "video.fill" : "phone.fill")
+                                .font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                                .padding(.horizontal, 10).padding(.vertical, 3).background(Theme.accent, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Join the call, \(live.participantCount) in it")
+                        .accessibilityIdentifier("chat-join-call")
+                    } else {
+                        Text(conversation.subtitle)
+                            .font(Theme.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                    }
                 } else if let person = conversation.members.first, person.label == nil, let status = store.status(of: person.id), let words = StatusPlan.caption(state: status.state, until: status.until) {
                     Text(words)
                         .font(Theme.caption)
@@ -533,7 +545,7 @@ struct ChatView: View {
         }
     }
 
-    /// The call button: voice or video, to one accepted person (group calls come later).
+    /// The call button: voice or video, to one accepted person, or to a group (LIME-112b).
     private func callMenu(_ conversation: Conversation) -> some View {
         Menu {
             Button { startCall(conversation, video: false) } label: { Label("Voice call", systemImage: "phone") }
@@ -545,11 +557,33 @@ struct ChatView: View {
             .accessibilityIdentifier("chat-call-button")
     }
 
+    /// The call that is on in this group, if any (the core says; read again whenever a call event or a reload comes).
+    private func liveCall(_ conversation: Conversation) -> GroupCallInfo? {
+        _ = store.groupCalls.changes
+        guard conversation.isGroup, conversation.groupEnded == nil, !store.groupCalls.inCall else { return nil }
+        return store.groupCalls.core.activeCall(conversationID: conversation.id)
+    }
+
+    /// Tapping "<Name> started a call · Join" in a group joins the call while it is on.
+    private func groupCallTap(_ message: Message, _ conversation: Conversation) -> (() -> Void)? {
+        guard let call = message.call, call.isGroup, call.live, message.id.hasPrefix("call:") else { return nil }
+        let callID = String(message.id.dropFirst(5))
+        return {
+            if let live = store.groupCalls.core.activeCall(conversationID: conversation.id), live.callId == callID { joinGroupCall(live, conversation) }
+        }
+    }
+
+    private func joinGroupCall(_ call: GroupCallInfo, _ conversation: Conversation) {
+        Task { _ = await store.groupCalls.join(callID: call.callId, conversationID: conversation.id, title: conversation.title, video: call.video) }
+    }
+
     private func startCall(_ conversation: Conversation, video: Bool) {
-        guard !conversation.isGroup, !conversation.isRequest, conversation.groupEnded == nil, let peer = conversation.members.first else {
-            store.comingSoon("Group calls")
+        if conversation.isGroup {
+            guard !conversation.isRequest, conversation.groupEnded == nil else { return }
+            Task { _ = await store.groupCalls.start(conversationID: conversation.id, title: conversation.title, video: video) }
             return
         }
+        guard !conversation.isRequest, conversation.groupEnded == nil, let peer = conversation.members.first else { return }
         Task { _ = await store.calls.start(peerID: peer.id, name: conversation.title, video: video) }
     }
 
@@ -757,7 +791,7 @@ struct MessageBubble: View {
                         .labelStyle(.titleAndIcon)
                         .accessibilityIdentifier("forwarded-\(message.id)")
                 }
-                if let call = message.call { CallBubbleView(call: call, id: message.id, onTap: onCallBack) }
+                if let call = message.call { CallBubbleView(call: call, id: message.id, callerName: sender?.name, onTap: onCallBack) }
                 if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
                 if let preview = message.linkPreview { MessageLinkCard(messageID: message.id, preview: preview, isOwn: message.isOwn) }
                 if message.call == nil, !message.text.isEmpty || message.attachments.isEmpty {
@@ -971,6 +1005,8 @@ struct LabelSheet: View {
 struct CallBubbleView: View {
     let call: CallBubble
     let id: String
+    /// Who started a group call (the title says "<Name> started a call").
+    var callerName: String?
     var onTap: (() -> Void)?
 
     var body: some View {
@@ -982,9 +1018,10 @@ struct CallBubbleView: View {
                 Image(systemName: call.symbol).font(Theme.body)
                     .foregroundStyle(tint)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(call.title).font(Theme.body).foregroundStyle(tint)
+                    Text(call.title(startedBy: callerName)).font(Theme.body).foregroundStyle(tint)
                         .accessibilityIdentifier("call-bubble-title")
-                    Text(call.detail).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                    Text(call.chatDetail).font(call.isGroup && call.live ? Theme.caption.weight(.semibold) : Theme.caption)
+                        .foregroundStyle(call.isGroup && call.live ? Theme.text : Theme.textSecondary)
                         .accessibilityIdentifier("call-bubble-detail")
                 }
             }
@@ -995,8 +1032,8 @@ struct CallBubbleView: View {
         .onTapGesture { onTap?() }
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("\(call.title), \(call.detail)")
-        .accessibilityHint("Calls back after asking")
+        .accessibilityLabel("\(call.title(startedBy: callerName)), \(call.chatDetail)")
+        .accessibilityHint(call.isGroup ? (call.live ? "Joins the call" : "") : "Calls back after asking")
         .accessibilityIdentifier("call-bubble-\(id)")
     }
 }

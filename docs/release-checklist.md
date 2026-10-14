@@ -82,3 +82,12 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 
 - **Paid Apple Developer account item:** a video call's picture floats in system Picture in Picture and keeps your own camera running only while lime is in front. Keeping **your** camera on while lime is in the background (or in PiP after leaving) needs the restricted entitlement `com.apple.developer.avfoundation.multitasking-camera-access`, which Apple grants on request and which is not in the free account. Until then lime pauses your video when it leaves the front and tells the other side (`camera: false`, they see your avatar); it resumes when you come back. When the entitlement is granted: add it, set `isMultitaskingCameraAccessEnabled` on the capture session, and drop the pause in `CallManager.appBackgrounded`.
 - On a real phone: minimise a video call (the other person floats over lime; drag, resize, stash it, tap it to return); leave lime during a video call (the same window); close the window (the call goes on with the slim bar).
+
+## Group calls (LIME-112b)
+
+- `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and `LIVEKIT_URL` are set on each Supabase project and `livekit-token` returns 200, not 503 (`infra/sfu/README.md`).
+- `infra/sfu/setup.sh` has been run on the media server; 443/tcp, 7881/tcp and 50000-60000/udp are open (and in any Hetzner Cloud Firewall); coturn's certificate still renews (`certbot renew --dry-run --cert-name turn.limechat.org`, now through Caddy).
+- **A 100-person load test before launch**, from a data-centre machine (not a home network): `lk load-test` with 50 and 100 participants in speaker-view conditions; confirm CPU, egress and packet loss on the production server size (the numbers in `TEND.md` LIME-112b are from a home link at 3, 6 and 10).
+- Real phones: a 3-person voice and video call (join, leave, mute, camera, flip); a join with the app closed (rings only while lime is open or recent); a call over mobile data and with Always relay (the SFU must connect through coturn: the same-host path was not tested); minimise to the system window; a member removed mid-call stops seeing and hearing; the chat line says "Call ended".
+- The sender-key exchange goes to the external security review with the rest of the call crypto.
+
