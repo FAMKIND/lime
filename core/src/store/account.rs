@@ -107,6 +107,36 @@ pub(crate) struct StoredSession {
     pub session: Session,
 }
 
+/// The most sessions kept per peer device; the least recently used go first.
+const MAX_SESSIONS_PER_PEER: i64 = 5;
+
+/// One row of `olm_sessions`, read: its columns, and the session unpickled.
+fn read_session(
+    conn: &Connection,
+    pickle_key: &[u8; 32],
+    user: &str,
+    peer_identity_key: String,
+    stored_id: String,
+    pickle: String,
+) -> Result<StoredSession, StoreError> {
+    let session = Session::from_pickle(SessionPickle::from_encrypted(&pickle, pickle_key).map_err(|_| StoreError::BadMessage)?);
+    if stored_id.is_empty() {
+        // A row from before sessions were kept one each: its id could not be known until now. Fill it in (the row goes if that id is already there).
+        let id = session.session_id();
+        let moved = conn
+            .execute(
+                "UPDATE OR IGNORE olm_sessions SET session_id = ?3 WHERE peer_user_id = ?1 AND peer_identity_key = ?2 AND session_id = ''",
+                params![user, peer_identity_key, id],
+            )
+            .map_err(db_err)?;
+        if moved == 0 {
+            conn.execute("DELETE FROM olm_sessions WHERE peer_user_id = ?1 AND peer_identity_key = ?2 AND session_id = ''", params![user, peer_identity_key]).map_err(db_err)?;
+        }
+    }
+    Ok(StoredSession { peer_identity_key, session })
+}
+
+/// A person's sessions, the one a send should use first: the one that most recently decrypted something, else the newest.
 pub(crate) fn load_sessions(
     conn: &Connection,
     pickle_key: &[u8; 32],
@@ -114,29 +144,17 @@ pub(crate) fn load_sessions(
 ) -> Result<Vec<StoredSession>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT peer_identity_key, session_pickle FROM olm_sessions
-             WHERE peer_user_id = ?1 ORDER BY updated_at DESC",
+            "SELECT peer_identity_key, session_id, session_pickle FROM olm_sessions
+             WHERE peer_user_id = ?1 ORDER BY last_received DESC, created_at DESC",
         )
         .map_err(db_err)?;
     let rows = statement
-        .query_map(params![peer_user], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })
+        .query_map(params![peer_user], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
-    rows.into_iter()
-        .map(|(peer_identity_key, pickle)| {
-            let session = Session::from_pickle(
-                SessionPickle::from_encrypted(&pickle, pickle_key)
-                    .map_err(|_| StoreError::BadMessage)?,
-            );
-            Ok(StoredSession {
-                peer_identity_key,
-                session,
-            })
-        })
-        .collect()
+    drop(statement);
+    rows.into_iter().map(|(identity, id, pickle)| read_session(conn, pickle_key, peer_user, identity, id, pickle)).collect()
 }
 
 /// Every Olm session with the person it belongs to (a sealed item does not say who sent it).
@@ -145,25 +163,23 @@ pub(crate) fn load_all_sessions(
     pickle_key: &[u8; 32],
 ) -> Result<Vec<(String, StoredSession)>, StoreError> {
     let mut statement = conn
-        .prepare(
-            "SELECT peer_user_id, peer_identity_key, session_pickle FROM olm_sessions ORDER BY updated_at DESC",
-        )
+        .prepare("SELECT peer_user_id, peer_identity_key, session_id, session_pickle FROM olm_sessions ORDER BY last_received DESC, created_at DESC")
         .map_err(db_err)?;
     let rows = statement
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)))
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
+    drop(statement);
     rows.into_iter()
-        .map(|(user, peer_identity_key, pickle)| {
-            let session = Session::from_pickle(
-                SessionPickle::from_encrypted(&pickle, pickle_key).map_err(|_| StoreError::BadMessage)?,
-            );
-            Ok((user, StoredSession { peer_identity_key, session }))
-        })
+        .map(|(user, identity, id, pickle)| Ok((user.clone(), read_session(conn, pickle_key, &user, identity, id, pickle)?)))
         .collect()
 }
 
+/// Saves a session **by its own id**: it never replaces a different session with the same person. `received`: this session has just
+/// decrypted a message (what a later send prefers). Keeps at most `MAX_SESSIONS_PER_PEER` per peer device, dropping the least recently
+/// used, never the one just saved.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn save_session(
     conn: &Connection,
     pickle_key: &[u8; 32],
@@ -171,14 +187,23 @@ pub(crate) fn save_session(
     peer_device: &str,
     peer_identity_key: &str,
     session: &Session,
+    received: bool,
     now_ms: i64,
 ) -> Result<(), StoreError> {
+    let id = session.session_id();
     conn.execute(
-        "INSERT INTO olm_sessions (peer_user_id, peer_device_id, peer_identity_key, session_pickle, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5)
-         ON CONFLICT (peer_user_id, peer_identity_key) DO UPDATE SET
-           peer_device_id = ?2, session_pickle = ?4, updated_at = ?5",
-        params![peer_user, peer_device, peer_identity_key, session.pickle().encrypt(pickle_key), now_ms],
+        "INSERT INTO olm_sessions (peer_user_id, peer_device_id, peer_identity_key, session_id, session_pickle, created_at, updated_at, last_received)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)
+         ON CONFLICT (peer_user_id, peer_identity_key, session_id) DO UPDATE SET
+           peer_device_id = ?2, session_pickle = ?5, updated_at = ?6,
+           last_received = CASE WHEN ?8 THEN ?6 ELSE last_received END",
+        params![peer_user, peer_device, peer_identity_key, id, session.pickle().encrypt(pickle_key), now_ms, if received { now_ms } else { 0 }, received],
+    )
+    .map_err(db_err)?;
+    conn.execute(
+        "DELETE FROM olm_sessions WHERE peer_user_id = ?1 AND peer_identity_key = ?2 AND session_id <> ?3 AND session_id NOT IN (
+             SELECT session_id FROM olm_sessions WHERE peer_user_id = ?1 AND peer_identity_key = ?2 AND session_id <> ?3 ORDER BY last_received DESC, updated_at DESC LIMIT ?4)",
+        params![peer_user, peer_identity_key, id, MAX_SESSIONS_PER_PEER - 1],
     )
     .map_err(db_err)?;
     Ok(())

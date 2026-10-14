@@ -1071,7 +1071,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -3410,7 +3410,6 @@ fn a_key_that_arrives_before_the_senders_join_is_kept_and_a_stuck_tile_can_ask_a
 }
 
 #[test]
-#[ignore = "Olm glare: two phones that start a session with each other at the same moment each lose their own outbound session, because olm_sessions keeps one row per peer key (LIME-112b-fix: needs the user's decision to change that)"]
 fn everyone_joining_before_anyone_reads_still_ends_with_every_key_everywhere() {
     let server = FakeServer::new();
     let (alice, bob, carol, transport, chat) = call_team(&server);
@@ -3445,4 +3444,36 @@ fn everyone_joining_before_anyone_reads_still_ends_with_every_key_everywhere() {
     for p in [&alice, &bob, &carol] {
         assert_eq!(p.store.pending_summary().unwrap(), "", "nothing is left waiting");
     }
+}
+
+#[test]
+fn two_people_who_first_message_each_other_at_the_same_moment_lose_nothing() {
+    // LIME-145: each phone starts an Olm session to the other before reading anything. The first messages cross; each phone then holds
+    // its own outbound session and the one it made from the other's first message, and keeps both.
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    alice.store.start_dm(bob.user.clone(), bob.user.clone()).unwrap();
+    bob.store.start_dm(alice.user.clone(), alice.user.clone()).unwrap();
+    say(&alice, &bob, &transport, "from alice, first");
+    say(&bob, &alice, &transport, "from bob, first");
+    assert_eq!(sync(&alice, &transport).received, 1);
+    assert_eq!(sync(&bob, &transport).received, 1);
+    // Both said more, each under the session it holds first: neither is lost, in either direction, in either order.
+    say(&alice, &bob, &transport, "from alice, second");
+    say(&bob, &alice, &transport, "from bob, second");
+    say(&alice, &bob, &transport, "from alice, third");
+    sync(&alice, &transport);
+    sync(&bob, &transport);
+    say(&bob, &alice, &transport, "from bob, third");
+    sync(&alice, &transport);
+    let at_bob: Vec<String> = texts(&bob, &alice);
+    let at_alice: Vec<String> = texts(&alice, &bob);
+    for wanted in ["from alice, first", "from alice, second", "from alice, third"] {
+        assert!(at_bob.iter().any(|t| t == wanted), "Bob has {wanted:?}: {at_bob:?}");
+    }
+    for wanted in ["from bob, first", "from bob, second", "from bob, third"] {
+        assert!(at_alice.iter().any(|t| t == wanted), "Alice has {wanted:?}: {at_alice:?}");
+    }
+    assert!(pending_rows(&alice).is_empty() && pending_rows(&bob).is_empty(), "nothing is left waiting: {:?} {:?}", pending_rows(&alice), pending_rows(&bob));
 }

@@ -289,6 +289,7 @@ mod protocol_state {
                 "peer-device",
                 "peer-identity",
                 &session,
+                false,
                 1,
             )
             .unwrap();
@@ -390,5 +391,101 @@ mod protocol_state {
             )
             .unwrap();
         assert_eq!(columns, 2);
+    }
+
+    /// A session with a stranger, for the session storage tests.
+    fn some_session(account: &mut Account, peer: &Account) -> vodozemac::olm::Session {
+        let mut other = Account::new();
+        other.generate_one_time_keys(1);
+        let _ = peer;
+        let otk = *other.one_time_keys().values().next().unwrap();
+        account.create_outbound_session(SessionConfig::version_1(), other.curve25519_key(), otk).unwrap()
+    }
+
+    #[test]
+    fn two_sessions_with_one_peer_are_both_kept_and_the_one_that_last_decrypted_goes_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LimeStore::open_inner(&path_in(&dir), &key(7)).unwrap();
+        let mut mine = Account::new();
+        let stranger = Account::new();
+        let (first, second) = (some_session(&mut mine, &stranger), some_session(&mut mine, &stranger));
+        assert_ne!(first.session_id(), second.session_id());
+        let conn = store.lock();
+        // The same peer key: before LIME-145 the second save replaced the first.
+        save_session(&conn, &store.pickle_key, "peer", "dev", "peer-key", &first, false, 10).unwrap();
+        save_session(&conn, &store.pickle_key, "peer", "dev", "peer-key", &second, false, 20).unwrap();
+        let held = load_sessions(&conn, &store.pickle_key, "peer").unwrap();
+        assert_eq!(held.iter().map(|s| s.session.session_id()).collect::<Vec<_>>(), vec![second.session_id(), first.session_id()], "both kept, the newest first");
+        // The first one decrypts something: it goes first now (the rule that makes both phones settle on one session).
+        save_session(&conn, &store.pickle_key, "peer", "dev", "peer-key", &first, true, 30).unwrap();
+        let held = load_sessions(&conn, &store.pickle_key, "peer").unwrap();
+        assert_eq!(held[0].session.session_id(), first.session_id());
+        assert_eq!(held.len(), 2, "saving a session again updates it, never adds a copy");
+        assert_eq!(crate::store::account::load_all_sessions(&conn, &store.pickle_key).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn at_most_five_sessions_are_kept_per_peer_and_the_least_recently_used_go_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LimeStore::open_inner(&path_in(&dir), &key(7)).unwrap();
+        let mut mine = Account::new();
+        let stranger = Account::new();
+        let sessions: Vec<_> = (0..7).map(|_| some_session(&mut mine, &stranger)).collect();
+        let conn = store.lock();
+        for (i, session) in sessions.iter().enumerate() {
+            save_session(&conn, &store.pickle_key, "peer", "dev", "peer-key", session, i == 0, 10 + i as i64).unwrap();
+        }
+        let ids: Vec<String> = load_sessions(&conn, &store.pickle_key, "peer").unwrap().iter().map(|s| s.session.session_id()).collect();
+        assert_eq!(ids.len(), 5);
+        assert_eq!(ids[0], sessions[0].session_id(), "the one that decrypted is never the one evicted");
+        assert!(ids.contains(&sessions[6].session_id()), "the newest is kept");
+        assert!(!ids.contains(&sessions[1].session_id()) && !ids.contains(&sessions[2].session_id()), "the oldest unused went");
+        // Another peer's sessions are separate.
+        let other = some_session(&mut mine, &stranger);
+        save_session(&conn, &store.pickle_key, "someone-else", "dev", "else-key", &other, false, 99).unwrap();
+        assert_eq!(load_sessions(&conn, &store.pickle_key, "peer").unwrap().len(), 5);
+        assert_eq!(load_sessions(&conn, &store.pickle_key, "someone-else").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_store_from_before_migration_28_keeps_its_session_and_names_it_when_first_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = path_in(&dir);
+        let session_id;
+        let pickle;
+        {
+            let store = LimeStore::open_inner(&path, &key(7)).unwrap();
+            let mut mine = Account::new();
+            let stranger = Account::new();
+            let session = some_session(&mut mine, &stranger);
+            session_id = session.session_id();
+            pickle = session.pickle().encrypt(&store.pickle_key);
+            let conn = store.lock();
+            // Put the store back to the schema before migration 28: one row per peer key, no session id.
+            conn.execute_batch(
+                "DROP INDEX olm_sessions_by_peer; DROP TABLE olm_sessions;
+                 CREATE TABLE olm_sessions (peer_user_id TEXT NOT NULL, peer_device_id TEXT NOT NULL, peer_identity_key TEXT NOT NULL,
+                     session_pickle TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (peer_user_id, peer_identity_key));
+                 PRAGMA user_version = 27;",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO olm_sessions (peer_user_id, peer_device_id, peer_identity_key, session_pickle, created_at, updated_at) VALUES ('peer', 'dev', 'peer-key', ?1, 5, 6)",
+                params![pickle],
+            )
+            .unwrap();
+        }
+        let store = LimeStore::open_inner(&path, &key(7)).unwrap();
+        let conn = store.lock();
+        let stored: String = conn.query_row("SELECT session_id FROM olm_sessions", [], |r| r.get(0)).unwrap();
+        assert_eq!(stored, "", "the pickle is encrypted: its id cannot be known inside the migration");
+        let held = load_sessions(&conn, &store.pickle_key, "peer").unwrap();
+        assert_eq!(held.len(), 1);
+        assert_eq!(held[0].session.session_id(), session_id);
+        let named: String = conn.query_row("SELECT session_id FROM olm_sessions", [], |r| r.get(0)).unwrap();
+        assert_eq!(named, session_id, "named the first time it is read");
+        // Saving it again updates that row rather than adding a copy.
+        save_session(&conn, &store.pickle_key, "peer", "dev", "peer-key", &held[0].session, true, 50).unwrap();
+        assert_eq!(load_sessions(&conn, &store.pickle_key, "peer").unwrap().len(), 1);
     }
 }

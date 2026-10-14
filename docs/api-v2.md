@@ -45,6 +45,9 @@ A message travels in two layers, and the signed op is inside the inner one.
 
 **Megolm session keys.** They travel as Olm-encrypted *to-device ops* through the same mailbox. They are not a separate channel.
 
+
+**Olm sessions on a device (LIME-145).** A device keeps **every** Olm session it has with another device (one row per session id, at most 5 per peer device, the least recently used dropped first), never one per peer. When two devices start a session with each other at the same moment (a *glare*), each ends up with two sessions and keeps both, so neither side's messages become unreadable. **Decrypting:** a pre-key message that belongs to a session already held uses it, otherwise it starts a new session that is *added*; a normal message is tried against all of that peer's sessions, the most recently useful first. **Encrypting:** a send uses the session that most recently decrypted a message from that peer, else the newest created (Matrix's rule), which makes both devices settle on one session after a crossing. The Megolm group sessions do not have this issue: an inbound session is stored by its own id, and a device has one outbound session per group by design.
+
 ## 4. Sealed sender, delivery keys, message requests and blocking
 
 - **The delivery key.** Each user has one. It is shared only inside their encrypted conversations, so the people they already talk to have it.

@@ -1670,7 +1670,6 @@ fn a_send_is_one_request_with_a_warm_device_cache_and_a_stale_cache_is_corrected
 }
 
 #[test]
-#[ignore = "Olm glare (see client_tests everyone_joining_before_anyone_reads...): fails until olm_sessions keeps more than one session per peer"]
 fn a_group_call_of_three_exchanges_sender_keys_through_the_real_server_in_any_order() {
     let admin = Admin::from_env();
     let transport = admin.transport();

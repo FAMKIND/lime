@@ -732,7 +732,7 @@ impl LimeStore {
                         .map_err(|_| StoreError::BadMessage)?;
                     // Kept at once: if this send turns out stale and is retried, the claimed key is not lost.
                     self.with_conn(|conn| {
-                        save_session(conn, &self.pickle_key, recipient, &device.device_id, &device.identity_key, &session, now)
+                        save_session(conn, &self.pickle_key, recipient, &device.device_id, &device.identity_key, &session, false, now)
                     })?;
                     sessions.push((device, session));
                 }
@@ -804,7 +804,7 @@ impl LimeStore {
             let now = now_ms();
             self.with_conn(|conn| {
                 for (device, session) in &updated {
-                    save_session(conn, &self.pickle_key, recipient, &device.device_id, &device.identity_key, session, now)?;
+                    save_session(conn, &self.pickle_key, recipient, &device.device_id, &device.identity_key, session, false, now)?;
                 }
                 save_account(conn, &self.pickle_key, state)
             })?;
@@ -1380,7 +1380,7 @@ impl LimeStore {
             // The session is kept even when the key is not trusted: a pre-key message cannot be read a
             // second time (its one-time key is spent), and it must be readable once the key is accepted.
             if let Some(session) = &session {
-                save_session(conn, &self.pickle_key, &sender, &cert.device_id, &peer_identity, session, now)?;
+                save_session(conn, &self.pickle_key, &sender, &cert.device_id, &peer_identity, session, true, now)?;
             }
             if pin_master_key(conn, &sender, &cert.master_key) == Err(StoreError::KeyMismatch) {
                 record_key_change(conn, &sender, &cert.master_key)?;

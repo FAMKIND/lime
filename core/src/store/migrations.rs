@@ -466,6 +466,26 @@ const MIGRATIONS: &[&str] = &[
          payload         TEXT NOT NULL,
          at              INTEGER NOT NULL
      );",
+    // 28 (LIME-145): every Olm session is kept (one row per session, not one per peer), so two phones that start a session with each other at
+    // the same moment do not lose each other's messages. `session_id` is vodozemac's id of the session: an older row has '' until it is first
+    // read (its pickle is encrypted, so only the app can compute it) and is filled in then. `last_received` is when the session last decrypted
+    // something: a send uses the session that most recently did, which makes both phones settle on one session after a crossing.
+    "CREATE TABLE olm_sessions_v2 (
+         peer_user_id      TEXT NOT NULL,
+         peer_device_id    TEXT NOT NULL,
+         peer_identity_key TEXT NOT NULL,
+         session_id        TEXT NOT NULL DEFAULT '',
+         session_pickle    TEXT NOT NULL,
+         created_at        INTEGER NOT NULL,
+         updated_at        INTEGER NOT NULL,
+         last_received     INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (peer_user_id, peer_identity_key, session_id)
+     );
+     INSERT INTO olm_sessions_v2 (peer_user_id, peer_device_id, peer_identity_key, session_id, session_pickle, created_at, updated_at, last_received)
+         SELECT peer_user_id, peer_device_id, peer_identity_key, '', session_pickle, created_at, updated_at, updated_at FROM olm_sessions;
+     DROP TABLE olm_sessions;
+     ALTER TABLE olm_sessions_v2 RENAME TO olm_sessions;
+     CREATE INDEX olm_sessions_by_peer ON olm_sessions (peer_user_id, peer_identity_key);",
 ];
 
 /// The schema version this build writes.
