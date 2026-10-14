@@ -126,6 +126,13 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e80. **137 gate: "looks good" (the user, 2026-10-13); Return is accepted as built.** **A bug:** Select All + Delete over lists removes only one marker. Cause read in code: `RichComposer`'s "deleting into a marker" rule swallows any delete whose range starts in a marker; it predates 137 (LIME-100). **→ LIME-137-fix (drafted, NEXT).** Still open with the user: children moving with their parent (137b, lean yes); whether Indent/Outdent are too hidden in the scrolling toolbar on small phones.
+1e79. **LIME-137 LANDED as `7ff4f7e` (pushed, 2026-10-13; PLOT.md `a4c9ed5`).** The core owns `list_markers`, `list_trigger`, `max_list_level`, `list_level_after`; cargo 197; `check-android.sh` passes; full suite 312 unit + 184 UI; 0 warnings; Release clean; the SE screenshot was committed as `docs/design/mobile/ios-composer-indent-se.png` (an extra, harmless).
+   - **Deviations, all fine:** a Tab arriving as typed text also indents; VoiceOver says "level 2 of 3"; previews/search show ◦/▪; numbered lists keep their typed start number.
+   - **Not exercised:** a real device, a hardware Tab (`UIKeyCommand`), AX3, RTL.
+   - **On the SE the toolbar scrolls to reach Indent/Outdent**, so the user should judge whether they're discoverable.
+   - **Open:** tend asks whether indent/outdent should carry an item's children (Notes does; today an outdent can leave level 0 → level 2). Plot's lean: **yes, as a small LIME-137b** after the user's gate, folded with anything the gate finds.
+   - Waiting on the user's 5-point gate (incl. "is Return what you meant?").
 1e78. **LIME-132b LANDED as `267af9e` (pushed, 2026-10-13).** `check-android.sh` passes (arm64-v8a 6.8 MB, x86_64 7.5 MB; Kotlin compiles against JNA with no patch); one Android-only feature (`bundled-sqlcipher-vendored-openssl`); `crate-type` unchanged; nothing else Apple-only in core. cargo 192; full suite 299 unit + 183 UI pass (covers 136's list UI tests); 0 warnings; Release clean. **Not covered:** no Android run (no app module), no CI job (CI would need the NDK + JDK). **The full UI suite takes ~53 min**, so briefs asking for it need a soft cap above 60 min (137's prompt allows ~90). Tend suggested 133 next; **the user's queue keeps 137 next** (133 is after 117). **Next: LIME-137.**
 1e77. **The security/privacy/trust overview doc (the user, 2026-10-13, "to read on the go", iOS + Android + future Microsoft):** https://claude.ai/code/artifact/1cf5779f-8f1d-4863-bf8c-934eb69b278e. It covers the promise, how it works (a status table + a data-flow diagram), what the server can/can't see, a platform-by-platform table (iOS/Android/Windows), mesh, trust + the GDPR checklist, and the gaps before TestFlight. Built from `docs/architecture.md` + PLOT.md. **Unverified in it:** the C# UniFFI generator, Windows key storage/BLE background. Update it when push, mesh or multi-device land.
 1e76. **ANDROID REUSE (the user, 2026-10-13: "to speed up the Android build, leverage open-source Android messaging apps, security, Bluetooth open-source tech").** Plot checked the licences via the GitHub API on 2026-10-13:
@@ -4775,6 +4782,34 @@ If the survey turns up related issues, raise them before editing. If a decision 
 5. **Return behaviour: is this what you meant?**
 
 **Record:** `## LIME-137` in TEND.md, ending with **For plot:**. **Commit:** `feat: nested lists to 3 levels, indent/outdent, lists start as you type`, trailer `Brief: LIME-137`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Anything the brief didn't decide (e.g. the toolbar doesn't fit on the SE): stop and ask the user.
+
+### LIME-137-fix → `tend` (lime-aa) (NEXT; drafted 2026-10-13): deleting a selection that starts in a list deletes only one marker
+**Goal:** deleting any selection in the composer (Select All + Delete, Cut, a drag-selection across lists) removes exactly the selected text, every time; the single-backspace marker rules from LIME-100/137 keep working.
+
+**The user (2026-10-13, after 137 "looks good"):** "when you select all (the lists I made) and press delete, it doesn't always delete all; it just deleted one list item instead of the entire selection."
+
+**Plot's diagnosis (read in code, not run):** `RichComposer.swift`, `textView(_:shouldChangeTextIn:replacementText:)`, the block "Deleting into a list marker takes the whole marker". For **any** delete (`text.isEmpty, range.length > 0`), it walks the paragraphs the range covers. At the first list paragraph whose marker the range overlaps **and** where `range.location < NSMaxRange(marker)`, it deletes **only that marker** and returns `false`, so UIKit never deletes the rest of the selection. A selection starting at or inside a list item's marker (Select All on a message that begins with a list) therefore loses one marker and nothing else. A selection starting in plain text skips the rule, which is why it's intermittent. **The rule predates 137 (LIME-100)**; 137 added the nested-outdent branch inside it. Cut (⌘X / the edit menu) goes through the same delegate call, so it's likely affected too. **Tend confirms this in Phase 1 with a failing test before fixing.**
+
+**Scope:** `RichComposer.swift` (that block), `ComposerDocument.swift` only for a post-delete clean-up helper, and their tests. **Not:** Return, auto-start, Indent/Outdent, the core.
+
+**Phase 0:** `git add PLOT.md` only, commit; re-read PLOT.md.
+
+**Phase 1:** write the failing tests first (unit on `ComposerDocument`/the delegate logic, and one UI test). Report which fail before the fix:
+- Select All over a 3-level outline + Delete → the composer is empty;
+- a selection from the middle of item 1 to the middle of item 3 → exactly that text is gone, and the remainder is one list item at item 1's level and kind;
+- Cut over a list selection → the same as delete, and the clipboard holds the text;
+- a selection from plain text into a list.
+
+**Phase 2: the fix:**
+1. The marker rules apply **only** when the delete is a plain backspace touching just the marker: `range.length == 1` (or the range lies entirely inside the marker). Then the 137 behaviour stays: a nested item outdents, a level-0 item drops its marker.
+2. **Any wider delete is UIKit's normal delete** (return `true`), followed by a clean-up pass, so the result is consistent: a paragraph whose marker was partly removed becomes plain text or keeps a whole marker (no half "1" or stray bullet); list attributes left on non-list text are cleared; a completely emptied composer has no list typing attributes (the next character typed is plain); then renumber and restyle.
+3. Undo (⌘Z / shake) restores the deleted selection in one step.
+
+**Kind:** behaviour → the Phase 1 tests are the guard. **Verification:** those tests pass; the existing composer tests pass; build, 0 warnings, Release clean; the full suite on the 13 mini (~53 min UI; soft cap ~90 min).
+
+**Gate (the user):** Select All + Delete on a message full of lists → empty; drag-select across two items + Delete → just that text; Cut + Paste a list back (paste behaviour itself is out of scope, so just note what happens); single Backspace on a sub-item's start still steps it out.
+
+**Record:** `## LIME-137-fix` in TEND.md, ending with **For plot:**. **Commit:** `fix(composer): deleting a selection that starts in a list deletes the whole selection`, trailer `Brief: LIME-137-fix`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Commit with explicit paths; never `public/assets/*`.
 
 ### LIME-136 → `tend` (lime-aa) (DONE as `e630919`; was NEXT, before 132b finishes; drafted 2026-10-13): rename `Block::List` to `Block::ItemList`
 **Goal:** the core's formatting `Block` enum has no variant named like a Kotlin/Swift built-in type, so the Kotlin bindings compile with no patch; iOS behaves exactly as before.
