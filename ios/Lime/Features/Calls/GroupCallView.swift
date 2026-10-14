@@ -8,6 +8,11 @@ import SwiftUI
 struct GroupCallView: View {
     @Environment(ConversationStore.self) private var store
     @State private var showPeople = false
+    @State private var selfCorner: GroupCallLayout.Corner = .bottomTrailing
+    @State private var selfDrag: CGSize = .zero
+    @State private var viewSize: CGSize = .zero
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// A clear view over the whole screen that system Picture in Picture grows its window from.
     @State private var pipAnchor: UIView?
 
@@ -16,7 +21,7 @@ struct GroupCallView: View {
     var body: some View {
         let tiles = call.tiles
         VStack(spacing: 0) {
-            header
+            header.padding(.top, windowControlsMargin).accessibilitySortPriority(3)
             Group {
                 if call.speakerViewByDefault {
                     speakerLayout(tiles)
@@ -26,10 +31,11 @@ struct GroupCallView: View {
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            controls
+            controls.accessibilitySortPriority(0)
         }
         .background(Color(red: 0.07, green: 0.08, blue: 0.07).ignoresSafeArea())
         .preferredColorScheme(.dark)
+        .onGeometryChange(for: CGSize.self, of: { $0.size }) { viewSize = $0 }
         .background(PiPAnchor { pipAnchor = $0 })
         .sheet(isPresented: $showPeople) { GroupPeopleSheet() }
         .onAppear { preparePiP() }
@@ -37,6 +43,19 @@ struct GroupCallView: View {
         .onChange(of: call.video) { _, _ in preparePiP() }
         .onChange(of: pipAnchor) { _, _ in preparePiP() }
         .accessibilityIdentifier("group-call-screen")
+    }
+
+    /// A windowed iPad scene has iPadOS's own window controls (the "•••") over its top: the header starts below them. Windowed means this
+    /// view is smaller than the screen (read from the view itself, which holds in Stage Manager, Split View and Slide Over).
+    private var windowControlsMargin: CGFloat {
+        let screen = UIScreen.main.bounds.size
+        // The screen's size in the view's own orientation.
+        let matched = (viewSize.width > viewSize.height) == (screen.width > screen.height) ? screen : CGSize(width: screen.height, height: screen.width)
+        // lime is iPhone-only today, so on an iPad it runs in a compatibility window whose idiom says phone: the device model says iPad.
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad || UIDevice.current.model.hasPrefix("iPad")
+        // A compact-width window on an iPad is a Stage Manager, Split View or Slide Over window by definition.
+        if isPad && horizontalSizeClass == .compact { return GroupCallLayout.windowControlsMargin(idiomIsPad: true, window: .zero, screen: matched) }
+        return GroupCallLayout.windowControlsMargin(idiomIsPad: isPad, window: viewSize, screen: matched)
     }
 
     private func preparePiP() {
@@ -89,19 +108,46 @@ struct GroupCallView: View {
         return tiles.filter { tile in chosen.contains { $0.id == tile.id } }
     }
 
+    /// The grid fills the visible area: no scrolling at any size, tiles shrink to fit and keep a video shape (`GroupCallLayout`). With three or
+    /// more people my own picture is a small floating tile in a corner (drag it to another corner) instead of one of the grid's tiles.
     private func gridLayout(_ tiles: [GroupCallManager.Tile]) -> some View {
         let shown = visible(tiles, limit: 9)
-        let columns = shown.count <= 1 ? 1 : (shown.count <= 4 ? 2 : 3)
-        let items = Array(repeating: GridItem(.flexible(), spacing: 6), count: columns)
-        return ScrollView {
-            LazyVGrid(columns: items, spacing: 6) {
-                ForEach(shown) { tile in GroupTileView(tile: tile, video: call.video, large: false) }
+        let floating = shown.count >= 3 ? shown.first(where: \.isMe) : nil
+        let others = shown.filter { $0.id != floating?.id }
+        return GeometryReader { geo in
+            let frames = GroupCallLayout.grid(count: others.count, in: geo.size)
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(zip(others, frames)), id: \.0.id) { tile, frame in
+                    GroupTileView(tile: tile, video: call.video, large: false, fixedShape: true)
+                        .frame(width: frame.width, height: frame.height)
+                        .position(x: frame.midX, y: frame.midY)
+                        .accessibilitySortPriority(tile.speaking ? 2 : 1)
+                }
+                if let floating {
+                    let frame = GroupCallLayout.selfView(in: geo.size, corner: selfCorner)
+                    GroupTileView(tile: floating, video: call.video, large: false, fixedShape: true)
+                        .frame(width: frame.width, height: frame.height)
+                        .position(x: frame.midX + selfDrag.width, y: frame.midY + selfDrag.height)
+                        .gesture(DragGesture()
+                            .onChanged { selfDrag = $0.translation }
+                            .onEnded { value in
+                                let end = CGPoint(x: frame.midX + value.translation.width, y: frame.midY + value.translation.height)
+                                selfCorner = GroupCallLayout.nearestCorner(to: end, in: geo.size)
+                                selfDrag = .zero
+                            })
+                        .accessibilitySortPriority(0.5)
+                }
+                if tiles.count > shown.count {
+                    Text("+\(tiles.count - shown.count) more").font(.footnote).foregroundStyle(.white.opacity(0.7)).padding(8)
+                        .background(.black.opacity(0.4), in: Capsule()).position(x: geo.size.width / 2, y: geo.size.height - 14)
+                        .accessibilityLabel("\(tiles.count - shown.count) more people, see the people list")
+                }
             }
-            if tiles.count > shown.count {
-                Text("+\(tiles.count - shown.count) more").font(.footnote).foregroundStyle(.white.opacity(0.7)).padding(8)
-                    .accessibilityLabel("\(tiles.count - shown.count) more people, see the people list")
-            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: frames)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: selfCorner)
+            .frame(width: geo.size.width, height: geo.size.height)
         }
+        .accessibilityElement(children: .contain)
     }
 
     private func speakerLayout(_ tiles: [GroupCallManager.Tile]) -> some View {
@@ -120,32 +166,37 @@ struct GroupCallView: View {
 
     // MARK: Controls
 
+    /// The controls in one row that always shows Leave: the buttons shrink (56, 50, then 44 pt) before anything would need to scroll.
     private var controls: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 14) { buttons }
-            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 14) { buttons }.padding(.horizontal, 16) }
+            HStack(spacing: 14) { buttons(size: 56) }
+            HStack(spacing: 10) { buttons(size: 50) }
+            HStack(spacing: 6) { buttons(size: 44) }
+            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) { buttons(size: 44) }.padding(.horizontal, 16) }
         }
         .padding(.vertical, 12)
+        .padding(.horizontal, 8)
     }
 
-    @ViewBuilder private var buttons: some View {
-        control(call.muted ? "mic.slash.fill" : "mic.fill", label: call.muted ? "Unmute" : "Mute", on: call.muted, id: "group-call-mute") { Task { await call.setMuted(!call.muted) } }
+    @ViewBuilder private func buttons(size: CGFloat) -> some View {
+        control(call.muted ? "mic.slash.fill" : "mic.fill", label: call.muted ? "Unmute" : "Mute", on: call.muted, id: "group-call-mute", size: size) { Task { await call.setMuted(!call.muted) } }
         if call.video {
-            control(call.cameraOn ? "video.fill" : "video.slash.fill", label: call.cameraOn ? "Turn camera off" : "Turn camera on", on: !call.cameraOn, id: "group-call-camera") { Task { await call.toggleCamera() } }
-            control("arrow.triangle.2.circlepath.camera", label: "Flip camera", on: false, id: "group-call-flip") { Task { await call.flipCamera() } }
+            control(call.cameraOn ? "video.fill" : "video.slash.fill", label: call.cameraOn ? "Turn camera off" : "Turn camera on", on: !call.cameraOn, id: "group-call-camera", size: size) { Task { await call.toggleCamera() } }
+            control("arrow.triangle.2.circlepath.camera", label: "Flip camera", on: false, id: "group-call-flip", size: size) { Task { await call.flipCamera() } }
         }
-        control(call.speakerOn ? "speaker.wave.3.fill" : "speaker.fill", label: call.speakerOn ? "Speaker on" : "Speaker off", on: call.speakerOn, id: "group-call-speaker") { call.toggleSpeaker() }
+        control("arrow.down.right.and.arrow.up.left", label: "Minimise", on: false, id: "group-call-minimise-control", size: size) { call.minimize() }
+        control(call.speakerOn ? "speaker.wave.3.fill" : "speaker.fill", label: call.speakerOn ? "Speaker on" : "Speaker off", on: call.speakerOn, id: "group-call-speaker", size: size) { call.toggleSpeaker() }
         Button { Task { await call.leave() } } label: {
-            Image(systemName: "phone.down.fill").font(.system(size: 22)).foregroundStyle(.white)
-                .frame(width: 56, height: 56).background(Color.red, in: Circle())
+            Image(systemName: "phone.down.fill").font(.system(size: size * 0.4)).foregroundStyle(.white)
+                .frame(width: size, height: size).background(Color.red, in: Circle())
         }
         .accessibilityLabel("Leave call").accessibilityIdentifier("group-call-leave")
     }
 
-    private func control(_ symbol: String, label: String, on: Bool, id: String, action: @escaping () -> Void) -> some View {
+    private func control(_ symbol: String, label: String, on: Bool, id: String, size: CGFloat, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 20)).foregroundStyle(on ? Color.black : Color.white)
-                .frame(width: 56, height: 56).background(on ? Color.white : Color.white.opacity(0.18), in: Circle())
+            Image(systemName: symbol).font(.system(size: size * 0.36)).foregroundStyle(on ? Color.black : Color.white)
+                .frame(width: size, height: size).background(on ? Color.white : Color.white.opacity(0.18), in: Circle())
         }
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
@@ -158,6 +209,8 @@ struct GroupTileView: View {
     let tile: GroupCallManager.Tile
     let video: Bool
     let large: Bool
+    /// The grid sets this tile's exact frame (`GroupCallLayout`): no shape of its own.
+    var fixedShape = false
 
     private var stateWords: String {
         if !tile.secured { return "Connecting securely" }
@@ -206,8 +259,7 @@ struct GroupTileView: View {
                 .background(Color.white.opacity(0.10))
             }
         }
-        .aspectRatio(large ? nil : 3.0 / 4.0, contentMode: .fit)
-        .frame(maxWidth: .infinity, maxHeight: large ? .infinity : nil)
+        .modifier(TileShape(fixed: fixedShape, large: large))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         // Speaking is also shown by a ring (and by the waveform and the words), not by colour alone.
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white, lineWidth: tile.speaking ? 3 : 0))
@@ -361,6 +413,19 @@ struct GroupInviteSheet: View {
             .presentationBackground(Theme.canvas)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("group-invite-sheet")
+        }
+    }
+}
+
+/// A tile's own shape (the speaker view's strip and big tile), or none when the grid has already fixed its frame.
+private struct TileShape: ViewModifier {
+    let fixed: Bool
+    let large: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if fixed {
+            content
+        } else {
+            content.aspectRatio(large ? nil : 3.0 / 4.0, contentMode: .fit).frame(maxWidth: .infinity, maxHeight: large ? .infinity : nil)
         }
     }
 }
