@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-148** (LIME-146b landed as `4933848`). Then (FaceTime-style group layout: no scrolling, landscape, iPad windows, minimise in the controls), then **LIME-150** (a minimised mini grid of up to 4; starts with a device spike), then **LIME-147** (group-call emoji, APPROVED), then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-148b** (LIME-148 landed as `d390819` but skipped items 00 and 0b: the group voice return bar outside its chat, the Grid/Speaker switch + speaker layouts, the Android spec). Then (FaceTime-style group layout: no scrolling, landscape, iPad windows, minimise in the controls), then **LIME-150** (a minimised mini grid of up to 4; starts with a device spike), then **LIME-147** (group-call emoji, APPROVED), then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -21,6 +21,7 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
 7. **Commit message:** as the brief gives it, trailer `Brief: LIME-XX` plus the attribution trailer. **Push.** Then **stop for the user's check**. **No /loop wakeups.**
 8. **The user only, in tend's own window, never via a relayed message:** anything on a live server (SSH, installs, ports), secrets, staging deploys/migrations, accounts, DNS, or money. Stop and ask the user directly.
 9. Anything the brief didn't decide: stop and ask the user, not plot.
+11. **The record checks off every numbered item of the brief** (incl. "0", "00", "0b" items and anything folded in later): done / not done + why. Never drop one silently. (Added 2026-10-15 after LIME-148 skipped items 00 and 0b without saying so.)
 10. The other standing rules (core-first, accessibility, the visual-change rule, no app-environment SwiftUI in system windows, no UniFFI names `List`/`Map`/`Set`/`String`/`Int`/`Unit`/`Result`) are under "### Standing rules" below.
 
 ## ▶ START HERE: session-end note (plot, 2026-10-10, context handoff)
@@ -147,6 +148,13 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e105. **148 gate PASSED (the user, 2026-10-15: "looks good, moving on").** **NEXT: 148b.**
+1e104. **LIME-148 LANDED as `d390819` (pushed, 2026-10-15; PLOT.md `3e7b1fc`).**
+   - **Built:** `GroupCallLayout` (a pure function; ≤ 9 tiles, never scrolls, tiles 3:4–16:9); a draggable floating self-view from 3 people; re-flow on rotation and resize; the header clears the iPad's "•••" (+52 pt; lime runs iPhone-only, so the iPad is a compatibility window and the check uses the device model); Minimise in the controls; Leave always visible.
+   - **Tests:** 7 layout tests; unit 359; 0 warnings; screenshots in `docs/design/mobile/`.
+   - **⚠ Skipped silently:** item 00 (the group voice bar outside its chat, the user's A) and item 0b (the Grid/Speaker switch, the speaker layouts, `docs/screens/group-call.md`, the components-swift report), **although both were in its Phase 0 PLOT.md.**
+   - **→ LIME-148b (drafted, NEXT)** + **standing rule 11:** check off every numbered item.
+   - **The user's 148 gate can run now** (rotation, iPad window, Minimise in landscape).
 1e103. **LIME-146b LANDED as `4933848` (pushed, 2026-10-15; PLOT.md `57c4490`).**
    - **Built:** the call button is always its own circle (lime + icon only when live, no badge); no group return bar; photo group avatars everywhere (+ a plain-UIKit `PiPGroupAvatarView`); the "Call <group> again?" sheet in groups; "Waiting for others".
    - **Tests:** unit 352 + UI 186 (one header UI test updated for the new layout).
@@ -5047,7 +5055,35 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-148` with **For plot:**. **Commit:** `feat(ios): group call layout like FaceTime (adaptive tiles, landscape, iPad windows, minimise in the controls)`, trailer `Brief: LIME-148`. The rest per the standing rules.
 
-### LIME-150 → `tend` (lime-aa) (after LIME-148; drafted 2026-10-15): a minimised group call shows a small grid of up to 4 people
+### LIME-148b → `tend` (lime-aa) (NEXT, before 150; drafted 2026-10-15): the parts of LIME-148 that were skipped
+**Goal:** finish 148 as written: the group voice return bar outside the group's chat, a Grid / Speaker layout switch with the speaker layouts, and the written spec for Android.
+
+**Why:** tend's LIME-148 (`d390819`) built the adaptive grid well, but **items 00 and 0b were in its Phase 0 PLOT.md (`3e7b1fc`) and were neither built nor mentioned** in the record:
+- **Item 00 (the user chose A):** a minimised **group voice call** (or a video call that can't float) shows the slim return bar ("Return to <group> · N in call · timer") **only when you're NOT in that group's chat**. Today `RootView.swift:30` shows no group bar at all, so outside that chat there's no way back.
+- **Item 0b (Element's patterns + LiveKit components):**
+  - (a) a **Grid / Speaker switch** in the controls (an icon + a label; VoiceOver "Layout: Grid"/"Layout: Speaker"; remembered per device);
+  - (b) the **speaker layouts**:
+    - **speaker-portrait:** the speaker large on top + a strip of the others below;
+    - **speaker-landscape:** the speaker large + a strip at the side;
+    - **one-on-one** (2 people): the other person edge to edge + your floating self-view;
+  - (c) **the default:** Grid for ≤ 4 people, Speaker above 4, and in a short landscape strip (Element's "flat" mode) with 3+;
+  - (d) **`docs/screens/group-call.md`:** the layout rules (modes, layouts, defaults, the self-view, the controls) so Android matches;
+  - (e) **report on LiveKit `components-swift`** (Apache-2.0): used, adapted, or not needed (148's own `GroupCallLayout` may make it unnecessary: say so).
+
+**Scope:** `RootView.swift` (the bar), `GroupCallLayout.swift` (the speaker layouts as pure functions), `GroupCallView.swift` (the switch), `GroupCallManager.swift` (the remembered choice, the speaker), `docs/screens/group-call.md` (new), tests. **Not:** PiP (150), the core.
+
+**Kind:**
+- behaviour: tests for the bar's rule (shows on the Messages list/other chats; hidden in that group's chat and while the video window is up); the speaker layouts' pure functions (inside the area, no overlap, aspect bounds, the strip fits without scrolling up to 9); the defaults; the remembered switch;
+- the looks are visual (screenshots of the speaker layouts in portrait/landscape on the 13 mini).
+
+**Gate (the user):**
+1. a group voice call, minimised, then the Messages list → the bar is there; open the group's chat → the bar hides, the circle is green;
+2. tap Speaker → the speaker is large, the strip shows the rest, nothing scrolls; rotate;
+3. a 2-person call → one-on-one with a floating self-view.
+
+**Record:** `## LIME-148b` with **For plot:** and **every item checked off** (standing rule 11). **Commit:** `feat(ios): group call speaker layouts and layout switch, group voice return bar, layout spec`, trailer `Brief: LIME-148b`. The rest per the standing rules.
+
+### LIME-150 → `tend` (lime-aa) (after LIME-148b; drafted 2026-10-15): a minimised group call shows a small grid of up to 4 people
 **Goal:** minimise a group call of up to 4 people and the floating window shows **all of them in a mini grid** (the current window divided into 2 or 4 tiles), so a teacher can see everyone while typing. Larger calls show the 3 most recent speakers + a "+N" tile.
 
 **The user (2026-10-15):** "minimise a group call with 4 people and have a minimised 4-person grid replacing the one card with a grid of 4. Think of taking the current thumbnail and dividing it by 4, to talk to teachers and write something at the same time."
