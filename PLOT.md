@@ -126,6 +126,20 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e86. **137-fix gate PASSED on the phone (the user, 2026-10-14: "good on phone")**, Undo included (taken as covered; the iPad wasn't tested; Xcode had a stale paused session from the old PiP crash plus a Wi-Fi timeout to the iPad). The user asks to move on to group calls. **LIME-112b RECONCILED** (10 points at its top: core-first, accessibility, the 1:1 paths kept, group PiP/Always relay/DND, call bubbles + filters, measure the join time, a ~120 min cap, MIT, the CPX11 memory check, "For plot:"). **Open with the user: the order of 112b vs 137b/137c/138.**
+1e85. **LIME-137-fix LANDED as `34ab5e1` (pushed, 2026-10-13; PLOT.md `f26dc40`).** Cause confirmed with tests that failed first (7 of 9 unit tests, plus the new UI test). The marker rule now runs only for a delete wholly inside one marker; wider deletes are UIKit's own, followed by a clean-up pass; a new `.limeMarker` attribute marks marker characters (**future marker code must set it**). Full suite 321 unit + 185 UI pass; 0 warnings; Release clean. A visible change: Backspace across two items now joins them cleanly.
+   - **⚠ Not met: the brief's "Undo restores the selection in one step."** The clean-up edits the text storage directly, outside the undo manager, so Undo after a delete is untested and could misbehave (a wrong restore, or even a crash from a stale undo stack).
+   - **The user tests Undo on a device.** If it's wrong → **LIME-137-fix2**: register the clean-up with the undo manager (or group it with the delete), plus an Undo test. Then 137b.
+1e84. **IDEA (the user, 2026-10-13, after trying an offline message on a hike): license lime's mesh messaging to apps like AllTrails.** Not briefed; a revenue idea for the co-op list.
+   - **Plot's notes:**
+     - mesh isn't built yet (the hike message most likely waited in the outbox and sent once back online);
+     - a partner app on millions of phones would **raise relay density for everyone, teachers included**: a shared mesh is a network effect;
+     - **MIT means a partner can take the code for free**, so a licence fee wouldn't be enforceable. What a partner would pay for: a packaged SDK, support/SLAs, security reviews, certification, and joining lime's relay network/protocol ("works with lime");
+     - if code licensing itself should earn, the alternative is AGPL + a commercial licence (the Element model, which needs a CLA). **Switching stays cheap until the repo goes public or outside contributors arrive** (architecture §11.1).
+   - **The user's call;** plot's lean: keep MIT, and decide on revenue with the co-op once teachers join. **Mesh v1 must be built as a separable module in core** (its own crate or feature), so a mesh SDK stays possible: add this to the mesh design pass.
+1e83. **DECIDED (the user, 2026-10-13): L1 = MIT.** It closes architecture §11 item 1 and the long-pending "MIT vs AGPL". Copyleft apps (Signal, Molly, Element X, bitchat-android, Briar) are references only; the permissive set is used directly. **→ LIME-138 (drafted, docs only):** the reuse map in `docs/android.md`, §11.1 answered, `THIRD_PARTY.md` gets the Android OpenSSL + JNA. A lawyer still reviews the trademark and policies, which doesn't block. **The security overview doc's "Open with the lawyer" licence line should be updated to "decided: MIT".** **Queue: 137-fix (running) → 137b → 137c → 112b …; 138 fits between any two.**
+1e82. **DECIDED (the user, 2026-10-13): keep the 3-level limit** (plot offered 5 with indent compression; declined). **New: a list keeps its typed style (`-` dash, `•`/`*` bullet, `1.` numbered) → LIME-137c (drafted).** Plot's decisions in it: `ListKind {Bullet, Dash, Numbered}` replaces `ordered`; on the wire `- ` = dash and `* ` = bullet (CommonMark), so already-sent test bullets (stored as `- `) will show as dashes (accepted pre-launch); dashes show `–` at every level. **Queue: 137-fix (sent) → 137b → 137c → 112b → …**
+1e81. **DECIDED (the user, 2026-10-13): sub-items move with their parent → LIME-137b (drafted, after 137-fix); Indent/Outdent stay at the end of the toolbar** ("found it easily, we can always move later"). **Queue: 137-fix (sent) → 137b → 112b (re-survey first) → 117 → 133 → 113 → 130 → …**
 1e80. **137 gate: "looks good" (the user, 2026-10-13); Return is accepted as built.** **A bug:** Select All + Delete over lists removes only one marker. Cause read in code: `RichComposer`'s "deleting into a marker" rule swallows any delete whose range starts in a marker; it predates 137 (LIME-100). **→ LIME-137-fix (drafted, NEXT).** Still open with the user: children moving with their parent (137b, lean yes); whether Indent/Outdent are too hidden in the scrolling toolbar on small phones.
 1e79. **LIME-137 LANDED as `7ff4f7e` (pushed, 2026-10-13; PLOT.md `a4c9ed5`).** The core owns `list_markers`, `list_trigger`, `max_list_level`, `list_level_after`; cargo 197; `check-android.sh` passes; full suite 312 unit + 184 UI; 0 warnings; Release clean; the SE screenshot was committed as `docs/design/mobile/ios-composer-indent-se.png` (an extra, harmless).
    - **Deviations, all fine:** a Tab arriving as typed text also indents; VoiceOver says "level 2 of 3"; previews/search show ◦/▪; numbered lists keep their typed start number.
@@ -4783,6 +4797,105 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-137` in TEND.md, ending with **For plot:**. **Commit:** `feat: nested lists to 3 levels, indent/outdent, lists start as you type`, trailer `Brief: LIME-137`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Anything the brief didn't decide (e.g. the toolbar doesn't fit on the SE): stop and ask the user.
 
+### LIME-138 → `tend` (lime-aa) (docs only; can run any time, e.g. between briefs; drafted 2026-10-13): lime stays MIT; the Android reuse map; third-party licences for Android
+**Goal:** the repo states the licence decision, the rule for open-source reuse, and a complete third-party licence list for Android, so no future brief copies copyleft code by accident.
+
+**DECIDED (the user, 2026-10-13): L1 = MIT.** lime's own code stays MIT (`LICENSE` + `core/Cargo.toml` already say so). Copyleft projects are design references only.
+
+**Scope:** `docs/android.md`, `docs/architecture.md` (§11 item 1 only), `core/THIRD_PARTY.md`. **Not:** code, `LICENSE` itself, `PLOT.md`.
+
+**Phase 0:** `git add PLOT.md` only, commit; re-read PLOT.md.
+
+**The change:**
+1. `docs/architecture.md` §11 item 1: mark it **answered** ("**MIT**, decided 2026-10-13. Copyleft code (AGPL/GPL) is never copied into lime; such projects are design references only, because LimeCore also ships on iOS through the App Store"). Keep the original text above the answer, as items 5 already does.
+2. `docs/android.md`: a new section **"Open-source reuse"** with two tables (Project · Licence · What we take), copied from PLOT.md 1e76 and checked against each repo's licence on GitHub (state the date checked):
+   - **Use directly (permissive):** matrix-rust-sdk (Apache-2.0: the Rust core + UniFFI → Android packaging pattern), android/socialite (Apache-2.0), livekit client-sdk-android (Apache-2.0), GetStream webrtc-android (Apache-2.0), nordicsemi Kotlin-BLE-Library / Android-BLE-Library (BSD-3), UnifiedPush android-connector (Apache-2.0; note the last activity date), permissionlesstech/bitchat iOS (Unlicense: its mesh protocol may be ported into the core), berty/weshnet (Apache-2.0 or MIT), AndroidX core-telecom (Apache-2.0).
+   - **Reference only, never copy code (copyleft):** Signal-Android, Molly, libsignal, RingRTC (AGPL-3.0); Element X Android (AGPL-3.0: the closest architecture to ours); bitchat-android (GPL-3.0, unlike its iOS twin); Briar (GPL-3.0).
+   - Then **the rule** in one paragraph: read for patterns, never paste code; any new dependency's licence is checked and added to `THIRD_PARTY.md` in the same brief.
+3. `core/THIRD_PARTY.md`: add what 132b brought in, checked against `Cargo.lock`/`cargo metadata`:
+   - the Android-only OpenSSL that `bundled-sqlcipher-vendored-openssl` compiles in (the `openssl-src` crate and **OpenSSL's own licence** for the version vendored), marked "Android builds only";
+   - **JNA** (used only by `core/android-check` to compile the bindings; not shipped);
+   - update the "Checked" date line.
+
+**Kind:** docs; no tests. **Verification:** `git diff --stat` shows only the 3 docs files (plus TEND.md); each licence in the tables matches the repo's own licence on the date checked (report any that differ from PLOT.md 1e76); the vendored OpenSSL version is named.
+
+**Gate:** none on a device; plot reviews the report.
+
+**Record:** `## LIME-138` in TEND.md, ending with **For plot:**. **Commit:** `docs: lime stays MIT; Android open-source reuse map; third-party licences for Android`, trailer `Brief: LIME-138`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Explicit paths; never `public/assets/*`.
+
+### LIME-137c → `tend` (lime-aa) (after LIME-137b; drafted 2026-10-13): a list keeps the marker you typed (dash, bullet or number)
+**Goal:** typing `- ` makes a **dash** list, `• ` or `* ` makes a **bullet** list, `1. ` makes a **numbered** list. The list keeps that style in the composer, in the sent bubble, on the recipient's phone and when edited, on every platform.
+
+**The user (2026-10-13):** "when you do a '-' you should have a - list, if you do a '•' you have that type of list, same for numbers." **Also decided: keep the 3-level limit** (plot offered 5; the user declined).
+
+**Plot's survey (`core/src/format.rs`):**
+- `ListItem` has `ordered: bool` only; `list_trigger` maps `-`, `*` and `•` all to "bullet";
+- the parser accepts `- ` and `* ` (line ~128); **the serializer writes every bullet as `- `** (line ~488), so `* ` is normalised away. Every stored message's bullets are therefore `- `;
+- `list_markers` gives `•`/`◦`/`▪` by level.
+
+**Decisions (plot's):**
+- **Core model:** replace `ordered: bool` with `kind: ListKind { Bullet, Dash, Numbered }` (a UniFFI enum; not a reserved name). `ListTrigger` and the composer's block kind carry the same three.
+- **Wire format** (`docs/message-format.md`): **`- ` = dash, `* ` = bullet**, `1. ` = numbered; the serializer writes each kind's own marker. This matches what people type and is standard CommonMark. **Consequence, accepted pre-launch:** messages already sent with bullets were stored as `- `, so they'll now show as dash lists. Only test data exists. Old app builds render both `- ` and `* ` as `•` (no break).
+- **Markers shown:** dash `–` (en dash) at every level, as in Notes; bullet `•`, `◦`, `▪` by level (as now); numbered as now.
+- **Typing:** `- ` → dash; `* ` or `• ` → bullet; `N. ` → numbered (as now). **The toolbar's "Bulleted list" button makes a bullet (•) list**; there's no dash button (typing makes dashes).
+- **Return** continues the same kind. **Typing a different marker** on an item switches that item's kind (137 does this for bullet ↔ number; extend it to dash).
+- **Numbering:** a dash item interrupts a level's numbering exactly as a bullet does.
+- **Branch moves (137b)** are unaffected: kinds move with their items.
+
+**Scope:** `core/src/format.rs` (+ tests), `docs/message-format.md`, `ComposerDocument.swift`, `RichComposer.swift`, `MessageText.swift`, `FormattingToolbar.swift` (only if the bullet button's mapping needs it), their tests; `Generated/` via `./core/build-ios.sh`. **Not:** the 3-level limit, the toolbar's layout.
+
+**Pre-condition:** LIME-137b committed and pushed (the same files). If not, stop and ask the user.
+
+**Phase 0:** `git add PLOT.md` only, commit; re-read PLOT.md.
+
+**Kind:** behaviour → real tests:
+- core: round trips per kind at 3 levels (`- ` stays dash, `* ` stays bullet); `list_trigger` per marker; `list_markers` per kind; a mixed run (dash, bullet, numbered) keeps each item's kind; an old-style `- ` message parses as dash (document it);
+- iOS unit: auto-start per marker, Return continuing the kind, switching kind by typing, the bullet button making `•`, editing a sent message keeping kinds;
+- extend 137's UI test with one dash item.
+
+**Verification:** `cargo test` (count up), `./core/check-android.sh`, the full suite on the 13 mini (soft cap ~90 min), 0 warnings, Release clean.
+
+**Gate (the user):** type a `- ` list, a `• ` list and a `1. ` list (each with a sub-item) → each keeps its look in the composer, in the sent bubble and on the other phone; the toolbar's bullet button makes •; edit a sent message → the styles stay.
+
+**Record:** `## LIME-137c` in TEND.md, ending with **For plot:**. **Commit:** `feat: lists keep their typed style (dash, bullet, numbered)`, trailer `Brief: LIME-137c`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Explicit paths; never `public/assets/*`. Anything undecided: stop and ask the user.
+
+### LIME-137b → `tend` (lime-aa) (after LIME-137-fix; drafted 2026-10-13): sub-items move with their parent
+**Goal:** indenting or outdenting a list item moves its whole branch (its sub-items) with it, as in Notes, so an outline never ends up with a gap like level 0 followed by level 2.
+
+**The user (2026-10-13):** "yes they should" (tend's question in 137's report). Also: Indent/Outdent at the end of the scrolling toolbar were "found easily", so leave their place; move them later if needed.
+
+**Definitions (exact):** an item's **branch** = the item plus every item directly after it whose level is **greater** than the item's level, up to (not including) the next item at the same or a shallower level, or the end of the list run.
+
+**Rules:**
+1. **Indent:** the selected item(s) and their branches each go +1. **Not allowed** (button dimmed, Tab does nothing) if the first selected item would end up more than one level deeper than the item above it, or if **any item in the moved branches would pass level 2**. Nothing is clamped or flattened: either the whole move fits, or nothing moves.
+2. **Outdent:** the selected item(s) and their branches each go −1. Not allowed when the first selected item is at level 0 (the buttons and Shift-Tab). Items after the branch keep their levels.
+3. **A multi-item selection:** each item counts once. When a selected item is inside another selected item's branch, it moves only as part of that branch (not twice).
+4. **The paths that outdent go through the same rule:** Backspace at the start of a nested item's text, and Return on an empty nested item, move that item **with its branch** (an empty item rarely has one, but it must not leave a gap).
+5. **Removing a level-0 item's marker** (Backspace at its start, or the list button toggled off on it) **lifts its branch by one level**, so the following items still form a valid list. Same for the list button toggled off on a nested item: its branch moves up one level.
+
+**Core-first:** the branch rule goes in LimeCore, next to 137's `list_level_after`: `list_shift(levels: Vec<u32>, first: u32, last: u32, indent: bool) -> Option<Vec<u32>>`. It takes the levels of the whole list run and the selected item range, and returns the new levels for the run, or `None` when the move isn't allowed. Swift only maps paragraphs ↔ indices and applies the result. `list_level_after` can stay if other paths use it, or be folded in. Report which.
+
+**Scope:** `core/src/format.rs` (+ tests), `ComposerDocument.swift`, `RichComposer.swift`, `FormattingToolbar.swift` (only the enabled state), their tests. **Not:** the toolbar's layout, the bubble, the wire format.
+
+**Pre-condition:** LIME-137-fix is committed and pushed (it touches the same delete code). If not, stop and ask the user.
+
+**Phase 0:** `git add PLOT.md` only, commit; re-read PLOT.md.
+
+**Kind:** behaviour → real tests:
+- core tests for `list_shift`: indent/outdent with branches, the level-2 cap refusing the whole move, a multi-selection with nested selected items, a run end, an outdent from level 0 refused;
+- iOS unit tests for each path (the buttons, Tab/Shift-Tab, Backspace outdent, Return on an empty nested item, marker removal lifting the branch);
+- **no new UI test** (the 137 UI test plus the unit tests cover it).
+
+**Verification:** `cargo test` (count up from 197), `./core/check-android.sh`, the full suite on the 13 mini (soft cap ~90 min), 0 warnings, Release clean.
+
+**Gate (the user):**
+1. In a 3-level outline, outdent a level-1 item that has sub-items → they all move up together;
+2. indent it back → together;
+3. a branch that would pass level 3 can't be indented (the button is dimmed);
+4. Backspace at the start of a top item with sub-items → it becomes text and its sub-items step up one level.
+
+**Record:** `## LIME-137b` in TEND.md, ending with **For plot:**. **Commit:** `feat(composer): sub-items move with their parent on indent and outdent`, trailer `Brief: LIME-137b`, plus the attribution trailer. **Push.** Stop. No /loop wakeups. Commit with explicit paths; never `public/assets/*`. Anything undecided: stop and ask the user.
+
 ### LIME-137-fix → `tend` (lime-aa) (NEXT; drafted 2026-10-13): deleting a selection that starts in a list deletes only one marker
 **Goal:** deleting any selection in the composer (Select All + Delete, Cut, a drag-selection across lists) removes exactly the selected text, every time; the single-backspace marker rules from LIME-100/137 keep working.
 
@@ -5389,6 +5502,23 @@ Decided earlier (not reopened): self-hosted LiveKit, never LiveKit Cloud; 50–1
 
 ### LIME-112b → `tend` (lime-aa) (**after LIME-111-fix passes the user's two-phone gate**): group voice and video calls on self-hosted LiveKit, E2EE
 **Revises the LIME-112 draft (never sent): the ring cut-off is 10, per the user. Decisions: D1 = B (on `lime-turn-1`), D2 = B with 10, D3 = A.**
+
+**⚑ RECONCILED 2026-10-14 (plot): this brief was drafted 2026-10-10. Everything below still holds, PLUS these, which win where they differ:**
+1. **The 1:1 gate it waited on passed long ago** (111 → 118c, 119, 120, 128, 134, 135 all landed). Send it now.
+2. **Core-first (the standing rule):** the group call **state machine and rules** (who may start/join/key, key rotation on leave, the ring cut-off, "one active call at a time", the call-ended detection, the chat lines) live in **LimeCore**, as Phase 3 already puts the ops there. `GroupCallManager` in Swift is a **thin adapter** over the LiveKit SDK + CallKit; anything else in Swift is flagged as "Android debt" in TEND.md.
+3. **Accessibility from day one** (standing rule) on every new screen: tile names and speaking/muted states read by VoiceOver, never colour alone (muted = an icon *and* a label), Dynamic Type in the participant list, Reduce Motion (no tile-shuffle animation), 44 pt controls. Check the in-call controls in landscape (118c's bottom row) and on the SE.
+4. **Keep the 1:1 paths untouched:** 118b's `lime-ctl` channel, 118c's PiP, 119's emoji chip + Always relay, 128's `call.unavailable`, 135's PiP avatar. For groups:
+   - **mute/camera indicators** come from LiveKit's own track-muted events (not `lime-ctl`);
+   - **minimise** = system PiP of the active speaker, with the avatar when their camera is off, reusing 135's plain-UIKit `PiPAvatarView`. **The rule: no SwiftUI reading the app's environment inside the PiP window.**
+   - **Always relay calls:** when it's on, the SFU connection uses only the TURN relay (LiveKit's `iceTransportPolicy: relay` with our coturn); otherwise the SFU sees the phone's IP (already in the honest limits);
+   - **emoji verification is out of scope for groups** (note it in the limits);
+   - **DND/work hours (128):** a group ring is silenced exactly as 1:1 (labelled "Silenced · …"); no `call.unavailable` is sent to a group.
+5. **Call bubbles (123):** a group call writes the same kind of chat call bubble as 1:1 (reactions/reply work), using "<Name> started a call · Join" and then "Call ended · 23:10". **The Calls tab (116/124 filters):** group rows obey the existing filters (Voice/Video/Incoming/Outgoing; "Missed" for rung group calls).
+6. **Group op sends are slow (LIME-120b, not built):** group ops still look up each member's devices. `call.key` goes over Olm to call participants only, which is a few sends per join. **Measure the time from join to the first decrypted video**, and report it if it's over ~3 s; don't fix 120b here.
+7. **Time:** the full UI suite now takes ~53 min. The soft cap is **~120 min per run**. The brief naturally splits at the Phase 1 stop (DNS) and may need a second run after Phase 2: report at the cap.
+8. **The licence is decided: MIT** (2026-10-13). LiveKit's server and SDKs are Apache-2.0: fine. Record both in `core/THIRD_PARTY.md` / the iOS acknowledgements.
+9. **The server:** `lime-turn-1` is a CPX11 (2 vCPU, 2 GB, Ubuntu 26.04) also running coturn. Phase 1 reports whether LiveKit + coturn fit in its memory for a 10-person test, and the load limit to expect.
+10. **Record step:** end the TEND.md record with a paragraph headed **For plot:**. Commit with explicit paths; never `public/assets/*`.
 
 **Goal:** members of a lime group can start or join a voice or video call of up to 100 people, through lime's own LiveKit server, with the media end-to-end encrypted using per-sender keys sent over lime's own E2EE channel, so the server and the SFU only ever see ciphertext.
 
