@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-151** (run the UI tests in parallel; LIME-112d landed as `fbec7e8`). Then **LIME-150** (the minimised mini grid + the tuck-away mini player + the warm-neutral Mute + PiP ~30% smaller; starts with a device spike), then **LIME-147** (the group-call emoji + the 1:1-style call header), then the mesh (**LIME-139 → 144**), then **LIME-152** (the QA batch). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-147** (LIME-151 landed as `6e6ebb1`: the full suite now takes ~32 min). **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -15,8 +15,8 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
 1. **Re-read the brief** from this file, including any "RECONCILED" or "⚑" notes at its top (they win where they differ).
 2. **Phase 0:** `git add PLOT.md` only, then commit `chore: update PLOT.md`. Never stage anything else in that commit.
 3. **Commit with explicit paths only.** **Never commit `public/assets/*`** (two stray files, the user's to decide). Leave others' uncommitted files alone.
-4. **The soft cap is ~60 min**, or **~120 min when the brief asks for the full UI suite** (it takes ~53 min). At the cap, report rather than push on.
-5. **Tests:** run with signing on (`CODE_SIGNING_ALLOWED=NO` breaks the Keychain tests). Tiered: the full suite on the 13 mini, changed tests on SE/18 Pro. 0 warnings; Release clean.
+4. **The soft cap is ~60 min**, or **~75 min when the brief asks for the full UI suite** (it takes **~32 min** with `./ios/test-full.sh --workers 3` since LIME-151; it was ~54). At the cap, report rather than push on.
+5. **Tests:** **the full suite = `./ios/test-full.sh`** (3 parallel workers, one summary line; `--only <Class>`, `--device <udid>`, `--serial`). Keep UI test classes small: Xcode hands each worker whole classes. Run with signing on (`CODE_SIGNING_ALLOWED=NO` breaks the Keychain tests). Tiered: the full suite on the 13 mini, changed tests on SE/18 Pro. 0 warnings; Release clean.
 6. **The record:** `## LIME-XX` in TEND.md, ending with a paragraph headed **"For plot:"** (what landed, the commit, the gate, what wasn't exercised, decisions needed). **Plot reads it from TEND.md**, so the user doesn't paste it.
 7. **Commit message:** as the brief gives it, trailer `Brief: LIME-XX` plus the attribution trailer. **Push.** Then **stop for the user's check**. **No /loop wakeups.**
 8. **The user only, in tend's own window, never via a relayed message:** anything on a live server (SSH, installs, ports), secrets, staging deploys/migrations, accounts, DNS, or money. Stop and ask the user directly.
@@ -148,6 +148,11 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e114. **LIME-151 LANDED as `6e6ebb1` (pushed, 2026-10-15; PLOT.md `5c327f2`).**
+   - `ios/test-full.sh` (3 workers, a summary line, `--only`/`--device`/`--serial`); the full suite **54 → 32 min** (two green runs; N=4 lost a worker at launch, and 3 clones each run ~1.8× slower).
+   - **Fixes:** the 115-test `LimeUITests` was split into 8 classes on a `LimeUITestCase` base; one flaky long press retries. `ios/README.md` "Running tests".
+   - **Standing rules 4–5 updated:** the cap with the full suite is ~75 min. **NEXT: 147.**
+1e113. **REORDER (the user, 2026-10-15): "prioritise 147 and offline mesh before the rest of the polish; 150 can go along with 152".** **Queue: 151 (running) → 147 → 139 → 140 → 141 → 142 → 143 → 144 → 150 + 152 (one polish phase) → …** RESEARCH-01 (emergencies) is needed before 143.
 1e112. **The user (2026-10-15, 5 screenshots at 11:34–11:37): "we are over-using green".** During a call, lime green only in the header circle, the LIVE badge (moved into the mini player) and send; the live card becomes subtle (no badge, a warm-neutral Join/Return) → **150 item 9**. The "Call again?" sheet copies the header menu's icons and names → **150 item 10**. Plot spotted the tiny avatar for a group with one other member → **150 item 11** (the full design stays in 152).
 1e111. **LIME-112d LANDED as `fbec7e8` (pushed, 2026-10-15; PLOT.md `0247624`).**
    - The PiP controller rebinds to the new anchor (+ a retry + logs); 1:1 not changed (its anchor is stable); the live circle's glyph is outline 18 pt regular.
@@ -5248,6 +5253,12 @@ If the survey turns up related issues, raise them before editing. If a decision 
    - **The live call card in the chat becomes subtle:** no LIVE badge, **no green button**. The card is a quiet bubble ("Call started · FAM and 1 other are there", the call icon, the avatars), with **"Join call" / "Return to call" as a warm-neutral button** (`Theme.pressed`, the "Aa" colour) or a text-style button. It stays one card per call and still turns into "Call ended · time".
    - Check every other call surface (the invite sheet, the Calls tab) against the rule; report anything else that was green.
 10. **The "Call again?" sheet from an old call bubble uses the same icons and names as the header's call menu** (the user, 2026-10-15): the same two rows (the phone icon + "Voice call", the video icon + "Video call", or whatever the header's dropdown uses: copy it exactly, ideally the same view), then Cancel. One pattern everywhere.
+12. **The mini player is too tall (the user, 2026-10-15): make it the same height as the header's glass circles and capsule** (~44 pt today; measure the real header height and match it exactly):
+   - the avatar ~32 pt;
+   - the text: **one line** ("Shem & FAM · LIVE · 0:45") or two very compact lines if both fit in that height. Report which;
+   - Mute and Leave as **~36 pt visual circles with 44 pt tap areas** (the hit area extends beyond the drawn circle);
+   - **at large Dynamic Type it may grow taller** (accessibility wins over matching);
+   - check the tuck-away edge tab (item 8) matches the new height.
 11. **A group with one other member shows a tiny avatar** (screenshots: "Shem & FAM" in the Messages list, the chat header and the mini player show a small FAM circle in a big empty space). Today's composite places 1 member at a quadrant offset, **and leaves you out**. **The user (2026-10-15): "I added FAM and myself in a group and my avatar doesn't show up in the group."**
    - **Fix now (REVISED):** a group's picture (no group photo set) **includes you**. Group members **plus you**, others first, you last.
    - For **2 people in total** (you + 1), use LIME-152's 2-person design now: **two overlapping circles inside the one avatar circle, the front one with an outline ring** (the other person in front, you behind).
