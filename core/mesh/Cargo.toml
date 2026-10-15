@@ -1,0 +1,15 @@
+[package]
+name = "lime_mesh"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+description = "lime's mesh engine: carries already-sealed bytes from phone to phone (store, carry, forward). No radio, no accounts, no server."
+publish = false
+
+[lib]
+name = "lime_mesh"
+
+# Deliberately almost nothing: the mesh moves opaque, already-sealed bytes and knows nothing of lime's accounts, store, server or crypto.
+[dependencies]
+sha2 = "0.11"

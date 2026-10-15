@@ -487,7 +487,8 @@ final class LocalBackendE2ETests: XCTestCase {
 
         // Bob leaves: his copy goes, and Ada sees a line about it.
         await bob.store.leaveGroup(chat)
-        XCTAssertNil(bob.store.conversation(chat))
+        // Since LIME-115 a group I left stays as a read-only "You left" row.
+        XCTAssertEqual(bob.store.conversation(chat)?.groupEnded, "left")
         await eventually("Ada hears Bob left") { ada.store.conversation(chat)?.messages.contains { $0.isSystem && $0.text.contains("left") } == true }
         let details = await ada.store.groupDetails(chat)
         XCTAssertEqual(details?.members.count, 2)

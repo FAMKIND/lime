@@ -1,3 +1,7 @@
+# The mesh engine is a separate crate in the same workspace (it depends on nothing of lime's): `cargo test --workspace` runs both.
+[workspace]
+members = ["mesh"]
+
 [package]
 name = "lime_core"
 version = "0.1.0"

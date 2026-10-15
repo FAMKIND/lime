@@ -12,6 +12,7 @@ Checked 2026-10-06 (updated for LIME-90 and LIME-93) against the crates in `Carg
 | [uuid](https://crates.io/crates/uuid) | 1.27.0 | Apache-2.0 or MIT | UUIDv7 message and op ids, and random device ids (`v7` and `v4`). |
 | [serde](https://crates.io/crates/serde), [serde_json](https://crates.io/crates/serde_json) | 1.0.229, 1.0.151 | MIT or Apache-2.0 | The op and envelope JSON (LIME-93). |
 | [hkdf](https://crates.io/crates/hkdf), [sha2](https://crates.io/crates/sha2) | 0.13.0, 0.11.0 | MIT or Apache-2.0 | Derives the pickle key from the store key (HKDF-SHA256). The same versions vodozemac already uses. |
+| `lime_mesh` (`mesh/`, MIT, lime's own) | 0.1.0 | MIT | The mesh engine (LIME-140): a path dependency in this workspace. Its only dependency is `sha2` (above); it uses nothing else. |
 | [ureq](https://crates.io/crates/ureq) | 2.12.1 | MIT or Apache-2.0 | **Tests only** (a dev-dependency): the HTTP client of the integration tests. With its TLS stack (`rustls`, `ring` Apache-2.0 AND ISC, `rustls-webpki` ISC, `webpki-roots` CDLA-Permissive-2.0) it is not linked into the app. |
 | [tempfile](https://crates.io/crates/tempfile) | 3.27.0 | MIT or Apache-2.0 | Tests only (a dev-dependency); not linked into the app. |
 | [uniffi](https://crates.io/crates/uniffi) | 0.32.2 | MPL-2.0 | Generates the Swift bindings (build tool, `cargo run --features cli --bin uniffi-bindgen`) and provides the small runtime (`uniffi_core` and the macros) linked into the library. |
