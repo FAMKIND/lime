@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-139 (the mesh begins: signed access; its staging deploy waits for the user's go)** (LIME-147b landed as `fd6c1a0`). **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-140 (the mesh engine; drafted).** **It waits until the user has deployed LIME-139 to staging** (`./supabase/deploy-staging.sh`); ask the user if unsure. (LIME-139 landed as `ae9d225`.) **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -148,6 +148,28 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e121. **DECIDED, the emergency mode (the user, 2026-10-15), for LIME-143:**
+   - **E1 = A:** always silent (a banner, no sound or vibration), **plus a Settings option "Emergency alerts make a sound"** for places where loud helps (the user's example: a natural disaster in Nepal), off by default; a per-device choice.
+   - **E2 = A:** the SRP's five actions (Hold, Secure, Lockdown, Evacuate, Shelter) as presets + Safe / Need help; schools that don't use SRP can turn the presets off in Settings.
+   - **E3 = A:** a separate, clearly labelled **Drill** mode, **set up in Settings**.
+   - **E4 = A:** a live roll-up for the emergency group (status, student count, place, latest first).
+   - **"Call 911 first" (localised) on the first screen; lime never claims to alert police: YES.**
+   - Also carried in: M3 = A (no GPS), M4 = A + choose at the moment.
+1e120. **LIME-139 LANDED as `ae9d225` (pushed, 2026-10-15; PLOT.md `63ed50f`); NOT deployed.**
+   - Signed access: an Ed25519 key from HKDF(delivery key) via vodozemac's own `Ed25519SecretKey` (no new crate); the vector cross-checked with Python + OpenSSL; `access_public_key` column (staging migration pending); core migration 31 re-uploads; both send sites sign; the server accepts `signed`, and `sealed` stays during the overlap; docs + release-checklist notes.
+   - **Tests:** cargo 229; Deno 63; integration 21.
+   - **The user deploys BEFORE installing the new build** (else every send falls back to identified).
+   - **A stale e2e assertion** (a left group should stay "You left") → fixed in 140.
+   - **→ LIME-140 drafted (the mesh engine).**
+1e119. **RESEARCH-01 DONE (2026-10-15): https://claude.ai/code/artifact/8597fd9a-d248-4c48-a700-b20abf25624e** ("lime emergency mode: what teachers needed in real school emergencies").
+   - **Findings:**
+     - (1) phones must be **silent** in lockdowns (vibrate too), which **reverses** "break through DND with sound";
+     - (2) networks fail: Uvalde's Wi-Fi-dependent Raptor alert; Paradise's comms collapse; FEMA's "text, don't call";
+     - (3) status, not chat (SRP's OK/HELP cards, attendance) → one-tap Safe/Need help + a student count + a room;
+     - (4) rumours outrun official word → a clear Emergency label, from a known sender, no one-tap forward;
+     - (5) alert fatigue (Uvalde bailouts) → rare + a separate Drill mode; anyone can start it (Parkland, Okawa).
+   - **Plus:** a live roll-up for reunification; "call 911 first".
+   - **Decisions for the user, E1–E4:** E1 always silent; E2 SRP presets; E3 Drill mode; E4 the roll-up view. Leans A on all. **Needed before 143 is drafted.**
 1e118. **LIME-147b LANDED as `fd6c1a0` (pushed, 2026-10-15; PLOT.md `933a070`).**
    - The emoji v2 input (length-prefixed; vector `[60, 86, 17, 90]`, cross-checked in Python);
    - "ready" only when every key is renewed after each leave, bounded at 15 s;
@@ -5696,7 +5718,99 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-139 → `tend` (lime-aa) (NEXT; drafted 2026-10-15): signed access: a sealed send proves the delivery key without revealing it
+### LIME-140 → `tend` (lime-aa) (after LIME-139 is deployed; drafted 2026-10-15): the mesh core: a separate `core/mesh` crate, the sealed routing header, `mesh-drop`, and a simulator
+**Goal:** a tested, radio-free mesh engine. It takes lime's sealed envelopes and carries them from phone to phone (store, carry, forward), with privacy on the air, budgets, dedupe and expiry. A relay that reaches the internet can upload what it carries without learning who it's for. All of it is proven in a simulator of many virtual phones.
+
+**Inputs:** DESIGN-13 (above: the decided rules and both findings), `docs/spike-ble.md` §7, `architecture.md` §7, `api-v2.md` §4/§8, LIME-139 (signed access, `ae9d225`).
+
+**Capabilities assumed:** edit, build and test Rust/iOS; the local Supabase stack; commit and push. **Not:** staging, secrets (the user's steps, below).
+
+**The design (plot's; flag it for the pre-launch security review):**
+1. **A separate crate `core/mesh`** (the package `lime_mesh`, MIT), a **path dependency** of `lime_core`.
+   - **It depends on nothing of lime's** (no account, store, server or vodozemac types): it moves opaque, already-sealed bytes. That keeps a future mesh SDK possible (1e84).
+   - Its platform hooks are traits: **`MeshLink`** (send a frame to a link; the platform reports links up/down and frames in), **`MeshStore`** (persist carried packets + the seen-set; `lime_core` implements it on SQLCipher), **`Clock`** (time is passed in; **no timers in the core**).
+2. **A mesh packet** (versioned, length-prefixed binary) holds:
+   - `version`;
+   - **the recipient tag** (16 bytes);
+   - **the sealed routing header**;
+   - `hops_left`;
+   - `expires_at` (≤ **48 h** from creation);
+   - the **payload** (exactly the bytes the server's `send` stores: the ciphertext for that recipient device);
+   - **padding to buckets** (256/512/1024/2048 B, then 4 KiB steps), so sizes don't leak.
+3. **The recipient tag (finding 2a):**
+   - `tag = HMAC-SHA256(tag_key, "lime-mesh-tag-v1" || UTC day || to_device)[..16]`, where `tag_key = HKDF(delivery_key, "lime-mesh-tag-v1")`;
+   - contacts already hold the delivery key, so a sender can tag, and the recipient recomputes today's and yesterday's tags for its own device(s) to recognise its mail;
+   - bystanders and relays learn nothing;
+   - the HKDF and the HMAC live in `lime_core` (it holds the keys), and the mesh crate sees only 16 opaque bytes.
+4. **The sealed routing header (finding 2b):**
+   - `{to_device, access: {signed}}` (139's per-message proof), **sealed to the server's mesh public key** (X25519 + HKDF + AES-256-GCM, an ephemeral sender key per packet; a 1-byte key id for rotation; use crates already in `Cargo.lock` where possible: report which);
+   - **only the server can open it**: relays can't read the recipient or reuse the proof (139 binds it to the ciphertext).
+5. **Forwarding rules** (DESIGN-06/13, all parameters in one `MeshConfig`, tested):
+   - **TTL 7 hops, capped to 5** when a node has ≥ 6 links;
+   - an **LRU seen-set** (~1000 digests, 5 min) on the packet digest;
+   - **spray-and-wait** (copies start at 4, cap 8, half handed to each courier met);
+   - **budgets:** a total store cap (e.g. 5 MB), ~100 packets per recipient tag, and **trust tiers** (packets from or for accepted contacts get more slots than strangers'; `lime_core` supplies the tier);
+   - **expiry** at 48 h;
+   - **eviction** oldest / lowest-tier first under pressure;
+   - **relay jitter** (10–220 ms) is returned as a delay hint to the platform, not slept in core;
+   - **per-link rate limits.**
+6. **A meeting** (the platform says a link is up):
+   - the two sides swap **summaries** (the digests they hold, or a compact form: report which), then request what's missing, then send it with **per-packet acks**;
+   - resumable after a drop (spike §7.3);
+   - **one link per pair** is the platform's job (141), but the core tolerates duplicates;
+   - **"flush everything on every wake/meeting"** (the MESH v1 rules): the API's `on_link_up` returns the full send plan at once.
+7. **The API for 141/142 (propose it, report it; plot reviews):** roughly
+   - `MeshNode::new(config, store, clock)`;
+   - `on_link_up(link) → Vec<Action>`;
+   - `on_frame(link, bytes) → Vec<Action>`;
+   - `on_link_down(link)`;
+   - `enqueue(packet)`;
+   - `take_mine(my_tags) → Vec<payload>` (delivered to this phone);
+   - `take_uploadable() → Vec<(sealed_header, payload)>` (for `mesh-drop`);
+   - `Action = SendFrame{link, bytes, delay_ms} | Ack…`.
+   - **Exposed over UniFFI** (Kotlin-safe names: no `List/Map/Set/String/Int/Unit/Result`).
+8. **The server: `supabase/functions/mesh-drop`:**
+   - **a signed-in session required** (rate limiting per account; the relay isn't the sender, and the server already sees the relay's IP);
+   - it opens the sealed header with `MESH_ROUTING_SECRET_KEY`, then runs **exactly `send`'s access check + store** (shared code, not a copy) for that one recipient device;
+   - dedupe as `send` does (the outer-ciphertext hash per device);
+   - **logs nothing identifying**; **503 `not_configured`** until the secret exists;
+   - **the server's public key** is pinned in `lime_core`'s config with its key id.
+9. **The simulation harness (`core/mesh/tests/sim.rs`):** N virtual phones (up to ~50), virtual time, scripted meetings/partings/sleeps, deterministic seeds. **Scenarios:**
+   - A → B direct;
+   - A → B via 1, 2, 3 relays;
+   - **both asleep then a wake** (the 103c shape: delivery waits for a meeting, then flushes);
+   - a relay reaching "the internet" → `take_uploadable`;
+   - TTL exhaustion; 48 h expiry;
+   - **storage pressure** (eviction order);
+   - **a flood from one node** (rate limits hold);
+   - duplicates via many paths (one delivery);
+   - a tag only the recipient recognises;
+   - padding (all sizes on the wire are bucket sizes).
+   - **Report delivery rate, hops and median delay per scenario.**
+10. **`lime_core` glue (no radio):** the `MeshStore` on SQLCipher (a migration), computing the tags, sealing the header for an outbound sealed send, opening "mine" (payload → the normal inbound path, dedupe by `op_id` as today). **Wiring to the outbox is 142, not here.**
+
+**Also (a stale test, found by 139):** `LocalBackendE2ETests.testAGroupOfThreeChatsLiveAndTheOwnerManagesIt` line ~490 still asserts a left group disappears. Since LIME-115 it stays as a read-only "You left" row, so assert `groupEnded == "left"` instead.
+
+**Scope:** `core/mesh/` (new), `core/Cargo.toml` (the path dep), `core/src/` (glue + migration), `supabase/functions/mesh-drop` + `_shared` (the extracted send logic) + tests, `docs/api-v2.md` §8 (the packet, tag, header, `mesh-drop`), `docs/architecture.md` §7 (as built so far), `core/THIRD_PARTY.md`, the stale e2e test. **Not:** iOS beyond `Generated/`, Bluetooth, the outbox.
+
+**User steps (tend stops and asks; never does these):**
+- **(a) Generate the server's mesh key pair:** tend writes `supabase/mesh-keygen.sh`, which prints **only the public key** (for tend to pin) and pipes the secret straight into `supabase secrets set MESH_ROUTING_SECRET_KEY=… --project-ref "$SUPABASE_PROJECT_REF"`, run by the user in Terminal;
+- **(b)** `./supabase/deploy-staging.sh` after the user's go.
+
+**Kind:** core protocol → real tests:
+- unit tests per rule;
+- the simulator scenarios;
+- the packet format pinned with a test vector (for Android);
+- Deno tests for `mesh-drop` (a good header → stored; a bad seal / wrong key id / bad proof → 403 like `send`; replay → deduped; 503 without the secret);
+- **one local end-to-end:** A seals for B → a relay core holds it → `take_uploadable` → `mesh-drop` → B fetches it from its mailbox and reads it.
+
+**Verification:** `cargo test` (count up from 229), the sim report, `./core/check-android.sh`, `./supabase/test.sh` (up from 63), the integration suite (21 + the mesh e2e), the iOS build with 0 warnings + unit tests (the full UI suite only if `Generated/` changes shared UI types: say which).
+
+**Gate:** none on a device. Plot reviews the API, the sim numbers and the security notes; the user does steps (a)–(b).
+
+**Record:** `## LIME-140` with **For plot:** and every item checked off. **Commit:** `feat(core): the mesh engine (lime_mesh), sealed routing header, mesh-drop, simulator`, trailer `Brief: LIME-140`. The rest per the standing rules. It may split at a clean boundary (crate + sim first, then glue + server); say so.
+
+### LIME-139 → `tend` (lime-aa) (DONE as `ae9d225`; drafted 2026-10-15): signed access: a sealed send proves the delivery key without revealing it
 **Goal:** a sealed send carries a signature that's valid only for that ciphertext and recipient device, instead of the reusable delivery key, so a phone that carries the message (a future mesh relay, or anyone who captures a request) can't reuse it to message that person.
 
 **Why (DESIGN-13, finding 1):**
