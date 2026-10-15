@@ -28,6 +28,8 @@ enum PiPSubject: Equatable {
 @MainActor
 protocol GroupPiP: AnyObject {
     var isPossible: Bool { get }
+    /// Why the window cannot start now (for the log): "not prepared", "source off-window", or the system's own "not possible".
+    var notPossibleReason: String { get }
     var onStarted: (() -> Void)? { get set }
     var onStopped: (() -> Void)? { get set }
     /// The person tapped the window to come back to lime's full call screen.
@@ -40,6 +42,17 @@ protocol GroupPiP: AnyObject {
     func show(subject: PiPSubject, track: AnyObject?, pictureShowing: Bool)
     func start()
     func stop()
+}
+
+/// What `prepare` does with the call screen's anchor view (LIME-112d). The call screen is rebuilt on every return from minimising, so its
+/// anchor is a NEW view each time; a controller left bound to the first one is bound to a view that is gone and can never start again.
+enum PiPSourceBinding {
+    enum Action: Equatable { case create, keep, rebind }
+
+    static func action(hasController: Bool, sameSource: Bool) -> Action {
+        if !hasController { return .create }
+        return sameSource ? .keep : .rebind
+    }
 }
 
 /// Draws a LiveKit video track's frames with an `AVSampleBufferDisplayLayer`, the only kind of content system Picture in Picture can show.
@@ -114,6 +127,8 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
     private let display = PiPDisplayView()
     private let contentController = AVPictureInPictureVideoCallViewController()
     private var controller: AVPictureInPictureController?
+    /// The anchor view the controller is bound to now (weak: the call screen owns it).
+    private weak var sourceView: UIView?
     private var renderer: GroupPiPFrameRenderer?
     private var avatarView: UIView?
     private var avatarKey: String?
@@ -137,15 +152,32 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
 
     var isPossible: Bool { AVPictureInPictureController.isPictureInPictureSupported() && (controller?.isPictureInPicturePossible ?? false) }
 
-    func prepare(sourceView: UIView, subject: PiPSubject) {
-        guard controller == nil, AVPictureInPictureController.isPictureInPictureSupported() else { return }
-        show(subject: subject, track: nil, pictureShowing: false)
-        let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView, contentViewController: contentController)
-        let controller = AVPictureInPictureController(contentSource: source)
-        controller.canStartPictureInPictureAutomaticallyFromInline = true
-        controller.delegate = self
-        self.controller = controller
-        CallDiagnostics.shared.log("group pip prepared")
+    var notPossibleReason: String {
+        guard let controller else { return "not prepared" }
+        if sourceView?.window == nil { return "source off-window" }
+        return controller.isPictureInPicturePossible ? "possible" : "the system says not possible"
+    }
+
+    func prepare(sourceView newSource: UIView, subject: PiPSubject) {
+        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+        switch PiPSourceBinding.action(hasController: controller != nil, sameSource: sourceView === newSource) {
+        case .keep:
+            return
+        case .rebind:
+            // A new call screen: the same controller, content controller, renderer and subject, pointed at the new anchor.
+            controller?.contentSource = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: newSource, contentViewController: contentController)
+            sourceView = newSource
+            CallDiagnostics.shared.log("group pip rebound to the new call screen")
+        case .create:
+            show(subject: subject, track: nil, pictureShowing: false)
+            let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: newSource, contentViewController: contentController)
+            let controller = AVPictureInPictureController(contentSource: source)
+            controller.canStartPictureInPictureAutomaticallyFromInline = true
+            controller.delegate = self
+            self.controller = controller
+            sourceView = newSource
+            CallDiagnostics.shared.log("group pip prepared")
+        }
     }
 
     func show(subject: PiPSubject, track newTrack: AnyObject?, pictureShowing: Bool) {
@@ -192,6 +224,7 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
         track = nil
         renderer = nil
         controller = nil
+        sourceView = nil
     }
 
     // Attaching blocks the calling thread until WebRTC's worker accepts the sink, so it is done off the main thread.

@@ -1146,7 +1146,7 @@ struct LiveCallButton: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        let glyph = Image(systemName: video ? "video.fill" : "phone.fill").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.accentInk)
+        let glyph = Image(systemName: video ? "video" : "phone").font(.system(size: 18)).foregroundStyle(Theme.accentInk)
         Button(action: action) {
             Group {
                 if reduceTransparency {

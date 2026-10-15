@@ -60,13 +60,16 @@ final class GroupCallManagerTests: XCTestCase {
 
     final class FakePiP: GroupPiP {
         var isPossible = true
+        var notPossibleReason: String { "fake" }
         var onStarted: (() -> Void)?, onStopped: (() -> Void)?, onRestore: (() -> Void)?, onFailed: (() -> Void)?
         private(set) var prepared = 0, started = 0, stopped = 0
+        /// The anchor each `prepare` got, and the one the window would start from (the latest: a rebound controller).
+        private(set) var anchors: [UIView] = [], startedFrom: [UIView?] = []
         private(set) var shown: [(person: String, track: Bool, picture: Bool)] = []
         private(set) var subjects: [PiPSubject] = []
-        func prepare(sourceView: UIView, subject: PiPSubject) { prepared += 1 }
+        func prepare(sourceView: UIView, subject: PiPSubject) { prepared += 1; anchors.append(sourceView) }
         func show(subject: PiPSubject, track: AnyObject?, pictureShowing: Bool) { subjects.append(subject); shown.append((subject.name, track != nil, pictureShowing)) }
-        func start() { started += 1; onStarted?() }
+        func start() { started += 1; startedFrom.append(anchors.last); onStarted?() }
         func stop() { stopped += 1 }
     }
 
@@ -444,6 +447,51 @@ final class GroupCallManagerTests: XCTestCase {
         XCTAssertTrue(manager2.minimized)
         XCTAssertEqual(pip2.started, 0, "no picture, no window")
         await manager2.leave()
+    }
+
+    func testTheWindowFloatsOnEveryMinimiseWithTheCurrentCallScreensAnchor() async {
+        let (manager, pip, _, _, _, _) = await pipCall()
+        var anchors: [UIView] = [pip.anchors[0]]
+        for round in 1...4 {
+            manager.minimize()
+            XCTAssertEqual(pip.started, round, "round \(round): the window starts")
+            XCTAssertTrue(pip.startedFrom.last.flatMap { $0 } === anchors.last, "round \(round): from the anchor the call screen has now")
+            pip.onRestore?()
+            // The call screen is rebuilt: a new anchor view, handed to the same window.
+            let fresh = UIView()
+            anchors.append(fresh)
+            manager.preparePictureInPicture(sourceView: fresh)
+        }
+        XCTAssertEqual(pip.anchors.count, 5, "every new call screen reaches the window")
+        await manager.leave()
+    }
+
+    func testAWindowThatIsNotPossibleYetGetsOneMoreTryBeforeTheFallback() async {
+        let (manager, pip, _, _, _, _) = await pipCall()
+        manager.pipRetryDelay = .milliseconds(5)
+        pip.isPossible = false
+        manager.minimize()
+        XCTAssertEqual(pip.started, 0)
+        XCTAssertFalse(manager.minimized, "not yet: one more try first")
+        pip.isPossible = true // the rebind settled
+        try? await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(pip.started, 1, "the second try starts the window")
+        XCTAssertTrue(manager.pictureInPictureActive)
+
+        pip.onRestore?()
+        pip.isPossible = false
+        manager.minimize()
+        try? await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(pip.started, 1)
+        XCTAssertTrue(manager.minimized, "still not possible: the bar, as before")
+        XCTAssertFalse(manager.pictureInPictureActive)
+        await manager.leave()
+    }
+
+    func testTheWindowRebindsToANewAnchorAndKeepsAnUnchangedOne() {
+        XCTAssertEqual(PiPSourceBinding.action(hasController: false, sameSource: false), .create)
+        XCTAssertEqual(PiPSourceBinding.action(hasController: true, sameSource: true), .keep)
+        XCTAssertEqual(PiPSourceBinding.action(hasController: true, sameSource: false), .rebind, "the rebuilt call screen has a new anchor")
     }
 
     func testMobileDataSends480pAndWiFiGoesBackTo720p() async {

@@ -117,6 +117,8 @@ final class GroupCallManager {
     @ObservationIgnored var makePictureInPicture: (() -> (any GroupPiP)?)?
     @ObservationIgnored private var pip: (any GroupPiP)?
     private(set) var pictureInPictureActive = false
+    /// One beat before the window's second try when it is not possible at first (LIME-112d).
+    @ObservationIgnored var pipRetryDelay: Duration = .milliseconds(150)
     @ObservationIgnored private let network: GroupCallNetwork?
     /// Who the window shows now, and since when (a new speaker waits `speakerHoldSeconds` so it does not flicker), and the last other person who spoke.
     @ObservationIgnored private var pipSubject: String?
@@ -526,7 +528,15 @@ final class GroupCallManager {
     /// Picture in Picture, a voice call (or a video call that cannot) leaves the full screen and keeps the slim bar to return by.
     func minimize() {
         onMinimize?(conversationID)
-        if video, phase == .active, let pip, pip.isPossible { pip.start() } else { minimized = true }
+        guard video, phase == .active, let pip else { minimized = true; return }
+        if pip.isPossible { pip.start(); return }
+        // Not possible yet (a rebind or a layout pass may still be settling): say why, wait one beat, try once more, then fall back (LIME-112d).
+        diag.log("group pip not possible: \(pip.notPossibleReason); trying once more")
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: self?.pipRetryDelay ?? .zero)
+            guard let self, self.inCall, !self.minimized else { return }
+            if pip.isPossible { pip.start() } else { self.diag.log("group pip still not possible: \(pip.notPossibleReason)"); self.minimized = true }
+        }
     }
 
     /// Who the window shows: the person speaking (not me), kept for `speakerHoldSeconds` before it moves to someone else; when nobody else
