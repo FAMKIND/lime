@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-147b** (LIME-112e landed as `51cd57b`). Then **LIME-139**. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-139 (the mesh begins: signed access; its staging deploy waits for the user's go)** (LIME-147b landed as `fd6c1a0`). **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -148,6 +148,12 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e118. **LIME-147b LANDED as `fd6c1a0` (pushed, 2026-10-15; PLOT.md `933a070`).**
+   - The emoji v2 input (length-prefixed; vector `[60, 86, 17, 90]`, cross-checked in Python);
+   - "ready" only when every key is renewed after each leave, bounded at 15 s;
+   - `group_is_custom_named` from ops: any rename, or made with a non-default name. **Tend compared with the creation members, not the current ones (sound).** Migration 30.
+   - **Tests:** cargo 223; unit 375 + UI 192.
+   - **NEXT: 139 (the mesh).**
 1e117. **LIME-112e LANDED as `51cd57b` (pushed, 2026-10-15; PLOT.md `074c13f`).**
    - The core emits `my_key` on every rotation, and the app sets it locally **before** delivering (`pump` order fixed); a second `setKey` bug (treating keys as mine while `myIdentity` was empty) fixed; guards log index mismatches.
    - **The 3-core test proves:** the rotated key = what the others receive, and **after a leave the sending index ≠ the leaver's last index**.
