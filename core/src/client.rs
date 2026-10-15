@@ -1598,6 +1598,11 @@ impl LimeStore {
         self.with_conn(|conn| crate::store::attachments::set_data(conn, id, bytes)).unwrap();
     }
 
+    /// Tests only: how many inbound items are waiting (or held back as invalid).
+    pub(crate) fn test_pending_count(&self) -> u32 {
+        self.with_conn(pending::count).unwrap_or(0)
+    }
+
     pub(crate) fn test_delivery_key(&self) -> Vec<u8> {
         self.with_conn(|conn| delivery::current(conn, now_ms())).unwrap().0
     }

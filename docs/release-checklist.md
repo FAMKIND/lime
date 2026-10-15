@@ -95,3 +95,10 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 
 - [ ] **Remove the access-key path from `send`.** Sealed sends now carry an Ed25519 signature (`access.signed`); the server still accepts the older `access.sealed` (the hash of the access key) so builds from before LIME-139 keep working. Once every device has updated, **before TestFlight**: delete the `sealed` branch in `supabase/functions/send`, stop uploading `access_key_hash`/stop sending it from the core (and drop `delivery_access.access_key_hash` in a migration), and update `docs/api-v2.md` section 4.
 - [ ] **Security review.** The signing-key derivation (HKDF of the delivery key, `lime-access-sign-v1`), the signed message (`lime-access-v2 || SHA-256(ciphertext) || to_device`) and the server's verification are flagged for the pre-launch external security review.
+
+## The mesh's Bluetooth (LIME-141)
+
+- [ ] **Ship the mesh's Bluetooth in Release, deliberately.** Today everything Bluetooth is Debug-only (`#if DEBUG`; the Bluetooth background modes and `NSBluetoothAlwaysUsageDescription` come from `ios/Config/Info-Debug.plist` and the Debug build settings; `ios/check-release-no-bluetooth.sh` fails a Release build that has any). Offering the mesh to people means: move `MeshBluetooth`, `MeshService` and the explainer out of `#if DEBUG`, add `bluetooth-central` and `bluetooth-peripheral` to Release (they need no entitlement), keep the usage string, update `check-release-no-bluetooth.sh` to allow exactly that, and answer the App Store privacy questions (no Bluetooth identifiers are collected: the only identifier is a random link id that rotates every 15 minutes and is never advertised).
+- [ ] **User-facing copy and a switch.** The explainer today is a Debug alert. The real wording ("lime can pass messages phone to phone when there is no internet"), a Settings switch, and the honest limits (nothing is passed after a force-quit; iOS decides when a locked phone wakes) are LIME-142/143.
+- [ ] **Battery.** The device test's per-hour numbers (see `TEND.md`, LIME-141) decide whether the foreground duty cycle and the scan settings are acceptable for everyone.
+

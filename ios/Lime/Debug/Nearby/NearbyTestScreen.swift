@@ -7,6 +7,7 @@ import UIKit
 struct NearbyTestScreen: View {
     @State private var test = NearbyTest.shared
     @State private var showAuto = false
+    @State private var showMesh = false
     @State private var runs: [URL] = NearbyLog.savedRuns()
     @Environment(\.dismiss) private var dismiss
 
@@ -48,6 +49,9 @@ struct NearbyTestScreen: View {
                             .buttonStyle(.bordered).tint(Theme.text).disabled(!transport.running)
                             .accessibilityIdentifier("nearby-send-all")
                     }
+                    Button("Mesh test (LIME-141)…") { showMesh = true }
+                        .buttonStyle(.bordered).tint(Theme.text)
+                        .accessibilityIdentifier("mesh-open")
                     Button("Auto test (overnight)…") { showAuto = true }
                         .buttonStyle(.bordered).tint(Theme.text)
                         .accessibilityIdentifier("nearby-auto-button")
@@ -81,6 +85,7 @@ struct NearbyTestScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
             .sheet(isPresented: $showAuto) { NearbyAutoScreen() }
+            .sheet(isPresented: $showMesh) { MeshTestScreen() }
         }
     }
 }

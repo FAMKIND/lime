@@ -1075,6 +1075,27 @@ fn the_mesh_refuses_what_it_cannot_seal_and_a_carried_packet_survives_a_restart(
 }
 
 #[test]
+fn a_debug_probe_crosses_the_mesh_and_is_counted_but_never_becomes_a_message() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (stranger, _) = party(&server, "stranger", 3);
+    befriend(&alice, &bob, &transport);
+    let (a, b) = (mesh_engine(&alice), mesh_engine(&bob));
+    a.refresh_tags().unwrap();
+    b.refresh_tags().unwrap();
+    assert!(!a.queue_probe(stranger.user.clone()).unwrap(), "no delivery key for a stranger: no probe");
+    assert!(a.queue_probe(bob.user.clone()).unwrap());
+    mesh_meet(&a, &b);
+    let before = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().len();
+    assert_eq!(b.take_mine().unwrap(), 0, "a probe is not a message");
+    let stats = b.stats();
+    assert_eq!((stats.probes_received, stats.mine), (1, 1));
+    assert_eq!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().len(), before, "nothing in the conversation");
+    assert_eq!(bob.store.test_pending_count(), 0, "nothing in the pending queue either");
+}
+
+#[test]
 fn the_same_message_by_the_mesh_and_by_the_mailbox_is_one_message() {
     let server = FakeServer::new();
     let (alice, transport) = party(&server, "alice", 1);

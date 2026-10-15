@@ -186,7 +186,15 @@ pub struct MeshStats {
     pub rate_limited: u64,
     pub evicted: u64,
     pub expired: u64,
+    /// Packets taken as this phone's own mail (messages and probes) since the engine started.
+    pub mine: u64,
+    /// Debug probes (see `queue_probe`) taken as this phone's own since the engine started.
+    pub probes_received: u64,
 }
+
+/// What a debug probe's payload starts with: a probe is random bytes, not a message; the recipient counts it and never feeds it to the
+/// inbound path (so a field test leaves nothing in the conversations or the pending queue).
+const PROBE_PREFIX: &[u8] = b"LIMEMESHPROBE1";
 
 fn actions(list: Vec<Action>) -> Vec<MeshAction> {
     list.into_iter().map(|Action::SendFrame { link, bytes, delay_ms }| MeshAction { link: link.0, bytes, delay_ms }).collect()
@@ -200,16 +208,33 @@ pub struct MeshEngine {
     node: Mutex<MeshNode<SqlMeshStore, SystemClock>>,
     server_key: Option<ServerKey>,
     my_tags: Mutex<Vec<[u8; 16]>>,
+    counters: Mutex<(u64, u64)>, // (mine, probes received)
 }
 
 impl MeshEngine {
     fn build(store: Arc<LimeStore>, server_key: Option<ServerKey>) -> Arc<Self> {
         let node = MeshNode::new(MeshConfig { seed: now_ms() as u64, ..MeshConfig::default() }, SqlMeshStore { store: store.clone() }, SystemClock);
-        Arc::new(MeshEngine { store, node: Mutex::new(node), server_key, my_tags: Mutex::new(Vec::new()) })
+        Arc::new(MeshEngine { store, node: Mutex::new(node), server_key, my_tags: Mutex::new(Vec::new()), counters: Mutex::new((0, 0)) })
     }
 
     fn node(&self) -> std::sync::MutexGuard<'_, MeshNode<SqlMeshStore, SystemClock>> {
         self.node.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn queue(&self, to_user: String, to_device: String, ciphertext: Vec<u8>) -> Result<bool, StoreError> {
+        let server = self.server_key.ok_or(StoreError::Unavailable)?;
+        let now = now_ms().max(0) as u64 / 1000;
+        let key = {
+            let conn = self.store.lock();
+            match crate::store::delivery::contact_key(&conn, &to_user)? {
+                Some((key, false)) => key,
+                _ => return Ok(false),
+            }
+        };
+        let signed = crate::store::delivery::access_signature_b64(&key, &ciphertext, &to_device)?;
+        let header = seal_header(&server, &to_device, &signed)?;
+        let packet = Packet { tag: recipient_tag(&key, &to_device, day_of(now))?, header, payload: ciphertext, hops_left: 0, expires_at: now + 48 * 3600 };
+        Ok(self.node().enqueue(packet).is_ok())
     }
 }
 
@@ -263,19 +288,22 @@ impl MeshEngine {
     /// tagged for that device, with the routing header sealed to the server. Only mail to contacts who gave us their delivery key can travel
     /// (the proof is signed with it); anything else is refused, and the caller sends it the usual way. Returns whether it was queued.
     pub fn queue_for_send(&self, to_user: String, to_device: String, ciphertext: Vec<u8>) -> Result<bool, StoreError> {
-        let server = self.server_key.ok_or(StoreError::Unavailable)?;
-        let now = now_ms().max(0) as u64 / 1000;
-        let key = {
+        self.queue(to_user, to_device, ciphertext)
+    }
+
+    /// Debug field test (LIME-141): puts a **probe** on the mesh for an accepted contact: random bytes, sealed and tagged like real mail for
+    /// the first of the contact's devices this phone knows, that the recipient counts (`MeshStats.probes_received`) and never treats as a
+    /// message. Returns whether it was queued (false: no delivery key or no known device for that contact).
+    pub fn queue_probe(&self, to_user: String) -> Result<bool, StoreError> {
+        let device: Option<String> = {
             let conn = self.store.lock();
-            match crate::store::delivery::contact_key(&conn, &to_user)? {
-                Some((key, false)) => key,
-                _ => return Ok(false),
-            }
+            conn.query_row("SELECT device_id FROM peer_devices WHERE user_id = ?1 ORDER BY device_id LIMIT 1", params![to_user], |r| r.get(0)).ok()
         };
-        let signed = crate::store::delivery::access_signature_b64(&key, &ciphertext, &to_device)?;
-        let header = seal_header(&server, &to_device, &signed)?;
-        let packet = Packet { tag: recipient_tag(&key, &to_device, day_of(now))?, header, payload: ciphertext, hops_left: 0, expires_at: now + 48 * 3600 };
-        Ok(self.node().enqueue(packet).is_ok())
+        let Some(device) = device else { return Ok(false) };
+        let mut payload = PROBE_PREFIX.to_vec();
+        payload.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
+        payload.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
+        self.queue(to_user, device, payload)
     }
 
     /// A link to another phone is up: the frames to send.
@@ -300,7 +328,16 @@ impl MeshEngine {
         if mail.is_empty() {
             return Ok(0);
         }
-        self.store.receive_mesh_payloads(mail.into_iter().map(|m| m.payload).collect())
+        let (probes, messages): (Vec<_>, Vec<_>) = mail.into_iter().map(|m| m.payload).partition(|p| p.starts_with(PROBE_PREFIX));
+        {
+            let mut counters = self.counters.lock().unwrap_or_else(|e| e.into_inner());
+            counters.0 += (probes.len() + messages.len()) as u64;
+            counters.1 += probes.len() as u64;
+        }
+        if messages.is_empty() {
+            return Ok(0);
+        }
+        self.store.receive_mesh_payloads(messages)
     }
 
     /// What this phone carries that the server could take, for `mesh-drop`.
@@ -346,6 +383,7 @@ impl MeshEngine {
 
     pub fn stats(&self) -> MeshStats {
         let s = self.node().stats();
+        let counters = *self.counters.lock().unwrap_or_else(|e| e.into_inner());
         MeshStats {
             carried: s.carried as u32,
             carried_bytes: s.carried_bytes as u32,
@@ -355,6 +393,8 @@ impl MeshEngine {
             rate_limited: s.rate_limited,
             evicted: s.evicted,
             expired: s.expired,
+            mine: counters.0,
+            probes_received: counters.1,
         }
     }
 }

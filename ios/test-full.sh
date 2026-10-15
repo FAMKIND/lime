@@ -69,6 +69,8 @@ try:
             counts(bundle, c)
     parts = [f"{k}: {v['run']} run, {v['skipped']} skipped, {v['failed']} failed" for k, v in sorted(totals.items(), reverse=True)]
     failed = sum(v["failed"] for v in totals.values())
+    if not totals or sum(v["run"] for v in totals.values()) == 0:
+        parts, failed = ["no tests ran (is the class in the generated project? run ./ios/generate.sh or xcodegen)"], 1
 except Exception as error:  # the build failed before any test ran, or the bundle is unreadable
     parts, failed = [f"no result bundle ({error.__class__.__name__}); see {log}"], 1
 print("; ".join(parts) + f"; {minutes} min; " + ("PASSED" if status == 0 and failed == 0 else "FAILED"))

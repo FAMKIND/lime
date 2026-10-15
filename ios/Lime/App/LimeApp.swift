@@ -22,6 +22,7 @@ struct LimeApp: App {
         coordinator.onOpen = { [weak store] conversation, thread in store?.openFromNotification(conversation, thread: thread) }
         #if DEBUG
         NearbyTest.resumeIfNeeded() // iOS may relaunch the app for Bluetooth (LIME-103 field test)
+        MeshService.resumeIfNeeded(store: store) // and for the mesh (LIME-141)
         #endif
         TabBadgeStyle.install()
         _store = State(initialValue: store)

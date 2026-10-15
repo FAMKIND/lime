@@ -1,0 +1,627 @@
+#if DEBUG
+@preconcurrency import CoreBluetooth
+import Foundation
+import Observation
+import UIKit
+
+/// The Bluetooth link for the mesh (LIME-141): every phone is a central and a peripheral at once, advertising one service and scanning for it.
+/// Debug builds only for now (the Release check forbids CoreBluetooth until the mesh is offered to people).
+///
+/// - **Meeting** is GATT: connect, read the other phone's **link id** (a hello characteristic), write mine. The **lower id initiates**: both phones
+///   decide the same way (`MeshLinkPolicy`), so of the two links two phones make, one is kept and the other closed.
+/// - **Moving frames** is L2CAP (unencrypted and unpaired: everything of value is already sealed), opened from the PSM the peripheral publishes;
+///   **GATT write and notify** carry the frames meanwhile and whenever the channel fails (about 470 byte fragments, reassembled with caps and a
+///   30 second timeout).
+/// - **Privacy:** the advertisement carries the service UUID and nothing else (no name, no account, no device id); the only identifier is the
+///   random link id, new every launch and every 15 minutes, which is read only by a phone that connected.
+/// - **Restoration:** both managers have restore identifiers; every restore is logged and counts as a wake.
+@MainActor
+@Observable
+final class MeshBluetooth: NSObject {
+    static let serviceUUID = CBUUID(string: "6C696D65-6D65-7368-0000-000000000001")
+    static let helloUUID = CBUUID(string: "6C696D65-6D65-7368-0000-000000000002")
+    static let dataWriteUUID = CBUUID(string: "6C696D65-6D65-7368-0000-000000000003")
+    static let dataNotifyUUID = CBUUID(string: "6C696D65-6D65-7368-0000-000000000004")
+    static let psmUUID = CBUUID(string: "6C696D65-6D65-7368-0000-000000000005")
+    static let centralRestoreID = "org.famkind.lime.mesh.central"
+    static let peripheralRestoreID = "org.famkind.lime.mesh.peripheral"
+    static let protocolVersion: UInt8 = 1
+
+    private(set) var running = false
+    private(set) var bluetoothState = "off"
+    private(set) var peerCount = 0
+    private(set) var scanMode = "off"
+
+    @ObservationIgnored var identity = MeshLinkIdentity()
+    @ObservationIgnored var registry = MeshLinkRegistry()
+    /// The engine's driver, once the store is open (frames that arrive before are held, up to a few).
+    @ObservationIgnored var driver: MeshDriver? { didSet { if driver != nil { flushHeld() } } }
+    @ObservationIgnored var onLog: (String, [String: String]) -> Void = { _, _ in }
+    @ObservationIgnored var onPeersChanged: (() -> Void)?
+
+    // The central side.
+    @ObservationIgnored private var central: CBCentralManager?
+    @ObservationIgnored private var peripherals: [UUID: CBPeripheral] = [:]
+    @ObservationIgnored private var handshakes: [UUID: Handshake] = [:]
+    @ObservationIgnored private var rejectedUntil: [UUID: Date] = [:]
+    // The peripheral side.
+    @ObservationIgnored private var peripheralManager: CBPeripheralManager?
+    @ObservationIgnored private var notifyCharacteristic: CBMutableCharacteristic?
+    @ObservationIgnored private var psm: CBL2CAPPSM?
+    /// Centrals that have written their hello: their link id, and whether they have subscribed to notifications.
+    @ObservationIgnored private var inboundCentrals: [UUID: (remote: UInt64, subscribed: Bool, central: CBCentral?)] = [:]
+    // Links, by the remote phone's link id.
+    @ObservationIgnored private var peers: [UInt64: Peer] = [:]
+    @ObservationIgnored private var held: [(UInt64, Data)] = []
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var dutyTask: Task<Void, Never>?
+    @ObservationIgnored private var lastPeerSeen = Date()
+    @ObservationIgnored private var inBackground = false
+
+    /// What is known about a phone while meeting it.
+    fileprivate final class Handshake {
+        let peripheral: CBPeripheral
+        var hello: CBCharacteristic?
+        var write: CBCharacteristic?
+        var notify: CBCharacteristic?
+        var psm: CBCharacteristic?
+        var remote: UInt64?
+        var wroteHello = false
+        var subscribed = false
+        init(peripheral: CBPeripheral) { self.peripheral = peripheral }
+    }
+
+    /// One kept link to one phone.
+    fileprivate final class Peer {
+        let remote: UInt64
+        let iAmCentral: Bool
+        var peripheral: CBPeripheral?
+        var write: CBCharacteristic?
+        var central: CBCentral?
+        var streams: MeshStreams?
+        var reader = MeshStreamReader()
+        var reassembler = MeshReassembler()
+        var gatt: [Data] = []
+        var writing = false
+        var stream = Data()
+        var nextFragment: UInt16 = 0
+        var up = false
+        init(remote: UInt64, iAmCentral: Bool) { self.remote = remote; self.iAmCentral = iAmCentral }
+    }
+
+    // MARK: Start and stop
+
+    func start() {
+        guard !running else { return }
+        running = true
+        lastPeerSeen = Date()
+        watchApp()
+        onLog("start", ["central": Self.centralRestoreID, "id": MeshDriver.short(identity.id)])
+        central = CBCentralManager(delegate: self, queue: .main, options: [CBCentralManagerOptionRestoreIdentifierKey: Self.centralRestoreID])
+        peripheralManager = CBPeripheralManager(delegate: self, queue: .main, options: [CBPeripheralManagerOptionRestoreIdentifierKey: Self.peripheralRestoreID])
+    }
+
+    func stop() {
+        guard running else { return }
+        running = false
+        dutyTask?.cancel()
+        central?.stopScan()
+        peripheralManager?.stopAdvertising()
+        for peripheral in peripherals.values { central?.cancelPeripheralConnection(peripheral) }
+        for peer in peers.values { peer.streams?.close(); driver?.linkDown(peer.remote) }
+        if let psm { peripheralManager?.unpublishL2CAPChannel(psm) }
+        peers = [:]; peripherals = [:]; handshakes = [:]; inboundCentrals = [:]; registry = MeshLinkRegistry()
+        central = nil; peripheralManager = nil; notifyCharacteristic = nil; psm = nil
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers = []
+        scanMode = "off"
+        updateCount()
+        onLog("stop", [:])
+    }
+
+    private func watchApp() {
+        let center = NotificationCenter.default
+        let names: [(Notification.Name, String)] = [
+            (UIApplication.didEnterBackgroundNotification, "background"), (UIApplication.willEnterForegroundNotification, "foreground"),
+            (UIApplication.didBecomeActiveNotification, "active"), (UIApplication.protectedDataWillBecomeUnavailableNotification, "locking"),
+            (UIApplication.protectedDataDidBecomeAvailableNotification, "unlocked"),
+        ]
+        for (name, phase) in names {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.onLog("app", ["phase": phase])
+                    if phase == "background" { self.inBackground = true }
+                    if phase == "foreground" || phase == "active" { self.inBackground = false; self.startScan(continuous: true); self.wake("app-\(phase)") }
+                }
+            })
+        }
+    }
+
+    private func wake(_ reason: String) {
+        identity.rotateIfDue(now: Date())
+        driver?.wake(reason: reason)
+    }
+
+    private func updateCount() {
+        peerCount = peers.values.filter(\.up).count
+        onPeersChanged?()
+    }
+
+    // MARK: Scanning (the duty cycle)
+
+    /// Foreground and busy: scan all the time. Idle for two minutes in the foreground: 10 seconds on, 20 off, until a phone shows up or the app
+    /// leaves the foreground. In the background iOS runs its own service-filtered scan and the app does not control it, so it is left running.
+    private func startScan(continuous: Bool) {
+        guard running, let central, central.state == .poweredOn else { return }
+        // The service filter is required for scanning in the background; duplicates are not reported there.
+        central.scanForPeripherals(withServices: [Self.serviceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        scanMode = continuous ? "scanning" : "duty-on"
+        dutyTask?.cancel()
+        dutyTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(continuous ? 30 : 10))
+                guard let self, self.running, !Task.isCancelled else { return }
+                let idle = Date().timeIntervalSince(self.lastPeerSeen) > 120 && self.peers.isEmpty && !self.inBackground
+                if idle {
+                    self.central?.stopScan(); self.scanMode = "duty-off"; self.onLog("scan_cycle", ["mode": "off", "seconds": "20"])
+                    try? await Task.sleep(for: .seconds(20))
+                    guard !Task.isCancelled, self.running else { return }
+                    self.central?.scanForPeripherals(withServices: [Self.serviceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+                    self.scanMode = "duty-on"; self.onLog("scan_cycle", ["mode": "on", "seconds": "10"])
+                } else if self.scanMode != "scanning" {
+                    self.scanMode = "scanning"
+                }
+            }
+        }
+    }
+
+    // MARK: Hello
+
+    private var helloValue: Data {
+        var id = identity.id.bigEndian
+        return withUnsafeBytes(of: &id) { Data($0) } + Data([Self.protocolVersion])
+    }
+
+    private static func remoteID(from data: Data) -> UInt64? {
+        guard data.count >= 8 else { return nil }
+        return data.prefix(8).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+    }
+
+    // MARK: Sending and receiving
+
+    /// The driver's way out: one frame to the phone with this link id.
+    func transmit(_ link: UInt64, _ bytes: Data) {
+        guard let peer = peers[link] else { return }
+        if let streams = peer.streams, streams.isOpen {
+            peer.stream.append(MeshStreamFramer.encode(bytes))
+            pumpStream(peer)
+        } else {
+            let id = peer.nextFragment
+            peer.nextFragment &+= 1
+            peer.gatt.append(contentsOf: MeshFragmenter.split(bytes, id: id, fragmentBytes: fragmentBytes(for: peer)))
+            pumpGATT(peer)
+        }
+    }
+
+    private func fragmentBytes(for peer: Peer) -> Int {
+        if let peripheral = peer.peripheral { return min(MeshFraming.fragmentBytes, peripheral.maximumWriteValueLength(for: .withResponse)) }
+        if let central = peer.central { return min(MeshFraming.fragmentBytes, central.maximumUpdateValueLength) }
+        return MeshFraming.fragmentBytes
+    }
+
+    private func pumpGATT(_ peer: Peer) {
+        if let peripheral = peer.peripheral, let write = peer.write {
+            guard !peer.writing, !peer.gatt.isEmpty else { return }
+            peer.writing = true
+            peripheral.writeValue(peer.gatt.removeFirst(), for: write, type: .withResponse)
+        } else if let central = peer.central, let characteristic = notifyCharacteristic, let manager = peripheralManager {
+            while let next = peer.gatt.first {
+                if !manager.updateValue(next, for: characteristic, onSubscribedCentrals: [central]) { return }
+                peer.gatt.removeFirst()
+            }
+        }
+    }
+
+    fileprivate func pumpStream(_ peer: Peer) {
+        guard let streams = peer.streams, streams.isOpen else { return }
+        while !peer.stream.isEmpty, streams.hasSpace {
+            let written = streams.write(peer.stream)
+            if written <= 0 { break }
+            peer.stream = peer.stream.subdata(in: written..<peer.stream.count)
+        }
+    }
+
+    fileprivate func streamBytes(_ data: Data, from peer: Peer) {
+        driver?.wake(reason: "data")
+        for frame in peer.reader.append(data) { deliver(frame, from: peer) }
+        if peer.reader.overflowed { onLog("stream_overflow", ["link": MeshDriver.short(peer.remote)]); close(peer, why: "overflow") }
+    }
+
+    fileprivate func gattBytes(_ data: Data, from peer: Peer) {
+        if let frame = peer.reassembler.accept(data, now: Date()) { deliver(frame, from: peer) }
+    }
+
+    private func deliver(_ frame: Data, from peer: Peer) {
+        if let driver { driver.receive(frame, on: peer.remote) } else if held.count < 16 { held.append((peer.remote, frame)) }
+    }
+
+    private func flushHeld() {
+        let pending = held
+        held = []
+        for (link, frame) in pending where peers[link] != nil { driver?.receive(frame, on: link) }
+        for peer in peers.values where peer.up { driver?.linkUp(peer.remote) }
+    }
+
+    // MARK: Links
+
+    /// The link to this phone is kept and usable: tell the engine.
+    private func up(_ peer: Peer) {
+        guard !peer.up else { return }
+        peer.up = true
+        lastPeerSeen = Date()
+        updateCount()
+        onLog("peer_up", ["link": MeshDriver.short(peer.remote), "role": peer.iAmCentral ? "central" : "peripheral"])
+        driver?.linkUp(peer.remote)
+    }
+
+    private func close(_ peer: Peer, why: String) {
+        peer.streams?.close()
+        peers[peer.remote] = nil
+        registry.release(remote: peer.remote)
+        if peer.up { driver?.linkDown(peer.remote) }
+        onLog("peer_down", ["link": MeshDriver.short(peer.remote), "why": why])
+        updateCount()
+        if let peripheral = peer.peripheral { central?.cancelPeripheralConnection(peripheral) }
+    }
+
+    fileprivate func streamClosed(_ peer: Peer, why: String) { close(peer, why: "l2cap-\(why)") }
+
+    private func name(_ state: CBManagerState) -> String {
+        switch state {
+        case .poweredOn: "poweredOn"
+        case .poweredOff: "poweredOff"
+        case .unauthorized: "unauthorized"
+        case .unsupported: "unsupported"
+        case .resetting: "resetting"
+        default: "unknown"
+        }
+    }
+
+    private func peerFor(peripheral: CBPeripheral) -> Peer? { peers.values.first { $0.peripheral === peripheral } }
+    private func peerFor(central: CBCentral) -> Peer? { peers.values.first { $0.central?.identifier == central.identifier } }
+
+    private func openChannel(_ channel: CBL2CAPChannel, for peer: Peer) {
+        let streams = MeshStreams(channel: channel, owner: self, peer: peer)
+        peer.streams = streams
+        streams.open()
+        onLog("l2cap_open", ["link": MeshDriver.short(peer.remote), "psm": String(channel.psm)])
+        // What was waiting on GATT can go over the channel from now on; frames already in GATT fragments finish there.
+        driver?.wake(reason: "l2cap")
+    }
+}
+
+/// An L2CAP channel's two streams.
+@MainActor
+final class MeshStreams: NSObject, @preconcurrency StreamDelegate {
+    let channel: CBL2CAPChannel
+    private weak var owner: MeshBluetooth?
+    fileprivate let peer: AnyObject
+    private(set) var isOpen = false
+
+    fileprivate init(channel: CBL2CAPChannel, owner: MeshBluetooth, peer: AnyObject) {
+        self.channel = channel; self.owner = owner; self.peer = peer
+        super.init()
+    }
+
+    func open() {
+        for stream in [channel.inputStream, channel.outputStream] as [Stream?] {
+            stream?.delegate = self
+            stream?.schedule(in: .main, forMode: .default)
+            stream?.open()
+        }
+        isOpen = true
+    }
+
+    func close() {
+        isOpen = false
+        for stream in [channel.inputStream, channel.outputStream] as [Stream?] {
+            stream?.delegate = nil
+            stream?.close()
+            stream?.remove(from: .main, forMode: .default)
+        }
+    }
+
+    var hasSpace: Bool { channel.outputStream.hasSpaceAvailable }
+
+    func write(_ data: Data) -> Int {
+        data.withUnsafeBytes { raw in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return 0 }
+            return max(channel.outputStream.write(base, maxLength: data.count), 0)
+        }
+    }
+
+    func stream(_ stream: Stream, handle event: Stream.Event) {
+        guard let owner, let peer = peer as? MeshBluetooth.PeerHandle else { return }
+        switch event {
+        case .hasBytesAvailable:
+            guard let input = stream as? InputStream else { return }
+            var buffer = [UInt8](repeating: 0, count: 8_192)
+            while input.hasBytesAvailable {
+                let count = input.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                owner.received(Data(buffer.prefix(count)), from: peer)
+            }
+        case .hasSpaceAvailable:
+            owner.canWrite(peer)
+        case .endEncountered, .errorOccurred:
+            owner.closed(peer, why: event == .endEncountered ? "end" : "error")
+        default:
+            break
+        }
+    }
+}
+
+extension MeshBluetooth {
+    /// A narrow handle for the streams (the `Peer` type is private to this file).
+    fileprivate typealias PeerHandle = Peer
+    fileprivate func received(_ data: Data, from peer: Peer) { streamBytes(data, from: peer) }
+    fileprivate func canWrite(_ peer: Peer) { pumpStream(peer) }
+    fileprivate func closed(_ peer: Peer, why: String) { streamClosed(peer, why: why) }
+}
+
+// MARK: The central side (we scan and connect)
+
+extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
+    func centralManagerDidUpdateState(_ manager: CBCentralManager) {
+        bluetoothState = name(manager.state)
+        onLog("central_state", ["state": bluetoothState])
+        guard manager.state == .poweredOn else { return }
+        startScan(continuous: true)
+        onLog("scan_start", [:])
+    }
+
+    func centralManager(_ manager: CBCentralManager, willRestoreState dict: [String: Any]) {
+        let restored = (dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral]) ?? []
+        onLog("restore_central", ["peripherals": String(restored.count), "id": Self.centralRestoreID])
+        for peripheral in restored {
+            peripherals[peripheral.identifier] = peripheral
+            peripheral.delegate = self
+        }
+        wake("restore-central")
+    }
+
+    func centralManager(_ manager: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        wake("discover")
+        lastPeerSeen = Date()
+        let rssi = RSSI.intValue
+        guard MeshLinkPolicy.rssiAllowsConnecting(rssi) else { onLog("skip_weak", ["rssi": String(rssi)]); return }
+        if let until = rejectedUntil[peripheral.identifier], until > Date() { return }
+        guard handshakes[peripheral.identifier] == nil, peerFor(peripheral: peripheral) == nil, peripheral.state == .disconnected else { return }
+        peripherals[peripheral.identifier] = peripheral
+        peripheral.delegate = self
+        handshakes[peripheral.identifier] = Handshake(peripheral: peripheral)
+        onLog("connecting", ["rssi": String(rssi)])
+        manager.connect(peripheral)
+    }
+
+    func centralManager(_ manager: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        wake("connect")
+        onLog("connected", ["writeMTU": String(peripheral.maximumWriteValueLength(for: .withResponse))])
+        if handshakes[peripheral.identifier] == nil, peerFor(peripheral: peripheral) == nil { handshakes[peripheral.identifier] = Handshake(peripheral: peripheral) }
+        peripheral.discoverServices([Self.serviceUUID])
+    }
+
+    func centralManager(_ manager: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        onLog("connect_failed", ["error": error?.localizedDescription ?? "?"])
+        handshakes[peripheral.identifier] = nil
+    }
+
+    func centralManager(_ manager: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        onLog("disconnected", ["error": error?.localizedDescription ?? "none"])
+        handshakes[peripheral.identifier] = nil
+        if let peer = peerFor(peripheral: peripheral) {
+            close(peer, why: "disconnected")
+            // The lower id initiates, and that is me (the link was kept): connecting again never times out; iOS completes it in range.
+            if running, MeshLinkPolicy.iShouldInitiate(local: identity.id, remote: peer.remote) {
+                handshakes[peripheral.identifier] = Handshake(peripheral: peripheral)
+                manager.connect(peripheral)
+            }
+        }
+    }
+}
+
+extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
+            onLog("service_missing", ["error": error?.localizedDescription ?? "none"])
+            return
+        }
+        peripheral.discoverCharacteristics([Self.helloUUID, Self.dataWriteUUID, Self.dataNotifyUUID, Self.psmUUID], for: service)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        guard let handshake = handshakes[peripheral.identifier], let characteristics = service.characteristics else { return }
+        handshake.hello = characteristics.first { $0.uuid == Self.helloUUID }
+        handshake.write = characteristics.first { $0.uuid == Self.dataWriteUUID }
+        handshake.notify = characteristics.first { $0.uuid == Self.dataNotifyUUID }
+        handshake.psm = characteristics.first { $0.uuid == Self.psmUUID }
+        guard let hello = handshake.hello else { return }
+        peripheral.readValue(for: hello)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard let value = characteristic.value else { return }
+        wake("notified")
+        if characteristic.uuid == Self.helloUUID, let handshake = handshakes[peripheral.identifier] {
+            guard let remote = Self.remoteID(from: value) else { return }
+            handshake.remote = remote
+            switch registry.claim(remote: remote, local: identity.id, iAmCentral: true) {
+            case .keep:
+                onLog("hello_keep", ["link": MeshDriver.short(remote)])
+                let peer = Peer(remote: remote, iAmCentral: true)
+                peer.peripheral = peripheral
+                peer.write = handshake.write
+                peers[remote] = peer
+                if let hello = handshake.hello { peripheral.writeValue(helloValue, for: hello, type: .withResponse) }
+                if let notify = handshake.notify { peripheral.setNotifyValue(true, for: notify) }
+                if let psmCharacteristic = handshake.psm { peripheral.readValue(for: psmCharacteristic) }
+            case let verdict:
+                // The other phone should connect to me (or there is a link already): close this one and do not come back at once.
+                onLog("hello_drop", ["why": "\(verdict)"])
+                rejectedUntil[peripheral.identifier] = Date().addingTimeInterval(60)
+                handshakes[peripheral.identifier] = nil
+                central?.cancelPeripheralConnection(peripheral)
+            }
+        } else if characteristic.uuid == Self.psmUUID, value.count >= 2, peerFor(peripheral: peripheral) != nil {
+            let channel = CBL2CAPPSM(value.prefix(2).reduce(UInt16(0)) { ($0 << 8) | UInt16($1) })
+            peripheral.openL2CAPChannel(channel)
+        } else if characteristic.uuid == Self.dataNotifyUUID, let peer = peerFor(peripheral: peripheral) {
+            gattBytes(value, from: peer)
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard let peer = peerFor(peripheral: peripheral) else { return }
+        if characteristic.uuid == Self.helloUUID {
+            handshakes[peripheral.identifier]?.wroteHello = true
+            checkReady(peripheral)
+        } else {
+            peer.writing = false
+            if let error { onLog("write_failed", ["error": error.localizedDescription]) }
+            pumpGATT(peer)
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        onLog("notify_state", ["on": String(characteristic.isNotifying), "error": error?.localizedDescription ?? "none"])
+        handshakes[peripheral.identifier]?.subscribed = characteristic.isNotifying
+        checkReady(peripheral)
+    }
+
+    private func checkReady(_ peripheral: CBPeripheral) {
+        guard let handshake = handshakes[peripheral.identifier], handshake.wroteHello, handshake.subscribed, let remote = handshake.remote, let peer = peers[remote] else { return }
+        handshakes[peripheral.identifier] = nil
+        up(peer)
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
+        if let channel, let peer = peerFor(peripheral: peripheral) { openChannel(channel, for: peer) }
+        else { onLog("l2cap_failed", ["error": error?.localizedDescription ?? "?"]) }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        onLog("services_modified", [:])
+        if handshakes[peripheral.identifier] == nil, peerFor(peripheral: peripheral) == nil { handshakes[peripheral.identifier] = Handshake(peripheral: peripheral) }
+        peripheral.discoverServices([Self.serviceUUID])
+    }
+}
+
+// MARK: The peripheral side (we advertise and accept)
+
+extension MeshBluetooth: @preconcurrency CBPeripheralManagerDelegate {
+    func peripheralManagerDidUpdateState(_ manager: CBPeripheralManager) {
+        onLog("peripheral_state", ["state": name(manager.state)])
+        guard manager.state == .poweredOn else { return }
+        let hello = CBMutableCharacteristic(type: Self.helloUUID, properties: [.read, .write], value: nil, permissions: [.readable, .writeable])
+        let write = CBMutableCharacteristic(type: Self.dataWriteUUID, properties: [.write], value: nil, permissions: [.writeable])
+        let notify = CBMutableCharacteristic(type: Self.dataNotifyUUID, properties: [.notify], value: nil, permissions: [.readable])
+        let psm = CBMutableCharacteristic(type: Self.psmUUID, properties: [.read], value: nil, permissions: [.readable])
+        notifyCharacteristic = notify
+        let service = CBMutableService(type: Self.serviceUUID, primary: true)
+        service.characteristics = [hello, write, notify, psm]
+        manager.add(service)
+        manager.publishL2CAPChannel(withEncryption: false)
+    }
+
+    func peripheralManager(_ manager: CBPeripheralManager, willRestoreState dict: [String: Any]) {
+        let services = (dict[CBPeripheralManagerRestoredStateServicesKey] as? [CBMutableService]) ?? []
+        onLog("restore_peripheral", ["services": String(services.count), "id": Self.peripheralRestoreID, "advertising": String(dict[CBPeripheralManagerRestoredStateAdvertisementDataKey] != nil)])
+        wake("restore-peripheral")
+    }
+
+    func peripheralManager(_ manager: CBPeripheralManager, didAdd service: CBService, error: Error?) {
+        onLog("service_added", ["error": error?.localizedDescription ?? "none"])
+        // The advertisement is the service UUID and nothing else: no name, no id (in the background it goes in the "overflow" area).
+        manager.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID]])
+    }
+
+    func peripheralManagerDidStartAdvertising(_ manager: CBPeripheralManager, error: Error?) {
+        onLog("advertising", ["error": error?.localizedDescription ?? "none"])
+    }
+
+    func peripheralManager(_ manager: CBPeripheralManager, didPublishL2CAPChannel PSM: CBL2CAPPSM, error: Error?) {
+        psm = PSM
+        onLog("l2cap_published", ["psm": String(PSM), "error": error?.localizedDescription ?? "none"])
+    }
+
+    func peripheralManager(_ manager: CBPeripheralManager, didOpen channel: CBL2CAPChannel?, error: Error?) {
+        guard let channel else { onLog("l2cap_failed", ["error": error?.localizedDescription ?? "?"]); return }
+        if let peer = peers.values.first(where: { $0.central?.identifier == channel.peer.identifier }) { openChannel(channel, for: peer) }
+        else { onLog("l2cap_unknown_peer", [:]) }
+    }
+
+    func peripheralManager(_ manager: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
+        wake("subscribed")
+        var entry = inboundCentrals[central.identifier] ?? (remote: 0, subscribed: false, central: nil)
+        entry.subscribed = true
+        entry.central = central
+        inboundCentrals[central.identifier] = entry
+        attachInbound(central.identifier)
+    }
+
+    func peripheralManager(_ manager: CBPeripheralManager, central: CBCentral, didUnsubscribeFrom characteristic: CBCharacteristic) {
+        inboundCentrals[central.identifier] = nil
+        if let peer = peerFor(central: central) { close(peer, why: "unsubscribed") }
+    }
+
+    func peripheralManager(_ manager: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
+        if request.characteristic.uuid == Self.helloUUID {
+            identity.rotateIfDue(now: Date())
+            request.value = helloValue.dropFirst(request.offset)
+            manager.respond(to: request, withResult: .success)
+        } else if request.characteristic.uuid == Self.psmUUID, let psm {
+            request.value = Data([UInt8(psm >> 8), UInt8(psm & 0xFF)])
+            manager.respond(to: request, withResult: .success)
+        } else {
+            manager.respond(to: request, withResult: .attributeNotFound)
+        }
+    }
+
+    func peripheralManager(_ manager: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
+        wake("written")
+        for request in requests {
+            guard let value = request.value else { continue }
+            if request.characteristic.uuid == Self.helloUUID {
+                guard let remote = Self.remoteID(from: value) else { continue }
+                var entry = inboundCentrals[request.central.identifier] ?? (remote: 0, subscribed: false, central: nil)
+                entry.remote = remote
+                entry.central = request.central
+                inboundCentrals[request.central.identifier] = entry
+                attachInbound(request.central.identifier)
+            } else if request.characteristic.uuid == Self.dataWriteUUID, let peer = peerFor(central: request.central) {
+                gattBytes(value, from: peer)
+            }
+        }
+        if let first = requests.first { manager.respond(to: first, withResult: .success) }
+    }
+
+    /// A central has written its hello and subscribed: it is a link, if the policy keeps it.
+    private func attachInbound(_ id: UUID) {
+        guard let entry = inboundCentrals[id], entry.remote != 0, entry.subscribed, let central = entry.central, peers[entry.remote] == nil else { return }
+        switch registry.claim(remote: entry.remote, local: identity.id, iAmCentral: false) {
+        case .keep:
+            let peer = Peer(remote: entry.remote, iAmCentral: false)
+            peer.central = central
+            peers[entry.remote] = peer
+            up(peer)
+        case let verdict:
+            onLog("inbound_drop", ["why": "\(verdict)"])
+        }
+    }
+
+    func peripheralManagerIsReady(toUpdateSubscribers manager: CBPeripheralManager) {
+        for peer in peers.values where peer.central != nil { pumpGATT(peer) }
+    }
+}
+#endif
