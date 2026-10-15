@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-147** (LIME-151 landed as `6e6ebb1`: the full suite now takes ~32 min). **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-112e** (bug + security: phones never switch to their rotated call key, so rejoiners are stuck on "Connecting securely" and leavers aren't locked out; + the header cleanup). Then **LIME-147b**, then **LIME-139**. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -148,6 +148,18 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e116. **BUG + SECURITY (the user's gate, 2026-10-15 07:46–07:57; plot's diagnosis from the iPad + Shem logs):**
+   - **the core rotates my call key on a leave but never tells the app**, so every phone keeps encrypting with its index-0 key. Rejoiners, who get only rotated keys, see "Connecting securely"; **the rekey-on-leave never took effect** (a leaver isn't locked out). **147's emoji caught the mismatch** (Jean's phone showed different emoji).
+   - **→ LIME-112e (drafted, NEXT)**, with the user's header cleanup: the count at the end of the name pill, no people icon; Grid/Speaker moves into the pill's sheet.
+1e115. **LIME-147 LANDED as `018eba7` (pushed, 2026-10-15; PLOT.md `2a21ba9`).**
+   - Every item checked off:
+     - `group_call_emoji` in core; migration 29 stores only key hashes + indexes (the core computes the emoji itself, so Swift never assembles the input);
+     - shared `CallHeaderViews` (pill, chip, sheet) for 1:1 + group;
+     - the group header = the 1:1 look; the header chevron removed (Minimise stays in the controls); Grid/Speaker + the count top right;
+     - the docs' honest limit replaced.
+   - **Tests:** unit 373 + UI 191 in 33 min.
+   - **Tend's 2 points → LIME-147b (plot decided):** length-prefixed v2 input (free before Android ships); "waiting" until every key is newer than the last membership change.
+   - **Gate (3 devices):** the same 4 everywhere; leave/rejoin → new, the same.
 1e114. **LIME-151 LANDED as `6e6ebb1` (pushed, 2026-10-15; PLOT.md `5c327f2`).**
    - `ios/test-full.sh` (3 workers, a summary line, `--only`/`--device`/`--serial`); the full suite **54 → 32 min** (two green runs; N=4 lost a worker at launch, and 3 clones each run ~1.8× slower).
    - **Fixes:** the 115-test `LimeUITests` was split into 8 classes on a `LimeUITestCase` base; one flaky long press retries. `ios/README.md` "Running tests".
@@ -5171,6 +5183,73 @@ If the survey turns up related issues, raise them before editing. If a decision 
 3. the header buttons, Back and Sign out are always reachable.
 
 **Record:** `## LIME-148c` with **For plot:** and every item checked off. **Commit:** `feat(ios): a call mini player (like a podcast bar) replaces the return bars`, trailer `Brief: LIME-148c`. The rest per the standing rules.
+
+### LIME-112e → `tend` (lime-aa) (NEXT, before 147b; drafted 2026-10-15): a phone never starts sending with its rotated key (rejoiners see "Connecting securely"; leavers aren't locked out)
+**Goal:** when the core rotates **my** call key (on any leave or removal), this phone **encrypts with the new key at once**, so a rejoining or new participant, who gets only the new key, can see and hear everyone, and someone who left can't decrypt anything sent after they left.
+
+**The user (2026-10-15, 6 screenshots, 07:46–07:57):**
+- "I left the call, then reconnected on the iPad, and it keeps saying 'Connecting securely' on everyone's video, but I'm connected and can be seen on everyone else's screen, and the emoji work."
+- Jean's phone after its rejoin showed 🍜🐳🍩🛵 while the others showed 🐫💻🦭🎤: **147's check caught the key mismatch.**
+
+**Plot's diagnosis from the logs** (`/tmp/lime-calllogs11/{ipad,shem}.log`, pulled over USB; Jean's phone wasn't reachable):
+- **The iPad rejoined at 07:54:23** as `899c`, and received **index 2** keys from `834f` and `e157` ("accepted; setKey …"); **its frame cryptors for both stayed `missing_key`**, even after the 5 s re-request (07:54:33 → keys again at index 2 → still nothing).
+- At 07:57 a fresh joiner `d5d0` sent an **index 0** key → `frame cryptor d5d0… ok` at once. **So index 0 keys work and rotated ones don't.**
+- **On Shem's phone, the core rotated Shem's key** ("sent 1 ops (1 keys, **last index 2**)" at 07:54:25, then "last index 3" at 07:57:09), **but there's no `setKey me … index 2/3` line**: the only "setKey me" is at join, index 0. Every "send index reset to **0**" confirms that **Shem's phone kept encrypting with its original index-0 key.**
+- **Jean's phone confirms it** (`jean.log`, pulled on the second try):
+  - while she was in the call, her core rotated to index 2 (07:54:26, "last index 2") with **no `setKey me … index 2`**;
+  - after **her** rejoin at 07:57:07 as `d5d0` (index 0), she got `e157` at **index 3** and `899c` (the iPad) at **index 1**, accepted both, and both stayed `missing_key` through the 5 s re-request (the same indexes again at 07:57:21).
+  - **The same pattern on all three devices.**
+- **The cause:** `LiveKitGroupMedia.setKey` (`GroupCallMedia.swift:48–56`) only updates `myKeyIndex` when called for **my** identity, and **the core never emits my own rotated key to the app.** It sends the new key to the others but doesn't tell this phone's media layer. So:
+  - (a) **a newcomer/rejoiner** gets only index ≥ 1 keys and can't decrypt anyone who rotated → stuck tiles;
+  - (b) **old participants still decrypt fine** with the old index-0 key, so it looked OK to everyone else;
+  - (c) **⚠ a security hole:** after someone leaves, everyone still encrypts with the key the leaver holds. **The rekey-on-leave (112b) has never actually taken effect.** The leaver would also need a valid room token (10 min) and access to the SFU stream, so it isn't trivially exploitable, but the promise in `docs/architecture.md` is false today.
+
+**The fix:**
+1. **The core emits a "my key changed" event** (my participant, the new key bytes, the new index) whenever it rotates **my** key (leave, removal, any rekey). `GroupCallManager` calls `media.setKey(newKey, participant: myIdentity, index: i)`, so `myKeyIndex = i` and `setCurrentKeyIndex(i)`, and **the log says `setKey me … index i`**.
+2. **Order matters:** set my new key **locally first**, then send it to the others (a slightly early local switch only costs the others a ~1 s `missing_key` until their copy arrives; LiveKit's 16-slot key ring keeps the old index for in-flight frames).
+3. **A guard:** if the frame cryptor reports my own track `missing_key` or the send index ≠ the core's current index, log it loudly.
+4. **Tests:**
+   - core: a rotation emits the local event with the new index;
+   - Swift (fake media): after a leave, `setKey` is called for me at index n + 1 and the current index = n + 1;
+   - **the 3-core integration test extended:** A, B, C in a call; C leaves; **a new participant D (or C rejoining) can decrypt A and B** (it ends with A's and B's *current* keys, which A and B are actually using);
+   - **the security assertion:** after C leaves, A's current sending index ≠ the index C last received.
+5. **Docs:** in `docs/architecture.md` "Group calls: as built", correct the rekey paragraph (it's now true) and add a dated note that before this fix the rotation didn't take effect.
+
+**Also (visual, the user, same message; no new tests beyond fixing existing ones):**
+6. **Remove the people icon + count in the call header** ("it does the same thing as pressing the avatars and name"). **Put the count at the end of the name pill:** `[avatars] Jean, Shem, JA… 3 ›` (the names truncate, the count never does), then the next line `5:15 · 🔒 · the 4 emoji` as now.
+7. **Move Grid / Speaker into the sheet the pill opens:** the people sheet gets a "Layout" row (Grid · Speaker, the current one checked) at its top, then the people. **Remove the Grid/Speaker control from the header**, so the header is just the pill, the timer row and nothing on the right.
+
+**Scope:** `core/src/client/group_calls.rs` + `store/group_calls.rs` (the event), the FFI, `GroupCallManager.swift`, `GroupCallMedia.swift`, `GroupCallView.swift` + the people sheet (items 6–7), tests, `docs/architecture.md`, `docs/screens/group-call.md` (the header change).
+
+**Gate (the user, 3 devices):**
+1. a 3-person call; one leaves and rejoins → within ~5 s they see and hear everyone; **all three show the same 4 emoji**;
+2. repeat on another device;
+3. the header: the pill with the count, no people icon; Grid/Speaker in the pill's sheet.
+4. Then "logs": plot checks for a `setKey me … index n` after each leave.
+
+**Record:** `## LIME-112e` with **For plot:** and every item checked off. **Commit:** `fix: group calls switch to the rotated key at once (rejoiners can see everyone; leavers are locked out), call header cleanup`, trailer `Brief: LIME-112e`. The rest per the standing rules.
+
+### LIME-147b → `tend` (lime-aa) (after 112e, small, before 139; drafted 2026-10-15): length-prefix the group emoji input, and no mismatched emoji during a rekey
+**Goal:** the group-call emoji's hash input is unambiguous, and phones never briefly show different emoji after someone leaves.
+
+**From tend's LIME-147 report; plot decides both:**
+1. **Length-prefix every variable field** in `group_call_emoji`'s input:
+   - `SHA-256("lime-group-call-emoji-v2" || len32(call_id) || call_id || u32(count) || for each participant sorted: len32(id) || id || SHA-256(key))`, with big-endian u32 lengths;
+   - **bump the label to `-v2`**;
+   - re-pin the test vector (+ the Python cross-check).
+   - **Why:** unambiguous encoding is cheap crypto hygiene, and changing it is free while no Android build has shipped.
+2. **During a rekey, show "Waiting for everyone's keys…", not emoji:**
+   - after a `leave` (or a removal), every remaining participant rotates;
+   - the core's `group_call_emoji_state` reports **ready only when every participant's key is newer than the last membership change** (a key index/generation recorded at each join/leave), so phones show the waiting chip until all new keys are in, and then the same 4 everywhere;
+   - **tests:** a leave → waiting → all rotated → ready; a join similarly.
+
+**Scope:** `core/src/call_emoji.rs`, `core/src/store/group_calls.rs` (the generation), a migration if needed, tests, `docs/architecture.md` (the formula, v2). **Not:** the UI (the chip already handles waiting).
+
+**Verification:** `cargo test`, `./core/check-android.sh`, `./ios/test-full.sh` (or the group-call tests only if the FFI is unchanged: say which).
+
+**Gate:** with the 147 gate (3 devices): someone leaves → "Waiting…" for a moment → the same 4 on all.
+
+**Record:** `## LIME-147b` with **For plot:** and every item checked off. **Commit:** `fix(core): unambiguous group emoji input (v2) and no mismatched emoji during a rekey`, trailer `Brief: LIME-147b`. The rest per the standing rules.
 
 ### LIME-151 → `tend` (lime-aa) (after LIME-112d, before 150; drafted 2026-10-15): run the UI tests in parallel
 **Goal:** the full iOS test suite (unit + UI) runs in about a third of today's ~54 min, with the same tests and the same pass/fail meaning, so every brief can still run everything.
