@@ -35,7 +35,7 @@ struct GroupCallView: View {
         .preferredColorScheme(.dark)
         .onGeometryChange(for: CGSize.self, of: { $0.size }) { viewSize = $0 }
         .background(PiPAnchor { pipAnchor = $0 })
-        .sheet(isPresented: $showPeople) { GroupPeopleSheet() }
+        .sheet(isPresented: $showPeople) { GroupPeopleSheet(layout: layoutIsSpeaker ? .speaker : .grid) }
         .sheet(isPresented: $showEmoji) { emojiSheet }
         .onAppear { preparePiP() }
         .onChange(of: call.phase) { _, _ in preparePiP() }
@@ -67,58 +67,45 @@ struct GroupCallView: View {
 
     // MARK: Header
 
-    /// The 1:1 call header's look (LIME-147): a pill with the group's picture, its name and a › (tap: the people in the call), and under it
-    /// the timer and the encryption chip. The layout switch and the people count sit top right; Minimise is in the controls row.
+    /// The 1:1 call header's look (LIME-147): one pill with the people's pictures, their names (they truncate) and how many are in the call (it
+    /// never does), then ›; tapping it opens the people sheet, which also has the layout (Grid / Speaker). Under it: the timer and the
+    /// encryption chip. Nothing on the right; Minimise is in the controls row.
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                CallNamePill(name: call.title, accessibilityLabel: "\(call.title), people in the call", action: { showPeople = true }) { groupPicture }
-                    .layoutPriority(-1)
-                HStack(spacing: 8) {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(status(at: context.date)).monospacedDigit()
-                            .font(.subheadline).foregroundStyle(.white.opacity(0.85))
-                            .accessibilityIdentifier("call-status")
-                    }
-                    if call.phase == .active {
-                        CallEmojiChip(emoji: call.verificationEmoji, waiting: call.emojiWaiting, spokenPrefix: "Encrypted call.",
-                                      hint: "Opens how to check it. They change when people join or leave") { showEmoji = true }
-                    }
+        VStack(alignment: .leading, spacing: 4) {
+            CallNamePill(name: names, count: call.tiles.count, accessibilityLabel: "People in the call, \(call.tiles.count): \(names)", action: { showPeople = true }) { people }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(status(at: context.date)).monospacedDigit()
+                        .font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                        .accessibilityIdentifier("call-status")
                 }
-                .padding(.leading, 8)
-            }
-            Spacer(minLength: 0)
-            Button { call.chooseLayout(layoutIsSpeaker ? .grid : .speaker) } label: {
-                // An icon and a word when there is room, the icon alone when the header is tight.
-                ViewThatFits(in: .horizontal) {
-                    Label(layoutIsSpeaker ? "Speaker" : "Grid", systemImage: layoutIsSpeaker ? "person.crop.rectangle" : "square.grid.2x2")
-                        .labelStyle(.titleAndIcon).lineLimit(1).fixedSize()
-                    Image(systemName: layoutIsSpeaker ? "person.crop.rectangle" : "square.grid.2x2")
+                if call.phase == .active {
+                    CallEmojiChip(emoji: call.verificationEmoji, waiting: call.emojiWaiting, spokenPrefix: "Encrypted call.",
+                                  hint: "Opens how to check it. They change when people join or leave") { showEmoji = true }
                 }
-                .font(.subheadline.weight(.semibold)).padding(.horizontal, 10).frame(minHeight: 44)
             }
-            .accessibilityLabel("Layout: \(layoutIsSpeaker ? "Speaker" : "Grid")")
-            .accessibilityHint("Switches to \(layoutIsSpeaker ? "grid" : "speaker")")
-            .accessibilityIdentifier("group-call-layout")
-            Button { showPeople = true } label: {
-                Label("\(call.tiles.count)", systemImage: "person.2.fill").font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 12).frame(minHeight: 44)
-            }
-            .accessibilityLabel("People in the call, \(call.tiles.count)").accessibilityIdentifier("group-call-people")
+            .padding(.leading, 8)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 8)
     }
 
-    /// The group's picture in the pill: the same photo, emoji or cluster of members' photos as the chat.
-    @ViewBuilder private var groupPicture: some View {
-        if let conversation = store.conversation(call.conversationID) {
-            ConversationAvatar(conversation: conversation, size: 28)
-        } else {
-            Circle().fill(Color.white.opacity(0.18)).frame(width: 28, height: 28)
-                .overlay(Text(String(call.title.prefix(1)).uppercased()).font(.footnote.weight(.semibold)).foregroundStyle(.white))
-                .accessibilityHidden(true)
+    /// "Jean, Shem, Lee": the first names of the people in the call, in tile order.
+    private var names: String {
+        call.tiles.map { $0.name.split(separator: " ").first.map(String.init) ?? $0.name }.joined(separator: ", ")
+    }
+
+    /// Up to three of the people's pictures, overlapping.
+    private var people: some View {
+        HStack(spacing: -10) {
+            ForEach(Array(call.tiles.prefix(3).enumerated()), id: \.element.id) { index, tile in
+                AvatarView(person: Person(id: tile.userID.isEmpty ? tile.id : tile.userID, name: tile.name), size: 26)
+                    .overlay(Circle().stroke(Color(red: 0.07, green: 0.08, blue: 0.07), lineWidth: 1.5))
+                    .zIndex(Double(3 - index))
+            }
         }
+        .accessibilityHidden(true)
     }
 
     private var emojiSheet: some View {
@@ -377,21 +364,48 @@ struct GroupTileView: View {
 struct GroupPeopleSheet: View {
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    /// The layout showing now (the person's choice, else the default for the screen).
+    let layout: GroupCallLayout.Mode
 
     var body: some View {
         NavigationStack {
-            List(store.groupCalls.tiles) { tile in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tile.name).font(.body)
-                    Text(detail(tile)).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            List {
+                Section("Layout") {
+                    layoutRow("Grid", symbol: "square.grid.2x2", mode: .grid)
+                    layoutRow("Speaker", symbol: "person.crop.rectangle", mode: .speaker)
                 }
-                .accessibilityElement(children: .combine)
+                Section("People") {
+                    ForEach(store.groupCalls.tiles) { tile in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tile.name).font(.body)
+                            Text(detail(tile)).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
             }
             .navigationTitle("In this call")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    /// One row of the layout choice: the current one is checked (a check and the word "selected" for VoiceOver, never colour alone).
+    private func layoutRow(_ title: String, symbol: String, mode: GroupCallLayout.Mode) -> some View {
+        Button { store.groupCalls.chooseLayout(mode) } label: {
+            HStack {
+                Label(title, systemImage: symbol).foregroundStyle(.primary)
+                Spacer()
+                if layout == mode { Image(systemName: "checkmark").foregroundStyle(.primary) }
+            }
+            .frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Layout: \(title)")
+        .accessibilityValue(layout == mode ? "Selected" : "")
+        .accessibilityAddTraits(layout == mode ? .isSelected : [])
+        .accessibilityIdentifier("group-call-layout-\(title.lowercased())")
     }
 
     private func detail(_ tile: GroupCallManager.Tile) -> String {

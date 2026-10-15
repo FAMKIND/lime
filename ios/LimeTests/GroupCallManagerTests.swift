@@ -50,6 +50,9 @@ final class GroupCallManagerTests: XCTestCase {
         var connectError: Error?
         private(set) var disconnected = false, microphone: [Bool] = []
         func setKey(_ key: Data, participant: String, index: Int) { keys[participant] = (key, index) }
+        /// Every time this phone was told to send with a key (the join, then each renewal), oldest first.
+        private(set) var mySendKeys: [(key: Data, index: Int)] = []
+        func setMyKey(_ key: Data, participant: String, index: Int) { keys[participant] = (key, index); mySendKeys.append((key, index)) }
         func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool, lowBandwidth: Bool) async throws {
             if let connectError { throw connectError }
             connectArgs = (identity, relayOnly, camera, lowBandwidth)
@@ -528,6 +531,37 @@ final class GroupCallManagerTests: XCTestCase {
         await manager.leave()
         XCTAssertTrue(manager.verificationEmoji.isEmpty, "gone with the call")
         XCTAssertFalse(manager.emojiWaiting)
+    }
+
+    func testWhenTheCoreRenewsMyKeyThisPhoneSendsWithItAtOnceAndTheGuardLogsAMismatch() async {
+        let (manager, _, media, core, _, _) = await pipCall()
+        XCTAssertEqual(media.mySendKeys.map(\.index), [0], "at join: the first key, index 0")
+        let mine = String(repeating: "11", count: 16)
+        // Someone left: the core renewed my key (index 1) and says so.
+        let renewed = Data(repeating: 0x77, count: 32)
+        manager.handle([event("my_key", participant: mine, user: "u-me", name: "Shem Chung", key: renewed, index: 1)])
+        XCTAssertEqual(media.mySendKeys.map(\.index), [0, 1], "this phone switches to index 1")
+        XCTAssertEqual(media.mySendKeys.last?.key, renewed)
+        XCTAssertEqual(media.keys[mine]?.1, 1)
+        // Another renewal: n + 1 again.
+        manager.handle([event("my_key", participant: mine, user: "u-me", name: "Shem Chung", key: Data(repeating: 0x78, count: 32), index: 2)])
+        XCTAssertEqual(media.mySendKeys.map(\.index), [0, 1, 2])
+        // A key that is not mine, or not 32 bytes, changes nothing.
+        manager.handle([event("my_key", participant: core.others[0].participant, key: renewed, index: 9)])
+        manager.handle([event("my_key", participant: mine, user: "u-me", key: Data(repeating: 1, count: 5), index: 9)])
+        XCTAssertEqual(media.mySendKeys.map(\.index), [0, 1, 2])
+        // The guard: the media layer says it sends with an index the core does not call current.
+        func linesAfter(_ marker: String) -> [String] {
+            let all = CallDiagnostics.shared.lines
+            return all.lastIndex { $0.contains(marker) }.map { Array(all[($0 + 1)...]) } ?? []
+        }
+        CallDiagnostics.shared.log("MARK-112e-a")
+        media.onEvent?(.sendIndexReset(0))
+        XCTAssertTrue(linesAfter("MARK-112e-a").contains { $0.contains("WARNING this phone sends with index 0 but the core's current index is 2") })
+        CallDiagnostics.shared.log("MARK-112e-b")
+        media.onEvent?(.sendIndexReset(2))
+        XCTAssertFalse(linesAfter("MARK-112e-b").contains { $0.contains("WARNING this phone sends") })
+        await manager.leave()
     }
 
     func testMobileDataSends480pAndWiFiGoesBackTo720p() async {

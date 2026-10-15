@@ -21,8 +21,10 @@ enum GroupMediaEvent: Sendable, Equatable {
 @MainActor
 protocol GroupCallMedia: AnyObject {
     var onEvent: (@MainActor (GroupMediaEvent) -> Void)? { get set }
-    /// Sets a participant's sender key (the frame encryption), my own included. Safe before `connect`.
+    /// Sets another participant's sender key (the frame encryption). Never changes what this phone sends with. Safe before `connect`.
     func setKey(_ key: Data, participant: String, index: Int)
+    /// Sets MY sender key and starts sending with it at once (at join, and every time the core renews it because someone left: LIME-112e).
+    func setMyKey(_ key: Data, participant: String, index: Int)
     /// Connects to the room with the token, through the given relay (and only through it when `relayOnly`).
     func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool, lowBandwidth: Bool) async throws
     /// Mobile data: send 480p instead of 720p (restarts the camera with the new size when it is on). Wi-Fi: back to 720p.
@@ -47,12 +49,16 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
 
     func setKey(_ key: Data, participant: String, index: Int) {
         keyProvider.setKey(keyData: key, participantId: participant, index: Int32(index))
-        if participant == myIdentity || myIdentity.isEmpty {
-            myKeyIndex = Int32(index)
-        }
         // `setKey` moves the provider's one "current index" (what this phone sends with): someone else's key must not change it.
         keyProvider.setCurrentKeyIndex(myKeyIndex)
         if participant != myIdentity, !myIdentity.isEmpty { onEvent?(.sendIndexReset(Int(myKeyIndex))) }
+    }
+
+    func setMyKey(_ key: Data, participant: String, index: Int) {
+        myIdentity = participant
+        myKeyIndex = Int32(index)
+        keyProvider.setKey(keyData: key, participantId: participant, index: Int32(index))
+        keyProvider.setCurrentKeyIndex(myKeyIndex)
     }
 
     private var lowBandwidth = false

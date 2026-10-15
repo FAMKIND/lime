@@ -3301,6 +3301,85 @@ fn when_someone_leaves_everyone_still_in_makes_a_new_key_and_the_one_who_left_ge
     assert_eq!((history[0].id.as_str(), history[0].peer.as_str(), history[0].outcome.as_str(), history[0].outgoing), (call.call_id.as_str(), chat.as_str(), "completed", true));
 }
 
+fn my_key_events(events: &[crate::GroupCallEvent]) -> Vec<(String, u32, Vec<u8>)> {
+    events.iter().filter(|e| e.kind == "my_key").map(|e| (e.participant.clone(), e.key_index, e.key.clone().unwrap())).collect()
+}
+
+#[test]
+fn a_rotation_tells_my_own_phone_to_send_with_the_new_key_and_the_one_who_left_never_gets_it() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let b = bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let c = carol.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    // Bob's phone last received Alice's key at index 0 (the one she sent when she joined).
+    let bob_before = gc_events(&bob);
+    let bobs_copy_of_alices_key = keys_for(&bob_before).into_iter().find(|k| k.0 == a.participant).expect("Bob got Alice's key");
+    assert_eq!(bobs_copy_of_alices_key.1, 0);
+    for p in [&alice, &carol] {
+        assert!(my_key_events(&gc_events(p)).is_empty(), "no rotation yet, so no event for my own key");
+    }
+    bob.store.leave_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let at_alice = gc_events(&alice);
+    let at_carol = gc_events(&carol);
+    // Alice's own phone is told her new key: mine, index 1, 32 raw bytes, different from the first, and it is the key Carol receives.
+    let alices = my_key_events(&at_alice);
+    assert_eq!(alices.len(), 1, "{at_alice:?}");
+    assert_eq!((alices[0].0.as_str(), alices[0].1), (a.participant.as_str(), 1));
+    assert_eq!(alices[0].2.len(), 32);
+    assert_ne!(alices[0].2, a.key, "not the key Bob holds");
+    assert_eq!(keys_for(&at_carol).iter().find(|k| k.0 == a.participant).map(|k| (k.1, k.2.clone())), Some((1, alices[0].2.clone())), "the key she now sends with is the one Carol got");
+    let carols = my_key_events(&at_carol);
+    assert_eq!((carols.len(), carols[0].0.as_str(), carols[0].1), (1, c.participant.as_str(), 1));
+    assert_ne!(carols[0].2, c.key);
+    // The security point: the index Alice sends with now is not the one Bob (who left) last received, and he is sent nothing newer.
+    assert_ne!(alices[0].1, bobs_copy_of_alices_key.1);
+    assert!(keys_for(&gc_events(&bob)).is_empty());
+    assert!(my_key_events(&gc_events(&bob)).is_empty(), "the one who left rotates nothing");
+    let _ = b;
+}
+
+#[test]
+fn someone_who_rejoins_after_a_leave_gets_the_keys_the_others_really_send_with() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let c = carol.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        gc_events(p);
+    }
+    carol.store.leave_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let alice_now = my_key_events(&gc_events(&alice)).pop().expect("Alice rotated");
+    let bob_now = my_key_events(&gc_events(&bob)).pop().expect("Bob rotated");
+    assert_eq!((alice_now.1, bob_now.1), (1, 1));
+    gc_events(&carol);
+    // Carol comes back as a new participant: she gets only the CURRENT keys, and they are the ones Alice and Bob are encrypting with.
+    let c2 = carol.store.join_group_call(call.call_id.clone()).unwrap();
+    assert_ne!(c2.participant, c.participant);
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let carol_gets = keys_for(&gc_events(&carol));
+    let from_alice = carol_gets.iter().find(|k| k.0 == a.participant).expect("Alice's key reaches the rejoiner");
+    assert_eq!((from_alice.1, &from_alice.2), (alice_now.1, &alice_now.2), "the rejoiner holds the key Alice actually sends with");
+    let from_bob = carol_gets.iter().find(|k| k.0 == bob_now.0).expect("Bob's key reaches the rejoiner");
+    assert_eq!((from_bob.1, &from_bob.2), (bob_now.1, &bob_now.2));
+    // (Alice and Bob get the rejoiner's key, and the four emoji agree on all three.)
+    assert_eq!(gc_emoji(&alice, &call.call_id), gc_emoji(&carol, &call.call_id));
+    assert_eq!(gc_emoji(&bob, &call.call_id), gc_emoji(&carol, &call.call_id));
+}
+
 #[test]
 fn a_member_removed_from_the_group_is_out_of_the_call_and_gets_no_new_keys() {
     let server = FakeServer::new();

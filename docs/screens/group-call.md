@@ -31,8 +31,9 @@ Chosen from the container size `W x H`:
 
 ## Modes and the default
 
-Two modes, switched by the person (an icon and a word in the header, "Grid" or "Speaker"; the accessibility label is "Layout: Grid" or
-"Layout: Speaker"); **the choice is remembered on this device** and wins over the default:
+Two modes, switched by the person **in the people sheet** (the sheet the header's pill opens has a "Layout" section at its top, "Grid" and
+"Speaker" with the current one checked; the accessibility labels are "Layout: Grid" and "Layout: Speaker", the current one has the value
+"Selected"); **the choice is remembered on this device** and wins over the default:
 
 - **Grid**: everyone equal.
 - **Speaker**: the person speaking is large, the others are in a strip.
@@ -65,8 +66,11 @@ spoken, the first other person.
 ## The controls
 
 One row at the bottom (landscape included): mute, camera (video calls), flip camera, **minimise**, speaker, **leave**. **Leave is always
-visible**: the buttons shrink (56, 50, then 44 dp) before anything would scroll. Targets are at least 44 dp. The header has the minimise chevron
-(top left, below an iPad window's own window controls), the group's name and the timer, the layout switch and the people count (a list sheet).
+visible**: the buttons shrink (56, 50, then 44 dp) before anything would scroll. Targets are at least 44 dp. The header (below an iPad window's own window controls) is
+the 1:1 call header's look (LIME-147/112e): **one glass pill** at the top left with up to three of the people's pictures (overlapping), their first
+names (they truncate) and **how many are in the call (it never truncates)**, then a ›; tapping it opens the people sheet (the layout, then
+the people). Under the pill, one line: the timer, a lock, the four emoji of the encryption check (tap: how to compare them; "Waiting for
+everyone's keys…" while any key is missing). **Nothing on the right.** Minimise is only in the controls row.
 Reading order for a screen reader: the header, the tiles (the speaker first), the controls, my own floating picture last.
 
 ## Minimising

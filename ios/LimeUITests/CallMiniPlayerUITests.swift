@@ -66,6 +66,6 @@ final class CallMiniPlayerUITests: XCTestCase {
         app.buttons["call-mini-mute"].tap()
         XCTAssertEqual(app.buttons["call-mini-mute"].label, "Unmute")
         bar.tap()
-        XCTAssertTrue(app.buttons["Layout: Grid"].waitForExistence(timeout: 5), "back on the full call screen")
+        XCTAssertTrue(app.buttons["Minimise"].waitForExistence(timeout: 5), "back on the full call screen")
     }
 }

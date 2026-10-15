@@ -103,6 +103,8 @@ final class GroupCallManager {
     @ObservationIgnored private var poller: Task<Void, Never>?
     @ObservationIgnored private var ringTimeout: Task<Void, Never>?
     @ObservationIgnored private var myParticipant = ""
+    /// The index of the key this phone sends with, as the core says (set at join and at every renewal): for the guard.
+    @ObservationIgnored private var expectedSendIndex = 0
     @ObservationIgnored private var keyed: Set<String> = []
     @ObservationIgnored private var decrypting: [String: Bool] = [:]
     @ObservationIgnored private var busy = false
@@ -272,7 +274,8 @@ final class GroupCallManager {
         self.media = media
         media.onEvent = { [weak self] event in self?.handle(media: event) }
         // The key is raw bytes from the core (never text: the core's base64 has no padding, which Swift's decoder refuses).
-        media.setKey(joined.key, participant: joined.participant, index: Int(joined.keyIndex))
+        expectedSendIndex = Int(joined.keyIndex)
+        media.setMyKey(joined.key, participant: joined.participant, index: Int(joined.keyIndex))
         diag.log("group call: setKey me \(joined.participant.prefix(4))… index \(joined.keyIndex) (LiveKit identity \(joined.participant.prefix(4))…)")
         startPolling()
         // My join and my key go out now (they are what the others wait for), while the connection comes up.
@@ -383,8 +386,9 @@ final class GroupCallManager {
 
     /// Sends what is owed, then handles what arrived. The app calls this after every fetch; a call also does it once a second.
     func pump() async {
-        await deliverAndLog()
+        // Events first: when the core renewed my key, this phone switches to it before the others are sent theirs (LIME-112e).
         handle(core.takeEvents())
+        await deliverAndLog()
         checkStuckTiles()
     }
 
@@ -463,6 +467,13 @@ final class GroupCallManager {
                 keyed.insert(event.participant)
                 diag.log("group call: key received from \(event.participant.prefix(4))… (index \(event.keyIndex)) accepted; setKey \(event.participant.prefix(4))… (LiveKit identity \(event.participant.prefix(4))…)")
                 refreshSecured(event.participant)
+            case "my_key" where event.callId == callID:
+                // The core renewed MY key because someone left: this phone sends with it from now on (before the others' copies arrive: they keep
+                // the old index for frames in flight), so whoever left, and anyone who only ever got the old key, can read nothing new.
+                guard let key = event.key, key.count == 32, event.participant == myParticipant else { diag.log("group call: my renewed key is not usable: ignored"); continue }
+                expectedSendIndex = Int(event.keyIndex)
+                media?.setMyKey(key, participant: myParticipant, index: Int(event.keyIndex))
+                diag.log("group call: setKey me \(myParticipant.prefix(4))… index \(event.keyIndex) (renewed: someone left) (LiveKit identity \(myParticipant.prefix(4))…)")
             case "key_rejected" where event.callId == callID || callID.isEmpty:
                 diag.log("group call: key from \(event.participant.prefix(4))… rejected: \(event.reason)")
             default:
@@ -491,7 +502,8 @@ final class GroupCallManager {
             tiles.removeAll { $0.id == id }
             keyed.remove(id)
             let call = callID
-            Task { await core.participantGone(callID: call, participant: id); _ = await core.deliver(); refreshEmoji() }
+            // The core renews my key when someone is gone: take that event first (this phone switches to the new key), then send it to the others.
+            Task { await core.participantGone(callID: call, participant: id); handle(core.takeEvents()); _ = await core.deliver(); refreshEmoji() }
         case .microphone(let id, let muted):
             update(id) { $0.muted = muted }
         case .camera(let id, let on):
@@ -503,6 +515,7 @@ final class GroupCallManager {
             refreshPiP()
         case .secured(let id, let ok, let state):
             diag.log("group call: frame cryptor \(id.prefix(4))… \(state)")
+            if id == myParticipant, !ok { diag.log("group call: WARNING my own frames report \(state): the key this phone sends with may not be the current one") }
             decrypting[id] = ok
             refreshSecured(id)
         case .tracks:
@@ -510,6 +523,8 @@ final class GroupCallManager {
             refreshPiP()
         case .sendIndexReset(let index):
             diag.log("group call: send index reset to \(index)")
+            // The guard: what this phone encrypts with must be the index the core says is current.
+            if index != expectedSendIndex { diag.log("group call: WARNING this phone sends with index \(index) but the core's current index is \(expectedSendIndex)") }
         }
     }
 
@@ -659,6 +674,9 @@ extension GroupCallManager {
     /// Debug demo (`-lime-demo-screen group-call-N`): a group call on screen with N people and no network, for screenshots of the layout.
     func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team", conversationID: String = "grp:demo") {
         let names = ["Shem Chung", "Jean Park", "Lee Wong", "Sam Park", "Priya Nair", "Dee Ito", "Max Roy", "Ana Cruz", "Tom Lee", "Uma Das", "Vic Hale", "Wen Xu", "Yan Zhu"]
+        // The demo starts from the default layout (the person's remembered choice would make tests and screenshots depend on the last run).
+        chosenLayout = nil
+        layoutDefaults.removeObject(forKey: Self.layoutKey)
         phase = .active
         self.video = video
         self.title = title

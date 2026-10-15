@@ -12,8 +12,10 @@ final class GroupCallHeaderUITests: XCTestCase {
 
     func testTheHeaderHasThePillTheTimerAndTheEncryptionChipAndTheChipExplainsItself() {
         let app = launch()
-        let pill = app.buttons["Grade 4 Team, people in the call"]
-        XCTAssertTrue(pill.waitForExistence(timeout: 15), "the group's pill")
+        let pill = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'People in the call, 4: '")).firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 15), "one pill with the people and the count")
+        XCTAssertFalse(app.buttons["Layout: Grid"].exists || app.buttons["Layout: Speaker"].exists, "no layout switch in the header")
+        XCTAssertFalse(app.buttons["People in the call, 4"].exists, "no separate people icon and count")
         let chip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Encrypted call. Emoji: '")).firstMatch
         XCTAssertTrue(chip.exists, "the encryption chip after the timer")
         XCTAssertEqual(chip.label.dropFirst("Encrypted call. Emoji: ".count).split(separator: ",").count, 4, "four names for VoiceOver: \(chip.label)")
@@ -25,12 +27,21 @@ final class GroupCallHeaderUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Verify in person'")).firstMatch.exists, "it says it does not prove who people are")
     }
 
-    func testThePillOpensThePeopleAndMinimiseStaysInTheControls() {
+    func testThePillOpensThePeopleSheetWhichHasTheLayoutAtTheTopAndMinimiseStaysInTheControls() {
         let app = launch()
-        XCTAssertTrue(app.buttons["Grade 4 Team, people in the call"].waitForExistence(timeout: 15))
+        let pill = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'People in the call, 4: '")).firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["Minimise"].exists, "Minimise is in the controls row")
         XCTAssertFalse(app.buttons["Minimise call"].exists, "the header's chevron is gone: the pill takes the corner")
-        app.buttons["Grade 4 Team, people in the call"].tap()
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Shem'")).firstMatch.waitForExistence(timeout: 5), "the people in the call")
+        pill.tap()
+        let grid = app.buttons["Layout: Grid"], speaker = app.buttons["Layout: Speaker"]
+        XCTAssertTrue(grid.waitForExistence(timeout: 5), "the people sheet starts with the layout")
+        XCTAssertTrue(speaker.exists)
+        XCTAssertEqual(grid.value as? String, "Selected", "4 people: Grid is the default, and it is checked")
+        XCTAssertLessThan(grid.frame.minY, app.staticTexts["People"].frame.minY, "the layout is above the people")
+        XCTAssertGreaterThanOrEqual(grid.frame.height, 44)
+        speaker.tap()
+        XCTAssertEqual(app.buttons["Layout: Speaker"].value as? String, "Selected", "the choice is checked at once")
+        XCTAssertEqual(app.buttons["Layout: Grid"].value as? String, "")
     }
 }

@@ -42,7 +42,7 @@ pub struct GroupCallJoin {
 }
 
 /// Something the app must act on. `kind`: `started` (a call began: `ring` says whether to ring, `video`), `joined` and `left`
-/// (`participant`, `user_id`), `key` (`participant`'s sender key as raw bytes and its index: set it in the frame encryption), `key_rejected` (`reason`: a key was refused, for the diagnostics), `ended`.
+/// (`participant`, `user_id`), `key` (`participant`'s sender key as raw bytes and its index: set it in the frame encryption), `my_key` (this phone's OWN key was renewed because someone left: `participant` is mine, `key` and `key_index` the new ones: start sending with them before anything else), `key_rejected` (`reason`: a key was refused, for the diagnostics), `ended`.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct GroupCallEvent {
     pub kind: String,

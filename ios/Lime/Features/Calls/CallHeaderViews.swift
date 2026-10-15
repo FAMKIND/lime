@@ -6,12 +6,15 @@ import SwiftUI
 /// The pill at the top left: the picture, the name and a ›. Tapping it opens the details.
 struct CallNamePill<Picture: View>: View {
     let name: String
+    /// A group call: how many people are in it, at the end of the pill (the names truncate, this never does).
+    var count: Int?
     let accessibilityLabel: String
     let picture: Picture
     let action: () -> Void
 
-    init(name: String, accessibilityLabel: String, action: @escaping () -> Void, @ViewBuilder picture: () -> Picture) {
+    init(name: String, count: Int? = nil, accessibilityLabel: String, action: @escaping () -> Void, @ViewBuilder picture: () -> Picture) {
         self.name = name
+        self.count = count
         self.accessibilityLabel = accessibilityLabel
         self.action = action
         self.picture = picture()
@@ -22,6 +25,10 @@ struct CallNamePill<Picture: View>: View {
             HStack(spacing: 8) {
                 picture
                 Text(name).font(.headline).foregroundStyle(.white).lineLimit(1)
+                if let count {
+                    Text("\(count)").font(.headline).foregroundStyle(.white.opacity(0.85)).fixedSize().layoutPriority(1)
+                        .accessibilityIdentifier("call-name-pill-count")
+                }
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
             }
             .padding(.leading, 6).padding(.trailing, 12).padding(.vertical, 6)

@@ -221,13 +221,18 @@ fn enqueue_my_key_to(conn: &Connection, call: &CallRow, user: &str) -> Result<()
 }
 
 /// Someone left: a new sender key with the next index, sent only to the people still in the call (and still in the group).
-fn rotate_my_key(conn: &Connection, call: &CallRow, me: &str) -> Result<(), StoreError> {
+fn rotate_my_key(conn: &Connection, call: &CallRow, me: &str, now: i64) -> Result<(), StoreError> {
     if !call.joined || call.ended_at.is_some() {
         return Ok(());
     }
     let key = random_bytes32();
     let index = call.my_key_index + 1;
     conn.execute("UPDATE group_calls SET my_key = ?2, my_key_index = ?3 WHERE call_id = ?1", params![call.call_id, key.to_vec(), index]).map_err(db_err)?;
+    // This phone must start sending with the new key too (the app sets it first, then the others get theirs): an event with MY participant,
+    // the new key (raw bytes) and its index. Without it the phone would go on encrypting with the key everyone who left still holds.
+    if let Some(mine) = call.my_participant.as_deref() {
+        push_event(conn, "my_key", call, me, mine, json!({ "key": vodozemac::base64_encode(&key), "index": index }), now)?;
+    }
     let members = groups::state_of(conn, &call.group_id)?;
     let updated = CallRow { my_key: Some(key.to_vec()), my_key_index: index, ..call.clone() };
     // Drop anything still queued with the old key for someone who has not received it: only the new one matters.
@@ -426,7 +431,7 @@ pub(crate) fn apply(conn: &Connection, me: &str, sender: &str, device: &str, gro
                 .map_err(db_err)?;
             if changed > 0 {
                 push_event(conn, "left", &call, sender, &participant, json!({}), now)?;
-                rotate_my_key(conn, &call, me)?;
+                rotate_my_key(conn, &call, me, now)?;
                 finish_if_empty(conn, &call, me, now)?;
             }
         }
@@ -461,7 +466,7 @@ pub(crate) fn on_membership_changed(conn: &Connection, group_id: &str, me: &str,
             }
         }
         if removed {
-            rotate_my_key(conn, &call, me)?;
+            rotate_my_key(conn, &call, me, now)?;
             finish_if_empty(conn, &call, me, now)?;
         }
     }
@@ -578,7 +583,7 @@ pub(crate) fn local_participant_gone(conn: &Connection, me: &str, call_id: &str,
     let Some(user) = who else { return Ok(()) };
     conn.execute("UPDATE group_call_participants SET left_at = ?3 WHERE call_id = ?1 AND participant = ?2", params![call_id, participant, now]).map_err(db_err)?;
     push_event(conn, "left", &call, &user, participant, json!({}), now)?;
-    rotate_my_key(conn, &call, me)?;
+    rotate_my_key(conn, &call, me, now)?;
     finish_if_empty(conn, &call, me, now)?;
     Ok(())
 }
