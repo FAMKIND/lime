@@ -620,6 +620,7 @@ struct ChatView: View {
     @ViewBuilder
     private func bottomBar(_ conversation: Conversation) -> some View {
         VStack(spacing: 8) {
+            CallMiniPlayer()
             if conversation.keyChangePending { keyChangeBar(conversation) }
             if let selection {
                 SelectionBar(count: selection.count,

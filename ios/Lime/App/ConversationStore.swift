@@ -939,7 +939,8 @@ final class ConversationStore {
         case "notif-banner": demoNotification = "banner"
         case let name? where name.hasPrefix("group-call-"):
             loadDemoTeachers()
-            groupCalls.demoCall(people: Int(name.dropFirst("group-call-".count)) ?? 3)
+            let group = demoMakeGroup(name: "Grade 4 Team", emoji: "🍎", memberIDs: ["lee", "sam", "priya.nair"], owner: true)
+            groupCalls.demoCall(people: Int(name.dropFirst("group-call-".count)) ?? 3, conversationID: group)
         case "group", "group-details", "new-group", "new-group-name":
             loadDemoTeachers()
             let id = demoMakeGroup(name: "Grade 4 Team", emoji: "🍎", memberIDs: ["lee", "sam", "priya.nair"], owner: true)

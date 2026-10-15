@@ -627,13 +627,13 @@ final class GroupCallManager {
 #if DEBUG
 extension GroupCallManager {
     /// Debug demo (`-lime-demo-screen group-call-N`): a group call on screen with N people and no network, for screenshots of the layout.
-    func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team") {
+    func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team", conversationID: String = "grp:demo") {
         let names = ["Shem Chung", "Jean Park", "Lee Wong", "Sam Park", "Priya Nair", "Dee Ito", "Max Roy", "Ana Cruz", "Tom Lee", "Uma Das", "Vic Hale", "Wen Xu", "Yan Zhu"]
         phase = .active
         self.video = video
         self.title = title
         callID = "demo"
-        conversationID = "grp:demo"
+        self.conversationID = conversationID
         startedAt = Date().addingTimeInterval(-83)
         tiles = (0..<min(people, names.count)).map {
             Tile(id: "demo-\($0)", userID: "demo-user-\($0)", name: names[$0], isMe: $0 == 0, muted: $0 == 2, cameraOn: false, speaking: $0 == 1, secured: true)

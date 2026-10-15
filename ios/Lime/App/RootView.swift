@@ -3,7 +3,6 @@ import SwiftUI
 struct RootView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AccountSession.self) private var session
-    @Environment(NotificationCoordinator.self) private var notifications
 
     var body: some View {
         Group {
@@ -28,36 +27,7 @@ struct RootView: View {
             Button("OK", role: .cancel) {}
         } message: { Text(store.groupCalls.notice ?? "") }
         .fullScreenCover(isPresented: Binding(get: { store.groupCalls.inCall && !store.groupCalls.minimized }, set: { _ in })) { GroupCallView() }
-        // A minimised group call (voice, or video that cannot float) keeps lime's slim return bar everywhere EXCEPT in that group's own chat, where
-        // the lime call circle in the header is the way back (so they never overlap); never while the floating video window is up (LIME-148b).
-        .overlay(alignment: .top) {
-            if GroupCallLayout.returnBarShows(inCall: store.groupCalls.inCall, minimized: store.groupCalls.minimized,
-                                              windowUp: store.groupCalls.pictureInPictureActive,
-                                              viewingThatChat: notifications.viewing?.conversationID == store.groupCalls.conversationID) {
-                Button { store.groupCalls.minimized = false } label: {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Label("Return to \(store.groupCalls.title) \u{00B7} \(store.groupCalls.tiles.count) in call \u{00B7} \(CallRecord.clock(context.date.timeIntervalSince(store.groupCalls.startedAt ?? context.date)))", systemImage: "phone.fill")
-                            .lineLimit(1)
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accentInk)
-                            .frame(maxWidth: .infinity, minHeight: 36).background(Theme.accent)
-                    }
-                }
-                .accessibilityIdentifier("group-call-return-bar")
-            }
-        }
         .fullScreenCover(isPresented: Binding(get: { store.calls.inCall && !store.calls.minimized }, set: { _ in })) { CallView() }
-        .overlay(alignment: .top) {
-            if store.calls.inCall && store.calls.minimized && !store.calls.pictureInPictureActive {
-                Button { store.calls.minimized = false } label: {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Label("Tap to return to call \u{00B7} \(store.calls.statusText(at: context.date))", systemImage: "phone.fill")
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.accentInk)
-                            .frame(maxWidth: .infinity, minHeight: 36).background(Theme.accent)
-                    }
-                }
-                .accessibilityIdentifier("call-return-bar")
-            }
-        }
     }
 }
 
@@ -81,7 +51,7 @@ private struct SignedInView: View {
                 .tabItem { tabLabel("call", TabSymbols.call) }
                 .badge(store.missedCalls)
                 .tag(ConversationStore.Section.call)
-            JamPage()
+            JamPage().callMiniPlayerInset()
                 .tabItem { tabLabel("jam", TabSymbols.jam) }
                 .tag(ConversationStore.Section.jam)
         }
@@ -135,26 +105,26 @@ private struct SignedInView: View {
 
     private func linkTab(path: Binding<NavigationPath>) -> some View {
         NavigationStack(path: path) {
-            MessagesView()
+            MessagesView().callMiniPlayerInset()
                 .navigationDestination(for: Conversation.ID.self) { id in
                     ChatView(conversationID: id).toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: GroupTarget.self) { target in
-                    GroupDetailsView(target: target).toolbar(.hidden, for: .tabBar)
+                    GroupDetailsView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ThreadTarget.self) { target in
-                    ThreadView(target: target).toolbar(.hidden, for: .tabBar)
+                    ThreadView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ChatTarget.self) { target in
                     ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words)
                         .toolbar(.hidden, for: .tabBar)
                 }
-                .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
-                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
+                .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0).callMiniPlayerInset() }
+                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).callMiniPlayerInset() }
                 .navigationDestination(for: MessagesRoute.self) { route in
                     switch route {
-                    case .requests: RequestsView()
-                    case .search: MessageSearchScreen()
+                    case .requests: RequestsView().callMiniPlayerInset()
+                    case .search: MessageSearchScreen().callMiniPlayerInset()
                     }
                 }
         }
@@ -162,10 +132,10 @@ private struct SignedInView: View {
 
     private func callTab(path: Binding<NavigationPath>) -> some View {
         NavigationStack(path: path) {
-            CallHistoryView()
-                .navigationDestination(for: CallSearchRoute.self) { _ in CallSearchScreen() }
-                .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0) }
-                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0) }
+            CallHistoryView().callMiniPlayerInset()
+                .navigationDestination(for: CallSearchRoute.self) { _ in CallSearchScreen().callMiniPlayerInset() }
+                .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0).callMiniPlayerInset() }
+                .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).callMiniPlayerInset() }
         }
     }
 }

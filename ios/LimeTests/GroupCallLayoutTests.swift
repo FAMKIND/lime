@@ -151,13 +151,4 @@ final class GroupCallLayoutTests: XCTestCase {
         XCTAssertEqual(layout.speaker, CGRect(origin: .zero, size: size))
         XCTAssertTrue(layout.strip.isEmpty)
     }
-
-    func testTheReturnBarShowsOnlyWhenMinimisedAndNotInThatChatAndNoWindow() {
-        let show = GroupCallLayout.returnBarShows
-        XCTAssertTrue(show(true, true, false, false), "on the Messages list or another chat")
-        XCTAssertFalse(show(true, true, false, true), "hidden in that group's chat: the lime call circle is the way back")
-        XCTAssertFalse(show(true, true, true, false), "hidden while the floating video window is up")
-        XCTAssertFalse(show(true, false, false, false), "the full call screen is showing")
-        XCTAssertFalse(show(false, true, false, false), "no call")
-    }
 }

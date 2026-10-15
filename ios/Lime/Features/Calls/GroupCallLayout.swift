@@ -136,10 +136,4 @@ enum GroupCallLayout {
         let strip = grid(count: others, in: CGSize(width: size.width, height: stripHeight), gap: gap).map { $0.offsetBy(dx: 0, dy: speakerArea.height + gap) }
         return Spotlight(speaker: CGRect(origin: .zero, size: speakerArea), strip: strip)
     }
-
-    /// Whether lime's slim return bar shows for a minimised group call (LIME-148b item 00): when I am not in that group's chat, whose lime call
-    /// circle is the way back there, and not while the floating video window is up.
-    static func returnBarShows(inCall: Bool, minimized: Bool, windowUp: Bool, viewingThatChat: Bool) -> Bool {
-        inCall && minimized && !windowUp && !viewingThatChat
-    }
 }

@@ -81,3 +81,14 @@ beside the search and more capsule, lime with the call's icon (and no count) whi
 ## Not in these rules yet
 
 Screen sharing (LIME-149: a screen share would take the speaker's place), the mini grid when minimised (LIME-150), and the emoji check (LIME-147).
+
+## The call mini player (LIME-148c)
+
+A minimised call (group or 1:1) is shown as a capsule, like a podcast player. It replaces the old "Return to call" bars, which covered the header buttons.
+
+- **Shape:** a glass capsule (Liquid Glass where the system has it, a material otherwise, a solid fill with Reduce Transparency), at least 60 dp tall, with the screen's side margins. It never sits at the top and never over a button.
+- **Contents:** the call's picture on the left (the group's photo or emoji or the member composite; the person's photo for 1:1); the name in bold, one line, truncating; under it "Video call · 3 in call · 1:01" or "Voice call · …" (1:1 shows just the timer). On the right: **Mute/Unmute** (a mic that fills and takes the accent when muted; the state is also spoken as a value, never colour alone) and **Leave** (a red hang-up circle that leaves at once, with no confirmation). Both targets are at least 44 dp.
+- **Tapping** anywhere else on the capsule goes back to the full call screen.
+- **Where:** in the bottom inset of every screen: just above the tab bar where there is one, otherwise just above the bottom safe area; in a chat, **just above the composer**. Every screen reserves that space (a bottom inset), so the last row and the composer are never covered.
+- **When:** whenever a call is minimised: in the group's own chat too (the call button stays), and while the floating video window is up. Never on the full call screen.
+- **Accessibility:** one element "Call with Grade 4 Team, 4 in call, 1 minute 30 seconds. Double-tap to return", then Mute and Leave as separate buttons. With large text the count drops first, then the line truncates; the buttons never go.

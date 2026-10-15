@@ -141,13 +141,13 @@ final class CallScreenUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(frame.width, 44)
     }
 
-    func testMinimisingLeavesTheSlimBarAndTappingItReturnsToTheCall() {
+    func testMinimisingLeavesTheMiniPlayerAndTappingItReturnsToTheCall() {
         let voice = app("voice")
         XCTAssertTrue(voice.buttons["call-minimize"].waitForExistence(timeout: 10))
         voice.buttons["call-minimize"].tap()
-        let bar = voice.buttons["call-return-bar"]
-        XCTAssertTrue(bar.waitForExistence(timeout: 5), "the slim bar (no floating window in a voice call)")
-        XCTAssertTrue(bar.label.contains("Tap to return to call"), bar.label)
+        let bar = voice.buttons["call-mini-return"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5), "the mini player (no floating window in a voice call)")
+        XCTAssertTrue(bar.label.hasSuffix("Double-tap to return"), bar.label)
         bar.tap()
         XCTAssertTrue(voice.buttons["call-end"].waitForExistence(timeout: 5), "back on the full call screen")
     }
