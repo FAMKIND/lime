@@ -1060,17 +1060,18 @@ fn the_mesh_refuses_what_it_cannot_seal_and_a_carried_packet_survives_a_restart(
     let (stranger, _) = party(&server, "stranger", 3);
     befriend(&alice, &bob, &transport);
     let (device, ciphertext) = mesh_only_message(&server, &alice, &bob, &transport, "persist me");
-    // No server key pinned yet (none is, until the server's key pair exists): nothing can be sealed.
-    let unpinned = crate::MeshEngine::new(alice.store.clone());
-    assert!(unpinned.queue_for_send(bob.user.clone(), device.clone(), ciphertext.clone()).is_err());
+    // The engine that uses the pinned server key (id 1, the staging key pair) seals too.
+    let pinned = crate::MeshEngine::new(alice.store.clone());
+    assert!(pinned.queue_for_send(bob.user.clone(), device.clone(), ciphertext.clone()).unwrap());
     let a = mesh_engine(&alice);
     // Someone who never gave Alice a delivery key: the proof cannot be made, so it does not travel (the caller sends it the usual way).
     assert!(!a.queue_for_send(stranger.user.clone(), device.clone(), ciphertext.clone()).unwrap());
     assert!(a.queue_for_send(bob.user.clone(), device, ciphertext).unwrap());
-    assert_eq!(a.stats().carried, 1);
-    // The carried packet is on the encrypted disk: a new engine on the same store still has it.
+    // (Two packets: each seal has its own ephemeral key, so the pinned-key engine's copy and this one are different packets.)
+    assert_eq!(a.stats().carried, 2);
+    // The carried packets are on the encrypted disk: a new engine on the same store still has them.
     let again = mesh_engine(&alice);
-    assert_eq!(again.stats().carried, 1);
+    assert_eq!(again.stats().carried, 2);
 }
 
 #[test]

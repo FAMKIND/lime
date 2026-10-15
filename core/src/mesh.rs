@@ -24,9 +24,10 @@ use crate::store::StoreError;
 const TAG_INFO: &[u8] = b"lime-mesh-tag-v1";
 const HEADER_INFO: &[u8] = b"lime-mesh-header-v1";
 
-/// The server's mesh public keys by id, pinned in the app. **Empty until the server's key pair exists** (the user generates it with
-/// `supabase/mesh-keygen.sh`, which prints only the public key; it is added here with its id). With none pinned, nothing can be sealed.
-pub(crate) const SERVER_KEYS: &[ServerKey] = &[];
+/// The server's mesh public keys by id, pinned in the app (the newest is sealed to). Id 1 is the staging project's key pair, made with
+/// `supabase/mesh-keygen.sh` (it printed only the public half: `6Z2M6QVBAbFHN3odDk4LSUIpLY116i03+XEh7B1mrAg=`; the secret is only in
+/// Supabase's secrets). A new key is added here with the next id when the server key rotates.
+pub(crate) const SERVER_KEYS: &[ServerKey] = &[ServerKey { id: 1, public: [0xe9, 0x9d, 0x8c, 0xe9, 0x05, 0x41, 0x01, 0xb1, 0x47, 0x37, 0x7a, 0x1d, 0x0e, 0x4e, 0x0b, 0x49, 0x42, 0x29, 0x2d, 0x8d, 0x75, 0xea, 0x2d, 0x37, 0xf9, 0x71, 0x21, 0xec, 0x1d, 0x66, 0xac, 0x08] }];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ServerKey {
@@ -437,6 +438,14 @@ mod tests {
         assert!(!text.contains(DEVICE) && !text.contains("c2ln") && !text.contains("to_device"), "nothing readable");
         // A new ephemeral key every time: two seals of the same thing differ.
         assert_ne!(header, seal_header(&local_key(), DEVICE, "c2ln").unwrap());
+    }
+
+    #[test]
+    fn the_pinned_server_key_is_the_one_mesh_keygen_printed() {
+        let key = current_server_key().expect("a server key is pinned");
+        assert_eq!(key.id, 1);
+        assert_eq!(vodozemac::base64_encode(key.public), "6Z2M6QVBAbFHN3odDk4LSUIpLY116i03+XEh7B1mrAg", "(unpadded base64 of the printed public key)");
+        assert_ne!(key.public, local_key().public, "not the local test key");
     }
 
     #[test]
