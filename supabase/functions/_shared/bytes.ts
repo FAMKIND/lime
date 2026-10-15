@@ -25,6 +25,11 @@ export function fromHex(hex: string): Uint8Array {
   return out;
 }
 
+/** The 16 raw bytes of a UUID string. */
+export function uuidBytes(uuid: string): Uint8Array {
+  return fromHex(uuid.replaceAll("-", ""));
+}
+
 /** How PostgREST writes and reads a bytea column. */
 export function toPgBytea(bytes: Uint8Array): string {
   return "\\x" + toHex(bytes);

@@ -879,6 +879,86 @@ fn the_delivery_key_is_made_once_and_only_its_hash_goes_to_the_server() {
     assert_eq!(server.state.lock().unwrap().delivery_access.get("alice").cloned(), held);
 }
 
+/// Posts a `send` body straight to the fake server, as a relay that captured a request might: no token.
+fn replay_send(transport: &Arc<dyn Transport>, body: &serde_json::Value) -> u16 {
+    transport
+        .request("POST".into(), "/functions/v1/send".into(), vec![crate::HeaderPair { name: "content-type".into(), value: "application/json".into() }], serde_json::to_vec(body).unwrap())
+        .unwrap()
+        .status
+}
+
+#[test]
+fn a_sealed_send_carries_a_signature_for_that_ciphertext_and_device_and_a_replay_is_refused() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let second_device = add_linked_device(&server, &bob);
+    server.state.lock().unwrap().sent.clear();
+    say(&alice, &bob, &transport, "signed hello");
+    let sent = server.state.lock().unwrap().sent.clone();
+    // (The first attempt may be refused as stale because of the linked device; the retry is the one that was accepted.)
+    let request = sent.iter().rev().find(|b| b["recipients"][0]["access"]["signed"].is_string() && b["recipients"][0]["to_device"].as_str() == Some(bob.device.as_str())).expect("a sealed send went out signed");
+    assert!(sent.iter().all(|b| b["recipients"].as_array().unwrap().iter().all(|r| r["access"]["sealed"].is_null())), "no reusable access key goes on the wire any more");
+    assert_eq!(request["recipients"][0]["to_device"].as_str(), Some(bob.device.as_str()));
+    // The very same request again is accepted as a duplicate (nothing new is stored)...
+    assert_eq!(replay_send(&transport, request), 200);
+    // ...but the signature cannot be reused for another ciphertext, or for another device of the same person.
+    let mut other_message = request.clone();
+    other_message.as_object_mut().unwrap().remove("expect");
+    let mut bytes = vodozemac::base64_decode(request["ciphertext"].as_str().unwrap()).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 1;
+    other_message["ciphertext"] = serde_json::json!(vodozemac::base64_encode(&bytes));
+    assert_eq!(replay_send(&transport, &other_message), 403, "a changed byte");
+    let mut other_device = request.clone();
+    other_device["recipients"][0]["to_device"] = serde_json::json!(second_device);
+    other_device.as_object_mut().unwrap().remove("expect");
+    assert_eq!(replay_send(&transport, &other_device), 403, "another device");
+}
+
+#[test]
+fn the_public_key_goes_up_with_the_hash_and_again_on_the_first_launch_after_an_update() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let key = alice.store.test_delivery_key();
+    let expected = crate::store::delivery::access_public_key_b64(&key);
+    let held = |server: &Arc<FakeServer>| server.state.lock().unwrap().delivery_public.get("alice").map(|k| vodozemac::base64_encode(k));
+    assert_eq!(held(&server).as_deref().map(|k| k.trim_end_matches('=')), Some(expected.trim_end_matches('=')), "the public key, not the delivery key");
+    // A phone that updated from a build with no public key: the server has none, and the store says "uploaded" from before.
+    server.state.lock().unwrap().delivery_public.clear();
+    {
+        let conn = alice.store.lock();
+        conn.execute("UPDATE delivery_state SET uploaded = 1", []).unwrap();
+        // Migration 31 marks the key as not uploaded, so the first launch after updating uploads both again.
+        conn.execute_batch("UPDATE delivery_state SET uploaded = 0;").unwrap();
+    }
+    alice.store.register_device(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(held(&server).as_deref().map(|k| k.trim_end_matches('=')), Some(expected.trim_end_matches('=')), "uploaded again");
+    // A rotation (a block) gives a new key, so a new public key goes up.
+    let before = held(&server);
+    {
+        let conn = alice.store.lock();
+        crate::store::delivery::rotate(&conn, crate::store::now_ms()).unwrap();
+    }
+    alice.store.register_device(transport, alice.token.clone()).unwrap();
+    assert_ne!(held(&server), before, "a new delivery key, a new public key");
+}
+
+#[test]
+fn a_contact_on_an_older_build_has_no_public_key_so_the_first_send_falls_back_to_identified_and_arrives() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    // Bob's phone is an older build: it set its access-key hash but no public key.
+    server.state.lock().unwrap().delivery_public.remove("bob");
+    say(&alice, &bob, &transport, "after the update");
+    let items = mailbox_of(&server, &bob.device);
+    assert_eq!(items.last(), Some(&(true, Some("alice".to_string()))), "refused signed (403), then sent identified, silently");
+    assert_eq!(sync(&bob, &transport).received, 1, "the new message arrives");
+}
+
 #[test]
 fn a_strangers_first_message_stays_identified_and_lands_in_requests() {
     let server = FakeServer::new();

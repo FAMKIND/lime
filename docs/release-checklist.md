@@ -91,3 +91,7 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - Real phones: a 3-person voice and video call (join, leave, mute, camera, flip); a join with the app closed (rings only while lime is open or recent); a call over mobile data and with Always relay (the SFU must connect through coturn: the same-host path was not tested); minimise to the system window; a member removed mid-call stops seeing and hearing; the chat line says "Call ended".
 - The sender-key exchange goes to the external security review with the rest of the call crypto.
 
+## Signed access (LIME-139)
+
+- [ ] **Remove the access-key path from `send`.** Sealed sends now carry an Ed25519 signature (`access.signed`); the server still accepts the older `access.sealed` (the hash of the access key) so builds from before LIME-139 keep working. Once every device has updated, **before TestFlight**: delete the `sealed` branch in `supabase/functions/send`, stop uploading `access_key_hash`/stop sending it from the core (and drop `delivery_access.access_key_hash` in a migration), and update `docs/api-v2.md` section 4.
+- [ ] **Security review.** The signing-key derivation (HKDF of the delivery key, `lime-access-sign-v1`), the signed message (`lime-access-v2 || SHA-256(ciphertext) || to_device`) and the server's verification are flagged for the pre-launch external security review.

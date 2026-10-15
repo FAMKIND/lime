@@ -622,18 +622,22 @@ impl LimeStore {
                 _ => identified.push((user, devices)),
             }
         }
-        let sealed_recipients = |part: &[(String, Vec<u8>, Vec<String>)]| -> Vec<Value> {
-            part.iter()
-                .flat_map(|(_, key, devices)| {
-                    devices.iter().map(move |d| json!({ "to_device": d, "access": { "sealed": delivery::access_key_b64(key) } }))
-                })
-                .collect()
+        // Signed access (LIME-139): one signature per recipient device, over this ciphertext and that device.
+        let wire = vodozemac::base64_decode(wire_b64).map_err(|_| StoreError::BadMessage)?;
+        let sealed_recipients = |part: &[(String, Vec<u8>, Vec<String>)]| -> Result<Vec<Value>, StoreError> {
+            let mut out = Vec::new();
+            for (_, key, devices) in part {
+                for d in devices {
+                    out.push(json!({ "to_device": d, "access": { "signed": delivery::access_signature_b64(key, &wire, d)? } }));
+                }
+            }
+            Ok(out)
         };
         for chunk in sealed.chunks(SEND_CHUNK / 4 + 1) {
-            let (status, _) = call(transport, None, "send", &json!({ "ciphertext": wire_b64, "recipients": sealed_recipients(chunk) }))?;
+            let (status, _) = call(transport, None, "send", &json!({ "ciphertext": wire_b64, "recipients": sealed_recipients(chunk)? }))?;
             if status == 403 {
                 for one in chunk {
-                    let (status, _) = call(transport, None, "send", &json!({ "ciphertext": wire_b64, "recipients": sealed_recipients(std::slice::from_ref(one)) }))?;
+                    let (status, _) = call(transport, None, "send", &json!({ "ciphertext": wire_b64, "recipients": sealed_recipients(std::slice::from_ref(one))? }))?;
                     if status == 403 {
                         self.with_conn(|conn| delivery::mark_denied(conn, &one.0))?;
                         identified.push((one.0.clone(), one.2.clone()));

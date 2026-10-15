@@ -38,8 +38,12 @@ pub(crate) struct ServerState {
     pub undelivered: HashMap<String, Vec<String>>,
     /// user to SHA-256(access_key) (hex): what `delivery-access-set` stored
     pub delivery_access: HashMap<String, String>,
+    /// user to the 32-byte Ed25519 public key `delivery-access-set` stored for signed access (LIME-139); cleared by a call without one
+    pub delivery_public: HashMap<String, Vec<u8>>,
     /// How many `send` requests carried an Authorization header, and how many did not (sealed).
     pub sends_with_token: usize,
+    /// Every `send` request body, in order (for tests that look at, or replay, what a phone sent).
+    pub sent: Vec<Value>,
     pub sends_without_token: usize,
     /// Storage objects by `<bucket>/<name>` (the stand-in for Supabase Storage behind signed URLs).
     pub objects: HashMap<String, Vec<u8>>,
@@ -274,6 +278,7 @@ impl Transport for FakeServer {
                     .cloned()
                     .unwrap_or_default();
                 if user.is_empty() { state.sends_without_token += 1 } else { state.sends_with_token += 1 }
+                state.sent.push(body.clone());
                 // All or nothing: check every recipient's access before storing anything (the key first, as the real server does).
                 let checking = body.get("expect").is_some() && !state.ignore_expect;
                 let mut revoked_named: Vec<String> = Vec::new();
@@ -294,12 +299,26 @@ impl Transport for FakeServer {
                         continue;
                     }
                     let owner = state.devices.get(&device).map(|d| d.0.clone()).or_else(|| state.revoked.get(&device).cloned());
-                    let presented = r["access"]["sealed"].as_str().and_then(|k| vodozemac::base64_decode(k).ok());
-                    let hash: Option<String> = presented
-                        .filter(|k| k.len() == 16)
-                        .map(|k| sha2::Sha256::digest(&k).iter().map(|b| format!("{b:02x}")).collect());
-                    let stored = owner.and_then(|o| state.delivery_access.get(&o).cloned());
-                    if hash.is_none() || hash != stored || (revoked && !checking) {
+                    let accepted = if let Some(signature) = r["access"]["signed"].as_str() {
+                        // Signed access: the signature covers the ciphertext and this device, and is checked against the owner's public key.
+                        let ciphertext = body["ciphertext"].as_str().and_then(|c| vodozemac::base64_decode(c).ok()).unwrap_or_default();
+                        let public = owner.as_ref().and_then(|o| state.delivery_public.get(o).cloned());
+                        match (public, vodozemac::Ed25519Signature::from_base64(signature), crate::store::delivery::signed_message(&ciphertext, &device)) {
+                            (Some(public), Ok(signature), Ok(message)) => <[u8; 32]>::try_from(public.as_slice())
+                                .ok()
+                                .and_then(|p| vodozemac::Ed25519PublicKey::from_slice(&p).ok())
+                                .is_some_and(|key| key.verify(&message, &signature).is_ok()),
+                            _ => false,
+                        }
+                    } else {
+                        let presented = r["access"]["sealed"].as_str().and_then(|k| vodozemac::base64_decode(k).ok());
+                        let hash: Option<String> = presented
+                            .filter(|k| k.len() == 16)
+                            .map(|k| sha2::Sha256::digest(&k).iter().map(|b| format!("{b:02x}")).collect());
+                        let stored = owner.and_then(|o| state.delivery_access.get(&o).cloned());
+                        hash.is_some() && hash == stored
+                    };
+                    if !accepted || (revoked && !checking) {
                         return respond(403, json!({ "error": "access_denied" }));
                     }
                     if revoked {
@@ -492,7 +511,16 @@ impl Transport for FakeServer {
                 if hash.len() != 32 {
                     return respond(400, json!({ "error": "bad_request" }));
                 }
+                let public = body.get("access_public_key").filter(|v| !v.is_null()).map(|v| v.as_str().and_then(|k| vodozemac::base64_decode(k).ok()).unwrap_or_default());
+                if public.as_ref().is_some_and(|p| p.len() != 32) {
+                    return respond(400, json!({ "error": "bad_request" }));
+                }
                 state.delivery_access.insert(user.clone(), hash.iter().map(|b| format!("{b:02x}")).collect());
+                // Like the real server: a call without a public key CLEARS the stored one (it belonged to the previous delivery key).
+                match public {
+                    Some(p) => state.delivery_public.insert(user.clone(), p),
+                    None => state.delivery_public.remove(&user),
+                };
                 respond(200, json!({ "ok": true }))
             }
             "mailbox-fetch" => {

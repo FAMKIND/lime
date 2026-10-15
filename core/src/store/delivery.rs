@@ -5,6 +5,12 @@
 //! "lime-access-v1")` (16 bytes) and no user token, so the server learns the recipient but not the sender.
 //! The server stores only `SHA-256(access_key)`. Blocking someone rotates the key, which makes their sealed
 //! sends fail. Keys never leave the encrypted database and never appear in an error or a log.
+//!
+//! **Signed access (LIME-139).** The access key is a reusable capability: anyone who sees one request (a future mesh relay) could message
+//! that person. So a sealed send now carries a **signature** instead: both sides derive an Ed25519 key pair from the delivery key
+//! (`seed = HKDF-SHA256(delivery_key, "lime-access-sign-v1")`, 32 bytes), the owner uploads the PUBLIC key, and a sender signs
+//! `"lime-access-v2" || SHA-256(ciphertext) || to_device (16 raw UUID bytes)`, valid for that message to that device only. The older
+//! access-key hash is still uploaded during the overlap (remove it before TestFlight).
 
 use hkdf::Hkdf;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -15,6 +21,8 @@ use super::{db_err, StoreError};
 
 const KEY_BYTES: usize = 32;
 pub(crate) const ACCESS_INFO: &[u8] = b"lime-access-v1";
+pub(crate) const SIGN_INFO: &[u8] = b"lime-access-sign-v1";
+pub(crate) const SIGNED_LABEL: &[u8] = b"lime-access-v2";
 
 /// A new random delivery key.
 pub(crate) fn random_key() -> Vec<u8> {
@@ -35,9 +43,30 @@ pub(crate) fn access_hash_b64(delivery_key: &[u8]) -> String {
     vodozemac::base64_encode(Sha256::digest(access_key(delivery_key)))
 }
 
-/// What a sealed send presents, base64.
-pub(crate) fn access_key_b64(delivery_key: &[u8]) -> String {
-    vodozemac::base64_encode(access_key(delivery_key))
+/// The Ed25519 key pair both sides derive from a delivery key.
+fn signing_key(delivery_key: &[u8]) -> Ed25519SecretKey {
+    let mut seed = [0u8; 32];
+    Hkdf::<Sha256>::new(None, delivery_key).expand(SIGN_INFO, &mut seed).expect("32 bytes is a valid HKDF-SHA256 length");
+    Ed25519SecretKey::from_slice(&seed)
+}
+
+/// What the owner uploads beside the hash: the base64 of the public key of the pair derived from the delivery key.
+pub(crate) fn access_public_key_b64(delivery_key: &[u8]) -> String {
+    signing_key(delivery_key).public_key().to_base64()
+}
+
+/// The bytes a sender signs for one message to one device: the label, SHA-256 of the ciphertext and the device's 16 raw UUID bytes.
+pub(crate) fn signed_message(ciphertext: &[u8], to_device: &str) -> Result<Vec<u8>, StoreError> {
+    let device = uuid::Uuid::parse_str(to_device).map_err(|_| StoreError::BadMessage)?;
+    let mut message = SIGNED_LABEL.to_vec();
+    message.extend_from_slice(&Sha256::digest(ciphertext));
+    message.extend_from_slice(device.as_bytes());
+    Ok(message)
+}
+
+/// What a sealed send presents, base64: the signature for this ciphertext and this recipient device (see the module notes).
+pub(crate) fn access_signature_b64(delivery_key: &[u8], ciphertext: &[u8], to_device: &str) -> Result<String, StoreError> {
+    Ok(signing_key(delivery_key).sign(&signed_message(ciphertext, to_device)?).to_base64())
 }
 
 // ---------------------------------------------------------------- my own key
@@ -198,5 +227,55 @@ mod tests {
         assert_ne!(a, access_key(&[2u8; 32]));
         // The hash the server stores is of the access key, not of the delivery key.
         assert_ne!(access_hash_b64(&[1u8; 32]), vodozemac::base64_encode(Sha256::digest([1u8; 32])));
+    }
+
+    const VECTOR_KEY: [u8; 32] = [7u8; 32];
+    const VECTOR_DEVICE: &str = "0a0b0c0d-0e0f-4a1b-8c2d-3e4f5a6b7c8d";
+
+    #[test]
+    fn signed_access_fixed_test_vector_so_every_platform_derives_the_same_pair_and_signature() {
+        // Must never change: another platform checks the same vector. Computed independently: HKDF-SHA256 with Python's hmac, the Ed25519
+        // public key and signature with OpenSSL 3.6 (`openssl pkey` / `openssl pkeyutl -sign -rawin`), not with this code.
+        let public = vodozemac::Ed25519PublicKey::from_base64(&access_public_key_b64(&VECTOR_KEY)).unwrap();
+        assert_eq!(
+            public.as_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "48f64e6a9932b684a073c9b47cf913871345f5b2dc9bd3123227d611589493cc"
+        );
+        let signature = vodozemac::Ed25519Signature::from_base64(&access_signature_b64(&VECTOR_KEY, b"hello lime", VECTOR_DEVICE).unwrap()).unwrap();
+        assert_eq!(
+            vodozemac::base64_encode(signature.to_bytes()).trim_end_matches('='),
+            "lGF3ieAzmxRpRrgVd7Lzb9e7scE4/uIoNcrC0iK5qC0Am3PzXUcVooFUb5VY4ngPIcKEoQy+bWYirSproxhHAQ"
+        );
+        let message = signed_message(b"hello lime", VECTOR_DEVICE).unwrap();
+        assert_eq!(message.len(), 14 + 32 + 16);
+        assert!(message.starts_with(b"lime-access-v2"));
+        assert!(public.verify(&message, &signature).is_ok());
+    }
+
+    #[test]
+    fn a_signature_is_good_for_one_ciphertext_and_one_device_only() {
+        let public = vodozemac::Ed25519PublicKey::from_base64(&access_public_key_b64(&VECTOR_KEY)).unwrap();
+        let verify = |ciphertext: &[u8], device: &str, signature: &str| {
+            let signature = vodozemac::Ed25519Signature::from_base64(signature).unwrap();
+            public.verify(&signed_message(ciphertext, device).unwrap(), &signature).is_ok()
+        };
+        let signature = access_signature_b64(&VECTOR_KEY, b"hello lime", VECTOR_DEVICE).unwrap();
+        assert!(verify(b"hello lime", VECTOR_DEVICE, &signature));
+        assert!(!verify(b"hello lime!", VECTOR_DEVICE, &signature), "a changed byte of the ciphertext");
+        assert!(!verify(b"hello lime", "0a0b0c0d-0e0f-4a1b-8c2d-3e4f5a6b7c8e", &signature), "another device");
+        assert!(access_signature_b64(&VECTOR_KEY, b"hello lime", "not-a-uuid").is_err());
+    }
+
+    #[test]
+    fn a_new_delivery_key_has_a_new_pair_and_the_old_signature_fails_against_it() {
+        let old = random_key();
+        let new = random_key();
+        assert_ne!(access_public_key_b64(&old), access_public_key_b64(&new));
+        let signature = vodozemac::Ed25519Signature::from_base64(&access_signature_b64(&old, b"ct", VECTOR_DEVICE).unwrap()).unwrap();
+        let new_public = vodozemac::Ed25519PublicKey::from_base64(&access_public_key_b64(&new)).unwrap();
+        assert!(new_public.verify(&signed_message(b"ct", VECTOR_DEVICE).unwrap(), &signature).is_err(), "a blocked sender's old key proves nothing");
+        // The pair is not the delivery key itself, and the same key always gives the same pair.
+        assert_ne!(access_public_key_b64(&VECTOR_KEY), vodozemac::Ed25519SecretKey::from_slice(&VECTOR_KEY).public_key().to_base64());
+        assert_eq!(access_public_key_b64(&VECTOR_KEY), access_public_key_b64(&VECTOR_KEY));
     }
 }

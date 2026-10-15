@@ -496,6 +496,10 @@ const MIGRATIONS: &[&str] = &[
     // and their key must have been renewed as many times; `last_rekey_at` (when I last renewed mine) bounds the wait.
     "ALTER TABLE group_call_participants ADD COLUMN rekeys_at_join INTEGER NOT NULL DEFAULT 0;
      ALTER TABLE group_calls ADD COLUMN last_rekey_at INTEGER NOT NULL DEFAULT 0;",
+    // 31 (LIME-139): signed access. Every phone uploaded only the hash of its delivery key before; the server now also needs the PUBLIC key of
+    // the signing pair derived from it. Marking the key "not uploaded" makes the first launch after updating upload both again (before the
+    // next send), as an upload that did not get through always is.
+    "UPDATE delivery_state SET uploaded = 0;",
 ];
 
 /// The schema version this build writes.

@@ -2,7 +2,7 @@
 // These run against the LOCAL stack only (see supabase/test.sh).
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { sha256, toBase64 } from "../functions/_shared/bytes.ts";
+import { fromBase64, fromHex, sha256, toBase64 } from "../functions/_shared/bytes.ts";
 
 export const API_URL = must("LIME_API_URL");
 export const ANON_KEY = must("LIME_ANON_KEY");
@@ -158,4 +158,32 @@ export async function setAccessKey(user: TestUser): Promise<string> {
 
 export function ciphertext(size = 64): string {
   return toBase64(randomBytes(size));
+}
+
+/** A signer for signed access (LIME-139): the server only gets the public key. */
+export type AccessSigner = {
+  publicKey: string;
+  /** The `signed` value for one message to one device: Ed25519 over "lime-access-v2" || SHA-256(ciphertext) || the device's 16 UUID bytes. */
+  sign: (ciphertextBase64: string, toDevice: string) => Promise<string>;
+};
+
+/** Gives `user` signed access (and the old access key too, as the app does during the overlap): returns the signer and the access key. */
+export async function setSignedAccess(user: TestUser): Promise<{ signer: AccessSigner; accessKey: string }> {
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair;
+  const publicKey = toBase64(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
+  const accessKey = randomBytes(16);
+  const res = await call("delivery-access-set", user.token, { access_key_hash: toBase64(await sha256Bytes(accessKey)), access_public_key: publicKey });
+  if (res.status !== 200) throw new Error(`delivery-access-set failed: ${res.status} ${JSON.stringify(res.body)}`);
+  const signer: AccessSigner = {
+    publicKey,
+    sign: async (ct, toDevice) => {
+      const message = new Uint8Array([
+        ...new TextEncoder().encode("lime-access-v2"),
+        ...(await sha256Bytes(fromBase64(ct))),
+        ...fromHex(toDevice.replaceAll("-", "")),
+      ]);
+      return toBase64(new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, pair.privateKey, message)));
+    },
+  };
+  return { signer, accessKey: toBase64(accessKey) };
 }

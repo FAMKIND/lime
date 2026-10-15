@@ -764,7 +764,8 @@ impl LimeStore {
                 wire.extend_from_slice(&bytes);
                 hashes.push(hex_sha256(&wire));
                 let access = match delivery_key {
-                    Some(key) => json!({ "sealed": delivery::access_key_b64(key) }),
+                    // Signed (LIME-139): valid for this ciphertext and this device only, so a relay cannot reuse it.
+                    Some(key) => json!({ "signed": delivery::access_signature_b64(key, &wire, &device.device_id).map_err(SendError::from)? }),
                     None => json!({ "identified": true }),
                 };
                 let request = json!({
@@ -907,8 +908,8 @@ impl LimeStore {
 
     // ------------------------------------------------------------ the delivery key
 
-    /// Puts the hash of my delivery key on the server if it is not there (the first time, or after a block
-    /// rotated it).
+    /// Puts the hash of my delivery key and the public key of its signing pair on the server if they are not there (the first time, after a block
+    /// rotated it, or the first launch after an update that added the public key).
     fn ensure_delivery_access(&self, transport: &Arc<dyn Transport>, token: &str) -> Result<(), StoreError> {
         let (key, uploaded) = self.with_conn(|conn| delivery::current(conn, now_ms()))?;
         if uploaded {
@@ -918,7 +919,8 @@ impl LimeStore {
             transport,
             Some(token),
             "delivery-access-set",
-            &json!({ "access_key_hash": delivery::access_hash_b64(&key) }),
+            // The hash stays during the overlap (older builds send with the access key); the public key is what signed sends are checked against.
+            &json!({ "access_key_hash": delivery::access_hash_b64(&key), "access_public_key": delivery::access_public_key_b64(&key) }),
         )?;
         check(status)?;
         self.with_conn(|conn| delivery::mark_uploaded(conn, &key))
