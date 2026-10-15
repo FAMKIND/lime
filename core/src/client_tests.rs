@@ -3230,6 +3230,97 @@ fn everyone_in_a_group_call_sees_the_same_four_emoji_which_change_when_people_jo
 }
 
 #[test]
+fn after_someone_leaves_the_emoji_wait_until_every_renewed_key_is_in_and_then_agree() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    for p in [&alice, &bob, &carol] {
+        p.store.join_group_call(call.call_id.clone()).unwrap();
+        gc_settle(&[&alice, &bob, &carol], &transport);
+    }
+    let before = gc_emoji(&alice, &call.call_id).expect("all keys are in");
+    assert_eq!(gc_emoji(&carol, &call.call_id), Some(before.clone()));
+    // Bob leaves; only his leave travels. Alice and Carol each renew their key (queued, not sent yet).
+    bob.store.leave_group_call(call.call_id.clone()).unwrap();
+    gc_flush(&bob, &transport);
+    sync(&alice, &transport);
+    sync(&carol, &transport);
+    let state = alice.store.group_call_emoji_state(call.call_id.clone()).unwrap();
+    assert_eq!((state.ready, state.waiting, state.emoji.len()), (false, 1, 0), "Alice renewed hers but Carol's new key has not arrived: waiting, not the old emoji");
+    assert!(gc_emoji(&carol, &call.call_id).is_none(), "Carol is waiting for Alice's too");
+    // Carol's new key reaches Alice: Alice now holds everything.
+    gc_flush(&carol, &transport);
+    sync(&alice, &transport);
+    let alice_after = gc_emoji(&alice, &call.call_id).expect("Alice has every renewed key");
+    assert_ne!(alice_after, before, "someone left: new emoji");
+    assert!(gc_emoji(&carol, &call.call_id).is_none(), "Carol still waits for Alice's new key: she does not show a different four");
+    // Alice's reaches Carol: the same four everywhere.
+    gc_flush(&alice, &transport);
+    sync(&carol, &transport);
+    assert_eq!(gc_emoji(&carol, &call.call_id), Some(alice_after));
+}
+
+#[test]
+fn a_join_changes_the_emoji_without_waiting_and_a_renewal_that_never_comes_does_not_wait_for_ever() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let two = gc_emoji(&alice, &call.call_id).unwrap();
+    // Carol joins (a join renews nobody's key): her join and key travel together, so nobody waits for the renewals a leave needs, and the
+    // four change and agree once everyone's keys are in.
+    carol.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let three = gc_emoji(&alice, &call.call_id).unwrap();
+    assert_ne!(three, two, "someone joined: new emoji");
+    assert_eq!(gc_emoji(&carol, &call.call_id), Some(three.clone()));
+    assert_eq!(gc_emoji(&bob, &call.call_id), Some(three));
+    // Carol leaves; Alice renews, Bob renews, but suppose Bob's new key never reaches Alice (his phone missed the leave): after the settle time
+    // the emoji show what Alice holds rather than waiting for ever.
+    carol.store.leave_group_call(call.call_id.clone()).unwrap();
+    gc_flush(&carol, &transport);
+    sync(&alice, &transport);
+    assert!(gc_emoji(&alice, &call.call_id).is_none(), "waiting for Bob's renewal");
+    {
+        let conn = alice.store.lock();
+        conn.execute("UPDATE group_calls SET last_rekey_at = ?2 WHERE call_id = ?1", rusqlite::params![call.call_id, crate::store::now_ms() - 60_000]).unwrap();
+    }
+    assert!(gc_emoji(&alice, &call.call_id).is_some(), "the settle time has passed: no waiting for ever");
+}
+
+#[test]
+fn a_group_counts_as_custom_named_when_it_was_renamed_or_made_with_another_name_than_the_default() {
+    assert_eq!(crate::default_group_name(vec![]), "New group");
+    assert_eq!(crate::default_group_name(vec!["Lee".into()]), "Lee");
+    assert_eq!(crate::default_group_name(vec!["Lee".into(), "Sam".into()]), "Lee & Sam");
+    assert_eq!(crate::default_group_name(vec!["Lee".into(), "Sam".into(), "Priya".into()]), "Lee, Sam & Priya");
+    assert_eq!(crate::default_group_name(vec!["Lee".into(), "Sam".into(), "Priya".into(), "Max".into(), "Ana".into()]), "Lee, Sam, Priya +2");
+    assert_eq!(crate::default_group_name(vec!["x".repeat(60)]).chars().count(), 50);
+    let server = FakeServer::new();
+    let (alice, _transport) = party(&server, "alice", 1);
+    let (_bob, _) = party(&server, "bob", 2);
+    let (_carol, _) = party(&server, "carol", 3);
+    {
+        let conn = alice.store.lock();
+        conn.execute("INSERT OR REPLACE INTO people (id, name, tone) VALUES ('bob', 'Bob Lee', 1), ('carol', 'Carol Wu', 2)", []).unwrap();
+    }
+    let by_default = alice.store.create_group("Bob & Carol".into(), None, vec!["bob".into(), "carol".into()]).unwrap();
+    assert!(!alice.store.group_is_custom_named(by_default.clone()).unwrap(), "the name the first-names rule gives: not a chosen name");
+    let typed = alice.store.create_group("Grade 4 Team".into(), None, vec!["bob".into(), "carol".into()]).unwrap();
+    assert!(alice.store.group_is_custom_named(typed).unwrap(), "a name a person typed");
+    alice.store.rename_group(by_default.clone(), "Bob & Carol".into()).unwrap();
+    assert!(alice.store.group_is_custom_named(by_default).unwrap(), "once renamed, even to the same words: a person chose it");
+    // A member whose name is not known cannot be compared: the group's own name is shown.
+    let unknown = alice.store.create_group("Dee".into(), None, vec!["dee".into()]).unwrap();
+    assert!(alice.store.group_is_custom_named(unknown).unwrap());
+}
+
+#[test]
 fn a_phone_that_holds_another_key_for_someone_shows_other_emoji() {
     let server = FakeServer::new();
     let (alice, bob, _carol, transport, chat) = call_team(&server);

@@ -265,7 +265,7 @@ impl LimeStore {
     /// `ready` until every person in the call has sent their key. See `call_emoji::group_emoji_for`.
     pub fn group_call_emoji_state(&self, call_id: String) -> Result<GroupCallEmojiState, StoreError> {
         self.with_conn(|conn| {
-            let (waiting, indexes) = rules::emoji_state(conn, &call_id)?;
+            let (waiting, indexes) = rules::emoji_state(conn, &call_id, now_ms())?;
             Ok(match indexes {
                 Some(indexes) => GroupCallEmojiState { ready: true, waiting: 0, emoji: crate::call_emoji::emoji_records(indexes) },
                 None => GroupCallEmojiState { ready: false, waiting, emoji: Vec::new() },

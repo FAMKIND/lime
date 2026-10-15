@@ -70,6 +70,10 @@ final class StoreGroupCallCore: GroupCallCore {
         try? store?.core?.groupCallEmojiState(callId: callID)
     }
 
+    func isCustomNamed(conversationID: String) -> Bool {
+        (try? store?.core?.groupIsCustomNamed(conversationId: conversationID)) ?? true
+    }
+
     func title(of conversationID: String) -> String {
         store?.conversations.first { $0.id == conversationID }?.title ?? "Group"
     }

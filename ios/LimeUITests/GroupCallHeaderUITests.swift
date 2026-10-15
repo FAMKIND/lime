@@ -3,9 +3,9 @@ import XCTest
 /// The group call's header (LIME-147): the 1:1 call's look, the timer and the four-emoji check, with the explainer sheet.
 @MainActor
 final class GroupCallHeaderUITests: XCTestCase {
-    private func launch() -> XCUIApplication {
+    private func launch(_ screen: String = "group-call-4") -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "group-call-4"]
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", screen]
         app.launch()
         return app
     }
@@ -43,5 +43,15 @@ final class GroupCallHeaderUITests: XCTestCase {
         speaker.tap()
         XCTAssertEqual(app.buttons["Layout: Speaker"].value as? String, "Selected", "the choice is checked at once")
         XCTAssertEqual(app.buttons["Layout: Grid"].value as? String, "")
+    }
+
+    func testAGroupNamedByAPersonShowsItsNameWithTheCountAndADefaultNamedOneShowsThePeople() {
+        let named = launch("group-call-named-4")
+        XCTAssertTrue(named.buttons["People in the call, 4: Grade 4 Team"].waitForExistence(timeout: 15), "a chosen name names the call")
+        named.terminate()
+        let plain = launch("group-call-4")
+        XCTAssertTrue(plain.buttons["People in the call, 4: Shem, Jean, Lee, Sam"].waitForExistence(timeout: 15), "a default-named group shows the people")
+        plain.buttons["People in the call, 4: Shem, Jean, Lee, Sam"].tap()
+        XCTAssertTrue(plain.navigationBars["Shem, Jean, Lee, Sam"].waitForExistence(timeout: 5), "the people sheet's title follows the same rule")
     }
 }

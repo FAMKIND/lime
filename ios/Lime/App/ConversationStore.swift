@@ -940,7 +940,9 @@ final class ConversationStore {
         case let name? where name.hasPrefix("group-call-"):
             loadDemoTeachers()
             let group = demoMakeGroup(name: "Grade 4 Team", emoji: "🍎", memberIDs: ["lee", "sam", "priya.nair"], owner: true)
-            groupCalls.demoCall(people: Int(name.dropFirst("group-call-".count)) ?? 3, conversationID: group)
+            // `group-call-named-N`: the group's name was chosen by a person, so it names the call (otherwise the people do).
+            let rest = String(name.dropFirst("group-call-".count))
+            groupCalls.demoCall(people: Int(rest.replacingOccurrences(of: "named-", with: "")) ?? 3, conversationID: group, customName: rest.hasPrefix("named-"))
         case "group", "group-details", "new-group", "new-group-name":
             loadDemoTeachers()
             let id = demoMakeGroup(name: "Grade 4 Team", emoji: "🍎", memberIDs: ["lee", "sam", "priya.nair"], owner: true)

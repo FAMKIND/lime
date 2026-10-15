@@ -130,18 +130,8 @@ struct GroupPickerScreen: View {
 enum GroupNames {
     static let limit = 50
 
-    static func defaultName(firstNames: [String]) -> String {
-        let names = firstNames.filter { !$0.isEmpty }
-        let text: String
-        switch names.count {
-        case 0: text = "New group"
-        case 1: text = names[0]
-        case 2: text = "\(names[0]) & \(names[1])"
-        case 3: text = "\(names[0]), \(names[1]) & \(names[2])"
-        default: text = "\(names[0]), \(names[1]), \(names[2]) +\(names.count - 3)"
-        }
-        return String(text.prefix(limit))
-    }
+    /// The rule lives in the core (so Android shows the same names, and the core can tell a chosen name from the default).
+    static func defaultName(firstNames: [String]) -> String { defaultGroupName(firstNames: firstNames) }
 }
 
 struct GroupNameScreen: View {

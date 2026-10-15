@@ -491,6 +491,11 @@ const MIGRATIONS: &[&str] = &[
     // hashes and from my own key's hash.
     "ALTER TABLE group_call_participants ADD COLUMN key_hash BLOB;
      ALTER TABLE group_call_participants ADD COLUMN key_index INTEGER;",
+    // 30 (LIME-147b): no mismatched emoji during a rekey. `rekeys_at_join` is how many times I had renewed my own key when I first saw this
+    // person (a renewal happens once per person who leaves, on every phone), so the renewals since then are `my_key_index - rekeys_at_join`
+    // and their key must have been renewed as many times; `last_rekey_at` (when I last renewed mine) bounds the wait.
+    "ALTER TABLE group_call_participants ADD COLUMN rekeys_at_join INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE group_calls ADD COLUMN last_rekey_at INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// The schema version this build writes.

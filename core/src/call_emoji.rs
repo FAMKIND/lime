@@ -307,16 +307,21 @@ pub struct GroupCallKey {
     pub key: Vec<u8>,
 }
 
-/// The four emoji for a group call (LIME-147), from `SHA-256("lime-group-call-emoji-v1" || call_id || for each participant, sorted by
-/// participant id (byte order of the id as sent): participant_id || SHA-256(that participant's current key))`, the first four bytes
-/// indexing the list. Everyone in the call, me included, gets the same four exactly when every phone holds the same current keys for the
-/// same people: a swapped key, or a hidden extra participant, changes them on someone's screen.
+/// The four emoji for a group call (LIME-147, v2 in LIME-147b): the first four bytes of
+/// `SHA-256("lime-group-call-emoji-v2" || len32(call_id) || call_id || u32(count) || for each participant, sorted by participant id (byte
+/// order of the id as sent): len32(participant_id) || participant_id || SHA-256(that participant's current key))`, every length and the count
+/// a big-endian u32, the first four bytes indexing the list. Every variable-length field carries its length, so no two different calls or
+/// groups of people can make the same input. Everyone in the call, me included, gets the same four exactly when every phone holds the same
+/// current keys for the same people: a swapped key, or a hidden extra participant, changes them on someone's screen.
 pub(crate) fn group_emoji_for(call_id: &str, mut people: Vec<(String, [u8; 32])>) -> [usize; 4] {
     people.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
     let mut hasher = Sha256::new();
-    hasher.update(b"lime-group-call-emoji-v1");
+    hasher.update(b"lime-group-call-emoji-v2");
+    hasher.update((call_id.len() as u32).to_be_bytes());
     hasher.update(call_id.as_bytes());
+    hasher.update((people.len() as u32).to_be_bytes());
     for (participant, key_hash) in &people {
+        hasher.update((participant.len() as u32).to_be_bytes());
         hasher.update(participant.as_bytes());
         hasher.update(key_hash);
     }
@@ -384,7 +389,7 @@ mod tests {
         assert_ne!(base, emoji_for("call-9", "01:02:03", "AB:CD:EF"), "the roles are not interchangeable");
     }
 
-    const GROUP_VECTOR: [usize; 4] = [185, 93, 172, 216];
+    const GROUP_VECTOR: [usize; 4] = [60, 86, 17, 90];
 
     fn key(byte: u8) -> Vec<u8> {
         vec![byte; 32]
@@ -392,7 +397,7 @@ mod tests {
 
     #[test]
     fn group_emoji_fixed_test_vector_so_every_platform_shows_the_same_four() {
-        // Never change: another platform checks the same vector (the digest was also computed independently with Python's hashlib).
+        // Never change: another platform checks the same vector (the digest was also computed independently with Python's hashlib, v2).
         let call = "ab".repeat(32);
         let people = vec![
             GroupCallKey { participant: "0a".repeat(16), key: key(1) },
@@ -430,5 +435,20 @@ mod tests {
         assert_ne!(base, group_call_emoji("00".repeat(32), vec![a.clone(), b.clone()]), "another call");
         let swapped = vec![GroupCallKey { participant: a.participant.clone(), key: b.key.clone() }, GroupCallKey { participant: b.participant.clone(), key: a.key.clone() }];
         assert_ne!(base, group_call_emoji(call, swapped), "the same keys given to the other people");
+    }
+
+    #[test]
+    fn group_emoji_input_is_unambiguous_where_the_first_version_was_not() {
+        let hash = key_hash(&key(5));
+        // The call id and the participant id used to be concatenated bare: moving a character from one to the other made the same bytes.
+        let a = group_emoji_for("ab", vec![("c".to_owned(), hash)]);
+        let b = group_emoji_for("a", vec![("bc".to_owned(), hash)]);
+        assert_ne!(a, b, "the boundary between the call id and a participant id matters");
+        // The same between two participant ids.
+        let c = group_emoji_for("call", vec![("ab".to_owned(), hash), ("c".to_owned(), hash)]);
+        let d = group_emoji_for("call", vec![("a".to_owned(), hash), ("bc".to_owned(), hash)]);
+        assert_ne!(c, d);
+        // And the label says which version this is: v1's vector is not v2's.
+        assert_ne!(group_emoji_for(&"ab".repeat(32), vec![("0a".repeat(16), key_hash(&key(1)))]), [185, 93, 172, 216]);
     }
 }

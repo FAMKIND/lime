@@ -55,8 +55,58 @@ pub struct GroupDetails {
     pub max_members: u32,
 }
 
+/// The name a new group starts with, from the first names of the people picked (the person making it is not counted): one name alone, "A & B",
+/// "A, B & C", then "A, B, C +N"; "New group" for nobody; at most 50 characters. The app suggests it when a group is made, and
+/// `group_is_custom_named` compares a group's name with it.
+#[uniffi::export]
+pub fn default_group_name(first_names: Vec<String>) -> String {
+    let names: Vec<&String> = first_names.iter().filter(|n| !n.is_empty()).collect();
+    let text = match names.len() {
+        0 => "New group".to_owned(),
+        1 => names[0].clone(),
+        2 => format!("{} & {}", names[0], names[1]),
+        3 => format!("{}, {} & {}", names[0], names[1], names[2]),
+        n => format!("{}, {}, {} +{}", names[0], names[1], names[2], n - 3),
+    };
+    text.chars().take(crate::protocol::group::MAX_NAME_CHARS).collect()
+}
+
 #[uniffi::export]
 impl LimeStore {
+    /// Whether the group's name was chosen by a person (LIME-147b): it was renamed at some point, or it was made with a name other than the
+    /// default the first-names rule gives for the people it was made with. A group still carrying its default name is better shown by the
+    /// people in it (the call screen does). Decided from the group's own ops, so every phone gives the same answer; a person whose name is
+    /// not known counts as "a name was chosen" (it cannot be compared).
+    pub fn group_is_custom_named(&self, conversation_id: String) -> Result<bool, StoreError> {
+        let group_id = groups::group_id_of(&conversation_id).ok_or(StoreError::NotFound)?.to_owned();
+        self.with_conn(|conn| {
+            let mut statement = conn
+                .prepare("SELECT op_type, payload FROM group_ops WHERE group_id = ?1 AND op_type IN ('group.create', 'group.rename')")
+                .map_err(db_err)?;
+            let rows = statement
+                .query_map(rusqlite::params![group_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .map_err(db_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(db_err)?;
+            if rows.iter().any(|(kind, _)| kind == "group.rename") {
+                return Ok(true);
+            }
+            let Some((_, payload)) = rows.into_iter().find(|(kind, _)| kind == "group.create") else { return Ok(true) };
+            let payload: serde_json::Value = serde_json::from_str(&payload).map_err(|_| StoreError::BadMessage)?;
+            let created_name = payload.get("name").and_then(serde_json::Value::as_str).unwrap_or_default();
+            let members: Vec<String> = payload.get("members").and_then(serde_json::Value::as_array).map(|a| a.iter().filter_map(|m| m.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+            let mut firsts = Vec::new();
+            for user in &members {
+                let name: Option<String> = conn.query_row("SELECT name FROM people WHERE id = ?1", rusqlite::params![user], |r| r.get(0)).optional().map_err(db_err)?;
+                match name.as_deref().and_then(|n| n.split_whitespace().next()) {
+                    Some(first) => firsts.push(first.to_owned()),
+                    None => return Ok(true),
+                }
+            }
+            Ok(created_name != default_group_name(firsts))
+        })
+    }
+
     /// Makes a group with the people listed (not counting me; I am the owner) and queues the news to each of them.
     /// Returns the conversation id. Nothing is sent yet: the next delivery does that.
     pub fn create_group(&self, name: String, emoji: Option<String>, members: Vec<String>) -> Result<String, StoreError> {

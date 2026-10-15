@@ -130,30 +130,45 @@ pub(crate) fn active_participants(conn: &Connection, call_id: &str) -> Result<Ve
     Ok(rows)
 }
 
-/// The call's four-emoji check (LIME-147): `(how many people's keys I am still waiting for, the four indexes once I hold everyone's)`. Everyone
-/// in the call counts, me included (my own current key is the one in the call row); with nobody else's key missing and my own key made, the
-/// four come from `call_emoji::group_emoji_for`.
-pub(crate) fn emoji_state(conn: &Connection, call_id: &str) -> Result<(u32, Option<[usize; 4]>), StoreError> {
+/// How long after I renew my key the emoji wait for the others' renewed keys (a person's phone that never renews, for a leave it never saw,
+/// must not keep the chip waiting for ever): after this the emoji show whatever keys are held.
+const REKEY_SETTLE_MS: i64 = 15_000;
+
+/// The call's four-emoji check (LIME-147, LIME-147b): `(how many people's keys I am still waiting for, the four indexes once I hold everyone's)`.
+/// Everyone in the call counts, me included (my own current key is the one in the call row). I wait for a person's key when it has not arrived,
+/// and, after someone left, when it has not been renewed as many times as mine has since I first saw them (every phone renews once per leave;
+/// without this the phones would briefly show different emoji while the new keys travel). With nothing missing, the four come from
+/// `call_emoji::group_emoji_for`.
+pub(crate) fn emoji_state(conn: &Connection, call_id: &str, now: i64) -> Result<(u32, Option<[usize; 4]>), StoreError> {
     let Some(call) = call_row(conn, call_id)?.filter(|c| c.joined && c.ended_at.is_none()) else { return Ok((0, None)) };
     let (Some(mine), Some(my_key)) = (call.my_participant.as_deref(), call.my_key.as_deref()) else { return Ok((0, None)) };
+    let last_rekey_at: i64 = conn.query_row("SELECT last_rekey_at FROM group_calls WHERE call_id = ?1", params![call_id], |r| r.get(0)).map_err(db_err)?;
+    let settling = last_rekey_at > 0 && now - last_rekey_at <= REKEY_SETTLE_MS;
     let mut statement = conn
-        .prepare("SELECT participant, key_hash FROM group_call_participants WHERE call_id = ?1 AND left_at IS NULL")
+        .prepare("SELECT participant, key_hash, key_index, rekeys_at_join FROM group_call_participants WHERE call_id = ?1 AND left_at IS NULL")
         .map_err(db_err)?;
     let rows = statement
-        .query_map(params![call_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<Vec<u8>>>(1)?)))
+        .query_map(params![call_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<Vec<u8>>>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, i64>(3)?)))
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
     let mut people: Vec<(String, [u8; 32])> = Vec::new();
     let mut waiting = 0u32;
-    for (participant, hash) in rows {
+    for (participant, hash, index, rekeys_at_join) in rows {
         if participant == mine {
             people.push((participant, crate::call_emoji::key_hash(my_key)));
-        } else if let Some(hash) = hash.and_then(|h| <[u8; 32]>::try_from(h.as_slice()).ok()) {
-            people.push((participant, hash));
-        } else {
-            waiting += 1;
+            continue;
         }
+        let Some(hash) = hash.and_then(|h| <[u8; 32]>::try_from(h.as_slice()).ok()) else {
+            waiting += 1;
+            continue;
+        };
+        let renewals_due = (call.my_key_index as i64 - rekeys_at_join).max(0);
+        if settling && index.unwrap_or(0) < renewals_due {
+            waiting += 1;
+            continue;
+        }
+        people.push((participant, hash));
     }
     if waiting > 0 || people.is_empty() {
         return Ok((waiting, None));
@@ -227,7 +242,7 @@ fn rotate_my_key(conn: &Connection, call: &CallRow, me: &str, now: i64) -> Resul
     }
     let key = random_bytes32();
     let index = call.my_key_index + 1;
-    conn.execute("UPDATE group_calls SET my_key = ?2, my_key_index = ?3 WHERE call_id = ?1", params![call.call_id, key.to_vec(), index]).map_err(db_err)?;
+    conn.execute("UPDATE group_calls SET my_key = ?2, my_key_index = ?3, last_rekey_at = ?4 WHERE call_id = ?1", params![call.call_id, key.to_vec(), index, now]).map_err(db_err)?;
     // This phone must start sending with the new key too (the app sets it first, then the others get theirs): an event with MY participant,
     // the new key (raw bytes) and its index. Without it the phone would go on encrypting with the key everyone who left still holds.
     if let Some(mine) = call.my_participant.as_deref() {
@@ -327,8 +342,8 @@ fn add_participant(conn: &Connection, call: &CallRow, participant: &str, user: &
     }
     let added = conn
         .execute(
-            "INSERT OR IGNORE INTO group_call_participants (call_id, participant, user_id, device_id, joined_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![call.call_id, participant, user, device, now],
+            "INSERT OR IGNORE INTO group_call_participants (call_id, participant, user_id, device_id, joined_at, rekeys_at_join) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![call.call_id, participant, user, device, now, call.my_key_index as i64],
         )
         .map_err(db_err)?;
     Ok(added > 0)

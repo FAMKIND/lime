@@ -22,6 +22,8 @@ protocol GroupCallCore: AnyObject {
     func title(of conversationID: String) -> String
     /// The call's four-emoji check from everyone's current keys (all held by the core); not ready until every person's key is in.
     func emojiState(callID: String) -> GroupCallEmojiState?
+    /// A person chose this group's name (renamed it, or typed another than the default): the core decides, so every phone agrees.
+    func isCustomNamed(conversationID: String) -> Bool
 }
 
 /// One group call at a time (LIME-112b). A thin adapter: LimeCore decides everything about the call and its keys; LiveKit carries the
@@ -70,6 +72,8 @@ final class GroupCallManager {
     /// The four-emoji check (LIME-147): from everyone's current media keys; empty while any person's key has not arrived (`emojiWaiting`).
     private(set) var verificationEmoji: [CallEmoji] = []
     private(set) var emojiWaiting = false
+    /// The group's name was chosen by a person (LIME-147b): then it names the call; otherwise the people in it do.
+    private(set) var groupNameIsCustom = false
     private(set) var muted = false
     private(set) var cameraOn = false
     private(set) var speakerOn = false
@@ -251,6 +255,7 @@ final class GroupCallManager {
         for other in joined.participants where other.userId != "" { roster[info.callId, default: [:]][other.participant] = Person(id: other.userId, name: other.name) }
         callID = info.callId
         conversationID = info.conversationId
+        groupNameIsCustom = core.isCustomNamed(conversationID: info.conversationId)
         self.title = title
         video = info.video
         phase = .connecting
@@ -416,6 +421,15 @@ final class GroupCallManager {
             }
         }
     }
+
+    /// "Jean, Shem, Lee": the first names of the people in the call, in tile order.
+    var peopleNames: String {
+        tiles.map { $0.name.split(separator: " ").first.map(String.init) ?? $0.name }.joined(separator: ", ")
+    }
+
+    /// What names the call on screen (the header pill, the people sheet, the mini player): the group's own name when a person chose it
+    /// (renamed, or typed another than the default), else the people in the call.
+    var callTitle: String { groupNameIsCustom || tiles.isEmpty ? title : peopleNames }
 
     /// Asks the core for the emoji again: after every join, leave and key (the keys change when people come and go).
     func refreshEmoji() {
@@ -672,11 +686,12 @@ final class GroupCallManager {
 #if DEBUG
 extension GroupCallManager {
     /// Debug demo (`-lime-demo-screen group-call-N`): a group call on screen with N people and no network, for screenshots of the layout.
-    func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team", conversationID: String = "grp:demo") {
+    func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team", conversationID: String = "grp:demo", customName: Bool = false) {
         let names = ["Shem Chung", "Jean Park", "Lee Wong", "Sam Park", "Priya Nair", "Dee Ito", "Max Roy", "Ana Cruz", "Tom Lee", "Uma Das", "Vic Hale", "Wen Xu", "Yan Zhu"]
         // The demo starts from the default layout (the person's remembered choice would make tests and screenshots depend on the last run).
         chosenLayout = nil
         layoutDefaults.removeObject(forKey: Self.layoutKey)
+        groupNameIsCustom = customName
         phase = .active
         self.video = video
         self.title = title

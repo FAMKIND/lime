@@ -72,7 +72,7 @@ struct GroupCallView: View {
     /// encryption chip. Nothing on the right; Minimise is in the controls row.
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            CallNamePill(name: names, count: call.tiles.count, accessibilityLabel: "People in the call, \(call.tiles.count): \(names)", action: { showPeople = true }) { people }
+            CallNamePill(name: call.callTitle, count: call.tiles.count, accessibilityLabel: "People in the call, \(call.tiles.count): \(call.callTitle)", action: { showPeople = true }) { people }
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 8) {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -89,11 +89,6 @@ struct GroupCallView: View {
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 8)
-    }
-
-    /// "Jean, Shem, Lee": the first names of the people in the call, in tile order.
-    private var names: String {
-        call.tiles.map { $0.name.split(separator: " ").first.map(String.init) ?? $0.name }.joined(separator: ", ")
     }
 
     /// Up to three of the people's pictures, overlapping.
@@ -384,7 +379,7 @@ struct GroupPeopleSheet: View {
                     }
                 }
             }
-            .navigationTitle("In this call")
+            .navigationTitle(store.groupCalls.callTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }

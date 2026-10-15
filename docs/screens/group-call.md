@@ -68,7 +68,7 @@ spoken, the first other person.
 One row at the bottom (landscape included): mute, camera (video calls), flip camera, **minimise**, speaker, **leave**. **Leave is always
 visible**: the buttons shrink (56, 50, then 44 dp) before anything would scroll. Targets are at least 44 dp. The header (below an iPad window's own window controls) is
 the 1:1 call header's look (LIME-147/112e): **one glass pill** at the top left with up to three of the people's pictures (overlapping), their first
-names (they truncate) and **how many are in the call (it never truncates)**, then a ›; tapping it opens the people sheet (the layout, then
+names (they truncate) and **how many are in the call (it never truncates)**, then a ›; **if a person chose the group's name** (the core says so: renamed, or made with a name other than the first-names default) the pill shows that name instead of the first names, and the people sheet's title and the mini player follow the same rule; tapping it opens the people sheet (the layout, then
 the people). Under the pill, one line: the timer, a lock, the four emoji of the encryption check (tap: how to compare them; "Waiting for
 everyone's keys…" while any key is missing). **Nothing on the right.** Minimise is only in the controls row.
 Reading order for a screen reader: the header, the tiles (the speaker first), the controls, my own floating picture last.

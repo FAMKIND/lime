@@ -19,6 +19,8 @@ final class GroupCallManagerTests: XCTestCase {
         /// What the core says the four emoji are now (the real one is tested in the core).
         var emoji = GroupCallEmojiState(ready: false, waiting: 1, emoji: [])
         private(set) var asked = 0
+        /// The core's answer: a person chose the group's name.
+        var customNamed = false
         private(set) var started = 0, joined = 0, left: [String] = [], gone: [String] = [], delivered = 0
         func start(conversationID: String, video: Bool) async throws -> GroupCallInfo {
             if refuseStart { throw AuthError.network }
@@ -39,6 +41,7 @@ final class GroupCallManagerTests: XCTestCase {
         func activeCall(conversationID: String) -> GroupCallInfo? { info }
         func title(of conversationID: String) -> String { "Grade 4 Team" }
         func emojiState(callID: String) -> GroupCallEmojiState? { asked += 1; return emoji }
+        func isCustomNamed(conversationID: String) -> Bool { customNamed }
     }
 
     final class FakeMedia: GroupCallMedia {
@@ -562,6 +565,26 @@ final class GroupCallManagerTests: XCTestCase {
         media.onEvent?(.sendIndexReset(2))
         XCTAssertFalse(linesAfter("MARK-112e-b").contains { $0.contains("WARNING this phone sends") })
         await manager.leave()
+    }
+
+    func testTheCallIsNamedByThePeopleUnlessAPersonChoseTheGroupsName() async {
+        // The group kept its default name: the people in the call name it, and the names follow who is there.
+        let (manager, _, _, core, _, _) = await pipCall()
+        XCTAssertFalse(manager.groupNameIsCustom)
+        XCTAssertEqual(manager.callTitle, "Shem, Bob, Carol", "the people (me first), not the group's name")
+        manager.handle([event("left", participant: core.others[1].participant, user: "carol")])
+        XCTAssertEqual(manager.callTitle, "Shem, Bob", "it follows who is in the call")
+        await manager.leave()
+        // A name a person chose (renamed, or typed): that names the call.
+        let custom = FakeCore()
+        custom.customNamed = true
+        custom.others = [GroupCallParticipant(participant: String(repeating: "22", count: 16), userId: "u1", name: "Bob Lee")]
+        let media = FakeMedia()
+        let named = GroupCallManager(core: custom, system: QuietCallSystem(), me: { Person(id: "u-me", name: "Shem Chung") }, makeMedia: { media })
+        _ = await named.start(conversationID: "grp:g1", title: "Grade 4 Team", video: true)
+        XCTAssertTrue(named.groupNameIsCustom)
+        XCTAssertEqual(named.callTitle, "Grade 4 Team")
+        await named.leave()
     }
 
     func testMobileDataSends480pAndWiFiGoesBackTo720p() async {

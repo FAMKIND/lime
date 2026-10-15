@@ -49,7 +49,7 @@ struct CallMiniPlayer: View {
 
     private func content(for subject: CallMiniPlayerRule.Subject, at date: Date) -> some View {
         let group = subject == .group
-        let name = group ? store.groupCalls.title : store.calls.peerName
+        let name = group ? store.groupCalls.callTitle : store.calls.peerName
         let video = group ? store.groupCalls.video : store.calls.video
         let muted = group ? store.groupCalls.muted : store.calls.muted
         let clock = CallRecord.clock(date.timeIntervalSince(group ? (store.groupCalls.startedAt ?? date) : (store.calls.startedAt ?? date)))
