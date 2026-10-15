@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-141-fix** (the device test found a Hello storm: every incoming frame re-announces every link, ~20,000 frames/min while idle; the delivery itself works). Then re-run the device test with all three logs. **Then LIME-142** (needs drafting: plot).
+**▶ NEXT FOR TEND: LIME-142** (real messages over the mesh; drafted). LIME-141-fix passed its device re-run (1e129: no storm; a 2-hop delivery across two locked phones in ~5–10 s).
 - **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
@@ -149,6 +149,27 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e129. **The 141-fix device re-run PASSED the key checks (2026-10-15 23:04–23:49; all 3 logs in `/tmp/lime-meshlogs2/`):**
+   - **The storm is gone:** 520 / 384 / 387 log rows in 45 min (it was 65–100k); ≤ 90 frames/min at the busiest, near 0 idle; no storm warnings.
+   - **The topology** (by the logs, not the plan): **the 13 mini (upstairs) linked to both ends; Jean's phone (back) and the iPad (middle) never linked directly** until all were brought together at 23:49. So **the 13 mini was the relay**: a true line, Jean ↔ 13 mini ↔ iPad.
+   - **Multi-hop while locked, proven:**
+     - the iPad queued probes at 23:11:23–25 and linked to the 13 mini at 23:11:17;
+     - the 13 mini (locked since 23:07:24) linked to Jean's phone (locked since 23:07:45) at 23:11:28, and sent 7 × 518 B frames;
+     - **Jean's `mine` went 8 → 10 by 23:11:32.** ⇒ **iPad → locked 13 mini → locked Jean's phone in ~5–10 s.**
+   - **Locked phones now form links** (the 13 mini at 23:11:17/23:11:28/23:19:10 while locked); short links (2–4 s) with "connection timed out" drops that recover.
+   - **Battery (5 % granularity):**
+     - Jean's phone 95 → 95 over 45 min, locked most of the time (good);
+     - the 13 mini 100 → 100 (probably still charging or at the top of the scale);
+     - the iPad 100 → 90 with **its screen on and unlocked the whole time** (not representative).
+     - A longer unplugged test (2–4 h, phones locked) belongs in 144's field test.
+   - **For tend (fold into 142):**
+     - (a) **`frame_in` no longer appears in the logs**: restore it (sizes only);
+     - (b) **`mine` totals exceed the probes sent** (Jean 45, the iPad 24, the 13 mini 19 = 88 vs 49 queued): probes may be counted per delivery path or per device. Give each probe an id + an origin time, and log `probe_received id… after Ns, hops h`, so latency and hops can be read directly.
+   - **NEXT: LIME-142 (plot drafts it now).**
+1e128. **LIME-141-fix LANDED as `06f8b6a` (pushed; PLOT.md `b5e0c83`/`e199b12`); not yet proven on devices; installed on all 3.**
+   - A frame is no longer a wake; Hellos are debounced at 30 s/link unless `summary_version` moved (a core counter, reported); the storm guard; 17 mesh tests incl. a 3-node quiet test.
+   - **Plus:** reconnect/fallback fixes, a 15 s fallback grace, and **no id rotation while a link is live** (a privacy trade-off, for the security review).
+   - **The re-run is NEXT** (with the user).
 1e127. **The 13 mini + iPad logs pulled (second try):**
    - the storm is on every device (iPad dup 374);
    - **the 13 mini and the iPad linked directly**, so the "line" wasn't one and multi-hop is unproven;
@@ -5748,7 +5769,56 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-141-fix → `tend` (lime-aa) (NEXT; drafted 2026-10-15): stop the mesh's Hello storm (every frame re-announces every link)
+### LIME-142 → `tend` (lime-aa) (NEXT; drafted 2026-10-15): real messages travel over the mesh: offline sends, relays upload, honest statuses
+**Goal:** with no internet, a text to a contact (1:1 or group) leaves the phone over Bluetooth, hops through nearby lime phones, and reaches the recipient's phone directly, or the server via whichever phone gets online first. The sender sees honest statuses throughout. **Still Debug-only** (shipping in Release is a checklist step, `docs/release-checklist.md`).
+
+**Inputs:** DESIGN-13, LIME-140's `MeshEngine` (`queue_for_send`, `take_mine`, `take_uploadable`/`upload_all`, `stats`), LIME-141 + fix (the Bluetooth link; device-proven 1e129), 139's signed access, the existing outbox/sync.
+
+**The change:**
+1. **The mesh runs by itself** (no Debug test screen needed): it starts at launch when Bluetooth permission is granted and the Settings switch (item 7) is on. The **permission explainer** shows the first time the app is offline, or when the switch is turned on, not at first launch.
+2. **Sending offline** (no connectivity, or a send that fails for network reasons):
+   - **text messages and small ops** (reactions, edits, deletes, group-state ops, `delivery_key.share`) to **accepted contacts** (they have a delivery key, so the send can be sealed + signed) → `queue_for_send` **per recipient device** (group messages: per member device, as the server fan-out does);
+   - **the same sealed ciphertext stays in the outbox**, and when the internet returns the outbox sends it normally. The server dedupes by the outer-ciphertext hash per device; recipients dedupe by `op_id`. **Never re-encrypt** for the retry (it must be the same bytes);
+   - **can't go over the mesh** (strangers, so identified sends; attachments; calls): wait for the internet, with their own honest status (item 4).
+3. **Originate with 8 copies** (plot's call from 140's sim, 1e122): packets this phone creates start at 8 in `MeshConfig`; relays keep halving. Re-run the sim table and report.
+4. **Statuses on the sender's bubble** (words + icon, never colour alone):
+   - **"Waiting for signal"**: queued, no link yet (grey, not red);
+   - **"Passed to a nearby phone"**: at least one copy was acked by another phone (**an engine event or a stats delta per message is needed: add the smallest core hook, reported**);
+   - **"Sent"**: the server accepted it (by us or by a relay's upload: we learn of a relay's upload only when we're online and the outbox's own send dedupes; that's fine, it then shows Sent);
+   - **"Delivered"**: the existing delivery signal;
+   - **"Waiting for internet"**: for what can't use the mesh (attachments, strangers), with a one-line reason on tap;
+   - **"Not sent"** (red) **only** for a real failure (48 h with no route, or a server refusal).
+   - **No "Tap to retry" for offline cases:** sending resumes automatically on any link or connectivity.
+5. **Relaying + uploading:** when online, upload everything carried (`upload_all` via `mesh-drop`) on app active, on a connectivity change and after each sync; `upload_done`/`upload_failed` as designed. **Receiving:** `take_mine` after each frame batch → the normal inbound path (the chat updates live).
+6. **The offline banner** (the Messages list), replacing "You're offline. Check your connection and try again." when the mesh is on: **"Offline: lime will send through nearby phones, and when you're back online."** With the mesh off or no permission: "Offline: messages will send when you're back online." Tap → a short sheet with the honest promise (from `docs/spike-ble.md` §7: delivered when phones meet and at least one is awake; not when lime is swiped away).
+7. **Settings → Privacy (or a new "Nearby" row): "Help pass on nearby messages"**, **on by default** (M1 = A), with one line ("Uses a little battery. Messages you carry are sealed; you can't read them."). Off = no relaying for others and no originating over the mesh (offline sends then wait for the internet).
+8. **From the device re-run (1e129):**
+   - (a) restore `frame_in` in the mesh log (sizes only);
+   - (b) give probes and real mesh sends **an id + an origin time**, and log `mesh_delivered id… after Ns, hops h` on the receiver, so latency and hops can be read. Fix the `mine` over-count (88 counted vs 49 queued): count per packet digest, once.
+9. **Accessibility:** statuses read in full by VoiceOver ("Waiting for signal"); the banner is one element with a hint; the Settings line ≥ 44 pt; Reduce Motion: no animated status changes.
+10. **Docs:** `docs/architecture.md` §7 (as built: the outbox ↔ mesh ↔ upload flow, the statuses), `docs/screens/` (the statuses + the banner for Android), `api-v2.md` §8 if any wire detail changes.
+
+**Kind:**
+- behaviour → real tests:
+  - unit tests for the status machine (every transition);
+  - the outbox's mesh-or-wait decision (contact / stranger / attachment / group);
+  - "never re-encrypt on retry";
+  - upload triggers;
+  - the banner text by state;
+- **the local integration test extended:** A offline sends to B → the relay engine carries it → the relay uploads → B reads it, **and** A's later online retry is a duplicate (one message on B);
+- **the device test (the real proof; tend with the user, airplane mode, the same line: Jean ↔ 13 mini ↔ iPad):**
+  1. a real chat message "Love you" from the 13 mini to Jean, both offline → it arrives; statuses go Waiting → Passed → (later) Sent → Delivered;
+  2. a group message to all three;
+  3. Jean's phone locked;
+  4. one phone goes online (Wi-Fi on) → it uploads what it carries → a fourth party, or the recipient back online, gets it via the server;
+  5. an attachment offline shows "Waiting for internet";
+  6. the logs: latency and hops per message.
+
+**Scope:** the outbox/sync glue in `lime_core` + small engine hooks (reported), `ios/Lime/Core/Mesh/` (lifecycle out of the test screen; still `#if DEBUG`), the chat bubble status, the Messages banner, Settings, tests, docs. **Not:** Nearby mode / emergency (143), Release shipping.
+
+**Record:** `## LIME-142` with **For plot:** and every item checked off. **Commit:** `feat: messages travel over the mesh when offline (statuses, relay uploads, the Help-pass-on switch)`, trailer `Brief: LIME-142`. The rest per the standing rules (the full suite: `./ios/test-full.sh`).
+
+### LIME-141-fix → `tend` (lime-aa) (DONE as `06f8b6a`; drafted 2026-10-15): stop the mesh's Hello storm (every frame re-announces every link)
 **Goal:** two or three phones in range exchange only what's needed, then go quiet: no endless Hello ping-pong, so battery and duplicate counts stay low.
 
 **Plot's read of Jean's mesh log** (`/tmp/lime-meshlogs1/jean/mesh-1792102327.jsonl`, the 141 device test, 22:12–22:20; the 13 mini and the iPad weren't reachable over USB for their logs):
