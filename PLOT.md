@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-141's DEVICE TEST** (the code landed as `9f5f196`, unit-tested; **not proven on devices**). Run the brief's device test with the user (2 devices in airplane mode → then locked → then 3 in a line), report the numbers + battery, and fix CoreBluetooth surprises as `fix(ios): …` commits under `Brief: LIME-141`. **Then LIME-142** (needs drafting: plot).
+**▶ NEXT FOR TEND: LIME-141-fix** (the device test found a Hello storm: every incoming frame re-announces every link, ~20,000 frames/min while idle; the delivery itself works). Then re-run the device test with all three logs. **Then LIME-142** (needs drafting: plot).
 - **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
@@ -149,6 +149,15 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e127. **The 13 mini + iPad logs pulled (second try):**
+   - the storm is on every device (iPad dup 374);
+   - **the 13 mini and the iPad linked directly**, so the "line" wasn't one and multi-hop is unproven;
+   - **a locked 13 mini formed no new links for 12 min** (probes waited ~14 min);
+   - both devices were charging, so no battery data.
+   - All folded into LIME-141-fix items 5–6.
+1e126. **The 141 device test, the first run (2026-10-15 22:12–22:20; Jean's log only, the others weren't on USB):**
+   - **It works:** discovery ~2 s, probes delivered (10), frames flow while locked, relaying (Jean carried 5), one link per pair, drops recovered.
+   - **⚠ A Hello storm:** an incoming frame counts as a wake → a re-Hello on every link → a loop (~20k frames/min while idle, 22k wakes, dup 137). **→ LIME-141-fix (drafted, NEXT):** a frame isn't a wake; Hellos debounced per link; a storm guard; a 3-node quiet test; re-run the device test with all 3 logs + battery while not charging.
 1e125. **LIME-141 code LANDED as `9f5f196` (pushed; PLOT.md `25eaf42`), DEBUG ONLY, NOT proven on a device:**
    - **Built:** `MeshBluetooth` (central + peripheral, its own service UUID, GATT hello/PSM, L2CAP + GATT fallback with ~470 B fragments, one link per pair, RSSI −92, link id rotating every 15 min); `MeshDriver` (pure, tested; wake → flush); state restoration in code; the explainer; `MeshLog`; the Debug mesh test screen (+ `MeshEngine.queue_probe` + stats fields: a core change, reported).
    - **The scan cycle:** foreground continuous → 10 s on / 20 s off after 2 min idle; background is iOS's own.
@@ -5738,6 +5747,40 @@ If the survey turns up related issues, raise them before editing. If a decision 
   - **Copies (plot, from 140's simulator):** with 4 copies a 4-hop chain never delivered (4 → 2 → 1, then the last holder waits); with 8 it did. **Packets this phone originates start with 8 copies** (`MeshConfig`); relayed ones keep halving. Re-check the sim table + the storage cap.
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
+
+### LIME-141-fix → `tend` (lime-aa) (NEXT; drafted 2026-10-15): stop the mesh's Hello storm (every frame re-announces every link)
+**Goal:** two or three phones in range exchange only what's needed, then go quiet: no endless Hello ping-pong, so battery and duplicate counts stay low.
+
+**Plot's read of Jean's mesh log** (`/tmp/lime-meshlogs1/jean/mesh-1792102327.jsonl`, the 141 device test, 22:12–22:20; the 13 mini and the iPad weren't reachable over USB for their logs):
+- **The good:**
+  - **discovery ~2 s** (start 22:12:07 → connected 22:12:08 → link up + L2CAP 22:12:09);
+  - **probes arrived** (10 received; `mine` 10);
+  - **frames flowed while Jean's phone was locked** (22:12:57–22:13:32: 5 in, 4 out);
+  - **Jean carried 5 packets** (relaying in step 2: whether the iPad got them is unknown until its log is pulled);
+  - one link per pair worked (`hello_drop: wrongDirection` ×3);
+  - two "connection timed out" drops recovered.
+- **⚠ The bug: a feedback loop.** **102,566 log rows in 8 minutes**: 40,678 frames in, 39,740 out, **22,016 `wake` events with reason `data`**. **~20,000 frames a minute even when idle** (22:16–22:18, when the stats didn't change: no new packets). A one-second sample shows the cycle every ~5 ms: a frame in (124 B) → `wake(reason: data)` → **a 124 B frame out on BOTH links** (a Hello) → the other phones answer → a frame in → wake → … **`dup` climbed to 137.** The 141 design said "every wake event calls `link_up` for each live link so the engine flushes", and **an incoming data frame counts as a wake**, so each frame re-announces every link, forever. **Battery:** Jean's went 70 → 75 % (charging, so no reading); this loop would drain a phone fast.
+
+**The fix:**
+1. **An incoming data frame is NOT a wake.** It goes to `frame` only. Wakes that re-announce links are only: the app becoming active/foreground, a state restoration, a **new** link coming up, and a discovery of a **new** peer.
+2. **Debounce Hellos per link:** at most one Hello per link per **N seconds** (start at 30 s; report the value) unless the engine's summary changed (a new packet was queued or received since the last Hello). If the engine's API can't tell you whether the summary changed, add a cheap `summary_version()` to `MeshEngine` (a core change, reported).
+3. **A guard in the log:** if a link exceeds e.g. 50 frames/minute while the stats are unchanged, log `WARNING frame storm on <link>` once per minute.
+4. **Tests:**
+   - the driver: a frame in produces **no** Hello; a new link produces one; two wakes within N s produce one Hello per link; a queued packet triggers one Hello;
+   - **a 3-node simulated loop test** (fake links joining three drivers): after the initial exchange **the system goes quiet** (0 frames over a simulated minute) and every probe arrives once.
+5. **Also from the 13 mini + iPad logs** (pulled on the second try: `/tmp/lime-meshlogs1/{shem,ipad}/`):
+   - **the storm is on every device** (the 13 mini 65,600 rows in 19 min; the iPad 71,450 rows in 17 min, **dup 374**);
+   - **the "line" wasn't a line:** the 13 mini and the iPad linked **directly** (22:14:29, 22:15:36), so multi-hop isn't proven yet;
+   - **a locked phone formed no new links:** the 13 mini locked 22:19:00–22:30:59, and no link_up until after it unlocked; 4 probes it queued at 22:16 reached the iPad only at 22:30:30, **~14 min later**.
+   - **Look at:** whether background reconnection after a drop or rotation works at all on a locked phone (state restoration, the background scan, the 15-min link id rotation tearing links down while locked: **consider not rotating the id while a link is live**). Report.
+   - **Battery unknown:** the 13 mini sat at 95 % and the iPad at 100 % throughout (both charging).
+6. **Re-run the device test** with the user afterwards (the same 3 steps; this time pull all three devices' logs, with the 13 mini and the iPad on USB at the end) and report: frames per minute idle (target ≈ 0 apart from occasional keep-alives), probes received, carried, dup, **battery per 30 min (UNPLUGGED)**.
+   - **For a true line:** the 13 mini and the iPad must never link directly; check in the logs that each end's only link is Jean's phone, else move them further apart and repeat;
+   - **plus a locked-phone case:** the receiver locked for 10 min while a packet is queued → how long until it arrives.
+
+**Scope:** `ios/Lime/Core/Mesh/` (the driver/adapter), maybe `MeshEngine.summary_version` in core, tests. **Not:** the mesh rules.
+
+**Record:** `## LIME-141-fix` with **For plot:** and every item checked off. **Commit:** `fix(ios): stop the mesh Hello storm (a frame is not a wake; debounced Hellos)`, trailer `Brief: LIME-141`. The rest per the standing rules.
 
 ### LIME-141 → `tend` (lime-aa) (after 140's key is pinned + deployed; drafted 2026-10-15): the iPhone Bluetooth link for the mesh
 **Goal:** two or more iPhones/iPads running lime find each other over Bluetooth with no internet and pass `MeshEngine` frames reliably, in the foreground and while locked/backgrounded (not force-quit), using the patterns the spikes proved.
