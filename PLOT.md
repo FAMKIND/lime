@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-112d** (bug: the group video window only floats on the first minimise; LIME-148c landed as `0ac2772`). **Not 150 yet:** 148c's report named 150 because its Phase 0 predates 112d. Then **LIME-151** (run the UI tests in parallel; the user chose A). Then **LIME-150**. Then (FaceTime-style group layout: no scrolling, landscape, iPad windows, minimise in the controls), then **LIME-150** (a minimised mini grid of up to 4; starts with a device spike), then **LIME-147** (group-call emoji, APPROVED), then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-151** (run the UI tests in parallel; LIME-112d landed as `fbec7e8`). Then **LIME-150** (the minimised mini grid + the tuck-away mini player + the warm-neutral Mute + PiP ~30% smaller; starts with a device spike), then **LIME-147** (the group-call emoji + the 1:1-style call header), then the mesh (**LIME-139 → 144**), then **LIME-152** (the QA batch). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -148,6 +148,13 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e112. **The user (2026-10-15, 5 screenshots at 11:34–11:37): "we are over-using green".** During a call, lime green only in the header circle, the LIVE badge (moved into the mini player) and send; the live card becomes subtle (no badge, a warm-neutral Join/Return) → **150 item 9**. The "Call again?" sheet copies the header menu's icons and names → **150 item 10**. Plot spotted the tiny avatar for a group with one other member → **150 item 11** (the full design stays in 152).
+1e111. **LIME-112d LANDED as `fbec7e8` (pushed, 2026-10-15; PLOT.md `0247624`).**
+   - The PiP controller rebinds to the new anchor (+ a retry + logs); 1:1 not changed (its anchor is stable); the live circle's glyph is outline 18 pt regular.
+   - **Tests:** unit 372 + 34 call UI tests (the full UI suite not needed).
+   - **Gate:** a group video call, minimise/restore ×5 while typing; then 1:1 ×5; the outline circle in light/dark.
+   - **NEXT: 151.**
+   - **The user's 7 QA items** (keyboard cuts the composer; overlapping-circle group avatars; Note-to-Self avatar → profile; sharp video posters; long-press shows the bubble; the blurry Shared media; smaller Pin icons) → **LIME-152, a QA batch after the mesh.**
 1e110. **The user (2026-10-15): "the mini player is nice; with FaceTime and the tuck-away it doesn't feel overwhelming."**
    - **Mute = the warm neutral `Theme.pressed`** → 150 item 7b;
    - **a standing rule: 20% brand / 80% clean;**
@@ -4778,6 +4785,25 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Phase 0:** `git add PLOT.md` only, then commit; re-read PLOT.md. **Verification:** build; 0 warnings; Release clean; fix only existing tests that break (the 107-qa footer-alignment test will need its expectation updated for own messages); screenshots in TEND.md (media + caption, text only, a file + caption; light/dark); the accessibility standing rule. **Gate:** under your own message with photos and a caption, the reactions sit at the caption bubble's bottom-left corner.
 **Record:** `## LIME-131`. **Commit:** `fix(ios): visual QA batch (own-message reactions align to their bubble, …)`, trailer `Brief: LIME-131`, plus the attribution trailer. **Push.** Stop. No /loop wakeups.
 
+### LIME-152 (QA BATCH, scheduled AFTER the mesh build; collected 2026-10-15; plot re-surveys and writes it up as a full brief before sending; it may merge LIME-131's 3 items)
+**The user's items (2026-10-15):**
+1. **[bug] The keyboard pushes the composer half off-screen:** "sometimes when I select text I typed and delete it, the keyboard scrolls up and cuts off half of our chat input box, so all the icons (add, emoji, format, send) are lost until you scroll." The composer must always sit fully above the keyboard (a keyboard-avoidance / `UITextView` scroll-into-view issue after a selection delete; LIME-137-fix touched that delete path). **Real test:** select-all + delete in a multi-line draft keeps the composer's tool row visible.
+2. **[design] Group avatars as overlapping circles inside one avatar circle (they include you: the user, 2026-10-15; the 2-person case is done early in LIME-150 item 11)** (the user's earlier screenshots), the same outer size everywhere:
+   - **2 people:** two smaller overlapping circles, the top one with an outline ring;
+   - **3:** a triangle of overlapping circles;
+   - **4:** a circle of circles;
+   - (5+: 3 + "+N").
+   - It replaces today's quadrant composite (`ConversationAvatar`) and **its UIKit twin for PiP** (`PiPGroupAvatarView`), so it's applied everywhere: Messages, the headers, the Calls tab, the call header pill, the mini player, PiP, invites. The rule goes in `docs/screens/` for Android.
+3. **[bug] In "message yourself" (Note to Self), tapping your avatar in the chat header doesn't open your profile.** It should, as everywhere else (122a2).
+4. **[media] Video thumbnails show blurry with a play sign:** show a **real frame** as the cover (like iMessage/KakaoTalk). Today the attachment carries only a tiny blurred `thumb` (98d). Make a sharper poster frame on the sender's phone (e.g. ~480 px JPEG, encrypted inside the message, as the thumbnail is), within the size budget; old messages keep the blur. A size/privacy note in `api-v2.md` §6.
+5. **[interaction] Long-press on a bubble keeps the message visible, like iMessage:** reactions on top, **then the pressed bubble itself** (lifted, sharp), then the actions menu below; the rest dims/blurs. Today the bubble isn't shown, so there's no context.
+6. **[media] The Shared section of profiles shows all media blurry:** use the downloaded image (or the item 4 poster frame), not the blur thumbnail, in the Shared grid; tap still opens the viewer.
+7. **[visual] The profile's Pin/Unpin icons are too big:** match the other header icons' size and weight (like 112d's outline circle fix).
+- **Also queued for this batch (plot's notes):**
+  - the "no 'You'" copy sweep ("You created the group…" → "<Name> created…"; the user's rule);
+  - check the live call circle is lime in the group chat during a call (148c screenshot);
+  - the 20/80 brand rule applied to anything touched.
+
 ### LIME-134 → `tend` (lime-aa) (NEXT, before 132): two bugs: chats sometimes open blank until scrolled; the video call isn't full screen
 **The user (2026-10-12, screenshots from the 13 mini and the iPad in a Stage Manager window), after 120:** "video and sound was smooth; the video was cut off at the bottom instead of being full screen. Loading the chat window, even before this, sometimes the chat loads blank until you drag/scroll." Screenshots: a DM ("FAM") opens showing only the header and the composer (blank in between, with the keyboard up and down); after a drag the messages appear; the iPad shows the same blank chat in a window.
 
@@ -5216,6 +5242,17 @@ If the survey turns up related issues, raise them before editing. If a decision 
    - **⚠ iOS chooses a PiP window's initial size; apps set only its aspect (`preferredContentSize`)**, and people can pinch to resize. Phase 1 tests on a device whether a smaller `preferredContentSize` (≈ 0.7× today's) changes the initial size at all.
    - If it does, use it for both group and 1:1 PiP.
    - If not, **say so plainly** and offer the closest lever: a slightly narrower portrait aspect, which reads as smaller. **Don't fake it** with an in-app floating tile instead of system PiP: that loses floating over other apps.
+9. **Less green (the user, 2026-10-15, 5 screenshots: "we are over-using green"; the 20/80 rule):** after this, **green appears only in three places during a call: the header's live call circle, the LIVE badge, and the send button.**
+   - **The LIVE badge moves into the mini player** (beside the name or the subtitle: "LIVE · Video call · 0:45"); it's lime with dark ink, the word not colour alone.
+   - **The mini player has no other green:** Mute is the warm neutral (7b); Leave stays red (a danger colour, not brand).
+   - **The live call card in the chat becomes subtle:** no LIVE badge, **no green button**. The card is a quiet bubble ("Call started · FAM and 1 other are there", the call icon, the avatars), with **"Join call" / "Return to call" as a warm-neutral button** (`Theme.pressed`, the "Aa" colour) or a text-style button. It stays one card per call and still turns into "Call ended · time".
+   - Check every other call surface (the invite sheet, the Calls tab) against the rule; report anything else that was green.
+10. **The "Call again?" sheet from an old call bubble uses the same icons and names as the header's call menu** (the user, 2026-10-15): the same two rows (the phone icon + "Voice call", the video icon + "Video call", or whatever the header's dropdown uses: copy it exactly, ideally the same view), then Cancel. One pattern everywhere.
+11. **A group with one other member shows a tiny avatar** (screenshots: "Shem & FAM" in the Messages list, the chat header and the mini player show a small FAM circle in a big empty space). Today's composite places 1 member at a quadrant offset, **and leaves you out**. **The user (2026-10-15): "I added FAM and myself in a group and my avatar doesn't show up in the group."**
+   - **Fix now (REVISED):** a group's picture (no group photo set) **includes you**. Group members **plus you**, others first, you last.
+   - For **2 people in total** (you + 1), use LIME-152's 2-person design now: **two overlapping circles inside the one avatar circle, the front one with an outline ring** (the other person in front, you behind).
+   - 3+ people keep today's composite until 152's full design (triangle / circle of circles), **but include you as one of the shown members** when there's room (≤ 4 total), else "+N".
+   - The same rule in the UIKit twin (`PiPGroupAvatarView`).
 7. **The mini grid and 148c's mini player show together** (the user, 2026-10-15: "together first, then I'll decide"): the floating window is for seeing people, the mini player for mute/leave (iOS doesn't allow working buttons inside the PiP window). No shrinking of the mini player yet.
 8. **The mini player can be tucked away (the user, 2026-10-15),** like stashing PiP:
    - **swipe it sideways off either edge** → it collapses into a small **edge tab** (a lime handle with the call icon, ~44 × 64 pt, in the same vertical spot); tap or swipe the tab back out → the full mini player;
