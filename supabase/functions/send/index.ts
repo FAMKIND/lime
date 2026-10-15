@@ -18,14 +18,12 @@
 // Nothing here logs ciphertext, keys, access keys or tokens.
 
 import { admin, config, rateLimit, requireUser } from "../_shared/db.ts";
-import { constantTimeEqual, fromBase64, fromPgBytea, isUuid, sha256, toHex, toPgBytea, uuidBytes, verifyEd25519 } from "../_shared/bytes.ts";
+import { fromBase64, isUuid, sha256, toHex } from "../_shared/bytes.ts";
+import { type Access, accessDenied, loadAccess, sealedRow, storeRows, verifySealed } from "../_shared/access.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 type Recipient = { to_device: string; access: { signed?: unknown; sealed?: unknown; identified?: unknown } };
-type Access = { hash: Uint8Array | null; publicKey: Uint8Array | null };
 
-/** What a signed send signs: a label, SHA-256 of the ciphertext and the recipient device's 16 raw UUID bytes (so a signature fits one message to one device only). */
-const SIGNED_LABEL = new TextEncoder().encode("lime-access-v2");
 type Expected = { devices: Set<string>; master: string };
 
 /** The sender's `expect`, validated; null when the request has none (the old behaviour). */
@@ -43,23 +41,6 @@ function readExpect(value: unknown): Map<string, Expected> | null {
     out.set(userId.toLowerCase(), { devices: new Set((e.devices as string[]).map((d) => d.toLowerCase())), master: e.master.toLowerCase() });
   }
   return out;
-}
-
-async function nudge(deviceIds: string[]): Promise<void> {
-  const url = Deno.env.get("SUPABASE_URL");
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!url || !key || deviceIds.length === 0) return;
-  try {
-    await fetch(`${url}/realtime/v1/api/broadcast`, {
-      method: "POST",
-      headers: { "content-type": "application/json", apikey: key, authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        messages: deviceIds.map((id) => ({ topic: `device:${id}`, event: "new", payload: { type: "new" }, private: true })),
-      }),
-    });
-  } catch {
-    // A missed nudge is harmless: the device also fetches when it opens.
-  }
 }
 
 Deno.serve(handler(async (req) => {
@@ -126,45 +107,10 @@ Deno.serve(handler(async (req) => {
     // Sealed (signed, or the older access key). A wrong key or signature, a missing key and an unknown device all look the same: 403.
     // (A revoked device is the same without `expect`; with it, the proof is checked first and a revoked device is then reported, to the
     // holder of the key only.)
-    const denied = () => new HttpError(403, "access_denied", "The access key was not accepted.");
     const signed = typeof r.access.signed === "string";
-    if (!device || (revoked && !checking) || (!signed && typeof r.access.sealed !== "string")) throw denied();
-    if (!accessByUser.has(device.user_id)) {
-      const { data } = await db.from("delivery_access").select("access_key_hash, access_public_key").eq("user_id", device.user_id).maybeSingle();
-      accessByUser.set(device.user_id, {
-        hash: data?.access_key_hash ? fromPgBytea(data.access_key_hash as string) : null,
-        publicKey: data?.access_public_key ? fromPgBytea(data.access_public_key as string) : null,
-      });
-    }
-    const stored = accessByUser.get(device.user_id)!;
-    let bucketKey: Uint8Array;
-    if (signed) {
-      // The signature covers this ciphertext and this device: it cannot be replayed for another message or another device.
-      let signature: Uint8Array;
-      try {
-        signature = fromBase64(r.access.signed as string);
-      } catch {
-        throw denied();
-      }
-      if (!stored.publicKey || signature.length !== 64) throw denied();
-      const message = new Uint8Array(SIGNED_LABEL.length + 32 + 16);
-      message.set(SIGNED_LABEL, 0);
-      message.set(ciphertextHash, SIGNED_LABEL.length);
-      message.set(uuidBytes(id), SIGNED_LABEL.length + 32);
-      if (!(await verifyEd25519(stored.publicKey, signature, message))) throw denied();
-      bucketKey = await sha256(stored.publicKey);
-    } else {
-      let presented: Uint8Array;
-      try {
-        presented = fromBase64(r.access.sealed as string);
-      } catch {
-        throw denied();
-      }
-      if (presented.length !== 16) throw denied();
-      const presentedHash = await sha256(presented);
-      if (!stored.hash || !constantTimeEqual(stored.hash, presentedHash)) throw denied();
-      bucketKey = presentedHash;
-    }
+    if (!device || (revoked && !checking) || (!signed && typeof r.access.sealed !== "string")) throw accessDenied();
+    const stored = await loadAccess(db, device.user_id as string, accessByUser);
+    const bucketKey = await verifySealed(stored, r.access, id, ciphertextHash);
     if (revoked) {
       revokedNamed.push(id);
       continue;
@@ -221,24 +167,11 @@ Deno.serve(handler(async (req) => {
     if (seen.has(id)) continue;
     seen.add(id);
     const identified = r.access.identified === true;
-    rows.push({
-      to_device: id,
-      ciphertext: toPgBytea(ciphertext),
-      ciphertext_hash: toPgBytea(ciphertextHash),
-      size: ciphertext.length,
-      identified,
-      sender_user: identified ? senderUser : null,
-    });
+    rows.push(sealedRow(id, ciphertext, ciphertextHash, identified, senderUser));
   }
 
-  // De-duplicate by SHA-256(ciphertext) per recipient device: a repeat is ignored.
-  const { data: stored, error } = await db
-    .from("mailbox_items")
-    .upsert(rows, { onConflict: "to_device,ciphertext_hash", ignoreDuplicates: true })
-    .select("to_device");
-  if (error) throw new HttpError(500, "internal");
-  const storedDevices = (stored ?? []).map((s) => s.to_device as string);
+  // De-duplicate by SHA-256(ciphertext) per recipient device: a repeat is ignored (and the devices that got one are nudged).
+  const storedDevices = await storeRows(db, rows);
 
-  await nudge(storedDevices);
   return json({ stored: storedDevices.length, duplicates: rows.length - storedDevices.length, checked: checking });
 }));

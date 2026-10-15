@@ -1168,7 +1168,7 @@ impl LimeStore {
     }
 
     /// Tries every waiting item that is worth trying; returns how many became messages.
-    fn retry_pending(&self, state: &mut AccountState, me: &str) -> Result<u32, StoreError> {
+    pub(crate) fn retry_pending(&self, state: &mut AccountState, me: &str) -> Result<u32, StoreError> {
         let mut received = 0;
         loop {
             let rows = self.with_conn(pending::retryable)?;

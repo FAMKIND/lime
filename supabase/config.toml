@@ -395,8 +395,10 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-# [edge_runtime.secrets]
-# secret_key = "env(SECRET_VALUE)"
+# LOCAL TEST ONLY (LIME-140): the mesh routing key pair of this local stack, so `mesh-drop` can be tested here. It is NOT the staging key: the
+# staging secret is made by `supabase/mesh-keygen.sh` and goes straight into Supabase's secrets; this one is public on purpose.
+[edge_runtime.secrets]
+MESH_ROUTING_SECRET_KEY = "KILKJyNyeB2broEOGIiyuqZcUVWs9jZM9XtAjY/ZiWA="
 
 [analytics]
 enabled = false

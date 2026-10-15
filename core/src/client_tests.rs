@@ -959,6 +959,144 @@ fn a_contact_on_an_older_build_has_no_public_key_so_the_first_send_falls_back_to
     assert_eq!(sync(&bob, &transport).received, 1, "the new message arrives");
 }
 
+// ---------------------------------------------------------------- the mesh glue (LIME-140)
+
+const MESH_LOCAL_PUBLIC: &str = "GyNOPj7N/ovXno/OznB9bEtKB2PTAsuRK1XzXrzX7lY=";
+const MESH_LOCAL_SECRET: &str = "KILKJyNyeB2broEOGIiyuqZcUVWs9jZM9XtAjY/ZiWA=";
+
+fn mesh_engine(party: &Party) -> Arc<crate::MeshEngine> {
+    let public = vodozemac::base64_decode(MESH_LOCAL_PUBLIC).unwrap();
+    crate::MeshEngine::new_with_server_key(party.store.clone(), 1, public).unwrap()
+}
+
+/// Two engines meet: frames trade until nothing more is sent.
+fn mesh_meet(a: &crate::MeshEngine, b: &crate::MeshEngine) {
+    let mut queue: Vec<(bool, Vec<u8>)> = Vec::new();
+    queue.extend(a.link_up(1).into_iter().map(|x| (true, x.bytes)));
+    queue.extend(b.link_up(1).into_iter().map(|x| (false, x.bytes)));
+    let mut guard = 0;
+    while !queue.is_empty() {
+        guard += 1;
+        assert!(guard < 5_000);
+        let (to_b, bytes) = queue.remove(0);
+        let answers = if to_b { b.frame(1, bytes) } else { a.frame(1, bytes) };
+        queue.extend(answers.into_iter().map(|x| (!to_b, x.bytes)));
+    }
+    a.link_down(1);
+    b.link_down(1);
+}
+
+/// Alice's next message to Bob, as the server's `send` stored it for Bob's device: the ciphertext, taken out of the server so the only way it
+/// can reach Bob now is the mesh. Returns (Bob's device, the ciphertext bytes).
+fn mesh_only_message(server: &Arc<FakeServer>, alice: &Party, bob: &Party, transport: &Arc<dyn Transport>, text: &str) -> (String, Vec<u8>) {
+    say(alice, bob, transport, text);
+    let mut state = server.state.lock().unwrap();
+    let at = state.mailbox.iter().rposition(|m| m.1 == bob.device).expect("the server stored it");
+    let item = state.mailbox.remove(at);
+    (item.1, vodozemac::base64_decode(item.2).unwrap())
+}
+
+#[test]
+fn a_message_travels_by_the_mesh_alone_through_a_relay_and_the_recipient_reads_it() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (relay, _) = party(&server, "relay", 3);
+    befriend(&alice, &bob, &transport);
+    let (device, ciphertext) = mesh_only_message(&server, &alice, &bob, &transport, "by the mesh");
+    let (a, r, b) = (mesh_engine(&alice), mesh_engine(&relay), mesh_engine(&bob));
+    for e in [&a, &r, &b] {
+        e.refresh_tags().unwrap();
+    }
+    assert!(a.queue_for_send(bob.user.clone(), device, ciphertext).unwrap(), "Alice holds Bob's delivery key: it can travel");
+    assert_eq!(a.stats().carried, 1);
+    mesh_meet(&a, &r);
+    assert_eq!(r.stats().carried, 1, "the relay carries it");
+    assert_eq!(r.take_mine().unwrap(), 0, "and cannot tell it is not for it: nothing arrives as its own");
+    assert!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().iter().all(|m| m.text != "by the mesh"), "not delivered yet");
+    mesh_meet(&r, &b);
+    assert_eq!(b.take_mine().unwrap(), 1, "Bob recognises his tag and the message goes through the normal inbound path");
+    assert!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().iter().any(|m| m.text == "by the mesh"));
+    assert_eq!(b.take_mine().unwrap(), 0, "taken once");
+}
+
+#[test]
+fn a_relay_that_uploads_hands_the_server_a_header_only_the_server_can_open_and_the_proof_inside_is_bobs_to_check() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (relay, _) = party(&server, "relay", 3);
+    befriend(&alice, &bob, &transport);
+    let (device, ciphertext) = mesh_only_message(&server, &alice, &bob, &transport, "for upload");
+    let (a, r) = (mesh_engine(&alice), mesh_engine(&relay));
+    a.refresh_tags().unwrap();
+    r.refresh_tags().unwrap();
+    assert!(a.queue_for_send(bob.user.clone(), device.clone(), ciphertext.clone()).unwrap());
+    mesh_meet(&a, &r);
+    let upload = r.take_uploadable();
+    assert_eq!(upload.len(), 1);
+    // The relay sees opaque bytes: no device id, no user id, nothing readable in the header, and the payload is just Olm ciphertext.
+    let haystack = [upload[0].header.clone(), upload[0].payload.clone()].concat();
+    for secret in [device.as_bytes(), bob.user.as_bytes(), alice.user.as_bytes()] {
+        assert!(!haystack.windows(secret.len()).any(|w| w == secret), "the relay cannot read who it is for");
+    }
+    assert_eq!(upload[0].payload, ciphertext, "exactly what the server's send would store");
+    // The server opens the header: the recipient device and the signed proof, which Bob's public key accepts for this ciphertext and device.
+    let secret = vodozemac::Curve25519SecretKey::from_slice(&vodozemac::base64_decode(MESH_LOCAL_SECRET).unwrap().try_into().unwrap());
+    let opened: serde_json::Value = serde_json::from_slice(&crate::mesh::open_header(&secret, &upload[0].header).expect("the server can open it")).unwrap();
+    assert_eq!(opened["to_device"].as_str(), Some(device.as_str()));
+    let signature = vodozemac::Ed25519Signature::from_base64(opened["access"]["signed"].as_str().unwrap()).unwrap();
+    let public = vodozemac::Ed25519PublicKey::from_base64(&crate::store::delivery::access_public_key_b64(&bob.store.test_delivery_key())).unwrap();
+    assert!(public.verify(&crate::store::delivery::signed_message(&ciphertext, &device).unwrap(), &signature).is_ok());
+    assert!(public.verify(&crate::store::delivery::signed_message(b"another ciphertext", &device).unwrap(), &signature).is_err(), "bound to this ciphertext");
+    r.upload_failed(upload[0].id.clone());
+}
+
+#[test]
+fn the_mesh_refuses_what_it_cannot_seal_and_a_carried_packet_survives_a_restart() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (stranger, _) = party(&server, "stranger", 3);
+    befriend(&alice, &bob, &transport);
+    let (device, ciphertext) = mesh_only_message(&server, &alice, &bob, &transport, "persist me");
+    // No server key pinned yet (none is, until the server's key pair exists): nothing can be sealed.
+    let unpinned = crate::MeshEngine::new(alice.store.clone());
+    assert!(unpinned.queue_for_send(bob.user.clone(), device.clone(), ciphertext.clone()).is_err());
+    let a = mesh_engine(&alice);
+    // Someone who never gave Alice a delivery key: the proof cannot be made, so it does not travel (the caller sends it the usual way).
+    assert!(!a.queue_for_send(stranger.user.clone(), device.clone(), ciphertext.clone()).unwrap());
+    assert!(a.queue_for_send(bob.user.clone(), device, ciphertext).unwrap());
+    assert_eq!(a.stats().carried, 1);
+    // The carried packet is on the encrypted disk: a new engine on the same store still has it.
+    let again = mesh_engine(&alice);
+    assert_eq!(again.stats().carried, 1);
+}
+
+#[test]
+fn the_same_message_by_the_mesh_and_by_the_mailbox_is_one_message() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    say(&alice, &bob, &transport, "twice");
+    // The server's copy stays in Bob's mailbox; the same ciphertext also travels over the mesh.
+    let (device, ciphertext) = {
+        let state = server.state.lock().unwrap();
+        let item = state.mailbox.iter().rev().find(|m| m.1 == bob.device).unwrap();
+        (item.1.clone(), vodozemac::base64_decode(&item.2).unwrap())
+    };
+    let (a, b) = (mesh_engine(&alice), mesh_engine(&bob));
+    a.refresh_tags().unwrap();
+    b.refresh_tags().unwrap();
+    assert!(a.queue_for_send(bob.user.clone(), device, ciphertext).unwrap());
+    mesh_meet(&a, &b);
+    let by_mesh = b.take_mine().unwrap();
+    sync(&bob, &transport);
+    let copies = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().iter().filter(|m| m.text == "twice").count();
+    assert_eq!(copies, 1, "one message however many ways it came (mesh delivered {by_mesh})");
+}
+
 #[test]
 fn a_strangers_first_message_stays_identified_and_lands_in_requests() {
     let server = FakeServer::new();
@@ -1151,7 +1289,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )

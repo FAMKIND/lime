@@ -500,6 +500,19 @@ const MIGRATIONS: &[&str] = &[
     // the signing pair derived from it. Marking the key "not uploaded" makes the first launch after updating upload both again (before the
     // next send), as an upload that did not get through always is.
     "UPDATE delivery_state SET uploaded = 0;",
+    // 32 (LIME-140): the mesh. What this phone carries for others (the encoded packet as it is now, how many copies it holds, its trust tier),
+    // and the digests it has seen recently (so a packet it forwarded and dropped is not taken again at once). The store is encrypted.
+    "CREATE TABLE mesh_packets (
+         digest      BLOB PRIMARY KEY,
+         bytes       BLOB NOT NULL,
+         copies      INTEGER NOT NULL,
+         tier        INTEGER NOT NULL,
+         received_at INTEGER NOT NULL
+     );
+     CREATE TABLE mesh_seen (
+         digest BLOB PRIMARY KEY,
+         at     INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

@@ -926,6 +926,8 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "hkdf",
+ "hmac",
+ "lime_mesh",
  "rusqlite",
  "serde",
  "serde_json",

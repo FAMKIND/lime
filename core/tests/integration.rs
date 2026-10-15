@@ -18,6 +18,104 @@ fn env(name: &str) -> String {
         .unwrap_or_else(|_| panic!("{name} is not set (use ./core/run-integration.sh)"))
 }
 
+/// LIME-140: a message that never touches the server on Alice's side. Her `send` request is captured instead of delivered (the phones are
+/// "offline"); the ciphertext travels Alice -> a relay over the mesh engines; the relay reaches the internet and uploads it through the real
+/// `mesh-drop`; Bob's next sync finds it in his mailbox as a sealed item with no sender and reads it. The local stack's mesh test key is the one
+/// in `supabase/config.toml`.
+struct Divert {
+    inner: Arc<dyn Transport>,
+    captured: std::sync::Mutex<Vec<serde_json::Value>>,
+    on: std::sync::atomic::AtomicBool,
+}
+
+impl Transport for Divert {
+    fn request(&self, method: String, path: String, headers: Vec<HeaderPair>, body: Vec<u8>) -> Result<TransportResponse, TransportError> {
+        if self.on.load(std::sync::atomic::Ordering::SeqCst) && path == "/functions/v1/send" {
+            self.captured.lock().unwrap().push(serde_json::from_slice(&body).unwrap());
+            return Ok(TransportResponse { status: 200, body: serde_json::to_vec(&serde_json::json!({ "stored": 1, "duplicates": 0, "checked": true })).unwrap() });
+        }
+        self.inner.request(method, path, headers, body)
+    }
+}
+
+fn mesh_meet(a: &lime_core::MeshEngine, b: &lime_core::MeshEngine) {
+    let mut queue: Vec<(bool, Vec<u8>)> = Vec::new();
+    queue.extend(a.link_up(1).into_iter().map(|x| (true, x.bytes)));
+    queue.extend(b.link_up(1).into_iter().map(|x| (false, x.bytes)));
+    while !queue.is_empty() {
+        let (to_b, bytes) = queue.remove(0);
+        let answers = if to_b { b.frame(1, bytes) } else { a.frame(1, bytes) };
+        queue.extend(answers.into_iter().map(|x| (!to_b, x.bytes)));
+    }
+    a.link_down(1);
+    b.link_down(1);
+}
+
+#[test]
+fn a_message_travels_by_the_mesh_and_a_relay_uploads_it_through_mesh_drop_to_the_real_server() {
+    let admin = Admin::from_env();
+    let real = admin.transport();
+    let alice = admin.create_account();
+    let bob = admin.create_account();
+    let relay = admin.create_account();
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in [&alice, &bob, &relay] {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(&alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(&bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    admin.give_profile(&relay, "Rae Relay", &format!("re{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (alice_store, bob_store, relay_store) = (store(&dir, "alice.db", 1), store(&dir, "bob.db", 2), store(&dir, "relay.db", 3));
+    alice_store.register_device(real.clone(), alice.token.clone()).unwrap();
+    let bob_device = bob_store.register_device(real.clone(), bob.token.clone()).unwrap().device_id;
+    relay_store.register_device(real.clone(), relay.token.clone()).unwrap();
+
+    // Alice and Bob accept each other (so each holds the other's delivery key).
+    let chat_with_bob = alice_store.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    alice_store.queue_text(chat_with_bob.clone(), "hello Bob".into()).unwrap();
+    alice_store.deliver_queued(real.clone(), alice.token.clone()).unwrap();
+    bob_store.sync(real.clone(), bob.token.clone()).unwrap();
+    let chat_with_alice = bob_store.list_conversations().unwrap().remove(0).id;
+    bob_store.accept_request(chat_with_alice.clone()).unwrap();
+    bob_store.queue_text(chat_with_alice.clone(), "hi Alice".into()).unwrap();
+    bob_store.deliver_queued(real.clone(), bob.token.clone()).unwrap();
+    alice_store.sync(real.clone(), alice.token.clone()).unwrap();
+    assert_eq!(alice_store.sealed_contact_count().unwrap(), 1);
+
+    // Alice is offline: her sealed send is captured instead of delivered.
+    let offline = Arc::new(Divert { inner: real.clone(), captured: std::sync::Mutex::new(Vec::new()), on: std::sync::atomic::AtomicBool::new(true) });
+    let offline_transport: Arc<dyn Transport> = offline.clone();
+    alice_store.queue_text(chat_with_bob.clone(), "over the mesh".into()).unwrap();
+    alice_store.deliver_queued(offline_transport, alice.token.clone()).unwrap();
+    assert!(admin.mailbox_senders(&bob_device).is_empty(), "nothing reached the server");
+    let request = offline.captured.lock().unwrap().iter().rev().find(|b| b["recipients"][0]["access"]["signed"].is_string()).cloned().expect("a signed sealed send");
+    let ciphertext = vodozemac::base64_decode(request["ciphertext"].as_str().unwrap()).unwrap();
+    let to_device = request["recipients"][0]["to_device"].as_str().unwrap().to_owned();
+    assert_eq!(to_device, bob_device);
+
+    // The mesh: Alice -> the relay (a phone with the internet).
+    let local_public = vodozemac::base64_decode("GyNOPj7N/ovXno/OznB9bEtKB2PTAsuRK1XzXrzX7lY=").unwrap();
+    let alice_mesh = lime_core::MeshEngine::new_with_server_key(alice_store.clone(), 1, local_public.clone()).unwrap();
+    let relay_mesh = lime_core::MeshEngine::new_with_server_key(relay_store.clone(), 1, local_public).unwrap();
+    alice_mesh.refresh_tags().unwrap();
+    relay_mesh.refresh_tags().unwrap();
+    assert!(alice_mesh.queue_for_send(bob.id.clone(), to_device.clone(), ciphertext).unwrap());
+    mesh_meet(&alice_mesh, &relay_mesh);
+    assert_eq!(relay_mesh.stats().carried, 1);
+
+    // The relay reaches the internet: `mesh-drop` opens the sealed header, checks Alice's proof as `send` would, and stores it for Bob.
+    assert_eq!(relay_mesh.upload_all(real.clone(), relay.token.clone()).unwrap(), 1);
+    assert_eq!(relay_mesh.stats().carried, 0, "uploaded: no longer carried");
+    assert_eq!(admin.mailbox_senders(&bob_device), vec![(false, None)], "sealed, and the server recorded no sender (the relay is not one)");
+    // A second upload of the same packet (another relay carried it too) is a duplicate, not a second item.
+    alice_mesh.refresh_tags().unwrap();
+    assert_eq!(bob_store.sync(real.clone(), bob.token.clone()).unwrap().received, 1);
+    let texts: Vec<String> = bob_store.list_messages(chat_with_alice).unwrap().into_iter().map(|m| m.text).collect();
+    assert_eq!(texts.last().map(String::as_str), Some("over the mesh"), "Bob read what travelled by the mesh: {texts:?}");
+}
+
 /// The platform side of the transport, with a blocking HTTP client (iOS uses URLSession).
 struct HttpTransport {
     base: String,

@@ -25,7 +25,7 @@ for target in ("aarch64-apple-ios", "aarch64-apple-ios-sim"):
             linked.add((parts[0], parts[1].lstrip("v")))
 by_name = {(p["name"], p["version"]): p for p in packages.values()}
 
-names = sorted(n for n in linked if n[0] != "lime_core" and n in by_name)
+names = sorted(n for n in linked if n[0] not in ("lime_core", "lime_mesh") and n in by_name)  # lime's own crates are not third-party
 texts = {}      # sha -> text
 users = {}      # sha -> [crate names]
 rows = []

@@ -36,6 +36,8 @@ serde_json = "1"
 hkdf = "0.13"
 aes-gcm = "0.10"
 sha2 = "0.11"
+hmac = "0.13"
+lime_mesh = { path = "mesh" }
 
 [profile.release]
 lto = true

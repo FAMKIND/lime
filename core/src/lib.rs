@@ -10,6 +10,7 @@ mod call_emoji;
 mod client;
 mod format;
 mod keys;
+mod mesh;
 mod protocol;
 mod selftest;
 mod store;
@@ -22,6 +23,7 @@ mod testing;
 
 pub use call_emoji::{call_emoji, group_call_emoji, CallEmoji, GroupCallKey};
 pub use format::{Block, ListItem, Span};
+pub use mesh::{MeshAction, MeshEngine, MeshStats, MeshUpload};
 pub use client::groups::{default_group_name, GroupDetails, GroupMemberInfo};
 pub use client::group_calls::{group_call_rings, GroupCallEmojiState, GroupCallEvent, GroupCallInfo, GroupCallJoin, GroupCallParticipant, GroupCallSendReport, LiveKitToken};
 pub use client::attachments::{OutgoingAttachment, TransferProgress};
