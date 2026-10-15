@@ -5,7 +5,8 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-140 (the mesh engine; drafted).** **It waits until the user has deployed LIME-139 to staging** (`./supabase/deploy-staging.sh`); ask the user if unsure. (LIME-139 landed as `ae9d225`.) **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-141** (the iPhone Bluetooth link; drafted). LIME-140 is complete: the key is pinned (`e5f37ab`) and `mesh-drop` was deployed to staging at 14:48 (`d0e2002`; the smoke test passed).
+- **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -148,6 +149,17 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e124. **LIME-140 complete on staging (2026-10-15 14:48):** `mesh-drop` + the refactored `send` deployed, secrets re-set, `smoke-staging.sh` passed; `mesh-drop` without a session → 401. **Not yet tested on staging:** a real signed upload through `mesh-drop` (it needs the app; it comes in 142's device test). **NEXT: 141.**
+1e123. **The mesh server key is pinned (`e5f37ab`, id 1; the public key is in `core/src/mesh.rs`).** **`mesh-drop` is NOT deployed yet** (checked: staging's functions date from 12:11; there's no `mesh-drop`). Tend waits for the user's "go". Tend's notes, all fine:
+   - a local test key pair in `config.toml` (public by design);
+   - `new_with_server_key` is exported for staging vs prod;
+   - Hello carries the recipient's day tags to a met phone (**for the security review**);
+   - **a key-rotation overlap (two ids) is needed before any rotation**: a later brief.
+1e122. **LIME-140 LANDED in 2 parts: `3825804` (the `lime_mesh` crate + the simulator) + `e3c6fac` (the glue, the sealed header, `MeshEngine` over UniFFI, `mesh-drop`), pushed 2026-10-15; PLOT.md `ed97b87`.**
+   - **The crate depends only on `sha2`**; the packet's pinned vector; the tag vector (Python-checked); the header = X25519 (vodozemac) + HKDF + AES-GCM (no new library compiled; `hmac` was already in the lock); `mesh-drop` shares `_shared/access.ts` with `send` (refactored; its 58 tests still pass); only signatures accepted; migration 32 (`mesh_packets`, `mesh_seen`); `set_my_tags` added.
+   - **Sim:** every crowd scenario 40/40, 20/20; direct and 1–2 relays OK; **a 3-relay chain fails with 4 copies, OK with 8 → originate with 8 (142)**; TTL + expiry behave.
+   - **The user's steps:** `mesh-keygen.sh` (plot reviewed it: prints the public key only; the secret goes via a chmod-600 temp file, then is deleted), then the deploy go.
+   - **→ LIME-141 drafted.**
 1e121. **DECIDED, the emergency mode (the user, 2026-10-15), for LIME-143:**
    - **E1 = A:** always silent (a banner, no sound or vibration), **plus a Settings option "Emergency alerts make a sound"** for places where loud helps (the user's example: a natural disaster in Nepal), off by default; a per-device choice.
    - **E2 = A:** the SRP's five actions (Hold, Secure, Lockdown, Evacuate, Shelter) as presets + Safe / Need help; schools that don't use SRP can turn the presets off in Settings.
@@ -5715,10 +5727,53 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-140:** core: the `core/mesh` crate (framing, padding, rotating tags, the sealed routing header (finding 2), store-carry-forward, budgets, dedupe, summaries, the `MeshLink` trait) + the `mesh-drop` endpoint + the server's routing key pair (a user step: the secret) + the simulation harness. No radios.
 - **LIME-141:** iOS: the CoreBluetooth `MeshLink` adapter (GATT meet, L2CAP move, one link per pair, resume, service-changed), the Bluetooth permission explainer, the Nearby status.
 - **LIME-142:** wiring: the outbox sends via the mesh when offline; carried envelopes upload via `mesh-drop`; receiving over the mesh; the message statuses; flush on every wake; state restoration; the M1 Settings switch.
+  - **The user's airplane-mode test (2026-10-15, screenshots):** today an offline send ends in a red **"Not sent. Tap to retry"**, and the Messages list shows "You're offline. Check your connection and try again."
+  - **In 142:** an offline send shows **"Waiting for signal"** (not red, not a failure), **sends automatically** on any link (mesh or internet) with no tap, then "Passed to a nearby phone" → "Delivered";
+  - the banner says what's happening ("Offline. lime will send through nearby phones and when you're back online", the honest promise copy);
+  - **"Not sent" only for a real failure** (e.g. the 48 h expiry with no route).
+  - **Copies (plot, from 140's simulator):** with 4 copies a 4-hop chain never delivered (4 → 2 → 1, then the last holder waits); with 8 it did. **Packets this phone originates start with 8 copies** (`MeshConfig`); relayed ones keep halving. Re-check the sim table + the storage cap.
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-140 → `tend` (lime-aa) (after LIME-139 is deployed; drafted 2026-10-15): the mesh core: a separate `core/mesh` crate, the sealed routing header, `mesh-drop`, and a simulator
+### LIME-141 → `tend` (lime-aa) (after 140's key is pinned + deployed; drafted 2026-10-15): the iPhone Bluetooth link for the mesh
+**Goal:** two or more iPhones/iPads running lime find each other over Bluetooth with no internet and pass `MeshEngine` frames reliably, in the foreground and while locked/backgrounded (not force-quit), using the patterns the spikes proved.
+
+**Inputs:** `docs/spike-ble.md` (§2–§7 and §8's flags), LIME-140's `MeshEngine` API (`core/mesh/README.md`, the UniFFI `MeshEngine`/`MeshAction`), DESIGN-13.
+
+**The change (iOS only; the core is untouched except bug fixes it needs, reported):**
+1. **`MeshBluetooth` (a new file), the `MeshLink` adapter over CoreBluetooth:**
+   - both roles at once (central + peripheral), **one service UUID**, the background modes `bluetooth-central` + `bluetooth-peripheral` (already proven with free provisioning);
+   - **GATT to meet** (a hello characteristic + the L2CAP PSM characteristic);
+   - **L2CAP to move frames** (unencrypted, unpaired; everything of value is already sealed); **GATT write/notify fallback** for small frames or when the channel fails; ~470 B fragments with a reassembly cap and a 30 s timeout (DESIGN-06);
+   - **one link per pair:** a random per-launch link id exchanged in the hello; **the lower id initiates**; duplicates are closed;
+   - **resumable:** on a drop, re-issue the connect (the spike saw ~1 drop / 20 min); handle `services_modified` (rediscover).
+2. **Privacy on the air:**
+   - **no name, no account or device id in adverts or the hello**: only the service UUID (background adverts carry nothing else anyway) and a **rotating ephemeral link id** (new per launch and every ~15 min);
+   - RSSI-gate connections (skip very weak links);
+   - duty-cycle scanning when the app is backgrounded and idle (the spike numbers; **report the cycle chosen**).
+3. **Driving the engine:** link up → `link_up`, frames → `frame`, down → `link_down`; execute the returned `MeshAction`s (honour `delay_ms` with a dispatch-after while running; never a timer that needs a suspended app). **Every wake event** (a discovery, a connection, the app opening, state restoration) calls `link_up` for each live link so the engine flushes (the MESH v1 rule).
+4. **State restoration:** `CBCentralManagerOptionRestoreIdentifierKey` + `CBPeripheralManagerOptionRestoreIdentifierKey`; log every restore (the spike couldn't confirm it). **Force-quit = nothing** (documented, shown in the UI copy later).
+5. **The permission + status UX (minimal now; the full copy is 142/143):**
+   - a one-time explainer before the system Bluetooth prompt ("lime can pass messages phone-to-phone when there's no internet");
+   - a tiny Debug-visible "Nearby: off / looking / N phones" status for testing;
+   - **no user-facing promise yet.**
+6. **Debug diagnostics:** a "Mesh" log (like the call diagnostics): links up/down, frames in/out (sizes only), the engine's `stats()` every minute, restores, the scan cycle. **No tags, digests or ids in full** (4-char prefixes).
+7. **A Debug "mesh test" screen:** queue a test packet to a chosen contact, show counts, so 141 can be proven before 142 wires the real outbox.
+
+**Kind:**
+- behaviour: unit tests for the adapter's pure logic (fragmenting/reassembly with the caps, link dedupe by id, action execution order) with a fake CoreBluetooth layer;
+- **a device test is the real proof** (the simulator has no Bluetooth).
+
+**Device test (tend with the user, the 13 mini on USB + Jean's phone + the iPad):**
+1. **two devices in airplane mode, Bluetooth on:** a test packet from A reaches B (the Debug screen), foreground → foreground; then **B locked**;
+2. **three devices in a line** (A … C out of range, B in the middle) → A to C via B;
+3. **report:** discovery time, time per hop, drops, restores seen, battery % per hour on each device over ~30 min, **the scan cycle used**.
+
+**Scope:** `ios/Lime/Core/Mesh/` (new), `project.yml` (Info.plist background modes + `NSBluetoothAlwaysUsageDescription`), the Debug screens, tests. **Not:** the outbox (142), Nearby/emergency (143), the core's mesh rules.
+
+**Record:** `## LIME-141` with **For plot:** and every item checked off. **Commit:** `feat(ios): the Bluetooth link for the mesh (GATT meet, L2CAP move, one link per pair, restoration)`, trailer `Brief: LIME-141`. The rest per the standing rules.
+
+### LIME-140 → `tend` (lime-aa) (DONE as `3825804` + `e3c6fac`; drafted 2026-10-15): the mesh core: a separate `core/mesh` crate, the sealed routing header, `mesh-drop`, and a simulator
 **Goal:** a tested, radio-free mesh engine. It takes lime's sealed envelopes and carries them from phone to phone (store, carry, forward), with privacy on the air, budgets, dedupe and expiry. A relay that reaches the internet can upload what it carries without learning who it's for. All of it is proven in a simulator of many virtual phones.
 
 **Inputs:** DESIGN-13 (above: the decided rules and both findings), `docs/spike-ble.md` §7, `architecture.md` §7, `api-v2.md` §4/§8, LIME-139 (signed access, `ae9d225`).
