@@ -130,6 +130,37 @@ pub(crate) fn active_participants(conn: &Connection, call_id: &str) -> Result<Ve
     Ok(rows)
 }
 
+/// The call's four-emoji check (LIME-147): `(how many people's keys I am still waiting for, the four indexes once I hold everyone's)`. Everyone
+/// in the call counts, me included (my own current key is the one in the call row); with nobody else's key missing and my own key made, the
+/// four come from `call_emoji::group_emoji_for`.
+pub(crate) fn emoji_state(conn: &Connection, call_id: &str) -> Result<(u32, Option<[usize; 4]>), StoreError> {
+    let Some(call) = call_row(conn, call_id)?.filter(|c| c.joined && c.ended_at.is_none()) else { return Ok((0, None)) };
+    let (Some(mine), Some(my_key)) = (call.my_participant.as_deref(), call.my_key.as_deref()) else { return Ok((0, None)) };
+    let mut statement = conn
+        .prepare("SELECT participant, key_hash FROM group_call_participants WHERE call_id = ?1 AND left_at IS NULL")
+        .map_err(db_err)?;
+    let rows = statement
+        .query_map(params![call_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<Vec<u8>>>(1)?)))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    let mut people: Vec<(String, [u8; 32])> = Vec::new();
+    let mut waiting = 0u32;
+    for (participant, hash) in rows {
+        if participant == mine {
+            people.push((participant, crate::call_emoji::key_hash(my_key)));
+        } else if let Some(hash) = hash.and_then(|h| <[u8; 32]>::try_from(h.as_slice()).ok()) {
+            people.push((participant, hash));
+        } else {
+            waiting += 1;
+        }
+    }
+    if waiting > 0 || people.is_empty() {
+        return Ok((waiting, None));
+    }
+    Ok((0, Some(crate::call_emoji::group_emoji_for(call_id, people))))
+}
+
 fn person_name(conn: &Connection, user: &str) -> String {
     conn.query_row("SELECT name FROM people WHERE id = ?1", params![user], |r| r.get::<_, String>(0)).unwrap_or_else(|_| user.to_owned())
 }
@@ -365,6 +396,12 @@ pub(crate) fn apply(conn: &Connection, me: &str, sender: &str, device: &str, gro
                     enqueue_my_key_to(conn, &call, sender)?;
                 }
             }
+            // Only the hash of their current key is kept (for the emoji check): the newest index wins.
+            conn.execute(
+                "UPDATE group_call_participants SET key_hash = ?3, key_index = ?4 WHERE call_id = ?1 AND participant = ?2 AND (key_index IS NULL OR key_index <= ?4)",
+                params![call_id, participant, crate::call_emoji::key_hash(&key).to_vec(), index as i64],
+            )
+            .map_err(db_err)?;
             push_event(conn, "key", &call, sender, &participant, json!({ "key": vodozemac::base64_encode(&key), "index": index }), now)?;
         }
         "group.call.key_request" => {

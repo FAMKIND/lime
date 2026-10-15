@@ -66,6 +66,10 @@ final class StoreGroupCallCore: GroupCallCore {
         (try? store?.core?.activeGroupCall(conversationId: conversationID)) ?? nil
     }
 
+    func emojiState(callID: String) -> GroupCallEmojiState? {
+        try? store?.core?.groupCallEmojiState(callId: callID)
+    }
+
     func title(of conversationID: String) -> String {
         store?.conversations.first { $0.id == conversationID }?.title ?? "Group"
     }

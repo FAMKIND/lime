@@ -58,8 +58,8 @@ final class CallMiniPlayerUITests: XCTestCase {
 
     func testAGroupCallsMiniPlayerHasThePeopleCountAndMutes() {
         let app = launch(["-lime-demo-screen", "group-call-4"])
-        XCTAssertTrue(app.buttons["Minimise call"].waitForExistence(timeout: 15))
-        app.buttons["Minimise call"].tap()
+        XCTAssertTrue(app.buttons["Minimise"].waitForExistence(timeout: 15))
+        app.buttons["Minimise"].tap()
         let bar = app.buttons["call-mini-return"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5), "also inside the group's own chat")
         XCTAssertTrue(bar.label.contains("4 in call"), bar.label)

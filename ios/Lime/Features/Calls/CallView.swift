@@ -207,38 +207,17 @@ struct CallView: View {
 
     private func header(_ call: CallManager) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Button { showPerson = true } label: {
-                HStack(spacing: 8) {
-                    AvatarView(person: person(store), size: 28)
-                    Text(call.peerName).font(.headline).foregroundStyle(.white).lineLimit(1)
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-                }
-                .padding(.leading, 6).padding(.trailing, 12).padding(.vertical, 6)
-                .background(.black.opacity(0.35), in: Capsule())
+            CallNamePill(name: call.peerName, accessibilityLabel: "\(call.peerName), details", action: { showPerson = true }) {
+                AvatarView(person: person(store), size: 28)
             }
-            .accessibilityLabel("\(call.peerName), details")
-            .accessibilityIdentifier("call-name-pill")
             HStack(spacing: 8) {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(call.statusText(at: context.date)).monospacedDigit()
                         .font(.subheadline).foregroundStyle(.white.opacity(0.85))
                         .accessibilityIdentifier("call-status")
                 }
-                if !call.verificationEmoji.isEmpty && call.phase == .active {
-                    Button { showEmoji = true } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "lock.fill").font(.caption2)
-                            // The same order, left to right, for both people (so they compare the same way), whatever the language.
-                            HStack(spacing: 2) { ForEach(Array(call.verificationEmoji.enumerated()), id: \.offset) { Text($1.emoji).font(.callout) } }
-                                .environment(\.layoutDirection, .leftToRight)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10).frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel("Encrypted call. Emoji: \(call.verificationEmoji.map(\.name).joined(separator: ", "))")
-                    .accessibilityHint("Opens how to check it")
-                    .accessibilityIdentifier("call-emoji")
+                if call.phase == .active {
+                    CallEmojiChip(emoji: call.verificationEmoji, spokenPrefix: "Encrypted call.", hint: "Opens how to check it") { showEmoji = true }
                 }
                 if call.remoteMuted && call.phase == .active {
                     Label("Muted", systemImage: "mic.slash.fill").labelStyle(.titleAndIcon)
@@ -261,26 +240,9 @@ struct CallView: View {
     }
 
     private func emojiSheet(_ call: CallManager) -> some View {
-        VStack(spacing: 18) {
-            Image(systemName: "lock.fill").font(.title2).foregroundStyle(.white.opacity(0.8)).padding(.top, 28).accessibilityHidden(true)
-            HStack(spacing: 14) {
-                ForEach(Array(call.verificationEmoji.enumerated()), id: \.offset) { Text($1.emoji).font(.system(size: 52)) }
-            }
-            .environment(\.layoutDirection, .leftToRight)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Emoji: \(call.verificationEmoji.map(\.name).joined(separator: ", "))")
-            .accessibilityIdentifier("call-emoji-large")
-            Text("If you both see these same 4 emoji, in this order, your call is end-to-end encrypted and no one is in between. Read them to each other.")
-                .font(.body).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.9))
-                .accessibilityIdentifier("call-emoji-explanation")
-            Text("They belong to this call only. They are different from Verify in person, which checks a person\u{2019}s account.")
-                .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.6))
-            Spacer()
-        }
-        .padding(.horizontal, 24)
-        .presentationDetents([.height(380)])
-        // (An identifier on the container would replace the children's own.)
-        .background(Color.clear.accessibilityIdentifier("call-emoji-sheet"))
+        CallEmojiSheet(emoji: call.verificationEmoji,
+                       explanation: "If you both see these same 4 emoji, in this order, your call is end-to-end encrypted and no one is in between. Read them to each other.",
+                       footnote: "They belong to this call only. They are different from Verify in person, which checks a person\u{2019}s account.")
     }
 
     private func personSheet(_ call: CallManager) -> some View {

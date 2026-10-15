@@ -300,6 +300,45 @@ pub fn call_emoji(call_id: String, fp_caller: String, fp_callee: String) -> Vec<
         .collect()
 }
 
+/// One person's current media key in a group call, for `group_call_emoji`.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct GroupCallKey {
+    pub participant: String,
+    pub key: Vec<u8>,
+}
+
+/// The four emoji for a group call (LIME-147), from `SHA-256("lime-group-call-emoji-v1" || call_id || for each participant, sorted by
+/// participant id (byte order of the id as sent): participant_id || SHA-256(that participant's current key))`, the first four bytes
+/// indexing the list. Everyone in the call, me included, gets the same four exactly when every phone holds the same current keys for the
+/// same people: a swapped key, or a hidden extra participant, changes them on someone's screen.
+pub(crate) fn group_emoji_for(call_id: &str, mut people: Vec<(String, [u8; 32])>) -> [usize; 4] {
+    people.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    let mut hasher = Sha256::new();
+    hasher.update(b"lime-group-call-emoji-v1");
+    hasher.update(call_id.as_bytes());
+    for (participant, key_hash) in &people {
+        hasher.update(participant.as_bytes());
+        hasher.update(key_hash);
+    }
+    let digest = hasher.finalize();
+    [digest[0] as usize, digest[1] as usize, digest[2] as usize, digest[3] as usize]
+}
+
+pub(crate) fn key_hash(key: &[u8]) -> [u8; 32] {
+    Sha256::digest(key).into()
+}
+
+pub(crate) fn emoji_records(indexes: [usize; 4]) -> Vec<CallEmoji> {
+    indexes.into_iter().map(|index| CallEmoji { emoji: EMOJI[index].0.to_owned(), name: EMOJI[index].1.to_owned() }).collect()
+}
+
+/// The four emoji to compare on a group call, from everyone's current keys (see `group_emoji_for`). The order the people are given in does
+/// not matter. (The app asks the core for the call's own emoji; this is the same computation with the keys given, for other platforms and tests.)
+#[uniffi::export]
+pub fn group_call_emoji(call_id: String, participants: Vec<GroupCallKey>) -> Vec<CallEmoji> {
+    emoji_records(group_emoji_for(&call_id, participants.into_iter().map(|p| (p.participant, key_hash(&p.key))).collect()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,5 +382,53 @@ mod tests {
         assert_ne!(base, emoji_for("call-9", "AB:CD:EF", "01:02:04"), "a swapped callee key");
         assert_ne!(base, emoji_for("call-10", "AB:CD:EF", "01:02:03"), "another call");
         assert_ne!(base, emoji_for("call-9", "01:02:03", "AB:CD:EF"), "the roles are not interchangeable");
+    }
+
+    const GROUP_VECTOR: [usize; 4] = [185, 93, 172, 216];
+
+    fn key(byte: u8) -> Vec<u8> {
+        vec![byte; 32]
+    }
+
+    #[test]
+    fn group_emoji_fixed_test_vector_so_every_platform_shows_the_same_four() {
+        // Never change: another platform checks the same vector (the digest was also computed independently with Python's hashlib).
+        let call = "ab".repeat(32);
+        let people = vec![
+            GroupCallKey { participant: "0a".repeat(16), key: key(1) },
+            GroupCallKey { participant: "0b".repeat(16), key: key(2) },
+            GroupCallKey { participant: "0c".repeat(16), key: key(3) },
+        ];
+        let got = group_emoji_for(&call, people.iter().map(|p| (p.participant.clone(), key_hash(&p.key))).collect());
+        assert_eq!(got, GROUP_VECTOR);
+        let names: Vec<String> = group_call_emoji(call, people).into_iter().map(|e| e.name).collect();
+        assert_eq!(names, GROUP_VECTOR.map(|i| EMOJI[i].1.to_owned()));
+    }
+
+    #[test]
+    fn group_emoji_do_not_depend_on_the_order_the_people_are_listed_in() {
+        let call = "cd".repeat(32);
+        let a = GroupCallKey { participant: "01".repeat(16), key: key(9) };
+        let b = GroupCallKey { participant: "02".repeat(16), key: key(8) };
+        let c = GroupCallKey { participant: "03".repeat(16), key: key(7) };
+        let one = group_call_emoji(call.clone(), vec![a.clone(), b.clone(), c.clone()]);
+        assert_eq!(one, group_call_emoji(call.clone(), vec![c.clone(), a.clone(), b.clone()]));
+        assert_eq!(one, group_call_emoji(call, vec![b, c, a]));
+        assert_eq!(one.len(), 4);
+    }
+
+    #[test]
+    fn a_changed_key_a_hidden_extra_person_another_call_or_a_swapped_key_changes_the_group_emoji() {
+        let call = "ef".repeat(32);
+        let a = GroupCallKey { participant: "01".repeat(16), key: key(1) };
+        let b = GroupCallKey { participant: "02".repeat(16), key: key(2) };
+        let base = group_call_emoji(call.clone(), vec![a.clone(), b.clone()]);
+        let rekeyed = GroupCallKey { participant: b.participant.clone(), key: key(3) };
+        assert_ne!(base, group_call_emoji(call.clone(), vec![a.clone(), rekeyed]), "a changed key");
+        let hidden = GroupCallKey { participant: "03".repeat(16), key: key(4) };
+        assert_ne!(base, group_call_emoji(call.clone(), vec![a.clone(), b.clone(), hidden]), "an extra participant nobody else sees");
+        assert_ne!(base, group_call_emoji("00".repeat(32), vec![a.clone(), b.clone()]), "another call");
+        let swapped = vec![GroupCallKey { participant: a.participant.clone(), key: b.key.clone() }, GroupCallKey { participant: b.participant.clone(), key: a.key.clone() }];
+        assert_ne!(base, group_call_emoji(call, swapped), "the same keys given to the other people");
     }
 }

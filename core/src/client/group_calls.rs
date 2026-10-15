@@ -60,6 +60,15 @@ pub struct GroupCallEvent {
     pub reason: String,
 }
 
+/// The four-emoji check of a group call (LIME-147). `ready` is false (and `emoji` empty) while any person's key has not arrived (`waiting` of
+/// them): no emoji until everyone's key is in. Recomputed by the app after every key, join and leave event.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct GroupCallEmojiState {
+    pub ready: bool,
+    pub waiting: u32,
+    pub emoji: Vec<crate::CallEmoji>,
+}
+
 /// What one pass of `deliver_group_call_ops` did (for the call diagnostics): how many ops went, how many of them were keys (and the index of the
 /// last), and how many wait because a person's key changed.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -250,6 +259,18 @@ impl LimeStore {
             }
         }
         Ok(report)
+    }
+
+    /// The call's four-emoji check from everyone's current keys, all held by the core (the app never assembles the input): empty and not
+    /// `ready` until every person in the call has sent their key. See `call_emoji::group_emoji_for`.
+    pub fn group_call_emoji_state(&self, call_id: String) -> Result<GroupCallEmojiState, StoreError> {
+        self.with_conn(|conn| {
+            let (waiting, indexes) = rules::emoji_state(conn, &call_id)?;
+            Ok(match indexes {
+                Some(indexes) => GroupCallEmojiState { ready: true, waiting: 0, emoji: crate::call_emoji::emoji_records(indexes) },
+                None => GroupCallEmojiState { ready: false, waiting, emoji: Vec::new() },
+            })
+        })
     }
 
     /// A tile has been stuck without a key: asks the owner of `participant` to send their current key again (queued; `deliver_group_call_ops` sends it).

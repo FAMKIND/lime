@@ -8,6 +8,7 @@ import SwiftUI
 struct GroupCallView: View {
     @Environment(ConversationStore.self) private var store
     @State private var showPeople = false
+    @State private var showEmoji = false
     @State private var selfCorner: GroupCallLayout.Corner = .bottomTrailing
     @State private var selfDrag: CGSize = .zero
     @State private var viewSize: CGSize = .zero
@@ -35,6 +36,7 @@ struct GroupCallView: View {
         .onGeometryChange(for: CGSize.self, of: { $0.size }) { viewSize = $0 }
         .background(PiPAnchor { pipAnchor = $0 })
         .sheet(isPresented: $showPeople) { GroupPeopleSheet() }
+        .sheet(isPresented: $showEmoji) { emojiSheet }
         .onAppear { preparePiP() }
         .onChange(of: call.phase) { _, _ in preparePiP() }
         .onChange(of: call.video) { _, _ in preparePiP() }
@@ -65,17 +67,25 @@ struct GroupCallView: View {
 
     // MARK: Header
 
+    /// The 1:1 call header's look (LIME-147): a pill with the group's picture, its name and a › (tap: the people in the call), and under it
+    /// the timer and the encryption chip. The layout switch and the people count sit top right; Minimise is in the controls row.
     private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Button { call.minimize() } label: {
-                Image(systemName: "chevron.down").font(.system(size: 18, weight: .semibold)).frame(width: 44, height: 44)
-            }
-            .accessibilityLabel("Minimise call").accessibilityIdentifier("group-call-minimise")
-            VStack(alignment: .leading, spacing: 1) {
-                Text(call.title).font(.headline).lineLimit(1).layoutPriority(-1)
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(status(at: context.date)).font(.footnote).foregroundStyle(.white.opacity(0.75))
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                CallNamePill(name: call.title, accessibilityLabel: "\(call.title), people in the call", action: { showPeople = true }) { groupPicture }
+                    .layoutPriority(-1)
+                HStack(spacing: 8) {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(status(at: context.date)).monospacedDigit()
+                            .font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                            .accessibilityIdentifier("call-status")
+                    }
+                    if call.phase == .active {
+                        CallEmojiChip(emoji: call.verificationEmoji, waiting: call.emojiWaiting, spokenPrefix: "Encrypted call.",
+                                      hint: "Opens how to check it. They change when people join or leave") { showEmoji = true }
+                    }
                 }
+                .padding(.leading, 8)
             }
             Spacer(minLength: 0)
             Button { call.chooseLayout(layoutIsSpeaker ? .grid : .speaker) } label: {
@@ -98,6 +108,25 @@ struct GroupCallView: View {
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 8)
+    }
+
+    /// The group's picture in the pill: the same photo, emoji or cluster of members' photos as the chat.
+    @ViewBuilder private var groupPicture: some View {
+        if let conversation = store.conversation(call.conversationID) {
+            ConversationAvatar(conversation: conversation, size: 28)
+        } else {
+            Circle().fill(Color.white.opacity(0.18)).frame(width: 28, height: 28)
+                .overlay(Text(String(call.title.prefix(1)).uppercased()).font(.footnote.weight(.semibold)).foregroundStyle(.white))
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var emojiSheet: some View {
+        CallEmojiSheet(emoji: call.verificationEmoji,
+                       explanation: "Compare these 4 with everyone in the call. If you all see the same 4, nobody else can see or hear the call.",
+                       changeNote: "They change when someone joins or leaves, so compare again.",
+                       footnote: "They check the call\u{2019}s keys, not who each person is. Use Verify in person to check a person\u{2019}s account.",
+                       height: 440)
     }
 
     private func status(at date: Date) -> String {

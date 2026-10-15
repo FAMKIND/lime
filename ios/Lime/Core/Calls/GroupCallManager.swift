@@ -20,6 +20,8 @@ protocol GroupCallCore: AnyObject {
     func takeEvents() -> [GroupCallEvent]
     func activeCall(conversationID: String) -> GroupCallInfo?
     func title(of conversationID: String) -> String
+    /// The call's four-emoji check from everyone's current keys (all held by the core); not ready until every person's key is in.
+    func emojiState(callID: String) -> GroupCallEmojiState?
 }
 
 /// One group call at a time (LIME-112b). A thin adapter: LimeCore decides everything about the call and its keys; LiveKit carries the
@@ -65,6 +67,9 @@ final class GroupCallManager {
     private(set) var title = ""
     private(set) var video = false
     private(set) var tiles: [Tile] = []
+    /// The four-emoji check (LIME-147): from everyone's current media keys; empty while any person's key has not arrived (`emojiWaiting`).
+    private(set) var verificationEmoji: [CallEmoji] = []
+    private(set) var emojiWaiting = false
     private(set) var muted = false
     private(set) var cameraOn = false
     private(set) var speakerOn = false
@@ -255,6 +260,7 @@ final class GroupCallManager {
         stuckSince = [:]
         asked = []
         myParticipant = joined.participant
+        refreshEmoji()
         let myself = me()
         tiles = [Tile(id: joined.participant, userID: myself?.id ?? "", name: myself?.name ?? "Me", isMe: true, secured: true)]
         for other in joined.participants { tiles.append(Tile(id: other.participant, userID: other.userId, name: other.name, isMe: false)) }
@@ -407,7 +413,19 @@ final class GroupCallManager {
         }
     }
 
+    /// Asks the core for the emoji again: after every join, leave and key (the keys change when people come and go).
+    func refreshEmoji() {
+        guard phase != .idle, !callID.isEmpty, let state = core.emojiState(callID: callID) else {
+            if !verificationEmoji.isEmpty { verificationEmoji = [] }
+            emojiWaiting = false
+            return
+        }
+        if state.emoji != verificationEmoji { verificationEmoji = state.emoji }
+        emojiWaiting = !state.ready
+    }
+
     func handle(_ events: [GroupCallEvent]) {
+        defer { refreshEmoji() }
         if !events.isEmpty { changes += 1 }
         for event in events {
             // Who is in a call, for the chat's live card and the invite sheet (any call in any of my groups).
@@ -473,7 +491,7 @@ final class GroupCallManager {
             tiles.removeAll { $0.id == id }
             keyed.remove(id)
             let call = callID
-            Task { await core.participantGone(callID: call, participant: id); _ = await core.deliver() }
+            Task { await core.participantGone(callID: call, participant: id); _ = await core.deliver(); refreshEmoji() }
         case .microphone(let id, let muted):
             update(id) { $0.muted = muted }
         case .camera(let id, let on):
@@ -610,6 +628,8 @@ final class GroupCallManager {
         phase = .idle
         self.media = nil
         tiles = []
+        verificationEmoji = []
+        emojiWaiting = false
         callID = ""
         startedAt = nil
         minimized = false
@@ -645,6 +665,7 @@ extension GroupCallManager {
         callID = "demo"
         self.conversationID = conversationID
         startedAt = Date().addingTimeInterval(-83)
+        verificationEmoji = groupCallEmoji(callId: "demo", participants: (0..<min(people, names.count)).map { GroupCallKey(participant: String(format: "%032x", $0), key: Data(repeating: UInt8($0 + 1), count: 32)) })
         tiles = (0..<min(people, names.count)).map {
             Tile(id: "demo-\($0)", userID: "demo-user-\($0)", name: names[$0], isMe: $0 == 0, muted: $0 == 2, cameraOn: false, speaking: $0 == 1, secured: true)
         }

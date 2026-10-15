@@ -466,6 +466,7 @@ mod protocol_state {
                 "DROP INDEX olm_sessions_by_peer; DROP TABLE olm_sessions;
                  CREATE TABLE olm_sessions (peer_user_id TEXT NOT NULL, peer_device_id TEXT NOT NULL, peer_identity_key TEXT NOT NULL,
                      session_pickle TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (peer_user_id, peer_identity_key));
+                 ALTER TABLE group_call_participants DROP COLUMN key_hash; ALTER TABLE group_call_participants DROP COLUMN key_index;
                  PRAGMA user_version = 27;",
             )
             .unwrap();

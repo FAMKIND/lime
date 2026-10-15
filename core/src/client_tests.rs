@@ -3183,6 +3183,77 @@ fn people_who_join_swap_their_own_sender_keys_over_olm_and_each_key_is_the_owner
     }
 }
 
+/// The emoji each phone shows now (`None` while it is waiting for someone's key).
+fn gc_emoji(p: &Party, call_id: &str) -> Option<Vec<String>> {
+    let state = p.store.group_call_emoji_state(call_id.to_owned()).unwrap();
+    assert_eq!(state.ready, !state.emoji.is_empty());
+    state.ready.then(|| state.emoji.into_iter().map(|e| e.name).collect())
+}
+
+#[test]
+fn everyone_in_a_group_call_sees_the_same_four_emoji_which_change_when_people_join_or_leave() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert_eq!(alice.store.group_call_emoji_state(call.call_id.clone()).unwrap(), crate::GroupCallEmojiState { ready: false, waiting: 0, emoji: vec![] }, "not in the call: nothing to check");
+    alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let alone = gc_emoji(&alice, &call.call_id).expect("alone, my own key is everyone's key");
+    bob.store.join_group_call(call.call_id.clone()).unwrap();
+    // Bob has joined but Alice's key has not reached him yet: he waits, he does not show four he cannot trust.
+    assert_eq!(bob.store.group_call_emoji_state(call.call_id.clone()).unwrap().waiting, 1);
+    assert!(gc_emoji(&bob, &call.call_id).is_none());
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let pair = gc_emoji(&alice, &call.call_id).expect("both keys are in");
+    assert_eq!(gc_emoji(&bob, &call.call_id), Some(pair.clone()), "the same four on both phones");
+    assert_ne!(pair, alone, "someone joined: new emoji");
+    carol.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let three = gc_emoji(&alice, &call.call_id).unwrap();
+    assert_eq!(gc_emoji(&bob, &call.call_id), Some(three.clone()));
+    assert_eq!(gc_emoji(&carol, &call.call_id), Some(three.clone()), "the same four on all three");
+    assert_ne!(three, pair);
+    // Bob leaves: Alice and Carol make new keys, so the two left see new emoji, and the same ones.
+    bob.store.leave_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let after = gc_emoji(&alice, &call.call_id).unwrap();
+    assert_eq!(gc_emoji(&carol, &call.call_id), Some(after.clone()));
+    assert_ne!(after, three, "someone left: new emoji");
+    // Bob rejoins (a new participant): new again, the same on all three.
+    bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let again = gc_emoji(&alice, &call.call_id).unwrap();
+    assert_eq!(gc_emoji(&bob, &call.call_id), Some(again.clone()));
+    assert_eq!(gc_emoji(&carol, &call.call_id), Some(again.clone()));
+    assert_ne!(again, after);
+}
+
+#[test]
+fn a_phone_that_holds_another_key_for_someone_shows_other_emoji() {
+    let server = FakeServer::new();
+    let (alice, bob, _carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    gc_settle(&[&alice, &bob], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob], &transport);
+    bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob], &transport);
+    let before = gc_emoji(&bob, &call.call_id).unwrap();
+    assert_eq!(gc_emoji(&alice, &call.call_id), Some(before.clone()));
+    // Bob's phone is made to hold a different key for Alice (what a substituted key would look like).
+    {
+        let conn = bob.store.lock();
+        conn.execute(
+            "UPDATE group_call_participants SET key_hash = ?3 WHERE call_id = ?1 AND participant = ?2",
+            rusqlite::params![call.call_id, a.participant, crate::call_emoji::key_hash(b"another key").to_vec()],
+        )
+        .unwrap();
+    }
+    assert_ne!(gc_emoji(&bob, &call.call_id), Some(before.clone()), "Bob now sees other emoji than Alice");
+    assert_eq!(gc_emoji(&alice, &call.call_id), Some(before), "Alice still sees hers: they differ, which is what the check is for");
+}
+
 #[test]
 fn when_someone_leaves_everyone_still_in_makes_a_new_key_and_the_one_who_left_gets_none() {
     let server = FakeServer::new();

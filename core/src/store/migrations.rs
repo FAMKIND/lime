@@ -486,6 +486,11 @@ const MIGRATIONS: &[&str] = &[
      DROP TABLE olm_sessions;
      ALTER TABLE olm_sessions_v2 RENAME TO olm_sessions;
      CREATE INDEX olm_sessions_by_peer ON olm_sessions (peer_user_id, peer_identity_key);",
+    // 29 (LIME-147): the four-emoji check for group calls. For each person in a call, the SHA-256 of their CURRENT sender key and its index
+    // (never the key itself: other people's keys stay only in `group_call_events` until the app takes them). The emoji are computed from these
+    // hashes and from my own key's hash.
+    "ALTER TABLE group_call_participants ADD COLUMN key_hash BLOB;
+     ALTER TABLE group_call_participants ADD COLUMN key_index INTEGER;",
 ];
 
 /// The schema version this build writes.

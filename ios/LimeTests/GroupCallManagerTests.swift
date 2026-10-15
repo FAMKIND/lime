@@ -16,6 +16,9 @@ final class GroupCallManagerTests: XCTestCase {
         var servers = [IceServer(urls: ["turn:turn.example.org:3478"], username: "u", credential: "c")]
         var queued: [GroupCallEvent] = []
         var refuseStart = false
+        /// What the core says the four emoji are now (the real one is tested in the core).
+        var emoji = GroupCallEmojiState(ready: false, waiting: 1, emoji: [])
+        private(set) var asked = 0
         private(set) var started = 0, joined = 0, left: [String] = [], gone: [String] = [], delivered = 0
         func start(conversationID: String, video: Bool) async throws -> GroupCallInfo {
             if refuseStart { throw AuthError.network }
@@ -35,6 +38,7 @@ final class GroupCallManagerTests: XCTestCase {
         func takeEvents() -> [GroupCallEvent] { defer { queued = [] }; return queued }
         func activeCall(conversationID: String) -> GroupCallInfo? { info }
         func title(of conversationID: String) -> String { "Grade 4 Team" }
+        func emojiState(callID: String) -> GroupCallEmojiState? { asked += 1; return emoji }
     }
 
     final class FakeMedia: GroupCallMedia {
@@ -492,6 +496,38 @@ final class GroupCallManagerTests: XCTestCase {
         XCTAssertEqual(PiPSourceBinding.action(hasController: false, sameSource: false), .create)
         XCTAssertEqual(PiPSourceBinding.action(hasController: true, sameSource: true), .keep)
         XCTAssertEqual(PiPSourceBinding.action(hasController: true, sameSource: false), .rebind, "the rebuilt call screen has a new anchor")
+    }
+
+    func testTheEmojiWaitUntilEveryKeyIsInAndAreAskedForAgainAfterEveryJoinKeyAndLeave() async {
+        let (manager, _, media, core, _, _) = await pipCall()
+        _ = media
+        let bob = core.others[0].participant
+        XCTAssertTrue(manager.emojiWaiting, "someone's key has not arrived: no emoji, a waiting chip")
+        XCTAssertTrue(manager.verificationEmoji.isEmpty)
+        let first = [CallEmoji(emoji: "🐶", name: "dog"), CallEmoji(emoji: "🐱", name: "cat"), CallEmoji(emoji: "🐭", name: "mouse"), CallEmoji(emoji: "🐹", name: "hamster")]
+        core.emoji = GroupCallEmojiState(ready: true, waiting: 0, emoji: first)
+        let before = core.asked
+        manager.handle([event("key", participant: bob, key: Data(repeating: 3, count: 32), index: 0)])
+        XCTAssertEqual(manager.verificationEmoji, first, "the key arrived: the four are shown")
+        XCTAssertFalse(manager.emojiWaiting)
+        XCTAssertGreaterThan(core.asked, before)
+        // Someone joins: the core's four change, and the app shows the new ones (and waits again for the new person's key).
+        core.emoji = GroupCallEmojiState(ready: false, waiting: 1, emoji: [])
+        manager.handle([event("joined", participant: String(repeating: "77", count: 16), user: "dee", name: "Dee")])
+        XCTAssertTrue(manager.emojiWaiting)
+        XCTAssertTrue(manager.verificationEmoji.isEmpty, "no emoji while a key is missing")
+        let second = [CallEmoji(emoji: "🐰", name: "rabbit"), first[0], first[1], first[2]]
+        core.emoji = GroupCallEmojiState(ready: true, waiting: 0, emoji: second)
+        manager.handle([event("key", participant: String(repeating: "77", count: 16), user: "dee", key: Data(repeating: 4, count: 32), index: 0)])
+        XCTAssertEqual(manager.verificationEmoji, second)
+        // Someone leaves: new keys, new four.
+        let third = [first[3], first[2], first[1], first[0]]
+        core.emoji = GroupCallEmojiState(ready: true, waiting: 0, emoji: third)
+        manager.handle([event("left", participant: String(repeating: "77", count: 16), user: "dee")])
+        XCTAssertEqual(manager.verificationEmoji, third)
+        await manager.leave()
+        XCTAssertTrue(manager.verificationEmoji.isEmpty, "gone with the call")
+        XCTAssertFalse(manager.emojiWaiting)
     }
 
     func testMobileDataSends480pAndWiFiGoesBackTo720p() async {
