@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-141** (the iPhone Bluetooth link; drafted). LIME-140 is complete: the key is pinned (`e5f37ab`) and `mesh-drop` was deployed to staging at 14:48 (`d0e2002`; the smoke test passed).
+**▶ NEXT FOR TEND: LIME-141's DEVICE TEST** (the code landed as `9f5f196`, unit-tested; **not proven on devices**). Run the brief's device test with the user (2 devices in airplane mode → then locked → then 3 in a line), report the numbers + battery, and fix CoreBluetooth surprises as `fix(ios): …` commits under `Brief: LIME-141`. **Then LIME-142** (needs drafting: plot).
 - **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
@@ -149,6 +149,10 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e125. **LIME-141 code LANDED as `9f5f196` (pushed; PLOT.md `25eaf42`), DEBUG ONLY, NOT proven on a device:**
+   - **Built:** `MeshBluetooth` (central + peripheral, its own service UUID, GATT hello/PSM, L2CAP + GATT fallback with ~470 B fragments, one link per pair, RSSI −92, link id rotating every 15 min); `MeshDriver` (pure, tested; wake → flush); state restoration in code; the explainer; `MeshLog`; the Debug mesh test screen (+ `MeshEngine.queue_probe` + stats fields: a core change, reported).
+   - **The scan cycle:** foreground continuous → 10 s on / 20 s off after 2 min idle; background is iOS's own.
+   - **The device test the brief required was NOT run** (the record says so plainly) → NEXT.
 1e124. **LIME-140 complete on staging (2026-10-15 14:48):** `mesh-drop` + the refactored `send` deployed, secrets re-set, `smoke-staging.sh` passed; `mesh-drop` without a session → 401. **Not yet tested on staging:** a real signed upload through `mesh-drop` (it needs the app; it comes in 142's device test). **NEXT: 141.**
 1e123. **The mesh server key is pinned (`e5f37ab`, id 1; the public key is in `core/src/mesh.rs`).** **`mesh-drop` is NOT deployed yet** (checked: staging's functions date from 12:11; there's no `mesh-drop`). Tend waits for the user's "go". Tend's notes, all fine:
    - a local test key pair in `config.toml` (public by design);
