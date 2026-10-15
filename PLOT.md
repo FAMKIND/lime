@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-148c (DECIDED B: a call mini player like a podcast bar, with mute + leave, replacing both return bars).** Then **LIME-150**. Then (FaceTime-style group layout: no scrolling, landscape, iPad windows, minimise in the controls), then **LIME-150** (a minimised mini grid of up to 4; starts with a device spike), then **LIME-147** (group-call emoji, APPROVED), then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-112d** (bug: the group video window only floats on the first minimise; LIME-148c landed as `0ac2772`). **Not 150 yet:** 148c's report named 150 because its Phase 0 predates 112d. Then **LIME-151** (run the UI tests in parallel; the user chose A). Then **LIME-150**. Then (FaceTime-style group layout: no scrolling, landscape, iPad windows, minimise in the controls), then **LIME-150** (a minimised mini grid of up to 4; starts with a device spike), then **LIME-147** (group-call emoji, APPROVED), then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -148,6 +148,24 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e110. **The user (2026-10-15): "the mini player is nice; with FaceTime and the tuck-away it doesn't feel overwhelming."**
+   - **Mute = the warm neutral `Theme.pressed`** → 150 item 7b;
+   - **a standing rule: 20% brand / 80% clean;**
+   - **PiP ~30% smaller** → 150 item 7c (iOS may not allow it: test, report honestly);
+   - **the group call header takes the 1:1 look** (a glass pill: avatar + name + ›; the timer + 🔒 + 4 emoji) → **147 item 5**.
+1e109. **LIME-148c LANDED as `0ac2772` (pushed, 2026-10-15; PLOT.md `a7adf98`).**
+   - Every item checked off: one `CallMiniPlayer` as a bottom inset on every screen (not `tabViewBottomAccessory`, which covers only tab-bar screens); it shows in the group's own chat and under PiP; both old bars removed; the a11y element + Mute/Leave ≥ 44 pt; a spec section in `docs/screens/group-call.md`.
+   - **Tests:** unit 369 + UI 189.
+   - **The user should see:** it takes ~70 pt above the composer in a chat (150's tuck-away answers that); Settings (a sheet) covers it.
+   - **Follow-ups:** the mic distinction → 150 item 7b; the "no 'You'" copy sweep → a small brief later; the green circle in the chat → check on a phone.
+   - **NEXT: 112d.**
+1e108. **148c screenshots reviewed (the user: "looks good").**
+   - **Plot's notes for a follow-up, after tend's report:**
+     - (1) the header circle isn't lime in the group chat during a live call in the screenshot (maybe just the demo seed: check on a phone);
+     - (2) the mini player's **mute mic** sits right above the composer's **voice-message mic**, so make mute visually distinct (a filled mic in a dark circle and/or a label);
+     - (3) system lines still say "You created the group…": a "no 'You'" copy sweep (the user's rule).
+   - **DECIDED:** the PiP grid + the mini player show **together** first; **the mini player can be tucked into an edge tab** → both folded into **LIME-150 items 7–8**.
+   - **Open:** the test speed-up (A parallel / B affected-only / C both; plot leans A).
 1e107. **148b gate: "minor updates after testing"**: the green return bar covers the header (back, Sign out). **→ LIME-148c (drafted, NEXT, small):** the bar pushes the screen down instead (a safe-area inset), for the group and 1:1 bars. Plot chose this over the user's alternative (a live toast), because a toast still covers something.
 1e106. **LIME-148b LANDED as `05e3917` (pushed, 2026-10-15; PLOT.md `428926a`).**
    - Every item checked off (rule 11 worked): the group voice return bar outside its chat; the Grid/Speaker switch (remembered); speaker-portrait/landscape/one-on-one as pure functions; defaults 2 = one-on-one, ≤ 4 grid, > 4 or flat = speaker; `docs/screens/group-call.md`; components-swift not used (its environment scopes clash with core-first + the PiP rule).
@@ -610,6 +628,10 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
 - The App Store name, e.g. "lime: teacher messaging" (lowercase is allowed).
 
 ### Standing rules (also in the sections below)
+- **Brand restraint: about 20% brand colour, 80% clean and minimal (the user, 2026-10-15).** "We want to be sparing with our brand colour… we don't want to overwhelm teachers, but want them to have a lot of powerful tools to do their best, which results in student impact."
+  - **Lime green is reserved for the one primary action or live state on a screen** (the "+", a live call circle, Join, the LIVE tag);
+  - **secondary controls use the warm neutrals** (`Theme.pressed`, as behind the selected "Aa"; `Theme.surface`; `Theme.chipFill`);
+  - every UI brief checks this. It extends the older rule "green = only the primary action".
 - **Core-first, for a fast Android port (the user, 2026-10-12: "build in a way that when ready we can take what we have and ready it for an Android app in a fraction of the time").** **Anything that isn't drawing a screen or calling an Apple-only API goes in LimeCore (Rust, exposed through UniFFI)**, so Android reuses it:
   - protocols and state machines (calls, mesh, sync);
   - rules (status/work hours, filters, grouping, call outcomes, unread counts, the profile's context rule);
@@ -5119,7 +5141,54 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-148c` with **For plot:** and every item checked off. **Commit:** `feat(ios): a call mini player (like a podcast bar) replaces the return bars`, trailer `Brief: LIME-148c`. The rest per the standing rules.
 
-### LIME-150 → `tend` (lime-aa) (after LIME-148c; drafted 2026-10-15): a minimised group call shows a small grid of up to 4 people
+### LIME-151 → `tend` (lime-aa) (after LIME-112d, before 150; drafted 2026-10-15): run the UI tests in parallel
+**Goal:** the full iOS test suite (unit + UI) runs in about a third of today's ~54 min, with the same tests and the same pass/fail meaning, so every brief can still run everything.
+
+**DECIDED (the user, 2026-10-15): A** (parallel), over B (affected-only) and C (both).
+
+**Facts:** the Mac has 10 cores and 32 GB RAM; today 186–189 UI tests + ~369 unit tests run serially on one simulator (the 13 mini); `ios/` has `check-warnings.sh`, `check-release-no-bluetooth.sh`, `generate.sh`, `run-e2e-*.sh`, **no test script**.
+
+**The change:**
+1. **`ios/test-full.sh`** (new): runs the full suite on the 13 mini simulator with `-parallel-testing-enabled YES` and **`-parallel-testing-worker-count N`**. Measure N = 3 and N = 4 (and 5 if RAM allows) and **pick the fastest that stays green twice in a row**. Signing on (standing rule 5). It prints one summary line: unit run/skipped/failed, UI run/skipped/failed, minutes. It exits non-zero on any failure. Optional args: `--only <TestClass>`, `--serial`.
+2. **Fix the tests that break in parallel** (each worker is a cloned simulator, so state is separate per clone, but tests that assume an order or share a fixed port/file may fail). Make each self-contained; **don't skip or delete tests to make it green**; report each one fixed and why.
+3. **Make the unit-test bundle parallel too** if it helps (report the minutes).
+4. **The tiered rule stays:** changed tests on SE/18 Pro (serial is fine there).
+5. **Update the standing rules** at the top of PLOT.md? **No: plot owns PLOT.md.** Instead, report the new time; plot updates rules 4–5 (the soft cap) from the number.
+6. **Docs:** a short "Running tests" section in `ios/README.md` (or create it if missing).
+
+**Scope:** `ios/test-full.sh` (new), `ios/project.yml`/the scheme only if parallel settings must live there, the tests that need fixing, `ios/README.md`. **Not:** app code (except a test hook if a test needs isolation; report it).
+
+**Verification:** two consecutive green runs of `./ios/test-full.sh` with the chosen N; the before/after minutes; the old serial command still works (`--serial`).
+
+**Gate:** none on a device; plot reads the timings.
+
+**Record:** `## LIME-151` with **For plot:** and every item checked off. **Commit:** `chore(ios): run the full test suite in parallel (ios/test-full.sh)`, trailer `Brief: LIME-151`. The rest per the standing rules.
+
+### LIME-112d → `tend` (lime-aa) (NEXT after 148c, before 150; drafted 2026-10-15): the group video window only floats the first time you minimise
+**Goal:** a group video call floats in PiP every time you minimise, not just the first.
+
+**The user (2026-10-15, two devices):** "the first time the video stayed while I was typing, then every time after, if I minimised again it would not show the FaceTime window while typing."
+
+**Plot's diagnosis (read in code, not run):**
+- `GroupCallPictureInPicture.prepare(sourceView:subject:)` returns early when `controller != nil`, so **the `AVPictureInPictureController` stays bound to the first call screen's anchor view** (`GroupCallView.swift:63`, `pipAnchor`);
+- minimising dismisses that screen, and returning builds a **new** `GroupCallView` with a **new** anchor, but the old controller keeps the old, now off-window view. So `isPictureInPicturePossible` is false, `start()` calls `onFailed`, and the manager falls back to "minimised without a window" (`GroupCallManager.minimize()`);
+- the 1:1 `CallPictureInPicture.prepare` has the same `controller == nil` guard. Check whether 1:1 shows the same bug on a second minimise; 1:1's screen may stay alive, which would explain why the 118c gate passed. **Report.**
+
+**The fix:**
+1. When `prepare` gets a **different** source view, **rebind**: set `controller.contentSource` to a new `ContentSource(activeVideoCallSourceView: newView, contentViewController: contentController)` (iOS 15+), or rebuild the controller if that isn't reliable. **Keep** the content controller, the renderer and the current subject.
+2. If `start()` finds PiP not possible, log why (`group pip not possible: source off-window / not prepared / …`), then retry once after the next layout pass before falling back.
+3. **The same for 1:1** if Phase 1 finds it affected (a shared pattern; no 1:1 behaviour change otherwise).
+4. **A test** with the fake window: minimise → restore → minimise ×3 → the window starts each time with the current anchor.
+
+5. **Also, a small visual (the user, 2026-10-15; no new tests, the visual rule):** the header's **live call circle** (146b, `ChatView.swift`) uses a filled, oversized video glyph. Make it the **outline** symbol (`video` / `phone`, not `.fill`) at **the same point size and weight as the other header icons** (search, ⋯, the normal phone icon), so the circle reads as balanced with them; keep the lime circle and the ≥ 44 pt target; check the glyph contrast on lime (≥ 3:1). One screenshot in TEND.md.
+
+**Scope:** `GroupCallPiP.swift`, `GroupCallManager.swift` (only if needed), `CallPiP.swift` only if 1:1 is affected, `ChatView.swift` (item 5 only), tests.
+
+**Gate:** in a group video call, minimise and restore 5 times; the window floats every time while typing; then the same in a 1:1 video call.
+
+**Record:** `## LIME-112d` with **For plot:** and every item checked off. **Commit:** `fix(ios): the group video window floats on every minimise, not just the first`, trailer `Brief: LIME-112d`. The rest per the standing rules (unit tests + the call UI tests; the full UI suite only if shared files change).
+
+### LIME-150 → `tend` (lime-aa) (after LIME-112d; drafted 2026-10-15): a minimised group call shows a small grid of up to 4 people
 **Goal:** minimise a group call of up to 4 people and the floating window shows **all of them in a mini grid** (the current window divided into 2 or 4 tiles), so a teacher can see everyone while typing. Larger calls show the 3 most recent speakers + a "+N" tile.
 
 **The user (2026-10-15):** "minimise a group call with 4 people and have a minimised 4-person grid replacing the one card with a grid of 4. Think of taking the current thumbnail and dividing it by 4, to talk to teachers and write something at the same time."
@@ -5141,6 +5210,19 @@ If the survey turns up related issues, raise them before editing. If a decision 
 4. **A choice:** a "Minimised view: Grid · Speaker" setting (in the call's ⋯ or in Settings → Calls; default **Grid** up to 4, **Speaker** above). The setting is remembered.
 5. **The window's size:** prefer a 4:3 or square preferred content size for a grid (the user can still resize); the speaker view keeps 112c's sizing.
 6. **Kept:** tap returns to the full call; the system close button ends PiP, not the call; minimise opens the group chat (112c); 1:1 PiP unchanged.
+7a. **Clarification (tend asked in 148c's report):** the mini grid lives **in the system PiP window** (the floating video window), **not inside 148c's mini player capsule**. The capsule keeps its current size and contents (photo, name, subtitle, Mute, Leave).
+7b. **The capsule's Mute button (the user, 2026-10-15, replaces plot's earlier "dark circle" idea):** its circle uses **the warm neutral `Theme.pressed`**, the same as the composer's selected "Aa" background (`ChatComposer.swift:72`). Not the brand lime, not dark grey. Muted state: the `mic.slash` glyph + VoiceOver value "Muted" (not colour alone). That and the call-control shape also tell it apart from the composer's voice-message mic below it. Leave stays red.
+7c. **The floating video window ~30% smaller (the user, 2026-10-15: "the FaceTime thumbnail when minimised can be about 30% smaller"):**
+   - **⚠ iOS chooses a PiP window's initial size; apps set only its aspect (`preferredContentSize`)**, and people can pinch to resize. Phase 1 tests on a device whether a smaller `preferredContentSize` (≈ 0.7× today's) changes the initial size at all.
+   - If it does, use it for both group and 1:1 PiP.
+   - If not, **say so plainly** and offer the closest lever: a slightly narrower portrait aspect, which reads as smaller. **Don't fake it** with an in-app floating tile instead of system PiP: that loses floating over other apps.
+7. **The mini grid and 148c's mini player show together** (the user, 2026-10-15: "together first, then I'll decide"): the floating window is for seeing people, the mini player for mute/leave (iOS doesn't allow working buttons inside the PiP window). No shrinking of the mini player yet.
+8. **The mini player can be tucked away (the user, 2026-10-15),** like stashing PiP:
+   - **swipe it sideways off either edge** → it collapses into a small **edge tab** (a lime handle with the call icon, ~44 × 64 pt, in the same vertical spot); tap or swipe the tab back out → the full mini player;
+   - it stays tucked until you bring it back or the call ends, and is remembered across screens for that call;
+   - **VoiceOver:** custom actions "Tuck away call controls" / "Show call controls" on the player and the tab; the tab reads "Call controls, hidden. Double-tap to show";
+   - Reduce Motion: no slide, a cross-fade;
+   - **tests:** tuck/untuck, persistence across navigation, the tab's actions; 1:1 voice calls get the same.
 
 **Scope:** `GroupCallPiP.swift` (several renderers/layers), `GroupCallManager.swift` (which participants are shown; the speaker ring), LIME-148's layout function (its pip mode), Settings or the call's ⋯ for the choice, tests. **Not:** the 1:1 PiP, the core.
 
@@ -5193,6 +5275,13 @@ If the survey turns up related issues, raise them before editing. If a decision 
    - VoiceOver reads the emoji names (119's names);
    - the emoji order is forced left to right in RTL (as 119).
 4. **It doesn't prove identity** (who each person is): the explainer says to use Verify in person for that.
+5. **The group call header takes the 1:1 call header's look (the user, 2026-10-15, a screenshot of a 1:1 call):** "I liked the visual treatment for the avatar, title and encryption emoji during a call in the previous builds; bring it back instead of the way it is now."
+   - **a glass pill** at the top left with **the group's picture (photo composite) + the group name + a ›** (tap = the people in the call / group details), over the video;
+   - **below it, one line: the timer, a 🔒, then the 4 emoji chip** (this brief's emoji; tap = the explainer);
+   - **the 1:1 call header (118b/119) is the model:** reuse its views rather than copy them;
+   - the Grid/Speaker switch and Minimise (148/148b) move to wherever fits without crowding the pill (e.g. the top-right corner or the controls row). **Report the placement;**
+   - the same in landscape and in the iPad window (clear of the "•••", 148);
+   - visual: screenshots in portrait and landscape.
 
 **Scope:** `core/src/call_emoji.rs` + its exports + tests, `GroupCallManager.swift`, `GroupCallView.swift` (the chip), the shared chip/sheet views from 119, `docs/architecture.md` ("Group calls: as built": remove "no emoji verification in groups" from the honest limits, add how it works), tests. **Not:** the 1:1 emoji, the server.
 
