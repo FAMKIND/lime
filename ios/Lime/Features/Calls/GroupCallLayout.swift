@@ -83,4 +83,63 @@ enum GroupCallLayout {
         let windowed = window.width < screen.width - 1 || window.height < screen.height - 1
         return windowed ? 52 : 0
     }
+
+    // MARK: Modes and the speaker layouts (LIME-148b)
+
+    /// How tiles are arranged: everyone equal, or the speaker large with the others in a strip.
+    enum Mode: String, CaseIterable { case grid, speaker }
+
+    /// The shape of the container (Element's "window modes", chosen from the container's size and not the device): a short wide strip
+    /// ("flat": a phone on its side, a short iPad window) gets the speaker layout so everything fits without scrolling.
+    enum Shape: Equatable { case normal, narrow, flat }
+
+    static func shape(of size: CGSize) -> Shape {
+        if size.height < 280 && size.width > size.height * 1.8 { return .flat }
+        if size.width < 330 { return .narrow }
+        return .normal
+    }
+
+    /// The default when the person has not chosen: one-on-one for 2, the grid up to 4 people, the speaker layout above 4, and always the speaker layout in a
+    /// flat strip with 3 or more (a grid of tiny tiles is no use there).
+    static func defaultMode(people: Int, in size: CGSize) -> Mode {
+        // Two people: one-on-one (the other person fills the area, my picture floats), which is the speaker layout with nobody in the strip.
+        if people == 2 { return .speaker }
+        if shape(of: size) == .flat && people >= 3 { return .speaker }
+        return people <= 4 ? .grid : .speaker
+    }
+
+    /// The speaker's tile may be larger and a little less constrained than a strip tile.
+    static let speakerMinAspect: CGFloat = 0.6
+    static let speakerMaxAspect: CGFloat = 2.0
+
+    struct Spotlight: Equatable {
+        var speaker: CGRect
+        var strip: [CGRect]
+    }
+
+    /// The speaker large and `others` small tiles (everyone but the speaker and me: I float). Portrait: the speaker on top and the strip below
+    /// it; landscape (or flat): the speaker on the left and the strip down the right side. The strip is laid out like the grid inside its own
+    /// area, so up to 8 small tiles fit without scrolling. With no others the speaker fills the area (one-on-one: the other person edge to edge).
+    static func spotlight(others: Int, in size: CGSize, gap: CGFloat = gap) -> Spotlight? {
+        guard size.width > 0, size.height > 0 else { return nil }
+        if others <= 0 { return Spotlight(speaker: CGRect(origin: .zero, size: size), strip: []) }
+        let landscape = size.width > size.height
+        let share: CGFloat = others <= 2 ? 0.26 : (others <= 4 ? 0.32 : 0.38)
+        if landscape {
+            let stripWidth = max(80, size.width * share)
+            let speakerArea = CGSize(width: size.width - stripWidth - gap, height: size.height)
+            let strip = grid(count: others, in: CGSize(width: stripWidth, height: size.height), gap: gap).map { $0.offsetBy(dx: speakerArea.width + gap, dy: 0) }
+            return Spotlight(speaker: CGRect(origin: .zero, size: speakerArea), strip: strip)
+        }
+        let stripHeight = max(70, size.height * share)
+        let speakerArea = CGSize(width: size.width, height: size.height - stripHeight - gap)
+        let strip = grid(count: others, in: CGSize(width: size.width, height: stripHeight), gap: gap).map { $0.offsetBy(dx: 0, dy: speakerArea.height + gap) }
+        return Spotlight(speaker: CGRect(origin: .zero, size: speakerArea), strip: strip)
+    }
+
+    /// Whether lime's slim return bar shows for a minimised group call (LIME-148b item 00): when I am not in that group's chat, whose lime call
+    /// circle is the way back there, and not while the floating video window is up.
+    static func returnBarShows(inCall: Bool, minimized: Bool, windowUp: Bool, viewingThatChat: Bool) -> Bool {
+        inCall && minimized && !windowUp && !viewingThatChat
+    }
 }

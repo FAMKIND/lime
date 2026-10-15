@@ -11,6 +11,8 @@ struct GroupCallView: View {
     @State private var selfCorner: GroupCallLayout.Corner = .bottomTrailing
     @State private var selfDrag: CGSize = .zero
     @State private var viewSize: CGSize = .zero
+    /// The tiles' own area (what the layout is chosen from).
+    @State private var areaSize: CGSize = .zero
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// A clear view over the whole screen that system Picture in Picture grows its window from.
@@ -22,15 +24,10 @@ struct GroupCallView: View {
         let tiles = call.tiles
         VStack(spacing: 0) {
             header.padding(.top, windowControlsMargin).accessibilitySortPriority(3)
-            Group {
-                if call.speakerViewByDefault {
-                    speakerLayout(tiles)
-                } else {
-                    gridLayout(tiles)
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            tileArea(tiles)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onGeometryChange(for: CGSize.self, of: { $0.size }) { areaSize = $0 }
             controls.accessibilitySortPriority(0)
         }
         .background(Color(red: 0.07, green: 0.08, blue: 0.07).ignoresSafeArea())
@@ -58,6 +55,9 @@ struct GroupCallView: View {
         return GroupCallLayout.windowControlsMargin(idiomIsPad: isPad, window: viewSize, screen: matched)
     }
 
+    /// Whether the speaker layout is the one showing now (the person's choice, else the default for the area's size).
+    private var layoutIsSpeaker: Bool { call.effectiveLayout(in: areaSize) == .speaker }
+
     private func preparePiP() {
         guard call.video, let pipAnchor else { return }
         call.preparePictureInPicture(sourceView: pipAnchor)
@@ -72,12 +72,24 @@ struct GroupCallView: View {
             }
             .accessibilityLabel("Minimise call").accessibilityIdentifier("group-call-minimise")
             VStack(alignment: .leading, spacing: 1) {
-                Text(call.title).font(.headline).lineLimit(1)
+                Text(call.title).font(.headline).lineLimit(1).layoutPriority(-1)
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(status(at: context.date)).font(.footnote).foregroundStyle(.white.opacity(0.75))
                 }
             }
             Spacer(minLength: 0)
+            Button { call.chooseLayout(layoutIsSpeaker ? .grid : .speaker) } label: {
+                // An icon and a word when there is room, the icon alone when the header is tight.
+                ViewThatFits(in: .horizontal) {
+                    Label(layoutIsSpeaker ? "Speaker" : "Grid", systemImage: layoutIsSpeaker ? "person.crop.rectangle" : "square.grid.2x2")
+                        .labelStyle(.titleAndIcon).lineLimit(1).fixedSize()
+                    Image(systemName: layoutIsSpeaker ? "person.crop.rectangle" : "square.grid.2x2")
+                }
+                .font(.subheadline.weight(.semibold)).padding(.horizontal, 10).frame(minHeight: 44)
+            }
+            .accessibilityLabel("Layout: \(layoutIsSpeaker ? "Speaker" : "Grid")")
+            .accessibilityHint("Switches to \(layoutIsSpeaker ? "grid" : "speaker")")
+            .accessibilityIdentifier("group-call-layout")
             Button { showPeople = true } label: {
                 Label("\(call.tiles.count)", systemImage: "person.2.fill").font(.subheadline.weight(.semibold))
                     .padding(.horizontal, 12).frame(minHeight: 44)
@@ -106,6 +118,60 @@ struct GroupCallView: View {
         var chosen = Array((speaking + rest).prefix(limit))
         if let me = tiles.first(where: \.isMe), !chosen.contains(where: { $0.id == me.id }) { chosen[chosen.count - 1] = me }
         return tiles.filter { tile in chosen.contains { $0.id == tile.id } }
+    }
+
+    /// The tiles in the layout that fits: the grid, or the speaker large with the others in a strip (one-on-one: the other person fills the
+    /// area). Chosen from this area's size, so a short landscape strip or a small window gets the speaker layout by itself.
+    private func tileArea(_ tiles: [GroupCallManager.Tile]) -> some View {
+        GeometryReader { geo in
+            let mode = call.effectiveLayout(in: geo.size)
+            if mode == .speaker && tiles.count >= 2 {
+                spotlightLayout(tiles, in: geo.size)
+            } else {
+                gridLayout(tiles)
+            }
+        }
+    }
+
+    private func spotlightLayout(_ tiles: [GroupCallManager.Tile], in size: CGSize) -> some View {
+        let others = tiles.filter { !$0.isMe }
+        let speaker = others.first { $0.id == call.spotlightID } ?? others.first
+        let strip = others.filter { $0.id != speaker?.id }
+        let me = tiles.first(where: \.isMe)
+        let layout = GroupCallLayout.spotlight(others: strip.count, in: size) ?? GroupCallLayout.Spotlight(speaker: CGRect(origin: .zero, size: size), strip: [])
+        return ZStack(alignment: .topLeading) {
+            if let speaker {
+                GroupTileView(tile: speaker, video: call.video, large: true, fixedShape: true)
+                    .frame(width: layout.speaker.width, height: layout.speaker.height)
+                    .position(x: layout.speaker.midX, y: layout.speaker.midY)
+                    .accessibilitySortPriority(3)
+            }
+            ForEach(Array(zip(strip, layout.strip)), id: \.0.id) { tile, frame in
+                GroupTileView(tile: tile, video: call.video, large: false, fixedShape: true, compact: frame.width < 170)
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
+                    .accessibilitySortPriority(1)
+            }
+            if let me {
+                // My picture floats over the speaker's own tile, so it never covers the strip.
+                let base = GroupCallLayout.selfView(in: layout.speaker.size, corner: selfCorner)
+                let frame = base.offsetBy(dx: layout.speaker.minX, dy: layout.speaker.minY)
+                GroupTileView(tile: me, video: call.video, large: false, fixedShape: true, compact: true)
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX + selfDrag.width, y: frame.midY + selfDrag.height)
+                    .gesture(DragGesture()
+                        .onChanged { selfDrag = $0.translation }
+                        .onEnded { value in
+                            let centre = CGPoint(x: frame.midX + value.translation.width - layout.speaker.minX, y: frame.midY + value.translation.height - layout.speaker.minY)
+                            selfCorner = GroupCallLayout.nearestCorner(to: centre, in: layout.speaker.size)
+                            selfDrag = .zero
+                        })
+                    .accessibilitySortPriority(0.5)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: layout)
+        .frame(width: size.width, height: size.height)
+        .accessibilityElement(children: .contain)
     }
 
     /// The grid fills the visible area: no scrolling at any size, tiles shrink to fit and keep a video shape (`GroupCallLayout`). With three or
@@ -148,20 +214,6 @@ struct GroupCallView: View {
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .accessibilityElement(children: .contain)
-    }
-
-    private func speakerLayout(_ tiles: [GroupCallManager.Tile]) -> some View {
-        let speaker = tiles.first { $0.speaking && !$0.isMe } ?? tiles.first { !$0.isMe } ?? tiles.first
-        let strip = visible(tiles.filter { $0.id != speaker?.id }, limit: 9)
-        return VStack(spacing: 6) {
-            if let speaker { GroupTileView(tile: speaker, video: call.video, large: true) }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(strip) { tile in GroupTileView(tile: tile, video: call.video, large: false).frame(width: 96, height: 128) }
-                }
-            }
-            .frame(height: 132)
-        }
     }
 
     // MARK: Controls
@@ -211,6 +263,8 @@ struct GroupTileView: View {
     let large: Bool
     /// The grid sets this tile's exact frame (`GroupCallLayout`): no shape of its own.
     var fixedShape = false
+    /// A small tile (the strip, my floating picture): the pill shows the name and its icon, not the word "Muted" (VoiceOver still says it).
+    var compact = false
 
     private var stateWords: String {
         if !tile.secured { return "Connecting securely" }
@@ -231,8 +285,8 @@ struct GroupTileView: View {
         HStack(spacing: 6) {
             if tile.muted { Image(systemName: "mic.slash.fill").font(.caption) }
             else if tile.speaking { Image(systemName: "waveform").font(.caption) }
-            Text(tile.name).font(.footnote.weight(.semibold)).lineLimit(1)
-            if tile.muted { Text("Muted").font(.caption2) }
+            Text(tile.name).font(.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
+            if tile.muted && !compact { Text("Muted").font(.caption2).lineLimit(1) }
         }
         .foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 4)
         .background(.black.opacity(0.55), in: Capsule()).padding(6)

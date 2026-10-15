@@ -90,4 +90,74 @@ final class GroupCallLayoutTests: XCTestCase {
         XCTAssertGreaterThan(GroupCallLayout.windowControlsMargin(idiomIsPad: true, window: CGSize(width: 600, height: 500), screen: screen), 24, "a Stage Manager window")
         XCTAssertEqual(GroupCallLayout.windowControlsMargin(idiomIsPad: false, window: CGSize(width: 390, height: 844), screen: CGSize(width: 390, height: 844)), 0)
     }
+
+    // MARK: LIME-148b: modes, defaults, the speaker layouts, the return bar
+
+    func testTheShapeIsChosenFromTheContainerNotTheDevice() {
+        XCTAssertEqual(GroupCallLayout.shape(of: CGSize(width: 700, height: 230)), .flat, "a phone on its side")
+        XCTAssertEqual(GroupCallLayout.shape(of: CGSize(width: 560, height: 170)), .flat)
+        XCTAssertEqual(GroupCallLayout.shape(of: CGSize(width: 1000, height: 260)), .flat, "a short iPad window")
+        XCTAssertEqual(GroupCallLayout.shape(of: CGSize(width: 375, height: 470)), .normal)
+        XCTAssertEqual(GroupCallLayout.shape(of: CGSize(width: 300, height: 600)), .narrow)
+    }
+
+    func testTheDefaultIsOneOnOneForTwoGridUpToFourAndSpeakerAboveOrInAFlatStrip() {
+        let normal = CGSize(width: 375, height: 470), flat = CGSize(width: 700, height: 230)
+        XCTAssertEqual(GroupCallLayout.defaultMode(people: 2, in: normal), .speaker, "two people: one-on-one")
+        XCTAssertEqual(GroupCallLayout.defaultMode(people: 3, in: normal), .grid)
+        XCTAssertEqual(GroupCallLayout.defaultMode(people: 4, in: normal), .grid)
+        XCTAssertEqual(GroupCallLayout.defaultMode(people: 5, in: normal), .speaker)
+        XCTAssertEqual(GroupCallLayout.defaultMode(people: 9, in: normal), .speaker)
+        XCTAssertEqual(GroupCallLayout.defaultMode(people: 3, in: flat), .speaker, "3 or more in a flat strip: speaker")
+        XCTAssertEqual(GroupCallLayout.defaultMode(people: 1, in: flat), .grid)
+    }
+
+    func testTheSpeakerLayoutsFitInsideTheAreaWithoutOverlapOrScrollingForUpToEightInTheStrip() {
+        for (name, size) in areas {
+            for others in 0...8 {
+                guard let layout = GroupCallLayout.spotlight(others: others, in: size) else { return XCTFail("\(name) \(others)") }
+                XCTAssertEqual(layout.strip.count, others, "\(name) \(others)")
+                let bounds = CGRect(origin: .zero, size: size).insetBy(dx: -0.01, dy: -0.01)
+                XCTAssertTrue(bounds.contains(layout.speaker), "\(name) \(others): the speaker is inside")
+                let all = [layout.speaker] + layout.strip
+                for frame in layout.strip {
+                    XCTAssertTrue(bounds.contains(frame), "\(name) \(others): a strip tile is inside (nothing scrolls)")
+                    let aspect = frame.width / frame.height
+                    XCTAssertGreaterThanOrEqual(aspect, GroupCallLayout.minAspect - 0.01, "\(name) \(others)")
+                    XCTAssertLessThanOrEqual(aspect, GroupCallLayout.maxAspect + 0.01, "\(name) \(others)")
+                }
+                if others > 0 {
+                    let aspect = layout.speaker.width / layout.speaker.height
+                    XCTAssertGreaterThan(layout.speaker.width * layout.speaker.height, layout.strip.map { $0.width * $0.height }.max()! * 1.5, "\(name) \(others): the speaker is the large one")
+                    _ = aspect
+                }
+                for (i, a) in all.enumerated() {
+                    for b in all[(i + 1)...] { XCTAssertFalse(a.insetBy(dx: 0.5, dy: 0.5).intersects(b.insetBy(dx: 0.5, dy: 0.5)), "\(name) \(others): overlap") }
+                }
+            }
+        }
+    }
+
+    func testPortraitPutsTheStripBelowAndLandscapeAtTheSide() {
+        let portrait = GroupCallLayout.spotlight(others: 3, in: CGSize(width: 375, height: 600))!
+        XCTAssertTrue(portrait.strip.allSatisfy { $0.minY >= portrait.speaker.maxY - 0.5 }, "below the speaker")
+        let landscape = GroupCallLayout.spotlight(others: 3, in: CGSize(width: 800, height: 380))!
+        XCTAssertTrue(landscape.strip.allSatisfy { $0.minX >= landscape.speaker.maxX - 0.5 }, "at the side")
+    }
+
+    func testOneOnOneFillsTheAreaEdgeToEdge() {
+        let size = CGSize(width: 375, height: 560)
+        let layout = GroupCallLayout.spotlight(others: 0, in: size)!
+        XCTAssertEqual(layout.speaker, CGRect(origin: .zero, size: size))
+        XCTAssertTrue(layout.strip.isEmpty)
+    }
+
+    func testTheReturnBarShowsOnlyWhenMinimisedAndNotInThatChatAndNoWindow() {
+        let show = GroupCallLayout.returnBarShows
+        XCTAssertTrue(show(true, true, false, false), "on the Messages list or another chat")
+        XCTAssertFalse(show(true, true, false, true), "hidden in that group's chat: the lime call circle is the way back")
+        XCTAssertFalse(show(true, true, true, false), "hidden while the floating video window is up")
+        XCTAssertFalse(show(true, false, false, false), "the full call screen is showing")
+        XCTAssertFalse(show(false, true, false, false), "no call")
+    }
 }

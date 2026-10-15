@@ -602,4 +602,43 @@ final class GroupCallManagerTests: XCTestCase {
         XCTAssertEqual(many.clusterCount, 4, "three members and the +4 slot, like the chat's cluster")
         XCTAssertEqual(cluster.accessibilityLabel, "G")
     }
+
+    // MARK: LIME-148b
+
+    func testTheLayoutChoiceIsRememberedAndOverridesTheDefault() async {
+        let defaults = UserDefaults(suiteName: "lime.tests.layout.\(UUID().uuidString)")!
+        let media = FakeMedia()
+        let core = FakeCore()
+        core.others = [GroupCallParticipant(participant: bob, userId: "bob", name: "Bob")]
+        let manager = GroupCallManager(core: core, system: QuietCallSystem(), layoutDefaults: defaults, makeMedia: { media })
+        let size = CGSize(width: 375, height: 470)
+        _ = await manager.start(conversationID: "grp:g1", title: "T", video: true)
+        XCTAssertNil(manager.chosenLayout)
+        XCTAssertEqual(manager.effectiveLayout(in: size), .speaker, "one person plus me: one-on-one by default")
+        manager.chooseLayout(.grid)
+        XCTAssertEqual(manager.effectiveLayout(in: size), .grid)
+        await manager.leave()
+        // A new call on this phone (a new manager) remembers it.
+        let again = GroupCallManager(core: FakeCore(), system: QuietCallSystem(), layoutDefaults: defaults, makeMedia: { media })
+        XCTAssertEqual(again.chosenLayout, .grid, "kept on this device")
+    }
+
+    func testTheSpeakerLargeIsTheSpeakingPersonElseTheLastToSpeakNeverMe() async {
+        let core = FakeCore()
+        core.others = [GroupCallParticipant(participant: bob, userId: "bob", name: "Bob"), GroupCallParticipant(participant: String(repeating: "33", count: 16), userId: "c", name: "Carol")]
+        let (manager, _, media, _) = await { () -> (GroupCallManager, FakeCore, FakeMedia, QuietCallSystem) in
+            let m = FakeMedia()
+            let manager = GroupCallManager(core: core, system: QuietCallSystem(), layoutDefaults: UserDefaults(suiteName: "lime.tests.\(UUID().uuidString)")!, makeMedia: { m })
+            _ = await manager.start(conversationID: "grp:g1", title: "T", video: true)
+            return (manager, core, m, QuietCallSystem())
+        }()
+        _ = media
+        XCTAssertEqual(manager.spotlightID, bob, "nobody has spoken: the first other person")
+        let carol = core.others[1].participant
+        manager.handle(media: .speaking([carol]))
+        XCTAssertEqual(manager.spotlightID, carol)
+        manager.handle(media: .speaking([manager.tiles[0].id]))
+        XCTAssertEqual(manager.spotlightID, carol, "I am never the large one")
+        await manager.leave()
+    }
 }

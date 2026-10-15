@@ -103,6 +103,10 @@ final class GroupCallManager {
     @ObservationIgnored private var busy = false
     /// Who is in each live call that this phone has heard about (from the core's join and leave events), by participant.
     @ObservationIgnored private var roster: [String: [String: Person]] = [:]
+    /// The person's chosen layout (Grid or Speaker), kept on this phone; nil until they choose (then the default for the call's size applies).
+    @ObservationIgnored private let layoutDefaults: UserDefaults
+    static let layoutKey = "lime.groupCallLayout"
+    private(set) var chosenLayout: GroupCallLayout.Mode?
     /// Whether that group's chat is the screen the person is looking at (set by the app): no invite sheet over it.
     @ObservationIgnored var isViewingChat: (String) -> Bool = { _ in false }
     /// Who I am (the name and photo on my own tile; never "You").
@@ -129,8 +133,11 @@ final class GroupCallManager {
 
     init(core: GroupCallCore, system: CallSystem, quietReason: @escaping () -> CallQuietReason? = { nil },
          isOtherCallActive: @escaping () -> Bool = { false }, now: @escaping () -> Date = Date.init,
-         me: @escaping () -> Person? = { nil }, network: GroupCallNetwork? = nil, makeMedia: @escaping () -> any GroupCallMedia) {
+         me: @escaping () -> Person? = { nil }, network: GroupCallNetwork? = nil, layoutDefaults: UserDefaults = .standard,
+         makeMedia: @escaping () -> any GroupCallMedia) {
         self.core = core
+        self.layoutDefaults = layoutDefaults
+        self.chosenLayout = layoutDefaults.string(forKey: Self.layoutKey).flatMap(GroupCallLayout.Mode.init(rawValue:))
         self.me = me
         self.network = network
         self.system = system
@@ -160,6 +167,25 @@ final class GroupCallManager {
     }
 
     var inCall: Bool { phase != .idle }
+
+    /// Grid or Speaker: what the person chose, else the default for this many people in this container.
+    func effectiveLayout(in size: CGSize) -> GroupCallLayout.Mode {
+        chosenLayout ?? GroupCallLayout.defaultMode(people: tiles.count, in: size)
+    }
+
+    /// The layout switch: remembered on this phone.
+    func chooseLayout(_ mode: GroupCallLayout.Mode) {
+        chosenLayout = mode
+        layoutDefaults.set(mode.rawValue, forKey: Self.layoutKey)
+    }
+
+    /// Who is large in the speaker layout: the person speaking now (not me), else the last other person who spoke, else the first other person.
+    var spotlightID: String? {
+        let others = tiles.filter { !$0.isMe }
+        if let speaking = others.first(where: \.speaking) { return speaking.id }
+        if let last = lastOtherSpeaker, others.contains(where: { $0.id == last }) { return last }
+        return others.first?.id
+    }
 
     /// The picture of a participant for the tile (the media engine's video track), or nil. Only the SwiftUI tile looks inside.
     func videoTrack(for participant: String) -> AnyObject? { media?.videoTrack(for: participant) }
