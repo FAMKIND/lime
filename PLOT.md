@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-148b** (LIME-148 landed as `d390819` but skipped items 00 and 0b: the group voice return bar outside its chat, the Grid/Speaker switch + speaker layouts, the Android spec). Then (FaceTime-style group layout: no scrolling, landscape, iPad windows, minimise in the controls), then **LIME-150** (a minimised mini grid of up to 4; starts with a device spike), then **LIME-147** (group-call emoji, APPROVED), then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-148c (DECIDED B: a call mini player like a podcast bar, with mute + leave, replacing both return bars).** Then **LIME-150**. Then (FaceTime-style group layout: no scrolling, landscape, iPad windows, minimise in the controls), then **LIME-150** (a minimised mini grid of up to 4; starts with a device spike), then **LIME-147** (group-call emoji, APPROVED), then LIME-139 (the first mesh brief). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -148,6 +148,11 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e107. **148b gate: "minor updates after testing"**: the green return bar covers the header (back, Sign out). **→ LIME-148c (drafted, NEXT, small):** the bar pushes the screen down instead (a safe-area inset), for the group and 1:1 bars. Plot chose this over the user's alternative (a live toast), because a toast still covers something.
+1e106. **LIME-148b LANDED as `05e3917` (pushed, 2026-10-15; PLOT.md `428926a`).**
+   - Every item checked off (rule 11 worked): the group voice return bar outside its chat; the Grid/Speaker switch (remembered); speaker-portrait/landscape/one-on-one as pure functions; defaults 2 = one-on-one, ≤ 4 grid, > 4 or flat = speaker; `docs/screens/group-call.md`; components-swift not used (its environment scopes clash with core-first + the PiP rule).
+   - **Tests:** unit 367 + UI 186.
+   - **NEXT: 150** (the mini grid; starts with a device spike, so the user's devices are needed).
 1e105. **148 gate PASSED (the user, 2026-10-15: "looks good, moving on").** **NEXT: 148b.**
 1e104. **LIME-148 LANDED as `d390819` (pushed, 2026-10-15; PLOT.md `3e7b1fc`).**
    - **Built:** `GroupCallLayout` (a pure function; ≤ 9 tiles, never scrolls, tiles 3:4–16:9); a draggable floating self-view from 3 people; re-flow on rotation and resize; the header clears the iPad's "•••" (+52 pt; lime runs iPhone-only, so the iPad is a compatibility window and the check uses the device model); Minimise in the controls; Leave always visible.
@@ -5083,7 +5088,38 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-148b` with **For plot:** and **every item checked off** (standing rule 11). **Commit:** `feat(ios): group call speaker layouts and layout switch, group voice return bar, layout spec`, trailer `Brief: LIME-148b`. The rest per the standing rules.
 
-### LIME-150 → `tend` (lime-aa) (after LIME-148b; drafted 2026-10-15): a minimised group call shows a small grid of up to 4 people
+### LIME-148c → `tend` (lime-aa) (NEXT, before 150; drafted 2026-10-15, revised to B): a call mini player replaces the green return bars
+**Goal:** the "Return to <call>" bar (group and 1:1) never hides any button: the back button, the header's circles, your avatar/Settings/Sign out.
+
+**The user (2026-10-15, after testing 148b):** "the green covers the top header buttons and doesn't allow you to go back or even sign out. Can we have it above the buttons instead of over them, or treat it like a notification live toast?"
+
+**DECIDED B (the user, 2026-10-15): "similar to the podcast bar, I like that better"** (a screenshot: Substack's podcast mini player, a white/glass capsule floating just above the tab bar with artwork + title + subtitle + ▶ + ✕). **The green top bar is replaced by a call mini player:**
+1. **Its shape:** a Liquid Glass capsule (iOS 26; material on 17–25; solid with Reduce Transparency), about 56–64 pt tall, floating just above the tab bar with the same side margins as the tab bar. It holds:
+   - **left:** the call's picture: the group's photo composite (`ConversationAvatar`) or the person's photo;
+   - **middle:** the name in bold (one line, truncating) + a subtitle "Video call · 3 in call · 1:01" (or "Voice call · …"; for 1:1 just the timer);
+   - **right:** **Mute/Unmute** (the mic icon; a filled state + a VoiceOver value, not colour alone) and **Leave** (the red phone-down icon, VoiceOver "Leave call"; it leaves at once, like FaceTime's end button; no confirm).
+   - **Tapping the capsule** (outside the buttons) returns to the full call screen.
+2. **Where it sits:**
+   - on screens with the tab bar: **just above it** (on iOS 26 use `tabViewBottomAccessory` if it gives this look; else our own overlay);
+   - **on screens that hide the tab bar** (chats, group details, threads, profiles, the Calls details: `RootView.swift:140–150`, `ProfileView`, `CallsTab`): it floats **just above the composer** in chats, else just above the bottom safe area, **and the screen's content gets a matching bottom inset**, so the last message/row and the composer are never covered.
+   - **Never at the top; never over any button.**
+3. **When it shows:** whenever a call (1:1 or group) is minimised, **including inside that group's chat** (the mute/leave are useful there; the lime call circle stays too) and **also while the video PiP window floats** (the system window has no mute). Hidden only on the full call screen.
+4. **It replaces** 148b's group return bar **and** 118c's 1:1 voice bar (both removed; 148b's `returnBarShows` rule is replaced by "shows unless on the full call screen", tested).
+5. **Accessibility:** one container ("Call with Jean, Shem & FAM, 3 in call, 1 minute. Double-tap to return"), then Mute and Leave as separate buttons; targets ≥ 44 pt; Dynamic Type: the subtitle may drop the count, then truncate, never the buttons.
+6. **Android:** a short spec section added to `docs/screens/group-call.md` ("the call mini player").
+
+**Kind:**
+- behaviour: tests for when it shows (every minimised state, incl. the group's own chat and with PiP; never on the call screen), Mute toggles the call's mic, Leave ends the call, tap returns, the content inset in a chat (the composer stays hittable), the header and Sign out are reachable;
+- the look is visual (screenshots: the Messages list, a chat, a profile; light/dark).
+
+**Gate:**
+1. minimise a group call → the mini player above the tab bar; open a chat → it sits above the composer, nothing covered; mute from it; tap → back in the call; Leave from it;
+2. the same with a 1:1 voice call;
+3. the header buttons, Back and Sign out are always reachable.
+
+**Record:** `## LIME-148c` with **For plot:** and every item checked off. **Commit:** `feat(ios): a call mini player (like a podcast bar) replaces the return bars`, trailer `Brief: LIME-148c`. The rest per the standing rules.
+
+### LIME-150 → `tend` (lime-aa) (after LIME-148c; drafted 2026-10-15): a minimised group call shows a small grid of up to 4 people
 **Goal:** minimise a group call of up to 4 people and the floating window shows **all of them in a mini grid** (the current window divided into 2 or 4 tiles), so a teacher can see everyone while typing. Larger calls show the 3 most recent speakers + a "+N" tile.
 
 **The user (2026-10-15):** "minimise a group call with 4 people and have a minimised 4-person grid replacing the one card with a grid of 4. Think of taking the current thumbnail and dividing it by 4, to talk to teachers and write something at the same time."
