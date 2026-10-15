@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-112e** (bug + security: phones never switch to their rotated call key, so rejoiners are stuck on "Connecting securely" and leavers aren't locked out; + the header cleanup). Then **LIME-147b**, then **LIME-139**. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
+**▶ NEXT FOR TEND: LIME-147b** (LIME-112e landed as `51cd57b`). Then **LIME-139**. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
 - **"begin tending"** (in tend's window) = implement the brief named on the "▶ NEXT FOR TEND" line above (or "begin tending LIME-XX" for a named one), following all the rules below, and stop for the user's check. If the NEXT line says it waits on a user step that the user hasn't confirmed, ask before starting.
@@ -148,6 +148,14 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e117. **LIME-112e LANDED as `51cd57b` (pushed, 2026-10-15; PLOT.md `074c13f`).**
+   - The core emits `my_key` on every rotation, and the app sets it locally **before** delivering (`pump` order fixed); a second `setKey` bug (treating keys as mine while `myIdentity` was empty) fixed; guards log index mismatches.
+   - **The 3-core test proves:** the rotated key = what the others receive, and **after a leave the sending index ≠ the leaver's last index**.
+   - The docs carry the dated "it didn't take effect before" note.
+   - **The header:** the pill shows up to 3 people's pictures + first names + a count that never truncates + ›; Grid/Speaker moved into the people sheet ("Layout" first, ✓). The header's right side is empty.
+   - **Tests:** core 219; unit 374 + UI 191.
+   - **DECIDED (the user):** the pill shows **the group's name + the count if the group was renamed from its default**, else the people's first names + the count → **147b item 3**.
+   - **Gate:** leave/rejoin → everyone visible in ~5 s, the same 4 emoji; then "logs" (`setKey me … renewed`). **NEXT: 147b.**
 1e116. **BUG + SECURITY (the user's gate, 2026-10-15 07:46–07:57; plot's diagnosis from the iPad + Shem logs):**
    - **the core rotates my call key on a leave but never tells the app**, so every phone keeps encrypting with its index-0 key. Rejoiners, who get only rotated keys, see "Connecting securely"; **the rekey-on-leave never took effect** (a leaver isn't locked out). **147's emoji caught the mismatch** (Jean's phone showed different emoji).
    - **→ LIME-112e (drafted, NEXT)**, with the user's header cleanup: the count at the end of the name pill, no people icon; Grid/Speaker moves into the pill's sheet.
@@ -5243,7 +5251,14 @@ If the survey turns up related issues, raise them before editing. If a decision 
    - the core's `group_call_emoji_state` reports **ready only when every participant's key is newer than the last membership change** (a key index/generation recorded at each join/leave), so phones show the waiting chip until all new keys are in, and then the same 4 everywhere;
    - **tests:** a leave → waiting → all rotated → ready; a join similarly.
 
-**Scope:** `core/src/call_emoji.rs`, `core/src/store/group_calls.rs` (the generation), a migration if needed, tests, `docs/architecture.md` (the formula, v2). **Not:** the UI (the chip already handles waiting).
+3. **The call header pill's title (the user, 2026-10-15):**
+   - if the group's name was **changed from its default** (LIME-115's first-names default), show **the group's name + the count** ("Grade 4 Team 4 ›");
+   - if it's still the default, keep 112e's **people's first names + the count**.
+   - **How to know:** the core decides (core-first): `group_is_custom_named(group)`, true when the current name differs from what LIME-115's default-name rule gives for the current members, or a stored "renamed by a person" flag if that already exists. Report which.
+   - The same rule in the people sheet's title and the mini player's name.
+   - **Tests:** a default-named group shows names; after a rename, the group's name.
+
+**Scope:** `core/src/call_emoji.rs`, `core/src/store/group_calls.rs` (the generation), the group-name rule (item 3; core + `GroupCallView`/`CallMiniPlayer` titles), a migration if needed, tests, `docs/architecture.md` (the formula, v2), `docs/screens/group-call.md` (the title rule). **Not:** other UI (the chip already handles waiting).
 
 **Verification:** `cargo test`, `./core/check-android.sh`, `./ios/test-full.sh` (or the group-call tests only if the FFI is unchanged: say which).
 
