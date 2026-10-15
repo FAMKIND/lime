@@ -90,6 +90,7 @@ final class MeshService {
         guard let engine else { return false }
         let queued = (try? engine.queueProbe(toUser: user)) ?? false
         log.record("probe_queued", ["ok": String(queued)])
+        if queued { driver?.packetQueued() }
         refreshStats()
         return queued
     }

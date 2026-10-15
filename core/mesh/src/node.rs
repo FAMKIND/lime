@@ -95,6 +95,8 @@ pub struct MeshNode<S: MeshStore, C: Clock> {
     uploading: HashSet<Digest>,
     rng: u64,
     stats: NodeStats,
+    /// Counts every change to what is carried or recently seen (what a Hello's summary is made of): the platform sends a new Hello only when it moved.
+    version: u64,
 }
 
 impl<S: MeshStore, C: Clock> MeshNode<S, C> {
@@ -114,7 +116,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         }
         let seen_set = seen.iter().map(|(d, _)| *d).collect();
         let rng = config.seed | 1;
-        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), rng, stats: NodeStats::default() }
+        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), rng, stats: NodeStats::default(), version: 0 }
     }
 
     pub fn config(&self) -> &MeshConfig {
@@ -126,6 +128,12 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         stats.carried = self.carried.len();
         stats.carried_bytes = self.carried.values().map(|c| c.packet.wire_len()).sum();
         stats
+    }
+
+    /// A number that changes whenever the packets carried or the recently seen digests change (so does what a Hello would say). Idle meetings,
+    /// duplicates and frames that change nothing leave it alone.
+    pub fn summary_version(&self) -> u64 {
+        self.version
     }
 
     pub fn link_count(&self) -> usize {
@@ -178,6 +186,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         for digest in mine {
             if let Some(c) = self.carried.remove(&digest) {
                 self.store.remove(&digest);
+                self.version += 1;
                 self.remember_seen(digest);
                 out.push(Delivered { digest, payload: c.packet.payload, hops_left: c.packet.hops_left });
             }
@@ -207,6 +216,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         self.uploading.remove(digest);
         if self.carried.remove(digest).is_some() {
             self.store.remove(digest);
+            self.version += 1;
         }
         self.remember_seen(*digest);
     }
@@ -351,6 +361,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
             // Delivered to its recipient: no need to carry it on.
             if self.carried.remove(&full).is_some() {
                 self.store.remove(&full);
+                self.version += 1;
             }
             return;
         }
@@ -393,6 +404,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
             self.carried.remove(&digest);
             self.store.remove(&digest);
             self.stats.expired += 1;
+            self.version += 1;
         }
         while let Some((digest, at)) = self.seen.front().copied() {
             if now.saturating_sub(at) > self.config.seen_window_secs {
@@ -409,6 +421,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         if self.seen_set.insert(digest) {
             self.seen.push_back((digest, now));
             self.store.save_seen(&digest, now);
+            self.version += 1;
         }
         while self.seen.len() > self.config.seen_capacity {
             if let Some((old, _)) = self.seen.pop_front() {
@@ -461,6 +474,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         let stored = StoredPacket { bytes: packet.encode(), copies, tier, received_at: now };
         self.store.save(&stored);
         self.carried.insert(digest, Carried { packet, copies, tier, received_at: now });
+        self.version += 1;
         true
     }
 
@@ -468,6 +482,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         if self.carried.remove(digest).is_some() {
             self.store.remove(digest);
             self.stats.evicted += 1;
+            self.version += 1;
         }
     }
 
@@ -831,5 +846,32 @@ mod tests {
         assert!(node.on_frame(LinkId(1), &Frame::Packet { copies: 1, bytes: far.encode() }.encode()).is_empty());
         assert_eq!(node.stats().rejected, 1);
         assert!(node.carried.is_empty());
+    }
+
+    #[test]
+    fn the_summary_version_moves_only_when_what_a_hello_would_say_moves() {
+        let c = clock();
+        let mut a = node_with(MeshConfig::default(), &c);
+        let mut b = node_with(MeshConfig::default(), &c);
+        let start = a.summary_version();
+        a.enqueue(packet(1, 1, &c)).unwrap();
+        let after_enqueue = a.summary_version();
+        assert!(after_enqueue > start, "a new packet");
+        meet(&mut a, &mut b);
+        assert!(b.summary_version() > 0, "the receiver's summary moved too");
+        let (va, vb) = (a.summary_version(), b.summary_version());
+        meet(&mut a, &mut b);
+        meet(&mut a, &mut b);
+        assert_eq!((a.summary_version(), b.summary_version()), (va, vb), "idle meetings change nothing");
+        // A duplicate frame changes nothing either.
+        let digest = a.carried_digests()[0];
+        let bytes = a.carried[&digest].packet.encode();
+        b.on_link_up(LinkId(7));
+        b.on_frame(LinkId(7), &Frame::Packet { copies: 1, bytes }.encode());
+        assert_eq!(b.summary_version(), vb);
+        // Expiry and delivery move it.
+        c.0.set(c.0.get() + 3601);
+        a.housekeeping();
+        assert!(a.summary_version() > va);
     }
 }

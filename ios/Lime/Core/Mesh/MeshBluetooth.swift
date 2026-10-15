@@ -44,6 +44,10 @@ final class MeshBluetooth: NSObject {
     @ObservationIgnored private var peripherals: [UUID: CBPeripheral] = [:]
     @ObservationIgnored private var handshakes: [UUID: Handshake] = [:]
     @ObservationIgnored private var rejectedUntil: [UUID: Date] = [:]
+    /// Links I started that dropped: connect again once iOS has let go of them (a pending connect never times out and is completed in range, in the background too).
+    @ObservationIgnored private var reconnect: Set<UUID> = []
+    /// How long a phone with the higher id waits for the lower-id phone to connect before keeping its own link (a locked phone cannot connect).
+    static let fallbackGraceSeconds = 15
     // The peripheral side.
     @ObservationIgnored private var peripheralManager: CBPeripheralManager?
     @ObservationIgnored private var notifyCharacteristic: CBMutableCharacteristic?
@@ -108,6 +112,7 @@ final class MeshBluetooth: NSObject {
         central?.stopScan()
         peripheralManager?.stopAdvertising()
         for peripheral in peripherals.values { central?.cancelPeripheralConnection(peripheral) }
+        reconnect = []
         for peer in peers.values { peer.streams?.close(); driver?.linkDown(peer.remote) }
         if let psm { peripheralManager?.unpublishL2CAPChannel(psm) }
         peers = [:]; peripherals = [:]; handshakes = [:]; inboundCentrals = [:]; registry = MeshLinkRegistry()
@@ -138,9 +143,17 @@ final class MeshBluetooth: NSObject {
         }
     }
 
+    /// A wake that may call for re-announcing the live links (the driver debounces). **Not** for data arriving: that is never a wake.
     private func wake(_ reason: String) {
-        identity.rotateIfDue(now: Date())
+        rotateIdentityIfIdle()
         driver?.wake(reason: reason)
+    }
+
+    /// The link id changes every 15 minutes, but **not while a link is live**: a phone that changed its id under an open link would be
+    /// registered under two ids, and the policy that keeps one link per pair would tear it down.
+    private func rotateIdentityIfIdle() {
+        guard peers.isEmpty, registry.live.isEmpty else { return }
+        identity.rotateIfDue(now: Date())
     }
 
     private func updateCount() {
@@ -233,7 +246,6 @@ final class MeshBluetooth: NSObject {
     }
 
     fileprivate func streamBytes(_ data: Data, from peer: Peer) {
-        driver?.wake(reason: "data")
         for frame in peer.reader.append(data) { deliver(frame, from: peer) }
         if peer.reader.overflowed { onLog("stream_overflow", ["link": MeshDriver.short(peer.remote)]); close(peer, why: "overflow") }
     }
@@ -272,7 +284,11 @@ final class MeshBluetooth: NSObject {
         if peer.up { driver?.linkDown(peer.remote) }
         onLog("peer_down", ["link": MeshDriver.short(peer.remote), "why": why])
         updateCount()
-        if let peripheral = peer.peripheral { central?.cancelPeripheralConnection(peripheral) }
+        if let peripheral = peer.peripheral {
+            // A link I started and lost: connect again once iOS has let go of this one (the disconnect callback does it).
+            if running, why != "stop" { reconnect.insert(peripheral.identifier) }
+            central?.cancelPeripheralConnection(peripheral)
+        }
     }
 
     fileprivate func streamClosed(_ peer: Peer, why: String) { close(peer, why: "l2cap-\(why)") }
@@ -297,7 +313,6 @@ final class MeshBluetooth: NSObject {
         streams.open()
         onLog("l2cap_open", ["link": MeshDriver.short(peer.remote), "psm": String(channel.psm)])
         // What was waiting on GATT can go over the channel from now on; frames already in GATT fragments finish there.
-        driver?.wake(reason: "l2cap")
     }
 }
 
@@ -392,7 +407,6 @@ extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
     }
 
     func centralManager(_ manager: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        wake("discover")
         lastPeerSeen = Date()
         let rssi = RSSI.intValue
         guard MeshLinkPolicy.rssiAllowsConnecting(rssi) else { onLog("skip_weak", ["rssi": String(rssi)]); return }
@@ -401,12 +415,12 @@ extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
         peripherals[peripheral.identifier] = peripheral
         peripheral.delegate = self
         handshakes[peripheral.identifier] = Handshake(peripheral: peripheral)
+        wake("discover-new")
         onLog("connecting", ["rssi": String(rssi)])
         manager.connect(peripheral)
     }
 
     func centralManager(_ manager: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        wake("connect")
         onLog("connected", ["writeMTU": String(peripheral.maximumWriteValueLength(for: .withResponse))])
         if handshakes[peripheral.identifier] == nil, peerFor(peripheral: peripheral) == nil { handshakes[peripheral.identifier] = Handshake(peripheral: peripheral) }
         peripheral.discoverServices([Self.serviceUUID])
@@ -420,13 +434,12 @@ extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
     func centralManager(_ manager: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         onLog("disconnected", ["error": error?.localizedDescription ?? "none"])
         handshakes[peripheral.identifier] = nil
-        if let peer = peerFor(peripheral: peripheral) {
-            close(peer, why: "disconnected")
-            // The lower id initiates, and that is me (the link was kept): connecting again never times out; iOS completes it in range.
-            if running, MeshLinkPolicy.iShouldInitiate(local: identity.id, remote: peer.remote) {
-                handshakes[peripheral.identifier] = Handshake(peripheral: peripheral)
-                manager.connect(peripheral)
-            }
+        if let peer = peerFor(peripheral: peripheral) { close(peer, why: "disconnected") }
+        // Connecting again never times out: iOS completes it when the phone is next in range, in the background too. (Only for links I started.)
+        if running, reconnect.remove(peripheral.identifier) != nil {
+            handshakes[peripheral.identifier] = Handshake(peripheral: peripheral)
+            onLog("reconnecting", [:])
+            manager.connect(peripheral)
         }
     }
 }
@@ -452,22 +465,32 @@ extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard let value = characteristic.value else { return }
-        wake("notified")
         if characteristic.uuid == Self.helloUUID, let handshake = handshakes[peripheral.identifier] {
             guard let remote = Self.remoteID(from: value) else { return }
             handshake.remote = remote
             switch registry.claim(remote: remote, local: identity.id, iAmCentral: true) {
             case .keep:
-                onLog("hello_keep", ["link": MeshDriver.short(remote)])
-                let peer = Peer(remote: remote, iAmCentral: true)
-                peer.peripheral = peripheral
-                peer.write = handshake.write
-                peers[remote] = peer
-                if let hello = handshake.hello { peripheral.writeValue(helloValue, for: hello, type: .withResponse) }
-                if let notify = handshake.notify { peripheral.setNotifyValue(true, for: notify) }
-                if let psmCharacteristic = handshake.psm { peripheral.readValue(for: psmCharacteristic) }
+                establish(peripheral, handshake, remote: remote, how: "hello_keep")
+            case .wrongDirection:
+                // The other phone should connect to me. If it has not within the grace period (it may be locked), keep this link after all.
+                onLog("hello_wait", ["link": MeshDriver.short(remote), "grace": String(Self.fallbackGraceSeconds)])
+                let id = peripheral.identifier
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(Self.fallbackGraceSeconds))
+                    guard let self, self.running, let waiting = self.handshakes[id], waiting.remote == remote, peripheral.state == .connected,
+                          self.peers[remote] == nil, self.registry.claimFallback(remote: remote, local: self.identity.id) else {
+                        if let self, self.handshakes[id]?.remote == remote, self.peers[remote] == nil {
+                            self.onLog("hello_drop", ["why": "wrongDirection-after-grace"])
+                            self.rejectedUntil[id] = Date().addingTimeInterval(60)
+                            self.handshakes[id] = nil
+                            self.central?.cancelPeripheralConnection(peripheral)
+                        }
+                        return
+                    }
+                    self.establish(peripheral, waiting, remote: remote, how: "hello_fallback")
+                }
             case let verdict:
-                // The other phone should connect to me (or there is a link already): close this one and do not come back at once.
+                // A link to that phone exists already (or it is me): close this one and do not come back at once.
                 onLog("hello_drop", ["why": "\(verdict)"])
                 rejectedUntil[peripheral.identifier] = Date().addingTimeInterval(60)
                 handshakes[peripheral.identifier] = nil
@@ -497,6 +520,18 @@ extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
         onLog("notify_state", ["on": String(characteristic.isNotifying), "error": error?.localizedDescription ?? "none"])
         handshakes[peripheral.identifier]?.subscribed = characteristic.isNotifying
         checkReady(peripheral)
+    }
+
+    /// This central link is kept: register it, give the other phone my id, subscribe, read the PSM.
+    private func establish(_ peripheral: CBPeripheral, _ handshake: Handshake, remote: UInt64, how: String) {
+        onLog(how, ["link": MeshDriver.short(remote)])
+        let peer = Peer(remote: remote, iAmCentral: true)
+        peer.peripheral = peripheral
+        peer.write = handshake.write
+        peers[remote] = peer
+        if let hello = handshake.hello { peripheral.writeValue(helloValue, for: hello, type: .withResponse) }
+        if let notify = handshake.notify { peripheral.setNotifyValue(true, for: notify) }
+        if let psmCharacteristic = handshake.psm { peripheral.readValue(for: psmCharacteristic) }
     }
 
     private func checkReady(_ peripheral: CBPeripheral) {
@@ -562,7 +597,6 @@ extension MeshBluetooth: @preconcurrency CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ manager: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
-        wake("subscribed")
         var entry = inboundCentrals[central.identifier] ?? (remote: 0, subscribed: false, central: nil)
         entry.subscribed = true
         entry.central = central
@@ -577,7 +611,7 @@ extension MeshBluetooth: @preconcurrency CBPeripheralManagerDelegate {
 
     func peripheralManager(_ manager: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
         if request.characteristic.uuid == Self.helloUUID {
-            identity.rotateIfDue(now: Date())
+            rotateIdentityIfIdle()
             request.value = helloValue.dropFirst(request.offset)
             manager.respond(to: request, withResult: .success)
         } else if request.characteristic.uuid == Self.psmUUID, let psm {
@@ -589,7 +623,6 @@ extension MeshBluetooth: @preconcurrency CBPeripheralManagerDelegate {
     }
 
     func peripheralManager(_ manager: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
-        wake("written")
         for request in requests {
             guard let value = request.value else { continue }
             if request.characteristic.uuid == Self.helloUUID {

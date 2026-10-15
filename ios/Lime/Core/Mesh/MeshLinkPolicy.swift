@@ -62,5 +62,14 @@ struct MeshLinkRegistry {
         return .keep
     }
 
+    /// The grace-period fallback (LIME-141-fix): the other phone has the lower id and should have connected to me, but has not (it may be locked,
+    /// and a locked phone does not scan or connect). After a short wait a link in the "wrong" direction is better than none: kept if there is
+    /// still no link to that phone. If the lower phone then connects after all, its link finds this one live and is refused as a duplicate.
+    mutating func claimFallback(remote: UInt64, local: UInt64) -> Bool {
+        guard remote != local, !live.contains(remote) else { return false }
+        live.insert(remote)
+        return true
+    }
+
     mutating func release(remote: UInt64) { live.remove(remote) }
 }

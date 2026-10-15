@@ -306,6 +306,12 @@ impl MeshEngine {
         self.queue(to_user, device, payload)
     }
 
+    /// A number that changes whenever what this phone would say in a Hello changes (packets carried or recently seen). The platform sends a new
+    /// Hello on a link only when it moved or the last one is old, so two phones do not answer each other for ever.
+    pub fn summary_version(&self) -> u64 {
+        self.node().summary_version()
+    }
+
     /// A link to another phone is up: the frames to send.
     pub fn link_up(&self, link: u64) -> Vec<MeshAction> {
         actions(self.node().on_link_up(LinkId(link)))

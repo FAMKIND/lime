@@ -119,6 +119,21 @@ final class MeshLinkTests: XCTestCase {
         XCTAssertEqual(registry.claim(remote: 9, local: 5, iAmCentral: true), .keep, "after a drop the link can come back")
     }
 
+    func testAHigherIdPhoneMayKeepItsLinkAfterTheGraceOnlyIfNoLinkToThatPhoneExists() {
+        var registry = MeshLinkRegistry()
+        XCTAssertEqual(registry.claim(remote: 3, local: 5, iAmCentral: true), .wrongDirection, "the lower id should connect to me")
+        XCTAssertTrue(registry.claimFallback(remote: 3, local: 5), "it did not within the grace (it may be locked): keep mine")
+        XCTAssertEqual(registry.claim(remote: 3, local: 5, iAmCentral: false), .duplicate, "if it connects after all, that link is the duplicate")
+        XCTAssertFalse(registry.claimFallback(remote: 3, local: 5), "never two links to one phone")
+        XCTAssertFalse(registry.claimFallback(remote: 5, local: 5), "never to myself")
+        // The lower phone connected during the grace: the fallback is refused.
+        var other = MeshLinkRegistry()
+        XCTAssertEqual(other.claim(remote: 3, local: 5, iAmCentral: false), .keep)
+        XCTAssertFalse(other.claimFallback(remote: 3, local: 5))
+        other.release(remote: 3)
+        XCTAssertTrue(other.claimFallback(remote: 3, local: 5), "after a drop it can be claimed again")
+    }
+
     func testTheLinkIdRotatesEveryFifteenMinutesAndTheWeakestRSSIIsSkipped() {
         let start = Date()
         var next: UInt64 = 10
@@ -141,6 +156,8 @@ final class MeshLinkTests: XCTestCase {
         var upActions: [UInt64: [MeshAction]] = [:]
         var frameActions: [MeshAction] = []
         var mine: UInt32 = 0
+        var version: UInt64 = 0
+        func summaryVersion() -> UInt64 { version }
         private(set) var calls: [String] = []
         func frame(link: UInt64, bytes: Data) -> [MeshAction] { calls.append("frame \(link) \(bytes.count)"); return frameActions }
         func linkDown(link: UInt64) { calls.append("down \(link)") }
@@ -190,8 +207,11 @@ final class MeshLinkTests: XCTestCase {
         XCTAssertEqual(engine.calls, ["up 5", "down 5"])
     }
 
-    func testFramesGoToTheEngineThenTheMailIsTaken() {
+    private final class Clock { var now = Date(timeIntervalSince1970: 1_000_000) }
+
+    func testAFrameInIsNotAWakeItGoesToTheEngineAndTheMailIsTaken() {
         let engine = FakeEngine()
+        engine.upActions[5] = [action(5, 1)]
         engine.frameActions = [action(5, 9)]
         engine.mine = 2
         var sent: [UInt8] = []
@@ -199,28 +219,179 @@ final class MeshLinkTests: XCTestCase {
         let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), transmit: { sent.append($1[0]) })
         driver.onMessages = { messages += $0 }
         driver.linkUp(5)
+        sent = []
         driver.receive(Data(repeating: 0, count: 40), on: 5)
-        XCTAssertEqual(engine.calls, ["up 5", "frame 5 40", "takeMine"], "the frame, then the mail for this phone")
-        XCTAssertEqual(sent, [9])
+        XCTAssertEqual(engine.calls, ["up 5", "frame 5 40", "takeMine"], "the frame and the mail, and no Hello: a data frame is not a wake")
+        XCTAssertEqual(sent, [9], "only the engine's own answer went out")
         XCTAssertEqual(messages, 2)
+        // Many more frames: still no re-announcement.
+        for _ in 0..<100 { driver.receive(Data([0]), on: 5) }
+        XCTAssertEqual(engine.calls.filter { $0 == "up 5" }.count, 1, "one Hello for the link, however many frames arrive")
     }
 
-    func testEveryWakeMakesTheTagsCurrentAndAnnouncesEveryLiveLinkAgain() {
+    func testANewLinkGetsOneHelloAndTwoWakesWithinThirtySecondsGiveOnePerLink() {
         let engine = FakeEngine()
         engine.upActions[5] = [action(5, 1)]
         engine.upActions[8] = [action(8, 2)]
+        let clock = Clock()
         var sent: [(UInt64, UInt8)] = []
-        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), transmit: { sent.append(($0, $1[0])) })
+        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), now: { clock.now }, transmit: { sent.append(($0, $1[0])) })
         driver.linkUp(8)
         driver.linkUp(5)
+        XCTAssertEqual(sent.map(\.1), [2, 1], "a new link: a Hello at once")
         sent = []
-        driver.wake(reason: "discover")
-        XCTAssertEqual(Array(engine.calls.suffix(3)), ["tags", "up 5", "up 8"], "tags first, then each live link in a stable order")
-        XCTAssertEqual(sent.map(\.1), [1, 2])
-        driver.linkDown(8)
-        sent = []
+        clock.now.addTimeInterval(5)
+        driver.wake(reason: "discover-new")
+        clock.now.addTimeInterval(10)
+        driver.wake(reason: "app-active")
+        XCTAssertTrue(sent.isEmpty, "wakes within 30 s of the last Hello and with nothing changed send nothing: \(sent)")
+        XCTAssertEqual(engine.calls.filter { $0 == "tags" }.count, 2, "the tags are still made current on every wake")
+        clock.now.addTimeInterval(20) // 35 s after the Hellos
         driver.wake(reason: "restore")
-        XCTAssertEqual(sent.map(\.0), [5], "only the links that are still live")
+        XCTAssertEqual(sent.map(\.0).sorted(), [5, 8], "after 30 s a wake announces each live link once")
+        sent = []
+        driver.wake(reason: "restore-again")
+        XCTAssertTrue(sent.isEmpty, "and not again at once")
+        driver.linkDown(8)
+        clock.now.addTimeInterval(40)
+        driver.wake(reason: "app-foreground")
+        XCTAssertEqual(sent.map(\.0), [5], "only the live link")
+    }
+
+    func testAChangedSummaryAnnouncesAtOnceAndAQueuedPacketAnnouncesOncePerLink() {
+        let engine = FakeEngine()
+        engine.upActions[5] = [action(5, 1)]
+        engine.upActions[8] = [action(8, 2)]
+        let clock = Clock()
+        var sent: [(UInt64, UInt8)] = []
+        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), now: { clock.now }, transmit: { sent.append(($0, $1[0])) })
+        driver.linkUp(5)
+        driver.linkUp(8)
+        sent = []
+        clock.now.addTimeInterval(2)
+        engine.version += 1 // this phone queued a packet
+        driver.packetQueued()
+        XCTAssertEqual(sent.map(\.0).sorted(), [5, 8], "within the 30 s, because the summary moved: one Hello per link")
+        sent = []
+        driver.packetQueued()
+        driver.wake(reason: "app-active")
+        XCTAssertTrue(sent.isEmpty, "the same version again: nothing")
+        // A frame that changes what this phone holds tells the OTHER links once, not the one it came from.
+        engine.frameActions = []
+        engine.version += 1
+        driver.receive(Data([1]), on: 5)
+        XCTAssertEqual(sent.map(\.0), [8], "link 8 hears about the change; link 5 (the source) does not")
+        sent = []
+        driver.receive(Data([1]), on: 5)
+        XCTAssertTrue(sent.isEmpty, "and once only")
+    }
+
+    func testAFrameStormIsLoggedOncePerMinuteWhileNothingChanges() {
+        let engine = FakeEngine()
+        let clock = Clock()
+        var warnings = 0
+        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), now: { clock.now }, transmit: { _, _ in }, log: { kind, _ in if kind.hasPrefix("WARNING") { warnings += 1 } })
+        driver.linkUp(5)
+        for _ in 0..<49 { driver.receive(Data([1]), on: 5) }
+        XCTAssertEqual(warnings, 0)
+        for _ in 0..<200 { driver.receive(Data([1]), on: 5) }
+        XCTAssertEqual(warnings, 1, "once, however long it goes on")
+        clock.now.addTimeInterval(61)
+        for _ in 0..<60 { driver.receive(Data([1]), on: 5) }
+        XCTAssertEqual(warnings, 2, "and again in the next minute")
+        // Frames that change what the phone holds are real work, not a storm.
+        let busy = FakeEngine()
+        var busyWarnings = 0
+        let busyDriver = MeshDriver(engine: busy, scheduler: FakeScheduler(), now: { clock.now }, transmit: { _, _ in }, log: { kind, _ in if kind.hasPrefix("WARNING") { busyWarnings += 1 } })
+        busyDriver.linkUp(5)
+        for _ in 0..<500 { busy.version += 1; busyDriver.receive(Data([1]), on: 5) }
+        XCTAssertEqual(busyWarnings, 0)
+    }
+
+    // MARK: A simulated loop
+
+    /// A tiny stand-in for the engine's meeting protocol (Hello with a summary, Want, Packet, Ack): enough to see whether the driver lets three
+    /// phones go quiet.
+    private final class LoopEngine: MeshEngineProtocol, @unchecked Sendable {
+        var have: Set<UInt8> = []
+        var version: UInt64 = 0
+        func summaryVersion() -> UInt64 { version }
+        private func a(_ link: UInt64, _ bytes: [UInt8]) -> MeshAction { MeshAction(link: link, bytes: Data(bytes), delayMs: 0) }
+        func linkUp(link: UInt64) -> [MeshAction] { [a(link, [1] + have.sorted())] }
+        func frame(link: UInt64, bytes: Data) -> [MeshAction] {
+            let b = [UInt8](bytes)
+            guard let kind = b.first else { return [] }
+            let ids = Array(b.dropFirst())
+            switch kind {
+            case 1: let want = ids.filter { !have.contains($0) }; return want.isEmpty ? [] : [a(link, [2] + want)]
+            case 2: return ids.filter { have.contains($0) }.map { a(link, [3, $0]) }
+            case 3:
+                if let id = ids.first, !have.contains(id) { have.insert(id); version += 1 }
+                return [a(link, [4] + ids)]
+            default: return []
+            }
+        }
+        func linkDown(link: UInt64) {}
+        func queueForSend(toUser: String, toDevice: String, ciphertext: Data) throws -> Bool { true }
+        func queueProbe(toUser: String) throws -> Bool { true }
+        func refreshTags() throws {}
+        func stats() -> MeshStats { MeshStats(carried: UInt32(have.count), carriedBytes: 0, received: 0, duplicates: 0, rejected: 0, rateLimited: 0, evicted: 0, expired: 0, mine: 0, probesReceived: 0) }
+        func takeMine() throws -> UInt32 { 0 }
+        func takeUploadable() -> [MeshUpload] { [] }
+        func uploadAll(transport: Transport, authToken: String) throws -> UInt32 { 0 }
+        func uploadDone(id: Data) {}
+        func uploadFailed(id: Data) {}
+    }
+
+    func testThreePhonesExchangeWhatIsNeededThenGoQuietAndEveryPacketArrivesOnce() {
+        let clock = Clock()
+        let engines = [LoopEngine(), LoopEngine(), LoopEngine()]
+        var bus: [(to: Int, link: UInt64, bytes: Data)] = []
+        var framesSent = 0
+        var drivers: [MeshDriver] = []
+        // Link ids are the other phone's index + 1, on each side.
+        for index in 0..<3 {
+            drivers.append(MeshDriver(engine: engines[index], scheduler: FakeScheduler(), now: { clock.now }, transmit: { link, bytes in
+                framesSent += 1
+                bus.append((to: Int(link) - 1, link: UInt64(index + 1), bytes: bytes))
+            }))
+        }
+        func settle(_ limit: Int = 5_000) {
+            var steps = 0
+            while !bus.isEmpty {
+                steps += 1
+                XCTAssertLessThan(steps, limit, "the phones must go quiet: this is a storm")
+                if steps >= limit { bus = []; return }
+                let next = bus.removeFirst()
+                drivers[next.to].receive(next.bytes, on: next.link)
+            }
+        }
+        // Everyone is in range of everyone (a triangle).
+        engines[0].have = [1, 2]
+        engines[0].version = 1
+        for (a, b) in [(0, 1), (1, 2), (0, 2)] {
+            drivers[a].linkUp(UInt64(b + 1))
+            drivers[b].linkUp(UInt64(a + 1))
+        }
+        settle()
+        XCTAssertEqual(engines.map(\.have), [[1, 2], [1, 2], [1, 2]], "every packet reached every phone")
+        framesSent = 0
+        // A minute passes with nothing happening except the app's own wakes (the ones that re-announce, debounced).
+        for second in 1...60 {
+            clock.now.addTimeInterval(1)
+            if second % 15 == 0 { for driver in drivers { driver.wake(reason: "app-active") } }
+            settle()
+        }
+        XCTAssertLessThanOrEqual(framesSent, 6 * 2, "after the exchange the system is quiet: at most the occasional Hello per link after 30 s (and nobody answers it), not thousands: \(framesSent)")
+        // A packet queued on the third phone reaches the others, once each, and then quiet again.
+        engines[2].have.insert(9)
+        engines[2].version += 1
+        drivers[2].packetQueued()
+        settle()
+        XCTAssertEqual(engines.map(\.have), [[1, 2, 9], [1, 2, 9], [1, 2, 9]])
+        framesSent = 0
+        for _ in 1...60 { clock.now.addTimeInterval(1); settle() }
+        XCTAssertEqual(framesSent, 0, "idle: no frames at all")
     }
 
     func testAShortLinkIdIsFourCharactersAndRevealsLittle() {
