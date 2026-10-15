@@ -31,6 +31,8 @@ final class CallBubblesUITests: XCTestCase {
         let bubble = any(app, "call-bubble-call:d1")
         XCTAssertTrue(bubble.waitForExistence(timeout: 10))
         bubble.press(forDuration: 0.8)
+        // On a busy simulator (tests run in parallel) the first press can be swallowed while the screen is still settling: press once more.
+        if !any(app, "reaction-row").waitForExistence(timeout: 3) { bubble.press(forDuration: 0.8) }
         XCTAssertTrue(any(app, "reaction-row").waitForExistence(timeout: 5), "the emoji bar")
         XCTAssertTrue(app.buttons["reply-in-thread"].exists, "Reply")
         XCTAssertTrue(app.buttons["action-delete"].exists, "Delete")

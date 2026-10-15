@@ -5607,3 +5607,36 @@ Phase 0: `PLOT.md` committed first (0247624).
 **Not exercised (the user's gate):** in a group video call on a phone, minimise and restore 5 times while typing (the window should float each time, and the log should show "rebound" from the second time); then a 1:1 video call, minimise and restore 5 times; the live circle's new look on the phone, light and dark.
 
 **For plot:** LIME-112d is committed for the user's gate. It fixes the cause by reading (a controller bound to a dead anchor) and adds a retry and a log, but only a phone proves iOS accepts the rebound source: if the gate still fails, the log line will say why, and the fallback is rebuilding the controller. 1:1 was not changed because its source view is stable. Next on the line: LIME-151 (parallel UI tests), then 150.
+
+
+## LIME-151 (run the full test suite in parallel)
+
+Phase 0: `PLOT.md` committed first (5c327f2).
+
+**Result: the full suite takes 32 min instead of ~54 (about 40% less), with the same tests.** Not the "a third" the brief hoped for; why is below.
+
+**Every item, checked off.**
+- **1 `ios/test-full.sh`: DONE.** The full suite on the 13 mini with `-parallel-testing-enabled YES -parallel-testing-worker-count N`, signing on, one summary line (unit and UI: run / skipped / failed, minutes, PASSED/FAILED), non-zero exit on any failure; options `--workers N` (default 3), `--serial`, `--only <TestClass>` (repeatable; finds the bundle by itself), `--device <udid>`. The counts come from the result bundle (`xcresulttool`), not from log scraping. **Measured:**
+
+  | run | result | time |
+  |---|---|---|
+  | N=3, UI tests as they were | 1 failed (a slow test timed out at 273 s on the one worker that had the whole big class) | 52 min |
+  | N=3, UI tests split (below) | **green** | **32 min** |
+  | N=3 again | **green** | **32 min** |
+  | N=4 | 1 test failed (a long press) and **one worker's test runner failed to launch** ("Simulator device failed to launch …xctrunner"), so only 3 workers were used | 33 min |
+
+  **Chosen N=3:** the fastest that stayed green twice in a row (two consecutive green runs). **N=5 not tried:** N=4 already lost a worker at launch and was no faster; each try costs half an hour.
+- **2 Fix what breaks in parallel: DONE, 2 things.**
+  - **The big class.** Xcode gives a worker whole classes, and `LimeUITests` had 115 of the ~190 UI tests, so one worker ran them for ~52 min while the others finished early (at N=3 the first run was no faster than serial). I **split it into 8 classes by area** (`LimeUITestsMessages`, `…QARound`, `…MessageActions`, `…StatusAndGroupRows`, `…ThreadsAndFormatting`, `…SearchAndNotifications`, `…Settings`, `…GroupsAndSignIn`) on a shared base class `LimeUITestCase` that holds the helpers (the private helpers became internal; nothing else in them changed). A script moved the code; 115 tests before, 115 after; **no test was skipped, deleted or edited** in that move.
+  - **`CallBubblesUITests.testLongPressOffersOnlyTheEmojiBarReplyAndDelete`** failed once in parallel (the long press was swallowed on a busy simulator; it passes alone): it now presses once more if the emoji bar does not appear within 3 s. The assertions are the same.
+  - No test needed a fixed port or file: each worker is its own simulator clone.
+- **3 Unit tests in parallel: NO GAIN, left as is.** The unit bundle runs ~19 s in one process; it is one worker's work, not worth splitting.
+- **4 The tiered rule stays: DONE** (no change). `--device` runs the changed tests on the SE or 18 Pro; `--serial` is fine there.
+- **5 PLOT.md: NOT TOUCHED** (plot owns it). **The number for plot to update rules 4–5 with: the full suite is ~32 min (was ~54), so the soft cap with the full suite can drop from ~120 to ~75 min.**
+- **6 Docs: DONE.** A "Running tests" section in `ios/README.md` (the options, what the summary line means, why classes matter, the 3-worker finding, the long-press rule).
+
+**Verification.** Two consecutive green runs of `./ios/test-full.sh --workers 3` (unit 372 run / 10 skipped / 0 failed, UI 189 / 1 skipped / 0 failed, 32 min each); `--serial` still works (checked with two classes: 7 tests, passed); 0 warnings in lime's sources.
+
+**Why 32 and not ~18.** Three clones on one Mac are each about 1.8 times slower than the one simulator alone (the UI work is ~54 min of one simulator, ~96 simulator-minutes across three), and a fourth did not launch reliably. More cores would not help until that launch problem is understood; I did not chase it.
+
+**For plot:** LIME-151 is committed. The full suite is ~32 min with `./ios/test-full.sh` (default 3 workers). Suggested rule change: use `./ios/test-full.sh` for the full run and a ~75 min soft cap when it is required. New UI tests should go in a small class (they run in parallel by class). Open: 4 workers fail to launch a runner sometimes; the cause is not known.

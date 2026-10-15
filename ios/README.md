@@ -35,13 +35,33 @@ xcodebuild -scheme Lime -destination 'platform=iOS Simulator,name=iPhone 18 Pro'
 
 Switch light/dark in the Simulator with Features → Toggle Appearance (or Settings → Developer → Dark Appearance).
 
-## Tests
+## Running tests
+
+The whole suite (unit + UI) on the 13 mini simulator, in parallel:
+
+```bash
+./test-full.sh                      # 3 parallel workers (each is a clone of the simulator)
+./test-full.sh --workers 4          # another number of workers
+./test-full.sh --serial             # one simulator, one test at a time (the old way)
+./test-full.sh --only CallScreenUITests --only GroupCallLayoutTests    # chosen test classes only
+./test-full.sh --device <udid>      # another simulator
+```
+
+It prints one summary line (unit and UI: run / skipped / failed, minutes) and exits non-zero on any failure. The log is `$TMPDIR/lime-test-full.log` and the result bundle `$TMPDIR/lime-test-full.xcresult`. Signing stays on (the Keychain tests need it: never pass `CODE_SIGNING_ALLOWED=NO` for tests).
+
+Notes on running in parallel:
+
+- Xcode gives each worker whole test **classes**, never single tests, so one big class cannot be split across workers. The UI tests are therefore several classes (`LimeUITestsMessages`, `LimeUITestsSettings`, …) on a shared base class `LimeUITestCase` (`LimeUITests/LimeUITests.swift`); add new UI tests to a small class, not a big one.
+- 3 workers is the fastest setting that stayed green on this Mac (10 cores, 32 GB). 4 workers did not help (one worker's test runner failed to launch).
+- A test must not depend on another test, a fixed port, or a file another test writes. A gesture that can be swallowed on a busy simulator (a long press) should be repeated once, not given a longer wait.
+
+One class on one simulator, as before:
 
 ```bash
 xcodebuild test -scheme Lime -destination 'platform=iOS Simulator,name=iPhone 18 Pro'
 ```
 
-`LimeTests` covers the sample data, the store and the theme (own bubble colour, 4.5:1 text contrast in light and dark). `LimeUITests` launches the app, opens a chat, sends a message and goes back.
+`LimeTests` covers the sample data, the store, the core adapters and the theme (own bubble colour, 4.5:1 text contrast in light and dark). `LimeUITests` (and the other `*UITests` classes) launch the app on made-up data and drive its screens.
 
 ## Layout
 

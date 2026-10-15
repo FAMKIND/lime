@@ -1,31 +1,33 @@
 import XCTest
 
+/// The helpers every UI test class shares. The tests are split into several classes (LIME-151) because Xcode runs a class on one simulator at a
+/// time: one big class cannot run in parallel.
 @MainActor
-final class LimeUITests: XCTestCase {
+class LimeUITestCase: XCTestCase {
     /// An app that is already signed in (no backend) with the made-up sample chats loaded: what the
     /// older tests of Messages and Chat need now that a new account starts empty.
-    private func signedInApp(_ extra: [String] = []) -> XCUIApplication {
+    func signedInApp(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-load-sample-chats"] + extra
         return app
     }
 
     /// An app using the stand-in backend, with no saved session: the sign-up and sign-in screens.
-    private func onboardingApp(_ extra: [String] = []) -> XCUIApplication {
+    func onboardingApp(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-fake-auth", "-lime-reset-session", "-lime-reset-store"] + extra
         return app
     }
 
     /// Signed in, no backend, with made-up conversations in memory: a request waiting and a chat.
-    private func demoApp() -> XCUIApplication {
+    func demoApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"]
         return app
     }
 
     /// Your avatar opens your profile; Settings is one of its cards.
-    private func openSettingsFromAvatar(_ app: XCUIApplication) {
+    func openSettingsFromAvatar(_ app: XCUIApplication) {
         app.buttons["settings-button"].tap()
         let row = app.buttons["profile-settings"]
         XCTAssertTrue(row.waitForExistence(timeout: 5), "your profile opens")
@@ -34,7 +36,7 @@ final class LimeUITests: XCTestCase {
     }
 
     /// The link tab's badge (the system tab bar shows the count of unread chats as the tab's value); "" when there is none.
-    private func linkBadge(_ app: XCUIApplication) -> String {
+    func linkBadge(_ app: XCUIApplication) -> String {
         // The system reads the badge as the tab's value, e.g. "1 item"; keep the number.
         let text = (app.tabBars.buttons["link"].value as? String) ?? ""
         let digits = text.prefix { $0.isNumber }
@@ -43,7 +45,7 @@ final class LimeUITests: XCTestCase {
 
     /// Waits for the link badge to read `text` ("" = no badge).
     @discardableResult
-    private func waitForLinkBadge(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 5) -> Bool {
+    func waitForLinkBadge(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 5) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if linkBadge(app) == text { return true }
@@ -52,7 +54,7 @@ final class LimeUITests: XCTestCase {
         return linkBadge(app) == text
     }
 
-    private func goBack(_ app: XCUIApplication) {
+    func goBack(_ app: XCUIApplication) {
         let custom = app.buttons["back-button"]
         (custom.exists ? custom : app.navigationBars.buttons.element(boundBy: 0)).tap()
     }
@@ -62,8 +64,86 @@ final class LimeUITests: XCTestCase {
         await MainActor.run { XCUIDevice.shared.orientation = .portrait }
     }
 
-    // MARK: New message, requests and delivery states (in-memory demo conversations)
+    func openNewMessage(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["new-message-button"].waitForExistence(timeout: 10))
+        app.buttons["new-message-button"].tap()
+        XCTAssertTrue(app.textFields["new-message-field"].waitForExistence(timeout: 5))
+    }
 
+    func voiceBubbles(_ app: XCUIApplication) -> XCUIElementQuery {
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'voice-bubble-'"))
+    }
+
+    func openSam(_ app: XCUIApplication) {
+        app.launch()
+        XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
+        app.buttons["conversation-row-dm:sam"].tap()
+    }
+
+    func longPress(_ app: XCUIApplication, _ text: String) {
+        let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 10), text)
+        bubble.press(forDuration: 1.0)
+        XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForExistence(timeout: 5), "the actions menu opens")
+    }
+
+    func remoteApp(extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "attachments-remote",
+                               "-lime-network", "cellular", "-lime.autoDownload.photos", "wifiOnly"] + extra
+        return app
+    }
+
+    func threadApp(_ screen: String = "thread") -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", screen]
+        return app
+    }
+
+    func openComposer(_ app: XCUIApplication, chat: String = "dm:sam") -> XCUIElement {
+        XCTAssertTrue(app.buttons["conversation-row-\(chat)"].waitForExistence(timeout: 10))
+        app.buttons["conversation-row-\(chat)"].tap()
+        let field = app.textViews["composer-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        return field
+    }
+
+    /// Selects all of what was typed (a long press, then the callout's Select All).
+    func selectAll(_ field: XCUIElement, in app: XCUIApplication) {
+        field.press(forDuration: 1.2)
+        let all = app.menuItems["Select All"]
+        if all.waitForExistence(timeout: 3) { all.tap() } else { field.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).doubleTap() }
+    }
+
+    func notifApp(_ screen: String? = nil, _ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-reset-session"] + (screen.map { ["-lime-demo-screen", $0] } ?? []) + extra
+        return app
+    }
+
+    func openSettings(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        openSettingsFromAvatar(app)
+        XCTAssertTrue(app.otherElements["settings-root"].waitForExistence(timeout: 5) || app.buttons["settings-profile"].waitForExistence(timeout: 5))
+    }
+
+    func typeSecure(_ text: String, _ id: String, _ app: XCUIApplication) {
+        let field = app.secureTextFields[id]
+        field.tap()
+        field.typeText(text)
+    }
+
+    func type(_ text: String, into id: String, in app: XCUIApplication, secure: Bool = false) {
+        let field = secure ? app.secureTextFields[id] : app.textFields[id]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), id)
+        field.tap()
+        field.typeText(text)
+    }
+}
+
+@MainActor
+final class LimeUITestsMessages: LimeUITestCase {
     func testARequestIsAcceptedFromTheRequestsRow() {
         let app = demoApp()
         app.launch()
@@ -98,14 +178,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["requests-row"].exists)
         XCTAssertFalse(app.buttons["conversation-row-dm:ada"].exists)
-    }
-
-    // MARK: New Message (LIME-101b)
-
-    private func openNewMessage(_ app: XCUIApplication) {
-        XCTAssertTrue(app.buttons["new-message-button"].waitForExistence(timeout: 10))
-        app.buttons["new-message-button"].tap()
-        XCTAssertTrue(app.textFields["new-message-field"].waitForExistence(timeout: 5))
     }
 
     func testNewMessageListsTeachersAToZAndTheRailJumps() {
@@ -335,10 +407,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["composer-files"].exists)
     }
 
-    private func voiceBubbles(_ app: XCUIApplication) -> XCUIElementQuery {
-        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'voice-bubble-'"))
-    }
-
     func testVoiceMessagePlaysWithAnAdjustableSpeedAndGoesOnToTheNextOne() {
         let app = threadApp("attachments-media")
         app.launch()
@@ -432,9 +500,10 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["composer-photo-library"].waitForExistence(timeout: 5), "and it offers photos (and videos), the camera and files")
         XCTAssertTrue(app.buttons["composer-files"].exists)
     }
+}
 
-    // MARK: LIME-104 (the QA round)
-
+@MainActor
+final class LimeUITestsQARound: LimeUITestCase {
     func testSwipingARowOffersDeleteMuteReadAndPin() {
         let app = demoApp()
         app.launch()
@@ -683,22 +752,10 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["group-photo-library"].waitForExistence(timeout: 5))
         app.buttons["group-avatar-cancel"].tap()
     }
+}
 
-    // MARK: LIME-105 (message actions)
-
-    private func openSam(_ app: XCUIApplication) {
-        app.launch()
-        XCTAssertTrue(app.buttons["conversation-row-dm:sam"].waitForExistence(timeout: 10))
-        app.buttons["conversation-row-dm:sam"].tap()
-    }
-
-    private func longPress(_ app: XCUIApplication, _ text: String) {
-        let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
-        XCTAssertTrue(bubble.waitForExistence(timeout: 10), text)
-        bubble.press(forDuration: 1.0)
-        XCTAssertTrue(app.descendants(matching: .any)["message-actions"].waitForExistence(timeout: 5), "the actions menu opens")
-    }
-
+@MainActor
+final class LimeUITestsMessageActions: LimeUITestCase {
     func testTheLongPressMenuHasTheReactionRowAndTheActionsInOrder() {
         let app = demoApp()
         openSam(app)
@@ -749,8 +806,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-s1"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["reaction-cluster-s1"].label.contains("👍"), "toggled off")
     }
-
-    // MARK: Reactions and the menu on media (LIME-104-fix)
 
     func testLongPressingAPhotoAlbumAndFileOpensTheMenuAndReactionsShowOnTheMedia() {
         let app = threadApp("attachments")
@@ -808,8 +863,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["reaction-cluster-a6"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["video-player"].exists, "a long-press does not open the player")
     }
-
-    // MARK: LIME-106: forward, my own chat, link cards
 
     func testForwardingAMessageToTwoChatsLabelsItForwardedAndSelectModeForwardsToo() {
         let app = demoApp()
@@ -917,13 +970,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["composer-plus"].exists)
     }
 
-    private func remoteApp(extra: [String] = []) -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "attachments-remote",
-                               "-lime-network", "cellular", "-lime.autoDownload.photos", "wifiOnly"] + extra
-        return app
-    }
-
     func testStorageShowsUsagePerChatAndRemovesAChatsMediaAndSetsKeepMediaAndAutoDownload() {
         let app = threadApp("settings/storage")
         app.launch()
@@ -986,9 +1032,10 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Not enough space'")).firstMatch.waitForExistence(timeout: 5), "a clean failure with a reason")
         XCTAssertTrue(photo.exists && photo.label.contains("tap to download"), "and it can be tried again")
     }
+}
 
-    // MARK: LIME-107-qa
-
+@MainActor
+final class LimeUITestsStatusAndGroupRows: LimeUITestCase {
     func testTheFooterAndTheReplySummaryAreAlignedToTheVideoTheyBelongTo() {
         let app = threadApp("attachments-media")
         app.launch()
@@ -1106,8 +1153,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(waitForLinkBadge(app, ""))
     }
 
-    // MARK: LIME-108: status and work hours
-
     func testContactsShowAStatusBadgeAndTheChatHeaderSaysIt() {
         let app = demoApp()
         app.launch()
@@ -1159,8 +1204,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["hours-day-7"].isSelected)
     }
 
-    // MARK: LIME-102b
-
     func testNotificationSettingsShowLimeChimeSelectedByDefaultAndAnAddYourOwnRow() {
         let app = threadApp("settings/notifications")
         app.launchArguments += ["-lime-reset-session"]   // the demo's own notification choices start fresh
@@ -1206,8 +1249,6 @@ final class LimeUITests: XCTestCase {
         let link = app.links.matching(NSPredicate(format: "label CONTAINS[c] 'famkind.com'")).firstMatch
         XCTAssertTrue(link.waitForExistence(timeout: 8), "the address is a tappable link")
     }
-
-    // MARK: LIME-115: group rows and default names
 
     func testSwipingAGroupRowOffersMuteLeaveAndDeleteForTheOwnerOrClearForAMember() {
         let app = threadApp("groups-rows")
@@ -1361,15 +1402,10 @@ final class LimeUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["problem-message"].label, "Your session has ended. Please sign in again.")
         XCTAssertTrue(app.buttons["problem-sign-in"].exists)
     }
+}
 
-    // MARK: Threads (LIME-101)
-
-    private func threadApp(_ screen: String = "thread") -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", screen]
-        return app
-    }
-
+@MainActor
+final class LimeUITestsThreadsAndFormatting: LimeUITestCase {
     func testAMessageWithRepliesShowsASummaryAndItsRepliesAreNotInTheTimeline() {
         let app = threadApp()
         app.launch()
@@ -1442,24 +1478,6 @@ final class LimeUITests: XCTestCase {
         hit.tap()
         XCTAssertTrue(app.staticTexts["thread-count"].waitForExistence(timeout: 5), "the hit opens its thread")
         XCTAssertTrue(app.otherElements["match-marker-t1b"].waitForExistence(timeout: 5), "and lands on the reply")
-    }
-
-    // MARK: Formatting (LIME-100)
-
-    private func openComposer(_ app: XCUIApplication, chat: String = "dm:sam") -> XCUIElement {
-        XCTAssertTrue(app.buttons["conversation-row-\(chat)"].waitForExistence(timeout: 10))
-        app.buttons["conversation-row-\(chat)"].tap()
-        let field = app.textViews["composer-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
-        return field
-    }
-
-    /// Selects all of what was typed (a long press, then the callout's Select All).
-    private func selectAll(_ field: XCUIElement, in app: XCUIApplication) {
-        field.press(forDuration: 1.2)
-        let all = app.menuItems["Select All"]
-        if all.waitForExistence(timeout: 3) { all.tap() } else { field.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).doubleTap() }
     }
 
     func testSelectingTextShowsTheFormattingToolbarAboveTheKeyboardAndBoldWorks() {
@@ -1641,9 +1659,10 @@ final class LimeUITests: XCTestCase {
         let open = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'link-open' OR label == 'Open link'")).firstMatch
         XCTAssertTrue(open.waitForExistence(timeout: 5), "a confirmation first")
     }
+}
 
-    // MARK: Search (LIME-99)
-
+@MainActor
+final class LimeUITestsSearchAndNotifications: LimeUITestCase {
     func testSearchFindsAChatAndAMessageAndOpensTheChatAtTheMessage() {
         let app = demoApp()
         app.launch()
@@ -1723,14 +1742,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["find-count"].waitForExistence(timeout: 5))
         expectation(for: NSPredicate(format: "label == 'No matches'"), evaluatedWith: app.staticTexts["find-count"])
         waitForExpectations(timeout: 5)
-    }
-
-    // MARK: Notifications (LIME-102)
-
-    private func notifApp(_ screen: String? = nil, _ extra: [String] = []) -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-reset-session"] + (screen.map { ["-lime-demo-screen", $0] } ?? []) + extra
-        return app
     }
 
     func testNotificationSettingsOffersPreviewSoundAndMutedChats() {
@@ -1816,8 +1827,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["incoming-banner"].exists)
     }
 
-    // MARK: Bluetooth field test (LIME-103, Debug builds only)
-
     func testTheNearbyTestOpensFromAboutAndStartsAndStopsWithoutBluetooth() {
         let app = notifApp()
         app.launch()
@@ -1889,123 +1898,10 @@ final class LimeUITests: XCTestCase {
         app.buttons["privacy-blocked"].tap()
         XCTAssertTrue(app.staticTexts["Sam Park"].waitForExistence(timeout: 5), "listed under Blocked, with Unblock")
     }
+}
 
-    // MARK: Groups (LIME-97)
-
-    func testNewGroupPicksPeopleNamesItAndOpensTheChat() {
-        let app = threadApp("new-message")
-        app.launch()
-        XCTAssertTrue(app.buttons["action-new-group"].waitForExistence(timeout: 10))
-        app.buttons["action-new-group"].tap()
-        let next = app.buttons["group-next"]
-        XCTAssertTrue(next.waitForExistence(timeout: 5))
-        XCTAssertFalse(next.isEnabled, "Next waits for at least one person")
-        XCTAssertEqual(app.staticTexts["group-count"].label, "1 Member")
-        app.buttons["group-pick-ben.okafor"].tap()
-        app.buttons["group-pick-chloe.diaz"].tap()
-        XCTAssertTrue(app.buttons["group-chip-ben.okafor"].waitForExistence(timeout: 3), "a removable chip")
-        XCTAssertEqual(app.staticTexts["group-count"].label, "3 Members")
-        app.buttons["group-chip-chloe.diaz"].tap()
-        XCTAssertFalse(app.buttons["group-chip-chloe.diaz"].exists, "the chip removes the person")
-        app.buttons["group-pick-chloe.diaz"].tap()
-        XCTAssertTrue(next.isEnabled)
-        next.tap()
-        let create = app.buttons["group-create"]
-        XCTAssertTrue(create.waitForExistence(timeout: 5))
-        XCTAssertTrue(create.isEnabled, "a name is filled in from the people picked")
-        let field = app.textFields["group-name-field"]
-        field.tap()
-        let existing = (field.value as? String) ?? ""
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count))
-        XCTAssertFalse(create.isEnabled, "but a name is still required")
-        field.typeText("Grade 4 Team")
-        XCTAssertTrue(create.isEnabled)
-        create.tap()
-        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
-        XCTAssertTrue(title.waitForExistence(timeout: 5), "the new group opens")
-        XCTAssertTrue(title.label.contains("Grade 4 Team"), title.label)
-        XCTAssertTrue(title.label.contains("3 members"), title.label)
-        XCTAssertTrue(app.staticTexts["You created the group “Grade 4 Team”"].waitForExistence(timeout: 3), "a system line")
-    }
-
-    func testAGroupNameIsLimitedToFiftyCharacters() {
-        let app = threadApp("new-group-name")
-        app.launch()
-        let field = app.textFields["group-name-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.typeText(String(repeating: "a", count: 60))
-        expectation(for: NSPredicate(format: "label == '50/50'"), evaluatedWith: app.staticTexts["group-name-count"])
-        waitForExpectations(timeout: 5)
-        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: app.buttons["group-create"])
-        waitForExpectations(timeout: 5)
-    }
-
-    func testAGroupChatShowsNamesOnBubblesAndAMembersHeader() {
-        let app = threadApp("group")
-        app.launch()
-        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
-        XCTAssertTrue(title.waitForExistence(timeout: 10))
-        XCTAssertTrue(title.label.contains("Grade 4 Team") && title.label.contains("4 members"), title.label)
-        XCTAssertTrue(app.staticTexts["Lee Wong"].exists || app.staticTexts["lee"].exists, "the sender's name above a group message")
-        XCTAssertTrue(app.staticTexts["You created the group “Grade 4 Team”"].exists)
-    }
-
-    func testGroupDetailsRenameRemoveAddAndLeave() {
-        let app = threadApp("group-details")
-        app.launch()
-        XCTAssertTrue(app.buttons["group-details-name"].waitForExistence(timeout: 10))
-        XCTAssertEqual(app.staticTexts["group-details-count"].label, "4 members")
-        // Rename.
-        app.buttons["group-details-name"].tap()
-        let field = app.textFields["group-rename-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.clearAndType("Fourth Grade")
-        XCTAssertEqual(field.value as? String, "Fourth Grade", "the field holds the new name")
-        app.buttons["group-rename-save"].tap()
-        expectation(for: NSPredicate(format: "label CONTAINS 'Fourth Grade'"), evaluatedWith: app.buttons["group-details-name"])
-        waitForExpectations(timeout: 5)
-        // Remove someone (asks first).
-        XCTAssertTrue(app.buttons["group-remove-sam"].exists)
-        app.buttons["group-remove-sam"].tap()
-        let confirm = app.buttons.matching(identifier: "group-remove-confirm").firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
-        confirm.tap()
-        XCTAssertTrue(app.staticTexts["group-details-count"].waitForExistence(timeout: 3))
-        expectation(for: NSPredicate(format: "label == '3 members'"), evaluatedWith: app.staticTexts["group-details-count"])
-        waitForExpectations(timeout: 5)
-        XCTAssertFalse(app.buttons["group-remove-sam"].exists)
-        // Add someone from the teachers you message.
-        app.buttons["group-add"].tap()
-        XCTAssertTrue(app.buttons["group-pick-ben.okafor"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["group-pick-lee"].exists, "people already in the group are not offered")
-        app.buttons["group-pick-ben.okafor"].tap()
-        app.buttons["group-next"].tap()
-        expectation(for: NSPredicate(format: "label == '4 members'"), evaluatedWith: app.staticTexts["group-details-count"])
-        waitForExpectations(timeout: 5)
-        // Leave (asks first), and the group is gone from Messages.
-        app.buttons["group-leave"].tap()
-        let leave = app.buttons.matching(identifier: "group-leave-confirm").firstMatch
-        XCTAssertTrue(leave.waitForExistence(timeout: 3))
-        leave.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
-        // The group stays in the list, read-only ("You left"), until it is removed.
-        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-grp:'")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
-        row.tap()
-        XCTAssertTrue(app.staticTexts["group-ended-note"].waitForExistence(timeout: 5))
-        app.buttons["group-ended-remove"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-grp:'")).firstMatch.exists)
-    }
-
-    // MARK: Settings (LIME-98)
-
-    private func openSettings(_ app: XCUIApplication) {
-        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
-        openSettingsFromAvatar(app)
-        XCTAssertTrue(app.otherElements["settings-root"].waitForExistence(timeout: 5) || app.buttons["settings-profile"].waitForExistence(timeout: 5))
-    }
-
+@MainActor
+final class LimeUITestsSettings: LimeUITestCase {
     func testTheAvatarOpensSettingsWithTheRowsOfTheDesign() {
         let app = demoApp()
         app.launch()
@@ -2193,12 +2089,6 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Signing out removes your messages and keys from this iPhone. Your contacts will see that your security key changed."].exists)
     }
 
-    private func typeSecure(_ text: String, _ id: String, _ app: XCUIApplication) {
-        let field = app.secureTextFields[id]
-        field.tap()
-        field.typeText(text)
-    }
-
     func testAMessageShowsSendingThenSent() {
         let app = demoApp()
         app.launch()
@@ -2354,14 +2244,114 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(next.buttons["conversation-row-c1"].waitForExistence(timeout: 10))
         XCTAssertFalse(next.staticTexts["recovery-notice"].exists, "the notice does not come back")
     }
+}
 
-    // MARK: Signing up and in (the stand-in backend)
-
-    private func type(_ text: String, into id: String, in app: XCUIApplication, secure: Bool = false) {
-        let field = secure ? app.secureTextFields[id] : app.textFields[id]
-        XCTAssertTrue(field.waitForExistence(timeout: 10), id)
+@MainActor
+final class LimeUITestsGroupsAndSignIn: LimeUITestCase {
+    func testNewGroupPicksPeopleNamesItAndOpensTheChat() {
+        let app = threadApp("new-message")
+        app.launch()
+        XCTAssertTrue(app.buttons["action-new-group"].waitForExistence(timeout: 10))
+        app.buttons["action-new-group"].tap()
+        let next = app.buttons["group-next"]
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        XCTAssertFalse(next.isEnabled, "Next waits for at least one person")
+        XCTAssertEqual(app.staticTexts["group-count"].label, "1 Member")
+        app.buttons["group-pick-ben.okafor"].tap()
+        app.buttons["group-pick-chloe.diaz"].tap()
+        XCTAssertTrue(app.buttons["group-chip-ben.okafor"].waitForExistence(timeout: 3), "a removable chip")
+        XCTAssertEqual(app.staticTexts["group-count"].label, "3 Members")
+        app.buttons["group-chip-chloe.diaz"].tap()
+        XCTAssertFalse(app.buttons["group-chip-chloe.diaz"].exists, "the chip removes the person")
+        app.buttons["group-pick-chloe.diaz"].tap()
+        XCTAssertTrue(next.isEnabled)
+        next.tap()
+        let create = app.buttons["group-create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        XCTAssertTrue(create.isEnabled, "a name is filled in from the people picked")
+        let field = app.textFields["group-name-field"]
         field.tap()
-        field.typeText(text)
+        let existing = (field.value as? String) ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count))
+        XCTAssertFalse(create.isEnabled, "but a name is still required")
+        field.typeText("Grade 4 Team")
+        XCTAssertTrue(create.isEnabled)
+        create.tap()
+        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "the new group opens")
+        XCTAssertTrue(title.label.contains("Grade 4 Team"), title.label)
+        XCTAssertTrue(title.label.contains("3 members"), title.label)
+        XCTAssertTrue(app.staticTexts["You created the group “Grade 4 Team”"].waitForExistence(timeout: 3), "a system line")
+    }
+
+    func testAGroupNameIsLimitedToFiftyCharacters() {
+        let app = threadApp("new-group-name")
+        app.launch()
+        let field = app.textFields["group-name-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.typeText(String(repeating: "a", count: 60))
+        expectation(for: NSPredicate(format: "label == '50/50'"), evaluatedWith: app.staticTexts["group-name-count"])
+        waitForExpectations(timeout: 5)
+        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: app.buttons["group-create"])
+        waitForExpectations(timeout: 5)
+    }
+
+    func testAGroupChatShowsNamesOnBubblesAndAMembersHeader() {
+        let app = threadApp("group")
+        app.launch()
+        let title = app.descendants(matching: .any).matching(identifier: "chat-title").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertTrue(title.label.contains("Grade 4 Team") && title.label.contains("4 members"), title.label)
+        XCTAssertTrue(app.staticTexts["Lee Wong"].exists || app.staticTexts["lee"].exists, "the sender's name above a group message")
+        XCTAssertTrue(app.staticTexts["You created the group “Grade 4 Team”"].exists)
+    }
+
+    func testGroupDetailsRenameRemoveAddAndLeave() {
+        let app = threadApp("group-details")
+        app.launch()
+        XCTAssertTrue(app.buttons["group-details-name"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["group-details-count"].label, "4 members")
+        // Rename.
+        app.buttons["group-details-name"].tap()
+        let field = app.textFields["group-rename-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.clearAndType("Fourth Grade")
+        XCTAssertEqual(field.value as? String, "Fourth Grade", "the field holds the new name")
+        app.buttons["group-rename-save"].tap()
+        expectation(for: NSPredicate(format: "label CONTAINS 'Fourth Grade'"), evaluatedWith: app.buttons["group-details-name"])
+        waitForExpectations(timeout: 5)
+        // Remove someone (asks first).
+        XCTAssertTrue(app.buttons["group-remove-sam"].exists)
+        app.buttons["group-remove-sam"].tap()
+        let confirm = app.buttons.matching(identifier: "group-remove-confirm").firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
+        XCTAssertTrue(app.staticTexts["group-details-count"].waitForExistence(timeout: 3))
+        expectation(for: NSPredicate(format: "label == '3 members'"), evaluatedWith: app.staticTexts["group-details-count"])
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["group-remove-sam"].exists)
+        // Add someone from the teachers you message.
+        app.buttons["group-add"].tap()
+        XCTAssertTrue(app.buttons["group-pick-ben.okafor"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["group-pick-lee"].exists, "people already in the group are not offered")
+        app.buttons["group-pick-ben.okafor"].tap()
+        app.buttons["group-next"].tap()
+        expectation(for: NSPredicate(format: "label == '4 members'"), evaluatedWith: app.staticTexts["group-details-count"])
+        waitForExpectations(timeout: 5)
+        // Leave (asks first), and the group is gone from Messages.
+        app.buttons["group-leave"].tap()
+        let leave = app.buttons.matching(identifier: "group-leave-confirm").firstMatch
+        XCTAssertTrue(leave.waitForExistence(timeout: 3))
+        leave.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
+        // The group stays in the list, read-only ("You left"), until it is removed.
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-grp:'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(app.staticTexts["group-ended-note"].waitForExistence(timeout: 5))
+        app.buttons["group-ended-remove"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'conversation-row-grp:'")).firstMatch.exists)
     }
 
     func testSignUpEndToEndThenSignOutAndSignInByUsername() {
@@ -2446,6 +2436,7 @@ final class LimeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["error-message"].label.contains("isn't right"))
     }
 }
+
 
 private extension XCUIElement {
     /// Replaces the field's text.
