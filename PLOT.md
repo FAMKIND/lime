@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-142-fix2** (`mesh-drop` refuses the iPad's upload with a 403; find out why). Then the rest of the device session (order B + LIME-143's test). Previously: The builds are installed on all 3. LIME-142-fix landed as `0e619e3`. After it: plot pulls the logs (looking for `upload_ok` + the trigger), then drafts **LIME-144** (the field test + docs).
+**▶ NEXT FOR TEND: LIME-143-fix** (remove Drill; a one-line EMERGENCY card label; "Safewords"; the "+" long-press; the key-script guard). **Then the mesh is wrapped**: LIME-144 shrinks to docs + a passive battery soak (the field test is effectively done, 1e129/1e131/1e138). **Then, per the user's order: LIME-150 + LIME-152** (the call polish + the QA batch). Previously: The builds are installed on all 3. LIME-142-fix landed as `0e619e3`. After it: plot pulls the logs (looking for `upload_ok` + the trigger), then drafts **LIME-144** (the field test + docs).
 - **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
@@ -149,6 +149,20 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e140. **LIME-143 DEVICE TEST PASSED (the user, 2026-10-16: "all worked")**: Nearby mode, a silent emergency status, "Need help" first in the roll-up, the sound setting, End (Drill tested too).
+   - **The user's changes → LIME-143-fix (drafted, NEXT):** **remove Drill entirely** (E3 reversed); the "EMERGENCY" word wraps to 2 lines on the 13 mini, so tidy the card; rename "School safety actions" → **"Safewords"**; plus the long-press fix + the key-script guard.
+   - **"Wrap up and move on":** after 143-fix the mesh is done for v1. **144 becomes a small docs + passive-battery brief** (the field results exist: 1e129, 1e131, 1e138). **Then 150 + 152.**
+1e139. **BUG (the user, the 143 device test): long-pressing the "+" opens New Message, not Emergency.**
+   - `FloatingPlus.swift:44` puts `.onLongPressGesture(minimumDuration: 0.7)` on a `Button`, and the Button's own tap wins (a known SwiftUI conflict); the UI test only used the accessibility action.
+   - **The fix (small, into 144 or a 143-fix):** `.simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { … })` **plus** a `.contextMenu` with "Emergency" (the iOS-native long-press pattern; it also gives a haptic + a visible menu), and a real-press UI test.
+   - **The workaround for now:** the group's ⋯ → Emergency.
+1e138. **THE UPLOAD ROUTE WORKS (the user, 2026-10-16: "worked").** The key was re-pinned (`385ff42`); upload test A passed: the 13 mini stayed offline → the iPad carried the message → the iPad came online and uploaded via `mesh-drop` → Jean's phone (far, online, Bluetooth off) received it. **Every part of mesh v1 is now proven on devices:** Bluetooth delivery (1e131), multi-hop across locked phones (1e129), and the relay upload. **Remaining in this session:** upload test B (Wi-Fi on first) + LIME-143's device test. **Then plot drafts LIME-144** (the field test + docs) and the mesh-keygen safety brief (1e137).
+1e137. **The 403 CAUSE FOUND (2026-10-16 07:50 EDT; plot read the staging function logs via the Management API's `analytics/endpoints/logs` + ClickHouse SQL on the unified `logs` table):**
+   - `{"event":"access_denied","reason":"header_unopenable"}` at 11:50:17Z (= the iPad's `upload_refused id=8260`) and twice at 11:45Z;
+   - **so the mesh public key pinned in the app (id 1, `6Z2M…`) is not the pair of `MESH_ROUTING_SECRET_KEY` on staging.** Most likely the user gave tend the key printed by the **`--dry-run`** (whose secret is thrown away), not the real run's. **Plot's miss:** it suggested the dry run without warning that its key must not be used.
+   - **The fix:** the user runs `./supabase/mesh-keygen.sh` once (the real run) → gives tend the printed public key → tend re-pins `SERVER_KEYS` id 1, rebuilds the core, reinstalls on the 3 devices. **No server deploy needed** (the script sets the secret). Old sealed packets are lost (only test data).
+   - **For later:** `mesh-keygen.sh` should refuse to print a key in `--dry-run` that looks like the real output (e.g. print "DRY RUN, DO NOT PIN" beside it), and the app could self-check the pinned key against a server endpoint that returns the public key's fingerprint. A small brief.
+   - **How to read the reason codes again:** `curl -G https://api.supabase.com/v1/projects/$REF/analytics/endpoints/logs` with the CLI's keychain token (security item "Supabase CLI"), `sql=SELECT timestamp, event_message FROM logs WHERE event_message LIKE '%reason%' …` plus the iso start/end params.
 1e136. **The upload test A after 142-fix (2026-10-16 ~04:41):** the iPad uploaded (the trigger works) but **`mesh-drop` answered 403** (`upload_dropped` ×2), so Jean never got it. The cause is hidden by the one undifferentiated 403. **→ LIME-142-fix2 (drafted, NEXT):** server-side reason codes (no ids), test the 4 suspects (no public key on file is the top one), fix; also RSSI 127 = unknown, not weak.
 1e135. **LIME-142-fix LANDED as `0e619e3` (pushed; PLOT.md `7593ea3`).**
    - **The cause: a missing trigger.** An **already-online** carrier that was handed a packet later never uploaded: the 15 s tick only pumped, and the other triggers had already fired.
@@ -5805,7 +5819,38 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-142-fix2 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): `mesh-drop` refuses real uploads with a 403
+### LIME-143-fix → `tend` (lime-aa) (NEXT; drafted 2026-10-16): emergency clean-up: no drills, a tidy card, "Safewords", a working long-press; the key-script guard
+**Goal:** emergency mode is simpler and polished, and the "+" long-press opens it; the mesh key script can't cause the dry-run mix-up again.
+
+**The user (2026-10-16, after the device test: "all worked"):**
+- "remove the drill feature (no need to test)";
+- "clean up the emergency small card: the EMERGENCY word on the mini is two lines";
+- "change 'School safety actions' to Safewords in emergency settings".
+
+**The change:**
+1. **Remove Drill mode entirely** (reverses E3, the user's call): the Settings item, the drill flag in core (the op field, the roll-up's real-vs-drill split, the policy branch), the DRILL labels/dashed borders, the tests, the docs (`docs/screens/emergency.md`, `api-v2.md` §13, `architecture.md`). **The wire format:** keep accepting and ignoring a `drill` field from older builds (just test data) or drop it. Report which.
+2. **The emergency card (in the chat):**
+   - **"EMERGENCY" must fit on one line** on the 13 mini (and the SE) at the default text size: a smaller caps label (e.g. caption weight semibold, letter-spaced) beside a small icon, `lineLimit(1)` + `minimumScaleFactor` only as a last resort;
+   - tighten the card's padding and hierarchy: **the label row, then the status line** ("Safe · 12 students · Room 204") **as the main text**, then the sender + time;
+   - follow the **20/80 brand rule** (the label's colour is the danger red or a strong neutral, not lime; the card itself is warm-neutral);
+   - at AX sizes it may wrap (accessibility wins);
+   - screenshots (13 mini, SE; light/dark).
+3. **Rename** Settings → Emergency's **"Use school safety actions" → "Safewords"** (the toggle's label; keep the one-line explanation, reworded: "Show your school's safety words (Hold, Secure, Lockdown, Evacuate, Shelter) as quick choices."). The same name in the status sheet's section header and the docs.
+4. **Fix the "+" long-press** (1e139): `FloatingPlus` uses `.onLongPressGesture` on a `Button`, and the tap wins. Use **a `.contextMenu` with "Emergency"** (the native long-press menu, with its haptic) and/or `.simultaneousGesture(LongPressGesture(minimumDuration: 0.6))`; keep the accessibility action. **Add a UI test that really long-presses** (`press(forDuration:)`).
+5. **The mesh key script guard (separate commit, `chore(infra): …`, trailer `Brief: LIME-140`):**
+   - `--dry-run` prints its key under a loud **"DRY RUN: DO NOT PIN THIS KEY"** banner;
+   - the real run prints **"PIN THIS KEY"**;
+   - optionally, `mesh-drop` exposes the public key's fingerprint on an authenticated `GET`, and the app logs a warning at launch if its pinned key differs. Report whether it was done.
+
+**Kind:** behaviour (the drill removal: core + iOS tests updated; the long-press UI test) + visual (the card: screenshots, no looks tests).
+
+**Verification:** `cargo test --workspace`, `./core/check-android.sh`, `./ios/test-full.sh`, 0 warnings, Release clean.
+
+**Gate (the user, one device is enough):** long-press "+" → Emergency; the card reads EMERGENCY on one line; Settings says "Safewords"; no Drill anywhere.
+
+**Record:** `## LIME-143-fix` with **For plot:** and every item checked off. **Commit:** `fix: emergency clean-up (no drills, a one-line card label, Safewords, long-press opens Emergency)`, trailer `Brief: LIME-143`. The rest per the standing rules.
+
+### LIME-142-fix2 → `tend` (lime-aa) (DONE as `f04b61c` + the re-pin `385ff42`; drafted 2026-10-16): `mesh-drop` refuses real uploads with a 403
 **Goal:** a message carried by a relay is accepted by `mesh-drop` and reaches the recipient, on staging with the real test accounts.
 
 **The user's upload test A (2026-10-16 ~04:40; `/tmp/lime-meshlogs6/`; the 13 mini wasn't on USB):**
