@@ -6084,3 +6084,16 @@ Phase 0: `PLOT.md` committed first (d42ef29). **Owning up: the deploy that clobb
 **Gate (the user):** run `./supabase/mesh-keygen.sh` in a Terminal (the real run, **not** `--dry-run`) and give me the printed public key (→ LIME-154). **Do not run `deploy-staging.sh` before that**: it would now stop at the guard, with the other deploy steps already done.
 
 **For plot:** the step that leaked is `link` or `functions deploy` (unproven, not needed to fix). The deploy script now fails loudly while staging holds the local key (today, until the keygen); anyone deploying must run the real keygen first or ignore the final failure. LIME-154 waits for the printed key.
+
+
+## LIME-154 (re-pin the staging mesh public key) — committed; installed on the three phones; **the gate is yours**
+
+No Phase 0 commit: `PLOT.md` had no uncommitted changes.
+
+- **Checked first (read-only):** `./supabase/check-staging-mesh-key.sh` now says staging's mesh key digest starts **`d87134f7a5371c6e`** and is **not** the local test key (it was `ee56048f31821b2b`, the local one, before your real keygen).
+- **Pinned:** `SERVER_KEYS` id 1 = **`MiiyRxUtOU1GvQbl7u3BbE98S/0P9pGd9BEITIxz9Fw=`** (32 bytes), `core/src/mesh.rs`. The earlier keys `6Z2M…` and `zE27…` are dead and noted as such in the comment.
+- **Fingerprint of the pinned key** (the same rule as `meshKeyFingerprint`: the first 16 hex of SHA-256 of the public key): **`272c04ad6a46fd6d`**. The core's pin test and the "staging key pinned in the app" fingerprint test now say that. (`MeshReconnectTests` still has `03129b…` only as sample text for the log-line format, as the brief said to leave it.) **I could not compare it with what `mesh-key` returns**: that call needs a signed-in session, and I have none here; the phones will do it.
+- **Tests:** core 251 + 21 + 12 pass; Android check OK; Swift mesh tests (33) pass. Core rebuilt; the build is installed on Jean's phone, the iPad and the 13 mini.
+- **Gate (you):** open lime on each phone with internet: **no red banner**; then "logs": each should say `mesh_key_check result=ok key=272c04ad6a46fd6d`. A mismatch would show the red banner and `WARNING mesh key mismatch` with both fingerprints.
+
+**For plot:** after the check passes, upload test A is worth repeating (the key has changed since it last worked).

@@ -25,9 +25,9 @@ const TAG_INFO: &[u8] = b"lime-mesh-tag-v1";
 const HEADER_INFO: &[u8] = b"lime-mesh-header-v1";
 
 /// The server's mesh public keys by id, pinned in the app (the newest is sealed to). Id 1 is the staging project's key pair, made with
-/// `supabase/mesh-keygen.sh` (it printed only the public half: `zE270GBGVc9lt5S+ELw4rj5Dv+N6AciDskoUVmfy6X8=` (re-made 2026-10-16; the first key's secret was not the one on the server); the secret is only in
+/// `supabase/mesh-keygen.sh` (it printed only the public half: `MiiyRxUtOU1GvQbl7u3BbE98S/0P9pGd9BEITIxz9Fw=` (re-made 2026-10-16 after a deploy replaced the staging secret with the local test key: LIME-153/154; the earlier keys `6Z2M…` and `zE27…` are dead); the secret is only in
 /// Supabase's secrets). A new key is added here with the next id when the server key rotates.
-pub(crate) const SERVER_KEYS: &[ServerKey] = &[ServerKey { id: 1, public: [0xcc, 0x4d, 0xbb, 0xd0, 0x60, 0x46, 0x55, 0xcf, 0x65, 0xb7, 0x94, 0xbe, 0x10, 0xbc, 0x38, 0xae, 0x3e, 0x43, 0xbf, 0xe3, 0x7a, 0x01, 0xc8, 0x83, 0xb2, 0x4a, 0x14, 0x56, 0x67, 0xf2, 0xe9, 0x7f] }];
+pub(crate) const SERVER_KEYS: &[ServerKey] = &[ServerKey { id: 1, public: [0x32, 0x28, 0xb2, 0x47, 0x15, 0x2d, 0x39, 0x4d, 0x46, 0xbd, 0x06, 0xe5, 0xee, 0xed, 0xc1, 0x6c, 0x4f, 0x7c, 0x4b, 0xfd, 0x0f, 0xf6, 0x91, 0x9d, 0xf4, 0x11, 0x08, 0x4c, 0x8c, 0x73, 0xf4, 0x5c] }];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ServerKey {
@@ -626,7 +626,7 @@ mod tests {
         // The same vector `supabase/tests/mesh_test.ts` checks the server's fingerprint against (SHA-256 of the local test public key, 16 hex).
         let local = local_key();
         assert_eq!(key_fingerprint(&local.public), "4ceb3d2d8055495b");
-        assert_eq!(key_fingerprint(&current_server_key().unwrap().public), "03129b4296f76a31", "the staging key pinned in the app");
+        assert_eq!(key_fingerprint(&current_server_key().unwrap().public), "272c04ad6a46fd6d", "the staging key pinned in the app");
         let body = br#"{"key_id":1,"fingerprint":"4ceb3d2d8055495b"}"#;
         assert!(key_check(local, 200, body).unwrap().matches);
         let other = br#"{"key_id":1,"fingerprint":"0000000000000000"}"#;
@@ -670,7 +670,7 @@ mod tests {
     fn the_pinned_server_key_is_the_one_mesh_keygen_printed() {
         let key = current_server_key().expect("a server key is pinned");
         assert_eq!(key.id, 1);
-        assert_eq!(vodozemac::base64_encode(key.public), "zE270GBGVc9lt5S+ELw4rj5Dv+N6AciDskoUVmfy6X8", "(unpadded base64 of the printed public key)");
+        assert_eq!(vodozemac::base64_encode(key.public), "MiiyRxUtOU1GvQbl7u3BbE98S/0P9pGd9BEITIxz9Fw", "(unpadded base64 of the printed public key)");
         assert_ne!(key.public, local_key().public, "not the local test key");
     }
 
