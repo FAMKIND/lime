@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-141-fix2** (1e143: a reconnect storm, ~195 connects/min between the iPad and the 13 mini for ~30 min; the key check never logged). `mesh-key` is deployed. **Still not built** (tend ran 150a first: 1e144). Then LIME-152; **150's remainder (the spike → the mini grid, 7c) waits for the user's "spike" with the phones ready.**
+**▶ NOW: the user's device check of 141-fix2 + 150a's look (1e145)** → "logs" → plot reads them. **NEXT FOR TEND: LIME-153** (1e146: the staging deploy put the LOCAL test mesh key on staging), **then the user's real `mesh-keygen.sh` run → LIME-154** (re-pin), then LIME-152; **150's remainder (the spike → the mini grid, 7c) waits for the user's "spike" with the phones ready.**
 - **152 was drafted before the mesh work** (2026-10-15): **tend's Phase 1 must re-survey the files it names** and report anything that moved, before building.
 - LIME-144 landed as `67b1c84`: **mesh v1 is wrapped.**
 
@@ -153,6 +153,17 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e146. **The key check WORKED and caught a real fault (the user's screenshot, 12:15 EDT): "Mesh key mismatch: this build pins 03129b4296f76a31 but the server holds 4ceb3d2d8055495b."**
+   - **`4ceb3d2d8055495b` is the LOCAL TEST vector** (`supabase/tests/mesh_test.ts:177`; the secret in `supabase/config.toml` `[edge_runtime.secrets]`, LIME-140, public on purpose).
+   - **Proven (plot, read-only `supabase secrets list`):** staging's `MESH_ROUTING_SECRET_KEY` digest is `ee56048f31821b2b…` = SHA-256 of the local test secret, **`updated_at 2026-10-16T14:21:00Z`, the same second as the rate-limit secrets set by `deploy-staging.sh`** (the 144 `mesh-key` deploy). At 1e138 (~08:30) uploads worked with `03129b…`, so **the deploy overwrote the real staging key with the repo's local one.** Which CLI step did it (`link`, `functions deploy`, or `secrets set` reading `[edge_runtime.secrets]`) is for tend's survey.
+   - **Effect:** every mesh upload to staging is refused (`header_unopenable`) since 14:21Z; staging's routing key is a public repo value (staging test data only; no prod). **The real `03129b…` secret is gone** (never stored anywhere else by design) → a new real keygen + re-pin.
+   - **Bluetooth delivery is unaffected:** the 141-fix2 storm check can go ahead now.
+   - **→ LIME-153 (drafted):** stop the deploy from ever shipping the local key + a post-deploy guard. **→ then the user runs `./supabase/mesh-keygen.sh` (the real run, NOT `--dry-run`) → LIME-154:** tend re-pins `SERVER_KEYS` id 1 (as `385ff42`), rebuilds, reinstalls; the launch check then logs `result=ok key=<new>`.
+1e145. **LIME-141-fix2 LANDED as `e933523` (pushed, 2026-10-16 12:08; PLOT.md `4fe57f5`). Installed on all 3; the device check is the user's.**
+   - Backoff 0.5 s → 60 s ±20% (fail = ends < 2 s; reset after 30 s up), also gating discovery; `WARNING reconnect storm per_minute=…`; a channel before its hello is held 2 s (`PendingChannels`); a stale peer no longer blocks a new inbound; `inbound_drop why=live-peer` logged. Sim mutual-reject loop settles to ~1 try/min. Mesh tests pass; **the full suite was not run** (Debug mesh + pure rules only; acceptable).
+   - **The cause is NOT proven** (race vs stale peer); the next logs say which: look for `l2cap_pending central_known=…` and `l2cap_unknown_peer remote_known=… subscribed=… stale_peer=…` on the iPad ↔ 13 mini pair.
+   - **The key-check line's format changed:** grep `mesh_key_check result=ok key=03129b4296f76a31` (also `result=mismatch|unavailable why=…`).
+   - **Plot's log read:** connects per minute per pair (≤ a few), any storm warning, the key line on each phone, which cause shows up.
 1e144. **LIME-150 part 1 (150a) LANDED as `ad5e6c7` (pushed, 2026-10-16 11:41), out of order: 141-fix2 was NEXT but hadn't been committed to PLOT.md, so tend took 150.** Full suite passed on the 13 mini (unit 418/0 failed, UI 200/0 failed).
    - **Done:** 7b Mute warm neutral; 8 tuck-away edge tab; 9 less green (LIVE badge in the mini player, a quiet live card); 10 one `CallChoiceRows` (voice, then video); 11 group pictures include you (`GroupAvatarPlan`); 12 a 44 pt one-line mini player.
    - **Not done:** the spike → items 1–6 (the mini grid in the system window) and 7c (a ~30% smaller window). Needs the user + 3 devices ("spike").
@@ -5850,7 +5861,41 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-141-fix2 → `tend` (lime-aa) (NEXT; drafted 2026-10-16; 150a went first): a reconnect storm (L2CAP from an "unknown peer", reconnected every ~0.35 s); the key check never logs
+### LIME-153 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): the staging deploy must never ship the local test mesh key
+**Goal:** `deploy-staging.sh` can't put the repo's local mesh key on staging again, and it fails loudly if staging ever holds it.
+
+**Why (1e146):** the 144 deploy (14:21Z) set staging's `MESH_ROUTING_SECRET_KEY` to the local test secret from `supabase/config.toml` `[edge_runtime.secrets]` (digest `ee56048f31821b2b…`; fingerprint `4ceb3d2d8055495b`), replacing the real key. The app's launch check caught it.
+
+**Assumes:** tend can edit files, run the local Supabase stack + `deno test`, run read-only `supabase` CLI commands against staging (`secrets list`), and commit. **No staging writes in this brief** (no deploy, no `secrets set`): the user runs those.
+
+**Scope:** `supabase/config.toml`, `supabase/deploy-staging.sh`, `supabase/mesh-keygen.sh` (only to add the check below), where the local key is read for tests (`supabase/tests/mesh_test.ts` / a local env file), `supabase/README.md`. **Not:** the app, `lime_core`'s pinned keys (LIME-154), `mesh-drop`/`mesh-key` logic.
+
+**Phase 1 (survey, read-only; report before editing):**
+- the Supabase CLI version, and **which command pushes `[edge_runtime.secrets]` to a linked project** (check the CLI docs/changelog; don't test it against staging);
+- every other value under `[edge_runtime.secrets]` (would any of them also clobber staging?);
+- confirm with `supabase secrets list` that staging's `MESH_ROUTING_SECRET_KEY` digest still starts `ee56048f31821b2b` (report only the first 16 chars).
+
+**The change:**
+1. **Move the local key out of the path that reaches staging**, e.g. `supabase/functions/.env` (local serve only) or `env(...)` substitution in `config.toml` — whichever the survey shows the CLI never pushes. The local test still works with the public test vector (keep it public; keep the comment that says so).
+2. **A guard in `deploy-staging.sh`, after the secrets step:** read `supabase secrets list -o json`, and if `MESH_ROUTING_SECRET_KEY`'s digest equals SHA-256 of the local test secret, **exit non-zero with "staging holds the LOCAL test mesh key: run ./supabase/mesh-keygen.sh"**; also fail if the secret is missing. Never print secret values (digests only, first 16 chars).
+3. **`mesh-keygen.sh` (the real run):** after setting the secret, print the staging digest's first 16 chars beside the public key, so the user can see it changed.
+4. `supabase/README.md`: two lines on where the local key lives and why it must never reach staging.
+
+**Verification:**
+- `deno test` for `supabase/tests/mesh_test.ts` against the local stack → passes (the local key still loads);
+- `sh -n` on both scripts → clean;
+- the guard, run read-only against staging today → **fails with the message above** (staging still holds the local key); report that;
+- `grep -n MESH_ROUTING supabase/config.toml` → no secret value in a section the CLI pushes (per the survey).
+
+**Gate:** the user. Then the user runs `./supabase/mesh-keygen.sh` (the real run, in Terminal, **not** `--dry-run`) and gives tend the printed public key → LIME-154.
+
+**Record:** `## LIME-153` in TEND.md with **For plot:** (which CLI step leaked it) and every item checked off. **Commit:** `fix(supabase): keep the local mesh test key off staging; the deploy refuses a staging that holds it`, trailer `Brief: LIME-153`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
+
+### LIME-154 → `tend` (lime-aa) (after 153 + the user's real keygen; drafted 2026-10-16): re-pin the staging mesh key
+**Goal:** the app pins the new staging key; the launch check logs `mesh_key_check result=ok key=<new fingerprint>` on all 3 phones.
+**The change:** exactly as `385ff42` (key id 1, `SERVER_KEYS` in `lime_core`, the public key the user pastes); update the test vectors that hold `03129b4296f76a31` only where they mean "the staging key" (not `MeshReconnectTests`' format test unless it must); rebuild the core; reinstall on the 3 phones. **Verify:** core + mesh tests pass; the fingerprint of the pinned key (computed by the same rule as `meshKeyFingerprint`) = the one `mesh-key` returns. **Gate:** the user opens lime on each phone: no red banner; then "logs". **Commit:** `fix: re-pin the staging mesh public key (key id 1)`, trailer `Brief: LIME-154`.
+
+### LIME-141-fix2 → `tend` (lime-aa) (DONE as `e933523`; drafted 2026-10-16; 150a went first): a reconnect storm (L2CAP from an "unknown peer", reconnected every ~0.35 s); the key check never logs
 **Goal:** two phones that can't agree on a link back off instead of reconnecting forever; the L2CAP "unknown peer" case is handled; the launch key check always leaves a log line.
 
 **Plot's read of the logs after the 144 install (`/tmp/lime-meshlogs8/`, 2026-10-16 13:13–14:19 UTC):**
