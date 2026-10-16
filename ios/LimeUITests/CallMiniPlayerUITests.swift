@@ -69,13 +69,14 @@ final class CallMiniPlayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Minimise"].waitForExistence(timeout: 5), "back on the full call screen")
     }
 
-    func testTheMiniPlayerIsAsTallAsTheHeaderHasTheLiveBadgeAndAWarmMuteCircle() {
+    func testTheMiniPlayerIsShortHasNoLiveBadgeAndAWarmMuteCircle() {
         let app = launch(["-lime-demo-screen", "group-call-4"])
         XCTAssertTrue(app.buttons["Minimise"].waitForExistence(timeout: 15))
         app.buttons["Minimise"].tap()
         let bar = app.buttons["call-mini-return"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))
-        XCTAssertTrue(any(app, "call-mini-live").exists, "the LIVE badge is in the player")
+        XCTAssertFalse(any(app, "call-mini-live").exists, "no LIVE badge: the call's time is there instead")
+        XCTAssertTrue(bar.label.contains("in call"), bar.label)
         XCTAssertEqual(app.buttons["call-mini-mute"].frame.height, 44, "a 44 pt tap area (a 36 pt circle inside)")
         XCTAssertLessThanOrEqual(bar.frame.height, 48, "about the header's 44 pt, not the old 60")
     }

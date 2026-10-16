@@ -11,13 +11,20 @@ enum CallMiniPlayerRule {
         return nil
     }
 
-    /// "Video call · 3 in call · 1:01"; the count drops first when there is no room (`short`).
-    static func subtitle(video: Bool, count: Int?, clock: String, short: Bool = false) -> String {
-        var parts = [video ? "Video call" : "Voice call"]
-        if let count, !short { parts.append("\(count) in call") }
+    /// "Video call · 3 in call · 1:01". When there is no room: `compact` ("Video · 3 · 1:01", the words shortened), then `short` (the count
+    /// dropped: "Video call · 1:01"). The timer is always there.
+    static func subtitle(video: Bool, count: Int?, clock: String, short: Bool = false, compact: Bool = false) -> String {
+        var parts = [compact ? (video ? "Video" : "Voice") : (video ? "Video call" : "Voice call")]
+        if let count, !short { parts.append(compact ? "\(count)" : "\(count) in call") }
         parts.append(clock)
         return parts.joined(separator: " \u{00B7} ")
     }
+
+    /// The width of the iOS 26 tab bar's capsule (measured on the 13 mini and the 18 Pro: about 282 pt, centred). The player is as wide as the
+    /// dock on every screen, tab bar or not, so it never jumps. The bar's real width cannot be read without a private class name, so this is
+    /// a measured constant, like the floating "+" uses. Before iOS 26 the bar spans the screen, and so does the player (inside its margins).
+    static let dockWidth: CGFloat = 282
+    static func width(isIOS26: Bool) -> CGFloat? { isIOS26 ? dockWidth : nil }
 
     /// "1:01" → "1 minute 1 second" for VoiceOver.
     static func spokenDuration(_ clock: String) -> String {
@@ -59,6 +66,7 @@ struct CallMiniPlayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var drag: CGFloat = 0
+    private var isIOS26: Bool { if #available(iOS 26, *) { true } else { false } }
 
     /// The header's glass circles and capsule are 44 pt (`ToolIconLabel`): the player matches.
     static let height: CGFloat = 44
@@ -73,6 +81,7 @@ struct CallMiniPlayer: View {
                     if let edge = store.miniPlayerTuck.edge { tab(edge) } else { content(for: subject, at: context.date) }
                 }
                 .padding(.horizontal, store.miniPlayerTuck.isTucked ? 0 : 16).padding(.vertical, 6)
+                .frame(maxWidth: .infinity)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("call-mini-player")
             }
@@ -124,17 +133,14 @@ struct CallMiniPlayer: View {
         let line = group ? CallMiniPlayerRule.subtitle(video: video, count: count, clock: clock) : store.calls.statusText(at: date)
         let spoken = group ? "Call with \(name), \(count ?? 0) in call, \(CallMiniPlayerRule.spokenDuration(clock)). Double-tap to return"
                            : "Call with \(name), \(line). Double-tap to return"
-        let large = typeSize.isAccessibilitySize
+        let forms: [String] = group
+            ? [line, CallMiniPlayerRule.subtitle(video: video, count: count, clock: clock, compact: true), CallMiniPlayerRule.subtitle(video: video, count: count, clock: clock, short: true)]
+            : [line]
         return HStack(spacing: 6) {
             // A tap gesture, not a Button: a Button would also fire when a sideways swipe (tuck away) ends on it.
             HStack(spacing: 8) {
                 avatar(group: group, name: name)
-                // One line: "Shem & FAM · LIVE · 0:45". At accessibility sizes it may use two.
-                ViewThatFits(in: .horizontal) {
-                    oneLine(name: name, clock: group ? clock : line)
-                    oneLine(name: name, clock: nil)
-                }
-                .lineLimit(large ? 2 : 1)
+                twoLines(name: name, forms: forms)
                 Spacer(minLength: 0)
             }
             .frame(minHeight: Self.height)
@@ -150,7 +156,7 @@ struct CallMiniPlayer: View {
                 if group { Task { await store.groupCalls.setMuted(!muted) } } else { store.calls.setMuted(!muted) }
             } label: {
                 Image(systemName: muted ? "mic.slash.fill" : "mic.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .frame(width: Self.button, height: Self.button)
                     .background(Circle().fill(Theme.pressed))
@@ -165,7 +171,7 @@ struct CallMiniPlayer: View {
                 if group { Task { await store.groupCalls.leave() } } else { Task { await store.calls.end() } }
             } label: {
                 Image(systemName: "phone.down.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: Self.button, height: Self.button)
                     .background(Circle().fill(Color.red))
@@ -176,9 +182,16 @@ struct CallMiniPlayer: View {
             .accessibilityIdentifier("call-mini-leave")
         }
         .padding(.leading, 10).padding(.trailing, 4)
+        .padding(.vertical, typeSize.isAccessibilitySize ? 8 : 0)
         .frame(minHeight: Self.height)
+        // As wide as the tab bar (iOS 26); at accessibility sizes the text needs the room, so it uses the full width.
+        .frame(maxWidth: typeSize.isAccessibilitySize ? nil : CallMiniPlayerRule.width(isIOS26: isIOS26))
         .background {
-            if reduceTransparency { Capsule().fill(Theme.canvas).overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5)) }
+            // A capsule at normal sizes; at accessibility sizes the player grows tall, so it becomes a rounded rectangle (a tall capsule is a blob).
+            if typeSize.isAccessibilitySize {
+                if reduceTransparency { RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.canvas).overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5)) }
+                else { Color.clear.limeGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous)) }
+            } else if reduceTransparency { Capsule().fill(Theme.canvas).overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5)) }
             else { Color.clear.limeGlass(in: Capsule()) }
         }
         .offset(x: drag)
@@ -192,17 +205,21 @@ struct CallMiniPlayer: View {
         .transition(.opacity)
     }
 
-    /// "Shem & FAM  LIVE  0:45": the name, the LIVE badge (the word, lime with dark ink: one of the three places green appears in a call) and
-    /// the timer when it fits.
-    private func oneLine(name: String, clock: String?) -> some View {
-        HStack(spacing: 6) {
-            Text(name).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(1)
-            Text("LIVE").font(.system(.caption2, design: .default, weight: .bold)).foregroundStyle(Theme.accentInk)
-                .padding(.horizontal, 6).padding(.vertical, 2).background(Theme.accent, in: Capsule())
-                .accessibilityIdentifier("call-mini-live")
-            if let clock { Text(clock).font(.footnote.monospacedDigit()).foregroundStyle(Theme.textSecondary).lineLimit(1) }
+    /// 148c's text: the name, then the subtitle in the smaller grey line with the timer always present (the words shorten when narrow).
+    private func twoLines(name: String, forms: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            if typeSize.isAccessibilitySize {
+                // Accessibility sizes: everything wraps and the player grows, never clips.
+                Text(name).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                Text(forms[0]).font(.footnote).foregroundStyle(Theme.textSecondary)
+            } else {
+                Text(name).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                ViewThatFits(in: .horizontal) {
+                    ForEach(forms, id: \.self) { Text($0).lineLimit(1) }
+                }
+                .font(.footnote).foregroundStyle(Theme.textSecondary)
+            }
         }
-        .fixedSize(horizontal: false, vertical: false)
     }
 
     @ViewBuilder

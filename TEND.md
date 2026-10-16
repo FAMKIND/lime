@@ -6097,3 +6097,23 @@ No Phase 0 commit: `PLOT.md` had no uncommitted changes.
 - **Gate (you):** open lime on each phone with internet: **no red banner**; then "logs": each should say `mesh_key_check result=ok key=272c04ad6a46fd6d`. A mismatch would show the red banner and `WARNING mesh key mismatch` with both fingerprints.
 
 **For plot:** after the check passes, upload test A is worth repeating (the key has changed since it last worked).
+
+
+## LIME-150-fix (the mini player: dock width, the call time back, 148c's layout at 44 pt) — committed; installed on the three phones; **the gate is yours (on the phone)**
+
+Phase 0: `PLOT.md` committed first (0cbb023).
+
+**Phase 1 (read-only), reported.** 148c's player (`0ac2772`) was a 60 pt capsule: avatar 38, name `Theme.body.weight(.semibold)`, subtitle `.footnote` grey with `spacing: 1`, HStack spacing 8, Mute and Leave as 44 pt circles with 17 pt glyphs, the subtitle in two forms (full, and the count dropped). 150a replaced the text with one line plus a LIVE badge. **The tab bar's width cannot be read without a private class name** (`TabRetap.swift` finds the "platter" view by name, which is already the fragile bit). So the width is the **measured constant 282 pt** the floating "+" already uses (the iOS 26 capsule on the 13 mini and 18 Pro), centred, **on every screen, tab bar or not** (so a pushed chat shows the same width and nothing jumps); before iOS 26 the bar spans the screen and so does the player (inside its 16 pt margins). **If a phone's tab bar is not 282 pt wide, tell me the width and I change one constant** (`CallMiniPlayerRule.dockWidth`).
+
+**Every item, checked off:**
+- **1 Width: DONE** (above; the SE simulator runs an older iOS, so it shows the full-width form).
+- **2 LIVE badge removed; the timer always present: DONE.** The second line is 148c's subtitle with the timer: "Video call · 4 in call · 1:25", then, when narrow, a **compact form "Video · 4 · 1:28"** (the words shortened; this is the form the 282 pt width usually shows), then the count dropped ("Video call · 1:28"). 1:1 calls keep `statusText`.
+- **3 148c's layout: DONE.** Name `Theme.body.weight(.semibold)` `Theme.text`; subtitle `.footnote` `Theme.textSecondary`, `spacing: 1`; HStack spacing; Mute and Leave glyphs 17 pt semibold, 44 × 44 tap areas (drawn 36 pt, as 150a); **kept:** the warm-neutral Mute, red Leave, the 32 pt avatar with the pair/cluster, the tuck swipe and tab.
+- **4 Height: DONE, measured 44.0 pt** at the default text size on the 13 mini simulator (the capsule; two lines fit in 44 pt without extra padding), 282 pt wide. At accessibility sizes it grows and never clips: **at AX3 the capsule became a blob**, so at accessibility sizes it is now a rounded rectangle, full width, 8 pt vertical padding, the name and the subtitle wrap (screenshot checked).
+- **5 VoiceOver: unchanged and without "live"**: "Call with <name>, <n> in call, <duration>. Double-tap to return"; Mute/Leave as before.
+
+**Verification:** build 0 warnings, Release clean; `CallMiniPlayerUITests` (5) and `CallPolishTests` pass (edited only where they asserted the badge and the one-line layout: the test now checks the badge is gone and the label says "in call"). **Screenshots** (13 mini: default light and dark, AX3 light and dark; SE: default light and dark, AX3 light) are in `~/Desktop/lime-150fix/` (not committed). Seen: the default light on the 13 mini, the SE dark, and the 13 mini AX3 light (before and after the rounded-rectangle fix); the others were taken but I did not look at each.
+
+**Gate (you, on the phone):** the width matches the dock; the text and spacing feel like 148c; the height is still short.
+
+**For plot:** the measured height is **44.0 pt** (width 282 pt, a constant). The dock's real width is the one open question (a private view otherwise). The tab and the chat's live card are untouched.
