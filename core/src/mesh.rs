@@ -25,9 +25,9 @@ const TAG_INFO: &[u8] = b"lime-mesh-tag-v1";
 const HEADER_INFO: &[u8] = b"lime-mesh-header-v1";
 
 /// The server's mesh public keys by id, pinned in the app (the newest is sealed to). Id 1 is the staging project's key pair, made with
-/// `supabase/mesh-keygen.sh` (it printed only the public half: `6Z2M6QVBAbFHN3odDk4LSUIpLY116i03+XEh7B1mrAg=`; the secret is only in
+/// `supabase/mesh-keygen.sh` (it printed only the public half: `zE270GBGVc9lt5S+ELw4rj5Dv+N6AciDskoUVmfy6X8=` (re-made 2026-10-16; the first key's secret was not the one on the server); the secret is only in
 /// Supabase's secrets). A new key is added here with the next id when the server key rotates.
-pub(crate) const SERVER_KEYS: &[ServerKey] = &[ServerKey { id: 1, public: [0xe9, 0x9d, 0x8c, 0xe9, 0x05, 0x41, 0x01, 0xb1, 0x47, 0x37, 0x7a, 0x1d, 0x0e, 0x4e, 0x0b, 0x49, 0x42, 0x29, 0x2d, 0x8d, 0x75, 0xea, 0x2d, 0x37, 0xf9, 0x71, 0x21, 0xec, 0x1d, 0x66, 0xac, 0x08] }];
+pub(crate) const SERVER_KEYS: &[ServerKey] = &[ServerKey { id: 1, public: [0xcc, 0x4d, 0xbb, 0xd0, 0x60, 0x46, 0x55, 0xcf, 0x65, 0xb7, 0x94, 0xbe, 0x10, 0xbc, 0x38, 0xae, 0x3e, 0x43, 0xbf, 0xe3, 0x7a, 0x01, 0xc8, 0x83, 0xb2, 0x4a, 0x14, 0x56, 0x67, 0xf2, 0xe9, 0x7f] }];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ServerKey {
@@ -616,7 +616,7 @@ mod tests {
     fn the_pinned_server_key_is_the_one_mesh_keygen_printed() {
         let key = current_server_key().expect("a server key is pinned");
         assert_eq!(key.id, 1);
-        assert_eq!(vodozemac::base64_encode(key.public), "6Z2M6QVBAbFHN3odDk4LSUIpLY116i03+XEh7B1mrAg", "(unpadded base64 of the printed public key)");
+        assert_eq!(vodozemac::base64_encode(key.public), "zE270GBGVc9lt5S+ELw4rj5Dv+N6AciDskoUVmfy6X8", "(unpadded base64 of the printed public key)");
         assert_ne!(key.public, local_key().public, "not the local test key");
     }
 
