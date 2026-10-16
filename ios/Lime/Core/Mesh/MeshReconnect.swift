@@ -13,11 +13,12 @@ struct ReconnectBackoff: Equatable {
 
     private(set) var failures = 0
 
-    /// A link ended. `livedFor` is how long it was up (nil: it never came up).
-    mutating func linkEnded(livedFor: TimeInterval?) {
+    /// A link ended. `livedFor` is how long it was up (nil: it never came up); `carriedFrame` whether a frame came over it.
+    /// **A link is a failure unless it bound and carried a frame, or stayed up 30 s: never by time alone** (a link that lived 2.1 s because a
+    /// grace period ran out used to count as fine, so the wait never grew). One that carried a frame but was short is neither.
+    mutating func linkEnded(livedFor: TimeInterval?, carriedFrame: Bool = false) {
         guard let livedFor else { failures += 1; return }
-        if livedFor >= Self.stable { failures = 0 } else if livedFor < Self.quick { failures += 1 }
-        // Between 2 and 30 seconds: neither a failure nor a recovery.
+        if livedFor >= Self.stable { failures = 0 } else if !carriedFrame { failures += 1 }
     }
 
     /// The wait before the next connection attempt: `base × 2^failures`, at most `cap`, spread by `jitter` (0.8…1.2).
@@ -89,5 +90,19 @@ enum MeshKeyCheckGate {
         case false?: return ("mesh_key_check", ["result": "mismatch", "pinned": pinned, "server": server])
         case nil: return ("mesh_key_check", ["result": "unavailable", "why": why])
         }
+    }
+}
+
+/// One link per pair, decided the same way on both phones (LIME-141-fix3): when each is connecting to the other, the phone with the **lower**
+/// link id keeps its own (outbound) connection as the central; the other drops its outbound and accepts the inbound.
+enum MeshTieBreak {
+    static func keepsOutbound(local: UInt64, remote: UInt64) -> Bool { local < remote }
+}
+
+/// When the mesh engine may be attached (LIME-141-fix3, item 4): as soon as the account's store exists, whenever that is. A phone relaunched by
+/// iOS for Bluetooth while locked has no store at first; the engine used to give up after 60 s and never attach for the life of that process.
+enum MeshAttachGate {
+    static func shouldAttach(attached: Bool, helpEnabled: Bool, explained: Bool, coreReady: Bool) -> Bool {
+        !attached && helpEnabled && explained && coreReady
     }
 }

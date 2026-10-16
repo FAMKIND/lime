@@ -49,6 +49,7 @@ final class MeshService {
     /// The battery soak (LIME-144): a Debug toggle; samples every 5 minutes into the mesh log.
     private(set) var batterySamples: [BatterySample] = []
     @ObservationIgnored private var batteryTask: Task<Void, Never>?
+    @ObservationIgnored private var attachTask: Task<Void, Never>?
     var batteryLogOn: Bool { batteryTask != nil }
 
     private init() {
@@ -212,12 +213,26 @@ final class MeshService {
         startPathMonitor()
         if explained, helpEnabled { bluetooth.start() }
         if nearbyOn { applyNearby() }
-        Task { @MainActor in
-            var waited = 0
-            while store.core == nil && waited < 600 { try? await Task.sleep(for: .milliseconds(100)); waited += 1 }
-            guard let core = store.core else { return }
-            core.setMeshEnabled(enabled: helpEnabled)
-            if helpEnabled, explained { attach(core: core) }
+        if let core = store.core { core.setMeshEnabled(enabled: helpEnabled) }
+        ensureAttached()
+    }
+
+    /// Attaches the engine as soon as the account's store exists and the mesh is on, however long that takes: a phone iOS relaunched for
+    /// Bluetooth while locked has no store yet, and used to give up after a minute and never attach (LIME-141-fix3). Retried every 2 s.
+    func ensureAttached() {
+        attachTask?.cancel()
+        attachTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let core = self.store?.core
+                if MeshAttachGate.shouldAttach(attached: self.attached, helpEnabled: self.helpEnabled, explained: self.explained, coreReady: core != nil), let core {
+                    core.setMeshEnabled(enabled: true)
+                    self.attach(core: core)
+                    return
+                }
+                if self.attached || !self.helpEnabled || !self.explained { return }
+                try? await Task.sleep(for: .seconds(2))
+            }
         }
     }
 
@@ -229,10 +244,9 @@ final class MeshService {
     }
 
     private func startIfPossible() {
-        guard helpEnabled, explained, let core = store?.core else { return }
-        core.setMeshEnabled(enabled: true)
-        attach(core: core)
+        guard helpEnabled, explained else { return }
         bluetooth.start()
+        if let core = store?.core { core.setMeshEnabled(enabled: true); attach(core: core) } else { ensureAttached() }
     }
 
     /// The test screen's switch.

@@ -99,6 +99,10 @@ final class MeshBluetooth: NSObject {
         var nextFragment: UInt16 = 0
         var up = false
         var upAt: Date?
+        /// A frame came over this link (it works: not a failure however short).
+        var carriedFrame = false
+        /// The PSM read while the link was not up yet: the channel opens once it is (the hello written and the subscription done).
+        var pendingPSM: CBL2CAPPSM?
         init(remote: UInt64, iAmCentral: Bool) { self.remote = remote; self.iAmCentral = iAmCentral }
     }
 
@@ -270,6 +274,7 @@ final class MeshBluetooth: NSObject {
     }
 
     private func deliver(_ frame: Data, from peer: Peer) {
+        peer.carriedFrame = true
         if let driver { driver.receive(frame, on: peer.remote) } else if held.count < 16 { held.append((peer.remote, frame)) }
     }
 
@@ -303,10 +308,10 @@ final class MeshBluetooth: NSObject {
         if let peripheral = peer.peripheral {
             // A link I started and lost: connect again once iOS has let go of this one (the disconnect callback does it), after a wait that
             // grows with every link that fails (one that ended within 2 s of opening counts as a failure; one that lasted 30 s starts over).
-            if running, why != "stop" {
+            if running, why != "stop", why != "tie-break" {
                 reconnect.insert(peripheral.identifier)
                 var backoff = backoffs[peripheral.identifier] ?? ReconnectBackoff()
-                backoff.linkEnded(livedFor: peer.upAt.map { Date().timeIntervalSince($0) })
+                backoff.linkEnded(livedFor: peer.upAt.map { Date().timeIntervalSince($0) }, carriedFrame: peer.carriedFrame)
                 backoffs[peripheral.identifier] = backoff
             }
             central?.cancelPeripheralConnection(peripheral)
@@ -512,6 +517,14 @@ extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
                 let id = peripheral.identifier
                 Task { @MainActor [weak self] in
                     try? await Task.sleep(for: .seconds(Self.fallbackGraceSeconds))
+                    // Both phones connecting to each other: the one with the lower id keeps its outbound link; this one (the higher id) takes
+                    // the other phone's inbound instead of making a second link of its own.
+                    if let self, self.inboundCentrals.values.contains(where: { $0.remote == remote }), !MeshTieBreak.keepsOutbound(local: self.identity.id, remote: remote) {
+                        self.onLog("tie_break", ["kept": "inbound", "link": MeshDriver.short(remote)])
+                        self.handshakes[id] = nil
+                        self.central?.cancelPeripheralConnection(peripheral)
+                        return
+                    }
                     guard let self, self.running, let waiting = self.handshakes[id], waiting.remote == remote, peripheral.state == .connected,
                           self.peers[remote] == nil, self.registry.claimFallback(remote: remote, local: self.identity.id) else {
                         if let self, self.handshakes[id]?.remote == remote, self.peers[remote] == nil {
@@ -531,9 +544,11 @@ extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
                 handshakes[peripheral.identifier] = nil
                 central?.cancelPeripheralConnection(peripheral)
             }
-        } else if characteristic.uuid == Self.psmUUID, value.count >= 2, peerFor(peripheral: peripheral) != nil {
+        } else if characteristic.uuid == Self.psmUUID, value.count >= 2, let peer = peerFor(peripheral: peripheral) {
+            // The channel opens only once the hello is written and the subscription is on (the link is up): a channel that races ahead of
+            // them reaches a phone that cannot bind it yet (LIME-141-fix3). If the link is not up, `checkReady` opens it.
             let channel = CBL2CAPPSM(value.prefix(2).reduce(UInt16(0)) { ($0 << 8) | UInt16($1) })
-            peripheral.openL2CAPChannel(channel)
+            if peer.up { peripheral.openL2CAPChannel(channel) } else { peer.pendingPSM = channel }
         } else if characteristic.uuid == Self.dataNotifyUUID, let peer = peerFor(peripheral: peripheral) {
             gattBytes(value, from: peer)
         }
@@ -573,6 +588,7 @@ extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
         guard let handshake = handshakes[peripheral.identifier], handshake.wroteHello, handshake.subscribed, let remote = handshake.remote, let peer = peers[remote] else { return }
         handshakes[peripheral.identifier] = nil
         up(peer)
+        if let psm = peer.pendingPSM { peer.pendingPSM = nil; peripheral.openL2CAPChannel(psm) }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
@@ -695,8 +711,19 @@ extension MeshBluetooth: @preconcurrency CBPeripheralManagerDelegate {
             // A link to this phone that is not live any more (my own connection to it dropped without telling me) blocks the new one for
             // good; drop it and carry on. A live one stays, and the new inbound is refused (logged: it used to vanish without a trace).
             let live = existing.up && (existing.central != nil || existing.peripheral?.state == .connected)
-            guard !live else { onLog("inbound_drop", ["why": "live-peer"]); return }
-            close(existing, why: "stale")
+            if live, existing.iAmCentral {
+                // Each phone connected to the other: the lower id keeps its outbound link and refuses this inbound; the higher id drops its
+                // outbound and takes this one. Both compute the same answer, so one link is left.
+                if MeshTieBreak.keepsOutbound(local: identity.id, remote: entry.remote) {
+                    onLog("tie_break", ["kept": "outbound", "link": MeshDriver.short(entry.remote)])
+                    return
+                }
+                onLog("tie_break", ["kept": "inbound", "link": MeshDriver.short(entry.remote)])
+                close(existing, why: "tie-break")
+            } else {
+                guard !live else { onLog("inbound_drop", ["why": "live-peer"]); return }
+                close(existing, why: "stale")
+            }
         }
         switch registry.claim(remote: entry.remote, local: identity.id, iAmCentral: false) {
         case .keep:

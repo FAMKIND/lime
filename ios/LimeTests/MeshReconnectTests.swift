@@ -15,13 +15,17 @@ final class MeshReconnectTests: XCTestCase {
         }
     }
 
-    func testALinkThatNeverCameUpOrEndedWithinTwoSecondsIsAFailureAndOneThatLastedThirtySecondsStartsOver() {
+    func testALinkIsAFailureUnlessItCarriedAFrameOrLastedThirtySecondsNotByTimeAlone() {
         var backoff = ReconnectBackoff()
         backoff.linkEnded(livedFor: nil)
         backoff.linkEnded(livedFor: 1.9)
         XCTAssertEqual(backoff.failures, 2)
+        backoff.linkEnded(livedFor: 2.1)
+        XCTAssertEqual(backoff.failures, 3, "2.1 s with no frame is still a failure (the grace period used to make it look fine)")
         backoff.linkEnded(livedFor: 10)
-        XCTAssertEqual(backoff.failures, 2, "a middling link is neither")
+        XCTAssertEqual(backoff.failures, 4, "ten seconds that carried nothing is a failure too")
+        backoff.linkEnded(livedFor: 5, carriedFrame: true)
+        XCTAssertEqual(backoff.failures, 4, "a short link that carried a frame is neither")
         backoff.linkEnded(livedFor: 30)
         XCTAssertEqual(backoff.failures, 0, "a stable link resets it")
         XCTAssertEqual(backoff.delay(jitter: 1), 0.5)
@@ -94,5 +98,44 @@ final class MeshReconnectTests: XCTestCase {
         XCTAssertEqual(MeshKeyCheckGate.line(matches: true, pinned: "03129b4296f76a31", server: "03129b4296f76a31", why: "").detail, ["result": "ok", "key": "03129b4296f76a31"])
         XCTAssertEqual(MeshKeyCheckGate.line(matches: false, pinned: "aa", server: "bb", why: "").detail, ["result": "mismatch", "pinned": "aa", "server": "bb"])
         XCTAssertEqual(MeshKeyCheckGate.line(matches: nil, pinned: "", server: "", why: "offline").detail, ["result": "unavailable", "why": "offline"])
+    }
+
+    /// The 141-fix3 loop: each link lives 2.1 s (the grace runs out), carries nothing, and the other side tries again: it must settle too.
+    func testALoopWhoseLinksLiveJustOverTwoSecondsWithNoFrameSettlesToAboutOneAMinute() {
+        var backoff = ReconnectBackoff()
+        var now = t0
+        var attempts: [Date] = []
+        while now.timeIntervalSince(t0) < 1200 {
+            attempts.append(now)
+            now = now.addingTimeInterval(2.1)
+            backoff.linkEnded(livedFor: 2.1, carriedFrame: false)
+            now = now.addingTimeInterval(backoff.delay(jitter: 1))
+        }
+        let last = t0.addingTimeInterval(1200)
+        XCTAssertLessThanOrEqual(attempts.filter { last.timeIntervalSince($0) <= 60 }.count, 1, "at most one try in the last minute")
+        XCTAssertLessThan(attempts.count, 40)
+        // The old rule (time alone) never grew the wait at 0.5 s: about 400 tries in 20 minutes.
+        var old = ReconnectBackoff()
+        var oldNow = t0, oldCount = 0
+        while oldNow.timeIntervalSince(t0) < 1200 { oldCount += 1; oldNow = oldNow.addingTimeInterval(2.1); if 2.1 < ReconnectBackoff.quick { old.linkEnded(livedFor: 2.1) }; oldNow = oldNow.addingTimeInterval(old.delay(jitter: 1)) }
+        XCTAssertGreaterThan(oldCount, 300, "the loop the logs showed")
+    }
+
+    func testTheLowerIdKeepsItsOutboundLinkAndTheHigherIdTakesTheInbound() {
+        XCTAssertTrue(MeshTieBreak.keepsOutbound(local: 5, remote: 9))
+        XCTAssertFalse(MeshTieBreak.keepsOutbound(local: 9, remote: 5))
+        // Both phones ask the same question about the same pair and get opposite, consistent answers: exactly one keeps its outbound.
+        for (a, b) in [(1, 2), (100, 7), (UInt64.max - 1, 3)] as [(UInt64, UInt64)] {
+            XCTAssertNotEqual(MeshTieBreak.keepsOutbound(local: a, remote: b), MeshTieBreak.keepsOutbound(local: b, remote: a))
+        }
+    }
+
+    func testTheEngineAttachesAsSoonAsTheStoreExistsHoweverLateAndNeverWithoutTheSwitchOrTheExplanation() {
+        typealias G = MeshAttachGate
+        XCTAssertFalse(G.shouldAttach(attached: false, helpEnabled: true, explained: true, coreReady: false), "a locked relaunch: no store yet, keep waiting")
+        XCTAssertTrue(G.shouldAttach(attached: false, helpEnabled: true, explained: true, coreReady: true), "the store appears (unlock, sign-in): attach")
+        XCTAssertFalse(G.shouldAttach(attached: true, helpEnabled: true, explained: true, coreReady: true), "once")
+        XCTAssertFalse(G.shouldAttach(attached: false, helpEnabled: false, explained: true, coreReady: true))
+        XCTAssertFalse(G.shouldAttach(attached: false, helpEnabled: true, explained: false, coreReady: true))
     }
 }
