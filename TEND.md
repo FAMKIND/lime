@@ -6140,3 +6140,27 @@ No Phase 0 commit: `PLOT.md` had no uncommitted changes.
 **Gate (you):** the three phones near each other, lime open 10 minutes, then locked 10 minutes → "logs". Plot checks: **no `WARNING reconnect storm`**, at most a few connects a minute per pair, `mesh_key_check result=ok key=272c04ad6a46fd6d` **on all three (Jean's included)**, and `tie_break` lines if the pair collided; then **upload test A** again. **To exercise (d) on Jean's phone:** force-quit lime, lock the phone near another one running lime (iOS relaunches it for Bluetooth), then unlock and open it.
 
 **For plot:** all four causes held (with the (a) and (d) refinements above). The key check was never the problem on Jean's phone: the engine was.
+
+
+## LIME-150-fix2 (mini player spacing, outline call icons, a smaller video thumbnail) — committed; installed on the three phones; **items 1–6 done; item 7 NOT done: the "thumbnail while typing" is the system PiP window**
+
+Phase 0: `PLOT.md` committed first (21ec104).
+
+**Phase 1 (read-only), reported.**
+- **(a) Numbers before:** the capsule's padding was 10 leading, 4 trailing, 0 vertical (8 at accessibility sizes); the avatar-to-text spacing 8; name-to-subtitle `spacing: 1`; Mute, Leave and the text 6 apart (each button also has 4 pt of its own tap area around its 36 pt circle); the player's own vertical padding **6 pt** (so 6 pt to the dock) and, in a chat, the composer's `VStack(spacing: 8)` made it **6 + 8 = 14 pt above the composer**.
+- **(b) The video thumbnail while typing is the system Picture in Picture window** (`AVPictureInPictureVideoCallViewController` in `GroupCallPiP.swift` and `CallPiP.swift`): lime has no floating video view of its own (the only floating things are the "+" button and the mini player). Its size is LIME-150's item 7c (the spike: iOS chooses the window's initial size; apps only set the aspect). **So I did not touch it, as the brief says.**
+
+**Every item, checked off:**
+- **1 Padding: DONE.** +2 pt: leading 12, trailing 6, vertical 2 (8 at accessibility sizes). **The height grew from 44 to 48 pt** (measured on the 13 mini screenshot; the existing test's limit of 48 still holds).
+- **2 Name ↔ subtitle: DONE** (`spacing: 0`); no clipping at AX3 (the layout from 150-fix is unchanged there).
+- **3 Mute ↔ Leave: DONE.** They are now a pair with 4 pt between their 44 pt areas (it was 6): their circles are 2 pt closer; the tap areas do not overlap.
+- **4 The same 4 pt gap: DONE.** The player's own vertical padding is 4 (`floatGap`): 4 pt to the tab bar (dock) and, in a chat, the player is now outside the composer's 8 pt stack (a `VStack(spacing: 0)` holds the player and the rest), so **4 pt to the composer**. Seen in the 13 mini screenshots (Messages above the dock; the chat with the keyboard up).
+- **5 The tuck tab's icon: DONE.** `video` for a video call, `phone` for a voice call (outline; the tab now knows the call's kind), same size.
+- **6 The call-started card's icon: DONE** (`video` / `phone`, outline). **I did not see the live card itself**: no demo screen shows it (the code change is one line); the ordinary call bubbles use their own symbols and are unchanged.
+- **7 The thumbnail about two-thirds of today's size: NOT DONE** (the system PiP window: see Phase 1 (b)); it waits for the 150 spike.
+
+**Verification:** build 0 warnings, Release clean; `CallMiniPlayerUITests` (5), `CallBubblesUITests` and `CallPolishTests` pass (nothing needed editing). **Screenshots** (13 mini, light and dark): the player in a chat, with the keyboard up, the tuck tab video and voice, on Messages with the player, and a voice call's player: **`~/Desktop/lime-150fix2/`** (not committed; I looked at the keyboard chat, the video tab in dark, and Messages in light).
+
+**Gate (you, on the phone):** the spacing looks even; 4 pt to the dock and to the composer; outline icons that match the call; the thumbnail is the system window (unchanged).
+
+**For plot:** the player is now **48 pt** tall (it was 44); item 7 belongs to 150's item 7c and the spike. The live call card's new icon is unverified by eye.

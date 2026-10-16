@@ -72,15 +72,17 @@ struct CallMiniPlayer: View {
     static let height: CGFloat = 44
     static let avatar: CGFloat = 32
     static let button: CGFloat = 36
+    /// The player floats this far from what is above and below it (the tab bar, the composer).
+    static let floatGap: CGFloat = 4
 
     var body: some View {
         Group {
             if let subject = CallMiniPlayerRule.subject(groupInCall: store.groupCalls.inCall, groupMinimized: store.groupCalls.minimized,
                                                         callInCall: store.calls.inCall, callMinimized: store.calls.minimized) {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    if let edge = store.miniPlayerTuck.edge { tab(edge) } else { content(for: subject, at: context.date) }
+                    if let edge = store.miniPlayerTuck.edge { tab(edge, video: subject == .group ? store.groupCalls.video : store.calls.video) } else { content(for: subject, at: context.date) }
                 }
-                .padding(.horizontal, store.miniPlayerTuck.isTucked ? 0 : 16).padding(.vertical, 6)
+                .padding(.horizontal, store.miniPlayerTuck.isTucked ? 0 : 16).padding(.vertical, Self.floatGap)
                 .frame(maxWidth: .infinity)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("call-mini-player")
@@ -99,11 +101,11 @@ struct CallMiniPlayer: View {
     private func untuck() { animate { store.miniPlayerTuck.show() } }
 
     /// The edge tab: a small warm handle with the call icon, in the same vertical place. Tap or swipe it back out to bring the player back.
-    private func tab(_ edge: CallMiniPlayerTuck.Edge) -> some View {
+    private func tab(_ edge: CallMiniPlayerTuck.Edge, video: Bool) -> some View {
         HStack(spacing: 0) {
             if edge == .trailing { Spacer(minLength: 0) }
             Button(action: untuck) {
-                Image(systemName: "phone.fill").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text)
+                Image(systemName: video ? "video" : "phone").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text)
                     .frame(width: 44, height: 64)
                     .background(UnevenRoundedRectangle(topLeadingRadius: edge == .trailing ? 18 : 0, bottomLeadingRadius: edge == .trailing ? 18 : 0,
                                                        bottomTrailingRadius: edge == .leading ? 18 : 0, topTrailingRadius: edge == .leading ? 18 : 0)
@@ -152,37 +154,41 @@ struct CallMiniPlayer: View {
             .accessibilityAction { give(subject) }
             .accessibilityIdentifier("call-mini-return")
 
-            Button {
-                if group { Task { await store.groupCalls.setMuted(!muted) } } else { store.calls.setMuted(!muted) }
-            } label: {
-                Image(systemName: muted ? "mic.slash.fill" : "mic.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .frame(width: Self.button, height: Self.button)
-                    .background(Circle().fill(Theme.pressed))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel(muted ? "Unmute" : "Mute")
-            .accessibilityValue(muted ? "Muted" : "Microphone on")
-            .accessibilityIdentifier("call-mini-mute")
+            // Mute and Leave sit 2 pt closer than the rest of the row (their 44 pt tap areas still do not overlap).
+            HStack(spacing: 4) {
+                Button {
+                    if group { Task { await store.groupCalls.setMuted(!muted) } } else { store.calls.setMuted(!muted) }
+                } label: {
+                    Image(systemName: muted ? "mic.slash.fill" : "mic.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .frame(width: Self.button, height: Self.button)
+                        .background(Circle().fill(Theme.pressed))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(muted ? "Unmute" : "Mute")
+                .accessibilityValue(muted ? "Muted" : "Microphone on")
+                .accessibilityIdentifier("call-mini-mute")
 
-            Button {
-                if group { Task { await store.groupCalls.leave() } } else { Task { await store.calls.end() } }
-            } label: {
-                Image(systemName: "phone.down.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: Self.button, height: Self.button)
-                    .background(Circle().fill(Color.red))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                Button {
+                    if group { Task { await store.groupCalls.leave() } } else { Task { await store.calls.end() } }
+                } label: {
+                    Image(systemName: "phone.down.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: Self.button, height: Self.button)
+                        .background(Circle().fill(Color.red))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Leave call")
+                .accessibilityIdentifier("call-mini-leave")
             }
-            .accessibilityLabel("Leave call")
-            .accessibilityIdentifier("call-mini-leave")
         }
-        .padding(.leading, 10).padding(.trailing, 4)
-        .padding(.vertical, typeSize.isAccessibilitySize ? 8 : 0)
+        // 2 pt more room all round than 150-fix, so the contents sit evenly inside the capsule.
+        .padding(.leading, 12).padding(.trailing, 6)
+        .padding(.vertical, typeSize.isAccessibilitySize ? 8 : 2)
         .frame(minHeight: Self.height)
         // As wide as the tab bar (iOS 26); at accessibility sizes the text needs the room, so it uses the full width.
         .frame(maxWidth: typeSize.isAccessibilitySize ? nil : CallMiniPlayerRule.width(isIOS26: isIOS26))
@@ -207,7 +213,7 @@ struct CallMiniPlayer: View {
 
     /// 148c's text: the name, then the subtitle in the smaller grey line with the timer always present (the words shorten when narrow).
     private func twoLines(name: String, forms: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 0) {
             if typeSize.isAccessibilitySize {
                 // Accessibility sizes: everything wraps and the player grows, never clips.
                 Text(name).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)

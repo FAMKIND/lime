@@ -642,8 +642,16 @@ struct ChatView: View {
 
     @ViewBuilder
     private func bottomBar(_ conversation: Conversation) -> some View {
-        VStack(spacing: 8) {
+        // The mini player floats 4 pt above the composer (its own padding); the rest keeps its 8 pt spacing.
+        VStack(spacing: 0) {
             CallMiniPlayer()
+            bottomRest(conversation)
+        }
+    }
+
+    @ViewBuilder
+    private func bottomRest(_ conversation: Conversation) -> some View {
+        VStack(spacing: 8) {
             if conversation.isGroup { EmergencyPanel(conversation: conversation) }
             #if DEBUG
             NearbyOfferBar(waitingInChat: conversation.messages.contains { $0.state == .waiting })
@@ -1103,7 +1111,7 @@ struct CallBubbleView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 // No LIVE badge and no green here (LIME-150): a quiet card. The LIVE badge lives in the mini player.
-                Image(systemName: call.video ? "video.fill" : "phone.fill").font(Theme.body).foregroundStyle(Theme.text)
+                Image(systemName: call.video ? "video" : "phone").font(Theme.body).foregroundStyle(Theme.text)
                 Text(call.title(startedBy: callerName)).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
                     .accessibilityIdentifier("call-bubble-title")
             }
