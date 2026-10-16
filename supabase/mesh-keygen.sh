@@ -49,6 +49,11 @@ else
   supabase secrets set --env-file "$work/secret.env" --project-ref "$SUPABASE_PROJECT_REF" >/dev/null
   rm -f "$work/secret.env"
   echo "The secret is set on the staging project (MESH_ROUTING_SECRET_KEY, key id 1)."
+  # The staging digest (never the secret) beside the public key, so you can see it changed: the first 16 characters of what `supabase secrets list` shows.
+  digest="$(supabase secrets list --project-ref "$SUPABASE_PROJECT_REF" -o json 2>/dev/null | python3 -c 'import json,sys
+d = json.load(sys.stdin)
+print(next((s.get("value", "") for s in d if s.get("name") == "MESH_ROUTING_SECRET_KEY"), "")[:16])' 2>/dev/null || true)"
+  echo "Staging digest now: ${digest:-unknown} (first 16 characters; it changes with every real run)"
   echo
   echo "================================================================"
   echo "  PIN THIS KEY (its secret is now on the server)"

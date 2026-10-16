@@ -395,10 +395,8 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-# LOCAL TEST ONLY (LIME-140): the mesh routing key pair of this local stack, so `mesh-drop` can be tested here. It is NOT the staging key: the
-# staging secret is made by `supabase/mesh-keygen.sh` and goes straight into Supabase's secrets; this one is public on purpose.
-[edge_runtime.secrets]
-MESH_ROUTING_SECRET_KEY = "KILKJyNyeB2broEOGIiyuqZcUVWs9jZM9XtAjY/ZiWA="
+# The local mesh test key is NOT here (LIME-153): this table can reach the staging project (a deploy once replaced staging's real mesh key with it).
+# It lives in `supabase/functions/.env`, which only the local Edge runtime reads. See supabase/README.md.
 
 [analytics]
 enabled = false

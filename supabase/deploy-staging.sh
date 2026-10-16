@@ -31,6 +31,10 @@ supabase secrets set --project-ref "$SUPABASE_PROJECT_REF" \
   LIME_MAX_ITEM_BYTES=65536 LIME_RATE_LOOKUP_PER_MIN=30 LIME_RATE_PROFILE_PER_MIN=120 \
   LIME_RATE_IDENTIFY_PER_MIN=30 LIME_RATE_SIGNIN_PER_10MIN=10 LIME_RATE_EMAIL_PER_HOUR=10 >/dev/null
 
+# The mesh key must never be the local test key (LIME-153: a deploy once left it on staging). Read-only; fails the deploy loudly.
+echo "Checking staging's mesh key..."
+sh supabase/check-staging-mesh-key.sh
+
 # The URL and the anon (publishable) key are meant to ship inside the app, so they may be written
 # to a gitignored file for the later iOS brief. The service-role key is never read here.
 PUBLIC_ENV="supabase/.staging.public.env"

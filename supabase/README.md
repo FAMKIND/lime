@@ -54,6 +54,8 @@ supabase login                    # once; opens your browser
 ./supabase/smoke-staging.sh       # two throwaway users: sealed send, fetch, ack; then deletes them
 ```
 
+**The local mesh test key lives in `supabase/functions/.env`, not in `config.toml`.** It is public on purpose (tests need it) and must never reach staging: a deploy once replaced staging's real mesh key with it (LIME-153), so `deploy-staging.sh` ends with `check-staging-mesh-key.sh` (read-only, digests only) and fails if staging holds it; run that script any time, and `mesh-keygen.sh` (the real run) to make a real key.
+
 The scripts never print the secrets. `deploy-staging.sh` writes the project URL and the **anon (publishable) key** to the gitignored `supabase/.staging.public.env` for the later iOS brief (those two values are meant to ship inside the app). **The service-role key never leaves Supabase**: `smoke-staging.sh` reads it into memory only, to create and delete the throwaway users, and never writes it down. Never commit anything under `~/.lime`.
 
 ## The free plan (as of 2026-10-06, supabase.com/pricing)

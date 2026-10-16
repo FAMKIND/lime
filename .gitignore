@@ -27,4 +27,6 @@ supabase/.temp/
 supabase/.staging.public.env
 supabase/.env*
 supabase/functions/.env*
+# ... except the LOCAL stack's mesh TEST key (public on purpose; LIME-153): the one file the local Edge runtime reads for it. Never put a real secret in it.
+!supabase/functions/.env
 ios/Lime/Config/BackendConfig.generated.swift

@@ -6057,3 +6057,30 @@ Phase 0: `PLOT.md` committed first (4fe57f5).
 **Device check (the user):** the build is installed on the three phones. Leave them near each other, lime open and then locked, for 10 minutes: connects should be at most a few a minute; then "logs": plot checks `mesh_key_check result=ok key=03129b4296f76a31` on each. If a phone still loops, the `l2cap_unknown_peer` line now says which of the two causes it is.
 
 **For plot:** the loop is bounded whatever its cause; the cause (race or stale peer) will show in the next logs. The iPad ↔ 13 mini pair is where to look.
+
+
+## LIME-153 (the staging deploy must never ship the local test mesh key) — committed; **no staging writes were made**; the gate is yours
+
+Phase 0: `PLOT.md` committed first (d42ef29). **Owning up: the deploy that clobbered the key (14:21Z) was the one I ran at your "go" for LIME-144; the script is mine to guard.**
+
+**Phase 1 survey (read-only), reported before editing.**
+- Supabase CLI **2.119.0** (2.121.0 is available).
+- **Which step pushed `[edge_runtime.secrets]`: NOT proven.** The documented push is `supabase config push`, which `deploy-staging.sh` never calls; `supabase functions deploy --help` and `link --help` say nothing about secrets. The script's steps are `link`, `db push`, `functions deploy --use-api` and an explicit `secrets set` of the `LIME_*` limits (which cannot carry the mesh key). **So the leak came from `supabase link` or `supabase functions deploy` (the only two that read `config.toml`'s function and runtime settings).** Proving which needs a staging write (not allowed here, and a second clobber would be worse); **the fix does not depend on it**: the key is no longer in `config.toml` at all.
+- **Every other value under `[edge_runtime.secrets]`:** none; the table held only `MESH_ROUTING_SECRET_KEY`. Nothing else could clobber staging.
+- **Staging today (read-only `supabase secrets list`; the CLI shows digests):** `MESH_ROUTING_SECRET_KEY` digest starts **`ee56048f31821b2b`**, which is exactly SHA-256 of the local test secret (I checked by hashing it): staging **still holds the local key**.
+
+**Every item of the brief, checked off:**
+- **1 Move the local key out of the path that reaches staging: DONE.** `config.toml` no longer has `[edge_runtime.secrets]` (a comment says where it went). The local test key is now in **`supabase/functions/.env`**, which only the local Edge runtime reads (I restarted the local stack and **`mesh-key`, `mesh-drop` and the other mesh tests pass: 6 of 6**, and the real-backend integration test passes: 23). Nothing deploys a `.env`. The repo's `.gitignore` ignored `supabase/functions/.env*`, so I added a one-line exception for exactly that file, with a comment (it is the public test key; never put a real secret in it).
+- **2 The guard in `deploy-staging.sh`: DONE (as a separate, read-only script it calls).** `supabase/check-staging-mesh-key.sh` reads `supabase secrets list -o json`, compares the digest of `MESH_ROUTING_SECRET_KEY` with SHA-256 of the local key read from `functions/.env`, prints at most the first 16 characters, and **exits non-zero with "staging holds the LOCAL test mesh key: run ./supabase/mesh-keygen.sh"** (or when the secret is missing). `deploy-staging.sh` runs it after the secrets step (and before it writes the public env), so a deploy now ends in a failure if staging holds the local key.
+- **3 `mesh-keygen.sh` (the real run) prints the staging digest's first 16 characters** ("Staging digest now: … (first 16 characters; it changes with every real run)") beside the public key. Not run (it is a staging write).
+- **4 `supabase/README.md`: DONE** (where the local key lives and why it must never reach staging; the check script).
+
+**Verification:**
+- `deno test` mesh tests against the local stack (and the whole suite): **pass, 71 of 71**; the local key still loads from `functions/.env`.
+- `sh -n` on `deploy-staging.sh`, `mesh-keygen.sh`, `check-staging-mesh-key.sh`: clean.
+- **The guard, run read-only against staging today: FAILS as it should** ("staging holds the LOCAL test mesh key: run ./supabase/mesh-keygen.sh"; digest `ee56048f31821b2b`).
+- `grep -n MESH_ROUTING supabase/config.toml`: **no match** (the secret is not in any section the CLI reads).
+
+**Gate (the user):** run `./supabase/mesh-keygen.sh` in a Terminal (the real run, **not** `--dry-run`) and give me the printed public key (→ LIME-154). **Do not run `deploy-staging.sh` before that**: it would now stop at the guard, with the other deploy steps already done.
+
+**For plot:** the step that leaked is `link` or `functions deploy` (unproven, not needed to fix). The deploy script now fails loudly while staging holds the local key (today, until the keygen); anyone deploying must run the real keygen first or ignore the final failure. LIME-154 waits for the printed key.
