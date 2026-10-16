@@ -145,8 +145,8 @@ final class MeshLinkTests: XCTestCase {
         XCTAssertTrue(identity.rotateIfDue(now: start.addingTimeInterval(900), random: random))
         XCTAssertNotEqual(identity.id, first)
         XCTAssertTrue(MeshLinkPolicy.rssiAllowsConnecting(-60))
-        XCTAssertTrue(MeshLinkPolicy.rssiAllowsConnecting(-92))
-        XCTAssertFalse(MeshLinkPolicy.rssiAllowsConnecting(-93))
+        XCTAssertTrue(MeshLinkPolicy.rssiAllowsConnecting(-96))
+        XCTAssertFalse(MeshLinkPolicy.rssiAllowsConnecting(-97))
         XCTAssertFalse(MeshLinkPolicy.rssiAllowsConnecting(127), "unknown")
     }
 

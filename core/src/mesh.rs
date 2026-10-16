@@ -456,7 +456,14 @@ impl MeshEngine {
     /// the server stored.
     pub fn upload_all(&self, transport: Arc<dyn Transport>, auth_token: String) -> Result<u32, StoreError> {
         let mut stored = 0;
-        for item in self.take_uploadable() {
+        let items = self.take_uploadable();
+        if items.is_empty() {
+            return Ok(0);
+        }
+        self.note(format!("upload_try n={}", items.len()));
+        for item in items {
+            let digest = <Digest>::try_from(item.id.as_slice()).ok();
+            let id = digest.as_ref().map(short_id).unwrap_or_default();
             let body = serde_json::json!({ "header": vodozemac::base64_encode(&item.header), "payload": vodozemac::base64_encode(&item.payload) });
             let headers = vec![
                 HeaderPair { name: "content-type".into(), value: "application/json".into() },
@@ -465,11 +472,23 @@ impl MeshEngine {
             let response = transport.request("POST".into(), "/functions/v1/mesh-drop".into(), headers, serde_json::to_vec(&body).map_err(|_| StoreError::BadMessage)?);
             match response.map(|r| (r.status, r.body)) {
                 Ok((200, body)) => {
-                    stored += serde_json::from_slice::<serde_json::Value>(&body).ok().and_then(|v| v["stored"].as_u64()).unwrap_or(0) as u32;
+                    let n = serde_json::from_slice::<serde_json::Value>(&body).ok().and_then(|v| v["stored"].as_u64()).unwrap_or(0) as u32;
+                    stored += n;
+                    self.note(format!("upload_ok id={id} status=200 stored={n}"));
                     self.upload_done(item.id);
                 }
-                Ok((403, _)) => self.upload_done(item.id),
-                _ => self.upload_failed(item.id),
+                Ok((403, _)) => {
+                    self.note(format!("upload_dropped id={id} status=403"));
+                    self.upload_done(item.id)
+                }
+                Ok((status, _)) => {
+                    self.note(format!("upload_fail id={id} status={status}"));
+                    self.upload_failed(item.id)
+                }
+                Err(_) => {
+                    self.note(format!("upload_fail id={id} reason=network"));
+                    self.upload_failed(item.id)
+                }
             }
         }
         Ok(stored)

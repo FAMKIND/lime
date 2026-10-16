@@ -128,7 +128,7 @@ final class MeshMessagesTests: XCTestCase {
         let again = await runner.uploadIfOnline(online: true) { calls += 1; return 3 }
         XCTAssertEqual(again, 3)
         XCTAssertEqual(calls, 1)
-        XCTAssertEqual(logged, ["mesh_uploaded"])
+        XCTAssertEqual(logged, ["upload_skip", "mesh_uploaded"], "the skip while offline is logged, then the upload")
         // A second trigger while one is running is ignored.
         var inner: UInt32 = 99
         let outer = await runner.uploadIfOnline(online: true) {
@@ -138,11 +138,38 @@ final class MeshMessagesTests: XCTestCase {
         XCTAssertEqual(outer, 1)
         XCTAssertEqual(inner, 0, "one upload at a time")
         XCTAssertEqual(calls, 1)
-        // A failed upload is not an error here (it is tried again next time) and logs nothing.
+        // A failed upload is tried again next time, and says so in the log.
         struct Boom: Error {}
-        let failed = await runner.uploadIfOnline(online: true) { throw Boom() }
+        logged = []
+        let failed = await runner.uploadIfOnline(online: true, trigger: "tick") { throw Boom() }
         XCTAssertEqual(failed, 0)
         XCTAssertFalse(runner.uploading)
+        XCTAssertEqual(logged, ["upload_error"])
+    }
+
+    /// LIME-142-fix: a carrier that was online first and is handed a packet later uploads on the next tick; one that comes online later
+    /// uploads on the connectivity change. The trigger is in the log either way.
+    func testACarrierUploadsOnTheTickAfterItWasHandedSomethingAndOnTheConnectivityFlip() async {
+        let engine = FakeEngine()
+        var logged: [(String, [String: String])] = []
+        let runner = MeshOutboxRunner(engine: engine, driver: nil, log: { logged.append(($0, $1)) })
+        var calls = 0
+        // Offline: the connectivity trigger is skipped and says why.
+        _ = await runner.uploadIfOnline(online: false, trigger: "connectivity") { calls += 1; return 1 }
+        XCTAssertEqual(calls, 0)
+        XCTAssertEqual(logged.last?.0, "upload_skip")
+        XCTAssertEqual(logged.last?.1["why"], "offline")
+        // The network comes back: the flip uploads at once.
+        _ = await runner.uploadIfOnline(online: true, trigger: "connectivity") { calls += 1; return 1 }
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(logged.last?.1["trigger"], "connectivity")
+        // Online already, handed something later: the next tick uploads it (a quiet tick is not logged when offline).
+        logged = []
+        _ = await runner.uploadIfOnline(online: false, trigger: "tick") { calls += 1; return 1 }
+        XCTAssertTrue(logged.isEmpty, "a quiet tick offline stays quiet")
+        _ = await runner.uploadIfOnline(online: true, trigger: "tick") { calls += 1; return 2 }
+        XCTAssertEqual(calls, 2)
+        XCTAssertEqual(logged.last?.1["trigger"], "tick")
     }
 
     private final class ImmediateScheduler: MeshScheduler {

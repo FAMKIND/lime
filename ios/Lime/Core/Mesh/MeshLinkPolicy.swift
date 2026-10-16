@@ -27,7 +27,7 @@ struct MeshLinkIdentity {
 
 enum MeshLinkPolicy {
     /// Weaker than this (dBm) is not worth connecting to; 127 is the system's "unknown".
-    static let weakestRSSI = -92
+    static let weakestRSSI = -96
 
     static func rssiAllowsConnecting(_ rssi: Int) -> Bool { rssi != 127 && rssi >= weakestRSSI }
 

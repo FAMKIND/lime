@@ -41,6 +41,7 @@ final class MeshService {
     @ObservationIgnored private weak var store: ConversationStore?
     @ObservationIgnored private let path = NWPathMonitor()
     @ObservationIgnored private var online = true
+    @ObservationIgnored private var lastCarried: UInt32 = 0
 
     private init() {
         bluetooth.onLog = { [weak self] kind, detail in self?.log.record(kind, detail) }
@@ -48,7 +49,7 @@ final class MeshService {
         if !ProcessInfo.processInfo.arguments.contains("-lime-demo-chat"), let until = UserDefaults.standard.object(forKey: Self.nearbyUntilKey) as? Date, NearbyMode.isOn(until: until, now: Date()) { nearbyUntil = until }
         let center = NotificationCenter.default
         center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.appActive = true; self?.applyNearby() }
+            MainActor.assumeIsolated { self?.appActive = true; self?.applyNearby(); Task { await self?.uploadIfOnline(trigger: "active") } }
         }
         center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appActive = false; self?.applyNearby() }
@@ -200,7 +201,16 @@ final class MeshService {
         self.driver = driver
         let runner = MeshOutboxRunner(engine: engine, driver: driver, log: { [weak self] kind, detail in self?.log.record(kind, detail) })
         self.runner = runner
-        driver.onFrameHandled = { [weak runner] in runner?.drainNotes() }
+        driver.onFrameHandled = { [weak self, weak runner] in
+            runner?.drainNotes()
+            // A phone that is online and was just handed something to carry uploads it at once, not on the next tick.
+            Task { @MainActor in
+                guard let self, let engine = self.engine, self.online else { return }
+                let carried = engine.stats().carried
+                if carried > self.lastCarried { await self.uploadIfOnline(trigger: "frame") }
+                self.lastCarried = carried
+            }
+        }
         bluetooth.driver = driver
         attached = true
         try? engine.refreshTags()
@@ -217,7 +227,7 @@ final class MeshService {
         pumpTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
-                await self?.pump()
+                await self?.afterDelivery(trigger: "tick")
             }
         }
         Task { @MainActor in await self.afterDelivery() }
@@ -226,9 +236,9 @@ final class MeshService {
     // MARK: Real messages
 
     /// After a send attempt and after each sync (and every 15 s while running): on the mesh, statuses, uploads.
-    func afterDelivery() async {
+    func afterDelivery(trigger: String = "sync") async {
         await pump()
-        await uploadIfOnline()
+        await uploadIfOnline(trigger: trigger)
     }
 
     private func pump() async {
@@ -237,11 +247,19 @@ final class MeshService {
         if let store, store.conversations.contains(where: { $0.messages.contains { $0.state == .waiting || $0.state == .passed } }) || queued > 0 { await store.reload() }
     }
 
-    /// With internet, hands everything this phone carries to the server (`mesh-drop`).
-    func uploadIfOnline() async {
-        guard let engine, attached, let runner, let link = store?.currentLink else { return }
-        guard let token = try? await link.token() else { return }
-        await runner.uploadIfOnline(online: online) {
+    /// With internet, hands everything this phone carries to the server (`mesh-drop`). `trigger`: what asked (connectivity, active, tick, sync, frame).
+    func uploadIfOnline(trigger: String = "sync") async {
+        guard let engine, attached, let runner else { return }
+        guard let link = store?.currentLink else { if trigger != "tick" { log.record("upload_skip", ["why": "no-session", "trigger": trigger]) }; return }
+        guard online else { await runner.uploadIfOnline(online: false, trigger: trigger) { 0 }; return }
+        // Only fetch a token when something is carried (the tick runs every 15 s).
+        guard engine.stats().carried > 0 else { return }
+        let token: String
+        do { token = try await link.token() } catch {
+            log.record("upload_skip", ["why": "no-token", "error": String(describing: error), "trigger": trigger])
+            return
+        }
+        await runner.uploadIfOnline(online: online, trigger: trigger) {
             try await Task.detached(priority: .utility) { try engine.uploadAll(transport: link.transport, authToken: token) }.value
         }
     }
@@ -255,7 +273,7 @@ final class MeshService {
                 self.online = nowOnline
                 self.log.record("connectivity", ["online": String(nowOnline)])
                 // The internet is back: send what waited (it resumes by itself) and upload what is carried.
-                if came { await self.store?.syncNow() }
+                if came { await self.store?.syncNow(); await self.uploadIfOnline(trigger: "connectivity") }
             }
         }
         path.start(queue: .main)

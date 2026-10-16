@@ -107,6 +107,8 @@ fn a_message_travels_by_the_mesh_and_a_relay_uploads_it_through_mesh_drop_to_the
 
     // The relay reaches the internet: `mesh-drop` opens the sealed header, checks Alice's proof as `send` would, and stores it for Bob.
     assert_eq!(relay_mesh.upload_all(real.clone(), relay.token.clone()).unwrap(), 1);
+    let upload_notes = relay_mesh.take_notes();
+    assert!(upload_notes.iter().any(|n| n.starts_with("upload_try n=1")) && upload_notes.iter().any(|n| n.starts_with("upload_ok id=") && n.contains("status=200")), "the upload is logged: {upload_notes:?}");
     assert_eq!(relay_mesh.stats().carried, 0, "uploaded: no longer carried");
     assert_eq!(admin.mailbox_senders(&bob_device), vec![(false, None)], "sealed, and the server recorded no sender (the relay is not one)");
     // A second upload of the same packet (another relay carried it too) is a duplicate, not a second item.

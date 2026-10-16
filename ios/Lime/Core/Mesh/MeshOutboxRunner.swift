@@ -40,15 +40,24 @@ final class MeshOutboxRunner {
         }
     }
 
-    /// Uploads what is carried, if there is internet and no upload is running. `upload` does the call (the real one is `engine.uploadAll`).
-    /// Returns how many the server stored.
+    /// Uploads what is carried, if there is internet and no upload is running. `upload` does the call (the real one is `engine.uploadAll`; the
+    /// core writes `upload_try`, `upload_ok`, `upload_fail` and `upload_dropped` lines per packet). `trigger` says what asked for it
+    /// (connectivity, active, tick, sync, frame) and is logged when something was skipped or failed. Returns how many the server stored.
     @discardableResult
-    func uploadIfOnline(online: Bool, upload: () async throws -> UInt32) async -> UInt32 {
-        guard online, !uploading else { return 0 }
+    func uploadIfOnline(online: Bool, trigger: String = "", upload: () async throws -> UInt32) async -> UInt32 {
+        guard online else { if trigger != "tick" { log("upload_skip", ["why": "offline", "trigger": trigger]) }; return 0 }
+        guard !uploading else { log("upload_skip", ["why": "busy", "trigger": trigger]); return 0 }
         uploading = true
         defer { uploading = false }
-        let stored = (try? await upload()) ?? 0
-        if stored > 0 { log("mesh_uploaded", ["stored": String(stored)]) }
-        return stored
+        do {
+            let stored = try await upload()
+            drainNotes()
+            if stored > 0 { log("mesh_uploaded", ["stored": String(stored), "trigger": trigger]) }
+            return stored
+        } catch {
+            drainNotes()
+            log("upload_error", ["error": String(describing: error), "trigger": trigger])
+            return 0
+        }
     }
 }
