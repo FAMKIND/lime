@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-142-fix** (a carrier that comes online never uploaded; the user confirmed Jean never got the message; RSSI gate −96). LIME-143 landed as `6ac87ff` (Nearby) + `ef982b3` (Emergency), pushed; **its device test is still to do: run it in the same device session as 142-fix's re-run.**
+**▶ NEXT FOR TEND: LIME-142-fix2** (`mesh-drop` refuses the iPad's upload with a 403; find out why). Then the rest of the device session (order B + LIME-143's test). Previously: The builds are installed on all 3. LIME-142-fix landed as `0e619e3`. After it: plot pulls the logs (looking for `upload_ok` + the trigger), then drafts **LIME-144** (the field test + docs).
 - **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
@@ -149,6 +149,13 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e136. **The upload test A after 142-fix (2026-10-16 ~04:41):** the iPad uploaded (the trigger works) but **`mesh-drop` answered 403** (`upload_dropped` ×2), so Jean never got it. The cause is hidden by the one undifferentiated 403. **→ LIME-142-fix2 (drafted, NEXT):** server-side reason codes (no ids), test the 4 suspects (no public key on file is the top one), fix; also RSSI 127 = unknown, not weak.
+1e135. **LIME-142-fix LANDED as `0e619e3` (pushed; PLOT.md `7593ea3`).**
+   - **The cause: a missing trigger.** An **already-online** carrier that was handed a packet later never uploaded: the 15 s tick only pumped, and the other triggers had already fired.
+   - **Fixed:** the tick now does pump + upload; a new "frame" trigger (carried grows while online); the connectivity flip and app-active both upload; full upload logs (`upload_try/ok/dropped/fail/skip`, the trigger). The gate is −96 dBm.
+   - **Time Sensitive: REFUSED on the free account → the November list.**
+   - **Plot's decision on "prefer the stronger link":** not now (one link per pair; revisit with 144's field data).
+   - **NEXT: the device session.**
 1e134. **LIME-143 LANDED** (`6ac87ff` Nearby + `ef982b3` Emergency, pushed); its device test is still to do (run it with 142-fix's re-run).
    - **DECIDED (the user, 2026-10-16):**
      - (1) **yes** to the Time Sensitive Notifications capability → **folded into 142-fix** as a separate commit (stop if free provisioning refuses);
@@ -5798,7 +5805,34 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-142-fix → `tend` (lime-aa) (NEXT, before 143; drafted 2026-10-16): a carrier that comes online never uploads what it carries
+### LIME-142-fix2 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): `mesh-drop` refuses real uploads with a 403
+**Goal:** a message carried by a relay is accepted by `mesh-drop` and reaches the recipient, on staging with the real test accounts.
+
+**The user's upload test A (2026-10-16 ~04:40; `/tmp/lime-meshlogs6/`; the 13 mini wasn't on USB):**
+- the upload **now runs** (142-fix works): the iPad at **04:41:36** came online, then `upload_try n=1` → **`upload_dropped id=e0d4 status=403`**; at 04:44:08 the same for `977b` (403);
+- **Jean's phone never got "Upload test A".** `mesh-drop` returns **one undifferentiated 403** for: a header that won't open, a wrong/short signature, **no `access_public_key` on file for the recipient**, a wrong access key, an unknown or revoked device (`_shared/access.ts:14,33`; `mesh-drop/index.ts:38`). So the device logs can't say which.
+- **Online sends hide the same failure:** a 403 on `send` silently falls back to identified (LIME-96/139), but `mesh-drop` has no fallback, so the packet is dropped. (The sender's own outbox copy should still deliver once the 13 mini is online.)
+
+**Plot's suspects (check each; report which):**
+1. **The recipient has no `access_public_key` on staging.** 139 uploads it in `ensure_delivery_access` (called from `register_device`, `deliver_queued`, `sync`) only when the local "uploaded" flag is false. Check that Jean's (and the FAM test account's) devices actually uploaded after updating to the 139 build. (A narrow staging read: **for the 3 test accounts, is `access_public_key` null?**: ids and a boolean only; ask the user to approve the query, as the 111-fix3 PII rule requires.)
+2. **The sender signs with a stale delivery key** for the recipient (a rotation, or a key the recipient replaced): a signature over the wrong public key.
+3. **`to_device` in the sealed header is stale** (cached devices, LIME-120): a revoked/unknown device.
+4. **The header opens but its fields mismatch** what `verifySealed` expects (e.g. the device-id encoding, or the signature input differing between the mesh path and `send`: 139's `"lime-access-v2" || SHA-256(ciphertext) || to_device`; is the **payload** the mesh carries byte-identical to the `ciphertext` the signature covers?).
+
+**The change:**
+1. **Diagnose without leaking:** `mesh-drop` and `send` log a **reason code** server-side (`no_public_key` / `bad_signature` / `header_unopenable` / `header_fields` / `unknown_device` / `revoked_device`), **with no ids**, into the function logs. The client still sees only 403. **Read the reason from `supabase functions logs`** after a device retry (or reproduce with staging throwaway accounts in an integration test: A sends offline via a relay engine to B where B has (i) uploaded its key, (ii) not yet, (iii) rotated).
+2. **Fix the cause(s):**
+   - if (1): **upload the access public key proactively** at launch and on each sync whenever the server lacks it (or a cheap "is mine on file?" check), not only lazily;
+   - if (2)/(3): refresh the contact's delivery key/devices before sealing, or keep the outbox copy so the sender's own online retry covers it (it already does: confirm);
+   - if (4): fix the byte mismatch, with a cross-path test (the same message through `send` and `mesh-drop` must both verify).
+3. **When `mesh-drop` refuses for a reason a later retry can't fix,** drop as now; for `no_public_key`, **keep the packet** and retry later (the recipient may upload soon). Report the policy.
+4. **Also:** the iPad logged **`skip_weak rssi=127`**: **127 is CoreBluetooth's "RSSI unavailable"**, not a weak signal. Treat 127 as unknown (allow it) in the gate.
+
+**Device check:** upload test A again (and B): Jean's phone gets the message while the 13 mini is offline; the iPad logs `upload_ok status=200`.
+
+**Record:** `## LIME-142-fix2` with **For plot:** and every item checked off. **Commit:** `fix: mesh uploads accepted (…the cause…)`, trailer `Brief: LIME-142`. The rest per the standing rules. **A staging deploy is needed for the `mesh-drop`/`send` logging: stop for the user's go.**
+
+### LIME-142-fix → `tend` (lime-aa) (DONE as `0e619e3`; drafted 2026-10-16): a carrier that comes online never uploads what it carries
 **Goal:** a phone carrying someone else's mesh message uploads it through `mesh-drop` within seconds of getting internet, every time, and the logs show each attempt and its result.
 
 **The user's upload test (2026-10-16 01:50–01:57, `/tmp/lime-meshlogs5/`):** the sender (13 mini) and the carrier (iPad) were together and offline; the recipient (Jean's phone) was far away and online.
