@@ -5,7 +5,13 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-144** (wrap up mesh v1: the docs, the key fingerprint check (stop for a deploy go), a battery log, the emergency card in dark mode). LIME-143-fix landed as `d830476` + `1fbc07c`. **Then: LIME-150 + LIME-152** (the call polish + the QA batch; plot re-surveys both first). Previously: The builds are installed on all 3. LIME-142-fix landed as `0e619e3`. After it: plot pulls the logs (looking for `upload_ok` + the trigger), then drafts **LIME-144** (the field test + docs).
+**▶ NEXT:**
+- (1) **the user says go** → tend runs `./supabase/deploy-staging.sh` (adds `mesh-key`); a launch then logs `mesh_key_check ok`;
+- (2) **LIME-150** (the call polish), **then LIME-152** (the QA batch + the new sounds).
+- **Both were drafted before the mesh work** (2026-10-15): **tend's Phase 1 must re-survey the files they name** (`GroupCallPiP.swift`, `CallMiniPlayer.swift`, `ChatView.swift`, `ConversationAvatar`, …) and report anything that moved, before building.
+- LIME-144 landed as `67b1c84`: **mesh v1 is wrapped.**
+
+Previously: The builds are installed on all 3. LIME-142-fix landed as `0e619e3`. After it: plot pulls the logs (looking for `upload_ok` + the trigger), then drafts **LIME-144** (the field test + docs).
 - **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
@@ -149,6 +155,10 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e142. **LIME-144 LANDED as `67b1c84` (pushed; PLOT.md `0c44a53`). MESH V1 IS WRAPPED.**
+   - The docs as built + proven (`architecture.md` §7, `api-v2.md` §8, the release checklist, the DPIA input); `mesh-key` (fingerprint) + the app's launch check (**not deployed: the user's go**); a Debug battery log; dark mode checked (fine); the offline copy cut, with every string before → after (details behind "Learn more").
+   - **The roll-up panel is tall** → 152 item 9.
+   - **NEXT:** the deploy go, then 150, then 152.
 1e141. **LIME-143-fix LANDED as `d830476` (+ `1fbc07c`, the key-script banners), pushed.**
    - Drill removed everywhere (an old `drill` field is accepted and ignored); the card's "EMERGENCY" in caption2 on one line, the status as the main text, warm surface, a red border only for Need help; "Safewords" (the core field is still `school_actions`); the "+" `.contextMenu` → Emergency with a real long-press UI test.
    - **Not done:** the key fingerprint check (an endpoint + a deploy). **Plot: yes → LIME-144 item 2.** The dark mode of the card/panel isn't checked → 144 item 4.
@@ -4953,6 +4963,15 @@ If the survey turns up related issues, raise them before editing. If a decision 
 5. **[interaction] Long-press on a bubble keeps the message visible, like iMessage:** reactions on top, **then the pressed bubble itself** (lifted, sharp), then the actions menu below; the rest dims/blurs. Today the bubble isn't shown, so there's no context.
 6. **[media] The Shared section of profiles shows all media blurry:** use the downloaded image (or the item 4 poster frame), not the blur thumbnail, in the Shared grid; tap still opens the viewer.
 7. **[visual] The profile's Pin/Unpin icons are too big:** match the other header icons' size and weight (like 112d's outline circle fix).
+8. **[sound] The user's three new sounds (2026-10-16), replacing the current ones (keep the file names the code uses):**
+   - `~/Desktop/lime-chime.m4a` (3.6 s, stereo AAC 44.1 k) → **the message chime** `lime-chime.caf` (today 1.2 s);
+   - `~/Desktop/lime-dialtone.m4a` (9.2 s) → **the outgoing "Calling…" tone** `lime-ringback.caf` (today the 6 s North American 440+480 Hz; the app loops it);
+   - `~/Desktop/lime-ringtone.m4a` (12.6 s) → **the incoming ringtone** `lime-ring.caf` (today 25.9 s; CallKit loops it; must stay < 30 s).
+   - **Process** as `ios/Lime/Resources/Sounds/README.md` does: mono 16-bit CAF at 44.1 kHz; RMS ≈ −16 dBFS with a peak ceiling of −1 dBFS; **trim leading/trailing silence**; **check each loops without a click or gap** (the ringback and ringtone loop).
+   - **The originals stay out of git** (as the README says): copy them somewhere outside the repo, or keep them on the Desktop, and only commit the CAFs.
+   - **The chime: TRIMMED by the user to 2.96 s** (`~/Desktop/lime-chime.m4a`, saved 2026-10-16 09:34; plot checked it with `afinfo`). **Tend: don't cut it further**; only trim pure leading/trailing silence and normalise.
+   - Update the README (the sources, the durations, the levels). One listen on a device in the gate.
+9. **[design] The emergency roll-up panel is a tall block in the chat** (tend, LIME-144): make it collapsible (a one-line summary "Emergency · 2 safe · 1 needs help · 24 students ›" that expands), Need help always visible.
 - **Also queued for this batch (plot's notes):**
   - the "no 'You'" copy sweep ("You created the group…" → "<Name> created…"; the user's rule);
   - check the live call circle is lime in the group chat during a call (148c screenshot);
