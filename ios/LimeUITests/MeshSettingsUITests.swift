@@ -13,7 +13,7 @@ final class MeshSettingsUITests: LimeUITestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5), "the row is in Privacy")
         XCTAssertEqual(toggle.value as? String, "1", "on by default")
         XCTAssertTrue(app.staticTexts["Help pass on nearby messages"].exists, "the words are there for VoiceOver (the row is 58 pt tall, like the other Privacy rows)")
-        XCTAssertTrue(app.staticTexts["Uses a little battery. Messages you carry are sealed; you can\u{2019}t read them."].exists)
+        XCTAssertTrue(app.staticTexts["Uses a little battery. Carried messages are sealed."].exists)
     }
 
     func testNearbyModeIsOffByDefaultWithItsHonestLine() {

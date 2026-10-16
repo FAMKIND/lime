@@ -169,3 +169,28 @@ Deno.test("mesh-drop: a revoked device and a user with no signing key on file ar
     assertEquals((await call("mesh-drop", relay.token, { header: header3, payload: payload2 })).status, 403, "a revoked device");
   });
 });
+
+Deno.test("mesh-key: the fingerprint is the first 16 hex of SHA-256 of the public half of the secret", async () => {
+  const { meshKeyFingerprint } = await import("../functions/_shared/mesh.ts");
+  const expected = [...new Uint8Array(await crypto.subtle.digest("SHA-256", fromBase64(LOCAL_PUBLIC) as BufferSource))].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+  assertEquals(await meshKeyFingerprint(LOCAL_SECRET), expected);
+  assertEquals(expected, "4ceb3d2d8055495b", "the same vector lime_core pins");
+  assertEquals(await meshKeyFingerprint("not a key"), null);
+});
+
+Deno.test("mesh-key needs a session and answers with the key id and the fingerprint", opts, async () => {
+  const noToken = await fetch(`${Deno.env.get("LIME_API_URL")}/functions/v1/mesh-key`, { headers: { apikey: Deno.env.get("LIME_ANON_KEY") ?? "" } });
+  await noToken.body?.cancel();
+  assertEquals(noToken.status, 401);
+  const user = await newUser();
+  try {
+    const response = await fetch(`${Deno.env.get("LIME_API_URL")}/functions/v1/mesh-key`, { headers: { apikey: Deno.env.get("LIME_ANON_KEY") ?? "", authorization: `Bearer ${user.token}` } });
+    assertEquals(response.status, 200);
+    const body = await response.json();
+    assertEquals(body.key_id, 1);
+    assertEquals(body.fingerprint.length, 16);
+    assert(/^[0-9a-f]{16}$/.test(body.fingerprint));
+  } finally {
+    await deleteUser(user);
+  }
+});

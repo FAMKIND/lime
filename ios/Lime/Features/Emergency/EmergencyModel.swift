@@ -58,12 +58,12 @@ enum EmergencyCopy {
     static func endedWords(by name: String) -> String { "Emergency ended by \(name)" }
 
     static let soundTitle = "Emergency alerts make a sound"
-    static let soundWhy = "In a lockdown, a sound can reveal where people are hiding. Turn this on where loud is safer, for example natural disasters."
+    static let soundWhy = "In a lockdown, a sound can reveal where people hide."
     static let safewordsTitle = "Safewords"
     static let safewordsWhy = "Show your school\u{2019}s safety words (Hold, Secure, Lockdown, Evacuate, Shelter) as quick choices."
-    static let pushNote = "Until lime can send push notifications, an alert reaches a phone when lime is open or when nearby phones wake it. Keep lime open and your phone awake and plugged in if you can. This is not a promise of delivery."
-    static let keepAwake = "Keep your phone awake and plugged in if you can."
-    static let noGroup = "Choose your emergency group in Settings \u{2192} Emergency."
+    static let pushNote = "Alerts arrive while lime is open or when nearby phones wake it. Not guaranteed."
+    static let keepAwake = "Keep your phone awake and plugged in."
+    static let noGroup = "Choose a group in Settings \u{2192} Emergency."
 
     /// The region's number to call first (LimeCore's table).
     static func number(region: String? = Locale.current.region?.identifier) -> String { emergencyNumber(region: region ?? "US") }

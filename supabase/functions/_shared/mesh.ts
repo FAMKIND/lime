@@ -47,3 +47,19 @@ export async function openRoutingHeader(keys: Map<number, string>, header: Uint8
     return null;
   }
 }
+
+/** The fingerprint of a mesh key's PUBLIC half: the first 16 hex characters of SHA-256(public key). The phone computes the same from the key it pins. */
+export async function meshKeyFingerprint(secretB64: string): Promise<string | null> {
+  try {
+    const raw = fromB64(secretB64);
+    if (raw.length !== 32) return null;
+    // The public key is the secret times the curve's base point (u = 9): derive it with the base point as the "peer".
+    const privateKey = await crypto.subtle.importKey("pkcs8", new Uint8Array([...PKCS8_X25519_PREFIX, ...raw]), { name: "X25519" }, false, ["deriveBits"]);
+    const basePoint = await crypto.subtle.importKey("raw", Uint8Array.from([9, ...new Array(31).fill(0)]), { name: "X25519" }, false, []);
+    const publicKey = new Uint8Array(await crypto.subtle.deriveBits({ name: "X25519", public: basePoint }, privateKey, 256));
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", publicKey as BufferSource));
+    return [...digest.slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
+}

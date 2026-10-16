@@ -44,12 +44,16 @@ enum ConnectionProblem: Equatable, Sendable {
 /// The offline banner on Messages and what it promises (LIME-142). Pure words, so they are tested. The mesh promise is the honest one from the
 /// Bluetooth spike: delivery when phones meet and at least one is awake; nothing after lime is swiped away.
 enum OfflineCopy {
-    static let withMesh = "Offline: lime will send through nearby phones, and when you\u{2019}re back online."
-    static let withoutMesh = "Offline: messages will send when you\u{2019}re back online."
+    static let withMesh = "Offline \u{00B7} sending through nearby phones"
+    static let withoutMesh = "Offline \u{00B7} will send when you\u{2019}re online"
 
     static func banner(meshOn: Bool) -> String { meshOn ? withMesh : withoutMesh }
 
-    static let sheetTitle = "Sending with no internet"
+    static let sheetTitle = "No internet"
+    /// The whole first screen: one short paragraph. The honest limits are behind "Learn more".
+    static let sheetBody = "Messages hop phone to phone, sealed. They go when phones meet or anyone gets online. Photos wait for internet."
+    static let learnMore = "Learn more"
+    /// Behind "Learn more": the honest promise and its limits.
     static let promise = [
         "Messages you write while offline stay sealed on your phone. If other phones running lime are nearby, lime passes them along; those phones can\u{2019}t read them.",
         "A message moves when phones meet and at least one of them is awake. It does not move if lime has been swiped away. When any phone carrying it, or yours, reaches the internet, it goes through.",

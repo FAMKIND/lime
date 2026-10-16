@@ -102,3 +102,13 @@ Things that must be done before Lime goes to testers or the App Store. Later bri
 - [ ] **User-facing copy and a switch.** The explainer today is a Debug alert. The real wording ("lime can pass messages phone to phone when there is no internet"), a Settings switch, and the honest limits (nothing is passed after a force-quit; iOS decides when a locked phone wakes) are LIME-142/143.
 - [ ] **Battery.** The device test's per-hour numbers (see `TEND.md`, LIME-141) decide whether the foreground duty cycle and the scan settings are acceptable for everyone.
 
+
+## Mesh and emergency mode: shipping (LIME-144, 2026-10-16)
+
+- [ ] **Take the mesh out of `#if DEBUG`** (the service, the Bluetooth link, Settings → Privacy's two switches, the explainer, Nearby mode, the emergency entry points). `ios/check-release-no-bluetooth.sh` must then change on purpose: Release gets CoreBluetooth, the Bluetooth background modes and `NSBluetoothAlwaysUsageDescription` (today they come from `ios/Config/Info-Debug.plist`).
+- [ ] **App Store privacy answers** for Bluetooth and the mesh: no location, no tracking, no identifiers beyond a random link id that changes every 15 minutes; sealed packets carried for others are unreadable by the carrier (`docs/dpia-mesh.md`).
+- [ ] **Time Sensitive Notifications** (the paid account): add the `com.apple.developer.usernotifications.time-sensitive` entitlement so a real emergency can break through Do Not Disturb (the code already asks for it; free provisioning refuses the capability).
+- [ ] **The Lock Screen / Control Center emergency control** (the paid account): a control widget extension and an App Group.
+- [ ] **Push (APNs)** so an emergency reaches a phone that is not running lime.
+- [ ] **A mesh key rotation with an overlap.** Today one key (id 1); a rotation must keep the old secret until phones have the new public key, or every carried packet sealed to the old key is refused. The launch check (`mesh-key`) should be turned into a release gate for the pinned key; re-running `supabase/mesh-keygen.sh` replaces the staging key (its dry run prints DRY RUN: DO NOT PIN).
+- [ ] **The security review** of the whole mesh: the packet, the tag, the sealed header, signed access, `mesh-drop`, the retry policy.

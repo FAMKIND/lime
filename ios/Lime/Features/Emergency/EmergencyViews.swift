@@ -382,6 +382,7 @@ struct EmergencySettingsScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var settings: EmergencySettings?
     @State private var picking = false
+    @State private var learnMore = false
 
     private func binding<T>(_ keyPath: WritableKeyPath<EmergencySettings, T>, fallback: T) -> Binding<T> {
         Binding(get: { settings?[keyPath: keyPath] ?? fallback },
@@ -404,7 +405,7 @@ struct EmergencySettingsScreen: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("emergency-settings-group")
             }
-            SettingsFootnote(text: "Where statuses go. You can also choose it from a group\u{2019}s \u{22EF} menu. Start an emergency by long-pressing + in Messages, or from the group\u{2019}s \u{22EF} menu.")
+            SettingsFootnote(text: "Where statuses go. Start one by long-pressing + in Messages.")
             SettingsCard {
                 Toggle(isOn: binding(\.schoolActions, fallback: true)) { Text(EmergencyCopy.safewordsTitle).font(Theme.body).foregroundStyle(Theme.text) }
                     .tint(Theme.accent).padding(.horizontal, 18).frame(minHeight: 58)
@@ -417,9 +418,13 @@ struct EmergencySettingsScreen: View {
                     .accessibilityIdentifier("emergency-settings-sound")
             }
             SettingsFootnote(text: EmergencyCopy.soundWhy)
-            SettingsFootnote(text: "\(EmergencyCopy.callFirst(number: EmergencyCopy.number())). \(EmergencyCopy.neverAlerts)")
+            SettingsFootnote(text: "\(EmergencyCopy.callFirst(number: EmergencyCopy.number())). lime does not alert the police.")
             SettingsFootnote(text: EmergencyCopy.pushNote).accessibilityIdentifier("emergency-settings-honest")
+            Button(OfflineCopy.learnMore) { learnMore = true }
+                .font(Theme.secondary).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(.horizontal, 12)
+                .accessibilityIdentifier("emergency-learn-more")
         }
+        .sheet(isPresented: $learnMore) { OfflineSheet(startExpanded: true) }
         .task { settings = await store.emergencySettings() }
         .sheet(isPresented: $picking) {
             EmergencyGroupPicker(selected: settings?.groupId ?? "") { picked in

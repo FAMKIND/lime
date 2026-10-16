@@ -55,7 +55,7 @@ final class EmergencyUITests: XCTestCase {
         XCTAssertTrue(sound.waitForExistence(timeout: 5))
         XCTAssertEqual(sound.value as? String, "0", "silent by default")
         XCTAssertEqual(app.switches["emergency-settings-school"].value as? String, "1", "the school actions are on by default")
-        XCTAssertTrue(app.staticTexts["emergency-settings-honest"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'not a promise of delivery'")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["emergency-settings-honest"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Not guaranteed'")).firstMatch.exists)
         XCTAssertFalse(app.buttons["emergency-settings-drill"].exists, "no drills")
         XCTAssertTrue(app.staticTexts["Safewords"].exists, "the toggle is called Safewords")
     }

@@ -52,7 +52,7 @@ final class EmergencyTests: XCTestCase {
         XCTAssertEqual(EmergencyCopy.number(region: "US"), "911")
         XCTAssertEqual(EmergencyCopy.number(region: "GB"), "999")
         XCTAssertEqual(EmergencyCopy.number(region: nil), "911")
-        XCTAssertTrue(EmergencyCopy.soundWhy.contains("reveal where people are hiding"))
-        XCTAssertTrue(EmergencyCopy.pushNote.contains("not a promise"), "honest about background delivery")
+        XCTAssertTrue(EmergencyCopy.soundWhy.contains("a sound can reveal where people hide"))
+        XCTAssertTrue(EmergencyCopy.pushNote.contains("Not guaranteed"), "honest about background delivery")
     }
 }

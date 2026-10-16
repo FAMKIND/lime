@@ -33,6 +33,11 @@ struct MeshTestScreen: View {
                         }
                         .font(Theme.caption.monospacedDigit()).accessibilityIdentifier("mesh-stats")
                     }
+                    Toggle("Battery log (a sample every 5 min)", isOn: Binding(get: { service.batteryLogOn }, set: { service.setBatteryLog($0) }))
+                        .accessibilityIdentifier("mesh-battery-log")
+                    if service.batteryLogOn {
+                        Text(BatteryLog.summary(service.batterySamples)).font(Theme.caption.monospacedDigit()).accessibilityIdentifier("mesh-battery-summary")
+                    }
                     Divider()
                     Text("Send a test packet to").font(Theme.title)
                     ForEach(contacts) { chat in

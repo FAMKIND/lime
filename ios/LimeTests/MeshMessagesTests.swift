@@ -38,8 +38,11 @@ final class MeshMessagesTests: XCTestCase {
     // MARK: The words
 
     func testTheOfflineBannerSaysHowMessagesWillGoAndTheSheetMakesTheHonestPromise() {
-        XCTAssertEqual(OfflineCopy.banner(meshOn: true), "Offline: lime will send through nearby phones, and when you\u{2019}re back online.")
-        XCTAssertEqual(OfflineCopy.banner(meshOn: false), "Offline: messages will send when you\u{2019}re back online.")
+        XCTAssertEqual(OfflineCopy.banner(meshOn: true), "Offline \u{00B7} sending through nearby phones")
+        XCTAssertEqual(OfflineCopy.banner(meshOn: false), "Offline \u{00B7} will send when you\u{2019}re online")
+        XCTAssertEqual(OfflineCopy.sheetTitle, "No internet")
+        XCTAssertEqual(OfflineCopy.sheetBody, "Messages hop phone to phone, sealed. They go when phones meet or anyone gets online. Photos wait for internet.")
+        XCTAssertLessThanOrEqual(OfflineCopy.sheetBody.split(separator: " ").count, 22, "short enough to read in an emergency")
         let promise = OfflineCopy.promise.joined(separator: " ")
         XCTAssertTrue(promise.contains("at least one of them is awake"))
         XCTAssertTrue(promise.contains("swiped away"), "the limit is said plainly")
@@ -54,10 +57,10 @@ final class MeshMessagesTests: XCTestCase {
         let me = Person(id: "me", name: "Me")
         let friend = Person(id: "lee", name: "Lee")
         let chat = Conversation(id: "dm:lee", title: "Lee", members: [friend], messages: [plain])
-        XCTAssertTrue(OfflineReason.text(for: plain, in: chat).contains("aren\u{2019}t passing messages on"), "the general case")
+        XCTAssertTrue(OfflineReason.text(for: plain, in: chat).contains("No nearby phones"), "the general case")
         var stranger = chat
         stranger.isRequest = true
-        XCTAssertTrue(OfflineReason.text(for: plain, in: stranger).contains("hasn\u{2019}t accepted"), "someone who has not accepted you")
+        XCTAssertTrue(OfflineReason.text(for: plain, in: stranger).contains("haven\u{2019}t accepted"), "someone who has not accepted you")
         _ = me
     }
 
@@ -81,6 +84,7 @@ final class MeshMessagesTests: XCTestCase {
         func takeMine() throws -> UInt32 { 0 }
         func takeUploadable() -> [MeshUpload] { [] }
         func uploadAll(transport: Transport, authToken: String) throws -> UInt32 { 0 }
+        func checkServerKey(transport: Transport, authToken: String) -> MeshKeyCheck? { nil }
         func uploadDone(id: Data) {}
         func uploadFailed(id: Data) {}
     }

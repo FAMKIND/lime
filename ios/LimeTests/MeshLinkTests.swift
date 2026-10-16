@@ -171,6 +171,7 @@ final class MeshLinkTests: XCTestCase {
         func takeMine() throws -> UInt32 { calls.append("takeMine"); defer { mine = 0 }; return mine }
         func takeUploadable() -> [MeshUpload] { [] }
         func uploadAll(transport: Transport, authToken: String) throws -> UInt32 { 0 }
+        func checkServerKey(transport: Transport, authToken: String) -> MeshKeyCheck? { nil }
         func uploadDone(id: Data) {}
         func uploadFailed(id: Data) {}
     }
@@ -343,6 +344,7 @@ final class MeshLinkTests: XCTestCase {
         func takeMine() throws -> UInt32 { 0 }
         func takeUploadable() -> [MeshUpload] { [] }
         func uploadAll(transport: Transport, authToken: String) throws -> UInt32 { 0 }
+        func checkServerKey(transport: Transport, authToken: String) -> MeshKeyCheck? { nil }
         func uploadDone(id: Data) {}
         func uploadFailed(id: Data) {}
     }

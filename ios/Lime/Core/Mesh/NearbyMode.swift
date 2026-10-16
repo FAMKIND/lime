@@ -7,14 +7,14 @@ enum NearbyMode {
     static let limit: TimeInterval = 2 * 60 * 60
 
     static let statusLine = "Nearby mode on \u{00B7} keeps lime awake \u{00B7} uses more battery"
-    static let plugInHint = "Keep your phone plugged in if you can, and keep lime open on the screen."
+    static let plugInHint = "Keep it plugged in and lime open."
     static let settingTitle = "Nearby mode"
-    static let settingFootnote = "Keeps lime awake so messages reach people nearby in seconds. Turns itself off after 2 hours. Messages move when phones meet and at least one is awake; not after lime is swiped away."
+    static let settingFootnote = "Keeps lime awake to reach people nearby. Off after 2 hours."
     static let offerTitle = "No signal. Keep lime awake to reach people nearby?"
     static let offerButton = "Turn on Nearby mode"
     static let offerNotNow = "Not now"
     static let expiredTitle = "Nearby mode turned off after 2 hours"
-    static let expiredMessage = "Turn it on again to keep lime awake for 2 more hours."
+    static let expiredMessage = "Turn it on again for 2 hours?"
 
     /// When it is on and until when; `nil` is off.
     static func isOn(until: Date?, now: Date) -> Bool { until.map { $0 > now } ?? false }

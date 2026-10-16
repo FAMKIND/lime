@@ -1194,11 +1194,11 @@ enum LiveCardWords {
 /// Why a message is "Waiting for internet" instead of being passed through nearby phones (LIME-142): one line, true.
 enum OfflineReason {
     static func text(for message: Message, in conversation: Conversation) -> String {
-        if !message.attachments.isEmpty { return "Pictures and files need the internet. This goes as soon as you\u{2019}re connected." }
+        if !message.attachments.isEmpty { return "Photos need internet. Sends when you\u{2019}re online." }
         if conversation.isRequest || (!conversation.isGroup && conversation.members.first == nil) {
-            return "This person hasn\u{2019}t accepted your messages yet, so nearby phones can\u{2019}t carry this. It goes as soon as you\u{2019}re connected."
+            return "They haven\u{2019}t accepted you yet. Sends when you\u{2019}re online."
         }
-        return "Nearby phones aren\u{2019}t passing messages on right now. This goes as soon as you\u{2019}re connected."
+        return "No nearby phones. Sends when you\u{2019}re online."
     }
 }
 

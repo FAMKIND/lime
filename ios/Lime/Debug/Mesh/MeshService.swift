@@ -42,6 +42,13 @@ final class MeshService {
     @ObservationIgnored private let path = NWPathMonitor()
     @ObservationIgnored private var online = true
     @ObservationIgnored private var lastCarried: UInt32 = 0
+    /// The pinned mesh key is not the pair of the server's secret (LIME-144): every upload would be refused. Set by the launch check.
+    private(set) var keyWarning: String?
+    @ObservationIgnored private var keyChecked = false
+    /// The battery soak (LIME-144): a Debug toggle; samples every 5 minutes into the mesh log.
+    private(set) var batterySamples: [BatterySample] = []
+    @ObservationIgnored private var batteryTask: Task<Void, Never>?
+    var batteryLogOn: Bool { batteryTask != nil }
 
     private init() {
         bluetooth.onLog = { [weak self] kind, detail in self?.log.record(kind, detail) }
@@ -53,6 +60,44 @@ final class MeshService {
         }
         center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appActive = false; self?.applyNearby() }
+        }
+    }
+
+    // MARK: The mesh key check
+
+    /// Once per launch, when online with a session: asks the server which mesh key it holds and compares it with the one pinned in the app.
+    func checkServerKeyOnce() async {
+        guard !keyChecked, online, let engine, let link = store?.currentLink, let token = try? await link.token() else { return }
+        let transport = link.transport
+        let result = await Task.detached(priority: .utility) { engine.checkServerKey(transport: transport, authToken: token) }.value
+        guard let result else { log.record("mesh_key_check", ["result": "unavailable"]); return }
+        keyChecked = true
+        if result.matches {
+            log.record("mesh_key_check", ["result": "ok", "key": result.pinned])
+        } else {
+            keyWarning = "Mesh key mismatch: this build pins \(result.pinned) but the server holds \(result.server). Uploads will be refused."
+            log.record("WARNING mesh key mismatch", ["pinned": result.pinned, "server": result.server, "key_id": String(result.keyId)])
+        }
+    }
+
+    // MARK: Battery log
+
+    func setBatteryLog(_ on: Bool) {
+        batteryTask?.cancel()
+        batteryTask = nil
+        guard on else { log.record("battery_log", ["on": "false"]); return }
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        batterySamples = []
+        log.record("battery_log", ["on": "true"])
+        batteryTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let device = UIDevice.current
+                let sample = BatterySample(time: Date(), level: max(0, Int((device.batteryLevel * 100).rounded())), plugged: device.batteryState == .charging || device.batteryState == .full)
+                self.batterySamples.append(sample)
+                self.log.record("battery_sample", ["level": String(sample.level), "plugged": String(sample.plugged), "summary": BatteryLog.summary(self.batterySamples)])
+                try? await Task.sleep(for: .seconds(BatteryLog.interval))
+            }
         }
     }
 
@@ -237,6 +282,7 @@ final class MeshService {
 
     /// After a send attempt and after each sync (and every 15 s while running): on the mesh, statuses, uploads.
     func afterDelivery(trigger: String = "sync") async {
+        await checkServerKeyOnce()
         await pump()
         await uploadIfOnline(trigger: trigger)
     }

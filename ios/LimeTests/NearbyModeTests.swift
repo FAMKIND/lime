@@ -28,7 +28,8 @@ final class NearbyModeTests: XCTestCase {
 
     func testTheWordsAreHonest() {
         XCTAssertEqual(NearbyMode.statusLine, "Nearby mode on \u{00B7} keeps lime awake \u{00B7} uses more battery")
-        XCTAssertTrue(NearbyMode.settingFootnote.contains("not after lime is swiped away"))
+        XCTAssertTrue(NearbyMode.settingFootnote.contains("Off after 2 hours"))
+        XCTAssertTrue(OfflineCopy.promise.joined().contains("swiped away"), "the honest limit lives behind Learn more")
         XCTAssertTrue(NearbyMode.plugInHint.contains("plugged in"))
     }
 }

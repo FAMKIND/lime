@@ -168,6 +168,36 @@ pub struct MeshAction {
     pub delay_ms: u32,
 }
 
+/// The result of asking the server which mesh key it holds (LIME-144): a phone whose pinned key is not the pair of the server's secret has every
+/// mesh upload refused (a 403), so it is checked once at launch.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct MeshKeyCheck {
+    /// The pinned public key is the pair of the secret the server uses.
+    pub matches: bool,
+    /// The fingerprint of the key pinned in this app (the first 16 hex characters of SHA-256 of the public key).
+    pub pinned: String,
+    /// What the server reported (empty when it could not be asked: offline, not configured).
+    pub server: String,
+    pub key_id: u8,
+}
+
+/// The first 16 hex characters of SHA-256 of a public key: the same as `mesh-key` computes on the server.
+pub(crate) fn key_fingerprint(public: &[u8; 32]) -> String {
+    use sha2::Digest as _;
+    Sha256::digest(public)[..8].iter().map(|b| format!("{b:02x}")).collect()
+}
+
+pub(crate) fn key_check(pinned: ServerKey, status: u16, body: &[u8]) -> Option<MeshKeyCheck> {
+    if status != 200 {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let server = v["fingerprint"].as_str()?.to_owned();
+    let key_id = v["key_id"].as_u64()? as u8;
+    let pinned_fingerprint = key_fingerprint(&pinned.public);
+    Some(MeshKeyCheck { matches: key_id == pinned.id && server == pinned_fingerprint, pinned: pinned_fingerprint, server, key_id })
+}
+
 /// A carried packet a phone with internet can hand to `mesh-drop`. `id` names it for `upload_done` / `upload_failed`.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct MeshUpload {
@@ -498,6 +528,14 @@ impl MeshEngine {
         Ok(stored)
     }
 
+    /// Asks the server which mesh key it holds (`GET mesh-key`) and compares it with the key pinned in this app. `None`: could not be asked.
+    pub fn check_server_key(&self, transport: Arc<dyn Transport>, auth_token: String) -> Option<MeshKeyCheck> {
+        let pinned = current_server_key()?;
+        let headers = vec![HeaderPair { name: "authorization".into(), value: format!("Bearer {auth_token}") }];
+        let response = transport.request("GET".into(), "/functions/v1/mesh-key".into(), headers, Vec::new()).ok()?;
+        key_check(pinned, response.status, &response.body)
+    }
+
     pub fn stats(&self) -> MeshStats {
         let s = self.node().stats();
         let counters = *self.counters.lock().unwrap_or_else(|e| e.into_inner());
@@ -582,6 +620,22 @@ mod tests {
     // The local test key pair of the Supabase stack (`supabase/config.toml`, never used on staging): the secret there, the public half here.
     const LOCAL_TEST_PUBLIC: &str = "GyNOPj7N/ovXno/OznB9bEtKB2PTAsuRK1XzXrzX7lY=";
     const DEVICE: &str = "0a0b0c0d-0e0f-4a1b-8c2d-3e4f5a6b7c8d";
+
+    #[test]
+    fn the_key_fingerprint_is_pinned_and_the_check_compares_it() {
+        // The same vector `supabase/tests/mesh_test.ts` checks the server's fingerprint against (SHA-256 of the local test public key, 16 hex).
+        let local = local_key();
+        assert_eq!(key_fingerprint(&local.public), "4ceb3d2d8055495b");
+        assert_eq!(key_fingerprint(&current_server_key().unwrap().public), "03129b4296f76a31", "the staging key pinned in the app");
+        let body = br#"{"key_id":1,"fingerprint":"4ceb3d2d8055495b"}"#;
+        assert!(key_check(local, 200, body).unwrap().matches);
+        let other = br#"{"key_id":1,"fingerprint":"0000000000000000"}"#;
+        let mismatch = key_check(local, 200, other).unwrap();
+        assert!(!mismatch.matches);
+        assert_eq!((mismatch.pinned.as_str(), mismatch.server.as_str()), ("4ceb3d2d8055495b", "0000000000000000"));
+        assert!(!key_check(local, 200, br#"{"key_id":2,"fingerprint":"4ceb3d2d8055495b"}"#).unwrap().matches, "another key id");
+        assert!(key_check(local, 503, body).is_none() && key_check(local, 200, b"nope").is_none(), "could not be asked");
+    }
 
     fn local_key() -> ServerKey {
         ServerKey { id: 1, public: Curve25519PublicKey::from_base64(LOCAL_TEST_PUBLIC).unwrap().to_bytes() }

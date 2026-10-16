@@ -35,6 +35,12 @@ struct MessagesView: View {
         }
         #if DEBUG
         .sheet(isPresented: $startingEmergency) { EmergencySheet(conversationID: nil) }
+        .overlay(alignment: .top) {
+            if let warning = MeshService.shared.keyWarning {
+                Text(warning).font(Theme.caption).foregroundStyle(.white).padding(10).frame(maxWidth: .infinity).background(Color.red)
+                    .accessibilityIdentifier("mesh-key-warning")
+            }
+        }
         #endif
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showNewMessage) { NewMessageSheet() }
@@ -49,7 +55,7 @@ struct MessagesView: View {
             Button("Not now", role: .cancel) { MeshService.shared.helpEnabled = false }
             Button("Continue") { MeshService.shared.acceptExplainer() }
         } message: {
-            Text("lime can pass messages phone-to-phone when there\u{2019}s no internet. It uses Bluetooth, and iOS will ask you to allow it.")
+            Text("Uses Bluetooth when there\u{2019}s no internet.")
         }
         .alert(NearbyMode.expiredTitle, isPresented: Binding(get: { MeshService.shared.nearbyExpired }, set: { MeshService.shared.nearbyExpired = $0 })) {
             Button("Not now", role: .cancel) {}
@@ -374,13 +380,23 @@ private struct ProblemBanner: View {
 /// What "offline" means for sending, in a short sheet (tap the offline banner).
 struct OfflineSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var learnMore: Bool
+    init(startExpanded: Bool = false) { _learnMore = State(initialValue: startExpanded) }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(OfflineCopy.promise, id: \.self) { paragraph in
-                        Text(paragraph).font(Theme.body).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
+                    Text(OfflineCopy.sheetBody).font(Theme.body).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("offline-sheet-body")
+                    if learnMore {
+                        ForEach(OfflineCopy.promise, id: \.self) { paragraph in
+                            Text(paragraph).font(Theme.secondary).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else {
+                        Button(OfflineCopy.learnMore) { learnMore = true }
+                            .font(Theme.body).frame(minHeight: 44, alignment: .leading)
+                            .accessibilityIdentifier("offline-learn-more")
                     }
                 }
                 .padding(20)

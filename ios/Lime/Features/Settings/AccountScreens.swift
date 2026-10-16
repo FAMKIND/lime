@@ -139,6 +139,7 @@ struct PrivacyScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var blockedCount: Int?
     @State private var confirmClearCalls = false
+    @State private var learnMoreOffline = false
     @AppStorage(LinkPreviewSetting.key) private var linkPreviews = true
     @AppStorage(CallPrivacy.alwaysRelayKey) private var alwaysRelay = false
 
@@ -175,7 +176,7 @@ struct PrivacyScreen: View {
                 .padding(.horizontal, 18).frame(minHeight: 58)
                 .accessibilityIdentifier("privacy-mesh-help")
             }
-            SettingsFootnote(text: "Uses a little battery. Messages you carry are sealed; you can\u{2019}t read them.")
+            SettingsFootnote(text: "Uses a little battery. Carried messages are sealed.")
             // LIME-143: keeps lime awake while it is in front, for up to 2 hours.
             SettingsCard {
                 Toggle(isOn: Binding(get: { MeshService.shared.nearbyOn }, set: { MeshService.shared.setNearby($0) })) {
@@ -190,6 +191,9 @@ struct PrivacyScreen: View {
                 SettingsFootnote(text: NearbyMode.plugInHint)
             }
             SettingsFootnote(text: NearbyMode.settingFootnote)
+            Button(OfflineCopy.learnMore) { learnMoreOffline = true }
+                .font(Theme.secondary).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(.horizontal, 12)
+                .accessibilityIdentifier("privacy-learn-more")
             #endif
             SettingsCard {
                 Button { confirmClearCalls = true } label: {
@@ -201,6 +205,7 @@ struct PrivacyScreen: View {
             SettingsFootnote(text: "Creating a preview visits the site from your phone. The people you send it to never visit it: the preview travels inside the encrypted message.")
             SettingsFootnote(text: "Messages are end-to-end encrypted: only you and the person you message can read them.")
         }
+        .sheet(isPresented: $learnMoreOffline) { OfflineSheet(startExpanded: true) }
         .task { blockedCount = await store.blockedPeople().count }
         .confirmSheet("Clear call history?", isPresented: $confirmClearCalls) {
             Button("Clear call history", role: .destructive) { CallLog.shared.clear() }
