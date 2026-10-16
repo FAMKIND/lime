@@ -37,15 +37,32 @@ public="$(openssl pkey -in "$work/key.pem" -pubout -outform DER 2>/dev/null | ta
 rm -f "$work/key.pem"
 
 if [ "$dry" = 1 ]; then
-  echo "(dry run: nothing was set, the secret was thrown away)"
+  echo
+  echo "################################################################"
+  echo "#  DRY RUN: DO NOT PIN THIS KEY                                #"
+  echo "#  Nothing was set on the server; its secret was thrown away.  #"
+  echo "#  Pinning it makes every real upload fail (a 403).            #"
+  echo "################################################################"
 else
   umask 077
   printf 'MESH_ROUTING_SECRET_KEY=%s\n' "$secret" > "$work/secret.env"
   supabase secrets set --env-file "$work/secret.env" --project-ref "$SUPABASE_PROJECT_REF" >/dev/null
   rm -f "$work/secret.env"
   echo "The secret is set on the staging project (MESH_ROUTING_SECRET_KEY, key id 1)."
+  echo
+  echo "================================================================"
+  echo "  PIN THIS KEY (its secret is now on the server)"
+  echo "================================================================"
 fi
 secret=""
 echo
-echo "Public key (key id 1), for pinning in core/src/mesh.rs (SERVER_KEYS):"
+if [ "$dry" = 1 ]; then
+  echo "Public key of the THROWN-AWAY pair (DRY RUN: DO NOT PIN):"
+else
+  echo "Public key (key id 1), for pinning in core/src/mesh.rs (SERVER_KEYS):"
+fi
 echo "$public"
+if [ "$dry" = 1 ]; then
+  echo
+  echo "DRY RUN: DO NOT PIN THIS KEY"
+fi
