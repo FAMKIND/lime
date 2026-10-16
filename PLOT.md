@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-142** (real messages over the mesh; drafted). LIME-141-fix passed its device re-run (1e129: no storm; a 2-hop delivery across two locked phones in ~5–10 s).
+**▶ NEXT FOR TEND: LIME-143** (Nearby mode + emergency mode; drafted). LIME-142 passed its device test (1e131: 9/9 delivered, median ~1 s).
 - **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
@@ -149,6 +149,21 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e131. **LIME-142 DEVICE TEST PASSED (the user: "worked"; 2026-10-16 01:03–01:20; logs in `/tmp/lime-meshlogs3/`):**
+   - **9 of 9 real messages delivered** over the mesh in airplane mode, every direction among the 13 mini, Jean's phone and the iPad:
+     - **median ~1 s** from queue to delivery, at 2 hops (one relay);
+     - one at 13 s / 3 hops, one at 30 s with Jean's phone locked;
+     - "passed" logged on the sender within ~1–16 s.
+   - **Packets carried from the earlier sessions (4,500–10,000 s old) were delivered right after the app relaunched:** store-and-forward survives restarts.
+   - **Battery (17 min, mostly screens on):** Jean's 85 → 80, the 13 mini 100 → 95, the iPad 100 → 100.
+   - **Not shown in the logs:** a relay upload through `mesh-drop` (no upload lines; every message reached its recipient over Bluetooth first). **The upload path stays unproven on devices** → prove it in 144's field test (a recipient far away + one carrier going online).
+   - **NEXT: LIME-143 (Nearby + emergency mode), drafted below.**
+1e130. **LIME-142 LANDED as `270cf1d` (pushed; PLOT.md `37b7199`); installed on all 3; the device test NOT yet run.**
+   - **Built:** the mesh self-starts (Debug); sealed sends that fail on the network are **parked as made** (migration 33 `mesh_outbox`, never re-encrypted; group per member device from the cache); 8 originating copies (sim: crowds 40/40, median 780 s; a pure 4-relay chain still 0/1); statuses waiting / passed (core `was_handed`) / sent / delivered / offline ("Waiting for internet") / failed only at 48 h; `MeshOutboxRunner` (uploads on active, on a connectivity change, every 15 s); the banner + the honest-promise sheet; the Settings switch; probe ids + `mesh_delivered after/hops` logs; the `mine` over-count fixed; `docs/screens/mesh-statuses.md`.
+   - **Know:**
+     - **a network failure anywhere now shows grey "Waiting for internet" and auto-resumes;** "Not sent" only after 48 h (an app-wide change, intended);
+     - a relay's upload shows "Sent" only once the sender's own retry dedupes;
+     - **the first offline send to a brand-new contact can't be parked** (no cached devices).
 1e129. **The 141-fix device re-run PASSED the key checks (2026-10-15 23:04–23:49; all 3 logs in `/tmp/lime-meshlogs2/`):**
    - **The storm is gone:** 520 / 384 / 387 log rows in 45 min (it was 65–100k); ≤ 90 frames/min at the busiest, near 0 idle; no storm warnings.
    - **The topology** (by the logs, not the plan): **the 13 mini (upstairs) linked to both ends; Jean's phone (back) and the iPad (middle) never linked directly** until all were brought together at 23:49. So **the 13 mini was the relay**: a true line, Jean ↔ 13 mini ↔ iPad.
@@ -5769,7 +5784,82 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-142 → `tend` (lime-aa) (NEXT; drafted 2026-10-15): real messages travel over the mesh: offline sends, relays upload, honest statuses
+### LIME-143 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): Nearby mode and emergency mode
+**Goal:** a teacher can keep lime awake to pass messages nearby (Nearby mode), and in a crisis send one-tap, silent status ("Safe · 24 students · Room 204" / "Need help") to their emergency group, carried over the mesh when networks fail, with a live overview for the group and a clearly separate Drill mode.
+
+**Inputs (all decided):**
+- RESEARCH-01 (https://claude.ai/code/artifact/8597fd9a-d248-4c48-a700-b20abf25624e): **silence in lockdowns; status not chat; networks fail; rumours; alert fatigue; anyone can raise it**;
+- M2 = B, M3 = A, M4 = A + choose at the moment;
+- **E1 = A + a sound option; E2 = A (the SRP presets, can be turned off); E3 = A (Drill, set up in Settings); E4 = A (the roll-up); "call 911 first" = yes** (1e121);
+- DESIGN-13; LIME-142's mesh sending (device-proven, 1e131).
+
+**Part 1: Nearby mode (M2 = B):**
+1. **A "Nearby mode" switch** (Settings → Privacy, under "Help pass on nearby messages", **and** offered in context, item 2): **keeps lime awake** so the mesh delivers in seconds instead of on the next wake. While it's on:
+   - `UIApplication.isIdleTimerDisabled` **only while lime is in front** (iOS allows nothing more);
+   - the scan is continuous (no duty cycle);
+   - a clear status: **"Nearby mode on · keeps lime awake · uses more battery"**;
+   - an on-screen hint to keep the phone plugged in if possible.
+   - It turns itself **off after 2 h** unless renewed (a prompt).
+2. **The offer in context:** the first time a message is "Waiting for signal" (offline, the mesh on) and **no phone is in range**, a one-time banner in that chat: "No signal. Keep lime awake to reach people nearby? [Turn on Nearby mode]".
+3. **Honest copy** (the promise from `docs/spike-ble.md` §7): delivery when phones meet and at least one is awake; **not** after lime is swiped away.
+
+**Part 2: emergency mode:**
+
+4. **Setup** (Settings → Emergency):
+   - choose an **emergency group** (default: none until chosen, plus a one-time prompt in the group's ⋯ "Make this my emergency group");
+   - **"Use school safety actions" (SRP presets)**, on by default;
+   - **"Emergency alerts make a sound"**, **off by default** (E1: silent); one line explains why ("In a lockdown, a sound can reveal where people are hiding. Turn on where loud is safer, e.g. natural disasters.");
+   - **Drill mode** (E3): run a drill (see item 9);
+   - **"Call 911 first if you can"** shows with the localised number (US 911; elsewhere from the region: a small table in core; report the countries covered).
+5. **Starting it** (any teacher, E2/Parkland/Okawa):
+   - a **long-press on the "+"** (Messages) **or** an "Emergency" item in the emergency group's ⋯ **or** a **Lock-screen/Control Center control** if iOS allows it in Debug (report; else a later brief);
+   - the first screen: **"Call 911 first if you can"** (a tap = a call), then the status sheet.
+6. **The status sheet** (one screen, big targets, works with gloves/shaking hands):
+   - **Status:** **Safe** / **Need help** (+ the SRP action presets when on: Hold, Secure, Lockdown, Evacuate, Shelter, as the "situation" line);
+   - **Students with me:** a stepper (default: the last value used), "0" allowed;
+   - **Where:** a free text with the last value pre-filled ("Room 204"; **no GPS**, M3);
+   - **a note** (optional, short);
+   - **Send to:** the emergency group, "Change" (M4).
+   - **Send = one tap.** The message is **text only**, so the mesh can carry it (142's rules), and it goes over the server and the mesh at once.
+7. **On arrival** (E1):
+   - a distinctive **Emergency** card in the chat (the **label word + icon, not colour alone**; the sender's name + photo; the status, students, place, time);
+   - a **notification that shows even in Do Not Disturb / work hours, but SILENT** (no sound, no vibration) unless the recipient enabled "make a sound";
+   - **forwarding is disabled for emergency cards** (rumours).
+   - **Core-first:** the emergency message type, its fields and the "silent breakthrough" rule live in core (a new op type, encrypted like any message; its wire format in `api-v2.md`).
+8. **The roll-up (E4):** in the emergency group, an **"Emergency" panel** at the top while an emergency is active:
+   - **everyone's latest status** (Need help first, then no response yet, then Safe), students count, place, time; **a total of students accounted for**;
+   - tap a person → their thread;
+   - **"End emergency"** (anyone; it posts "Emergency ended by <Name>");
+   - **the roll-up rules (latest per person, ordering, totals) live in core.**
+9. **Drill mode (E3):** started from Settings → Emergency → "Start a drill". It's the same flow, but **every card, notification and the panel say DRILL** prominently, drills **never break through Do Not Disturb**, and "End drill" closes it.
+10. **Also emergency, always:**
+    - turning it on **turns Nearby mode on** (M3; and keeps the screen awake while lime is in front);
+    - **a "keep your phone awake and plugged in if you can" note**, not a promise.
+11. **Accessibility:**
+    - every control ≥ 60 pt in the sheet;
+    - VoiceOver order: Status → Students → Where → Send;
+    - Dynamic Type to AX5 without clipping;
+    - Reduce Motion;
+    - **the Emergency card announced** by VoiceOver even in the background (a high-priority announcement when lime is in front).
+12. **Android parity:** `docs/screens/emergency.md` (the flow, the copy, the rules) + the core rules.
+
+**Kind:** behaviour → real tests:
+- core: the op, the roll-up ordering/totals, drill vs real flags, the breakthrough rule (silent by default, the sound setting);
+- iOS unit: the sheet's defaults, Send-to, the 911 step, Drill labels everywhere, forwarding disabled;
+- UI tests: start → send → the card + the panel; end;
+- **the device test (with the user, 3 devices, airplane mode):**
+  1. Nearby mode on the receiver → a message arrives within seconds while lime is open; then the offer banner;
+  2. **an emergency "Safe · 12 students · Room 204"** from the 13 mini → Jean's phone and the iPad **silently** show it even in Do Not Disturb; the roll-up totals; "Need help" sorts first;
+  3. **the sound setting on** one device → it makes a sound;
+  4. a **Drill** (labelled everywhere, no DND breakthrough);
+  5. end the emergency;
+  6. the logs.
+
+**Scope:** core (the op + rules + migration), `ios/` (Settings → Emergency + Privacy additions, the "+" long-press, the sheet, the card, the panel, notifications), docs. **Not:** Release shipping (Debug-gated like the mesh; the checklist item), push (November: until then, notifications while lime is in the background rely on the mesh/BLE wakes, so **say so honestly in the setup screen**).
+
+**Record:** `## LIME-143` with **For plot:** and every item checked off. **Commit:** `feat: Nearby mode and emergency mode (silent status, roll-up, drills)`, trailer `Brief: LIME-143`. The rest per the standing rules (it may split into 143a Nearby / 143b Emergency at a clean boundary; say so).
+
+### LIME-142 → `tend` (lime-aa) (DONE as `270cf1d`; drafted 2026-10-15): real messages travel over the mesh: offline sends, relays upload, honest statuses
 **Goal:** with no internet, a text to a contact (1:1 or group) leaves the phone over Bluetooth, hops through nearby lime phones, and reaches the recipient's phone directly, or the server via whichever phone gets online first. The sender sees honest statuses throughout. **Still Debug-only** (shipping in Release is a checklist step, `docs/release-checklist.md`).
 
 **Inputs:** DESIGN-13, LIME-140's `MeshEngine` (`queue_for_send`, `take_mine`, `take_uploadable`/`upload_all`, `stats`), LIME-141 + fix (the Bluetooth link; device-proven 1e129), 139's signed access, the existing outbox/sync.
