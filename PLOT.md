@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-143** (Nearby mode + emergency mode; drafted). LIME-142 passed its device test (1e131: 9/9 delivered, median ~1 s).
+**▶ NEXT FOR TEND: LIME-142-fix** (a carrier that comes online never uploaded; the user confirmed Jean never got the message; RSSI gate −96). LIME-143 landed as `6ac87ff` (Nearby) + `ef982b3` (Emergency), pushed; **its device test is still to do: run it in the same device session as 142-fix's re-run.**
 - **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
@@ -149,6 +149,20 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e134. **LIME-143 LANDED** (`6ac87ff` Nearby + `ef982b3` Emergency, pushed); its device test is still to do (run it with 142-fix's re-run).
+   - **DECIDED (the user, 2026-10-16):**
+     - (1) **yes** to the Time Sensitive Notifications capability → **folded into 142-fix** as a separate commit (stop if free provisioning refuses);
+     - (2) **the Lock Screen / Control Center emergency control: yes, once the paid Apple developer account exists** → the **November list**, with push (APNs) and screen share (149).
+1e133. **The order slipped (2026-10-16): tend began LIME-143 before LIME-142-fix existed** (its Phase 0 `91b6be9` predates the 142-fix draft). 143a (Nearby) is committed locally (`6ac87ff`); 143b (Emergency) is mostly built (TEND.md draft: all 12 items DONE except the Lock Screen control), with checks running. **Let 143 finish, then 142-fix.**
+   - **Tend's decisions for the user:**
+     - (1) the **Time Sensitive Notifications** capability, so a real emergency can break through Do Not Disturb (signing untouched; check that free provisioning allows it);
+     - (2) a **Lock Screen / Control Center control** needs a widget extension + an **App Group**, so it **waits for the paid account in November** (like 149);
+     - (3) about 80 regions in the emergency-number table.
+1e132. **An upload-route test attempt (2026-10-16 01:30–01:43; `/tmp/lime-meshlogs4/`): inconclusive.**
+   - **Jean's phone was the offline sender** (5 mesh messages queued 01:37–01:39; it held 3, then 2), **but it formed no link to anyone:** every peer was below the **−92 dBm gate** (`skip_weak` at −94…−102 dBm, ~20 times). So no carrier ever got a copy (the iPad's `carried` stayed 0), and nothing could be uploaded. Jean's phone flickered online at times, so some sends likely went straight to the server.
+   - **The upload route stays unproven.**
+   - **The right setup:** the **sender + the carrier together** (same room, both offline); the recipient far away and online; after "Passed to a nearby phone", the carrier turns Wi-Fi on.
+   - **For 144:** review the RSSI gate (−92 dBm skipped many links at −94…−98; the spike delivered at −83 through a wall). Consider −96, or a gate that allows weak links but prefers strong ones.
 1e131. **LIME-142 DEVICE TEST PASSED (the user: "worked"; 2026-10-16 01:03–01:20; logs in `/tmp/lime-meshlogs3/`):**
    - **9 of 9 real messages delivered** over the mesh in airplane mode, every direction among the 13 mini, Jean's phone and the iPad:
      - **median ~1 s** from queue to delivery, at 2 hops (one relay);
@@ -5784,7 +5798,33 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-143 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): Nearby mode and emergency mode
+### LIME-142-fix → `tend` (lime-aa) (NEXT, before 143; drafted 2026-10-16): a carrier that comes online never uploads what it carries
+**Goal:** a phone carrying someone else's mesh message uploads it through `mesh-drop` within seconds of getting internet, every time, and the logs show each attempt and its result.
+
+**The user's upload test (2026-10-16 01:50–01:57, `/tmp/lime-meshlogs5/`):** the sender (13 mini) and the carrier (iPad) were together and offline; the recipient (Jean's phone) was far away and online.
+- **The 13 mini queued `5dd5` at 01:50:41 → `mesh_passed` 01:50:47** (the iPad took it; the iPad's `carried` 0 → 1), and **`4385` at 01:52:09 → passed 01:52:21**.
+- **The iPad came online at 01:51:06** (`connectivity online: true` ×4, app active).
+- **The iPad's `carried` was still 1 at 01:56:58, ~6 min later,** and **there's no upload line of any kind in any log** (the mesh log has no `upload*` events).
+- So either the upload never ran, or it ran and failed silently. **CONFIRMED by the user: Jean's phone never got the message.** The upload route is broken end to end.
+- (Also seen: Jean's 2 messages from the previous attempt, stuck behind the −92 dBm gate, were delivered over Bluetooth 481 s later, when the phones came closer: store-and-forward works.)
+
+**The change:**
+1. **Find why** (report it before fixing): is `MeshOutboxRunner`'s upload triggered on the iPad when the connectivity flips to online (`NWPathMonitor`)? On app active? By the 15 s tick? Does `take_uploadable` return the carried packet (is it eligible: a non-own packet with a sealed header)? Does `upload_all` get a valid session token on the iPad's test account? Does `mesh-drop` answer (status code)? **Reproduce locally first** (the integration path: relay offline → online), then on the devices.
+2. **Log every upload attempt** in the mesh log: `upload_try n`, `upload_ok id… status 200/duplicate`, `upload_fail id… reason/status`, and the trigger (connectivity / active / tick / sync).
+3. **Fix the cause(s).** Make the 15 s tick also run while lime is in front and online, even if nothing else happens.
+4. **A test:** the integration test "relay offline → comes online → uploads within one tick" (it exists for the core path; add the runner/trigger path with a fake connectivity flip).
+
+**Also (small, from the same logs):** **the RSSI gate:** −92 dBm skipped many links at −94…−101 (1e132). Change it to **−96 dBm**, and when choosing between links prefer the stronger. Report the `skip_weak` counts before and after in the device re-run.
+
+**Also, as a separate commit `feat(ios): time-sensitive emergency alerts` (trailer `Brief: LIME-143`; DECIDED by the user 2026-10-16):**
+- add the **Time Sensitive Notifications** capability (the `com.apple.developer.usernotifications.time-sensitive` entitlement via `project.yml`), and set real emergency notifications' `interruptionLevel = .timeSensitive` (still silent unless the sound setting is on; drills never);
+- **if free provisioning refuses the entitlement, stop and say so:** it then waits for the paid account in November.
+
+**Device re-run (the user):** the same setup. **Done = Jean's phone, far away, shows the message from the 13 mini while the 13 mini is still offline**, and the iPad's log has `upload_ok`. **In the same session, run LIME-143's device test** (Nearby mode; a silent emergency status even in Do Not Disturb; "Need help" first in the roll-up; the sound setting; a Drill; End).
+
+**Record:** `## LIME-142-fix` with **For plot:** and every item checked off. **Commit:** `fix: a carrier uploads what it carries as soon as it is online (and logs it); RSSI gate −96`, trailer `Brief: LIME-142`. The rest per the standing rules.
+
+### LIME-143 → `tend` (lime-aa) (after 142-fix; drafted 2026-10-16): Nearby mode and emergency mode
 **Goal:** a teacher can keep lime awake to pass messages nearby (Nearby mode), and in a crisis send one-tap, silent status ("Safe · 24 students · Room 204" / "Need help") to their emergency group, carried over the mesh when networks fail, with a live overview for the group and a clearly separate Drill mode.
 
 **Inputs (all decided):**
