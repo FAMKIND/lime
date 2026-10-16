@@ -68,4 +68,33 @@ final class CallMiniPlayerUITests: XCTestCase {
         bar.tap()
         XCTAssertTrue(app.buttons["Minimise"].waitForExistence(timeout: 5), "back on the full call screen")
     }
+
+    func testTheMiniPlayerIsAsTallAsTheHeaderHasTheLiveBadgeAndAWarmMuteCircle() {
+        let app = launch(["-lime-demo-screen", "group-call-4"])
+        XCTAssertTrue(app.buttons["Minimise"].waitForExistence(timeout: 15))
+        app.buttons["Minimise"].tap()
+        let bar = app.buttons["call-mini-return"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        XCTAssertTrue(any(app, "call-mini-live").exists, "the LIVE badge is in the player")
+        XCTAssertEqual(app.buttons["call-mini-mute"].frame.height, 44, "a 44 pt tap area (a 36 pt circle inside)")
+        XCTAssertLessThanOrEqual(bar.frame.height, 48, "about the header's 44 pt, not the old 60")
+    }
+
+    func testSwipingTheMiniPlayerOffAnEdgeTucksItIntoATabThatComesBackOnTap() {
+        let app = launch(["-lime-demo-screen", "group-call-4"])
+        XCTAssertTrue(app.buttons["Minimise"].waitForExistence(timeout: 15))
+        app.buttons["Minimise"].tap()
+        let bar = app.buttons["call-mini-return"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5))
+        // A real drag: from the right part of the capsule's name area to its left end.
+        bar.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).press(forDuration: 0.1, thenDragTo: bar.coordinate(withNormalizedOffset: CGVector(dx: 0.0, dy: 0.5)))
+        let tab = app.buttons["call-mini-tab"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 5), "it folds into an edge tab")
+        XCTAssertFalse(bar.exists)
+        XCTAssertEqual(tab.label, "Call controls, hidden")
+        XCTAssertGreaterThanOrEqual(tab.frame.height, 44)
+        tab.tap()
+        XCTAssertTrue(app.buttons["call-mini-return"].waitForExistence(timeout: 5), "the player is back")
+        XCTAssertFalse(app.buttons["call-mini-tab"].exists)
+    }
 }

@@ -69,12 +69,8 @@ struct ChatView: View {
                 Text("You won't get new messages from this group. Someone can add you back.")
             }
             .confirmSheet(conversation.isGroup ? "Call \(conversation.title) again?" : "Call \(conversation.title) back?", isPresented: Binding(get: { callBack != nil }, set: { if !$0 { callBack = nil } })) {
-                // The kind of the call they tapped first.
-                let videoFirst = callBack?.video ?? false
-                Button(videoFirst ? "Video call" : "Voice call") { startCall(conversation, video: videoFirst) }
-                    .accessibilityIdentifier("call-back-first")
-                Button(videoFirst ? "Voice call" : "Video call") { startCall(conversation, video: !videoFirst) }
-                    .accessibilityIdentifier("call-back-second")
+                // The same two rows, icons and order as the header's call menu (one pattern everywhere).
+                CallChoiceRows(voice: { startCall(conversation, video: false) }, video: { startCall(conversation, video: true) }, idPrefix: "call-back")
                 Button("Cancel", role: .cancel) {}
             }
             #if DEBUG
@@ -604,10 +600,7 @@ struct ChatView: View {
     /// The call button: voice or video, to one accepted person, or to a group (LIME-112b).
     private func callMenu(_ conversation: Conversation) -> some View {
         Menu {
-            Button { startCall(conversation, video: false) } label: { Label("Voice call", systemImage: "phone") }
-                .accessibilityIdentifier("chat-call-voice")
-            Button { startCall(conversation, video: true) } label: { Label("Video call", systemImage: "video") }
-                .accessibilityIdentifier("chat-call-video")
+            CallChoiceRows(voice: { startCall(conversation, video: false) }, video: { startCall(conversation, video: true) }, idPrefix: "chat-call")
         } label: { ToolIconLabel(symbol: "phone") }
             .accessibilityLabel("Call")
             .accessibilityIdentifier("chat-call-button")
@@ -1109,10 +1102,7 @@ struct CallBubbleView: View {
         let who = LiveCardWords.who(people.map(\.name), count: count, iAmIn: returning)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                // LIVE in words (no pulsing: Reduce Motion needs nothing).
-                Text("LIVE").font(Theme.caption.weight(.bold)).foregroundStyle(Theme.accentInk)
-                    .padding(.horizontal, 7).padding(.vertical, 2).background(Theme.accent, in: Capsule())
-                    .accessibilityIdentifier("call-card-live")
+                // No LIVE badge and no green here (LIME-150): a quiet card. The LIVE badge lives in the mini player.
                 Image(systemName: call.video ? "video.fill" : "phone.fill").font(Theme.body).foregroundStyle(Theme.text)
                 Text(call.title(startedBy: callerName)).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
                     .accessibilityIdentifier("call-bubble-title")
@@ -1126,8 +1116,8 @@ struct CallBubbleView: View {
             }
             Text(who).font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("call-card-who")
             Button(action: { onTap?() }) {
-                Text(returning ? "Return to call" : "Join call").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.accentInk)
-                    .frame(maxWidth: .infinity, minHeight: 44).background(Theme.accent, in: Capsule())
+                Text(returning ? "Return to call" : "Join call").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                    .frame(maxWidth: .infinity, minHeight: 44).background(Theme.pressed, in: Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("call-card-join")
@@ -1283,3 +1273,19 @@ struct NearbyOfferBar: View {
     }
 }
 #endif
+
+/// "Voice call" and "Video call" with their icons, in this order: the header's call menu and the "Call again?" sheet use this one view, so the
+/// two never drift apart (LIME-150, item 10).
+struct CallChoiceRows: View {
+    let voice: () -> Void
+    let video: () -> Void
+    /// The accessibility identifiers are `<prefix>-voice` and `<prefix>-video`.
+    let idPrefix: String
+
+    var body: some View {
+        Button(action: voice) { Label("Voice call", systemImage: "phone") }
+            .accessibilityIdentifier("\(idPrefix)-voice")
+        Button(action: video) { Label("Video call", systemImage: "video") }
+            .accessibilityIdentifier("\(idPrefix)-video")
+    }
+}

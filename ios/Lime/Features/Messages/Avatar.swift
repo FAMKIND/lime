@@ -55,24 +55,43 @@ struct ConversationAvatar: View {
                 .overlay(Text(emoji).font(.system(size: size * 0.5)))
                 .accessibilityHidden(true)
         } else {
-            let members = conversation.members
-            let shown = members.count > 4 ? Array(members.prefix(3)) : Array(members.prefix(4))
-            let extra = members.count - shown.count
+            plan
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @Environment(ConversationStore.self) private var store: ConversationStore?
+
+    /// The members' composite, including me (LIME-150): two overlapping circles for a pair, a quadrant cluster otherwise.
+    @ViewBuilder
+    private var plan: some View {
+        let me = store?.meProvider() ?? SampleData.me
+        switch GroupAvatarPlan.make(others: conversation.members, me: me) {
+        case .single(let person):
+            AvatarView(person: person, size: size)
+        case .pair(let front, let back):
+            let d = size * GroupAvatarPlan.pairDiameter
+            ZStack {
+                AvatarView(person: back, size: d).offset(x: size * GroupAvatarPlan.pairBack.x, y: size * GroupAvatarPlan.pairBack.y)
+                AvatarView(person: front, size: d)
+                    .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: max(1.5, size * 0.04)))
+                    .offset(x: size * GroupAvatarPlan.pairFront.x, y: size * GroupAvatarPlan.pairFront.y)
+            }
+        case .cluster(let shown, let extra):
             let d = size * 0.52
-            let o = size * 0.24
             ZStack {
                 ForEach(Array(shown.enumerated()), id: \.element.id) { index, person in
-                    AvatarView(person: person, size: d)
-                        .offset(x: index % 2 == 0 ? -o : o, y: index < 2 ? -o : o)
+                    let q = GroupAvatarPlan.quadrant(index)
+                    AvatarView(person: person, size: d).offset(x: size * q.x, y: size * q.y)
                 }
                 if extra > 0 {
+                    let q = GroupAvatarPlan.quadrant(3)
                     Circle().fill(Theme.surface).frame(width: d, height: d)
                         .overlay(Text("+\(extra)").font(.system(size: d * 0.38, weight: .medium)).foregroundStyle(Theme.text))
-                        .offset(x: o, y: o)
+                        .offset(x: size * q.x, y: size * q.y)
                 }
             }
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
         }
     }
 }

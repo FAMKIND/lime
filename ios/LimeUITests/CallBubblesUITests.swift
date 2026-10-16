@@ -41,15 +41,15 @@ final class CallBubblesUITests: XCTestCase {
         }
     }
 
-    func testTapAsksToCallBackWithTheCallsKindFirst() {
+    func testTapAsksToCallBackWithTheHeadersTwoRowsAndIcons() {
         let app = app()
         let bubble = app.buttons["call-bubble-call:d1"]
         XCTAssertTrue(bubble.waitForExistence(timeout: 10))
         bubble.tap()
-        let first = app.buttons["call-back-first"].firstMatch
+        let first = app.buttons["call-back-voice"].firstMatch
         XCTAssertTrue(first.waitForExistence(timeout: 5), "a confirmation, not an instant call")
-        XCTAssertEqual(first.label, "Video call", "the video call's own kind comes first")
-        XCTAssertEqual(app.buttons["call-back-second"].firstMatch.label, "Voice call")
+        XCTAssertEqual(first.label, "Voice call", "the same order as the header's menu: voice, then video")
+        XCTAssertEqual(app.buttons["call-back-video"].firstMatch.label, "Video call")
         app.buttons["Cancel"].firstMatch.tap()
         XCTAssertTrue(first.waitForNonExistence(timeout: 5))
     }

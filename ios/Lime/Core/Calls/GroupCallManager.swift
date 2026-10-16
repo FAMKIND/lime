@@ -123,6 +123,8 @@ final class GroupCallManager {
     /// Who I am (the name and photo on my own tile; never "You").
     @ObservationIgnored private let me: () -> Person?
     /// How the group looks (its emoji and members) for the window's group picture; set by the app.
+    /// Who I am, for the group's picture (it includes me: LIME-150).
+    @ObservationIgnored var meProvider: () -> Person = { SampleData.me }
     @ObservationIgnored var groupLook: (String) -> (emoji: String?, members: [Person])? = { _ in nil }
     /// System Picture in Picture of the active speaker (a video call); nil in tests and the demo.
     @ObservationIgnored var makePictureInPicture: (() -> (any GroupPiP)?)?
@@ -605,7 +607,7 @@ final class GroupCallManager {
         guard let id, let tile = tiles.first(where: { $0.id == id }) else {
             // Nobody else yet: the group itself, as the chat shows it (photo, emoji, or its members' photos).
             let look = groupLook(conversationID)
-            return .group(id: conversationID, name: title, emoji: look?.emoji, members: look?.members ?? [])
+            return .group(id: conversationID, name: title, emoji: look?.emoji, members: look?.members ?? [], me: meProvider())
         }
         return .person(Person(id: tile.userID.isEmpty ? tile.id : tile.userID, name: tile.name))
     }

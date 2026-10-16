@@ -715,7 +715,7 @@ final class GroupCallManagerTests: XCTestCase {
         media.onEvent?(.connection(connected: true, error: nil))
         manager.preparePictureInPicture(sourceView: UIView())
         manager.refreshPiP()
-        XCTAssertEqual(pip.subjects.last, .group(id: "grp:g1", name: "Grade 4 Team", emoji: "🍎", members: members))
+        XCTAssertEqual(pip.subjects.last, .group(id: "grp:g1", name: "Grade 4 Team", emoji: "🍎", members: members, me: SampleData.me))
         await manager.leave()
     }
 

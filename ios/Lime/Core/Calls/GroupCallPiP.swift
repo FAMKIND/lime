@@ -6,19 +6,19 @@ import UIKit
 /// Who the window is about: one person, or (nobody else has spoken, or is there) the group itself, drawn like the chat's own avatar.
 enum PiPSubject: Equatable {
     case person(Person)
-    case group(id: String, name: String, emoji: String?, members: [Person])
+    case group(id: String, name: String, emoji: String?, members: [Person], me: Person?)
 
     var key: String {
         switch self {
         case .person(let person): "p:\(person.id)"
-        case .group(let id, _, _, _): "g:\(id)"
+        case .group(let id, _, _, _, _): "g:\(id)"
         }
     }
 
     var name: String {
         switch self {
         case .person(let person): person.name
-        case .group(_, let name, _, _): name
+        case .group(_, let name, _, _, _): name
         }
     }
 }
@@ -187,7 +187,7 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
             let view: UIView
             switch subject {
             case .person(let person): view = PiPAvatarView(person: person)
-            case .group(let id, let name, let emoji, let members): view = PiPGroupAvatarView(groupID: id, name: name, emoji: emoji, members: members)
+            case .group(let id, let name, let emoji, let members, let me): view = PiPGroupAvatarView(groupID: id, name: name, emoji: emoji, members: members, me: me)
             }
             view.frame = contentController.view.bounds
             view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -272,7 +272,10 @@ final class PiPGroupAvatarView: UIView {
     private let photo = UIImageView()
     private let emojiLabel = UILabel()
 
-    @MainActor init(groupID: String, name: String, emoji: String?, members people: [Person]) {
+    /// How the cluster is laid out: a pair (you and one other: two overlapping circles, the other in front with a ring) or the quadrant cluster.
+    private var isPair = false
+
+    @MainActor init(groupID: String, name: String, emoji: String?, members people: [Person], me: Person? = nil) {
         super.init(frame: .zero)
         backgroundColor = UIColor(white: 0.08, alpha: 1)
         circle.clipsToBounds = true
@@ -288,9 +291,18 @@ final class PiPGroupAvatarView: UIView {
             circle.addSubview(emojiLabel)
         } else {
             circle.clipsToBounds = false
-            let shown = people.count > 4 ? Array(people.prefix(3)) : Array(people.prefix(4))
-            for person in shown { addMember(person) }
-            if people.count > shown.count { addMore(people.count - shown.count) }
+            if let me {
+                // The picture includes me (LIME-150): the same plan as the chat's avatar.
+                switch GroupAvatarPlan.make(others: people, me: me) {
+                case .single(let person): addMember(person)
+                case .pair(let front, let back): isPair = true; addMember(back); addMember(front)
+                case .cluster(let shown, let extra): for person in shown { addMember(person) }; if extra > 0 { addMore(extra) }
+                }
+            } else {
+                let shown = people.count > 4 ? Array(people.prefix(3)) : Array(people.prefix(4))
+                for person in shown { addMember(person) }
+                if people.count > shown.count { addMore(people.count - shown.count) }
+            }
         }
         isAccessibilityElement = true
         accessibilityLabel = name
@@ -346,6 +358,20 @@ final class PiPGroupAvatarView: UIView {
         photo.frame = circle.bounds
         emojiLabel.frame = circle.bounds
         emojiLabel.font = .systemFont(ofSize: side * 0.5)
+        if isPair {
+            let d = side * GroupAvatarPlan.pairDiameter
+            let spots = [GroupAvatarPlan.pairBack, GroupAvatarPlan.pairFront]
+            for (index, member) in members.enumerated() where index < spots.count {
+                member.circle.frame = CGRect(x: side / 2 + side * spots[index].x - d / 2, y: side / 2 + side * spots[index].y - d / 2, width: d, height: d)
+                member.circle.layer.cornerRadius = d / 2
+                member.circle.layer.borderWidth = index == 1 ? max(1.5, side * 0.04) : 0
+                member.circle.layer.borderColor = UIColor(white: 0.08, alpha: 1).cgColor
+                member.photo?.frame = member.circle.bounds
+                member.label?.frame = member.circle.bounds
+                member.label?.font = .systemFont(ofSize: d * 0.38, weight: .medium)
+            }
+            return
+        }
         let d = side * 0.52, o = side * 0.24
         for (index, member) in members.enumerated() {
             let cx = side / 2 + (index % 2 == 0 ? -o : o), cy = side / 2 + (index < 2 ? -o : o)

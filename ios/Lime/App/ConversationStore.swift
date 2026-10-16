@@ -87,6 +87,8 @@ final class ConversationStore {
     private(set) var link: BackendLink?
     /// How the signed-in person is shown (set by the account session): core calls them "me".
     var meProvider: @MainActor () -> Person = { SampleData.me }
+    /// The call mini player is tucked into an edge tab (LIME-150): kept for the whole call, across screens; reset when the call ends.
+    var miniPlayerTuck: CallMiniPlayerTuck = .init()
     /// The threads that are open on screen: the root message, then its replies. Kept fresh by `reload()`.
     var threads: [String: [Message]] = [:]
     private var openThreadIDs: Set<String> = []
@@ -164,6 +166,7 @@ final class ConversationStore {
         manager.alwaysRelay = { CallPrivacy.alwaysRelay }
         manager.fetchNow = { [weak self] in await self?.fetchCallOps() }
         manager.onFinished = { [weak self] in Task { @MainActor in await self?.reload() } }
+        manager.meProvider = { [weak self] in self?.meProvider() ?? SampleData.me }
         manager.groupLook = { [weak self] id in self?.conversation(id).map { ($0.emoji, $0.members) } }
         groupCallManager = manager
         return manager
