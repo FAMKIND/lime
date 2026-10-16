@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NOW: the user's device check of 141-fix2 + 150a's look (1e145)** → "logs" → plot reads them. **NEXT FOR TEND: LIME-150-fix** (the mini player, the user's look feedback, 1e148), **then LIME-141-fix3** (the storm is bounded but still ~20/min for ~18 min; 1e148), **then LIME-152**. Upload test A again after 141-fix3. The key is fixed (1e147); **150's remainder (the spike → the mini grid, 7c) waits for the user's "spike" with the phones ready.**
+**▶ NOW: the user's device check of 141-fix2 + 150a's look (1e145)** → "logs" → plot reads them. **▶ NEXT FOR TEND: LIME-150-fix2** (the user's player refinements, 1e150), **then LIME-112e** (the second minimise still loses the video; 1e151), **then LIME-150's spike** (the mini grid; the user has the phones ready), **then LIME-152.** Still owed by the user: 141-fix3's 10 + 10 min → "logs", then upload test A (1e149). The key is fixed (1e147); **150's remainder (the spike → the mini grid, 7c) waits for the user's "spike" with the phones ready.**
 - **152 was drafted before the mesh work** (2026-10-15): **tend's Phase 1 must re-survey the files it names** and report anything that moved, before building.
 - LIME-144 landed as `67b1c84`: **mesh v1 is wrapped.**
 
@@ -153,6 +153,13 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e151. **The second-minimise bug is NOT fixed by 112d (`fbec7e8`); proven from the 13 mini's `call-diagnostics.log` (`/tmp/lime-calllogs10/shem.log`, a group video call 15:34–15:41 local):** the first minimise `group pip started`; then on **every** return + minimise: `group pip rebound to the new call screen` → `not possible: the system says not possible; trying once more` → `still not possible` (×4). **So iOS does not honour a changed `contentSource` on a live `AVPictureInPictureController`** (112d's own stated risk). → **LIME-112e (drafted):** one anchor view owned by the call for its whole life (re-parented into each new call screen, the way 1:1's stable `remoteView` already works), falling back to rebuilding the controller; wait on `isPictureInPicturePossible` (KVO, ≤ 1 s) instead of a fixed 150 ms retry.
+1e150. **The user on 150-fix (2026-10-16): refinements → LIME-150-fix2 (drafted).** ~2 pt even padding around everything in the player (height may grow); a tighter name ↔ subtitle gap; Mute/Leave 2 pt closer; **the same ~4 pt gap player ↔ dock and player ↔ chat composer**; the tuck tab's icon **outline and by call kind** (`video` / `phone`); the chat's call-started card's icon outline; **the video thumbnail while typing in a chat during a video call: smaller.** **"Still not seeing grid view when you minimise":** expected, that's 150 items 1–6, which wait for the device spike (never run) → the spike goes right after 150-fix2.
+1e149. **LIME-150-fix LANDED as `f97f50d`, LIME-141-fix3 as `e91c385` (2026-10-16 15:10 / 15:20), installed on all 3.**
+   - **150-fix:** 44.0 pt measured; **the width is a constant 282 pt** (`CallMiniPlayerRule.dockWidth`, the iOS 26 capsule; the real tab bar's width needs a private view) on every screen; compact subtitle "Video · 4 · 1:28"; at accessibility sizes a full-width rounded rectangle. Screenshots in `~/Desktop/lime-150fix/` (not all looked at by tend). **If the dock isn't 282 pt on a phone, one constant changes.**
+   - **141-fix3: all four causes held.** (a) the PSM read opened L2CAP at once → now after hello + subscribe; (b) no tie-break → lower mesh id keeps the outbound (`tie_break kept=…`); (c) grace vs < 2 s → a failure = no frame and < 30 s; (d) **a real mesh bug, bigger than the key check:** after an **iOS background relaunch (state restoration)** the store wasn't open, `bootstrap` gave up after 60 s and **the engine never attached for that process** (Bluetooth up, nothing handled). Now `ensureAttached()` retries every 2 s. **Not seen on a device yet.**
+   - **Plot's correction to tend's test step for (d):** a **user force-quit** stops iOS from relaunching the app for Bluetooth (the honest limit), so it won't reproduce (d). Use a **system-style kill** instead: `xcrun devicectl device info processes --device <udid>` → the Lime pid → `xcrun devicectl device process terminate --device <udid> --pid <pid>`, lock the phone near another running lime, wait ~1 min, unlock → the log should show `restore_central` then `engine_attached` then `mesh_key_check result=ok`.
+   - **Plot's log read next:** no storm warning; connects/min per pair; `tie_break` lines; `result=ok key=272c04ad6a46fd6d` ×3; `engine_attached` after any `restore_central`.
 1e148. **The user's check (2026-10-16 ~14:50 EDT): "looks good for the most part" + logs (`/tmp/lime-meshlogs9/{ipad,jean,shem}`, the run 16:37–18:51Z).**
    - **The mini player (→ LIME-150-fix):** as wide as the tab bar ("the dock"); **no LIVE badge**, the call timer back; **the 148c layout back** (a semibold name + a subtle footnote line, the 148c button spacing) **but keep 150a's 44 pt height and the avatar treatment** (32 pt, the pair/cluster). The tuck tab (warm) and the four kept greens: no objection, **taken as approved.**
    - **Key check:** `result=ok key=272c04ad6a46fd6d` on the **iPad and the 13 mini** (each after one `no-session` at launch: fine). **Jean's phone: one `result=unavailable why=no-engine` (18:18Z), never `ok`** → 141-fix3 item 4.
@@ -5875,7 +5882,39 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-150-fix → `tend` (lime-aa) (NEXT; drafted 2026-10-16): the mini player: dock width, the timer back, the 148c layout at 44 pt
+### LIME-112e → `tend` (lime-aa) (after 150-fix2; drafted 2026-10-16): the group video window on every minimise, for real
+**Goal:** in a group video call, minimise → return → minimise any number of times, and the floating video window appears every time.
+**Evidence (1e151):** the 13 mini's `call-diagnostics.log` shows 112d's rebind runs and iOS then says "not possible" every time after the first. **Re-pull it yourself** (`xcrun devicectl device copy from --device 00008110-000651D23647801E --domain-type appDataContainer --domain-identifier com.famkind.lime --source Library/Caches/call-diagnostics.log --destination …`).
+**Assumes:** edit, build, install on the 3 phones, run a group video call across them **with the user**, pull the call logs, commit.
+**Scope:** `ios/Lime/Core/Calls/GroupCallPiP.swift`, `GroupCallManager.swift` (minimise / restore), `ios/Lime/Features/Calls/GroupCallView.swift` (the `PiPAnchor`), their tests. **Not:** 1:1 PiP (its source view is stable and it works), the mini player, the PiP grid (the spike).
+**Phase 1 (read-only; report before editing):** where the anchor `UIView` is created and owned today; whether the manager can own one for the call's life.
+**The change:**
+1. **One anchor for the whole call:** the manager (or the PiP object) creates the anchor `UIView` once per call and **each new `GroupCallView` hosts that same view** (re-parented in), so the controller's `contentSource` never changes, as with 1:1's `remoteView`. Drop the rebind.
+2. **If iOS still says not possible after a return (device check), rebuild the controller** on the current anchor (keep the content controller, the renderer, the subject) — log `group pip rebuilt`.
+3. **Wait for possible, don't guess:** observe `isPictureInPicturePossible` (KVO) and start when it turns true, up to ~1 s, then fall back to the mini player as today; log the wait time.
+4. **Tests:** the anchor is the same object across 4 minimise/restore rounds (the fake window); the KVO wait (possible later → starts; never → falls back).
+**Verification:** the call tests + `GroupCallManagerTests` pass; 0 warnings. **On the phones (with the user):** a group video call, **minimise → open a chat → return → minimise, 5 times**: the window floats every time; the log shows `group pip started` each time and no `not possible`. Report the log lines.
+**Gate:** the user repeats the 5 rounds while typing in a chat.
+**Record:** `## LIME-112e` with **For plot:** (which of 1 / 2 was needed). **Commit:** `fix(ios): the group video window floats on every minimise (one anchor for the call)`, trailer `Brief: LIME-112e`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
+
+### LIME-150-fix2 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): mini player spacing, outline call icons, a smaller video thumbnail while typing
+**Goal:** the player's contents sit evenly with a little breathing room, it floats the same ~4 pt from the dock and from the composer, the call icons on the tuck tab and the call-started card are outline and match the call's kind, and the video thumbnail shown while typing is smaller.
+**Assumes:** edit, build, simulators, install on the 3 phones, commit. **Visual brief: no new UI tests** (fix only ones that break); the user checks on the phone.
+**Scope:** `ios/Lime/Features/Calls/CallMiniPlayer.swift` (the player, the tuck tab, the bottom inset), `ios/Lime/Features/Chat/ChatView.swift` (the call card's icon ~line 1106; the composer gap), and the view that draws the video thumbnail while typing (Phase 1 finds it). **Not:** the PiP grid (the spike), colours, the avatar code.
+**Phase 1 (read-only; report before editing):** (a) today's paddings/spacings in the player and the gaps above the tab bar and above the chat composer (numbers); (b) **which view is "the video thumbnail while typing"** during a video call in a chat: if it is **the system PiP window**, its size is LIME-150's item 7c (the spike), so stop and say so instead of changing it; if it is lime's own view, give its size today.
+**The change:**
+1. **Padding:** +2 pt on every side between the capsule's edge and its contents (avatar, text, Mute, Leave), so the space looks even all round; the height may grow (report it).
+2. **Name ↔ subtitle:** tighter than today (e.g. `spacing: 0` and/or a tighter line height); no clipping at any text size.
+3. **Mute ↔ Leave:** 2 pt closer; tap areas stay 44 × 44 (they may overlap their own padding, not each other).
+4. **The same ~4 pt gap** between the player and the tab bar (dock) and between the player and the chat composer.
+5. **The tuck tab's icon:** outline, by kind: a video call `video`, a voice call `phone` (not `.fill`); same size as today.
+6. **The call-started card in the chat:** the icon outline (`video` / `phone`, not `.fill`).
+7. **The video thumbnail while typing:** about two-thirds of today's size, the same corner and position (only if Phase 1 shows it's lime's own view).
+**Verification:** build 0 warnings; `CallMiniPlayerUITests`, `CallPolishTests`, `CallBubblesUITests` pass; screenshots (13 mini: the player on Messages + in a chat with the keyboard up, the tuck tab voice + video, the call card; light + dark) in `~/Desktop/lime-150fix2/`; installed on the 3 phones.
+**Gate:** the user, on the phone: the spacing looks even; 4 pt to the dock and to the composer; outline icons that match the call; the thumbnail smaller.
+**Record:** `## LIME-150-fix2` with **For plot:** (the new height; which view the thumbnail was). **Commit:** `fix(ios): mini player spacing, outline call icons, a smaller video thumbnail while typing`, trailer `Brief: LIME-150`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
+
+### LIME-150-fix → `tend` (lime-aa) (DONE as `f97f50d`; drafted 2026-10-16): the mini player: dock width, the timer back, the 148c layout at 44 pt
 **Goal:** the call mini player is as wide as the tab bar, shows the call's time instead of a LIVE badge, and uses 148c's text and button layout at 150a's 44 pt height with 150a's avatars.
 **Assumes:** edit, build, simulators, install on the 3 phones, commit. **Visual brief: no new UI tests** (update existing ones that break); the user checks on the phone.
 **Scope:** `ios/Lime/Features/Calls/CallMiniPlayer.swift` (+ `CallMiniPlayerRule`), and only the tests that assert the LIVE badge or the one-line layout. **Not:** the tuck tab, the avatar code (`GroupAvatarPlan`, `ConversationAvatar`), the PiP window, the chat's live card.
@@ -5890,7 +5929,7 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Gate:** the user, on the phone: the width matches the dock; the text and spacing feel like 148c; the height is still short.
 **Record:** `## LIME-150-fix` with **For plot:** (the measured height). **Commit:** `fix(ios): the mini player: as wide as the tab bar, the call time back, the earlier layout at 44 pt`, trailer `Brief: LIME-150`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
 
-### LIME-141-fix3 → `tend` (lime-aa) (after 150-fix; drafted 2026-10-16): end the iPad ↔ Jean loop: subscribe before L2CAP, one central per pair, a grace-length link is a failure
+### LIME-141-fix3 → `tend` (lime-aa) (DONE as `e91c385`; drafted 2026-10-16): end the iPad ↔ Jean loop: subscribe before L2CAP, one central per pair, a grace-length link is a failure
 **Goal:** two phones settle on one link without a loop; a link that never binds raises the backoff; every phone logs `mesh_key_check result=ok`.
 **Assumes:** edit, run the Swift + core tests, install on the 3 phones, commit. **Evidence:** 1e148 (`/tmp/lime-meshlogs9/`).
 **Scope:** the Debug mesh link layer (`ios/Lime/Debug/Mesh/`, `ios/Lime/Core/Mesh/MeshReconnect.swift`), its tests. **Not:** the packet format, `lime_core`'s mesh, the server.
