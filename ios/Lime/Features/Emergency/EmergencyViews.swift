@@ -3,44 +3,43 @@ import UIKit
 
 // MARK: The card in the chat
 
-/// An emergency status in the timeline: the label word and an icon (never colour alone), the sender, the status line, the time.
+/// An emergency status in the timeline: a small label row (the word EMERGENCY and an icon, never colour alone), the status line as the main
+/// text, then the sender and time. The word stays on one line at the default text size; at accessibility sizes it may wrap.
 struct EmergencyCardView: View {
     let card: EmergencyCard
     let senderName: String
     let date: Date
     let id: String
+    @Environment(\.dynamicTypeSize) private var typeSize
 
-    private var icon: String { card.isEnd ? "checkmark.shield" : (card.needsHelp ? "exclamationmark.triangle.fill" : "checkmark.circle") }
+    private var icon: String { card.isEnd ? "checkmark.shield.fill" : (card.needsHelp ? "exclamationmark.triangle.fill" : "checkmark.circle.fill") }
+    private var time: String { date.formatted(date: .omitted, time: .shortened) }
 
     private var spoken: String {
-        let label = card.drill ? "Drill" : "Emergency"
-        if card.isEnd { return "\(label). \(EmergencyCopy.endedWords(by: senderName, drill: card.drill))" }
-        var words = "\(label). \(senderName). \(EmergencyCopy.summary(card))"
+        if card.isEnd { return "Emergency. \(EmergencyCopy.endedWords(by: senderName))" }
+        var words = "Emergency. \(senderName). \(EmergencyCopy.summary(card))"
         if !card.note.isEmpty { words += ". \(card.note)" }
         return words
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 17, weight: .semibold)).accessibilityHidden(true)
-                Text(EmergencyCopy.label(drill: card.drill)).font(Theme.secondary.weight(.bold)).tracking(1.2)
-                Spacer(minLength: 8)
-                Text(date.formatted(date: .omitted, time: .shortened)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 12, weight: .semibold)).accessibilityHidden(true)
+                Text(EmergencyCopy.label)
+                    .font(.system(.caption2, design: .default, weight: .semibold)).tracking(1)
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.8)
             }
-            if card.isEnd {
-                Text(EmergencyCopy.endedWords(by: senderName, drill: card.drill)).font(Theme.title)
-            } else {
-                Text(senderName).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-                Text(EmergencyCopy.summary(card)).font(Theme.title).fixedSize(horizontal: false, vertical: true)
-                if !card.note.isEmpty { Text(card.note).font(Theme.body).fixedSize(horizontal: false, vertical: true) }
-            }
+            .foregroundStyle(Color.red)
+            Text(card.isEnd ? EmergencyCopy.endedWords(by: senderName) : EmergencyCopy.summary(card))
+                .font(Theme.title).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
+            if !card.note.isEmpty && !card.isEnd { Text(card.note).font(Theme.secondary).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true) }
+            Text(card.isEnd ? time : "\(senderName) \u{00B7} \(time)").font(Theme.caption).foregroundStyle(Theme.textSecondary)
         }
-        .foregroundStyle(Theme.text)
-        .padding(14)
-        .frame(maxWidth: 320, alignment: .leading)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.text.opacity(card.drill ? 0.25 : 0.7), style: StrokeStyle(lineWidth: card.drill ? 1 : 2, dash: card.drill ? [6, 4] : [])))
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(maxWidth: 300, alignment: .leading)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(card.needsHelp ? Color.red.opacity(0.8) : Theme.hairline, lineWidth: card.needsHelp ? 1.5 : 1))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
         .accessibilityIdentifier("emergency-card-\(id)")
@@ -54,7 +53,6 @@ struct EmergencySheet: View {
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    let drill: Bool
     var conversationID: String?
 
     @State private var status = "safe"
@@ -75,15 +73,12 @@ struct EmergencySheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Text(drill ? "DRILL" : "EMERGENCY").font(Theme.title.weight(.bold)).tracking(1.4)
+                    Text(EmergencyCopy.label).font(Theme.title.weight(.bold)).tracking(1.4).foregroundStyle(Color.red)
                     Spacer()
                     Button("Close") { dismiss() }.font(Theme.body).frame(minWidth: 60, minHeight: 60)
                         .accessibilityIdentifier("emergency-close")
                 }
-                if drill {
-                    Text("This is a drill. Everyone sees DRILL, and it never breaks through Do Not Disturb.")
-                        .font(Theme.secondary).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("emergency-drill-note")
-                } else {
+                do {
                     Button { if let url = URL(string: "tel:\(number)") { openURL(url) } } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "phone.fill").font(.system(size: 22)).accessibilityHidden(true)
@@ -107,7 +102,7 @@ struct EmergencySheet: View {
 
                 if settings?.schoolActions == true {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Situation").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                        Text(EmergencyCopy.safewordsTitle).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                         FlowRow(spacing: 8) {
                             ForEach(["hold", "secure", "lockdown", "evacuate", "shelter"], id: \.self) { key in
                                 Button { situation = situation == key ? "" : key } label: {
@@ -161,7 +156,7 @@ struct EmergencySheet: View {
                 }
 
                 Button { Task { await send() } } label: {
-                    Text(drill ? "Send drill status" : "Send").font(Theme.title).foregroundStyle(Theme.accentInk)
+                    Text("Send").font(Theme.title).foregroundStyle(Theme.accentInk)
                         .frame(maxWidth: .infinity, minHeight: 64).background(Theme.accent, in: Capsule())
                 }
                 .disabled(target.isEmpty || sending)
@@ -217,10 +212,10 @@ struct EmergencySheet: View {
         sending = true
         defer { sending = false }
         let draft = EmergencyDraft(status: status, situation: settings?.schoolActions == true ? situation : "", students: UInt32(students),
-                                   place: place, note: note, drill: drill)
+                                   place: place, note: note)
         if await store.sendEmergency(draft, to: target) {
             #if DEBUG
-            if !drill, !store.isDemo { MeshService.shared.setNearby(true) }   // turning an emergency on turns Nearby mode on (M3)
+            if !store.isDemo { MeshService.shared.setNearby(true) }   // turning an emergency on turns Nearby mode on (M3)
             #endif
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             dismiss()
@@ -318,7 +313,7 @@ struct EmergencyPanel: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill").accessibilityHidden(true)
-                        Text(EmergencyCopy.label(drill: rollup.drill)).font(Theme.secondary.weight(.bold)).tracking(1.2)
+                        Text(EmergencyCopy.label).font(.system(.caption, design: .default, weight: .semibold)).tracking(1).foregroundStyle(Color.red)
                         Spacer()
                     }
                     Text("\(rollup.safe) safe \u{00B7} \(rollup.needHelp) need help \u{00B7} \(rollup.noResponse) no response \u{00B7} \(EmergencyCopy.studentsWords(Int(rollup.studentsTotal)))")
@@ -353,7 +348,7 @@ struct EmergencyPanel: View {
                         }
                         .accessibilityIdentifier("emergency-update")
                         Button { confirmEnd = true } label: {
-                            Text(rollup.drill ? "End drill" : "End emergency").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+                            Text("End emergency").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
                                 .padding(.horizontal, 16).frame(minHeight: 48).overlay(Capsule().strokeBorder(Theme.text.opacity(0.5), lineWidth: 1))
                         }
                         .accessibilityIdentifier("emergency-end")
@@ -363,13 +358,13 @@ struct EmergencyPanel: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.text.opacity(rollup.drill ? 0.25 : 0.7), style: StrokeStyle(lineWidth: rollup.drill ? 1 : 2, dash: rollup.drill ? [6, 4] : [])))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.text.opacity(0.7), lineWidth: 2))
                 .padding(.horizontal, 8)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("emergency-panel")
-                .sheet(isPresented: $showSheet) { EmergencySheet(drill: rollup.drill, conversationID: conversation.id) }
-                .confirmSheet(rollup.drill ? "End the drill?" : "End the emergency?", isPresented: $confirmEnd) {
-                    Button(rollup.drill ? "End drill" : "End emergency", role: .destructive) { Task { await store.endEmergency(in: conversation.id) } }
+                .sheet(isPresented: $showSheet) { EmergencySheet(conversationID: conversation.id) }
+                .confirmSheet("End the emergency?", isPresented: $confirmEnd) {
+                    Button("End emergency", role: .destructive) { Task { await store.endEmergency(in: conversation.id) } }
                         .accessibilityIdentifier("emergency-end-confirm")
                     Button("Cancel", role: .cancel) {}
                 } message: {
@@ -387,7 +382,6 @@ struct EmergencySettingsScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var settings: EmergencySettings?
     @State private var picking = false
-    @State private var drill = false
 
     private func binding<T>(_ keyPath: WritableKeyPath<EmergencySettings, T>, fallback: T) -> Binding<T> {
         Binding(get: { settings?[keyPath: keyPath] ?? fallback },
@@ -412,25 +406,17 @@ struct EmergencySettingsScreen: View {
             }
             SettingsFootnote(text: "Where statuses go. You can also choose it from a group\u{2019}s \u{22EF} menu. Start an emergency by long-pressing + in Messages, or from the group\u{2019}s \u{22EF} menu.")
             SettingsCard {
-                Toggle(isOn: binding(\.schoolActions, fallback: true)) { Text(EmergencyCopy.schoolActionsTitle).font(Theme.body).foregroundStyle(Theme.text) }
+                Toggle(isOn: binding(\.schoolActions, fallback: true)) { Text(EmergencyCopy.safewordsTitle).font(Theme.body).foregroundStyle(Theme.text) }
                     .tint(Theme.accent).padding(.horizontal, 18).frame(minHeight: 58)
                     .accessibilityIdentifier("emergency-settings-school")
             }
-            SettingsFootnote(text: EmergencyCopy.schoolActionsWhy)
+            SettingsFootnote(text: EmergencyCopy.safewordsWhy)
             SettingsCard {
                 Toggle(isOn: binding(\.sound, fallback: false)) { Text(EmergencyCopy.soundTitle).font(Theme.body).foregroundStyle(Theme.text) }
                     .tint(Theme.accent).padding(.horizontal, 18).frame(minHeight: 58)
                     .accessibilityIdentifier("emergency-settings-sound")
             }
             SettingsFootnote(text: EmergencyCopy.soundWhy)
-            SettingsCard {
-                Button { drill = true } label: {
-                    SettingsRowLabel(symbol: "figure.walk", title: "Start a drill", showsDivider: false)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("emergency-settings-drill")
-            }
-            SettingsFootnote(text: "A drill says DRILL on every card, notification and panel, and never breaks through Do Not Disturb.")
             SettingsFootnote(text: "\(EmergencyCopy.callFirst(number: EmergencyCopy.number())). \(EmergencyCopy.neverAlerts)")
             SettingsFootnote(text: EmergencyCopy.pushNote).accessibilityIdentifier("emergency-settings-honest")
         }
@@ -441,6 +427,5 @@ struct EmergencySettingsScreen: View {
                 if var next = settings { next.groupId = picked; settings = next; Task { await store.saveEmergencySettings(next) } }
             }
         }
-        .sheet(isPresented: $drill) { EmergencySheet(drill: true, conversationID: nil) }
     }
 }

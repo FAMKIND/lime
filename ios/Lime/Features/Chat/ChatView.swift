@@ -78,7 +78,7 @@ struct ChatView: View {
                 Button("Cancel", role: .cancel) {}
             }
             #if DEBUG
-            .sheet(isPresented: $startingEmergency) { EmergencySheet(drill: false, conversationID: conversation.id) }
+            .sheet(isPresented: $startingEmergency) { EmergencySheet(conversationID: conversation.id) }
             #endif
             .messageActions(actions, conversationID: conversationID, selection: $selection) { message in
                 store.path.append(ThreadTarget(conversationID: conversationID, rootID: message.id))

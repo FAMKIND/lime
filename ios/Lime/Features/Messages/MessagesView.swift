@@ -34,7 +34,7 @@ struct MessagesView: View {
             #endif
         }
         #if DEBUG
-        .sheet(isPresented: $startingEmergency) { EmergencySheet(drill: false, conversationID: nil) }
+        .sheet(isPresented: $startingEmergency) { EmergencySheet(conversationID: nil) }
         #endif
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showNewMessage) { NewMessageSheet() }

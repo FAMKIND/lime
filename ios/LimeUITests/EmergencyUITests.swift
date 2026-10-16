@@ -56,6 +56,33 @@ final class EmergencyUITests: XCTestCase {
         XCTAssertEqual(sound.value as? String, "0", "silent by default")
         XCTAssertEqual(app.switches["emergency-settings-school"].value as? String, "1", "the school actions are on by default")
         XCTAssertTrue(app.staticTexts["emergency-settings-honest"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'not a promise of delivery'")).firstMatch.exists)
-        XCTAssertTrue(app.buttons["emergency-settings-drill"].exists)
+        XCTAssertFalse(app.buttons["emergency-settings-drill"].exists, "no drills")
+        XCTAssertTrue(app.staticTexts["Safewords"].exists, "the toggle is called Safewords")
+    }
+
+    /// The "+" really long-pressed (not tapped) opens the menu with Emergency, and that opens the sheet.
+    func testLongPressingThePlusOffersEmergencyAndOpensTheSheet() {
+        let app = launch()
+        let plus = app.buttons["new-message-button"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 10))
+        plus.press(forDuration: 1.0)
+        let item = app.buttons["Emergency"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "the long-press menu has Emergency")
+        XCTAssertFalse(app.textFields.firstMatch.exists, "a long-press did not also start a new message")
+        item.tap()
+        XCTAssertTrue(any(app, "emergency-call-first").waitForExistence(timeout: 5), "the Emergency sheet opens on Call first")
+    }
+
+    /// The label is one line on the card at the default text size.
+    func testTheCardLabelIsOneLine() {
+        let app = launch()
+        app.buttons["conversation-row-grp:demo1"].tap()
+        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 8))
+        app.buttons["chat-more"].tap()
+        app.buttons["chat-emergency"].tap()
+        any(app, "emergency-send").tap()
+        let card = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH 'emergency-card-'")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 8))
+        XCTAssertLessThan(card.frame.height, 130, "label row, status line and sender: no wrapped label")
     }
 }

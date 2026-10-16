@@ -2,8 +2,7 @@
 //!
 //! It is an ordinary `message.send` whose encrypted payload also carries an `emergency` object, so it travels, is parked for the mesh and is
 //! delivered exactly like any text message (`docs/api-v2.md` section 9). The rules live here, for every platform: what a status holds, which
-//! status counts for a person (the latest), the roll-up's order and totals, and how an arrival is announced (silent by default, a drill
-//! never breaks through Do Not Disturb).
+//! status counts for a person (the latest), the roll-up's order and totals, and how an arrival is announced (silent by default).
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
@@ -27,8 +26,6 @@ pub struct EmergencyDraft {
     pub students: u32,
     pub place: String,
     pub note: String,
-    /// A drill: every card and notification says so, and it never breaks through Do Not Disturb.
-    pub drill: bool,
 }
 
 /// An emergency status or its end, as a message carries it.
@@ -44,7 +41,6 @@ pub struct EmergencyInfo {
     pub students: u32,
     pub place: String,
     pub note: String,
-    pub drill: bool,
 }
 
 /// One person's line in the roll-up. `user_id` is `None` for me.
@@ -67,7 +63,6 @@ pub struct RollupEntry {
 pub struct EmergencyRollup {
     pub session_id: String,
     pub conversation_id: String,
-    pub drill: bool,
     /// Need help first, then no response yet, then safe; newest first within each.
     pub entries: Vec<RollupEntry>,
     /// Students with the people who have answered (safe or not).
@@ -109,14 +104,10 @@ impl Default for EmergencySettings {
     }
 }
 
-/// The announcement rule, in one place: a real emergency shows even when quiet, **silent** (no sound, no vibration) unless the person turned
-/// sound on; a drill is a plain, silent notification that never breaks through quiet.
-pub fn alert_policy(drill: bool, sound_enabled: bool) -> EmergencyAlert {
-    if drill {
-        EmergencyAlert { show: true, sound: false, vibrate: false, breaks_quiet: false, label: "DRILL".into() }
-    } else {
-        EmergencyAlert { show: true, sound: sound_enabled, vibrate: sound_enabled, breaks_quiet: true, label: "EMERGENCY".into() }
-    }
+/// The announcement rule, in one place: an emergency shows even when quiet (Do Not Disturb, work hours, a muted chat), **silent** (no sound,
+/// no vibration) unless the person turned the sound setting on.
+pub fn alert_policy(sound_enabled: bool) -> EmergencyAlert {
+    EmergencyAlert { show: true, sound: sound_enabled, vibrate: sound_enabled, breaks_quiet: true, label: "EMERGENCY".into() }
 }
 
 /// The number to call first, for a region code (the phone's region). Unknown regions get 112, which most mobile networks route.
@@ -153,7 +144,7 @@ pub fn emergency_number(region: &str) -> &'static str {
     }
 }
 
-fn text_of(status: &str, situation: &str, students: u32, place: &str, note: &str, drill: bool) -> String {
+fn text_of(status: &str, situation: &str, students: u32, place: &str, note: &str) -> String {
     let mut parts = Vec::new();
     parts.push(match status {
         "need_help" => "Need help".to_owned(),
@@ -170,7 +161,7 @@ fn text_of(status: &str, situation: &str, students: u32, place: &str, note: &str
     if !place.is_empty() {
         parts.push(place.to_owned());
     }
-    let mut text = format!("{}: {}", if drill { "DRILL" } else { "Emergency" }, parts.join(" \u{00B7} "));
+    let mut text = format!("Emergency: {}", parts.join(" \u{00B7} "));
     if !note.is_empty() {
         text.push_str(&format!(". {note}"));
     }
@@ -180,7 +171,7 @@ fn text_of(status: &str, situation: &str, students: u32, place: &str, note: &str
 impl EmergencyDraft {
     /// The words an older client shows (and the chat list's last line).
     pub(crate) fn text(&self) -> String {
-        text_of(&self.status, &self.situation, self.students, self.place.trim(), self.note.trim(), self.drill)
+        text_of(&self.status, &self.situation, self.students, self.place.trim(), self.note.trim())
     }
 
     pub(crate) fn validated(&self) -> Result<EmergencyDraft, StoreError> {
@@ -204,7 +195,7 @@ impl EmergencyInfo {
     pub(crate) fn to_json(&self) -> Value {
         json!({
             "v": 1, "session": self.session_id, "kind": self.kind, "status": self.status, "situation": self.situation,
-            "students": self.students, "place": self.place, "note": self.note, "drill": self.drill,
+            "students": self.students, "place": self.place, "note": self.note
         })
     }
 
@@ -231,7 +222,6 @@ impl EmergencyInfo {
             students: e.get("students").and_then(Value::as_u64).map(|n| n.min(MAX_STUDENTS as u64) as u32).unwrap_or(0),
             place: text("place", MAX_PLACE),
             note: text("note", MAX_NOTE),
-            drill: e.get("drill").and_then(Value::as_bool).unwrap_or(false),
         })
     }
 }
@@ -239,9 +229,9 @@ impl EmergencyInfo {
 pub(crate) fn store(conn: &Connection, message_id: &str, conversation: &str, sender: &str, info: &EmergencyInfo) -> Result<(), StoreError> {
     conn.execute(
         "INSERT OR REPLACE INTO emergency_messages
-           (message_id, conversation_id, sender_id, session_id, kind, status, situation, students, place, note, drill)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-        params![message_id, conversation, sender, info.session_id, info.kind, info.status, info.situation, info.students, info.place, info.note, info.drill],
+           (message_id, conversation_id, sender_id, session_id, kind, status, situation, students, place, note)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![message_id, conversation, sender, info.session_id, info.kind, info.status, info.situation, info.students, info.place, info.note],
     )
     .map_err(db_err)?;
     Ok(())
@@ -257,11 +247,11 @@ pub(crate) fn apply_received(conn: &Connection, message_id: &str, conversation: 
 
 pub(crate) fn info(conn: &Connection, message_id: &str) -> Option<EmergencyInfo> {
     conn.query_row(
-        "SELECT session_id, kind, status, situation, students, place, note, drill FROM emergency_messages WHERE message_id = ?1",
+        "SELECT session_id, kind, status, situation, students, place, note FROM emergency_messages WHERE message_id = ?1",
         params![message_id],
         |r| {
             Ok(EmergencyInfo {
-                session_id: r.get(0)?, kind: r.get(1)?, status: r.get(2)?, situation: r.get(3)?, students: r.get(4)?, place: r.get(5)?, note: r.get(6)?, drill: r.get(7)?,
+                session_id: r.get(0)?, kind: r.get(1)?, status: r.get(2)?, situation: r.get(3)?, students: r.get(4)?, place: r.get(5)?, note: r.get(6)?,
             })
         },
     )
@@ -270,33 +260,33 @@ pub(crate) fn info(conn: &Connection, message_id: &str) -> Option<EmergencyInfo>
     .flatten()
 }
 
-/// The emergencies of a conversation that have not ended: (session, drill), newest first. Real ones before drills.
-fn active_sessions(conn: &Connection, conversation: &str) -> Result<Vec<(String, bool)>, StoreError> {
+/// The emergencies of a conversation that have not ended, newest first.
+fn active_sessions(conn: &Connection, conversation: &str) -> Result<Vec<String>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT e.session_id, MAX(e.drill), MAX(m.sent_at) AS last
+            "SELECT e.session_id, MAX(m.sent_at) AS last
              FROM emergency_messages e JOIN messages m ON m.id = e.message_id
              WHERE e.conversation_id = ?1 AND m.deleted = 0
                AND e.session_id NOT IN (SELECT session_id FROM emergency_messages WHERE conversation_id = ?1 AND kind = 'end')
-             GROUP BY e.session_id ORDER BY MAX(e.drill) ASC, last DESC",
+             GROUP BY e.session_id ORDER BY last DESC",
         )
         .map_err(db_err)?;
     let rows = statement
-        .query_map(params![conversation], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))
+        .query_map(params![conversation], |r| r.get::<_, String>(0))
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
     Ok(rows)
 }
 
-/// The session a new status joins: the conversation's active one with the same real/drill kind, else a new one.
-pub(crate) fn session_for(conn: &Connection, conversation: &str, drill: bool, new_id: &str) -> Result<String, StoreError> {
-    Ok(active_sessions(conn, conversation)?.into_iter().find(|(_, d)| *d == drill).map(|(s, _)| s).unwrap_or_else(|| new_id.to_owned()))
+/// The session a new status joins: the conversation's active one, else a new one.
+pub(crate) fn session_for(conn: &Connection, conversation: &str, new_id: &str) -> Result<String, StoreError> {
+    Ok(active_sessions(conn, conversation)?.into_iter().next().unwrap_or_else(|| new_id.to_owned()))
 }
 
-/// The roll-up of the conversation's active emergency (a real one before a drill), or `None`.
+/// The roll-up of the conversation's active emergency, or `None`.
 pub(crate) fn rollup(conn: &Connection, conversation: &str) -> Result<Option<EmergencyRollup>, StoreError> {
-    let Some((session, drill)) = active_sessions(conn, conversation)?.into_iter().next() else { return Ok(None) };
+    let Some(session) = active_sessions(conn, conversation)?.into_iter().next() else { return Ok(None) };
     // The latest status of each sender in this session (by the time it was sent, then by id).
     let mut statement = conn
         .prepare(
@@ -357,7 +347,6 @@ pub(crate) fn rollup(conn: &Connection, conversation: &str) -> Result<Option<Eme
     Ok(Some(EmergencyRollup {
         session_id: session,
         conversation_id: conversation.to_owned(),
-        drill,
         students_total: entries.iter().map(|e| e.students).sum(),
         safe: count("safe"),
         need_help: count("need_help"),

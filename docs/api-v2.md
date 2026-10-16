@@ -371,9 +371,9 @@ No new endpoint and no new op type: a status is an ordinary `message.send` (so i
 { "text": "Emergency: Safe · Lockdown · 24 students · Room 204",
   "emergency": { "v": 1, "session": "<id of the first status>", "kind": "status" | "end",
                  "status": "safe" | "need_help", "situation": "" | "hold" | "secure" | "lockdown" | "evacuate" | "shelter",
-                 "students": 24, "place": "Room 204", "note": "", "drill": false } }
+                 "students": 24, "place": "Room 204", "note": "" } }
 ```
 
-- `text` is the fallback an older client shows. `session` groups the statuses of one emergency; the first status's id is used, and later statuses join the conversation's active emergency of the same kind (real or drill). `kind: "end"` ends the session for everyone.
+- `text` is the fallback an older client shows. `session` groups the statuses of one emergency; the first status's id is used, and later statuses join the conversation's active emergency. `kind: "end"` ends the session for everyone. (Drills were removed in LIME-143-fix: an older build's `drill` field is ignored on receipt and no longer sent.)
 - A receiver bounds every field (place 60 characters, note 200, students ≤ 9999, an unknown situation is dropped, a missing session or a bad status makes it an ordinary message). The roll-up counts the latest status of each sender (by send time), lists members who have not answered as `no_response`, and orders Need help, then no response, then Safe.
 - The server sees nothing new: the object is inside the ciphertext. Forwarding an emergency message is refused by the core.

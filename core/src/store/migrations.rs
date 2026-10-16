@@ -547,6 +547,8 @@ const MIGRATIONS: &[&str] = &[
          key   TEXT PRIMARY KEY,
          value TEXT NOT NULL
      );",
+    // 35 (LIME-143-fix): drills were removed; the flag goes (an older build's `drill` field is ignored when read).
+    "ALTER TABLE emergency_messages DROP COLUMN drill;",
 ];
 
 /// The schema version this build writes.

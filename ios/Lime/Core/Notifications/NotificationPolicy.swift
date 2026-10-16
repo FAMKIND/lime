@@ -16,7 +16,7 @@ struct IncomingMessage: Identifiable, Equatable, Sendable {
     /// A stranger's first message: waits in Requests, so nothing of it is shown.
     let isRequest: Bool
     let date: Date
-    /// An emergency status or its end (LIME-143): announced by its own rule (silent unless sound is on; a drill never breaks through quiet).
+    /// An emergency status or its end (LIME-143): announced by its own rule (silent unless sound is on).
     var emergency: EmergencyCard? = nil
 }
 
@@ -58,18 +58,11 @@ struct NotificationContent: Equatable, Sendable {
 enum NotificationPolicy {
     static func presentation(for message: IncomingMessage, enabled: Bool, muted: Bool, sound: NotificationSound,
                              appActive: Bool, viewing: ViewingTarget?, quiet: Bool = false, emergencySound: Bool = false) -> Presentation {
-        if let card = message.emergency {
-            // LimeCore's rule: a real emergency shows even when quiet or muted, silent unless the person turned sound on; a drill never breaks
-            // through quiet and is never loud.
-            let alert = emergencyAlertPolicy(drill: card.drill, soundEnabled: emergencySound)
+        if message.emergency != nil {
+            // LimeCore's rule: an emergency shows even when quiet or muted, silent unless the person turned sound on.
+            let alert = emergencyAlertPolicy(soundEnabled: emergencySound)
             guard enabled, alert.show else { return .none }
-            if card.drill {
-                if muted { return .none }
-                if quiet { return .held }
-            }
-            guard appActive else { return .local(sound: alert.sound) }
-            if card.drill, let viewing, viewing.conversationID == message.conversationID, viewing.threadRoot == nil { return .tick }
-            return .banner(sound: alert.sound)
+            return appActive ? .banner(sound: alert.sound) : .local(sound: alert.sound)
         }
         guard enabled, !muted else { return .none }
         // Quiet hours hold everything (a message in the chat on screen still just ticks). Nothing here is marked urgent: the flag that
@@ -90,7 +83,7 @@ enum NotificationPolicy {
         if let card = message.emergency, !message.isRequest {
             let words = EmergencyCopy.notification(card: card, senderName: message.senderName)
             return NotificationContent(title: words.title, body: words.body, threadIdentifier: message.conversationID, conversationID: message.conversationID,
-                                       threadRoot: nil, messageID: message.id, sound: sound, breaksThroughQuiet: !card.drill)
+                                       threadRoot: nil, messageID: message.id, sound: sound, breaksThroughQuiet: true)
         }
         let title: String
         let body: String

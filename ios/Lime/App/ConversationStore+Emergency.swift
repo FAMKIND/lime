@@ -63,7 +63,7 @@ extension ConversationStore {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return false }
         let session = demoEmergencySessions[id] ?? UUID().uuidString
         demoEmergencySessions[id] = session
-        let info = EmergencyInfo(sessionId: session, kind: "status", status: draft.status, situation: draft.situation, students: draft.students, place: draft.place, note: draft.note, drill: draft.drill)
+        let info = EmergencyInfo(sessionId: session, kind: "status", status: draft.status, situation: draft.situation, students: draft.students, place: draft.place, note: draft.note)
         var message = Message(id: UUID().uuidString, senderID: nil, text: "Emergency", date: Date(), state: .sent)
         message.emergency = EmergencyCard(info)
         conversations[index].messages.append(message)
@@ -73,8 +73,7 @@ extension ConversationStore {
 
     func demoEndEmergency(_ id: Conversation.ID) {
         guard let index = conversations.firstIndex(where: { $0.id == id }), let session = demoEmergencySessions[id] else { return }
-        let drill = demoEmergencyStatuses[id]?.0.drill ?? false
-        let info = EmergencyInfo(sessionId: session, kind: "end", status: "", situation: "", students: 0, place: "", note: "", drill: drill)
+        let info = EmergencyInfo(sessionId: session, kind: "end", status: "", situation: "", students: 0, place: "", note: "")
         var message = Message(id: UUID().uuidString, senderID: nil, text: "Emergency ended", date: Date(), state: .sent)
         message.emergency = EmergencyCard(info)
         conversations[index].messages.append(message)
@@ -90,7 +89,7 @@ extension ConversationStore {
             entries.append(RollupEntry(userId: member.id, status: "no_response", situation: "", students: 0, place: "", note: "", at: 0, messageId: nil))
         }
         entries.sort { ($0.status == "need_help" ? 0 : $0.status == "no_response" ? 1 : 2) < ($1.status == "need_help" ? 0 : $1.status == "no_response" ? 1 : 2) }
-        return EmergencyRollup(sessionId: session, conversationId: id, drill: draft.drill, entries: entries, studentsTotal: draft.students,
+        return EmergencyRollup(sessionId: session, conversationId: id, entries: entries, studentsTotal: draft.students,
                                safe: draft.status == "safe" ? 1 : 0, needHelp: draft.status == "need_help" ? 1 : 0, noResponse: UInt32(conversation.members.count))
     }
 }

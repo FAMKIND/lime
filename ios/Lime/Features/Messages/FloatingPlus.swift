@@ -42,7 +42,13 @@ struct FloatingPlus: View {
             }
         }
         .buttonStyle(.plain)
-        .onLongPressGesture(minimumDuration: 0.7) { onLongPress?() }
+        // A long-press opens the native menu (with its haptic); a plain tap still starts a message. (A long-press gesture on a Button loses to the tap.)
+        .contextMenu {
+            if let onLongPress {
+                Button(role: .destructive, action: onLongPress) { Label("Emergency", systemImage: "exclamationmark.triangle") }
+                    .accessibilityIdentifier("plus-emergency")
+            }
+        }
         .accessibilityLabel(label)
         .accessibilityAction(named: "Emergency") { onLongPress?() }
         .accessibilityIdentifier(id)

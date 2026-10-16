@@ -4126,8 +4126,8 @@ fn two_people_who_first_message_each_other_at_the_same_moment_lose_nothing() {
 
 // ---- Emergency mode (LIME-143) ----
 
-fn draft(status: &str, students: u32, place: &str, drill: bool) -> crate::EmergencyDraft {
-    crate::EmergencyDraft { status: status.into(), situation: String::new(), students, place: place.into(), note: String::new(), drill }
+fn draft(status: &str, students: u32, place: &str) -> crate::EmergencyDraft {
+    crate::EmergencyDraft { status: status.into(), situation: String::new(), students, place: place.into(), note: String::new() }
 }
 
 fn emergency_team(server: &Arc<FakeServer>) -> (Party, Party, Party, Arc<dyn Transport>, String) {
@@ -4149,16 +4149,16 @@ fn send_status(p: &Party, transport: &Arc<dyn Transport>, chat: &str, d: crate::
 fn an_emergency_status_reaches_the_group_as_an_emergency_card_and_the_rollup_orders_and_totals() {
     let server = FakeServer::new();
     let (alice, bob, carol, transport, chat) = emergency_team(&server);
-    let mine = send_status(&alice, &transport, &chat, crate::EmergencyDraft { situation: "lockdown".into(), ..draft("safe", 24, "Room 204", false) });
+    let mine = send_status(&alice, &transport, &chat, crate::EmergencyDraft { situation: "lockdown".into(), ..draft("safe", 24, "Room 204") });
     assert_eq!(mine.emergency.as_ref().unwrap().status, "safe");
     assert!(mine.text.starts_with("Emergency: Safe"), "older clients read it as text: {}", mine.text);
     sync(&bob, &transport);
     sync(&carol, &transport);
     let seen = bob.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.id == mine.id).unwrap();
     let info = seen.emergency.expect("an emergency card");
-    assert_eq!((info.status.as_str(), info.situation.as_str(), info.students, info.place.as_str(), info.drill), ("safe", "lockdown", 24, "Room 204", false));
+    assert_eq!((info.status.as_str(), info.situation.as_str(), info.students, info.place.as_str()), ("safe", "lockdown", 24, "Room 204"));
     // Bob needs help; Carol has not answered.
-    send_status(&bob, &transport, &chat, draft("need_help", 3, "Gym", false));
+    send_status(&bob, &transport, &chat, draft("need_help", 3, "Gym"));
     sync(&alice, &transport);
     let roll = alice.store.emergency_rollup(chat.clone()).unwrap().expect("active");
     let order: Vec<(Option<String>, String)> = roll.entries.iter().map(|e| (e.user_id.clone(), e.status.clone())).collect();
@@ -4167,10 +4167,10 @@ fn an_emergency_status_reaches_the_group_as_an_emergency_card_and_the_rollup_ord
         vec![(Some(bob.user.clone()), "need_help".into()), (Some(carol.user.clone()), "no_response".into()), (None, "safe".into())],
         "need help first, then no response, then safe"
     );
-    assert_eq!((roll.students_total, roll.safe, roll.need_help, roll.no_response, roll.drill), (27, 1, 1, 1, false));
+    assert_eq!((roll.students_total, roll.safe, roll.need_help, roll.no_response), (27, 1, 1, 1));
     // A later status from the same person replaces the earlier one.
     std::thread::sleep(std::time::Duration::from_millis(5));
-    send_status(&bob, &transport, &chat, draft("safe", 3, "Gym", false));
+    send_status(&bob, &transport, &chat, draft("safe", 3, "Gym"));
     sync(&alice, &transport);
     let roll = alice.store.emergency_rollup(chat.clone()).unwrap().unwrap();
     assert_eq!((roll.need_help, roll.safe, roll.no_response, roll.students_total), (0, 2, 1, 27));
@@ -4187,32 +4187,14 @@ fn an_emergency_status_reaches_the_group_as_an_emergency_card_and_the_rollup_ord
 }
 
 #[test]
-fn a_drill_is_its_own_emergency_and_a_real_one_comes_first() {
-    let server = FakeServer::new();
-    let (alice, bob, _carol, transport, chat) = emergency_team(&server);
-    send_status(&alice, &transport, &chat, draft("safe", 10, "Room 1", true));
-    sync(&bob, &transport);
-    let drill = bob.store.emergency_rollup(chat.clone()).unwrap().unwrap();
-    assert!(drill.drill);
-    send_status(&bob, &transport, &chat, draft("need_help", 2, "Room 2", false));
-    sync(&alice, &transport);
-    let roll = alice.store.emergency_rollup(chat.clone()).unwrap().unwrap();
-    assert!(!roll.drill, "a real emergency is shown before a drill");
-    assert_ne!(roll.session_id, drill.session_id);
-    assert_eq!(roll.entries.iter().filter(|e| e.status != "no_response").count(), 1, "the drill's statuses are not in the real roll-up");
-    alice.store.end_emergency(chat.clone()).unwrap();
-    assert!(alice.store.emergency_rollup(chat).unwrap().unwrap().drill, "ending the real one leaves the drill");
-}
-
-#[test]
 fn an_emergency_status_is_checked_and_never_forwarded() {
     let server = FakeServer::new();
     let (alice, bob, _carol, transport, chat) = emergency_team(&server);
-    assert_eq!(alice.store.send_emergency(chat.clone(), draft("fine", 1, "", false)).err(), Some(crate::StoreError::Rejected));
-    assert_eq!(alice.store.send_emergency(chat.clone(), draft("safe", 100_000, "", false)).err(), Some(crate::StoreError::Rejected));
-    assert_eq!(alice.store.send_emergency(chat.clone(), draft("safe", 1, &"x".repeat(61), false)).err(), Some(crate::StoreError::Rejected));
-    assert_eq!(alice.store.send_emergency(chat.clone(), crate::EmergencyDraft { situation: "panic".into(), ..draft("safe", 1, "", false) }).err(), Some(crate::StoreError::Rejected));
-    let sent = send_status(&alice, &transport, &chat, draft("safe", 5, "Room 9", false));
+    assert_eq!(alice.store.send_emergency(chat.clone(), draft("fine", 1, "")).err(), Some(crate::StoreError::Rejected));
+    assert_eq!(alice.store.send_emergency(chat.clone(), draft("safe", 100_000, "")).err(), Some(crate::StoreError::Rejected));
+    assert_eq!(alice.store.send_emergency(chat.clone(), draft("safe", 1, &"x".repeat(61))).err(), Some(crate::StoreError::Rejected));
+    assert_eq!(alice.store.send_emergency(chat.clone(), crate::EmergencyDraft { situation: "panic".into(), ..draft("safe", 1, "") }).err(), Some(crate::StoreError::Rejected));
+    let sent = send_status(&alice, &transport, &chat, draft("safe", 5, "Room 9"));
     let to_bob = format!("dm:{}", bob.user);
     let forwarded = alice.store.forward_messages(vec![sent.id.clone()], vec![to_bob.clone()]).unwrap();
     assert!(forwarded.is_empty(), "an emergency card is skipped by forwarding");
@@ -4227,7 +4209,7 @@ fn an_emergency_status_sent_with_no_internet_is_parked_for_the_mesh_like_any_mes
     alice.store.queue_text(chat.clone(), "online first".into()).unwrap();
     alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
     net.online.store(false, std::sync::atomic::Ordering::SeqCst);
-    let item = alice.store.send_emergency(chat.clone(), draft("need_help", 12, "Room 204", false)).unwrap();
+    let item = alice.store.send_emergency(chat.clone(), draft("need_help", 12, "Room 204")).unwrap();
     alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap();
     let state = alice.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.id == item.id).unwrap().local_state;
     assert_eq!(state, "waiting", "it is parked for the mesh");
@@ -4253,15 +4235,12 @@ fn a_hostile_payload_cannot_overflow_the_card_or_the_totals() {
 }
 
 #[test]
-fn emergency_alerts_are_silent_unless_sound_is_on_and_a_drill_never_breaks_through() {
-    let real = crate::emergency_alert_policy(false, false);
-    assert!(real.show && real.breaks_quiet && !real.sound && !real.vibrate, "silent: no sound and no vibration");
-    assert_eq!(real.label, "EMERGENCY");
-    let loud = crate::emergency_alert_policy(false, true);
+fn emergency_alerts_are_silent_unless_sound_is_on() {
+    let quiet = crate::emergency_alert_policy(false);
+    assert!(quiet.show && quiet.breaks_quiet && !quiet.sound && !quiet.vibrate, "silent: no sound and no vibration");
+    assert_eq!(quiet.label, "EMERGENCY");
+    let loud = crate::emergency_alert_policy(true);
     assert!(loud.sound && loud.vibrate && loud.breaks_quiet);
-    let drill = crate::emergency_alert_policy(true, true);
-    assert!(drill.show && !drill.breaks_quiet && !drill.sound && !drill.vibrate, "a drill never breaks through quiet and is never loud");
-    assert_eq!(drill.label, "DRILL");
 }
 
 #[test]
@@ -4276,7 +4255,7 @@ fn the_emergency_number_depends_on_the_region_and_the_settings_are_kept() {
     alice.store.set_emergency_settings(crate::EmergencySettings { group_id: chat.clone(), sound: true, ..defaults }).unwrap();
     assert_eq!(alice.store.emergency_settings().unwrap().group_id, chat);
     assert!(alice.store.emergency_settings().unwrap().sound);
-    alice.store.send_emergency(chat, draft("safe", 18, "Room 7", false)).unwrap();
+    alice.store.send_emergency(chat, draft("safe", 18, "Room 7")).unwrap();
     let after = alice.store.emergency_settings().unwrap();
     assert_eq!((after.last_students, after.last_place.as_str()), (18, "Room 7"), "the last values are remembered");
 }

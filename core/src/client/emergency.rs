@@ -7,12 +7,11 @@ use crate::store::emergency::{self, EmergencyDraft, EmergencyInfo, EmergencyRoll
 
 #[uniffi::export]
 impl LimeStore {
-    /// Sends an emergency status to a conversation (a group, usually). The status joins the conversation's active emergency of the same kind
-    /// (real or drill) or starts one. Remembers the students and the place for next time.
+    /// Sends an emergency status to a conversation (a group, usually). The status joins the conversation's active emergency or starts one. Remembers the students and the place for next time.
     pub fn send_emergency(&self, conversation_id: String, draft: EmergencyDraft) -> Result<MessageItem, StoreError> {
         let draft = draft.validated()?;
         let text = draft.text();
-        let session = self.with_conn(|conn| emergency::session_for(conn, &conversation_id, draft.drill, &new_id()))?;
+        let session = self.with_conn(|conn| emergency::session_for(conn, &conversation_id, &new_id()))?;
         let info = EmergencyInfo {
             session_id: session,
             kind: "status".into(),
@@ -21,7 +20,6 @@ impl LimeStore {
             students: draft.students,
             place: draft.place.clone(),
             note: draft.note.clone(),
-            drill: draft.drill,
         };
         let item = self.queue_with(conversation_id, text, None, Vec::new(), QueueExtras { emergency: Some(info), ..Default::default() })?;
         self.with_conn(|conn| {
@@ -33,16 +31,13 @@ impl LimeStore {
         Ok(item)
     }
 
-    /// Ends the conversation's active emergency (a real one before a drill). Anyone in the group can.
+    /// Ends the conversation's active emergency Anyone in the group can.
     pub fn end_emergency(&self, conversation_id: String) -> Result<MessageItem, StoreError> {
-        let (session, drill) = self.with_conn(|conn| {
-            let rollup = emergency::rollup(conn, &conversation_id)?;
-            rollup.map(|r| (r.session_id, r.drill)).ok_or(StoreError::NotFound)
-        })?;
+        let session = self.with_conn(|conn| emergency::rollup(conn, &conversation_id)?.map(|r| r.session_id).ok_or(StoreError::NotFound))?;
         let info = EmergencyInfo {
-            session_id: session, kind: "end".into(), status: String::new(), situation: String::new(), students: 0, place: String::new(), note: String::new(), drill,
+            session_id: session, kind: "end".into(), status: String::new(), situation: String::new(), students: 0, place: String::new(), note: String::new(),
         };
-        let text = if drill { "DRILL ended" } else { "Emergency ended" };
+        let text = "Emergency ended";
         self.queue_with(conversation_id, text.to_owned(), None, Vec::new(), QueueExtras { emergency: Some(info), ..Default::default() })
     }
 
@@ -60,10 +55,10 @@ impl LimeStore {
     }
 }
 
-/// How an arriving emergency message is announced (silent by default; a drill never breaks through quiet).
+/// How an arriving emergency message is announced (silent by default).
 #[uniffi::export]
-pub fn emergency_alert_policy(drill: bool, sound_enabled: bool) -> emergency::EmergencyAlert {
-    emergency::alert_policy(drill, sound_enabled)
+pub fn emergency_alert_policy(sound_enabled: bool) -> emergency::EmergencyAlert {
+    emergency::alert_policy(sound_enabled)
 }
 
 /// The number to call first for a region code (`US` → `911`).
