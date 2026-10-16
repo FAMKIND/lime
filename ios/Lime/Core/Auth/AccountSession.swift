@@ -140,7 +140,7 @@ final class AccountSession {
         store.connect(BackendLink(transport: transport, token: { [weak self] in
             guard let self else { throw AuthError.notVerified }
             return try await self.accessToken()
-        }))
+        }, staleToken: { [weak self] in await self?.lastAccessToken() ?? "" }))
         let store = self.store
         store.myUserID = userID
         await nudges?.stop()
@@ -188,6 +188,9 @@ final class AccountSession {
 
     /// A valid access token, refreshed first when it is about to expire. Calls that arrive together
     /// share one refresh (a refresh token is single-use, so two at once could lose the session).
+    /// The access token this phone holds, expired or not (sending with no internet).
+    func lastAccessToken() -> String { tokens?.accessToken ?? "" }
+
     func accessToken() async throws -> String {
         guard let current = tokens else { throw AuthError.notVerified }
         guard current.isExpiring(), let auth else { return current.accessToken }

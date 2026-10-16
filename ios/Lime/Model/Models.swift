@@ -17,12 +17,37 @@ struct Person: Identifiable, Hashable, Sendable {
 /// Where one of my messages has got to. A received message is `.received`.
 enum DeliveryState: String, Hashable, Sendable {
     case sending, sent, failed, undelivered, received
+    /// No internet (LIME-142): `waiting` = kept for nearby phones, none has taken it yet ("Waiting for signal"); `passed` = a nearby phone took a
+    /// copy ("Passed to a nearby phone"); `offline` = cannot travel through nearby phones, waiting for the internet ("Waiting for internet").
+    case waiting, passed, offline
     /// A line of the timeline about the group itself ("Jean added Lee"), not a message.
     case system
 
     /// LimeCore's `local_state`; the older local-only states count as sent.
     init(localState: String) {
         self = DeliveryState(rawValue: localState) ?? .sent
+    }
+
+    /// Not sent to the server yet, and nothing wrong: the message is on its way by itself (it resumes with any link or connection).
+    var isInFlight: Bool { self == .sending || self == .waiting || self == .passed || self == .offline }
+
+    /// The words under the bubble (a short phrase; VoiceOver reads the same). Colour is never the only signal: each has words and an icon.
+    var statusWords: String? {
+        switch self {
+        case .waiting: "Waiting for signal"
+        case .passed: "Passed to a nearby phone"
+        case .offline: "Waiting for internet"
+        default: nil
+        }
+    }
+
+    var statusSymbol: String? {
+        switch self {
+        case .waiting: "dot.radiowaves.left.and.right"
+        case .passed: "arrow.right.circle"
+        case .offline: "wifi.slash"
+        default: nil
+        }
     }
 }
 

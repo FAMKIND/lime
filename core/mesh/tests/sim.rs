@@ -413,10 +413,12 @@ fn one_and_two_relays_deliver_with_the_default_copies_three_need_more_copies() {
     assert_eq!((one.delivered, two.delivered), (1, 1));
     // The honest limit of spray and wait on a pure chain: 4 copies halve at each courier, so the third courier holds the last copy and
     // only waits. With 8 copies a chain of three works.
-    let three = scenario_relays(3, MeshConfig::default(), "A -> B via 3 relays (4 copies)");
+    let three = scenario_relays(3, MeshConfig { copies_initial: 4, ..MeshConfig::default() }, "A -> B via 3 relays (4 copies)");
     assert_eq!(three.delivered, 0, "a pure chain of three relays does not deliver with 4 copies");
-    let three_more = scenario_relays(3, MeshConfig { copies_initial: 8, ..MeshConfig::default() }, "A -> B via 3 relays (8 copies)");
+    let three_more = scenario_relays(3, MeshConfig::default(), "A -> B via 3 relays (8 copies, the default)");
     assert_eq!(three_more.delivered, 1);
+    let four = scenario_relays(4, MeshConfig::default(), "A -> B via 4 relays (8 copies)");
+    assert_eq!(four.delivered, 0, "even 8 copies halve to the last courier on a pure chain: four relays do not deliver");
 }
 
 #[test]
@@ -540,8 +542,9 @@ fn the_simulation_report() {
         scenario_direct(),
         scenario_relays(1, MeshConfig::default(), "A -> B via 1 relay"),
         scenario_relays(2, MeshConfig::default(), "A -> B via 2 relays"),
-        scenario_relays(3, MeshConfig::default(), "A -> B via 3 relays (4 copies)"),
-        scenario_relays(3, MeshConfig { copies_initial: 8, ..MeshConfig::default() }, "A -> B via 3 relays (8 copies)"),
+        scenario_relays(3, MeshConfig { copies_initial: 4, ..MeshConfig::default() }, "A -> B via 3 relays (4 copies)"),
+        scenario_relays(3, MeshConfig::default(), "A -> B via 3 relays (8 copies, the default)"),
+        scenario_relays(4, MeshConfig::default(), "A -> B via 4 relays (8 copies)"),
         scenario_asleep_then_wake(),
         scenario_relay_to_internet(),
         ttl,

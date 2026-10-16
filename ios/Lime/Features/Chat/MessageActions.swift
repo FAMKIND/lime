@@ -122,7 +122,7 @@ struct MessageActionsHost: ViewModifier {
                 .onTapGesture { state.menu = nil }
                 .accessibilityHidden(true)
             VStack(spacing: 10) {
-                if !message.deleted && message.state != .sending && message.state != .failed {
+                if !message.deleted && !message.state.isInFlight && message.state != .failed {
                     HStack(spacing: 4) {
                         ForEach(ConversationStore.quickReactions, id: \.self) { emoji in
                             let mine = message.reactions.first { $0.emoji == emoji }?.mine ?? false
@@ -154,7 +154,7 @@ struct MessageActionsHost: ViewModifier {
                     .accessibilityIdentifier("reaction-row")
                 }
                 VStack(spacing: 0) {
-                    if !message.deleted, !inThread, message.state != .sending, message.state != .failed {
+                    if !message.deleted, !inThread, !message.state.isInFlight, message.state != .failed {
                         row("arrowshape.turn.up.left", "Reply", id: "reply-in-thread") { state.menu = nil; onReply(message) }
                     }
                     if !message.deleted, message.call == nil {

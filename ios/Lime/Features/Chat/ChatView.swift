@@ -11,6 +11,8 @@ struct ChatView: View {
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.dismiss) private var dismiss
     @State private var composerModel = RichComposerModel()
+    /// "Waiting for internet": the one-line reason (LIME-142).
+    @State private var offlineReason: String?
     @State private var confirmingBlock = false
     @State private var confirmingLeave = false
     @State private var showingSeal = false
@@ -137,6 +139,9 @@ struct ChatView: View {
         .safeAreaInset(edge: .bottom) { bottomBar(conversation) }
         .toolbar(.hidden, for: .navigationBar)
         .swipeBackEnabled()
+        .alert("Waiting for internet", isPresented: Binding(get: { offlineReason != nil }, set: { if !$0 { offlineReason = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(offlineReason ?? "") }
     }
 
     // MARK: Shared
@@ -271,6 +276,7 @@ struct ChatView: View {
                                           highlighted: highlightedID == message.id,
                                           findWords: highlightWords,
                                           onRetry: { Task { await store.resend(message.id) } },
+                                          onWhy: { offlineReason = OfflineReason.text(for: message, in: conversation) },
                                           onOpenThread: { store.path.append(ThreadTarget(conversationID: conversation.id, rootID: message.id)) },
                                           onActions: { actions.menu = message },
                                           onShowReactions: { actions.reactors = message },
@@ -728,6 +734,8 @@ struct MessageBubble: View {
     /// The words find (or a search result) is looking for: highlighted inside the bubble.
     var findWords: [String] = []
     var onRetry: () -> Void = {}
+    /// "Waiting for internet": tap for the one-line reason.
+    var onWhy: () -> Void = {}
     /// Tapping the "N replies" row under a message that has them.
     var onOpenThread: (() -> Void)? = nil
     /// Long-press: the actions menu (reactions, Reply, Edit, Copy, Select, Delete).
@@ -865,6 +873,21 @@ struct MessageBubble: View {
                     Button("· Not delivered. Tap to resend", action: onRetry)
                         .foregroundStyle(Color.red)
                         .accessibilityIdentifier("delivery-undelivered")
+                case .waiting, .passed:
+                    // On its way through nearby phones (LIME-142): words and an icon, grey (not an error), no retry (it resumes by itself).
+                    Label(message.state.statusWords ?? "", systemImage: message.state.statusSymbol ?? "")
+                        .labelStyle(.titleAndIcon).imageScale(.small)
+                        .accessibilityLabel(message.state.statusWords ?? "")
+                        .accessibilityIdentifier(message.state == .waiting ? "delivery-waiting" : "delivery-passed")
+                case .offline:
+                    // It cannot travel through nearby phones (a file, or someone who has not accepted you yet): waits for the internet and says why on tap.
+                    Button(action: onWhy) {
+                        Label(message.state.statusWords ?? "", systemImage: message.state.statusSymbol ?? "")
+                            .labelStyle(.titleAndIcon).imageScale(.small)
+                    }
+                    .accessibilityLabel("Waiting for internet")
+                    .accessibilityHint("Says why")
+                    .accessibilityIdentifier("delivery-offline")
                 case .received, .system: EmptyView()
                 }
             }
@@ -1135,6 +1158,17 @@ enum LiveCardWords {
     }
 
     static func spoken(who: String, video: Bool) -> String { "\(video ? "Video" : "Voice") call in progress. \(who). Join" }
+}
+
+/// Why a message is "Waiting for internet" instead of being passed through nearby phones (LIME-142): one line, true.
+enum OfflineReason {
+    static func text(for message: Message, in conversation: Conversation) -> String {
+        if !message.attachments.isEmpty { return "Pictures and files need the internet. This goes as soon as you\u{2019}re connected." }
+        if conversation.isRequest || (!conversation.isGroup && conversation.members.first == nil) {
+            return "This person hasn\u{2019}t accepted your messages yet, so nearby phones can\u{2019}t carry this. It goes as soon as you\u{2019}re connected."
+        }
+        return "Nearby phones aren\u{2019}t passing messages on right now. This goes as soon as you\u{2019}re connected."
+    }
 }
 
 /// The header's call circle while a group call is live (LIME-146b): the same circle as the phone button, turned lime, with the call's icon.

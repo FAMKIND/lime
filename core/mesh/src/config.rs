@@ -10,7 +10,8 @@ pub struct MeshConfig {
     /// The seen-set: digests remembered this many seconds, at most this many (LRU).
     pub seen_window_secs: u64,
     pub seen_capacity: usize,
-    /// Spray and wait: copies a packet starts with, the most it may ever hold, and (implicit) half is handed to each courier met.
+    /// Spray and wait: copies a packet starts with (8: the simulator showed 4 reaches only two relays on a chain), the most it may ever hold,
+    /// and (implicit) half is handed to each courier met.
     pub copies_initial: u8,
     pub copies_cap: u8,
     /// A packet lives at most this long from when its author made it.
@@ -41,7 +42,7 @@ impl Default for MeshConfig {
             ttl_cap_many_links: 5,
             seen_window_secs: 300,
             seen_capacity: 1000,
-            copies_initial: 4,
+            copies_initial: 8,
             copies_cap: 8,
             max_lifetime_secs: 48 * 3600,
             store_cap_bytes: 5 * 1024 * 1024,

@@ -1084,8 +1084,8 @@ fn a_debug_probe_crosses_the_mesh_and_is_counted_but_never_becomes_a_message() {
     let (a, b) = (mesh_engine(&alice), mesh_engine(&bob));
     a.refresh_tags().unwrap();
     b.refresh_tags().unwrap();
-    assert!(!a.queue_probe(stranger.user.clone()).unwrap(), "no delivery key for a stranger: no probe");
-    assert!(a.queue_probe(bob.user.clone()).unwrap());
+    assert!(a.queue_probe(stranger.user.clone()).unwrap().is_none(), "no delivery key for a stranger: no probe");
+    assert!(a.queue_probe(bob.user.clone()).unwrap().is_some());
     mesh_meet(&a, &b);
     let before = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().len();
     assert_eq!(b.take_mine().unwrap(), 0, "a probe is not a message");
@@ -1093,6 +1093,171 @@ fn a_debug_probe_crosses_the_mesh_and_is_counted_but_never_becomes_a_message() {
     assert_eq!((stats.probes_received, stats.mine), (1, 1));
     assert_eq!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().len(), before, "nothing in the conversation");
     assert_eq!(bob.store.test_pending_count(), 0, "nothing in the pending queue either");
+}
+
+// ---------------------------------------------------------------- real messages over the mesh (LIME-142)
+
+/// A phone whose internet can be switched off: every request fails like a network error while `online` is false.
+struct Flaky {
+    inner: Arc<dyn Transport>,
+    online: std::sync::atomic::AtomicBool,
+}
+
+impl Transport for Flaky {
+    fn request(&self, method: String, path: String, headers: Vec<crate::HeaderPair>, body: Vec<u8>) -> Result<crate::TransportResponse, crate::TransportError> {
+        if !self.online.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(crate::TransportError::Failed);
+        }
+        self.inner.request(method, path, headers, body)
+    }
+}
+
+fn flaky(transport: &Arc<dyn Transport>) -> (Arc<Flaky>, Arc<dyn Transport>) {
+    let flaky = Arc::new(Flaky { inner: transport.clone(), online: std::sync::atomic::AtomicBool::new(true) });
+    let as_transport: Arc<dyn Transport> = flaky.clone();
+    (flaky, as_transport)
+}
+
+fn state_of(p: &Party, to: &Party, text: &str) -> String {
+    p.store.list_messages(format!("dm:{}", to.user)).unwrap().into_iter().find(|m| m.text == text).unwrap().local_state
+}
+
+fn outbox_rows(p: &Party) -> Vec<(String, Vec<u8>)> {
+    let conn = p.store.lock();
+    let mut statement = conn.prepare("SELECT to_device, ciphertext FROM mesh_outbox ORDER BY to_device").unwrap();
+    statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|r| r.unwrap()).collect()
+}
+
+#[test]
+fn offline_a_sealed_message_waits_for_the_mesh_is_never_re_encrypted_and_goes_as_it_was_made_when_the_internet_returns() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    alice.store.set_mesh_enabled(true);
+    let (net, offline) = flaky(&transport);
+    net.online.store(false, std::sync::atomic::Ordering::SeqCst);
+    alice.store.queue_text(format!("dm:{}", bob.user), "Love you".into()).unwrap();
+    // Offline: the message is kept for the mesh, not failed.
+    assert_eq!(alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap(), 0, "nothing reached the server");
+    assert_eq!(state_of(&alice, &bob, "Love you"), "waiting", "\"Waiting for signal\"");
+    let rows = outbox_rows(&alice);
+    assert_eq!(rows.len(), 1, "one ciphertext per recipient device");
+    assert!(mailbox_of(&server, &bob.device).iter().all(|_| true));
+    // Trying again offline changes nothing and encrypts nothing new.
+    assert_eq!(alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap(), 0);
+    assert_eq!(outbox_rows(&alice), rows, "the same ciphertext: never re-encrypted");
+    assert_eq!(state_of(&alice, &bob, "Love you"), "waiting");
+    // The internet returns: exactly these bytes go, and the message is sent.
+    net.online.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(alice.store.flush_mesh_outbox(offline.clone(), alice.token.clone()).unwrap(), 1);
+    assert_eq!(state_of(&alice, &bob, "Love you"), "sent");
+    assert!(outbox_rows(&alice).is_empty());
+    let on_server: Vec<Vec<u8>> = server.state.lock().unwrap().mailbox.iter().filter(|m| m.1 == bob.device).map(|m| vodozemac::base64_decode(&m.2).unwrap()).collect();
+    assert!(on_server.contains(&rows[0].1), "the very ciphertext that was kept");
+    assert_eq!(sync(&bob, &transport).received, 1);
+    assert!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().iter().any(|m| m.text == "Love you"));
+}
+
+#[test]
+fn what_cannot_travel_the_mesh_still_waits_for_the_internet_and_the_switch_turns_it_off() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (stranger, _) = party(&server, "stranger", 3);
+    befriend(&alice, &bob, &transport);
+    alice.store.set_mesh_enabled(true);
+    let (net, offline) = flaky(&transport);
+    // A stranger (never gave me a delivery key) cannot be sent sealed: the usual failure, nothing parked.
+    alice.store.start_dm(stranger.user.clone(), stranger.user.clone()).unwrap();
+    alice.store.queue_text(format!("dm:{}", stranger.user), "hello stranger".into()).unwrap();
+    net.online.store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(alice.store.deliver_queued(offline.clone(), alice.token.clone()).is_err());
+    assert!(outbox_rows(&alice).is_empty(), "identified sends need the server: not parked");
+    assert_eq!(state_of(&alice, &stranger, "hello stranger"), "offline", "\"Waiting for internet\", not a failure: it resumes by itself");
+    // Back online, the very next delivery sends it (no tap needed).
+    net.online.store(true, std::sync::atomic::Ordering::SeqCst);
+    alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap();
+    assert_eq!(state_of(&alice, &stranger, "hello stranger"), "sent");
+    net.online.store(false, std::sync::atomic::Ordering::SeqCst);
+    // After 48 hours with no route it is a real failure.
+    alice.store.queue_text(format!("dm:{}", stranger.user), "too late".into()).unwrap();
+    assert!(alice.store.deliver_queued(offline.clone(), alice.token.clone()).is_err());
+    assert_eq!(state_of(&alice, &stranger, "too late"), "offline");
+    alice.store.lock().execute("UPDATE messages SET sent_at = sent_at - ?1 WHERE body = 'too late'", [49i64 * 3600 * 1000]).unwrap();
+    let _ = alice.store.deliver_queued(offline.clone(), alice.token.clone());
+    assert_eq!(state_of(&alice, &stranger, "too late"), "failed", "48 hours with no route: Not sent");
+    // The switch off: even a contact's message is not parked.
+    alice.store.set_mesh_enabled(false);
+    alice.store.queue_text(format!("dm:{}", bob.user), "no mesh".into()).unwrap();
+    assert!(alice.store.deliver_queued(offline.clone(), alice.token.clone()).is_err());
+    assert!(outbox_rows(&alice).is_empty());
+    // A call op is never carried (a ring that arrives a day late is worse than none), even with the mesh on.
+    alice.store.set_mesh_enabled(true);
+    assert!(alice.store.mesh_can_carry("message.send") && alice.store.mesh_can_carry("message.edit") && alice.store.mesh_can_carry("reaction.toggle"));
+    assert!(alice.store.mesh_can_carry("group.add") && alice.store.mesh_can_carry("group.session") && alice.store.mesh_can_carry("delivery_key.share"));
+    for op in ["call.offer", "call.ice", "group.call.start", "group.call.key", "status.changed", "profile.changed"] {
+        assert!(!alice.store.mesh_can_carry(op), "{op}");
+    }
+}
+
+#[test]
+fn a_parked_message_becomes_passed_when_a_phone_takes_a_copy_arrives_by_the_mesh_and_the_later_online_send_is_a_duplicate() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (relay, _) = party(&server, "relay", 3);
+    befriend(&alice, &bob, &transport);
+    alice.store.set_mesh_enabled(true);
+    let (net, offline) = flaky(&transport);
+    net.online.store(false, std::sync::atomic::Ordering::SeqCst);
+    alice.store.queue_text(format!("dm:{}", bob.user), "over the mesh".into()).unwrap();
+    alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap();
+    let (a, r, b) = (mesh_engine(&alice), mesh_engine(&relay), mesh_engine(&bob));
+    for e in [&a, &r, &b] {
+        e.refresh_tags().unwrap();
+    }
+    assert_eq!(a.pump_outbox().unwrap(), 1, "the kept ciphertext is on the mesh now");
+    assert_eq!(state_of(&alice, &bob, "over the mesh"), "waiting", "no phone has taken it yet");
+    mesh_meet(&a, &r);
+    a.pump_outbox().unwrap();
+    assert_eq!(state_of(&alice, &bob, "over the mesh"), "passed", "\"Passed to a nearby phone\"");
+    mesh_meet(&r, &b);
+    assert_eq!(b.take_mine().unwrap(), 1);
+    assert!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().iter().any(|m| m.text == "over the mesh"));
+    let notes = b.take_notes().join("\n");
+    assert!(notes.contains("mesh_delivered kind=message") && notes.contains("hops="), "{notes}");
+    // Alice's internet returns: the same ciphertext goes to the server, and Bob still has exactly one.
+    net.online.store(true, std::sync::atomic::Ordering::SeqCst);
+    alice.store.flush_mesh_outbox(offline, alice.token.clone()).unwrap();
+    assert_eq!(state_of(&alice, &bob, "over the mesh"), "sent");
+    sync(&bob, &transport);
+    let copies = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().iter().filter(|m| m.text == "over the mesh").count();
+    assert_eq!(copies, 1, "one message however many ways it came");
+}
+
+#[test]
+fn a_group_message_offline_goes_to_every_members_devices_over_the_mesh_with_the_same_ciphertext() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    // Everyone has talked to everyone (so each holds the others' delivery keys and devices).
+    for (x, y) in [(&alice, &bob), (&alice, &carol), (&bob, &carol)] {
+        befriend(x, y, &transport);
+    }
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    alice.store.set_mesh_enabled(true);
+    let (net, offline) = flaky(&transport);
+    // A first group message online, so every member has the group's session.
+    alice.store.queue_text(chat.clone(), "online first".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    net.online.store(false, std::sync::atomic::Ordering::SeqCst);
+    alice.store.queue_text(chat.clone(), "group offline".into()).unwrap();
+    alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap();
+    let state = alice.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.text == "group offline").unwrap().local_state;
+    assert_eq!(state, "waiting");
+    let rows = outbox_rows(&alice);
+    assert_eq!(rows.len(), 2, "one row per member device");
+    assert_eq!(rows[0].1, rows[1].1, "a group message is one ciphertext for everyone");
 }
 
 #[test]
@@ -1311,7 +1476,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -2013,7 +2178,7 @@ fn an_interrupted_upload_resumes_with_only_the_missing_chunks() {
 
     assert!(alice.store.deliver_queued(transport.clone(), alice.token.clone()).is_err(), "the upload was interrupted");
     let state_of = |p: &Party| p.store.list_messages(chat.clone()).unwrap().into_iter().find(|m| m.id == sent.id).unwrap().local_state;
-    assert_eq!(state_of(&alice), "failed", "the message waits, it is not lost");
+    assert_eq!(state_of(&alice), "offline", "the message waits (\"Waiting for internet\"), it is not lost");
     assert_eq!(server.state.lock().unwrap().objects.keys().filter(|k| k.starts_with("blobs/a/")).count(), 2);
     assert_eq!(sync(&bob, &transport).received, 0, "the message is not sent before its files are up");
 

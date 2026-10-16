@@ -4,6 +4,9 @@ import SwiftUI
 struct BackendLink: Sendable {
     let transport: Transport
     let token: @Sendable () async throws -> String
+    /// The last access token this phone holds, even if it has run out (an hour): for sending with no internet, where a sealed message never uses it
+    /// and a fresh one cannot be fetched. Empty when there is none.
+    var staleToken: @Sendable () async -> String = { "" }
 }
 
 /// Where the navigation stack can be sent besides a chat.
@@ -285,6 +288,12 @@ final class ConversationStore {
     }
 
     var isConnected: Bool { link != nil }
+    /// What the phone talks to the backend through (for the mesh's uploads).
+    var currentLink: BackendLink? { link }
+
+    /// Runs after a send attempt and after each sync: the mesh puts what could not be sent on nearby phones, updates the statuses and uploads what it
+    /// carries when there is internet (LIME-142). Set by the app.
+    @ObservationIgnored var afterDelivery: (() async -> Void)?
 
     /// Delivers what is waiting to be sent, then fetches the mailbox and refreshes the list. Calls
     /// that arrive while one is running are folded into one more round afterwards.
@@ -298,7 +307,9 @@ final class ConversationStore {
         repeat {
             syncAgain = false
             do {
-                let token = try await link.token()
+                // With no internet the token cannot be refreshed: a message that can travel through nearby phones does not need one.
+                let token: String
+                if let fresh = try? await link.token() { token = fresh } else { token = await link.staleToken() }
                 // Sends first (they keep their order); a failure leaves them "Not sent" for a retry.
                 _ = try? await Task.detached(priority: .userInitiated) {
                     try core.deliverQueued(transport: link.transport, authToken: token)
@@ -317,6 +328,7 @@ final class ConversationStore {
             await reload()
             await deliverCallEvents()
         } while syncAgain
+        await afterDelivery?()
         // Other people's photos, at most hourly each; this is off the critical path of the messages.
         await refreshPhotos()
         await refreshGroupPhotos()
@@ -330,7 +342,8 @@ final class ConversationStore {
         guard let core, let link else { return }
         publishStatus()
         do {
-            let token = try await link.token()
+            let token: String
+            if let fresh = try? await link.token() { token = fresh } else { token = await link.staleToken() }
             _ = try await Task.detached(priority: .userInitiated) {
                 try core.deliverQueued(transport: link.transport, authToken: token)
             }.value
@@ -340,6 +353,7 @@ final class ConversationStore {
             if case StoreError.KeyMismatch = error {} else { problem = ConnectionProblem.from(error) }
         }
         await reload()
+        await afterDelivery?()
     }
 
     /// New message: finds one person by exact username or email. `nil` means nobody (or they chose

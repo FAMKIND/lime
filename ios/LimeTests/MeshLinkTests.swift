@@ -163,7 +163,9 @@ final class MeshLinkTests: XCTestCase {
         func linkDown(link: UInt64) { calls.append("down \(link)") }
         func linkUp(link: UInt64) -> [MeshAction] { calls.append("up \(link)"); return upActions[link] ?? [] }
         func queueForSend(toUser: String, toDevice: String, ciphertext: Data) throws -> Bool { true }
-        func queueProbe(toUser: String) throws -> Bool { true }
+        func queueProbe(toUser: String) throws -> String? { "ab12" }
+        func pumpOutbox() throws -> UInt32 { 0 }
+        func takeNotes() -> [String] { [] }
         func refreshTags() throws { calls.append("tags") }
         func stats() -> MeshStats { MeshStats(carried: 0, carriedBytes: 0, received: 0, duplicates: 0, rejected: 0, rateLimited: 0, evicted: 0, expired: 0, mine: 0, probesReceived: 0) }
         func takeMine() throws -> UInt32 { calls.append("takeMine"); defer { mine = 0 }; return mine }
@@ -333,7 +335,9 @@ final class MeshLinkTests: XCTestCase {
         }
         func linkDown(link: UInt64) {}
         func queueForSend(toUser: String, toDevice: String, ciphertext: Data) throws -> Bool { true }
-        func queueProbe(toUser: String) throws -> Bool { true }
+        func queueProbe(toUser: String) throws -> String? { "ab12" }
+        func pumpOutbox() throws -> UInt32 { 0 }
+        func takeNotes() -> [String] { [] }
         func refreshTags() throws {}
         func stats() -> MeshStats { MeshStats(carried: UInt32(have.count), carriedBytes: 0, received: 0, duplicates: 0, rejected: 0, rateLimited: 0, evicted: 0, expired: 0, mine: 0, probesReceived: 0) }
         func takeMine() throws -> UInt32 { 0 }

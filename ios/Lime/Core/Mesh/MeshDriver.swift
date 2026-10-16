@@ -45,6 +45,8 @@ final class MeshDriver {
     private var storm: [UInt64: (windowStart: Date, frames: Int, version: UInt64, warned: Bool)] = [:]
     /// Called after mail for this phone was taken from the engine (messages that became part of a conversation).
     var onMessages: ((Int) -> Void)?
+    /// Called after each frame has been handled (the notes the engine made, such as a delivery, can be logged at once).
+    var onFrameHandled: (() -> Void)?
 
     init(engine: MeshEngineProtocol, scheduler: MeshScheduler = MainQueueScheduler(), now: @escaping () -> Date = Date.init,
          transmit: @escaping (UInt64, Data) -> Void, log: @escaping (String, [String: String]) -> Void = { _, _ in }) {
@@ -72,9 +74,11 @@ final class MeshDriver {
 
     /// A frame arrived. It is handed to the engine and nothing else: **a data frame is not a wake**.
     func receive(_ bytes: Data, on link: UInt64) {
+        log("frame_in", ["link": Self.short(link), "bytes": String(bytes.count)])
         watchForStorm(link)
         run(engine.frame(link: link, bytes: bytes))
         if let count = try? engine.takeMine(), count > 0 { onMessages?(Int(count)) }
+        onFrameHandled?()
         // If this changed what the phone holds, the other links should hear it (once: the debounce and the version see to that).
         let version = engine.summaryVersion()
         if version != lastVersion {

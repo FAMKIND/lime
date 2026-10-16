@@ -524,10 +524,18 @@ impl LimeStore {
 
         // Everyone's devices (a person whose key changed, or with no devices, is left out of this send).
         let mut audience: Vec<(String, Vec<String>)> = Vec::new();
+        let carry = self.mesh_can_carry(&op.op_type);
+        let (op_id, op_type) = (op.op_id.clone(), op.op_type.clone());
         for user in &others {
             match self.recipient_devices(transport, token, user) {
                 Ok(devices) => audience.push((user.clone(), devices.into_iter().map(|d| d.device_id).collect())),
                 Err(StoreError::KeyMismatch | StoreError::NoRecipientKeys) => continue,
+                // No internet: for something the mesh can carry, the devices this phone already knows are enough (the ciphertext is the
+                // same for every device of a group; each member gets their own signed proof).
+                Err(StoreError::Network) if carry => match self.cached_devices(user)? {
+                    Some((_, devices)) => audience.push((user.clone(), devices.into_iter().map(|d| d.device_id).collect())),
+                    None => return Err(StoreError::Network),
+                },
                 Err(error) => return Err(error),
             }
         }
@@ -540,7 +548,8 @@ impl LimeStore {
         let mut wire = vec![GROUP_WIRE];
         wire.extend_from_slice(json!({ "s": outbound.session.session_id(), "c": megolm.to_base64() }).to_string().as_bytes());
         self.with_conn(|conn| groups::save_outbound(conn, &self.pickle_key, &group_id, &outbound))?;
-        self.send_group_wire(transport, token, &vodozemac::base64_encode(&wire), audience)
+        let _ = op_type;
+        self.send_group_wire(transport, token, &vodozemac::base64_encode(&wire), audience, carry.then_some(op_id.as_str()))
     }
 
     /// The current outbound session, replaced first when it is time (a membership change, 100 messages, 7 days),
@@ -613,6 +622,8 @@ impl LimeStore {
         token: &str,
         wire_b64: &str,
         audience: Vec<(String, Vec<String>)>,
+        // Some(op id) when this may go to the mesh if the server cannot be reached (and every recipient can be sent sealed).
+        park_as: Option<&str>,
     ) -> Result<(), StoreError> {
         let mut sealed: Vec<(String, Vec<u8>, Vec<String>)> = Vec::new();
         let mut identified: Vec<(String, Vec<String>)> = Vec::new();
@@ -633,8 +644,23 @@ impl LimeStore {
             }
             Ok(out)
         };
+        // The mesh can take the whole send only if nobody has to be sent identified (that needs the server).
+        let park_as = park_as.filter(|_| identified.is_empty());
         for chunk in sealed.chunks(SEND_CHUNK / 4 + 1) {
-            let (status, _) = call(transport, None, "send", &json!({ "ciphertext": wire_b64, "recipients": sealed_recipients(chunk)? }))?;
+            let answer = call(transport, None, "send", &json!({ "ciphertext": wire_b64, "recipients": sealed_recipients(chunk)? }));
+            let (status, _) = match answer {
+                Ok(answer) => answer,
+                Err(StoreError::Network) if park_as.is_some() => {
+                    // No internet: every member device in this chunk gets this same ciphertext through the mesh.
+                    for (user, _, devices) in chunk {
+                        for device in devices {
+                            self.park_in_mesh_outbox(park_as.unwrap_or_default(), user, device, &wire)?;
+                        }
+                    }
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             if status == 403 {
                 for one in chunk {
                     let (status, _) = call(transport, None, "send", &json!({ "ciphertext": wire_b64, "recipients": sealed_recipients(std::slice::from_ref(one))? }))?;

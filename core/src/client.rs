@@ -188,6 +188,8 @@ impl LimeStore {
             self.refresh_my_photo_if_stale(&transport, &auth_token);
             self.deliver_photo_notices(&transport, &auth_token, &mut state, &me);
             self.deliver_status_notices(&transport, &auth_token, &mut state, &me);
+            // What was kept for the mesh while offline goes now, as it was made.
+            let _ = self.flush_mesh_outbox_locked(&transport, &auth_token);
         }
         // Group state ops (a new group, someone added or removed...) go out before the messages that follow them.
         self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
@@ -204,7 +206,8 @@ impl LimeStore {
                 // The files go up first (resuming if an earlier try was interrupted); then the message that carries their keys.
                 let recipients = self.attachment_recipients(&message.conversation_id);
                 if let Err(error) = self.upload_message_attachments(&transport, &auth_token, &message, recipients) {
-                    self.with_conn(|conn| set_state(conn, &message.id, "failed"))?;
+                    // No internet is not a failure: it waits for the connection and resumes by itself ("Waiting for internet").
+                    self.with_conn(|conn| set_state(conn, &message.id, failure_state(conn, &message.id, &error)))?;
                     // A file that is gone for good (nothing to send it from) fails this message only: the ones behind it still go.
                     // Anything else (no network, a refusal) stops here, as before, and the rest wait in order.
                     if matches!(error, StoreError::NotFound | StoreError::Rejected) {
@@ -213,14 +216,19 @@ impl LimeStore {
                     return Err(error);
                 }
             }
+            self.last_send_parked.store(false, std::sync::atomic::Ordering::Relaxed);
             if message.conversation_id.starts_with("grp:") {
                 match self.deliver_group_message(&transport, &auth_token, &mut state, &me, &message) {
                     Ok(()) => {
-                        self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
-                        sent += 1;
+                        // Kept for the mesh (no internet): "Waiting for signal", not "Sent".
+                        let parked = self.last_send_parked.swap(false, std::sync::atomic::Ordering::Relaxed);
+                        self.with_conn(|conn| set_state(conn, &message.id, if parked { "waiting" } else { "sent" }))?;
+                        if !parked {
+                            sent += 1;
+                        }
                     }
                     Err(error) => {
-                        self.with_conn(|conn| set_state(conn, &message.id, "failed"))?;
+                        self.with_conn(|conn| set_state(conn, &message.id, failure_state(conn, &message.id, &error)))?;
                         return Err(error);
                     }
                 }
@@ -240,12 +248,16 @@ impl LimeStore {
             }
             match outcome {
                 Ok(()) => {
-                    self.with_conn(|conn| set_state(conn, &message.id, "sent"))?;
-                    sent += 1;
+                    let parked = self.last_send_parked.swap(false, std::sync::atomic::Ordering::Relaxed);
+                    self.with_conn(|conn| set_state(conn, &message.id, if parked { "waiting" } else { "sent" }))?;
+                    if !parked {
+                        sent += 1;
+                    }
                 }
                 Err(error) => {
-                    self.with_conn(|conn| set_state(conn, &message.id, "failed"))?;
-                    return Err(error.into_store());
+                    let error = error.into_store();
+                    self.with_conn(|conn| set_state(conn, &message.id, failure_state(conn, &message.id, &error)))?;
+                    return Err(error);
                 }
             }
         }
@@ -295,6 +307,7 @@ impl LimeStore {
         // The delivery key's hash may still be waiting to go up (a block rotated it): send it, then the shares.
         if self.ensure_delivery_access(&transport, &auth_token).is_ok() {
             self.deliver_shares(&transport, &auth_token, &mut state, &me);
+            let _ = self.flush_mesh_outbox_locked(&transport, &auth_token);
         }
         // Turn what is waiting into messages (and retry what failed before). A new session can make
         // an earlier item readable, so go round again while anything makes progress.
@@ -775,7 +788,17 @@ impl LimeStore {
                 });
                 *requests += 1;
                 // Sealed: no Authorization header at all, so the request carries nothing about the sender.
-                let (status, body) = call(transport, if delivery_key.is_some() { None } else { Some(token) }, "send", &request)?;
+                let (status, body) = match call(transport, if delivery_key.is_some() { None } else { Some(token) }, "send", &request) {
+                    Ok(answer) => answer,
+                    // No internet, and this can travel the mesh (sealed, signed, and not a call): keep THIS ciphertext for the mesh and for the
+                    // retry, and carry on: the ratchet has moved, so the session must be saved (below) whatever happens to the packet.
+                    Err(StoreError::Network) if delivery_key.is_some() && self.mesh_can_carry(&op.op_type) => {
+                        self.park_in_mesh_outbox(&op.op_id, recipient, &device.device_id, &wire)?;
+                        updated.push((device, session));
+                        continue;
+                    }
+                    Err(error) => return Err(error.into()),
+                };
                 if delivery_key.is_some() && status == 403 {
                     return Err(SendError::Denied);
                 }
@@ -811,6 +834,96 @@ impl LimeStore {
             })?;
             return Ok(hashes);
         }
+    }
+
+    /// Sends the ciphertexts that were kept for the mesh while there was no internet, **exactly as they were made** (never re-encrypted: a new
+    /// ciphertext would burn another ratchet step and the recipient could see two for one message). The server de-duplicates by the hash of the
+    /// ciphertext per device, so one a relay already uploaded is a duplicate; recipients de-duplicate by op id. A message whose last ciphertext
+    /// goes becomes `sent`; one older than 48 hours with no route becomes `failed`. Stops quietly when the server cannot be reached. Returns how
+    /// many were sent. Runs with the protocol lock held.
+    pub(crate) fn flush_mesh_outbox_locked(&self, transport: &Arc<dyn Transport>, token: &str) -> Result<u32, StoreError> {
+        const GIVE_UP_MS: i64 = 48 * 3600 * 1000;
+        let rows: Vec<(String, String, String, Vec<u8>, i64)> = self.with_conn(|conn| {
+            let mut statement = conn.prepare("SELECT op_id, to_user, to_device, ciphertext, created_at FROM mesh_outbox ORDER BY created_at, op_id").map_err(db_err)?;
+            let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            Ok(rows)
+        })?;
+        let mut sent = 0;
+        for (op_id, to_user, to_device, ciphertext, created_at) in rows {
+            let finish = |sent_ok: bool| -> Result<(), StoreError> {
+                self.with_conn(|conn| {
+                    conn.execute("DELETE FROM mesh_outbox WHERE op_id = ?1 AND to_device = ?2", params![op_id, to_device]).map_err(db_err)?;
+                    let left: i64 = conn.query_row("SELECT COUNT(*) FROM mesh_outbox WHERE op_id = ?1", params![op_id], |r| r.get(0)).map_err(db_err)?;
+                    if left == 0 {
+                        conn.execute(
+                            "UPDATE messages SET local_state = ?2 WHERE id = ?1 AND local_state IN ('waiting', 'passed')",
+                            params![op_id, if sent_ok { "sent" } else { "failed" }],
+                        )
+                        .map_err(db_err)?;
+                    }
+                    Ok(())
+                })
+            };
+            if now_ms() - created_at > GIVE_UP_MS {
+                finish(false)?;
+                continue;
+            }
+            let contact = self.with_conn(|conn| delivery::contact_key(conn, &to_user))?;
+            let sealed_key = contact.and_then(|(key, denied)| (!denied).then_some(key));
+            let send_identified = |this: &Self| -> Result<u16, StoreError> {
+                let request = json!({ "ciphertext": vodozemac::base64_encode(&ciphertext), "recipients": [{ "to_device": to_device, "access": { "identified": true } }] });
+                Ok(call(transport, Some(token), "send", &request).map(|(status, _)| status).map_err(|e| { let _ = this; e })?)
+            };
+            let status = match sealed_key {
+                Some(key) => {
+                    let proof = delivery::access_signature_b64(&key, &ciphertext, &to_device)?;
+                    let request = json!({ "ciphertext": vodozemac::base64_encode(&ciphertext), "recipients": [{ "to_device": to_device, "access": { "signed": proof } }] });
+                    match call(transport, None, "send", &request) {
+                        Ok((403, _)) => {
+                            // They rotated their key: say nothing, send it identified once (as a normal send does).
+                            self.with_conn(|conn| delivery::mark_denied(conn, &to_user))?;
+                            send_identified(self)
+                        }
+                        Ok((status, _)) => Ok(status),
+                        Err(error) => Err(error),
+                    }
+                }
+                None => send_identified(self),
+            };
+            match status {
+                Ok(200) => {
+                    finish(true)?;
+                    sent += 1;
+                }
+                // The server cannot be reached: the rest waits too.
+                Err(StoreError::Network) => break,
+                // Anything else (a refusal, a changed device list): leave it; the 48 hour limit ends it if it never goes.
+                _ => continue,
+            }
+        }
+        Ok(sent)
+    }
+
+    /// Whether a send of this kind may be handed to the mesh when there is no internet: messages, their edits, deletes and reactions, group
+    /// state and the keys that go with it, and the delivery key share; never a call (a ring that arrives a day late is worse than none) or a
+    /// group call, and never anything while the mesh is switched off.
+    pub(crate) fn mesh_can_carry(&self, op_type: &str) -> bool {
+        self.mesh_enabled.load(std::sync::atomic::Ordering::Relaxed)
+            && (op_type.starts_with("message.") || op_type.starts_with("reaction.") || (op_type.starts_with("group.") && !op_type.starts_with("group.call.")) || op_type == "delivery_key.share")
+    }
+
+    /// Keeps a sealed ciphertext that could not be sent for the mesh (and for the retry when the internet is back).
+    pub(crate) fn park_in_mesh_outbox(&self, op_id: &str, to_user: &str, to_device: &str, ciphertext: &[u8]) -> Result<(), StoreError> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO mesh_outbox (op_id, to_user, to_device, ciphertext, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![op_id, to_user, to_device, ciphertext, now_ms()],
+            )
+            .map_err(db_err)?;
+            Ok(())
+        })?;
+        self.last_send_parked.store(true, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
     }
 
     /// The server said what I held about `recipient`'s devices is out of date (409), or names revoked ones (410), and sent the current
@@ -1727,7 +1840,7 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
     let mut statement = conn
         .prepare(
             "SELECT id, conversation_id, body, hlc, parents, thread_root FROM messages
-             WHERE sender_id = ?1 AND local_state IN ('sending', 'failed') AND op_id IS NOT NULL AND hlc IS NOT NULL
+             WHERE sender_id = ?1 AND local_state IN ('sending', 'failed', 'offline') AND op_id IS NOT NULL AND hlc IS NOT NULL
              ORDER BY hlc, id",
         )
         .map_err(db_err)?;
@@ -1759,6 +1872,19 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
             .map(|meta| (meta, crate::store::attachments::preview_of(conn, &row.id).ok().flatten().map(|(d, _)| d)));
     }
     Ok(rows.into_iter().filter(|q| !q.peer.is_empty() || q.conversation_id.starts_with("grp:")).collect())
+}
+
+/// What a failed send becomes: with no internet, "offline" (it waits and resumes by itself: "Waiting for internet") until it is 48 hours old
+/// with no route, then a real failure; anything else is a failure now.
+fn failure_state(conn: &Connection, id: &str, error: &StoreError) -> &'static str {
+    if !matches!(error, StoreError::Network) {
+        return "failed";
+    }
+    let sent_at: Option<i64> = conn.query_row("SELECT sent_at FROM messages WHERE id = ?1", params![id], |r| r.get(0)).ok();
+    match sent_at {
+        Some(at) if now_ms() - at > 48 * 3600 * 1000 => "failed",
+        _ => "offline",
+    }
 }
 
 fn set_state(conn: &Connection, id: &str, state: &str) -> Result<(), StoreError> {

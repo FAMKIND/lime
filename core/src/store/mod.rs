@@ -232,6 +232,10 @@ pub struct LimeStore {
     pub(crate) downloaded: std::sync::atomic::AtomicU32,
     /// How many HTTP requests the last send took (a send with a warm device cache is one): call diagnostics.
     pub(crate) last_send_requests: std::sync::atomic::AtomicU32,
+    /// The app turned the mesh on ("Help pass on nearby messages"): a sealed send that cannot reach the server is parked in `mesh_outbox` for the mesh.
+    pub(crate) mesh_enabled: std::sync::atomic::AtomicBool,
+    /// The last send parked at least one ciphertext in `mesh_outbox` (so the message shows "Waiting for signal", not "Sent").
+    pub(crate) last_send_parked: std::sync::atomic::AtomicBool,
 }
 
 pub(crate) fn db_err(_: rusqlite::Error) -> StoreError {
@@ -719,6 +723,8 @@ impl LimeStore {
             lock_wait_ms: std::sync::atomic::AtomicU64::new(0),
             downloaded: std::sync::atomic::AtomicU32::new(0),
             last_send_requests: std::sync::atomic::AtomicU32::new(0),
+            mesh_enabled: std::sync::atomic::AtomicBool::new(false),
+            last_send_parked: std::sync::atomic::AtomicBool::new(false),
         })
     }
 }

@@ -165,6 +165,18 @@ struct PrivacyScreen: View {
                 .accessibilityIdentifier("privacy-always-relay")
             }
             SettingsFootnote(text: "Hides your IP address from the person you\u{2019}re calling. Calls may be a little slower.")
+            #if DEBUG
+            // LIME-142: on by default. Off: lime stops passing messages for others and stops sending yours through nearby phones.
+            SettingsCard {
+                Toggle(isOn: Binding(get: { MeshService.shared.helpEnabled }, set: { MeshService.shared.helpEnabled = $0 })) {
+                    Text("Help pass on nearby messages").font(Theme.body).foregroundStyle(Theme.text)
+                }
+                .tint(Theme.accent)
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                .accessibilityIdentifier("privacy-mesh-help")
+            }
+            SettingsFootnote(text: "Uses a little battery. Messages you carry are sealed; you can\u{2019}t read them.")
+            #endif
             SettingsCard {
                 Button { confirmClearCalls = true } label: {
                     SettingsRowLabel(symbol: "phone.badge.minus", title: "Clear call history", showsDivider: false)

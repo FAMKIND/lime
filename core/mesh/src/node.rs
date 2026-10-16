@@ -34,6 +34,8 @@ pub struct Delivered {
     pub payload: Vec<u8>,
     /// Hops the packet had left when it arrived here (the hops it took are `ttl - hops_left`, plus the last hand-over).
     pub hops_left: u8,
+    /// When the packet expires: its author makes it expire 48 hours after creation, so `expires_at - 48 h` is when it was made.
+    pub expires_at: u64,
 }
 
 /// A carried packet a phone with internet can hand to the server (`mesh-drop`): the sealed routing header and the payload.
@@ -93,6 +95,8 @@ pub struct MeshNode<S: MeshStore, C: Clock> {
     contact_tags: HashSet<Tag>,
     my_tags: Vec<Tag>,
     uploading: HashSet<Digest>,
+    /// Packets another phone has acknowledged taking (a copy handed over): what "Passed to a nearby phone" is made from.
+    handed: HashSet<Digest>,
     rng: u64,
     stats: NodeStats,
     /// Counts every change to what is carried or recently seen (what a Hello's summary is made of): the platform sends a new Hello only when it moved.
@@ -116,7 +120,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         }
         let seen_set = seen.iter().map(|(d, _)| *d).collect();
         let rng = config.seed | 1;
-        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), rng, stats: NodeStats::default(), version: 0 }
+        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), handed: HashSet::new(), rng, stats: NodeStats::default(), version: 0 }
     }
 
     pub fn config(&self) -> &MeshConfig {
@@ -134,6 +138,11 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     /// duplicates and frames that change nothing leave it alone.
     pub fn summary_version(&self) -> u64 {
         self.version
+    }
+
+    /// Whether another phone has acknowledged taking a copy of this packet (or it reached its recipient) since this phone started.
+    pub fn was_handed(&self, digest: &Digest) -> bool {
+        self.handed.contains(digest)
     }
 
     pub fn link_count(&self) -> usize {
@@ -188,7 +197,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
                 self.store.remove(&digest);
                 self.version += 1;
                 self.remember_seen(digest);
-                out.push(Delivered { digest, payload: c.packet.payload, hops_left: c.packet.hops_left });
+                out.push(Delivered { digest, payload: c.packet.payload, hops_left: c.packet.hops_left, expires_at: c.packet.expires_at });
             }
         }
         out.sort_by_key(|d| d.digest);
@@ -357,6 +366,9 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
 
     fn on_ack(&mut self, link: LinkId, digest: Short) {
         let Some((full, given, to_recipient)) = self.links.get_mut(&link).and_then(|l| l.pending.remove(&digest)) else { return };
+        if self.handed.len() < 10_000 {
+            self.handed.insert(full);
+        }
         if to_recipient {
             // Delivered to its recipient: no need to carry it on.
             if self.carried.remove(&full).is_some() {
@@ -563,8 +575,9 @@ mod tests {
     #[test]
     fn a_packet_hops_to_a_courier_with_half_the_copies_and_one_fewer_hop() {
         let c = clock();
-        let mut a = node_with(MeshConfig::default(), &c);
-        let mut b = node_with(MeshConfig::default(), &c);
+        let four = MeshConfig { copies_initial: 4, ..MeshConfig::default() };
+        let mut a = node_with(four.clone(), &c);
+        let mut b = node_with(four, &c);
         let digest = a.enqueue(packet(1, 1, &c)).unwrap();
         meet(&mut a, &mut b);
         assert_eq!(a.carried[&digest].copies, 2, "4 copies: half handed over and acked, the holder keeps 2");
@@ -776,7 +789,7 @@ mod tests {
         let _lost_ack = b.on_frame(lb, &packet_bytes); // B stored it, the Ack never reaches A
         a.on_link_down(la);
         b.on_link_down(lb);
-        assert_eq!(a.carried[&digest].copies, 4, "A did not count it as handed over (no Ack)");
+        assert_eq!(a.carried[&digest].copies, 8, "A did not count it as handed over (no Ack)");
         assert!(b.carried.contains_key(&digest));
         // Next meeting: B says it has it; nothing is re-sent, and the copy count stays honest (it was never acked).
         meet(&mut a, &mut b);

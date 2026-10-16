@@ -116,6 +116,91 @@ fn a_message_travels_by_the_mesh_and_a_relay_uploads_it_through_mesh_drop_to_the
     assert_eq!(texts.last().map(String::as_str), Some("over the mesh"), "Bob read what travelled by the mesh: {texts:?}");
 }
 
+/// A phone whose internet can be switched off (LIME-142).
+struct Offline {
+    inner: Arc<dyn Transport>,
+    online: std::sync::atomic::AtomicBool,
+}
+
+impl Transport for Offline {
+    fn request(&self, method: String, path: String, headers: Vec<HeaderPair>, body: Vec<u8>) -> Result<TransportResponse, TransportError> {
+        if !self.online.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(TransportError::Failed);
+        }
+        self.inner.request(method, path, headers, body)
+    }
+}
+
+/// LIME-142: Alice has no internet and sends a real message. The sealed ciphertext is kept for the mesh (not re-encrypted later), travels to a
+/// relay, the relay uploads it through the real `mesh-drop`, Bob reads it; then Alice's internet returns and her retry sends the same bytes:
+/// a duplicate, so Bob still has exactly one message.
+#[test]
+fn an_offline_message_travels_the_mesh_is_uploaded_by_a_relay_and_alices_later_retry_is_a_duplicate() {
+    let admin = Admin::from_env();
+    let real = admin.transport();
+    let alice = admin.create_account();
+    let bob = admin.create_account();
+    let relay = admin.create_account();
+    let mut cleanup = Cleanup(&admin, vec![]);
+    for a in [&alice, &bob, &relay] {
+        cleanup.1.push(Account { id: a.id.clone(), email: a.email.clone(), token: a.token.clone() });
+    }
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    admin.give_profile(&alice, "Alice Adams", &format!("al{}", &suffix[..8]));
+    admin.give_profile(&bob, "Bob Brown", &format!("bo{}", &suffix[..8]));
+    admin.give_profile(&relay, "Rae Relay", &format!("re{}", &suffix[..8]));
+    let dir = tempfile::tempdir().unwrap();
+    let (alice_store, bob_store, relay_store) = (store(&dir, "alice.db", 1), store(&dir, "bob.db", 2), store(&dir, "relay.db", 3));
+    alice_store.register_device(real.clone(), alice.token.clone()).unwrap();
+    let bob_device = bob_store.register_device(real.clone(), bob.token.clone()).unwrap().device_id;
+    relay_store.register_device(real.clone(), relay.token.clone()).unwrap();
+    // Alice and Bob accept each other.
+    let chat_with_bob = alice_store.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
+    alice_store.queue_text(chat_with_bob.clone(), "hello Bob".into()).unwrap();
+    alice_store.deliver_queued(real.clone(), alice.token.clone()).unwrap();
+    bob_store.sync(real.clone(), bob.token.clone()).unwrap();
+    let chat_with_alice = bob_store.list_conversations().unwrap().remove(0).id;
+    bob_store.accept_request(chat_with_alice.clone()).unwrap();
+    bob_store.queue_text(chat_with_alice.clone(), "hi Alice".into()).unwrap();
+    bob_store.deliver_queued(real.clone(), bob.token.clone()).unwrap();
+    alice_store.sync(real.clone(), alice.token.clone()).unwrap();
+    assert_eq!(alice_store.sealed_contact_count().unwrap(), 1);
+
+    // Alice goes offline and writes.
+    alice_store.set_mesh_enabled(true);
+    let phone = Arc::new(Offline { inner: real.clone(), online: std::sync::atomic::AtomicBool::new(false) });
+    let offline: Arc<dyn Transport> = phone.clone();
+    alice_store.queue_text(chat_with_bob.clone(), "Love you".into()).unwrap();
+    alice_store.deliver_queued(offline.clone(), alice.token.clone()).unwrap();
+    let state = |text: &str| alice_store.list_messages(chat_with_bob.clone()).unwrap().into_iter().find(|m| m.text == text).unwrap().local_state;
+    assert_eq!(state("Love you"), "waiting");
+    assert!(admin.mailbox_senders(&bob_device).is_empty(), "nothing reached the server");
+
+    // The mesh: Alice -> the relay.
+    let local_public = vodozemac::base64_decode("GyNOPj7N/ovXno/OznB9bEtKB2PTAsuRK1XzXrzX7lY=").unwrap();
+    let alice_mesh = lime_core::MeshEngine::new_with_server_key(alice_store.clone(), 1, local_public.clone()).unwrap();
+    let relay_mesh = lime_core::MeshEngine::new_with_server_key(relay_store.clone(), 1, local_public).unwrap();
+    alice_mesh.refresh_tags().unwrap();
+    relay_mesh.refresh_tags().unwrap();
+    assert_eq!(alice_mesh.pump_outbox().unwrap(), 1);
+    mesh_meet(&alice_mesh, &relay_mesh);
+    alice_mesh.pump_outbox().unwrap();
+    assert_eq!(state("Love you"), "passed", "another phone took a copy");
+
+    // The relay reaches the internet and uploads through the real mesh-drop.
+    assert_eq!(relay_mesh.upload_all(real.clone(), relay.token.clone()).unwrap(), 1);
+    assert_eq!(bob_store.sync(real.clone(), bob.token.clone()).unwrap().received, 1);
+    let texts = |s: &lime_core::LimeStore, chat: &str| -> Vec<String> { s.list_messages(chat.to_owned()).unwrap().into_iter().map(|m| m.text).collect() };
+    assert_eq!(texts(&bob_store, &chat_with_alice).last().map(String::as_str), Some("Love you"));
+
+    // Alice's internet returns: the same ciphertext goes; the server already has it (a duplicate) and Bob still has one message.
+    phone.online.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(alice_store.flush_mesh_outbox(offline, alice.token.clone()).unwrap(), 1);
+    assert_eq!(state("Love you"), "sent");
+    bob_store.sync(real.clone(), bob.token.clone()).unwrap();
+    assert_eq!(texts(&bob_store, &chat_with_alice).iter().filter(|t| *t == "Love you").count(), 1, "one message however many ways it came");
+}
+
 /// The platform side of the transport, with a blocking HTTP client (iOS uses URLSession).
 struct HttpTransport {
     base: String,

@@ -513,6 +513,20 @@ const MIGRATIONS: &[&str] = &[
          digest BLOB PRIMARY KEY,
          at     INTEGER NOT NULL
      );",
+    // 33 (LIME-142): sealed sends that could not reach the server (no internet) and were handed to the mesh. The ciphertext is kept, so the
+    // retry when the internet returns sends exactly these bytes (a re-encryption would burn another ratchet step and the recipient would
+    // see two different ciphertexts for one message). `packet_digest` is set once the mesh engine carries it; `passed` once another phone took
+    // a copy (the "Passed to a nearby phone" status).
+    "CREATE TABLE mesh_outbox (
+         op_id         TEXT NOT NULL,
+         to_user       TEXT NOT NULL,
+         to_device     TEXT NOT NULL,
+         ciphertext    BLOB NOT NULL,
+         created_at    INTEGER NOT NULL,
+         packet_digest BLOB,
+         passed        INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (op_id, to_device)
+     );",
 ];
 
 /// The schema version this build writes.

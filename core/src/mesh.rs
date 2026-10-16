@@ -196,6 +196,11 @@ pub struct MeshStats {
 /// inbound path (so a field test leaves nothing in the conversations or the pending queue).
 const PROBE_PREFIX: &[u8] = b"LIMEMESHPROBE1";
 
+/// Four hex characters of a packet digest: enough to follow one packet through the logs, not enough to identify it.
+fn short_id(digest: &Digest) -> String {
+    digest[..2].iter().map(|b| format!("{b:02x}")).collect()
+}
+
 fn actions(list: Vec<Action>) -> Vec<MeshAction> {
     list.into_iter().map(|Action::SendFrame { link, bytes, delay_ms }| MeshAction { link: link.0, bytes, delay_ms }).collect()
 }
@@ -209,32 +214,43 @@ pub struct MeshEngine {
     server_key: Option<ServerKey>,
     my_tags: Mutex<Vec<[u8; 16]>>,
     counters: Mutex<(u64, u64)>, // (mine, probes received)
+    /// Packets already taken as this phone's own (counted once per packet, however many times it arrives again).
+    delivered: Mutex<std::collections::HashSet<Digest>>,
+    /// Lines for the diagnostics log (what was queued, what arrived, after how long and how many hops): drained by `take_notes`.
+    notes: Mutex<Vec<String>>,
 }
 
 impl MeshEngine {
     fn build(store: Arc<LimeStore>, server_key: Option<ServerKey>) -> Arc<Self> {
         let node = MeshNode::new(MeshConfig { seed: now_ms() as u64, ..MeshConfig::default() }, SqlMeshStore { store: store.clone() }, SystemClock);
-        Arc::new(MeshEngine { store, node: Mutex::new(node), server_key, my_tags: Mutex::new(Vec::new()), counters: Mutex::new((0, 0)) })
+        Arc::new(MeshEngine { store, node: Mutex::new(node), server_key, my_tags: Mutex::new(Vec::new()), counters: Mutex::new((0, 0)), delivered: Mutex::new(std::collections::HashSet::new()), notes: Mutex::new(Vec::new()) })
     }
 
     fn node(&self) -> std::sync::MutexGuard<'_, MeshNode<SqlMeshStore, SystemClock>> {
         self.node.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn queue(&self, to_user: String, to_device: String, ciphertext: Vec<u8>) -> Result<bool, StoreError> {
+    fn queue(&self, to_user: String, to_device: String, ciphertext: Vec<u8>) -> Result<Option<Digest>, StoreError> {
         let server = self.server_key.ok_or(StoreError::Unavailable)?;
         let now = now_ms().max(0) as u64 / 1000;
         let key = {
             let conn = self.store.lock();
             match crate::store::delivery::contact_key(&conn, &to_user)? {
                 Some((key, false)) => key,
-                _ => return Ok(false),
+                _ => return Ok(None),
             }
         };
         let signed = crate::store::delivery::access_signature_b64(&key, &ciphertext, &to_device)?;
         let header = seal_header(&server, &to_device, &signed)?;
         let packet = Packet { tag: recipient_tag(&key, &to_device, day_of(now))?, header, payload: ciphertext, hops_left: 0, expires_at: now + 48 * 3600 };
-        Ok(self.node().enqueue(packet).is_ok())
+        Ok(self.node().enqueue(packet).ok())
+    }
+
+    fn note(&self, line: String) {
+        let mut notes = self.notes.lock().unwrap_or_else(|e| e.into_inner());
+        if notes.len() < 500 {
+            notes.push(line);
+        }
     }
 }
 
@@ -288,22 +304,73 @@ impl MeshEngine {
     /// tagged for that device, with the routing header sealed to the server. Only mail to contacts who gave us their delivery key can travel
     /// (the proof is signed with it); anything else is refused, and the caller sends it the usual way. Returns whether it was queued.
     pub fn queue_for_send(&self, to_user: String, to_device: String, ciphertext: Vec<u8>) -> Result<bool, StoreError> {
-        self.queue(to_user, to_device, ciphertext)
+        Ok(self.queue(to_user, to_device, ciphertext)?.is_some())
     }
 
     /// Debug field test (LIME-141): puts a **probe** on the mesh for an accepted contact: random bytes, sealed and tagged like real mail for
     /// the first of the contact's devices this phone knows, that the recipient counts (`MeshStats.probes_received`) and never treats as a
     /// message. Returns whether it was queued (false: no delivery key or no known device for that contact).
-    pub fn queue_probe(&self, to_user: String) -> Result<bool, StoreError> {
+    pub fn queue_probe(&self, to_user: String) -> Result<Option<String>, StoreError> {
         let device: Option<String> = {
             let conn = self.store.lock();
             conn.query_row("SELECT device_id FROM peer_devices WHERE user_id = ?1 ORDER BY device_id LIMIT 1", params![to_user], |r| r.get(0)).ok()
         };
-        let Some(device) = device else { return Ok(false) };
+        let Some(device) = device else { return Ok(None) };
         let mut payload = PROBE_PREFIX.to_vec();
         payload.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
         payload.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
-        self.queue(to_user, device, payload)
+        let id = self.queue(to_user, device, payload)?.map(|d| short_id(&d));
+        if let Some(id) = &id {
+            self.note(format!("mesh_queued kind=probe id={id}"));
+        }
+        Ok(id)
+    }
+
+    /// Moves what the app could not send (kept in the mesh outbox) onto the mesh, and updates each message's status: **"waiting"** until another
+    /// phone has acknowledged taking a copy, then **"passed"**. Call it after every send attempt, when the mesh starts, and now and then while it
+    /// runs. Returns how many packets were newly queued (a Hello is worth sending when it is above zero).
+    pub fn pump_outbox(&self) -> Result<u32, StoreError> {
+        let rows: Vec<(String, String, String, Vec<u8>)> = {
+            let conn = self.store.lock();
+            let mut statement = conn
+                .prepare("SELECT op_id, to_user, to_device, ciphertext FROM mesh_outbox WHERE packet_digest IS NULL ORDER BY created_at")
+                .map_err(db_err)?;
+            let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            rows
+        };
+        let mut queued = 0;
+        for (op_id, to_user, to_device, ciphertext) in rows {
+            if let Some(digest) = self.queue(to_user, to_device.clone(), ciphertext)? {
+                let conn = self.store.lock();
+                conn.execute("UPDATE mesh_outbox SET packet_digest = ?3 WHERE op_id = ?1 AND to_device = ?2", params![op_id, to_device, digest.to_vec()]).map_err(db_err)?;
+                drop(conn);
+                self.note(format!("mesh_queued kind=message id={} op={}", short_id(&digest), op_id.chars().take(4).collect::<String>()));
+                queued += 1;
+            }
+        }
+        // Which of them has another phone taken?
+        let carried: Vec<(String, String, Vec<u8>)> = {
+            let conn = self.store.lock();
+            let mut statement = conn.prepare("SELECT op_id, to_device, packet_digest FROM mesh_outbox WHERE packet_digest IS NOT NULL AND passed = 0").map_err(db_err)?;
+            let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            rows
+        };
+        for (op_id, to_device, digest) in carried {
+            let Ok(digest) = <Digest>::try_from(digest.as_slice()) else { continue };
+            if self.node().was_handed(&digest) {
+                let conn = self.store.lock();
+                conn.execute("UPDATE mesh_outbox SET passed = 1 WHERE op_id = ?1 AND to_device = ?2", params![op_id, to_device]).map_err(db_err)?;
+                conn.execute("UPDATE messages SET local_state = 'passed' WHERE id = ?1 AND local_state = 'waiting'", params![op_id]).map_err(db_err)?;
+                drop(conn);
+                self.note(format!("mesh_passed id={}", short_id(&digest)));
+            }
+        }
+        Ok(queued)
+    }
+
+    /// Lines for the diagnostics log since the last call (queued, passed, delivered with the delay and hops). Four-character ids only.
+    pub fn take_notes(&self) -> Vec<String> {
+        std::mem::take(&mut *self.notes.lock().unwrap_or_else(|e| e.into_inner()))
     }
 
     /// A number that changes whenever what this phone would say in a Hello changes (packets carried or recently seen). The platform sends a new
@@ -334,7 +401,28 @@ impl MeshEngine {
         if mail.is_empty() {
             return Ok(0);
         }
-        let (probes, messages): (Vec<_>, Vec<_>) = mail.into_iter().map(|m| m.payload).partition(|p| p.starts_with(PROBE_PREFIX));
+        let now = now_ms().max(0) as u64 / 1000;
+        let mut probes: Vec<Vec<u8>> = Vec::new();
+        let mut messages: Vec<Vec<u8>> = Vec::new();
+        {
+            let mut delivered = self.delivered.lock().unwrap_or_else(|e| e.into_inner());
+            for m in mail {
+                // Counted once per packet: the same packet can arrive again (by another route, or after the seen-set forgot it).
+                if !delivered.insert(m.digest) {
+                    continue;
+                }
+                let made = m.expires_at.saturating_sub(48 * 3600);
+                let probe = m.payload.starts_with(PROBE_PREFIX);
+                self.note(format!(
+                    "mesh_delivered kind={} id={} after={}s hops={}",
+                    if probe { "probe" } else { "message" },
+                    short_id(&m.digest),
+                    now.saturating_sub(made),
+                    7u8.saturating_sub(m.hops_left) + 1
+                ));
+                if probe { probes.push(m.payload) } else { messages.push(m.payload) }
+            }
+        }
         {
             let mut counters = self.counters.lock().unwrap_or_else(|e| e.into_inner());
             counters.0 += (probes.len() + messages.len()) as u64;
@@ -402,6 +490,21 @@ impl MeshEngine {
             mine: counters.0,
             probes_received: counters.1,
         }
+    }
+}
+
+#[uniffi::export]
+impl LimeStore {
+    /// "Help pass on nearby messages" (the app's switch): when on, a sealed send that cannot reach the server is kept for the mesh instead of
+    /// failing; when off, it waits for the internet as before.
+    pub fn set_mesh_enabled(&self, enabled: bool) {
+        self.mesh_enabled.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Sends what was kept for the mesh while offline, exactly as it was made (a retry never re-encrypts). Returns how many went.
+    pub fn flush_mesh_outbox(&self, transport: Arc<dyn Transport>, auth_token: String) -> Result<u32, StoreError> {
+        let _guard = self.lock_protocol();
+        self.flush_mesh_outbox_locked(&transport, &auth_token)
     }
 }
 

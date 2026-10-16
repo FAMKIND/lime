@@ -1,36 +1,73 @@
 #if DEBUG
 import Foundation
+import Network
 import Observation
 
-/// The one mesh on this phone while testing (LIME-141, Debug builds only): the engine from LimeCore, the driver that runs it, the Bluetooth
-/// link, and the log. It survives the screen (and iOS relaunching the app for Bluetooth: `resumeIfNeeded`).
+/// The one mesh on this phone (LIME-141, 142; Debug builds only for now): the engine from LimeCore, the driver that runs it, the Bluetooth link,
+/// and the log. **It runs by itself:** at launch, once the person is signed in, when "Help pass on nearby messages" is on and the one-time
+/// explanation has been accepted; the test screen is only a window on it.
+///
+/// What it does for real messages: after every send attempt and sync it puts what could not reach the server (kept sealed in LimeCore's mesh
+/// outbox) on nearby phones, updates each message's status ("Waiting for signal", then "Passed to a nearby phone"), and, when there is internet,
+/// uploads everything it carries through `mesh-drop`. Mail for this phone that arrives over the mesh goes into the chat at once.
 @MainActor
 @Observable
 final class MeshService {
     static let shared = MeshService()
-    private static let onKey = "lime.mesh.debug.on"
+    static let helpKey = "lime.mesh.help"
     private static let explainedKey = "lime.mesh.debug.explained"
+    private static let askedOfflineKey = "lime.mesh.askedWhenOffline"
 
     let log = MeshLog()
     let bluetooth = MeshBluetooth()
     private(set) var engine: MeshEngine?
     private(set) var stats: MeshStats?
     private(set) var attached = false
+    /// The explainer should be shown (the person has not yet seen why lime wants Bluetooth).
+    var explainerPending = false
     @ObservationIgnored private var driver: MeshDriver?
+    @ObservationIgnored private var runner: MeshOutboxRunner?
     @ObservationIgnored private var statsTask: Task<Void, Never>?
+    @ObservationIgnored private var pumpTask: Task<Void, Never>?
+    @ObservationIgnored private weak var store: ConversationStore?
+    @ObservationIgnored private let path = NWPathMonitor()
+    @ObservationIgnored private var online = true
 
     private init() {
         bluetooth.onLog = { [weak self] kind, detail in self?.log.record(kind, detail) }
         bluetooth.onPeersChanged = { [weak self] in self?.refreshStats() }
     }
 
-    var isOn: Bool { UserDefaults.standard.bool(forKey: Self.onKey) }
+    // MARK: The switch and the explanation
 
-    /// Whether the one-time explanation before the system's Bluetooth prompt has been shown.
+    /// "Help pass on nearby messages": on by default. Off: no relaying for others and no sending through the mesh (offline sends wait for the internet).
+    var helpEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Self.helpKey) as? Bool ?? true }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.helpKey)
+            store?.core?.setMeshEnabled(enabled: newValue)
+            if newValue {
+                if explained { startIfPossible() } else { explainerPending = true }
+            } else {
+                stop()
+            }
+        }
+    }
+
+    /// Whether the one-time explanation before the system's Bluetooth prompt has been accepted.
     var explained: Bool {
         get { UserDefaults.standard.bool(forKey: Self.explainedKey) }
         set { UserDefaults.standard.set(newValue, forKey: Self.explainedKey) }
     }
+
+    /// The person accepted the explanation: now the system prompt may come.
+    func acceptExplainer() {
+        explained = true
+        explainerPending = false
+        startIfPossible()
+    }
+
+    var isOn: Bool { bluetooth.running }
 
     /// The tiny status: "off", "looking", or "N phones".
     var status: String {
@@ -39,16 +76,50 @@ final class MeshService {
         return bluetooth.peerCount == 0 ? "Nearby: looking" : "Nearby: \(bluetooth.peerCount) phone\(bluetooth.peerCount == 1 ? "" : "s")"
     }
 
+    // MARK: Lifecycle
+
+    /// At launch and after sign-in: the mesh follows the switch. (The Bluetooth managers start at once if the mesh was running, so iOS can hand back
+    /// what it held after relaunching the app for Bluetooth.)
+    func bootstrap(store: ConversationStore) {
+        self.store = store
+        store.afterDelivery = { [weak self] in await self?.afterDelivery() }
+        startPathMonitor()
+        if explained, helpEnabled { bluetooth.start() }
+        Task { @MainActor in
+            var waited = 0
+            while store.core == nil && waited < 600 { try? await Task.sleep(for: .milliseconds(100)); waited += 1 }
+            guard let core = store.core else { return }
+            core.setMeshEnabled(enabled: helpEnabled)
+            if helpEnabled, explained { attach(core: core) }
+        }
+    }
+
+    /// The person is offline for the first time: explain the mesh once (not at first launch).
+    func offlineSeen() {
+        guard helpEnabled, !explained, !UserDefaults.standard.bool(forKey: Self.askedOfflineKey) else { return }
+        UserDefaults.standard.set(true, forKey: Self.askedOfflineKey)
+        explainerPending = true
+    }
+
+    private func startIfPossible() {
+        guard helpEnabled, explained, let core = store?.core else { return }
+        core.setMeshEnabled(enabled: true)
+        attach(core: core)
+        bluetooth.start()
+    }
+
+    /// The test screen's switch.
     func start(core: LimeStore) {
-        UserDefaults.standard.set(true, forKey: Self.onKey)
+        explained = true
+        core.setMeshEnabled(enabled: helpEnabled)
         attach(core: core)
         bluetooth.start()
     }
 
     func stop() {
-        UserDefaults.standard.set(false, forKey: Self.onKey)
         bluetooth.stop()
         statsTask?.cancel()
+        pumpTask?.cancel()
         attached = false
         log.record("mesh_stopped")
     }
@@ -59,8 +130,14 @@ final class MeshService {
         self.engine = engine
         let bluetooth = self.bluetooth
         let driver = MeshDriver(engine: engine, transmit: { link, bytes in bluetooth.transmit(link, bytes) }, log: { [weak self] kind, detail in self?.log.record(kind, detail) })
-        driver.onMessages = { [weak self] count in self?.log.record("mesh_messages", ["count": String(count)]) }
+        driver.onMessages = { [weak self] count in
+            self?.log.record("mesh_messages", ["count": String(count)])
+            Task { @MainActor in await self?.store?.reload() }
+        }
         self.driver = driver
+        let runner = MeshOutboxRunner(engine: engine, driver: driver, log: { [weak self] kind, detail in self?.log.record(kind, detail) })
+        self.runner = runner
+        driver.onFrameHandled = { [weak runner] in runner?.drainNotes() }
         bluetooth.driver = driver
         attached = true
         try? engine.refreshTags()
@@ -72,6 +149,53 @@ final class MeshService {
                 try? await Task.sleep(for: .seconds(60))
             }
         }
+        // While it runs: every 15 seconds, put what is waiting on the mesh, update the statuses and drain the notes.
+        pumpTask?.cancel()
+        pumpTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                await self?.pump()
+            }
+        }
+        Task { @MainActor in await self.afterDelivery() }
+    }
+
+    // MARK: Real messages
+
+    /// After a send attempt and after each sync (and every 15 s while running): on the mesh, statuses, uploads.
+    func afterDelivery() async {
+        await pump()
+        await uploadIfOnline()
+    }
+
+    private func pump() async {
+        guard let runner, attached else { return }
+        let queued = runner.pump()
+        if let store, store.conversations.contains(where: { $0.messages.contains { $0.state == .waiting || $0.state == .passed } }) || queued > 0 { await store.reload() }
+    }
+
+    /// With internet, hands everything this phone carries to the server (`mesh-drop`).
+    func uploadIfOnline() async {
+        guard let engine, attached, let runner, let link = store?.currentLink else { return }
+        guard let token = try? await link.token() else { return }
+        await runner.uploadIfOnline(online: online) {
+            try await Task.detached(priority: .utility) { try engine.uploadAll(transport: link.transport, authToken: token) }.value
+        }
+    }
+
+    private func startPathMonitor() {
+        path.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in
+                guard let self else { return }
+                let nowOnline = path.status == .satisfied
+                let came = nowOnline && !self.online
+                self.online = nowOnline
+                self.log.record("connectivity", ["online": String(nowOnline)])
+                // The internet is back: send what waited (it resumes by itself) and upload what is carried.
+                if came { await self.store?.syncNow() }
+            }
+        }
+        path.start(queue: .main)
     }
 
     func refreshStats(log shouldLog: Bool = false) {
@@ -85,26 +209,15 @@ final class MeshService {
         }
     }
 
-    /// Puts a test packet (random bytes, not a message) on the mesh for an accepted contact. Returns whether it was queued.
-    func queueProbe(to user: String) -> Bool {
-        guard let engine else { return false }
-        let queued = (try? engine.queueProbe(toUser: user)) ?? false
-        log.record("probe_queued", ["ok": String(queued)])
-        if queued { driver?.packetQueued() }
+    /// Puts a test packet (random bytes, not a message) on the mesh for an accepted contact. Returns its four-character id, or nil if it was not queued.
+    func queueProbe(to user: String) -> String? {
+        guard let engine else { return nil }
+        let id = (try? engine.queueProbe(toUser: user)) ?? nil
+        log.record("probe_queued", ["ok": String(id != nil), "id": id ?? "-"])
+        if id != nil { driver?.packetQueued() }
+        runner?.drainNotes()
         refreshStats()
-        return queued
-    }
-
-    /// At launch: if the mesh was on when the app ended (iOS relaunches it for Bluetooth), the Bluetooth managers start again at once (with their
-    /// restore identifiers, so iOS can hand back what it held) and the engine attaches as soon as the store is open.
-    static func resumeIfNeeded(store: ConversationStore) {
-        guard shared.isOn else { return }
-        shared.bluetooth.start()
-        Task { @MainActor in
-            var waited = 0
-            while store.core == nil && waited < 600 { try? await Task.sleep(for: .milliseconds(100)); waited += 1 }
-            if let core = store.core { shared.attach(core: core) }
-        }
+        return id
     }
 }
 #endif

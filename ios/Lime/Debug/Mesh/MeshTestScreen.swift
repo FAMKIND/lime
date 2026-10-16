@@ -47,7 +47,7 @@ struct MeshTestScreen: View {
                     }
                     Button("Queue a test packet") {
                         guard let contact else { return }
-                        note = service.queueProbe(to: contact) ? "Queued. It goes out the next time a phone is near." : "Not queued: no delivery key or no known device for that contact (exchange a message with them first)."
+                        note = service.queueProbe(to: contact).map { "Queued (id \($0)). It goes out the next time a phone is near." } ?? "Not queued: no delivery key or no known device for that contact (exchange a message with them first)."
                     }
                     .buttonStyle(.bordered).tint(Theme.text).disabled(contact == nil || service.engine == nil)
                     .accessibilityIdentifier("mesh-probe")
@@ -80,7 +80,7 @@ struct MeshTestScreen: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
             .alert("Pass messages phone to phone?", isPresented: $explaining) {
                 Button("Not now", role: .cancel) {}
-                Button("Continue") { service.explained = true; begin() }
+                Button("Continue") { service.acceptExplainer(); begin() }
             } message: {
                 Text("lime can pass messages phone-to-phone when there\u{2019}s no internet. It uses Bluetooth, and iOS will ask you to allow it.")
             }
@@ -88,12 +88,13 @@ struct MeshTestScreen: View {
     }
 
     private func toggle() {
-        if service.bluetooth.running { service.stop(); runs = MeshLog.savedRuns(); return }
+        if service.bluetooth.running { service.helpEnabled = false; runs = MeshLog.savedRuns(); return }
         if service.explained { begin() } else { explaining = true }
     }
 
     private func begin() {
         guard let core = store.core else { note = "The store is not open yet."; return }
+        service.helpEnabled = true
         service.start(core: core)
         runs = MeshLog.savedRuns()
     }

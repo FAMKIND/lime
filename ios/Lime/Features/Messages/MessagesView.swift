@@ -33,6 +33,14 @@ struct MessagesView: View {
             StatusSheet(openSettings: { settingsAfterStatus = true })
         }
         #if DEBUG
+        // The mesh (LIME-142): explained once, the first time the phone is offline (not at first launch), before iOS asks for Bluetooth.
+        .onChange(of: store.problem) { _, problem in if problem == .offline { MeshService.shared.offlineSeen() } }
+        .alert("Pass messages phone to phone?", isPresented: Binding(get: { MeshService.shared.explainerPending }, set: { MeshService.shared.explainerPending = $0 })) {
+            Button("Not now", role: .cancel) { MeshService.shared.helpEnabled = false }
+            Button("Continue") { MeshService.shared.acceptExplainer() }
+        } message: {
+            Text("lime can pass messages phone-to-phone when there\u{2019}s no internet. It uses Bluetooth, and iOS will ask you to allow it.")
+        }
         .task {
             if store.demoNotification == "banner" {
                 try? await Task.sleep(for: .milliseconds(500))
@@ -292,14 +300,40 @@ struct MessagesView: View {
 private struct ProblemBanner: View {
     @Environment(AccountSession.self) private var session
     let problem: ConnectionProblem
+    @State private var explaining = false
+
+    /// Offline says how messages will go (through nearby phones too, when that is on); everything else is the problem's own words.
+    private var words: String {
+        guard problem == .offline else { return problem.message }
+        #if DEBUG
+        return OfflineCopy.banner(meshOn: MeshService.shared.helpEnabled && MeshService.shared.explained)
+        #else
+        return OfflineCopy.banner(meshOn: false)
+        #endif
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(problem.message)
+            if problem == .offline {
+                Button { explaining = true } label: {
+                    Text(words)
+                        .font(Theme.secondary).foregroundStyle(Theme.text)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(words)
+                .accessibilityHint("Explains how messages are sent with no internet")
+                .accessibilityIdentifier("problem-message")
+            } else {
+            Text(words)
                 .font(Theme.secondary)
                 .foregroundStyle(Theme.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("problem-message")
+            }
             if problem.needsSignIn {
                 Button { Task { await session.endSession() } } label: {
                     Text("Sign in").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.accentInk)
@@ -316,6 +350,32 @@ private struct ProblemBanner: View {
         .padding(.bottom, 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("problem-banner")
+        .sheet(isPresented: $explaining) { OfflineSheet() }
+    }
+}
+
+/// What "offline" means for sending, in a short sheet (tap the offline banner).
+struct OfflineSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(OfflineCopy.promise, id: \.self) { paragraph in
+                        Text(paragraph).font(Theme.body).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(Theme.canvas.ignoresSafeArea())
+            .navigationTitle(OfflineCopy.sheetTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+        .accessibilityIdentifier("offline-sheet")
     }
 }
 
