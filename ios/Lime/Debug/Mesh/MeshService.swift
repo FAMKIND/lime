@@ -2,6 +2,7 @@
 import Foundation
 import Network
 import Observation
+import UIKit
 
 /// The one mesh on this phone (LIME-141, 142; Debug builds only for now): the engine from LimeCore, the driver that runs it, the Bluetooth link,
 /// and the log. **It runs by itself:** at launch, once the person is signed in, when "Help pass on nearby messages" is on and the one-time
@@ -17,6 +18,8 @@ final class MeshService {
     static let helpKey = "lime.mesh.help"
     private static let explainedKey = "lime.mesh.debug.explained"
     private static let askedOfflineKey = "lime.mesh.askedWhenOffline"
+    private static let nearbyUntilKey = "lime.mesh.nearbyUntil"
+    private static let offeredKey = "lime.mesh.nearbyOffered"
 
     let log = MeshLog()
     let bluetooth = MeshBluetooth()
@@ -25,6 +28,12 @@ final class MeshService {
     private(set) var attached = false
     /// The explainer should be shown (the person has not yet seen why lime wants Bluetooth).
     var explainerPending = false
+    /// Nearby mode (LIME-143): lime stays awake while in front and scans all the time, for up to 2 hours.
+    private(set) var nearbyUntil: Date?
+    /// Nearby mode ended by itself after 2 hours: ask whether to renew it.
+    var nearbyExpired = false
+    @ObservationIgnored private var appActive = true
+    @ObservationIgnored private var nearbyTask: Task<Void, Never>?
     @ObservationIgnored private var driver: MeshDriver?
     @ObservationIgnored private var runner: MeshOutboxRunner?
     @ObservationIgnored private var statsTask: Task<Void, Never>?
@@ -36,7 +45,58 @@ final class MeshService {
     private init() {
         bluetooth.onLog = { [weak self] kind, detail in self?.log.record(kind, detail) }
         bluetooth.onPeersChanged = { [weak self] in self?.refreshStats() }
+        if let until = UserDefaults.standard.object(forKey: Self.nearbyUntilKey) as? Date, NearbyMode.isOn(until: until, now: Date()) { nearbyUntil = until }
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.appActive = true; self?.applyNearby() }
+        }
+        center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.appActive = false; self?.applyNearby() }
+        }
     }
+
+    // MARK: Nearby mode
+
+    var nearbyOn: Bool { NearbyMode.isOn(until: nearbyUntil, now: Date()) }
+
+    /// Turns Nearby mode on (for 2 hours) or off. Turning it on also turns the mesh on (and asks the one-time question if needed).
+    func setNearby(_ on: Bool) {
+        nearbyExpired = false
+        if on {
+            if !helpEnabled { helpEnabled = true }
+            nearbyUntil = Date().addingTimeInterval(NearbyMode.limit)
+            UserDefaults.standard.set(nearbyUntil, forKey: Self.nearbyUntilKey)
+            if explained { startIfPossible() } else { explainerPending = true }
+        } else {
+            nearbyUntil = nil
+            UserDefaults.standard.removeObject(forKey: Self.nearbyUntilKey)
+        }
+        log.record("nearby_mode", ["on": String(on)])
+        applyNearby()
+    }
+
+    /// The scan and the screen follow Nearby mode; a timer ends it after 2 hours.
+    private func applyNearby() {
+        let on = nearbyOn
+        UIApplication.shared.isIdleTimerDisabled = NearbyMode.keepsScreenAwake(nearbyOn: on, appActive: appActive)
+        bluetooth.setContinuousScan(on)
+        nearbyTask?.cancel()
+        guard on, let until = nearbyUntil else { return }
+        nearbyTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(max(1, until.timeIntervalSinceNow)))
+            guard !Task.isCancelled, let self else { return }
+            self.setNearby(false)
+            self.nearbyExpired = true
+        }
+    }
+
+    /// The one-time offer in a chat with a message "Waiting for signal" and no phone in range.
+    func shouldOfferNearby(waitingInChat: Bool) -> Bool {
+        NearbyMode.shouldOffer(waitingInChat: waitingInChat, meshOn: helpEnabled && explained && bluetooth.running, phonesInRange: bluetooth.peerCount,
+                               nearbyOn: nearbyOn, offeredBefore: UserDefaults.standard.bool(forKey: Self.offeredKey))
+    }
+
+    func offerHandled() { UserDefaults.standard.set(true, forKey: Self.offeredKey) }
 
     // MARK: The switch and the explanation
 
@@ -49,6 +109,7 @@ final class MeshService {
             if newValue {
                 if explained { startIfPossible() } else { explainerPending = true }
             } else {
+                setNearby(false)
                 stop()
             }
         }
@@ -72,6 +133,7 @@ final class MeshService {
     /// The tiny status: "off", "looking", or "N phones".
     var status: String {
         guard bluetooth.running else { return "Nearby: off" }
+        if nearbyOn { return NearbyMode.statusLine }
         if bluetooth.bluetoothState != "poweredOn" && bluetooth.bluetoothState != "off" { return "Nearby: Bluetooth \(bluetooth.bluetoothState)" }
         return bluetooth.peerCount == 0 ? "Nearby: looking" : "Nearby: \(bluetooth.peerCount) phone\(bluetooth.peerCount == 1 ? "" : "s")"
     }
@@ -85,6 +147,7 @@ final class MeshService {
         store.afterDelivery = { [weak self] in await self?.afterDelivery() }
         startPathMonitor()
         if explained, helpEnabled { bluetooth.start() }
+        if nearbyOn { applyNearby() }
         Task { @MainActor in
             var waited = 0
             while store.core == nil && waited < 600 { try? await Task.sleep(for: .milliseconds(100)); waited += 1 }

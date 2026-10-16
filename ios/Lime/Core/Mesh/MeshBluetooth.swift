@@ -28,6 +28,8 @@ final class MeshBluetooth: NSObject {
     static let protocolVersion: UInt8 = 1
 
     private(set) var running = false
+    /// Nearby mode (LIME-143): scan all the time, no duty cycle.
+    private(set) var continuousScan = false
     private(set) var bluetoothState = "off"
     private(set) var peerCount = 0
     private(set) var scanMode = "off"
@@ -163,6 +165,12 @@ final class MeshBluetooth: NSObject {
 
     // MARK: Scanning (the duty cycle)
 
+    /// Nearby mode on: scan continuously (no 10-on/20-off duty cycle). Off: the duty cycle may resume.
+    func setContinuousScan(_ on: Bool) {
+        continuousScan = on
+        if running { startScan(continuous: true) }
+    }
+
     /// Foreground and busy: scan all the time. Idle for two minutes in the foreground: 10 seconds on, 20 off, until a phone shows up or the app
     /// leaves the foreground. In the background iOS runs its own service-filtered scan and the app does not control it, so it is left running.
     private func startScan(continuous: Bool) {
@@ -175,7 +183,7 @@ final class MeshBluetooth: NSObject {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(continuous ? 30 : 10))
                 guard let self, self.running, !Task.isCancelled else { return }
-                let idle = Date().timeIntervalSince(self.lastPeerSeen) > 120 && self.peers.isEmpty && !self.inBackground
+                let idle = Date().timeIntervalSince(self.lastPeerSeen) > 120 && self.peers.isEmpty && !self.inBackground && !self.continuousScan
                 if idle {
                     self.central?.stopScan(); self.scanMode = "duty-off"; self.onLog("scan_cycle", ["mode": "off", "seconds": "20"])
                     try? await Task.sleep(for: .seconds(20))

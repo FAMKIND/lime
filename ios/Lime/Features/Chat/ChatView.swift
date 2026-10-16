@@ -627,6 +627,9 @@ struct ChatView: View {
     private func bottomBar(_ conversation: Conversation) -> some View {
         VStack(spacing: 8) {
             CallMiniPlayer()
+            #if DEBUG
+            NearbyOfferBar(waitingInChat: conversation.messages.contains { $0.state == .waiting })
+            #endif
             if conversation.keyChangePending { keyChangeBar(conversation) }
             if let selection {
                 SelectionBar(count: selection.count,
@@ -1211,3 +1214,44 @@ enum CallBubbleTap: Equatable {
         return call.isGroup ? .nothing : .callBack
     }
 }
+
+#if DEBUG
+/// LIME-143: the one-time offer when a message is "Waiting for signal" and no phone is in range.
+struct NearbyOfferBar: View {
+    let waitingInChat: Bool
+    @State private var dismissed = false
+
+    var body: some View {
+        if !dismissed, MeshService.shared.shouldOfferNearby(waitingInChat: waitingInChat) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(NearbyMode.offerTitle).font(Theme.secondary).foregroundStyle(Theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button {
+                        MeshService.shared.offerHandled()
+                        MeshService.shared.setNearby(true)
+                        dismissed = true
+                    } label: {
+                        Text(NearbyMode.offerButton).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                            .padding(.horizontal, 16).frame(minHeight: 44).background(Theme.accent, in: Capsule())
+                    }
+                    .accessibilityIdentifier("nearby-offer-on")
+                    Button {
+                        MeshService.shared.offerHandled()
+                        dismissed = true
+                    } label: {
+                        Text(NearbyMode.offerNotNow).font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 12).frame(minHeight: 44)
+                    }
+                    .accessibilityIdentifier("nearby-offer-not-now")
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.horizontal, 8)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("nearby-offer")
+        }
+    }
+}
+#endif

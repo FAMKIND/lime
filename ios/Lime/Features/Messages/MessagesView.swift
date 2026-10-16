@@ -41,6 +41,13 @@ struct MessagesView: View {
         } message: {
             Text("lime can pass messages phone-to-phone when there\u{2019}s no internet. It uses Bluetooth, and iOS will ask you to allow it.")
         }
+        .alert(NearbyMode.expiredTitle, isPresented: Binding(get: { MeshService.shared.nearbyExpired }, set: { MeshService.shared.nearbyExpired = $0 })) {
+            Button("Not now", role: .cancel) {}
+            Button("Turn on again") { MeshService.shared.setNearby(true) }
+                .accessibilityIdentifier("nearby-renew")
+        } message: {
+            Text(NearbyMode.expiredMessage)
+        }
         .task {
             if store.demoNotification == "banner" {
                 try? await Task.sleep(for: .milliseconds(500))

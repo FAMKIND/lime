@@ -176,6 +176,20 @@ struct PrivacyScreen: View {
                 .accessibilityIdentifier("privacy-mesh-help")
             }
             SettingsFootnote(text: "Uses a little battery. Messages you carry are sealed; you can\u{2019}t read them.")
+            // LIME-143: keeps lime awake while it is in front, for up to 2 hours.
+            SettingsCard {
+                Toggle(isOn: Binding(get: { MeshService.shared.nearbyOn }, set: { MeshService.shared.setNearby($0) })) {
+                    Text(NearbyMode.settingTitle).font(Theme.body).foregroundStyle(Theme.text)
+                }
+                .tint(Theme.accent)
+                .padding(.horizontal, 18).frame(minHeight: 58)
+                .accessibilityIdentifier("privacy-nearby-mode")
+            }
+            if MeshService.shared.nearbyOn {
+                SettingsFootnote(text: NearbyMode.statusLine).accessibilityIdentifier("nearby-status")
+                SettingsFootnote(text: NearbyMode.plugInHint)
+            }
+            SettingsFootnote(text: NearbyMode.settingFootnote)
             #endif
             SettingsCard {
                 Button { confirmClearCalls = true } label: {
