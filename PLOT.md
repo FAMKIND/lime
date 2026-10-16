@@ -5,10 +5,8 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT:**
-- (1) **the user says go** → tend runs `./supabase/deploy-staging.sh` (adds `mesh-key`); a launch then logs `mesh_key_check ok`;
-- (2) **LIME-150** (the call polish), **then LIME-152** (the QA batch + the new sounds).
-- **Both were drafted before the mesh work** (2026-10-15): **tend's Phase 1 must re-survey the files they name** (`GroupCallPiP.swift`, `CallMiniPlayer.swift`, `ChatView.swift`, `ConversationAvatar`, …) and report anything that moved, before building.
+**▶ NEXT FOR TEND: LIME-141-fix2** (1e143: a reconnect storm, ~195 connects/min between the iPad and the 13 mini for ~30 min; the key check never logged). `mesh-key` is deployed. **Still not built** (tend ran 150a first: 1e144). Then LIME-152; **150's remainder (the spike → the mini grid, 7c) waits for the user's "spike" with the phones ready.**
+- **152 was drafted before the mesh work** (2026-10-15): **tend's Phase 1 must re-survey the files it names** and report anything that moved, before building.
 - LIME-144 landed as `67b1c84`: **mesh v1 is wrapped.**
 
 Previously: The builds are installed on all 3. LIME-142-fix landed as `0e619e3`. After it: plot pulls the logs (looking for `upload_ok` + the trigger), then drafts **LIME-144** (the field test + docs).
@@ -155,6 +153,15 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e144. **LIME-150 part 1 (150a) LANDED as `ad5e6c7` (pushed, 2026-10-16 11:41), out of order: 141-fix2 was NEXT but hadn't been committed to PLOT.md, so tend took 150.** Full suite passed on the 13 mini (unit 418/0 failed, UI 200/0 failed).
+   - **Done:** 7b Mute warm neutral; 8 tuck-away edge tab; 9 less green (LIVE badge in the mini player, a quiet live card); 10 one `CallChoiceRows` (voice, then video); 11 group pictures include you (`GroupAvatarPlan`); 12 a 44 pt one-line mini player.
+   - **Not done:** the spike → items 1–6 (the mini grid in the system window) and 7c (a ~30% smaller window). Needs the user + 3 devices ("spike").
+   - **Open calls for the user:** (a) the edge tab is warm neutral, not lime (items 8 vs 9 collided); **plot leans warm** (brand restraint: lime only for the one live action, already the LIVE badge). (b) Greens kept as each screen's one primary action: `CallView` "Message", the group ring's "Join"/"Video", the invite's "Join", the Calls tab's "New call"; **plot leans keep** (one primary per screen is the rule).
+   - **Gate (the user, on a phone):** the 44 pt capsule's look, the pair avatar, the tuck tab; none seen on a device or in screenshots.
+   - **Stray working-tree drift (not from any brief):** `ios/Config/Info-Debug.plist` lost its LIME-103 comment (likely a tool regenerated it); untracked `public/assets/Logomark-outline.svg` and `public/assets/signin-teachers.mp4` (the user's own?). Plot leaves them alone.1e143. **`mesh-key` deployed (tend; 401 without a session).** Plot pulled all 3 logs (`/tmp/lime-meshlogs8/`):
+   - **⚠ a reconnect storm** between the iPad and the 13 mini (13:13–~13:45 UTC): ~4,500 connect/disconnect cycles at ~195/min, with the 13 mini logging `l2cap_unknown_peer` each time;
+   - **no `mesh_key_check` line on any device.**
+   - **→ LIME-141-fix2 (drafted, NEXT):** the unknown-peer race, reconnect backoff, the key check always logs.
 1e142. **LIME-144 LANDED as `67b1c84` (pushed; PLOT.md `0c44a53`). MESH V1 IS WRAPPED.**
    - The docs as built + proven (`architecture.md` §7, `api-v2.md` §8, the release checklist, the DPIA input); `mesh-key` (fingerprint) + the app's launch check (**not deployed: the user's go**); a Debug battery log; dark mode checked (fine); the offline copy cut, with every string before → after (details behind "Learn more").
    - **The roll-up panel is tall** → 152 item 9.
@@ -5843,7 +5850,26 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-144 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): wrap up mesh v1: the docs, the key fingerprint check, an optional battery soak
+### LIME-141-fix2 → `tend` (lime-aa) (NEXT; drafted 2026-10-16; 150a went first): a reconnect storm (L2CAP from an "unknown peer", reconnected every ~0.35 s); the key check never logs
+**Goal:** two phones that can't agree on a link back off instead of reconnecting forever; the L2CAP "unknown peer" case is handled; the launch key check always leaves a log line.
+
+**Plot's read of the logs after the 144 install (`/tmp/lime-meshlogs8/`, 2026-10-16 13:13–14:19 UTC):**
+- **The iPad ↔ 13 mini looped for ~30 minutes:** the iPad's log has **4,528 `connected` / 4,528 `disconnected` / 4,524 `l2cap_open`**, at **~195 a minute**: connected → hello_keep → peer_up → **l2cap_open → peer_down (why: `l2cap-end`) → disconnected → reconnecting → connected** again, **every ~0.35 s**;
+- the **13 mini's log has 4,519 `l2cap_unknown_peer`** at the same rate: it receives the iPad's L2CAP channel, doesn't recognise the peer, closes it, and the iPad reconnects at once. It eased off after ~13:45 (both locked/backgrounded).
+- **Battery and radio cost** would be serious; **nothing limits the reconnect rate.**
+- **The launch key check (144) left no line on any device:** no `mesh_key_check ok/unavailable`, and no mismatch warning. The phones were online (the iPad 13:13; the 13 mini 13:58–14:17), so it didn't run, or ran before the log/session was ready.
+
+**The change:**
+1. **Find why the 13 mini treats the iPad's L2CAP channel as an unknown peer** (report before fixing). Likely suspects: the channel arrives **before** the hello registers the peer (a race); the peer registry was reset (a relaunch/restore) while the iPad still held the old link id; or the 141-fix's "no id rotation while a link is live" left the two sides with different ids. **Fix it:** e.g. hold an unknown-peer L2CAP channel open for a short grace (≤ 2 s) until the hello arrives, or ask for the hello on the channel, instead of closing at once.
+2. **Reconnect backoff, always:** after a link drops for any reason, reconnect with **exponential backoff + jitter** (e.g. 0.5 s, 1, 2, 4 … capped at 60 s), reset only after a link stays up ≥ 30 s; **a link that ends within 2 s of opening counts as a failure.** A storm guard logs `WARNING reconnect storm` once a minute if > 10 reconnects a minute.
+3. **The key check:** run it **once per launch when both a session and connectivity exist**, retrying when either appears later, and **always log one line** (`ok key=…` / `mismatch pinned=… server=…` / `unavailable why=…`).
+4. **Tests:** the backoff schedule; the unknown-peer grace (a channel before the hello is kept, then bound); the key-check triggers (session later, connectivity later); **a 2-driver simulated "mutual reject" loop must settle** (≤ 10 reconnects/min).
+
+**Device check (the user):** leave the 3 phones near each other, with lime open and then locked, for 10 min → **no storm** (connects ≤ a few per minute); then "logs" (plot checks `mesh_key_check ok key=03129b4296f76a31` on each).
+
+**Record:** `## LIME-141-fix2` with **For plot:** and every item checked off. **Commit:** `fix(ios): mesh reconnect backoff and the unknown-peer L2CAP race; the key check always logs`, trailer `Brief: LIME-141`. The rest per the standing rules.
+
+### LIME-144 → `tend` (lime-aa) (DONE as `67b1c84`; drafted 2026-10-16): wrap up mesh v1: the docs, the key fingerprint check, an optional battery soak
 **Goal:** mesh v1's documents match what was built and proven; the app can't silently run with a mis-pinned server key again; there's a simple way to measure battery over hours.
 
 **The change:**
