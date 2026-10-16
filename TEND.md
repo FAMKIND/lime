@@ -6164,3 +6164,22 @@ Phase 0: `PLOT.md` committed first (21ec104).
 **Gate (you, on the phone):** the spacing looks even; 4 pt to the dock and to the composer; outline icons that match the call; the thumbnail is the system window (unchanged).
 
 **For plot:** the player is now **48 pt** tall (it was 44); item 7 belongs to 150's item 7c and the spike. The live call card's new icon is unverified by eye.
+
+
+## LIME-112e (the second brief of that number: the group video window on every minimise, for real) — committed; installed on the three phones; **the device check (5 rounds, with you) is still to do**
+
+(The earlier LIME-112e, `51cd57b`, was the rotated key; this is the PLOT.md brief "the group video window on every minimise, for real".) No Phase 0 commit: `PLOT.md` had no uncommitted changes.
+
+**Phase 1 (read-only), reported.** The anchor was created by `PiPAnchor` (a `UIViewRepresentable` in `GroupCallView.swift`): **`makeUIView` made a brand-new `UIView` every time the call screen was built**, i.e. on every return from minimising, and `preparePictureInPicture` then **rebound the live controller's `contentSource` to it** (112d's rebind), which iOS does not honour (1e151: `not possible` on every second minimise). 1:1 works because its source, `media.remoteView`, is one view for the whole call. **The manager can own one for the call's life**: it already outlives every call screen.
+
+**Every item of the brief, checked off:**
+- **1 One anchor for the whole call: DONE.** `GroupCallManager.pictureInPictureAnchor()` makes the anchor view once per call (and drops it when the call ends); `PiPAnchor(view:)` now **returns that same view** from `makeUIView`, so every new call screen re-parents the one view and the controller's content source never changes (`prepare` then takes its `.keep` path; the rebind code stays only as a safety net).
+- **2 Rebuild on "still not possible": DONE.** `GroupPiP.rebuild()` builds a fresh `AVPictureInPictureController` on the current anchor (keeping the content controller, the renderer and the subject) and logs `group pip rebuilt`; the manager does it when the wait below ends without "possible", then waits once more.
+- **3 Wait for possible, don't guess: DONE.** `waitUntilPossible(timeout:)` observes `isPictureInPicturePossible` (KVO) for up to **1 s** (`pipWait`) instead of the old fixed 150 ms retry; the log says `group pip waited N ms: possible | still not possible: …`; if it never comes (even after a rebuild) it falls back to the mini player as before.
+- **4 Tests: DONE.** `GroupCallManagerTests`: the anchor is the same object across the call and across four minimise/restore rounds (the fake window is never handed a new one), and a new call gets a new anchor; **the wait**: possible later → starts with no rebuild; not possible → rebuilt once → starts; never → rebuilt, then the mini player. (The 150 ms-retry test was replaced.) **Not testable here:** that iOS honours the one anchor (it is a device question).
+
+**Verification:** `GroupCallManagerTests` (42) and `CallTests` (39) pass; `GroupCallHeaderUITests` and `CallMiniPlayerUITests` pass; 0 warnings; Release clean. **Installed** on Jean's phone, the iPad and the 13 mini.
+
+**On the phones (with you), NOT YET RUN:** a group video call across the three; on one phone: minimise → open a chat → return → minimise, **5 times**: the window floats every time. Then tell me and plug the 13 mini in: I pull `call-diagnostics.log` and report the lines (`group pip started` each time; `rebuilt` or `waited` lines if any; no `not possible`).
+
+**For plot:** which of 1 / 2 was needed is known only after the device rounds. The record is incomplete until then.

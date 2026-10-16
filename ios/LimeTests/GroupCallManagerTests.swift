@@ -81,6 +81,16 @@ final class GroupCallManagerTests: XCTestCase {
         func show(subject: PiPSubject, track: AnyObject?, pictureShowing: Bool) { subjects.append(subject); shown.append((subject.name, track != nil, pictureShowing)) }
         func start() { started += 1; startedFrom.append(anchors.last); onStarted?() }
         func stop() { stopped += 1 }
+        /// The window becomes possible `possibleAfterRebuild` after a rebuild (a stand-in for iOS).
+        var possibleAfterRebuild = false
+        private(set) var rebuilt = 0, waited = 0
+        func waitUntilPossible(timeout: Duration) async -> Bool {
+            waited += 1
+            if isPossible { return true }
+            try? await Task.sleep(for: timeout)
+            return isPossible
+        }
+        func rebuild() { rebuilt += 1; if possibleAfterRebuild { isPossible = true } }
     }
 
     final class FakeNetwork: GroupCallNetwork {
@@ -459,41 +469,55 @@ final class GroupCallManagerTests: XCTestCase {
         await manager2.leave()
     }
 
-    func testTheWindowFloatsOnEveryMinimiseWithTheCurrentCallScreensAnchor() async {
+    func testTheCallHasOneAnchorForItsWholeLifeSoTheWindowFloatsOnEveryMinimise() async {
         let (manager, pip, _, _, _, _) = await pipCall()
-        var anchors: [UIView] = [pip.anchors[0]]
+        let anchor = manager.pictureInPictureAnchor()
+        XCTAssertTrue(manager.pictureInPictureAnchor() === anchor, "asked twice: the same view")
+        pip.isPossible = true
         for round in 1...4 {
             manager.minimize()
             XCTAssertEqual(pip.started, round, "round \(round): the window starts")
-            XCTAssertTrue(pip.startedFrom.last.flatMap { $0 } === anchors.last, "round \(round): from the anchor the call screen has now")
             pip.onRestore?()
-            // The call screen is rebuilt: a new anchor view, handed to the same window.
-            let fresh = UIView()
-            anchors.append(fresh)
-            manager.preparePictureInPicture(sourceView: fresh)
+            // A new call screen hosts the same anchor and hands it on again: nothing to rebind.
+            manager.preparePictureInPicture(sourceView: manager.pictureInPictureAnchor())
+            XCTAssertTrue(pip.anchors.last === anchor, "round \(round): the controller still has the one anchor")
         }
-        XCTAssertEqual(pip.anchors.count, 5, "every new call screen reaches the window")
+        XCTAssertEqual(Set(pip.anchors.map { ObjectIdentifier($0) }).count <= 2, true, "never a new anchor per call screen")
         await manager.leave()
+        XCTAssertFalse(manager.pictureInPictureAnchor() === anchor, "a new call gets a new anchor")
     }
 
-    func testAWindowThatIsNotPossibleYetGetsOneMoreTryBeforeTheFallback() async {
+    func testAWindowThatIsNotPossibleYetIsWaitedForThenRebuiltThenTheFallback() async {
         let (manager, pip, _, _, _, _) = await pipCall()
-        manager.pipRetryDelay = .milliseconds(5)
+        manager.pipWait = .milliseconds(20)
         pip.isPossible = false
+        pip.possibleAfterRebuild = true
         manager.minimize()
         XCTAssertEqual(pip.started, 0)
-        XCTAssertFalse(manager.minimized, "not yet: one more try first")
-        pip.isPossible = true // the rebind settled
-        try? await Task.sleep(for: .milliseconds(80))
-        XCTAssertEqual(pip.started, 1, "the second try starts the window")
+        XCTAssertFalse(manager.minimized, "not yet: it waits for the system first")
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(pip.rebuilt, 1, "still not possible after the wait: the controller is rebuilt")
+        XCTAssertEqual(pip.started, 1, "and the window starts once it is")
         XCTAssertTrue(manager.pictureInPictureActive)
 
+        // Possible by itself during the wait: no rebuild.
+        pip.onRestore?()
+        pip.isPossible = false
+        pip.possibleAfterRebuild = false
+        manager.minimize()
+        pip.isPossible = true
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(pip.started, 2)
+        XCTAssertEqual(pip.rebuilt, 1, "it became possible on its own: no second rebuild")
+
+        // Never possible: the bar, as before.
         pip.onRestore?()
         pip.isPossible = false
         manager.minimize()
-        try? await Task.sleep(for: .milliseconds(80))
-        XCTAssertEqual(pip.started, 1)
-        XCTAssertTrue(manager.minimized, "still not possible: the bar, as before")
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(pip.started, 2)
+        XCTAssertEqual(pip.rebuilt, 2)
+        XCTAssertTrue(manager.minimized, "still not possible after a rebuild: the mini player")
         XCTAssertFalse(manager.pictureInPictureActive)
         await manager.leave()
     }

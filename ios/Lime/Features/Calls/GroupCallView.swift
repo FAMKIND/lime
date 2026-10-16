@@ -34,7 +34,7 @@ struct GroupCallView: View {
         .background(Color(red: 0.07, green: 0.08, blue: 0.07).ignoresSafeArea())
         .preferredColorScheme(.dark)
         .onGeometryChange(for: CGSize.self, of: { $0.size }) { viewSize = $0 }
-        .background(PiPAnchor { pipAnchor = $0 })
+        .background(PiPAnchor(view: call.pictureInPictureAnchor()) { pipAnchor = $0 })
         .sheet(isPresented: $showPeople) { GroupPeopleSheet(layout: layoutIsSpeaker ? .speaker : .grid) }
         .sheet(isPresented: $showEmoji) { emojiSheet }
         .onAppear { preparePiP() }
@@ -446,11 +446,10 @@ struct GroupIncomingBanner: View {
 
 /// A clear, full-size view whose UIKit view is handed to the manager: system Picture in Picture opens its window from it.
 private struct PiPAnchor: UIViewRepresentable {
+    /// The call's one anchor (owned by the manager): every new call screen hosts this same view, so the system controller's content source never changes.
+    let view: UIView
     let ready: (UIView) -> Void
     func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .clear
-        view.isUserInteractionEnabled = false
         DispatchQueue.main.async { ready(view) }
         return view
     }

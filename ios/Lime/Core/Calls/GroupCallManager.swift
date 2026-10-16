@@ -131,7 +131,11 @@ final class GroupCallManager {
     @ObservationIgnored private var pip: (any GroupPiP)?
     private(set) var pictureInPictureActive = false
     /// One beat before the window's second try when it is not possible at first (LIME-112d).
-    @ObservationIgnored var pipRetryDelay: Duration = .milliseconds(150)
+    /// How long a minimise waits for the system to say the window is possible before it rebuilds the controller, and then again before it falls back.
+    @ObservationIgnored var pipWait: Duration = .seconds(1)
+    /// The one anchor view for the whole call (LIME-112e): system Picture in Picture opens from it. Each new call screen hosts this same view, so the
+    /// controller's content source never changes (the system ignores a changed one on a live controller).
+    @ObservationIgnored private var anchorView: UIView?
     @ObservationIgnored private let network: GroupCallNetwork?
     /// Who the window shows now, and since when (a new speaker waits `speakerHoldSeconds` so it does not flicker), and the last other person who spoke.
     @ObservationIgnored private var pipSubject: String?
@@ -559,6 +563,16 @@ final class GroupCallManager {
 
     // MARK: Picture in Picture (LIME-112c)
 
+    /// The call's one anchor view (made on first use, dropped when the call ends): the call screen hosts it, whatever number of times it is rebuilt.
+    func pictureInPictureAnchor() -> UIView {
+        if let anchorView { return anchorView }
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        anchorView = view
+        return view
+    }
+
     /// Makes the window ready for a video call (the call screen's anchor view must be on screen).
     func preparePictureInPicture(sourceView: UIView) {
         guard video, inCall else { return }
@@ -579,12 +593,20 @@ final class GroupCallManager {
         onMinimize?(conversationID)
         guard video, phase == .active, let pip else { minimized = true; return }
         if pip.isPossible { pip.start(); return }
-        // Not possible yet (a rebind or a layout pass may still be settling): say why, wait one beat, try once more, then fall back (LIME-112d).
-        diag.log("group pip not possible: \(pip.notPossibleReason); trying once more")
+        // Not possible yet (the call screen may still be settling): wait for the system's own "possible" (observed, not guessed) for up to a
+        // second; if it never comes, rebuild the controller on the current anchor and wait once more; then fall back to the mini player.
+        diag.log("group pip not possible: \(pip.notPossibleReason); waiting for it")
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: self?.pipRetryDelay ?? .zero)
-            guard let self, self.inCall, !self.minimized else { return }
-            if pip.isPossible { pip.start() } else { self.diag.log("group pip still not possible: \(pip.notPossibleReason)"); self.minimized = true }
+            guard let self else { return }
+            let began = self.now()
+            var possible = await pip.waitUntilPossible(timeout: self.pipWait)
+            self.diag.log("group pip waited \(Int(self.now().timeIntervalSince(began) * 1000)) ms: \(possible ? "possible" : "still not possible: \(pip.notPossibleReason)")")
+            if !possible {
+                pip.rebuild()
+                possible = await pip.waitUntilPossible(timeout: self.pipWait)
+            }
+            guard self.inCall, !self.minimized else { return }
+            if possible { pip.start() } else { self.diag.log("group pip not possible after a rebuild: \(pip.notPossibleReason)"); self.minimized = true }
         }
     }
 
@@ -655,6 +677,7 @@ final class GroupCallManager {
         poller?.cancel()
         network?.stop()
         pip?.stop(); pip = nil; pictureInPictureActive = false
+        anchorView = nil
         pipSubject = nil; lastOtherSpeaker = nil
         phase = .idle
         self.media = nil

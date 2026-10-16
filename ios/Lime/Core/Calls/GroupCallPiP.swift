@@ -42,6 +42,11 @@ protocol GroupPiP: AnyObject {
     func show(subject: PiPSubject, track: AnyObject?, pictureShowing: Bool)
     func start()
     func stop()
+    /// Waits until the system says the window is possible (KVO on `isPictureInPicturePossible`), up to `timeout`; true when it is.
+    func waitUntilPossible(timeout: Duration) async -> Bool
+    /// Builds the system controller again on the current anchor (keeping the content, the renderer and the subject): the last resort when the
+    /// system keeps saying "not possible" after a return from minimising.
+    func rebuild()
 }
 
 /// What `prepare` does with the call screen's anchor view (LIME-112d). The call screen is rebuilt on every return from minimising, so its
@@ -218,6 +223,33 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
         controller.startPictureInPicture()
     }
 
+    func waitUntilPossible(timeout: Duration) async -> Bool {
+        guard let controller else { return false }
+        if controller.isPictureInPicturePossible { return true }
+        let box = PossibleWait()
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            box.continuation = continuation
+            box.observation = controller.observe(\.isPictureInPicturePossible, options: [.new]) { _, change in
+                if change.newValue == true { box.finish(true) }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: timeout)
+                box.finish(controller.isPictureInPicturePossible)
+            }
+        }
+    }
+
+    func rebuild() {
+        guard let sourceView else { return }
+        controller?.delegate = nil
+        let source = AVPictureInPictureController.ContentSource(activeVideoCallSourceView: sourceView, contentViewController: contentController)
+        let fresh = AVPictureInPictureController(contentSource: source)
+        fresh.canStartPictureInPictureAutomaticallyFromInline = true
+        fresh.delegate = self
+        controller = fresh
+        CallDiagnostics.shared.log("group pip rebuilt")
+    }
+
     func stop() {
         controller?.stopPictureInPicture()
         if let old = track, let renderer { Self.detach(renderer, from: old) }
@@ -381,5 +413,23 @@ final class PiPGroupAvatarView: UIView {
             member.label?.frame = member.circle.bounds
             member.label?.font = .systemFont(ofSize: d * 0.38, weight: .medium)
         }
+    }
+}
+
+/// One wait for "possible": whichever of the observation and the timeout comes first resumes the caller, once.
+private final class PossibleWait: @unchecked Sendable {
+    private let lock = NSLock()
+    var continuation: CheckedContinuation<Bool, Never>?
+    var observation: NSKeyValueObservation?
+
+    func finish(_ value: Bool) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        let watching = observation
+        observation = nil
+        lock.unlock()
+        watching?.invalidate()
+        pending?.resume(returning: value)
     }
 }
