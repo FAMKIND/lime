@@ -16,6 +16,8 @@ struct IncomingMessage: Identifiable, Equatable, Sendable {
     /// A stranger's first message: waits in Requests, so nothing of it is shown.
     let isRequest: Bool
     let date: Date
+    /// An emergency status or its end (LIME-143): announced by its own rule (silent unless sound is on; a drill never breaks through quiet).
+    var emergency: EmergencyCard? = nil
 }
 
 /// Which screen the person is looking at (the chat, or one thread in it).
@@ -48,12 +50,27 @@ struct NotificationContent: Equatable, Sendable {
     let threadRoot: String?
     let messageID: String
     let sound: Bool
+    /// A real emergency: delivered even in Do Not Disturb (iOS "time sensitive"), still silent unless `sound`.
+    var breaksThroughQuiet = false
 }
 
 /// The rules, as pure functions so they can be tested without a phone.
 enum NotificationPolicy {
     static func presentation(for message: IncomingMessage, enabled: Bool, muted: Bool, sound: NotificationSound,
-                             appActive: Bool, viewing: ViewingTarget?, quiet: Bool = false) -> Presentation {
+                             appActive: Bool, viewing: ViewingTarget?, quiet: Bool = false, emergencySound: Bool = false) -> Presentation {
+        if let card = message.emergency {
+            // LimeCore's rule: a real emergency shows even when quiet or muted, silent unless the person turned sound on; a drill never breaks
+            // through quiet and is never loud.
+            let alert = emergencyAlertPolicy(drill: card.drill, soundEnabled: emergencySound)
+            guard enabled, alert.show else { return .none }
+            if card.drill {
+                if muted { return .none }
+                if quiet { return .held }
+            }
+            guard appActive else { return .local(sound: alert.sound) }
+            if card.drill, let viewing, viewing.conversationID == message.conversationID, viewing.threadRoot == nil { return .tick }
+            return .banner(sound: alert.sound)
+        }
         guard enabled, !muted else { return .none }
         // Quiet hours hold everything (a message in the chat on screen still just ticks). Nothing here is marked urgent: the flag that
         // would break through is reserved for emergency mode, which users cannot send yet.
@@ -70,6 +87,11 @@ enum NotificationPolicy {
     /// The words of a banner or notification for the person's preview choice. A request never shows its
     /// words, whatever the choice (nobody has accepted that person yet).
     static func content(for message: IncomingMessage, preview: NotificationPreview, sound: Bool) -> NotificationContent {
+        if let card = message.emergency, !message.isRequest {
+            let words = EmergencyCopy.notification(card: card, senderName: message.senderName)
+            return NotificationContent(title: words.title, body: words.body, threadIdentifier: message.conversationID, conversationID: message.conversationID,
+                                       threadRoot: nil, messageID: message.id, sound: sound, breaksThroughQuiet: !card.drill)
+        }
         let title: String
         let body: String
         let reply = message.threadRoot != nil

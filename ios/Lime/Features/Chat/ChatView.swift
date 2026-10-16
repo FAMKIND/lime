@@ -41,6 +41,9 @@ struct ChatView: View {
 
     /// Tapping a call bubble asks whether to call back (a stray tap in class must not ring anyone).
     @State private var callBack: CallBubble?
+    #if DEBUG
+    @State private var startingEmergency = false
+    #endif
 
     struct ScrollRequest: Equatable { let id: String; let token = UUID() }
 
@@ -74,6 +77,9 @@ struct ChatView: View {
                     .accessibilityIdentifier("call-back-second")
                 Button("Cancel", role: .cancel) {}
             }
+            #if DEBUG
+            .sheet(isPresented: $startingEmergency) { EmergencySheet(drill: false, conversationID: conversation.id) }
+            #endif
             .messageActions(actions, conversationID: conversationID, selection: $selection) { message in
                 store.path.append(ThreadTarget(conversationID: conversationID, rootID: message.id))
             }
@@ -98,6 +104,16 @@ struct ChatView: View {
             }
         }
     }
+
+    #if DEBUG
+    /// The group's ⋯ "Make this my emergency group" (LIME-143).
+    private func makeEmergencyGroup(_ conversation: Conversation) async {
+        var settings = await store.emergencySettings()
+        settings.groupId = conversation.id
+        await store.saveEmergencySettings(settings)
+        store.showBanner("\(conversation.title) is your emergency group")
+    }
+    #endif
 
     // MARK: iOS 26+: system back button, toolbar and scroll edge effect (as in Apple Messages)
 
@@ -509,6 +525,14 @@ struct ChatView: View {
                 .accessibilityIdentifier("chat-mute")
             }
             Divider()
+            #if DEBUG
+            if conversation.isGroup, conversation.groupEnded == nil, !conversation.isRequest {
+                Button { startingEmergency = true } label: { Label("Emergency", systemImage: "exclamationmark.triangle") }
+                    .accessibilityIdentifier("chat-emergency")
+                Button { Task { await makeEmergencyGroup(conversation) } } label: { Label("Make this my emergency group", systemImage: "star") }
+                    .accessibilityIdentifier("chat-make-emergency-group")
+            }
+            #endif
             if conversation.isGroup {
                 Button { store.path.append(GroupTarget(conversationID: conversation.id)) } label: {
                     Label("Group details", systemImage: "person.2")
@@ -627,6 +651,7 @@ struct ChatView: View {
     private func bottomBar(_ conversation: Conversation) -> some View {
         VStack(spacing: 8) {
             CallMiniPlayer()
+            if conversation.isGroup { EmergencyPanel(conversation: conversation) }
             #if DEBUG
             NearbyOfferBar(waitingInChat: conversation.messages.contains { $0.state == .waiting })
             #endif
@@ -827,10 +852,13 @@ struct MessageBubble: View {
                         .labelStyle(.titleAndIcon)
                         .accessibilityIdentifier("forwarded-\(message.id)")
                 }
+                if let card = message.emergency {
+                    EmergencyCardView(card: card, senderName: sender?.name ?? "You", date: message.date, id: message.id)
+                }
                 if let call = message.call { CallBubbleView(call: call, id: message.id, conversationID: conversationID, callerName: sender?.name, onTap: onCallBack) }
                 if !message.attachments.isEmpty { AttachmentStack(message: message, isOwn: message.isOwn) }
                 if let preview = message.linkPreview { MessageLinkCard(messageID: message.id, preview: preview, isOwn: message.isOwn) }
-                if message.call == nil, !message.text.isEmpty || message.attachments.isEmpty {
+                if message.call == nil, message.emergency == nil, !message.text.isEmpty || message.attachments.isEmpty {
                     FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
                                          link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString,
                                          find: findWords.isEmpty ? nil : FindStyle(words: findWords, current: highlighted))

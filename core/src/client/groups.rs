@@ -913,6 +913,7 @@ impl LimeStore {
                     crate::store::attachments::insert(conn, &inner.op.op_id, position, descriptor, None)?;
                 }
                 crate::store::link_preview::Extras::parse(&inner.op.payload).apply(conn, &inner.op.op_id)?;
+                crate::store::emergency::apply_received(conn, &inner.op.op_id, &conversation, &sender, &inner.op.payload)?;
             }
             Ok(if inserted { Outcome::Stored } else { Outcome::Duplicate })
         })?;

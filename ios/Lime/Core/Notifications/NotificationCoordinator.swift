@@ -50,6 +50,8 @@ final class NotificationCoordinator {
 
     /// Whether I am quiet at a moment (Do not disturb, quiet hours, or outside work hours).
     @ObservationIgnored var isQuiet: (Date) -> Bool = { _ in false }
+    /// "Emergency alerts make a sound" (LIME-143), read from LimeCore's settings before each arrival is announced. Off by default.
+    @ObservationIgnored var emergencySound = false
     /// Messages that arrived while I was quiet, waiting for a summary.
     private(set) var held: [IncomingMessage] = []
 
@@ -85,7 +87,7 @@ final class NotificationCoordinator {
         for message in arrivals {
             let how = NotificationPolicy.presentation(
                 for: message, enabled: settings.enabled, muted: settings.isMuted(message.conversationID, now: now),
-                sound: settings.sound, appActive: isActive, viewing: viewing, quiet: isQuiet(now))
+                sound: settings.sound, appActive: isActive, viewing: viewing, quiet: isQuiet(now), emergencySound: emergencySound)
             log.append(how)
             switch how {
             case .none: break
@@ -98,6 +100,12 @@ final class NotificationCoordinator {
             }
         }
         if let message = bannerFor {
+            if message.emergency != nil, isActive {
+                // Read out at once, ahead of anything else, even if VoiceOver is speaking.
+                let words = NotificationPolicy.content(for: message, preview: settings.preview, sound: false)
+                let spoken = NSAttributedString(string: "\(words.title). \(words.body)", attributes: [.accessibilitySpeechAnnouncementPriority: UIAccessibilityPriority.high.rawValue])
+                UIAccessibility.post(notification: .announcement, argument: spoken)
+            }
             banner = IncomingBanner(id: message.id, content: NotificationPolicy.content(for: message, preview: settings.preview, sound: bannerSound),
                                     sender: Person(id: message.senderID, name: message.senderName))
             if bannerSound { feedback.playSound() }
@@ -178,6 +186,7 @@ final class SystemNotifications: NSObject, LocalNotificationCenter, UNUserNotifi
         item.title = content.title
         item.body = content.body
         item.threadIdentifier = content.threadIdentifier
+        if content.breaksThroughQuiet { item.interruptionLevel = .timeSensitive }
         item.sound = content.sound ? (soundFile().map { UNNotificationSound(named: UNNotificationSoundName($0)) } ?? .default) : nil
         item.userInfo = ["conversation": content.conversationID, "thread": content.threadRoot ?? ""]
         let request = UNNotificationRequest(identifier: content.messageID, content: item, trigger: nil)

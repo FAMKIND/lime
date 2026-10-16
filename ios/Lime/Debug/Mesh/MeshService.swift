@@ -45,7 +45,7 @@ final class MeshService {
     private init() {
         bluetooth.onLog = { [weak self] kind, detail in self?.log.record(kind, detail) }
         bluetooth.onPeersChanged = { [weak self] in self?.refreshStats() }
-        if let until = UserDefaults.standard.object(forKey: Self.nearbyUntilKey) as? Date, NearbyMode.isOn(until: until, now: Date()) { nearbyUntil = until }
+        if !ProcessInfo.processInfo.arguments.contains("-lime-demo-chat"), let until = UserDefaults.standard.object(forKey: Self.nearbyUntilKey) as? Date, NearbyMode.isOn(until: until, now: Date()) { nearbyUntil = until }
         let center = NotificationCenter.default
         center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appActive = true; self?.applyNearby() }

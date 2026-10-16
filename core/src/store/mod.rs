@@ -25,6 +25,7 @@ pub(crate) mod link_preview;
 pub(crate) mod storage;
 pub(crate) mod status;
 pub(crate) mod calls;
+pub(crate) mod emergency;
 pub(crate) mod group_calls;
 pub(crate) mod shared;
 mod sample;
@@ -161,6 +162,8 @@ pub struct MessageItem {
     pub link_preview: Option<link_preview::LinkPreview>,
     /// For a reply: the message it answers (the root of its thread).
     pub thread_root: Option<String>,
+    /// An emergency status or its end (LIME-143): shown as an Emergency card, never forwarded.
+    pub emergency: Option<emergency::EmergencyInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -636,6 +639,7 @@ impl LimeStore {
             forwarded: false,
             link_preview: None,
             thread_root: None,
+            emergency: None,
         };
         conn.execute(
             "INSERT INTO messages (id, conversation_id, sender_id, body, sent_at, local_state, plain)
@@ -744,6 +748,7 @@ fn item_in(conn: &Connection, row: order::Row, me: &str) -> MessageItem {
     item.reactions = message_ops::reactions_for(conn, &item.id, me);
     item.forwarded = link_preview::is_forwarded(conn, &item.id);
     item.link_preview = link_preview::info(conn, &item.id);
+    item.emergency = emergency::info(conn, &item.id);
     item.thread_root = conn.query_row("SELECT thread_root FROM messages WHERE id = ?1", params![item.id], |r| r.get::<_, Option<String>>(0)).ok().flatten();
     item
 }
@@ -763,6 +768,7 @@ pub(crate) fn item_from_row(row: order::Row) -> MessageItem {
         forwarded: false,
         link_preview: None,
         thread_root: None,
+        emergency: None,
     }
 }
 

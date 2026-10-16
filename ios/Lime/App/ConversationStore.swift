@@ -110,6 +110,9 @@ final class ConversationStore {
     /// Debug demo: my photo and who may see it (no server).
     /// Debug demo: the decrypted bytes of the demo attachments, by id, and whether the composer opens with drafts.
     var demoAttachmentData: [String: Data] = [:]
+    var demoEmergencySettings = EmergencySettings(groupId: "", schoolActions: true, sound: false, lastStudents: 0, lastPlace: "")
+    var demoEmergencySessions: [String: String] = [:]
+    var demoEmergencyStatuses: [String: (EmergencyDraft, Date)] = [:]
     var demoDrafts = false
     var demoTransfer: [String: TransferProgress] = [:]
     #endif
@@ -686,13 +689,14 @@ final class ConversationStore {
                     id: message.id, conversationID: conversation.id, conversationTitle: conversation.title, senderID: sender,
                     senderName: person(sender, in: conversation)?.name ?? conversation.title,
                     text: messagePlainText(text: message.text), threadRoot: root, isGroup: conversation.isGroup,
-                    isRequest: conversation.isRequest, date: message.date)
+                    isRequest: conversation.isRequest, date: message.date, emergency: message.emergency)
             }
             candidates += conversation.messages.compactMap { make($0, root: nil) }
             for thread in unreadReplies where thread.conversationID == conversation.id {
                 candidates += thread.items.filter { $0.id != thread.root }.map(Message.init).compactMap { make($0, root: thread.root) }
             }
         }
+        notifications.emergencySound = candidates.contains { $0.emergency != nil } ? await emergencySettings().sound : false
         let arrivals = detector.arrivals(among: candidates)
         if !arrivals.isEmpty { await notifications.announce(arrivals) }
         await notifications.updateBadge(unreadChats: conversations.filter(\.isUnread).count)

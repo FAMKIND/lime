@@ -225,3 +225,7 @@ Calls in a lime group go through one self-hosted LiveKit server (`infra/sfu/`, `
 - The four-emoji check in a group call (below) shows that the phones hold the same keys for the same people; it does **not** say who each person is (Verify in person does that), and it is only as good as people actually comparing.
 - A person's phone sees the identities (random per-call ids) of the others in the room; names come from the signed `group.call.join` ops, which only group members can send.
 - The SFU is a single small server today: availability and capacity are limited (`infra/sfu/README.md`: about 3-10 people per room comfortably; a dedicated server for 50-100).
+
+## Emergency mode and Nearby mode (LIME-143)
+
+Nearby mode is a switch on the mesh service: continuous scan and an awake screen while lime is in front, for at most 2 hours. Emergency mode is a message type: an ordinary text message with an `emergency` object (`api-v2.md` §13), so it takes the same paths (sealed send, the mesh outbox, relay upload). The rules (what a status holds, the roll-up order and totals, the silent-by-default announcement rule, the drill rule, forwarding refused, the emergency-number table) are in LimeCore and shared with Android; the screens are in `docs/screens/emergency.md`. Notifications while lime is in the background rely on the mesh/Bluetooth wakes until push exists (November).

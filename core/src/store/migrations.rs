@@ -527,6 +527,26 @@ const MIGRATIONS: &[&str] = &[
          passed        INTEGER NOT NULL DEFAULT 0,
          PRIMARY KEY (op_id, to_device)
      );",
+    // 34 (LIME-143): emergency statuses. A status is an ordinary message whose payload also carries an `emergency` object; this keeps its fields
+    // (and the end of an emergency) next to the message, and `emergency_settings` holds this phone's choices.
+    "CREATE TABLE emergency_messages (
+         message_id      TEXT PRIMARY KEY,
+         conversation_id TEXT NOT NULL,
+         sender_id       TEXT NOT NULL,
+         session_id      TEXT NOT NULL,
+         kind            TEXT NOT NULL,
+         status          TEXT NOT NULL,
+         situation       TEXT NOT NULL,
+         students        INTEGER NOT NULL,
+         place           TEXT NOT NULL,
+         note            TEXT NOT NULL,
+         drill           INTEGER NOT NULL
+     );
+     CREATE INDEX emergency_by_conversation ON emergency_messages (conversation_id, session_id);
+     CREATE TABLE emergency_settings (
+         key   TEXT PRIMARY KEY,
+         value TEXT NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

@@ -9,6 +9,7 @@ struct MessagesView: View {
     @State private var sideInsets: (CGFloat, CGFloat) = (0, 0)
     @State private var showAbout = false
     @State private var showNewMessage = false
+    @State private var startingEmergency = false
     @State private var showSettings = false
     @State private var showStatus = false
     @State private var settingsAfterStatus = false
@@ -25,7 +26,16 @@ struct MessagesView: View {
                 legacyBody
             }
         }
-        .overlay { FloatingPlus(label: "New message", id: "new-message-button") { showNewMessage = true } }
+        .overlay {
+            #if DEBUG
+            FloatingPlus(label: "New message", id: "new-message-button", action: { showNewMessage = true }, onLongPress: { startingEmergency = true })
+            #else
+            FloatingPlus(label: "New message", id: "new-message-button") { showNewMessage = true }
+            #endif
+        }
+        #if DEBUG
+        .sheet(isPresented: $startingEmergency) { EmergencySheet(drill: false, conversationID: nil) }
+        #endif
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showNewMessage) { NewMessageSheet() }
         .sheet(isPresented: $showSettings) { SettingsView() }

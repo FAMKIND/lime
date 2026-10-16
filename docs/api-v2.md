@@ -362,3 +362,18 @@ A call inside a group goes through Lime's own LiveKit server (`sfu.limechat.org`
 **Keys reach the app as raw bytes** (`GroupCallJoin.key`, `GroupCallEvent.key`: 32 bytes, never text; the ops themselves carry base64 without padding, which a platform's own decoder may refuse). A refused key is reported as a `key_rejected` event with a reason (`unknown_call`, `not_in_call`, `bad_key`, `not_owner`, `participant_left`, `call_full`) for the diagnostics. A key that overtakes its sender's `join` claims the participant and also gets the receiver's own key sent back, as the join would have.
 
 **On the phone:** `start_group_call`, `join_group_call` (returns this phone's identity and first key), `leave_group_call`, `group_call_participant_gone`, `active_group_call`, `take_group_call_events` (`started`, `joined`, `left`, `key`, `key_rejected`, `ended`), `request_group_call_key`, `deliver_group_call_ops` (sends what is owed and says how many ops and keys went; keep calling it after `sync`), `fetch_livekit_token`, `group_call_rings`. Schema: migration 27 (`group_calls`, `group_call_participants`, `group_call_outbox`, `group_call_events`).
+
+## 13. Emergency status (LIME-143)
+
+No new endpoint and no new op type: a status is an ordinary `message.send` (so it is sealed, fanned out, parked for the mesh and de-duplicated like any message) whose encrypted payload also carries an `emergency` object:
+
+```json
+{ "text": "Emergency: Safe · Lockdown · 24 students · Room 204",
+  "emergency": { "v": 1, "session": "<id of the first status>", "kind": "status" | "end",
+                 "status": "safe" | "need_help", "situation": "" | "hold" | "secure" | "lockdown" | "evacuate" | "shelter",
+                 "students": 24, "place": "Room 204", "note": "", "drill": false } }
+```
+
+- `text` is the fallback an older client shows. `session` groups the statuses of one emergency; the first status's id is used, and later statuses join the conversation's active emergency of the same kind (real or drill). `kind: "end"` ends the session for everyone.
+- A receiver bounds every field (place 60 characters, note 200, students ≤ 9999, an unknown situation is dropped, a missing session or a bad status makes it an ordinary message). The roll-up counts the latest status of each sender (by send time), lists members who have not answered as `no_response`, and orders Need help, then no response, then Safe.
+- The server sees nothing new: the object is inside the ciphertext. Forwarding an emergency message is refused by the core.

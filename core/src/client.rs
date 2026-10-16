@@ -31,6 +31,7 @@ const POOL_LOW: u32 = 20;
 /// A text message must fit in a 64 KB mailbox item once wrapped and encrypted.
 const MAX_TEXT_BYTES: usize = 30_000;
 pub(crate) mod attachments;
+pub(crate) mod emergency;
 pub(crate) mod calls;
 pub(crate) mod group_calls;
 pub(crate) mod profile;
@@ -583,6 +584,9 @@ impl LimeStore {
             if extras.forwarded {
                 crate::store::link_preview::set_forwarded(conn, &op_id)?;
             }
+            if let Some(info) = &extras.emergency {
+                crate::store::emergency::store(conn, &op_id, &conversation_id, ME_ID, info)?;
+            }
             if let Some((meta, image)) = &extras.preview {
                 crate::store::link_preview::store(conn, &op_id, meta)?;
                 if let Some((descriptor, bytes)) = image {
@@ -603,6 +607,7 @@ impl LimeStore {
                 forwarded: extras.forwarded,
                 link_preview: crate::store::link_preview::info(conn, &op_id),
                 thread_root: root.clone(),
+                emergency: extras.emergency.clone(),
             })
         })
     }
@@ -1585,6 +1590,7 @@ impl LimeStore {
                     crate::store::attachments::insert(conn, &inner.op.op_id, position, descriptor, None)?;
                 }
                 crate::store::link_preview::Extras::parse(&inner.op.payload).apply(conn, &inner.op.op_id)?;
+                crate::store::emergency::apply_received(conn, &inner.op.op_id, &conversation, &sender, &inner.op.payload)?;
             }
             Ok(Some(Stored::Message(inserted)))
         })?;
@@ -1801,6 +1807,7 @@ struct Queued {
     forwarded: bool,
     /// The link card's words and picture.
     preview: Option<(crate::store::link_preview::Meta, Option<crate::store::attachments::Descriptor>)>,
+    emergency: Option<crate::store::emergency::EmergencyInfo>,
 }
 
 /// A link card to queue: its words and its picture (with the bytes, or `None` when they are copied from an existing copy).
@@ -1814,6 +1821,8 @@ pub(crate) struct QueueExtras {
     pub shared: Vec<crate::store::attachments::Descriptor>,
     /// The link card and its picture (with the bytes, or `None` when they are copied from an existing copy).
     pub preview: Option<PreviewToQueue>,
+    /// An emergency status or its end (LIME-143): its fields travel inside the encrypted payload.
+    pub emergency: Option<crate::store::emergency::EmergencyInfo>,
 }
 
 impl Queued {
@@ -1831,6 +1840,9 @@ impl Queued {
         }
         if let Some((meta, image)) = &self.preview {
             payload["link_preview"] = meta.to_json(image.as_ref());
+        }
+        if let Some(info) = &self.emergency {
+            payload["emergency"] = info.to_json();
         }
         payload
     }
@@ -1859,6 +1871,7 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
                 attachments: Vec::new(),
                 forwarded: false,
                 preview: None,
+                emergency: None,
             })
         })
         .map_err(db_err)?
@@ -1868,6 +1881,7 @@ fn queued_messages(conn: &Connection) -> Result<Vec<Queued>, StoreError> {
     for row in &mut rows {
         row.attachments = crate::store::attachments::for_message(conn, &row.id)?.into_iter().map(|(d, _)| d).collect();
         row.forwarded = crate::store::link_preview::is_forwarded(conn, &row.id);
+        row.emergency = crate::store::emergency::info(conn, &row.id);
         row.preview = crate::store::link_preview::meta_of(conn, &row.id)
             .map(|meta| (meta, crate::store::attachments::preview_of(conn, &row.id).ok().flatten().map(|(d, _)| d)));
     }

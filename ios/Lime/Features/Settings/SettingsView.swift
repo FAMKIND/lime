@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Where Settings can go.
 enum SettingsRoute: Hashable {
-    case profile, account, privacy, blocked, keys, devices, notifications, customize, about, acknowledgements, changePassword, myQR, photo, storage, workHours
+    case profile, account, privacy, blocked, keys, devices, notifications, customize, about, acknowledgements, changePassword, myQR, photo, storage, workHours, emergency
     case chatMedia(String)
 }
 
@@ -44,6 +44,7 @@ struct SettingsView: View {
                     case .photo: ProfilePhotoScreen()
                     case .storage: StorageScreen()
                     case .workHours: WorkHoursScreen()
+                    case .emergency: EmergencySettingsScreen()
                     case .chatMedia(let id): ChatMediaScreen(conversationID: id)
                     }
                 }
@@ -76,6 +77,9 @@ struct SettingsView: View {
                 SettingsCard {
                     SettingsRow(symbol: "person.crop.circle", title: "Account", route: .account, id: "settings-account")
                     SettingsRow(symbol: "hand.raised", title: "Privacy", route: .privacy, id: "settings-privacy")
+                    #if DEBUG
+                    SettingsRow(symbol: "exclamationmark.triangle", title: "Emergency", route: .emergency, id: "settings-emergency")
+                    #endif
                     SettingsRow(symbol: "internaldrive", title: "Storage", route: .storage, id: "settings-storage")
                     SettingsRow(symbol: "iphone", title: "Linked Devices", route: .devices, id: "settings-devices")
                     if let donate = DonateLink.current {

@@ -261,6 +261,10 @@ impl LimeStore {
             if deleted || hidden || matches!(state.as_str(), "system" | "sending" | "failed") {
                 continue;
             }
+            // An emergency card is never forwarded (rumours outrun official word).
+            if self.with_conn(|conn| Ok(crate::store::emergency::info(conn, id).is_some()))? {
+                continue;
+            }
             let (files, preview) = self.with_conn(|conn| {
                 let files = files::for_message(conn, id)?;
                 let preview = crate::store::link_preview::meta_of(conn, id)
@@ -278,6 +282,7 @@ impl LimeStore {
                     shared: files.iter().map(|(d, _)| d.clone()).collect(),
                     // The picture is shared like a file: the bytes are copied from the original here.
                     preview: preview.clone().map(|(meta, image)| (meta, image.map(|d| (d, None)))),
+                    emergency: None,
                 };
                 out.push(self.queue_with(target.clone(), body.clone(), None, Vec::new(), extras)?);
             }
@@ -318,7 +323,7 @@ impl LimeStore {
             };
             (descriptor, Some(preview.image.clone()))
         });
-        self.queue_with(conversation_id, text, reply_to, Vec::new(), QueueExtras { forwarded: false, shared: Vec::new(), preview: Some((meta, image)) })
+        self.queue_with(conversation_id, text, reply_to, Vec::new(), QueueExtras { preview: Some((meta, image)), ..Default::default() })
     }
 
     /// Makes sure my own chat exists (it is just a chat with myself, named with my name, kept on this phone only) and returns

@@ -157,7 +157,7 @@ struct MessageActionsHost: ViewModifier {
                     if !message.deleted, !inThread, !message.state.isInFlight, message.state != .failed {
                         row("arrowshape.turn.up.left", "Reply", id: "reply-in-thread") { state.menu = nil; onReply(message) }
                     }
-                    if !message.deleted, message.call == nil {
+                    if !message.deleted, message.call == nil, message.emergency == nil {
                         if state.cannotForward.contains(message.id) {
                             VStack(spacing: 0) {
                                 HStack(spacing: 12) {

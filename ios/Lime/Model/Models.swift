@@ -80,6 +80,8 @@ struct Message: Identifiable, Hashable, Sendable {
     var threadRoot: String?
     /// When other messages reply to this one: how many, the newest, who, and what is unread.
     var thread: ThreadInfo?
+    /// An emergency status or its end (LIME-143): shown as an Emergency card, never forwarded.
+    var emergency: EmergencyCard?
     /// A call shown as a message (LIME-123): its id is `call:<call id>`, the same on both phones.
     var call: CallBubble?
 
@@ -224,6 +226,7 @@ extension Message {
         reactions = item.reactions.map { ReactionChip(emoji: $0.emoji, count: Int($0.count), mine: $0.mine, people: $0.people) }
         forwarded = item.forwarded
         threadRoot = item.threadRoot
+        emergency = item.emergency.map(EmergencyCard.init)
         linkPreview = item.linkPreview.map { LinkPreviewItem(url: $0.url, title: $0.title, site: $0.site, image: $0.image.map(AttachmentItem.init)) }
         if item.id.hasPrefix("call:"), let bubble = CallBubble(body: item.text, mine: item.senderId == nil) {
             call = bubble

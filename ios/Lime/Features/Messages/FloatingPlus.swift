@@ -7,6 +7,8 @@ struct FloatingPlus: View {
     let label: String
     let id: String
     let action: () -> Void
+    /// A long-press (LIME-143: emergency mode starts here). Nil: none.
+    var onLongPress: (() -> Void)? = nil
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     static let size: CGFloat = 64
@@ -40,7 +42,9 @@ struct FloatingPlus: View {
             }
         }
         .buttonStyle(.plain)
+        .onLongPressGesture(minimumDuration: 0.7) { onLongPress?() }
         .accessibilityLabel(label)
+        .accessibilityAction(named: "Emergency") { onLongPress?() }
         .accessibilityIdentifier(id)
     }
 }
