@@ -1030,7 +1030,9 @@ impl LimeStore {
     /// rotated it, or the first launch after an update that added the public key).
     fn ensure_delivery_access(&self, transport: &Arc<dyn Transport>, token: &str) -> Result<(), StoreError> {
         let (key, uploaded) = self.with_conn(|conn| delivery::current(conn, now_ms()))?;
-        if uploaded {
+        // Once per launch it is put on file again even when this phone believes it already did (the call is an upsert): a sealed message
+        // (and a mesh upload) for me is refused when the server has no public key for me.
+        if uploaded && self.access_confirmed.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
         }
         let (status, _) = call(
@@ -1041,6 +1043,7 @@ impl LimeStore {
             &json!({ "access_key_hash": delivery::access_hash_b64(&key), "access_public_key": delivery::access_public_key_b64(&key) }),
         )?;
         check(status)?;
+        self.access_confirmed.store(true, std::sync::atomic::Ordering::Relaxed);
         self.with_conn(|conn| delivery::mark_uploaded(conn, &key))
     }
 

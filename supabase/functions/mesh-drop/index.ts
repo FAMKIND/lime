@@ -37,19 +37,20 @@ Deno.serve(handler(async (req) => {
 
   // Only the server can open the header; anything that does not open, or does not say what a header must, is the same 403 as a wrong proof.
   const opened = await openRoutingHeader(keys, header);
-  if (!opened) throw accessDenied();
+  if (!opened) throw accessDenied("header_unopenable");
   let routing: { to_device?: unknown; access?: { signed?: unknown } };
   try {
     routing = JSON.parse(new TextDecoder().decode(opened));
   } catch {
-    throw accessDenied();
+    throw accessDenied("header_fields");
   }
   const toDevice = typeof routing.to_device === "string" && isUuid(routing.to_device) ? routing.to_device.toLowerCase() : null;
-  if (!toDevice || typeof routing.access?.signed !== "string") throw accessDenied();
+  if (!toDevice || typeof routing.access?.signed !== "string") throw accessDenied("header_fields");
 
   const db = admin();
   const { data: device } = await db.from("devices").select("device_id, user_id, revoked_at").eq("device_id", toDevice).maybeSingle();
-  if (!device || device.revoked_at !== null) throw accessDenied();
+  if (!device) throw accessDenied("unknown_device");
+  if (device.revoked_at !== null) throw accessDenied("revoked_device");
   const payloadHash = await sha256(payload);
   const stored = await loadAccess(db, device.user_id as string, new Map());
   const bucketKey = await verifySealed(stored, { signed: routing.access.signed }, toDevice, payloadHash, false);

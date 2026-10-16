@@ -84,6 +84,9 @@ struct LinkState {
     accepted_in_window: u32,
 }
 
+/// How many times the server may refuse a packet before the carrier gives up on it.
+pub const MAX_REFUSALS: u32 = 3;
+
 pub struct MeshNode<S: MeshStore, C: Clock> {
     config: MeshConfig,
     store: S,
@@ -95,6 +98,9 @@ pub struct MeshNode<S: MeshStore, C: Clock> {
     contact_tags: HashSet<Tag>,
     my_tags: Vec<Tag>,
     uploading: HashSet<Digest>,
+    /// Packets the server refused (403): how many times, and not before when. A refusal may be fixed later (the recipient has not uploaded its
+    /// access key yet), so it is retried a few times, later and later, and then dropped.
+    refused: HashMap<Digest, (u32, u64)>,
     /// Packets another phone has acknowledged taking (a copy handed over): what "Passed to a nearby phone" is made from.
     handed: HashSet<Digest>,
     rng: u64,
@@ -120,7 +126,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         }
         let seen_set = seen.iter().map(|(d, _)| *d).collect();
         let rng = config.seed | 1;
-        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), handed: HashSet::new(), rng, stats: NodeStats::default(), version: 0 }
+        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), refused: HashMap::new(), handed: HashSet::new(), rng, stats: NodeStats::default(), version: 0 }
     }
 
     pub fn config(&self) -> &MeshConfig {
@@ -208,10 +214,11 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     /// [`confirm_uploaded`](Self::confirm_uploaded) says the server has it; [`upload_failed`](Self::upload_failed) offers it again.
     pub fn take_uploadable(&mut self) -> Vec<Uploadable> {
         self.housekeeping();
+        let now = self.clock.now_secs();
         let mut out: Vec<Uploadable> = self
             .carried
             .iter()
-            .filter(|(d, c)| !self.uploading.contains(*d) && !self.my_tags.contains(&c.packet.tag))
+            .filter(|(d, c)| !self.uploading.contains(*d) && !self.my_tags.contains(&c.packet.tag) && self.refused.get(*d).map(|(_, after)| *after <= now).unwrap_or(true))
             .map(|(d, c)| Uploadable { digest: *d, header: c.packet.header.clone(), payload: c.packet.payload.clone() })
             .collect();
         out.sort_by_key(|u| u.digest);
@@ -232,6 +239,21 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
 
     pub fn upload_failed(&mut self, digest: &Digest) {
         self.uploading.remove(digest);
+    }
+
+    /// The server refused the packet (403). Kept and tried again later (10 minutes, then 20), up to [`MAX_REFUSALS`] refusals, then dropped.
+    /// Returns `(refusals so far, dropped)`.
+    pub fn upload_refused(&mut self, digest: &Digest) -> (u32, bool) {
+        let now = self.clock.now_secs();
+        let count = self.refused.get(digest).map(|(n, _)| *n).unwrap_or(0) + 1;
+        if count >= MAX_REFUSALS {
+            self.refused.remove(digest);
+            self.confirm_uploaded(digest);
+            return (count, true);
+        }
+        self.refused.insert(*digest, (count, now + 600 * u64::from(count)));
+        self.uploading.remove(digest);
+        (count, false)
     }
 
     // ------------------------------------------------------------------ the radio's side
@@ -816,6 +838,25 @@ mod tests {
         node.upload_failed(&other);
         assert_eq!(node.take_uploadable().len(), 1);
         node.confirm_uploaded(&other);
+        assert!(node.carried.is_empty());
+    }
+
+    #[test]
+    fn a_refused_upload_is_retried_later_and_dropped_on_the_third_refusal() {
+        let c = clock();
+        let mut node = node_with(MeshConfig::default(), &c);
+        let digest = node.enqueue(packet(2, 2, &c)).unwrap();
+        assert_eq!(node.take_uploadable().len(), 1);
+        assert_eq!(node.upload_refused(&digest), (1, false));
+        assert!(node.take_uploadable().is_empty(), "not again at once");
+        c.0.set(c.0.get() + 599);
+        assert!(node.take_uploadable().is_empty(), "not before 10 minutes");
+        c.0.set(c.0.get() + 2);
+        assert_eq!(node.take_uploadable().len(), 1, "after 10 minutes it is offered again");
+        assert_eq!(node.upload_refused(&digest), (2, false));
+        c.0.set(c.0.get() + 1201);
+        assert_eq!(node.take_uploadable().len(), 1, "after 20 minutes more");
+        assert_eq!(node.upload_refused(&digest), (3, true), "the third refusal drops it");
         assert!(node.carried.is_empty());
     }
 

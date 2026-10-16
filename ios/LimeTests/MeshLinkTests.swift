@@ -147,7 +147,7 @@ final class MeshLinkTests: XCTestCase {
         XCTAssertTrue(MeshLinkPolicy.rssiAllowsConnecting(-60))
         XCTAssertTrue(MeshLinkPolicy.rssiAllowsConnecting(-96))
         XCTAssertFalse(MeshLinkPolicy.rssiAllowsConnecting(-97))
-        XCTAssertFalse(MeshLinkPolicy.rssiAllowsConnecting(127), "unknown")
+        XCTAssertTrue(MeshLinkPolicy.rssiAllowsConnecting(127), "127 is \"unavailable\", not weak")
     }
 
     // MARK: Running the engine's actions

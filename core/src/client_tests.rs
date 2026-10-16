@@ -4280,3 +4280,21 @@ fn the_emergency_number_depends_on_the_region_and_the_settings_are_kept() {
     let after = alice.store.emergency_settings().unwrap();
     assert_eq!((after.last_students, after.last_place.as_str()), (18, "Room 7"), "the last values are remembered");
 }
+
+// ---- LIME-142-fix2 ----
+
+#[test]
+fn the_access_public_key_is_put_on_the_servers_file_again_once_per_launch() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    assert!(server.state.lock().unwrap().delivery_public.contains_key("alice"), "put on file at registration");
+    // The server loses it (a reset, a restored backup, a deploy that never had it).
+    server.state.lock().unwrap().delivery_public.remove("alice");
+    sync(&alice, &transport);
+    assert!(!server.state.lock().unwrap().delivery_public.contains_key("alice"), "within one launch it is not repeated on every sync");
+    // The next launch: the same database opened again.
+    let path = alice._dir.path().join("lime.db").to_string_lossy().into_owned();
+    let relaunched = Party { store: crate::store::LimeStore::open(path, vec![1; 32]).unwrap(), user: alice.user.clone(), token: alice.token.clone(), device: alice.device.clone(), _dir: tempfile::tempdir().unwrap() };
+    sync(&relaunched, &transport);
+    assert!(server.state.lock().unwrap().delivery_public.contains_key("alice"), "the first sync of a launch repairs it");
+}

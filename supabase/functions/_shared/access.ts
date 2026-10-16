@@ -11,7 +11,14 @@ export type Access = { hash: Uint8Array | null; publicKey: Uint8Array | null };
 /** What a signed send signs: a label, SHA-256 of the ciphertext and the recipient device's 16 raw UUID bytes (one message to one device only). */
 export const SIGNED_LABEL = new TextEncoder().encode("lime-access-v2");
 
-export const accessDenied = () => new HttpError(403, "access_denied", "The access key was not accepted.");
+/** Why an access was refused, for the function logs only (LIME-142-fix2): a short code, never an id, key or token. The phone still sees the one 403. */
+export type DenyReason =
+  | "no_public_key" | "bad_signature" | "bad_access_key" | "no_proof" | "header_unopenable" | "header_fields" | "unknown_device" | "revoked_device";
+
+export const accessDenied = (reason?: DenyReason) => {
+  console.warn(JSON.stringify({ event: "access_denied", reason: reason ?? "unspecified" }));
+  return new HttpError(403, "access_denied", "The access key was not accepted.");
+};
 
 // deno-lint-ignore no-explicit-any
 type Db = any;
@@ -41,26 +48,27 @@ export async function verifySealed(
     try {
       signature = fromBase64(access.signed);
     } catch {
-      throw accessDenied();
+      throw accessDenied("bad_signature");
     }
-    if (!stored.publicKey || signature.length !== 64) throw accessDenied();
+    if (!stored.publicKey) throw accessDenied("no_public_key");
+    if (signature.length !== 64) throw accessDenied("bad_signature");
     const message = new Uint8Array(SIGNED_LABEL.length + 32 + 16);
     message.set(SIGNED_LABEL, 0);
     message.set(ciphertextHash, SIGNED_LABEL.length);
     message.set(uuidBytes(toDevice), SIGNED_LABEL.length + 32);
-    if (!(await verifyEd25519(stored.publicKey, signature, message))) throw accessDenied();
+    if (!(await verifyEd25519(stored.publicKey, signature, message))) throw accessDenied("bad_signature");
     return await sha256(stored.publicKey);
   }
-  if (!allowAccessKey || typeof access.sealed !== "string") throw accessDenied();
+  if (!allowAccessKey || typeof access.sealed !== "string") throw accessDenied("no_proof");
   let presented: Uint8Array;
   try {
     presented = fromBase64(access.sealed);
   } catch {
-    throw accessDenied();
+    throw accessDenied("bad_access_key");
   }
-  if (presented.length !== 16) throw accessDenied();
+  if (presented.length !== 16) throw accessDenied("bad_access_key");
   const presentedHash = await sha256(presented);
-  if (!stored.hash || !constantTimeEqual(stored.hash, presentedHash)) throw accessDenied();
+  if (!stored.hash || !constantTimeEqual(stored.hash, presentedHash)) throw accessDenied("bad_access_key");
   return presentedHash;
 }
 

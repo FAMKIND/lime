@@ -26,10 +26,10 @@ struct MeshLinkIdentity {
 }
 
 enum MeshLinkPolicy {
-    /// Weaker than this (dBm) is not worth connecting to; 127 is the system's "unknown".
+    /// Weaker than this (dBm) is not worth connecting to. 127 is CoreBluetooth's "RSSI unavailable": unknown, not weak, so it is allowed.
     static let weakestRSSI = -96
 
-    static func rssiAllowsConnecting(_ rssi: Int) -> Bool { rssi != 127 && rssi >= weakestRSSI }
+    static func rssiAllowsConnecting(_ rssi: Int) -> Bool { rssi == 127 || rssi >= weakestRSSI }
 
     /// The lower id initiates.
     static func iShouldInitiate(local: UInt64, remote: UInt64) -> Bool { local < remote }

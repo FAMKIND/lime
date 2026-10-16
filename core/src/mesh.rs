@@ -197,6 +197,8 @@ pub struct MeshStats {
 const PROBE_PREFIX: &[u8] = b"LIMEMESHPROBE1";
 
 /// Four hex characters of a packet digest: enough to follow one packet through the logs, not enough to identify it.
+const MAX_REFUSALS_FALLBACK: u32 = 3;
+
 fn short_id(digest: &Digest) -> String {
     digest[..2].iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -478,8 +480,10 @@ impl MeshEngine {
                     self.upload_done(item.id);
                 }
                 Ok((403, _)) => {
-                    self.note(format!("upload_dropped id={id} status=403"));
-                    self.upload_done(item.id)
+                    // One undifferentiated refusal (the server's logs say why). It may be fixable later (the recipient has not put its access key
+                    // on file yet), so it is kept and tried again after 10 and 20 minutes; the third refusal drops it.
+                    let (count, dropped) = digest.map(|d| self.node().upload_refused(&d)).unwrap_or((MAX_REFUSALS_FALLBACK, true));
+                    self.note(format!("{} id={id} status=403 refusals={count}", if dropped { "upload_dropped" } else { "upload_refused" }));
                 }
                 Ok((status, _)) => {
                     self.note(format!("upload_fail id={id} status={status}"));

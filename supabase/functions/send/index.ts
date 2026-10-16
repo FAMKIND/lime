@@ -108,7 +108,9 @@ Deno.serve(handler(async (req) => {
     // (A revoked device is the same without `expect`; with it, the proof is checked first and a revoked device is then reported, to the
     // holder of the key only.)
     const signed = typeof r.access.signed === "string";
-    if (!device || (revoked && !checking) || (!signed && typeof r.access.sealed !== "string")) throw accessDenied();
+    if (!device) throw accessDenied("unknown_device");
+    if (revoked && !checking) throw accessDenied("revoked_device");
+    if (!signed && typeof r.access.sealed !== "string") throw accessDenied("no_proof");
     const stored = await loadAccess(db, device.user_id as string, accessByUser);
     const bucketKey = await verifySealed(stored, r.access, id, ciphertextHash);
     if (revoked) {
