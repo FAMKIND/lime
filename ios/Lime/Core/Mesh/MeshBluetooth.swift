@@ -48,6 +48,12 @@ final class MeshBluetooth: NSObject {
     @ObservationIgnored private var rejectedUntil: [UUID: Date] = [:]
     /// Links I started that dropped: connect again once iOS has let go of them (a pending connect never times out and is completed in range, in the background too).
     @ObservationIgnored private var reconnect: Set<UUID> = []
+    /// The wait before connecting again to each phone, and when the next attempt may start (LIME-141-fix2).
+    @ObservationIgnored private var backoffs: [UUID: ReconnectBackoff] = [:]
+    @ObservationIgnored private var notBefore: [UUID: Date] = [:]
+    @ObservationIgnored private var storm = ReconnectStormGuard()
+    /// L2CAP channels that arrived before their phone's hello was handled.
+    @ObservationIgnored private var pendingChannels = PendingChannels<CBL2CAPChannel>()
     /// How long a phone with the higher id waits for the lower-id phone to connect before keeping its own link (a locked phone cannot connect).
     static let fallbackGraceSeconds = 15
     // The peripheral side.
@@ -92,6 +98,7 @@ final class MeshBluetooth: NSObject {
         var stream = Data()
         var nextFragment: UInt16 = 0
         var up = false
+        var upAt: Date?
         init(remote: UInt64, iAmCentral: Bool) { self.remote = remote; self.iAmCentral = iAmCentral }
     }
 
@@ -279,6 +286,7 @@ final class MeshBluetooth: NSObject {
     private func up(_ peer: Peer) {
         guard !peer.up else { return }
         peer.up = true
+        peer.upAt = Date()
         lastPeerSeen = Date()
         updateCount()
         onLog("peer_up", ["link": MeshDriver.short(peer.remote), "role": peer.iAmCentral ? "central" : "peripheral"])
@@ -293,8 +301,14 @@ final class MeshBluetooth: NSObject {
         onLog("peer_down", ["link": MeshDriver.short(peer.remote), "why": why])
         updateCount()
         if let peripheral = peer.peripheral {
-            // A link I started and lost: connect again once iOS has let go of this one (the disconnect callback does it).
-            if running, why != "stop" { reconnect.insert(peripheral.identifier) }
+            // A link I started and lost: connect again once iOS has let go of this one (the disconnect callback does it), after a wait that
+            // grows with every link that fails (one that ended within 2 s of opening counts as a failure; one that lasted 30 s starts over).
+            if running, why != "stop" {
+                reconnect.insert(peripheral.identifier)
+                var backoff = backoffs[peripheral.identifier] ?? ReconnectBackoff()
+                backoff.linkEnded(livedFor: peer.upAt.map { Date().timeIntervalSince($0) })
+                backoffs[peripheral.identifier] = backoff
+            }
             central?.cancelPeripheralConnection(peripheral)
         }
     }
@@ -420,12 +434,19 @@ extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
         guard MeshLinkPolicy.rssiAllowsConnecting(rssi) else { onLog("skip_weak", ["rssi": String(rssi)]); return }
         if let until = rejectedUntil[peripheral.identifier], until > Date() { return }
         guard handshakes[peripheral.identifier] == nil, peerFor(peripheral: peripheral) == nil, peripheral.state == .disconnected else { return }
+        if let until = notBefore[peripheral.identifier], until > Date() { return }
         peripherals[peripheral.identifier] = peripheral
         peripheral.delegate = self
-        handshakes[peripheral.identifier] = Handshake(peripheral: peripheral)
         wake("discover-new")
         onLog("connecting", ["rssi": String(rssi)])
-        manager.connect(peripheral)
+        connectNow(peripheral)
+    }
+
+    /// Starts a connection (the one place that does), and counts it for the storm guard.
+    private func connectNow(_ peripheral: CBPeripheral) {
+        handshakes[peripheral.identifier] = Handshake(peripheral: peripheral)
+        if storm.record(at: Date()) { onLog("WARNING reconnect storm", ["per_minute": String(storm.perMinute)]) }
+        central?.connect(peripheral)
     }
 
     func centralManager(_ manager: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -445,9 +466,15 @@ extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
         if let peer = peerFor(peripheral: peripheral) { close(peer, why: "disconnected") }
         // Connecting again never times out: iOS completes it when the phone is next in range, in the background too. (Only for links I started.)
         if running, reconnect.remove(peripheral.identifier) != nil {
-            handshakes[peripheral.identifier] = Handshake(peripheral: peripheral)
-            onLog("reconnecting", [:])
-            manager.connect(peripheral)
+            let id = peripheral.identifier
+            let wait = (backoffs[id] ?? ReconnectBackoff()).delay()
+            notBefore[id] = Date().addingTimeInterval(wait)
+            onLog("reconnecting", ["in_ms": String(Int(wait * 1000)), "failures": String(backoffs[id]?.failures ?? 0)])
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(Int(wait * 1000)))
+                guard let self, self.running, self.handshakes[id] == nil, self.peerFor(peripheral: peripheral) == nil, peripheral.state == .disconnected else { return }
+                self.connectNow(peripheral)
+            }
         }
     }
 }
@@ -601,7 +628,21 @@ extension MeshBluetooth: @preconcurrency CBPeripheralManagerDelegate {
     func peripheralManager(_ manager: CBPeripheralManager, didOpen channel: CBL2CAPChannel?, error: Error?) {
         guard let channel else { onLog("l2cap_failed", ["error": error?.localizedDescription ?? "?"]); return }
         if let peer = peers.values.first(where: { $0.central?.identifier == channel.peer.identifier }) { openChannel(channel, for: peer) }
-        else { onLog("l2cap_unknown_peer", [:]) }
+        else {
+            // The channel got here before the phone's hello was handled: keep it for a short grace and bind it when the peer appears.
+            pendingChannels.hold(channel, from: channel.peer.identifier, at: Date())
+            onLog("l2cap_pending", ["central_known": String(inboundCentrals[channel.peer.identifier] != nil)])
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(PendingChannels<CBL2CAPChannel>.grace + 0.1))
+                guard let self else { return }
+                for late in self.pendingChannels.expire(at: Date()) {
+                    let entry = self.inboundCentrals[late.peer.identifier]
+                    self.onLog("l2cap_unknown_peer", ["remote_known": String((entry?.remote ?? 0) != 0), "subscribed": String(entry?.subscribed ?? false),
+                                                       "stale_peer": String(entry.map { self.peers[$0.remote] != nil } ?? false)])
+                    late.inputStream?.close(); late.outputStream?.close()
+                }
+            }
+        }
     }
 
     func peripheralManager(_ manager: CBPeripheralManager, central: CBCentral, didSubscribeTo characteristic: CBCharacteristic) {
@@ -649,13 +690,21 @@ extension MeshBluetooth: @preconcurrency CBPeripheralManagerDelegate {
 
     /// A central has written its hello and subscribed: it is a link, if the policy keeps it.
     private func attachInbound(_ id: UUID) {
-        guard let entry = inboundCentrals[id], entry.remote != 0, entry.subscribed, let central = entry.central, peers[entry.remote] == nil else { return }
+        guard let entry = inboundCentrals[id], entry.remote != 0, entry.subscribed, let central = entry.central else { return }
+        if let existing = peers[entry.remote] {
+            // A link to this phone that is not live any more (my own connection to it dropped without telling me) blocks the new one for
+            // good; drop it and carry on. A live one stays, and the new inbound is refused (logged: it used to vanish without a trace).
+            let live = existing.up && (existing.central != nil || existing.peripheral?.state == .connected)
+            guard !live else { onLog("inbound_drop", ["why": "live-peer"]); return }
+            close(existing, why: "stale")
+        }
         switch registry.claim(remote: entry.remote, local: identity.id, iAmCentral: false) {
         case .keep:
             let peer = Peer(remote: entry.remote, iAmCentral: false)
             peer.central = central
             peers[entry.remote] = peer
             up(peer)
+            if let channel = pendingChannels.take(for: id, at: Date()) { openChannel(channel, for: peer) }
         case let verdict:
             onLog("inbound_drop", ["why": "\(verdict)"])
         }

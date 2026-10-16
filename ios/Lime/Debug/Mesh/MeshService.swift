@@ -45,6 +45,7 @@ final class MeshService {
     /// The pinned mesh key is not the pair of the server's secret (LIME-144): every upload would be refused. Set by the launch check.
     private(set) var keyWarning: String?
     @ObservationIgnored private var keyChecked = false
+    @ObservationIgnored private var keySkipsLogged: Set<String> = []
     /// The battery soak (LIME-144): a Debug toggle; samples every 5 minutes into the mesh log.
     private(set) var batterySamples: [BatterySample] = []
     @ObservationIgnored private var batteryTask: Task<Void, Never>?
@@ -65,16 +66,33 @@ final class MeshService {
 
     // MARK: The mesh key check
 
-    /// Once per launch, when online with a session: asks the server which mesh key it holds and compares it with the one pinned in the app.
+    /// Once per launch, when a session and the internet both exist (retried when either appears later: the 15 s tick, the connectivity flip, a
+    /// sync): asks the server which mesh key it holds and compares it with the one pinned in the app. It always leaves a line: `ok key=…`,
+    /// `mismatch pinned=… server=…` or `unavailable why=…` (a skip is logged once per reason, so the log never just goes quiet).
     func checkServerKeyOnce() async {
-        guard !keyChecked, online, let engine, let link = store?.currentLink, let token = try? await link.token() else { return }
+        let link = store?.currentLink
+        switch MeshKeyCheckGate.decide(alreadyChecked: keyChecked, engineReady: engine != nil, online: online, hasSession: link != nil) {
+        case .skip(let why):
+            if why != "done", keySkipsLogged.insert(why).inserted { log.record("mesh_key_check", ["result": "unavailable", "why": why]) }
+            return
+        case .run: break
+        }
+        guard let engine, let link else { return }
+        let token: String
+        do { token = try await link.token() } catch {
+            if keySkipsLogged.insert("no-token").inserted { log.record("mesh_key_check", ["result": "unavailable", "why": "no-token"]) }
+            return
+        }
         let transport = link.transport
         let result = await Task.detached(priority: .utility) { engine.checkServerKey(transport: transport, authToken: token) }.value
-        guard let result else { log.record("mesh_key_check", ["result": "unavailable"]); return }
+        guard let result else {
+            if keySkipsLogged.insert("server").inserted { log.record("mesh_key_check", ["result": "unavailable", "why": "server"]) }
+            return
+        }
         keyChecked = true
-        if result.matches {
-            log.record("mesh_key_check", ["result": "ok", "key": result.pinned])
-        } else {
+        let line = MeshKeyCheckGate.line(matches: result.matches, pinned: result.pinned, server: result.server, why: "")
+        log.record(line.kind, line.detail)
+        if !result.matches {
             keyWarning = "Mesh key mismatch: this build pins \(result.pinned) but the server holds \(result.server). Uploads will be refused."
             log.record("WARNING mesh key mismatch", ["pinned": result.pinned, "server": result.server, "key_id": String(result.keyId)])
         }
@@ -319,7 +337,7 @@ final class MeshService {
                 self.online = nowOnline
                 self.log.record("connectivity", ["online": String(nowOnline)])
                 // The internet is back: send what waited (it resumes by itself) and upload what is carried.
-                if came { await self.store?.syncNow(); await self.uploadIfOnline(trigger: "connectivity") }
+                if came { self.keySkipsLogged.remove("offline"); await self.store?.syncNow(); await self.checkServerKeyOnce(); await self.uploadIfOnline(trigger: "connectivity") }
             }
         }
         path.start(queue: .main)
