@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NOW: the user's device check of 141-fix2 + 150a's look (1e145)** → "logs" → plot reads them. **NEXT FOR TEND: LIME-153** (1e146: the staging deploy put the LOCAL test mesh key on staging), **then the user's real `mesh-keygen.sh` run → LIME-154** (re-pin), then LIME-152; **150's remainder (the spike → the mini grid, 7c) waits for the user's "spike" with the phones ready.**
+**▶ NOW: the user's device check of 141-fix2 + 150a's look (1e145)** → "logs" → plot reads them. **NEXT FOR TEND: LIME-150-fix** (the mini player, the user's look feedback, 1e148), **then LIME-141-fix3** (the storm is bounded but still ~20/min for ~18 min; 1e148), **then LIME-152**. Upload test A again after 141-fix3. The key is fixed (1e147); **150's remainder (the spike → the mini grid, 7c) waits for the user's "spike" with the phones ready.**
 - **152 was drafted before the mesh work** (2026-10-15): **tend's Phase 1 must re-survey the files it names** and report anything that moved, before building.
 - LIME-144 landed as `67b1c84`: **mesh v1 is wrapped.**
 
@@ -153,6 +153,19 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e148. **The user's check (2026-10-16 ~14:50 EDT): "looks good for the most part" + logs (`/tmp/lime-meshlogs9/{ipad,jean,shem}`, the run 16:37–18:51Z).**
+   - **The mini player (→ LIME-150-fix):** as wide as the tab bar ("the dock"); **no LIVE badge**, the call timer back; **the 148c layout back** (a semibold name + a subtle footnote line, the 148c button spacing) **but keep 150a's 44 pt height and the avatar treatment** (32 pt, the pair/cluster). The tuck tab (warm) and the four kept greens: no objection, **taken as approved.**
+   - **Key check:** `result=ok key=272c04ad6a46fd6d` on the **iPad and the 13 mini** (each after one `no-session` at launch: fine). **Jean's phone: one `result=unavailable why=no-engine` (18:18Z), never `ok`** → 141-fix3 item 4.
+   - **Storm: bounded, not gone.** Now the **iPad ↔ Jean's phone** pair (the 13 mini was quiet: 5 connects in 2 h). The iPad: 372 connects, **~20/min from 16:38 to 16:55** (18 `WARNING reconnect storm per_minute=20`), then ~1 per 10 min (locked). Was ~195/min: 10× better, but **the backoff never climbed**.
+   - **The cause is now visible (141-fix2's new lines):**
+     - Jean's side: 368 × `l2cap_pending central_known=true` → `l2cap_unknown_peer subscribed=false` (311 with `stale_peer=false`, 56 `stale_peer=true`): **the iPad opens L2CAP as a central that never subscribed**, so `attachInbound` never binds; the 2 s grace runs out; the channel closes.
+     - The iPad's side: 56 × `inbound_drop why=live-peer` + 56 `stale_peer=true` on Jean's: **both phones hold an outbound link to each other at the same moment** and each refuses the other's inbound (no tie-break on who is the central for a pair).
+     - **Why the backoff didn't climb (plot's inference, tend to prove):** the cycle is ~3 s = **the 2 s grace + 0.5 s backoff + connect**; a link that ends **after** 2 s doesn't count as a failure, so the backoff stays at 0.5 s. The grace (2 s) and the failure rule (< 2 s) cancel out.
+   - **Battery:** the iPad 70 → 30% in 2 h 14 min (~18%/h; screen use unknown: ask the user); the 13 mini 90 → 85; Jean's charging.
+1e147. **LIME-153 LANDED as `e554b49`; the user ran the real keygen; LIME-154 LANDED as `7a6a3a4` (2026-10-16 12:32), installed on all 3.**
+   - 153: the local key moved to `supabase/functions/.env` (local runtime only); new `supabase/check-staging-mesh-key.sh` (read-only, digests) runs at the end of `deploy-staging.sh`; `mesh-keygen.sh` prints the staging digest. The leaking step (`link` or `functions deploy`) is unproven; not needed.
+   - 154: staging digest now `d87134f7a5371c6e` (not local); pinned `MiiyRx…` (key id 1), **fingerprint `272c04ad6a46fd6d`**; core + mesh tests pass. tend couldn't call `mesh-key` (no session): **the phones are the check.**
+   - **The user's gate:** no red banner on each phone; "logs" → `mesh_key_check result=ok key=272c04ad6a46fd6d` on all 3; the 141-fix2 storm check in the same sitting; **then repeat upload test A** (the key changed since it last worked).
 1e146. **The key check WORKED and caught a real fault (the user's screenshot, 12:15 EDT): "Mesh key mismatch: this build pins 03129b4296f76a31 but the server holds 4ceb3d2d8055495b."**
    - **`4ceb3d2d8055495b` is the LOCAL TEST vector** (`supabase/tests/mesh_test.ts:177`; the secret in `supabase/config.toml` `[edge_runtime.secrets]`, LIME-140, public on purpose).
    - **Proven (plot, read-only `supabase secrets list`):** staging's `MESH_ROUTING_SECRET_KEY` digest is `ee56048f31821b2b…` = SHA-256 of the local test secret, **`updated_at 2026-10-16T14:21:00Z`, the same second as the rate-limit secrets set by `deploy-staging.sh`** (the 144 `mesh-key` deploy). At 1e138 (~08:30) uploads worked with `03129b…`, so **the deploy overwrote the real staging key with the repo's local one.** Which CLI step did it (`link`, `functions deploy`, or `secrets set` reading `[edge_runtime.secrets]`) is for tend's survey.
@@ -169,7 +182,8 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Not done:** the spike → items 1–6 (the mini grid in the system window) and 7c (a ~30% smaller window). Needs the user + 3 devices ("spike").
    - **Open calls for the user:** (a) the edge tab is warm neutral, not lime (items 8 vs 9 collided); **plot leans warm** (brand restraint: lime only for the one live action, already the LIVE badge). (b) Greens kept as each screen's one primary action: `CallView` "Message", the group ring's "Join"/"Video", the invite's "Join", the Calls tab's "New call"; **plot leans keep** (one primary per screen is the rule).
    - **Gate (the user, on a phone):** the 44 pt capsule's look, the pair avatar, the tuck tab; none seen on a device or in screenshots.
-   - **Stray working-tree drift (not from any brief):** `ios/Config/Info-Debug.plist` lost its LIME-103 comment (likely a tool regenerated it); untracked `public/assets/Logomark-outline.svg` and `public/assets/signin-teachers.mp4` (the user's own?). Plot leaves them alone.1e143. **`mesh-key` deployed (tend; 401 without a session).** Plot pulled all 3 logs (`/tmp/lime-meshlogs8/`):
+   - **Stray working-tree drift (not from any brief):** `ios/Config/Info-Debug.plist` lost its LIME-103 comment (likely a tool regenerated it); untracked `public/assets/Logomark-outline.svg` and `public/assets/signin-teachers.mp4` (the user's own?). Plot leaves them alone.
+1e143. **`mesh-key` deployed (tend; 401 without a session).** Plot pulled all 3 logs (`/tmp/lime-meshlogs8/`):
    - **⚠ a reconnect storm** between the iPad and the 13 mini (13:13–~13:45 UTC): ~4,500 connect/disconnect cycles at ~195/min, with the 13 mini logging `l2cap_unknown_peer` each time;
    - **no `mesh_key_check` line on any device.**
    - **→ LIME-141-fix2 (drafted, NEXT):** the unknown-peer race, reconnect backoff, the key check always logs.
@@ -5861,7 +5875,36 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-153 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): the staging deploy must never ship the local test mesh key
+### LIME-150-fix → `tend` (lime-aa) (NEXT; drafted 2026-10-16): the mini player: dock width, the timer back, the 148c layout at 44 pt
+**Goal:** the call mini player is as wide as the tab bar, shows the call's time instead of a LIVE badge, and uses 148c's text and button layout at 150a's 44 pt height with 150a's avatars.
+**Assumes:** edit, build, simulators, install on the 3 phones, commit. **Visual brief: no new UI tests** (update existing ones that break); the user checks on the phone.
+**Scope:** `ios/Lime/Features/Calls/CallMiniPlayer.swift` (+ `CallMiniPlayerRule`), and only the tests that assert the LIVE badge or the one-line layout. **Not:** the tuck tab, the avatar code (`GroupAvatarPlan`, `ConversationAvatar`), the PiP window, the chat's live card.
+**Phase 1 (read-only):** compare `git show ad5e6c7^:ios/Lime/Features/Calls/CallMiniPlayer.swift` (148c) with today's; find how the tab bar's width/insets are known on each screen (and when the player shows with no tab bar: a pushed chat). Report before editing if the tab bar's width can't be read without private API.
+**The change:**
+1. **Width:** the player's leading/trailing edges line up with the tab bar's capsule on every screen that has one; where there's no tab bar (inside a chat), use the same insets.
+2. **Remove the LIVE badge** from the player. **The second line is 148c's `subtitle` / `statusText`** (e.g. "Video · 3 · 4:12", the timer always present; the short form when narrow).
+3. **148c's layout:** the name `Theme.body.weight(.semibold)` in `Theme.text`; the subtitle `.footnote` in `Theme.textSecondary`, `spacing: 1`; 148c's HStack spacing and padding for Mute/Leave on the right (glyphs 17 pt semibold, **44 × 44 tap areas**); **keep** 150a's warm-neutral Mute, red Leave, the 32 pt avatar + pair/cluster, the tuck gesture.
+4. **Height:** as close to 44 pt as two lines allow at the default text size (report the real height); grows at accessibility sizes, never clips.
+5. VoiceOver: name, then the subtitle with the timer (no "live"); Mute/Leave unchanged.
+**Verification:** build 0 warnings; `CallMiniPlayerUITests` + `CallPolishTests` pass (edited only where they asserted the badge/one line); screenshots at the default size + AX3, light + dark, on the 13 mini and the SE simulator, attached in the record; installed on the 3 phones.
+**Gate:** the user, on the phone: the width matches the dock; the text and spacing feel like 148c; the height is still short.
+**Record:** `## LIME-150-fix` with **For plot:** (the measured height). **Commit:** `fix(ios): the mini player: as wide as the tab bar, the call time back, the earlier layout at 44 pt`, trailer `Brief: LIME-150`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
+
+### LIME-141-fix3 → `tend` (lime-aa) (after 150-fix; drafted 2026-10-16): end the iPad ↔ Jean loop: subscribe before L2CAP, one central per pair, a grace-length link is a failure
+**Goal:** two phones settle on one link without a loop; a link that never binds raises the backoff; every phone logs `mesh_key_check result=ok`.
+**Assumes:** edit, run the Swift + core tests, install on the 3 phones, commit. **Evidence:** 1e148 (`/tmp/lime-meshlogs9/`).
+**Scope:** the Debug mesh link layer (`ios/Lime/Debug/Mesh/`, `ios/Lime/Core/Mesh/MeshReconnect.swift`), its tests. **Not:** the packet format, `lime_core`'s mesh, the server.
+**Phase 1 (read-only; report before editing):** confirm or refute the three causes in 1e148 from the code + logs: (a) why the iPad's central opens L2CAP **without subscribing** (`hello_keep` path? does it skip the subscribe when it "keeps" a hello?); (b) both phones connecting to each other at once (`inbound_drop why=live-peer` ↔ `stale_peer=true`); (c) the 2 s grace vs the "< 2 s = failure" rule; and (d) why Jean's phone logged `no-engine` and never `ok`.
+**The change:**
+1. **The central subscribes (and its hello is handled) before it opens L2CAP**, on every path including `hello_keep`; if the peripheral still has no peer when the channel arrives, the grace stays.
+2. **One link per pair, a deterministic tie-break:** when both phones are connecting to each other, the phone with the lower mesh id (or another stable rule both sides compute the same) keeps the central role; the other drops its outbound and accepts the inbound. Log `tie_break kept=outbound|inbound`.
+3. **A link counts as a failure unless it bound and carried a frame** (or stayed up ≥ 30 s), **not by time alone**, so a grace-length link raises the backoff. The simulated loop test gets a 2.1 s-lifetime variant that must settle to ≤ 1/min.
+4. **The key check on Jean's phone:** fix whatever (d) shows so `no-engine` is retried when the engine comes up and ends in one `ok`/`mismatch`/`unavailable` line per launch.
+**Verification:** `MeshReconnectTests` (+ the 2.1 s variant, a tie-break test, a "no frame = failure" test), `MeshLinkTests`, `MeshMessagesTests` pass; 0 warnings; installed on the 3 phones.
+**Gate:** the user: the 3 phones near each other, lime open 10 min, then locked 10 min → "logs": plot checks **no `WARNING reconnect storm`**, ≤ a few connects/min per pair, `result=ok key=272c04ad6a46fd6d` on all 3; then **upload test A** again.
+**Record:** `## LIME-141-fix3` with **For plot:** (which causes held). **Commit:** `fix(ios): one mesh link per pair, subscribe before L2CAP, an unbound link raises the backoff`, trailer `Brief: LIME-141`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
+
+### LIME-153 → `tend` (lime-aa) (DONE as `e554b49`; drafted 2026-10-16): the staging deploy must never ship the local test mesh key
 **Goal:** `deploy-staging.sh` can't put the repo's local mesh key on staging again, and it fails loudly if staging ever holds it.
 
 **Why (1e146):** the 144 deploy (14:21Z) set staging's `MESH_ROUTING_SECRET_KEY` to the local test secret from `supabase/config.toml` `[edge_runtime.secrets]` (digest `ee56048f31821b2b…`; fingerprint `4ceb3d2d8055495b`), replacing the real key. The app's launch check caught it.
@@ -5891,7 +5934,7 @@ If the survey turns up related issues, raise them before editing. If a decision 
 
 **Record:** `## LIME-153` in TEND.md with **For plot:** (which CLI step leaked it) and every item checked off. **Commit:** `fix(supabase): keep the local mesh test key off staging; the deploy refuses a staging that holds it`, trailer `Brief: LIME-153`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
 
-### LIME-154 → `tend` (lime-aa) (after 153 + the user's real keygen; drafted 2026-10-16): re-pin the staging mesh key
+### LIME-154 → `tend` (lime-aa) (DONE as `7a6a3a4`; drafted 2026-10-16): re-pin the staging mesh key
 **Goal:** the app pins the new staging key; the launch check logs `mesh_key_check result=ok key=<new fingerprint>` on all 3 phones.
 **The change:** exactly as `385ff42` (key id 1, `SERVER_KEYS` in `lime_core`, the public key the user pastes); update the test vectors that hold `03129b4296f76a31` only where they mean "the staging key" (not `MeshReconnectTests`' format test unless it must); rebuild the core; reinstall on the 3 phones. **Verify:** core + mesh tests pass; the fingerprint of the pinned key (computed by the same rule as `meshKeyFingerprint`) = the one `mesh-key` returns. **Gate:** the user opens lime on each phone: no red banner; then "logs". **Commit:** `fix: re-pin the staging mesh public key (key id 1)`, trailer `Brief: LIME-154`.
 
