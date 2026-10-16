@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-143-fix** (remove Drill; a one-line EMERGENCY card label; "Safewords"; the "+" long-press; the key-script guard). **Then the mesh is wrapped**: LIME-144 shrinks to docs + a passive battery soak (the field test is effectively done, 1e129/1e131/1e138). **Then, per the user's order: LIME-150 + LIME-152** (the call polish + the QA batch). Previously: The builds are installed on all 3. LIME-142-fix landed as `0e619e3`. After it: plot pulls the logs (looking for `upload_ok` + the trigger), then drafts **LIME-144** (the field test + docs).
+**▶ NEXT FOR TEND: LIME-144** (wrap up mesh v1: the docs, the key fingerprint check (stop for a deploy go), a battery log, the emergency card in dark mode). LIME-143-fix landed as `d830476` + `1fbc07c`. **Then: LIME-150 + LIME-152** (the call polish + the QA batch; plot re-surveys both first). Previously: The builds are installed on all 3. LIME-142-fix landed as `0e619e3`. After it: plot pulls the logs (looking for `upload_ok` + the trigger), then drafts **LIME-144** (the field test + docs).
 - **Plot's decision on the sim result:** the packets this phone originates start with **8 copies** (relays still halve); that's 142's change, noted there. **The order, set by the user (2026-10-15): LIME-147** (the group-call emoji + the 1:1-style call header) → **the mesh, LIME-139 → 144** → **LIME-150 together with LIME-152** (the call polish + the QA batch, as one polish phase). LIME-149 (screen share) waits for the paid Apple account (November). *Plot keeps this line current.*
 
 **The user's words:**
@@ -149,6 +149,10 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e141. **LIME-143-fix LANDED as `d830476` (+ `1fbc07c`, the key-script banners), pushed.**
+   - Drill removed everywhere (an old `drill` field is accepted and ignored); the card's "EMERGENCY" in caption2 on one line, the status as the main text, warm surface, a red border only for Need help; "Safewords" (the core field is still `school_actions`); the "+" `.contextMenu` → Emergency with a real long-press UI test.
+   - **Not done:** the key fingerprint check (an endpoint + a deploy). **Plot: yes → LIME-144 item 2.** The dark mode of the card/panel isn't checked → 144 item 4.
+   - **NEXT: 144.**
 1e140. **LIME-143 DEVICE TEST PASSED (the user, 2026-10-16: "all worked")**: Nearby mode, a silent emergency status, "Need help" first in the roll-up, the sound setting, End (Drill tested too).
    - **The user's changes → LIME-143-fix (drafted, NEXT):** **remove Drill entirely** (E3 reversed); the "EMERGENCY" word wraps to 2 lines on the 13 mini, so tidy the card; rename "School safety actions" → **"Safewords"**; plus the long-press fix + the key-script guard.
    - **"Wrap up and move on":** after 143-fix the mesh is done for v1. **144 becomes a small docs + passive-battery brief** (the field results exist: 1e129, 1e131, 1e138). **Then 150 + 152.**
@@ -784,6 +788,7 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
 - The App Store name, e.g. "lime: teacher messaging" (lowercase is allowed).
 
 ### Standing rules (also in the sections below)
+- **Short copy, especially in emergencies (the user, 2026-10-16):** people in a crisis don't read paragraphs. First-screen copy is **one short true sentence (≈ ≤ 20 words)**; details go behind "Learn more". Every offline/emergency brief lists its strings.
 - **Brand restraint: about 20% brand colour, 80% clean and minimal (the user, 2026-10-15).** "We want to be sparing with our brand colour… we don't want to overwhelm teachers, but want them to have a lot of powerful tools to do their best, which results in student impact."
   - **Lime green is reserved for the one primary action or live state on a screen** (the "+", a live call circle, Join, the LIVE tag);
   - **secondary controls use the warm neutrals** (`Theme.pressed`, as behind the selected "Aa"; `Theme.surface`; `Theme.chipFill`);
@@ -5819,7 +5824,36 @@ If the survey turns up related issues, raise them before editing. If a decision 
 - **LIME-143:** Nearby mode (M2) + emergency mode (M3/M4, informed by RESEARCH-01) + the DND rule.
 - **LIME-144:** the 3-device field test (2 phones + iPad: walk-apart, relay through the middle device, both asleep, battery per hour: the M1 check) + docs (`architecture.md` §7, `api-v2.md` §4/§8, the DPIA inputs, the honest promise copy).
 
-### LIME-143-fix → `tend` (lime-aa) (NEXT; drafted 2026-10-16): emergency clean-up: no drills, a tidy card, "Safewords", a working long-press; the key-script guard
+### LIME-144 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): wrap up mesh v1: the docs, the key fingerprint check, an optional battery soak
+**Goal:** mesh v1's documents match what was built and proven; the app can't silently run with a mis-pinned server key again; there's a simple way to measure battery over hours.
+
+**The change:**
+1. **Docs (as built + proven), each section dated:**
+   - `docs/architecture.md` §7: the final design (the engine, the packet, the tags, the sealed header, signed access, `mesh-drop`, the outbox/statuses, Nearby + emergency), **the device results** (1e129: multi-hop across 2 locked phones ~5–10 s; 1e131: 9/9 delivered, median ~1 s; 1e138: the relay upload works), **the honest promise** (spike §7), and **the honest limits** (force-quit; both asleep = late; the first message to a brand-new contact needs the internet; Debug-only until the release checklist; no push until November; Time Sensitive needs the paid account);
+   - `docs/api-v2.md` §8/§13 final;
+   - `docs/release-checklist.md`: the mesh + emergency ship steps (out of `#if DEBUG`, Info.plist, App Store privacy answers, Time Sensitive, the Lock Screen control, a key rotation with an overlap);
+   - a **DPIA input** section (`docs/dpia-mesh.md`): what's processed, the proximity risk, the mitigations (rotating ids, padding, tags, no location, 48 h, sealed), the retention.
+2. **The key fingerprint check (the user's call: plot leans yes; tend asked):**
+   - an authenticated `GET mesh-key` returns `{key_id, fingerprint}` (SHA-256 of the public key, first 16 hex) for the current secret;
+   - the app checks it at launch (online) against its pinned key and **logs `WARNING mesh key mismatch`** + shows a Debug-only banner;
+   - a test.
+   - (It would have caught 1e137 in minutes.) **A staging deploy: stop for the user's go.**
+3. **An optional battery soak tool:** a Debug toggle "Battery log" that writes the battery % every 5 min into the mesh log while the mesh runs, plus a one-line summary on the Debug screen (% per hour since the start, plugged-in periods excluded). **No test session needed:** the user can leave phones running for hours and say "logs".
+4. **The dark-mode look of the emergency card + the roll-up panel** (tend flagged: not checked): screenshots in dark mode; fix contrast issues only.
+5. **Cut the offline copy by ~80% (the user, 2026-10-16, a screenshot: "way too long… especially in an emergency, when people don't have time to read"):**
+   - **the banner** (Messages): "Offline: lime will send through nearby phones, and when you're back online." → **"Offline · sending through nearby phones"**;
+   - **the sheet** "Sending with no internet" (~95 words today) → **~20 words**: title **"No internet"**, body **"Messages hop phone to phone, sealed. They go when phones meet or anyone gets online. Photos wait for internet."** Keep "Done";
+   - **the same rule for every emergency/offline surface** (the explainer "Pass messages phone to phone?", Nearby mode's status, the emergency sheet's notes, the Settings footnotes): **cut each to the shortest true sentence**; anything longer goes behind a "Learn more" link, not on the first screen;
+   - VoiceOver reads the short text;
+   - the honest-promise details (swiped away, etc.) live only in "Learn more".
+
+   Report every string before → after in TEND.md.
+
+**Kind:** docs + one small endpoint (a Deno test) + a Debug tool + visual.
+
+**Record:** `## LIME-144` with **For plot:** and every item checked off. **Commit:** `docs: mesh v1 as built and proven; mesh key fingerprint check; battery log`, trailer `Brief: LIME-144`. The rest per the standing rules.
+
+### LIME-143-fix → `tend` (lime-aa) (DONE as `d830476` + `1fbc07c`; drafted 2026-10-16): emergency clean-up: no drills, a tidy card, "Safewords", a working long-press; the key-script guard
 **Goal:** emergency mode is simpler and polished, and the "+" long-press opens it; the mesh key script can't cause the dry-run mix-up again.
 
 **The user (2026-10-16, after the device test: "all worked"):**
