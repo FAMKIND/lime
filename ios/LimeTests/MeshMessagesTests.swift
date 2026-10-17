@@ -16,7 +16,7 @@ final class MeshMessagesTests: XCTestCase {
         XCTAssertEqual(DeliveryState(localState: "failed"), .failed)
         XCTAssertEqual(DeliveryState(localState: "undelivered"), .undelivered)
         XCTAssertEqual(DeliveryState(localState: "sent_local"), .sent, "older local-only states still count as sent")
-        XCTAssertEqual(DeliveryState.waiting.statusWords, "Waiting for signal")
+        XCTAssertEqual(DeliveryState.waiting.statusWords, "Waiting for a phone nearby")
         XCTAssertEqual(DeliveryState.passed.statusWords, "Passed to a nearby phone")
         XCTAssertEqual(DeliveryState.offline.statusWords, "Waiting for internet")
         for state in [DeliveryState.waiting, .passed, .offline] {

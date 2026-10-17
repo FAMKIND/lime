@@ -106,3 +106,10 @@ enum MeshAttachGate {
         !attached && helpEnabled && explained && coreReady
     }
 }
+
+/// Whether a phone relaunched with no internet gets a (pending) link to the server (LIME-141-fix4). Without one every send became a local-only
+/// message that said "Sent" and went nowhere. Only a phone that has signed in and registered here before qualifies; the full registration runs
+/// when the internet is back.
+enum OfflineLinkRule {
+    static func shouldConnect(registrationFailedOffline: Bool, accountRegisteredHere: Bool) -> Bool { registrationFailedOffline && accountRegisteredHere }
+}

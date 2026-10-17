@@ -276,10 +276,15 @@ final class ConversationStore {
     }
 
     /// The phone is registered: from now on sends are delivered and the mailbox is fetched.
-    func connect(_ link: BackendLink) {
+    func connect(_ link: BackendLink, pendingRegistration: Bool = false) {
         self.link = link
-        problem = nil
+        needsRegistration = pendingRegistration
+        if !pendingRegistration { problem = nil }
     }
+
+    /// The link is an offline one (this phone registered before; the registration with the server runs when the internet is back): deliveries still
+    /// try to register first.
+    @ObservationIgnored var needsRegistration = false
 
     /// The session ended on this phone: stop talking to the server but keep the chats and keys, so
     /// signing in again as the same person loses nothing.
@@ -304,7 +309,7 @@ final class ConversationStore {
     /// Delivers what is waiting to be sent, then fetches the mailbox and refreshes the list. Calls
     /// that arrive while one is running are folded into one more round afterwards.
     func syncNow() async {
-        if link == nil, let registrar { await registrar() }
+        if link == nil || needsRegistration, let registrar { await registrar() }
         guard let core, let link else { return }
         if isSyncing { syncAgain = true; return }
         isSyncing = true
@@ -372,7 +377,7 @@ final class ConversationStore {
                 : FoundUser(userId: "grace", displayName: "Grace Hopper", username: "grace.h", school: "Naval Academy", aboutEmoji: "⚓", aboutText: "Debugging since 1947", isSelf: false)
         }
         #endif
-        if link == nil, let registrar { await registrar() }
+        if link == nil || needsRegistration, let registrar { await registrar() }
         guard let link else { throw AuthError.network }
         let token = try await link.token()
         return try await Task.detached(priority: .userInitiated) {
@@ -405,7 +410,7 @@ final class ConversationStore {
             return matches ? .verified : .mismatch
         }
         #endif
-        if link == nil, let registrar { await registrar() }
+        if link == nil || needsRegistration, let registrar { await registrar() }
         guard let core, let link else { throw AuthError.network }
         let token = try await link.token()
         let result = try await Task.detached(priority: .userInitiated) {

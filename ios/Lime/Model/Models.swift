@@ -17,7 +17,7 @@ struct Person: Identifiable, Hashable, Sendable {
 /// Where one of my messages has got to. A received message is `.received`.
 enum DeliveryState: String, Hashable, Sendable {
     case sending, sent, failed, undelivered, received
-    /// No internet (LIME-142): `waiting` = kept for nearby phones, none has taken it yet ("Waiting for signal"); `passed` = a nearby phone took a
+    /// No internet (LIME-142): `waiting` = kept for nearby phones, none has taken it yet ("Waiting for a phone nearby"); `passed` = a nearby phone took a
     /// copy ("Passed to a nearby phone"); `offline` = cannot travel through nearby phones, waiting for the internet ("Waiting for internet").
     case waiting, passed, offline
     /// A line of the timeline about the group itself ("Jean added Lee"), not a message.
@@ -34,7 +34,7 @@ enum DeliveryState: String, Hashable, Sendable {
     /// The words under the bubble (a short phrase; VoiceOver reads the same). Colour is never the only signal: each has words and an icon.
     var statusWords: String? {
         switch self {
-        case .waiting: "Waiting for signal"
+        case .waiting: "Waiting for a phone nearby"
         case .passed: "Passed to a nearby phone"
         case .offline: "Waiting for internet"
         default: nil

@@ -7,7 +7,7 @@ For the Android build. The rules are in LimeCore (`core/src/store/emergency.rs`,
 - Settings → Privacy, under "Help pass on nearby messages": **Nearby mode**. Off by default.
 - On: lime scans without a duty cycle, and the screen stays awake **only while lime is in front** (iOS allows nothing more). Turns itself off after **2 hours** and asks "Turn on again?".
 - Status line: **"Nearby mode on · keeps lime awake · uses more battery"**, plus "Keep your phone plugged in if you can, and keep lime open on the screen."
-- The offer in a chat (once, ever): a message is "Waiting for signal", the mesh is on, no phone is in range, Nearby mode is off → "No signal. Keep lime awake to reach people nearby?" [Turn on Nearby mode] [Not now].
+- The offer in a chat (once, ever): a message is "Waiting for a phone nearby", the mesh is on, no phone is in range, Nearby mode is off → "No signal. Keep lime awake to reach people nearby?" [Turn on Nearby mode] [Not now].
 - Honest promise: delivery when phones meet and at least one is awake; not after lime is swiped away.
 - Starting an emergency turns Nearby mode on.
 

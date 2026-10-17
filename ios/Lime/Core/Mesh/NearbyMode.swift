@@ -19,7 +19,7 @@ enum NearbyMode {
     /// When it is on and until when; `nil` is off.
     static func isOn(until: Date?, now: Date) -> Bool { until.map { $0 > now } ?? false }
 
-    /// The one-time offer in a chat: a message is "Waiting for signal", the mesh is on, no phone is in range, Nearby mode is off, and the
+    /// The one-time offer in a chat: a message is "Waiting for a phone nearby", the mesh is on, no phone is in range, Nearby mode is off, and the
     /// person has not been offered it before.
     static func shouldOffer(waitingInChat: Bool, meshOn: Bool, phonesInRange: Int, nearbyOn: Bool, offeredBefore: Bool) -> Bool {
         waitingInChat && meshOn && phonesInRange == 0 && !nearbyOn && !offeredBefore

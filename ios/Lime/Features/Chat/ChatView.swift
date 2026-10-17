@@ -1242,7 +1242,7 @@ enum CallBubbleTap: Equatable {
 }
 
 #if DEBUG
-/// LIME-143: the one-time offer when a message is "Waiting for signal" and no phone is in range.
+/// LIME-143: the one-time offer when a message is "Waiting for a phone nearby" and no phone is in range.
 struct NearbyOfferBar: View {
     let waitingInChat: Bool
     @State private var dismissed = false

@@ -7,14 +7,14 @@ For Android to match. All words are the app's own; none uses colour alone.
 | State | Words | Icon | Meaning | Tap |
 |---|---|---|---|---|
 | `sending` | Sending… | none | being sent | nothing |
-| `waiting` | **Waiting for signal** | antenna waves | sealed and kept for nearby phones; no phone has taken a copy | nothing |
+| `waiting` | **Waiting for a phone nearby** | antenna waves | sealed and kept for nearby phones; no phone has taken a copy | nothing |
 | `passed` | **Passed to a nearby phone** | arrow in a circle | another phone acknowledged taking a copy | nothing |
 | `sent` | Sent | none | the server has it (by this phone, or by a relay that uploaded it) | nothing |
 | `offline` | **Waiting for internet** | crossed Wi-Fi | cannot travel through nearby phones: a picture or file, someone who has not accepted you yet, or "Help pass on nearby messages" is off | **one line saying why** |
 | `failed` | Not sent. Tap to retry | none, red | a real failure, or 48 hours with no route | retry |
 
 - The first three offline states are **grey**, never red, and **have no retry**: sending resumes by itself on any link or connection.
-- VoiceOver / TalkBack read the words in full ("Waiting for signal"). "Waiting for internet" is a button (hint "Says why").
+- VoiceOver / TalkBack read the words in full ("Waiting for a phone nearby"). "Waiting for internet" is a button (hint "Says why").
 - A message that is in flight (`sending`, `waiting`, `passed`, `offline`) cannot be reacted to or replied to yet.
 - No animation when a status changes with Reduce Motion on (there is none otherwise either).
 - **The one-line reasons** (the alert on tapping "Waiting for internet"): a file: "Pictures and files need the internet. This goes as soon as you're connected." Someone who has not accepted you: "This person hasn't accepted your messages yet, so nearby phones can't carry this. It goes as soon as you're connected." Otherwise: "Nearby phones aren't passing messages on right now. This goes as soon as you're connected."

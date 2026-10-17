@@ -80,6 +80,9 @@ final class MeshBluetooth: NSObject {
         var remote: UInt64?
         var wroteHello = false
         var subscribed = false
+        /// When this handshake began, and how far it got (`connected`, `services`, `characteristics`, `hello`): so a stall says where it stalled.
+        let since = Date()
+        var stage = "connected"
         init(peripheral: CBPeripheral) { self.peripheral = peripheral }
     }
 
@@ -458,6 +461,29 @@ extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
         onLog("connected", ["writeMTU": String(peripheral.maximumWriteValueLength(for: .withResponse))])
         if handshakes[peripheral.identifier] == nil, peerFor(peripheral: peripheral) == nil { handshakes[peripheral.identifier] = Handshake(peripheral: peripheral) }
         peripheral.discoverServices([Self.serviceUUID])
+        watchHandshake(peripheral)
+    }
+
+    /// An outbound handshake that has not read the other phone's hello in 10 s is dropped, with where it stalled in the log (it used to wait for
+    /// ever, the other side hanging up a minute or two later). It counts as a failure for the backoff, and after two in a row the phone is not
+    /// dialled for a minute, so the other phone's fallback link can form instead of both half-trying for ever (LIME-141-fix4).
+    private func watchHandshake(_ peripheral: CBPeripheral) {
+        let id = peripheral.identifier
+        guard let started = handshakes[id]?.since else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(MeshHandshakeWatchdog.timeout))
+            guard let self, self.running, let handshake = self.handshakes[id], handshake.since == started, handshake.remote == nil else { return }
+            self.onLog("handshake_timeout", ["stage": handshake.stage, "seconds": String(Int(MeshHandshakeWatchdog.timeout))])
+            var backoff = self.backoffs[id] ?? ReconnectBackoff()
+            backoff.linkEnded(livedFor: nil)
+            self.backoffs[id] = backoff
+            let pause = MeshHandshakeWatchdog.pause(afterFailures: backoff.failures)
+            let wait = max(pause, backoff.delay())
+            self.notBefore[id] = Date().addingTimeInterval(wait)
+            if pause > 0 { self.onLog("outbound_paused", ["seconds": String(Int(pause)), "failures": String(backoff.failures)]) }
+            self.handshakes[id] = nil
+            self.central?.cancelPeripheralConnection(peripheral)
+        }
     }
 
     func centralManager(_ manager: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -486,6 +512,8 @@ extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
 
 extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        handshakes[peripheral.identifier]?.stage = "services"
+        if let started = handshakes[peripheral.identifier]?.since { onLog("handshake_stage", ["stage": "services", "ms": String(Int(Date().timeIntervalSince(started) * 1000))]) }
         guard let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
             onLog("service_missing", ["error": error?.localizedDescription ?? "none"])
             return
@@ -495,6 +523,8 @@ extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard let handshake = handshakes[peripheral.identifier], let characteristics = service.characteristics else { return }
+        handshake.stage = "characteristics"
+        onLog("handshake_stage", ["stage": "characteristics", "ms": String(Int(Date().timeIntervalSince(handshake.since) * 1000))])
         handshake.hello = characteristics.first { $0.uuid == Self.helloUUID }
         handshake.write = characteristics.first { $0.uuid == Self.dataWriteUUID }
         handshake.notify = characteristics.first { $0.uuid == Self.dataNotifyUUID }
@@ -508,6 +538,8 @@ extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
         if characteristic.uuid == Self.helloUUID, let handshake = handshakes[peripheral.identifier] {
             guard let remote = Self.remoteID(from: value) else { return }
             handshake.remote = remote
+            handshake.stage = "hello"
+            backoffs[peripheral.identifier]?.linkEnded(livedFor: ReconnectBackoff.stable) // the hello came: the handshake works (resets the dial-out count)
             switch registry.claim(remote: remote, local: identity.id, iAmCentral: true) {
             case .keep:
                 establish(peripheral, handshake, remote: remote, how: "hello_keep")
@@ -725,7 +757,21 @@ extension MeshBluetooth: @preconcurrency CBPeripheralManagerDelegate {
                 close(existing, why: "stale")
             }
         }
-        switch registry.claim(remote: entry.remote, local: identity.id, iAmCentral: false) {
+        var verdict = registry.claim(remote: entry.remote, local: identity.id, iAmCentral: false)
+        if verdict == .wrongDirection {
+            // The other phone has the higher id and has waited its grace: this is its fallback. Take it unless I have a live link to it or an
+            // outbound of my own that is still fresh; drop my stalled outbound handshakes first (they never finished and would race it).
+            let fresh = handshakes.values.contains { Date().timeIntervalSince($0.since) < MeshInboundFallback.freshSeconds }
+            if MeshInboundFallback.shouldAccept(hasLiveLink: registry.live.contains(entry.remote), freshOutboundHandshake: fresh), registry.claimFallback(remote: entry.remote, local: identity.id) {
+                for (id, stale) in handshakes where stale.remote == nil || stale.remote == entry.remote {
+                    handshakes[id] = nil
+                    self.central?.cancelPeripheralConnection(stale.peripheral)
+                }
+                onLog("inbound_accept", ["why": "fallback", "link": MeshDriver.short(entry.remote)])
+                verdict = .keep
+            }
+        }
+        switch verdict {
         case .keep:
             let peer = Peer(remote: entry.remote, iAmCentral: false)
             peer.central = central

@@ -9,7 +9,7 @@ import UIKit
 /// explanation has been accepted; the test screen is only a window on it.
 ///
 /// What it does for real messages: after every send attempt and sync it puts what could not reach the server (kept sealed in LimeCore's mesh
-/// outbox) on nearby phones, updates each message's status ("Waiting for signal", then "Passed to a nearby phone"), and, when there is internet,
+/// outbox) on nearby phones, updates each message's status ("Waiting for a phone nearby", then "Passed to a nearby phone"), and, when there is internet,
 /// uploads everything it carries through `mesh-drop`. Mail for this phone that arrives over the mesh goes into the chat at once.
 @MainActor
 @Observable
@@ -155,7 +155,7 @@ final class MeshService {
         }
     }
 
-    /// The one-time offer in a chat with a message "Waiting for signal" and no phone in range.
+    /// The one-time offer in a chat with a message "Waiting for a phone nearby" and no phone in range.
     func shouldOfferNearby(waitingInChat: Bool) -> Bool {
         NearbyMode.shouldOffer(waitingInChat: waitingInChat, meshOn: helpEnabled && explained && bluetooth.running, phonesInRange: bluetooth.peerCount,
                                nearbyOn: nearbyOn, offeredBefore: UserDefaults.standard.bool(forKey: Self.offeredKey))

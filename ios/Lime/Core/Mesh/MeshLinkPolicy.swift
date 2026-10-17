@@ -73,3 +73,26 @@ struct MeshLinkRegistry {
 
     mutating func release(remote: UInt64) { live.remove(remote) }
 }
+
+/// Whether the peripheral side takes a link the policy calls "wrong direction" (LIME-141-fix4). The phone with the higher id waits a grace period
+/// for the lower one to connect and then connects itself (the fallback); the lower phone used to refuse it by the same strict rule, so when the
+/// lower phone's own outbound never completed, no link ever formed. A "wrong direction" inbound can only be that fallback (the higher phone only
+/// writes its hello once the grace is over), so it is accepted unless the lower phone has a live link already or an outbound that is still
+/// fresh (it started under 4 s ago and may be about to finish).
+enum MeshInboundFallback {
+    /// An outbound handshake younger than this may still finish: the fallback is refused rather than made a duplicate.
+    static let freshSeconds: TimeInterval = 4
+
+    static func shouldAccept(hasLiveLink: Bool, freshOutboundHandshake: Bool) -> Bool { !hasLiveLink && !freshOutboundHandshake }
+}
+
+/// The outbound handshake's own clock (LIME-141-fix4): connect, discover the service, read the hello. It used to wait for ever (the iPad's logs
+/// show 19 connects and no hello, each ending 1–2 minutes later when the other side hung up).
+enum MeshHandshakeWatchdog {
+    static let timeout: TimeInterval = 10
+    /// After this many handshakes in a row that never finished, stop dialling that phone for a while and wait for its fallback instead.
+    static let failuresBeforePause = 2
+    static let pauseSeconds: TimeInterval = 60
+
+    static func pause(afterFailures failures: Int) -> TimeInterval { failures >= failuresBeforePause ? pauseSeconds : 0 }
+}

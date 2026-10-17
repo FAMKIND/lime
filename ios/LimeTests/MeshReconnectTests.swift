@@ -138,4 +138,65 @@ final class MeshReconnectTests: XCTestCase {
         XCTAssertFalse(G.shouldAttach(attached: false, helpEnabled: false, explained: true, coreReady: true))
         XCTAssertFalse(G.shouldAttach(attached: false, helpEnabled: true, explained: false, coreReady: true))
     }
+
+    // MARK: LIME-141-fix4
+
+    func testAFallbackLinkIsAcceptedUnlessThereIsALiveLinkOrAFreshOutbound() {
+        typealias F = MeshInboundFallback
+        XCTAssertTrue(F.shouldAccept(hasLiveLink: false, freshOutboundHandshake: false), "no link and no outbound of my own: take the fallback")
+        XCTAssertFalse(F.shouldAccept(hasLiveLink: true, freshOutboundHandshake: false), "a live link already: the fallback is a duplicate")
+        XCTAssertFalse(F.shouldAccept(hasLiveLink: false, freshOutboundHandshake: true), "my own outbound may be about to finish")
+    }
+
+    func testTheHandshakeWatchdogPausesDiallingAfterTwoFailures() {
+        XCTAssertEqual(MeshHandshakeWatchdog.pause(afterFailures: 1), 0)
+        XCTAssertEqual(MeshHandshakeWatchdog.pause(afterFailures: 2), 60)
+        XCTAssertEqual(MeshHandshakeWatchdog.pause(afterFailures: 7), 60)
+        XCTAssertEqual(MeshHandshakeWatchdog.timeout, 10)
+    }
+
+    /// Two phones near each other: the lower id's outbound never completes (it stalls, as the iPad's did); the higher id falls back after its 15 s
+    /// grace. The lower phone must take that fallback, and nothing may keep trying after it.
+    func testWhenTheLowerPhonesOutboundAlwaysStallsTheFallbackFormsAndHolds() {
+        var backoff = ReconnectBackoff()
+        var now = 0.0                       // seconds
+        var lowerHandshakeStartedAt: Double? = 0
+        var lowerTries = 1
+        var pausedUntil = 0.0
+        var linkFormedAt: Double?
+        let grace = 15.0, fallbackAt = grace + 0.5
+        while now < 120, linkFormedAt == nil {
+            now += 0.25
+            // The lower phone's watchdog: a handshake that has not finished in 10 s is dropped; two in a row pause it for a minute.
+            if let started = lowerHandshakeStartedAt, now - started >= MeshHandshakeWatchdog.timeout {
+                backoff.linkEnded(livedFor: nil)
+                lowerHandshakeStartedAt = nil
+                pausedUntil = now + max(MeshHandshakeWatchdog.pause(afterFailures: backoff.failures), backoff.delay(jitter: 1))
+            }
+            if lowerHandshakeStartedAt == nil, now >= pausedUntil { lowerHandshakeStartedAt = now; lowerTries += 1 }
+            // The higher phone's fallback reaches the lower phone at 15.5 s.
+            if now >= fallbackAt {
+                let fresh = lowerHandshakeStartedAt.map { now - $0 < MeshInboundFallback.freshSeconds } ?? false
+                if MeshInboundFallback.shouldAccept(hasLiveLink: false, freshOutboundHandshake: fresh) { linkFormedAt = now }
+            }
+        }
+        XCTAssertNotNil(linkFormedAt, "the fallback link formed")
+        XCTAssertLessThanOrEqual(linkFormedAt ?? 999, 21, "within about 20 s of the phones meeting")
+        XCTAssertLessThanOrEqual(lowerTries, 3, "the lower phone made at most a couple of tries before the fallback was taken")
+    }
+
+    func testAnOfflineRelaunchOfARegisteredPhoneStillGetsALinkSoSendsQueueInsteadOfStayingLocal() {
+        typealias R = OfflineLinkRule
+        XCTAssertTrue(R.shouldConnect(registrationFailedOffline: true, accountRegisteredHere: true))
+        XCTAssertFalse(R.shouldConnect(registrationFailedOffline: true, accountRegisteredHere: false), "a phone that never registered cannot queue")
+        XCTAssertFalse(R.shouldConnect(registrationFailedOffline: false, accountRegisteredHere: true), "another failure is not 'offline'")
+    }
+
+    func testTheWordsOfTheStatusesAreShortAndInOrder() {
+        XCTAssertEqual(DeliveryState.waiting.statusWords, "Waiting for a phone nearby")
+        XCTAssertEqual(DeliveryState.passed.statusWords, "Passed to a nearby phone")
+        XCTAssertNil(DeliveryState.sent.statusWords, "Sent has its own footer word and only means the server has it")
+        XCTAssertTrue(DeliveryState.waiting.isInFlight && DeliveryState.passed.isInFlight)
+        XCTAssertFalse(DeliveryState.sent.isInFlight)
+    }
 }

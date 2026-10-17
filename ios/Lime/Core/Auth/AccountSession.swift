@@ -131,16 +131,31 @@ final class AccountSession {
             await goLive(device: device, transport: transport, config: config)
         } catch {
             deviceRegistered = false
-            store.report(ConnectionProblem.from(error))
+            let problem = ConnectionProblem.from(error)
+            // Relaunched with no internet (airplane mode, a locked phone with no signal): this phone registered long ago, so it can still queue
+            // and park messages for the mesh. Without a link every send used to become a local-only message that said "Sent" and never went
+            // anywhere (LIME-141-fix4). The full registration runs when the internet returns.
+            if OfflineLinkRule.shouldConnect(registrationFailedOffline: problem == .offline, accountRegisteredHere: defaults.string(forKey: Self.ownerKey) == tokens?.userID) { connectOffline(config: config) }
+            store.report(problem)
         }
+    }
+
+    /// A link for a phone that has registered before but cannot reach the server now: sends queue (and park for the mesh) instead of staying local.
+    private func connectOffline(config: BackendConfig) {
+        let transport = URLSessionTransport(baseURL: config.url, apiKey: config.apiKey)
+        store.connect(makeLink(transport), pendingRegistration: true)
+    }
+
+    private func makeLink(_ transport: Transport) -> BackendLink {
+        BackendLink(transport: transport, token: { [weak self] in
+            guard let self else { throw AuthError.notVerified }
+            return try await self.accessToken()
+        }, staleToken: { [weak self] in await self?.lastAccessToken() ?? "" })
     }
 
     /// Registered: deliver and fetch for real, and listen for the "new items" nudge while the app is open.
     private func goLive(device: DeviceInfo, transport: Transport, config: BackendConfig) async {
-        store.connect(BackendLink(transport: transport, token: { [weak self] in
-            guard let self else { throw AuthError.notVerified }
-            return try await self.accessToken()
-        }, staleToken: { [weak self] in await self?.lastAccessToken() ?? "" }))
+        store.connect(makeLink(transport))
         let store = self.store
         store.myUserID = userID
         await nudges?.stop()
