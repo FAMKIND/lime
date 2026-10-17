@@ -44,6 +44,23 @@ enum GroupCallLayout {
         return frames
     }
 
+    /// The minimised window's cells (LIME-150, the "pip" mode of this function): they fill the whole window with a thin gap and the video
+    /// aspect-fills each (no tile is a strip, no rounded margins). 1 fills it; 2 sit side by side in a wide window and stacked in a tall one;
+    /// 3 or 4 make a 2 x 2.
+    static func pipGrid(count: Int, in size: CGSize, gap: CGFloat = 2) -> [CGRect] {
+        guard count > 0, size.width > 0, size.height > 0 else { return [] }
+        let columns: Int, rows: Int
+        switch count {
+        case 1: (columns, rows) = (1, 1)
+        case 2: (columns, rows) = size.width >= size.height ? (2, 1) : (1, 2)
+        default: (columns, rows) = (2, 2)
+        }
+        let w = (size.width - gap * CGFloat(columns - 1)) / CGFloat(columns), h = (size.height - gap * CGFloat(rows - 1)) / CGFloat(rows)
+        return (0..<count).map { index in
+            CGRect(x: CGFloat(index % columns) * (w + gap), y: CGFloat(index / columns) * (h + gap), width: w, height: h)
+        }
+    }
+
     /// The largest rectangle inside `cell` whose shape is within the allowed range.
     static func fit(_ cell: CGSize) -> CGSize {
         let aspect = cell.width / cell.height

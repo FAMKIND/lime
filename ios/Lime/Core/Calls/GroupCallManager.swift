@@ -141,6 +141,16 @@ final class GroupCallManager {
     @ObservationIgnored private var pipSubject: String?
     @ObservationIgnored private var pipSubjectSince = Date.distantPast
     @ObservationIgnored private var lastOtherSpeaker: String?
+    /// The other people by how lately they spoke, newest first (the minimised grid shows the 3 most recent when there are 5 or more).
+    @ObservationIgnored private var recentSpeakers: [String] = []
+    /// The minimised view (LIME-150): the person's choice (remembered), else the grid up to 4 other people and the speaker above.
+    static let pipViewKey = "lime.pipView"
+    private(set) var pipViewChoice: PiPGridPlan.View?
+    /// The heat guard (6b): the grid keeps only the speaker live while the phone is hot, and goes back after 2 calm minutes.
+    @ObservationIgnored private var heat = PiPHeatGuard()
+    @ObservationIgnored var thermalState: () -> ProcessInfo.ThermalState = { ProcessInfo.processInfo.thermalState }
+    @ObservationIgnored private var heatRecheck: Task<Void, Never>?
+    @ObservationIgnored private var lastGridLog = ""
     @ObservationIgnored var speakerHoldSeconds: Double = 2
     /// Minimise was pressed: the app opens the group's chat (so the person can type while talking).
     @ObservationIgnored var onMinimize: ((String) -> Void)?
@@ -157,6 +167,7 @@ final class GroupCallManager {
         self.core = core
         self.layoutDefaults = layoutDefaults
         self.chosenLayout = layoutDefaults.string(forKey: Self.layoutKey).flatMap(GroupCallLayout.Mode.init(rawValue:))
+        self.pipViewChoice = layoutDefaults.string(forKey: Self.pipViewKey).flatMap(PiPGridPlan.View.init(rawValue:))
         self.me = me
         self.network = network
         self.system = system
@@ -197,6 +208,16 @@ final class GroupCallManager {
         chosenLayout = mode
         layoutDefaults.set(mode.rawValue, forKey: Self.layoutKey)
     }
+
+    /// The minimised window's view: remembered on this phone.
+    func choosePiPView(_ view: PiPGridPlan.View) {
+        pipViewChoice = view
+        layoutDefaults.set(view.rawValue, forKey: Self.pipViewKey)
+        refreshPiP()
+    }
+
+    /// The view the minimised window shows now.
+    var pipView: PiPGridPlan.View { PiPGridPlan.view(choice: pipViewChoice, others: tiles.filter { !$0.isMe }.count) }
 
     /// Who is large in the speaker layout: the person speaking now (not me), else the last other person who spoke, else the first other person.
     var spotlightID: String? {
@@ -532,6 +553,7 @@ final class GroupCallManager {
         case .speaking(let ids):
             for index in tiles.indices { tiles[index].speaking = ids.contains(tiles[index].id) }
             if let other = tiles.first(where: { $0.speaking && !$0.isMe }) { lastOtherSpeaker = other.id }
+            for other in tiles where other.speaking && !other.isMe { recentSpeakers.removeAll { $0 == other.id }; recentSpeakers.insert(other.id, at: 0) }
             refreshPiP()
         case .secured(let id, let ok, let state):
             diag.log("group call: frame cryptor \(id.prefix(4))… \(state)")
@@ -642,13 +664,38 @@ final class GroupCallManager {
         if id != pipSubject { pipSubject = id; pipSubjectSince = now() }
         let tile = tiles.first { $0.id == id }
         let pictureShowing = (tile?.secured ?? false) && (tile?.cameraOn ?? false) && video
-        pip.show(subject: pipSubjectValue(for: id), track: id.flatMap { media?.videoTrack(for: $0) }, pictureShowing: pictureShowing)
-        #if DEBUG
-        // LIME-150's spike: every other person's picture, as live tiles (only when the spike is switched on).
-        if PiPGridSpike.tileCount > 0 {
-            pip.showGrid(tracks: tiles.filter { !$0.isMe && $0.secured && $0.cameraOn }.compactMap { media?.videoTrack(for: $0.id) })
+        let showGrid = video && pipView == .grid && !tiles.filter { !$0.isMe }.isEmpty
+        if !showGrid {
+            pip.show(subject: pipSubjectValue(for: id), track: id.flatMap { media?.videoTrack(for: $0) }, pictureShowing: pictureShowing)
+            pip.showGrid([])
+            return
         }
-        #endif
+        // The grid: the speaker window's own single picture is let go (no second sink on the same track), the cells draw instead.
+        pip.show(subject: pipSubjectValue(for: id), track: nil, pictureShowing: false)
+        let thermal = thermalState()
+        heat.update(thermal: thermal, now: now())
+        let people = tiles.map { PiPGridPlan.Person(id: $0.id, name: $0.name, isMe: $0.isMe, speaking: $0.speaking, hasPicture: $0.secured && $0.cameraOn) }
+        let cells = PiPGridPlan.cells(people: people, recent: recentSpeakers, speakerID: id, allLive: !heat.reduced)
+        let displays = cells.map { cell -> PiPGridDisplay in
+            let tile = tiles.first { $0.id == cell.id }
+            let person: Person? = cell.isMe ? meProvider() : tile.map { Person(id: $0.userID.isEmpty ? $0.id : $0.userID, name: $0.name) }
+            return PiPGridDisplay(cell: cell, person: person, track: cell.live ? media?.videoTrack(for: cell.id) : nil)
+        }
+        pip.showGrid(displays)
+        let line = "live=\(PiPGridPlan.liveCount(cells)) cells=\(cells.count) thermal=\(PiPHeatGuard.name(thermal))\(heat.reduced ? " guard=on" : "")"
+        if line != lastGridLog { lastGridLog = line; diag.log("pip_grid \(line)") }
+        scheduleHeatRecheck()
+    }
+
+    /// While the guard has the grid lightened, look again every 20 s so the grid comes back after 2 calm minutes without anything else prompting it.
+    private func scheduleHeatRecheck() {
+        guard heat.reduced, heatRecheck == nil else { return }
+        heatRecheck = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard let self else { return }
+            self.heatRecheck = nil
+            self.refreshPiP()
+        }
     }
 
     // MARK: In the call
@@ -683,6 +730,7 @@ final class GroupCallManager {
         poller?.cancel()
         network?.stop()
         pip?.stop(); pip = nil; pictureInPictureActive = false
+        heatRecheck?.cancel(); heatRecheck = nil; heat.reset(); recentSpeakers = []; lastGridLog = ""
         anchorView = nil
         pipSubject = nil; lastOtherSpeaker = nil
         phase = .idle

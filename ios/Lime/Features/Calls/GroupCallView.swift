@@ -369,6 +369,12 @@ struct GroupPeopleSheet: View {
                     layoutRow("Grid", symbol: "square.grid.2x2", mode: .grid)
                     layoutRow("Speaker", symbol: "person.crop.rectangle", mode: .speaker)
                 }
+                if store.groupCalls.video {
+                    Section("Minimised view") {
+                        minimisedRow("Grid", symbol: "square.grid.2x2", view: .grid)
+                        minimisedRow("Speaker", symbol: "person.crop.rectangle", view: .speaker)
+                    }
+                }
                 Section("People") {
                     ForEach(store.groupCalls.tiles) { tile in
                         VStack(alignment: .leading, spacing: 2) {
@@ -401,6 +407,24 @@ struct GroupPeopleSheet: View {
         .accessibilityValue(layout == mode ? "Selected" : "")
         .accessibilityAddTraits(layout == mode ? .isSelected : [])
         .accessibilityIdentifier("group-call-layout-\(title.lowercased())")
+    }
+
+    /// One row of the minimised-window choice (LIME-150): everyone in a small grid, or only the speaker.
+    private func minimisedRow(_ title: String, symbol: String, view: PiPGridPlan.View) -> some View {
+        let current = store.groupCalls.pipView
+        return Button { store.groupCalls.choosePiPView(view) } label: {
+            HStack {
+                Label(title, systemImage: symbol).foregroundStyle(.primary)
+                Spacer()
+                if current == view { Image(systemName: "checkmark").foregroundStyle(.primary) }
+            }
+            .frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Minimised view: \(title)")
+        .accessibilityValue(current == view ? "Selected" : "")
+        .accessibilityAddTraits(current == view ? .isSelected : [])
+        .accessibilityIdentifier("group-call-minimised-\(title.lowercased())")
     }
 
     private func detail(_ tile: GroupCallManager.Tile) -> String {

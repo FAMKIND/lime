@@ -77,6 +77,8 @@ final class GroupCallManagerTests: XCTestCase {
         private(set) var anchors: [UIView] = [], startedFrom: [UIView?] = []
         private(set) var shown: [(person: String, track: Bool, picture: Bool)] = []
         private(set) var subjects: [PiPSubject] = []
+        private(set) var grids: [[PiPGridDisplay]] = []
+        func showGrid(_ cells: [PiPGridDisplay]) { grids.append(cells) }
         func prepare(sourceView: UIView, subject: PiPSubject) { prepared += 1; anchors.append(sourceView) }
         func show(subject: PiPSubject, track: AnyObject?, pictureShowing: Bool) { subjects.append(subject); shown.append((subject.name, track != nil, pictureShowing)) }
         func start() { started += 1; startedFrom.append(anchors.last); onStarted?() }
@@ -381,13 +383,16 @@ final class GroupCallManagerTests: XCTestCase {
         await manager.leave()
     }
 
-    private func pipCall(speakers: Int = 2) async -> (GroupCallManager, FakePiP, FakeMedia, FakeCore, () -> Date, (TimeInterval) -> Void) {
+    private func pipCall(speakers: Int = 2, grid: Bool = false, thermal: @escaping () -> ProcessInfo.ThermalState = { .nominal }) async -> (GroupCallManager, FakePiP, FakeMedia, FakeCore, () -> Date, (TimeInterval) -> Void) {
         let core = FakeCore()
         core.others = (0..<speakers).map { GroupCallParticipant(participant: String(format: "%032x", $0 + 1), userId: "u\($0)", name: ["Bob", "Carol", "Dee"][$0]) }
         var clock = Date(timeIntervalSince1970: 5_000)
         let media = FakeMedia()
         let pip = FakePiP()
-        let manager = GroupCallManager(core: core, system: QuietCallSystem(), now: { clock }, me: { Person(id: "u-me", name: "Shem Chung") }, makeMedia: { media })
+        let manager = GroupCallManager(core: core, system: QuietCallSystem(), now: { clock }, me: { Person(id: "u-me", name: "Shem Chung") },
+                                       layoutDefaults: UserDefaults(suiteName: "pipcall-\(UUID().uuidString)")!, makeMedia: { media })
+        if !grid { manager.choosePiPView(.speaker) }
+        manager.thermalState = thermal
         manager.makePictureInPicture = { pip }
         _ = await manager.start(conversationID: "grp:g1", title: "Grade 4 Team", video: true)
         media.onEvent?(.connection(connected: true, error: nil))
@@ -412,6 +417,82 @@ final class GroupCallManagerTests: XCTestCase {
         XCTAssertEqual(pip.shown.last?.person, "Carol", "when I am the one speaking it keeps the last other speaker")
         manager.handle(media: .speaking([]))
         XCTAssertEqual(pip.shown.last?.person, "Carol", "and when nobody is speaking")
+        await manager.leave()
+    }
+
+    /// LIME-150: the minimised grid.
+    private func secure(_ manager: GroupCallManager, _ core: FakeCore, _ media: FakeMedia, _ who: [Int]) {
+        for index in who {
+            let id = core.others[index].participant
+            media.tracks[id] = NSObject()
+            manager.handle([GroupCallEvent(kind: "key", callId: core.info.callId, conversationId: "grp:g1", userId: "u\(index)", name: core.others[index].name, participant: id, video: true, ring: false,
+                                           key: Data(repeating: 5, count: 32), keyIndex: 0, durationMs: 0, reason: "")])
+            manager.handle(media: .camera(participant: id, on: true))
+        }
+    }
+
+    func testTheMinimisedViewIsTheGridUpToFourOtherPeopleAndTheChoiceIsRemembered() async {
+        let (manager, _, _, _, _, _) = await pipCall(speakers: 2, grid: true)
+        XCTAssertEqual(manager.pipView, .grid, "the default for a small call")
+        manager.choosePiPView(.speaker)
+        XCTAssertEqual(manager.pipView, .speaker)
+        XCTAssertEqual(PiPGridPlan.view(choice: nil, others: 4), .grid)
+        XCTAssertEqual(PiPGridPlan.view(choice: nil, others: 5), .speaker)
+        XCTAssertEqual(PiPGridPlan.view(choice: .grid, others: 8), .grid, "the person's choice wins")
+        await manager.leave()
+    }
+
+    func testTheGridShowsEveryoneWithTheSpeakerRingedAndPhotosWhereThereIsNoPicture() async {
+        let (manager, pip, media, core, _, _) = await pipCall(speakers: 2, grid: true)
+        secure(manager, core, media, [0])
+        manager.handle(media: .speaking([core.others[1].participant]))
+        let cells = pip.grids.last!.map(\.cell)
+        XCTAssertEqual(cells.map(\.name), ["Bob", "Carol"], "the others, not me, for two")
+        XCTAssertEqual(cells.map(\.speaking), [false, true], "the speaker is ringed")
+        XCTAssertEqual(cells.map(\.live), [true, false], "Bob's picture is live; Carol has no key or camera yet: her photo")
+        XCTAssertEqual(pip.grids.last!.map { $0.track != nil }, [true, false])
+        XCTAssertEqual(pip.shown.last?.track, false, "the speaker window lets go of the track while the grid draws")
+        await manager.leave()
+    }
+
+    func testThreeOthersMakeATwoByTwoWithMyPictureAsTheFourthCell() async {
+        let (manager, pip, _, _, _, _) = await pipCall(speakers: 3, grid: true)
+        manager.refreshPiP()
+        let cells = pip.grids.last!.map(\.cell)
+        XCTAssertEqual(cells.count, 4)
+        XCTAssertEqual(cells.last?.isMe, true)
+        XCTAssertEqual(pip.grids.last?.last?.person?.id, manager.meProvider().id)
+        await manager.leave()
+    }
+
+    func testTheSpeakerViewKeepsTheSingleSpeakerWindowAndClearsTheGrid() async {
+        let (manager, pip, _, core, _, _) = await pipCall(speakers: 2)
+        manager.handle(media: .speaking([core.others[0].participant]))
+        XCTAssertEqual(pip.shown.last?.person, "Bob")
+        XCTAssertEqual(pip.grids.last?.count, 0, "no grid in the speaker view")
+        await manager.leave()
+    }
+
+    func testTheHeatGuardKeepsOnlyTheSpeakerLiveWhileHotAndComesBackAfterTwoCalmMinutes() async {
+        var thermal = ProcessInfo.ThermalState.nominal
+        let (manager, pip, media, core, _, advance) = await pipCall(speakers: 3, grid: true, thermal: { thermal })
+        secure(manager, core, media, [0, 1, 2])
+        manager.handle(media: .speaking([core.others[0].participant]))
+        XCTAssertEqual(PiPGridPlan.liveCount(pip.grids.last!.map(\.cell)), 3, "all three pictures live")
+        thermal = .serious
+        manager.refreshPiP()
+        let hot = pip.grids.last!.map(\.cell)
+        XCTAssertEqual(PiPGridPlan.liveCount(hot), 1, "only the speaker stays live")
+        XCTAssertEqual(hot.filter(\.live).first?.name, "Bob")
+        XCTAssertEqual(hot.count, 4, "same layout")
+        thermal = .fair
+        manager.refreshPiP()
+        advance(60)
+        manager.refreshPiP()
+        XCTAssertEqual(PiPGridPlan.liveCount(pip.grids.last!.map(\.cell)), 1, "one calm minute is not enough")
+        advance(61)
+        manager.refreshPiP()
+        XCTAssertEqual(PiPGridPlan.liveCount(pip.grids.last!.map(\.cell)), 3, "two calm minutes: all live again")
         await manager.leave()
     }
 

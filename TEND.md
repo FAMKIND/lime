@@ -6470,3 +6470,23 @@ Raw log: `/tmp/lime-pipspike-13mini-1tile.log` (63 samples). Side by side with t
 - **CPU is the same with 1 tile or 4** (about 65% in front, 30% in the background): the call itself (receiving, decrypting, decoding the streams) is the cost; drawing 3 more layers adds almost none. The 4-tile run did dip lower in fps (13–15 at times).
 - **The thermal difference is not clean:** the 4-tile run was plugged in (charging heats a phone) and the baseline was not, so "serious" cannot be blamed on the tiles. To separate them, run 4 tiles unplugged for 5 minutes.
 - **Battery:** 5 points in about 5 minutes with 1 tile unplugged, the speaker-window baseline.
+
+## LIME-150 (items 1–6 and 6b)
+
+Brief: LIME-150, after the spike (1e188: build the live grid with a heat guard; 7c dropped).
+
+**What landed.** The minimised group video call shows a grid in the system window, not just the speaker.
+- [x] 1. `GroupCallLayout.pipGrid(count:in:)`: the "pip" mode of 148's layout function (cells fill the window with a 2 pt gap; 1 fills, 2 side by side in a wide window and stacked in a tall one, 3–4 a 2 × 2).
+- [x] 2. `PiPGridPlan` (pure) + `PiPGridView` (UIKit): counting the other people, 1 fills, 2 side by side, **3 make a 2 × 2 with my own picture as the fourth cell**, 4 make a 2 × 2, 5 or more show the 3 who spoke most recently and a "+N" cell. Each cell is a live picture (its own sample-buffer layer and `GroupPiPFrameRenderer`, 112c's mechanism) or the person's photo (`PiPAvatarView`, never black; the photo stays up until frames arrive), with a small name pill; **the speaker has a lime ring and a bold label**.
+- [x] 3. Self-view is off except as the fourth cell with three others (my picture when my camera is on, else my photo; I did not compare it with an empty cell on a device: say which reads better).
+- [x] 4. The choice "Minimised view: Grid · Speaker" is in the call's people sheet (next to the in-call Layout rows); remembered (`lime.pipView`); default grid up to 4 other people, speaker above. In the speaker view the window is 112c's, unchanged.
+- [x] 5. Preferred window size: square (480 × 480) for a 2 × 2, 4:3 for two cells; the system may still resize.
+- [x] 6. Kept: tap returns to the full call; the close button ends PiP, not the call; minimise opens the group's chat; 1:1 PiP untouched.
+- [x] 6b. Non-speaker cells ask LiveKit for 240 × 240, the speaker 360 × 480. **Heat guard** (`PiPHeatGuard`): at `serious` (or `critical`) only the speaker's cell stays live and the others become photos with the same layout; back to all live after 2 minutes at fair or nominal (rechecked every 20 s while lightened). Every change logs `pip_grid live=N cells=N thermal=… [guard=on]`. The spike instrument is removed (its numbers stay above).
+- Not done / for the device: the looks (screenshots of 2, 3, 4 and 6 people) are for the user; no frame-rate request for non-speaker tiles (LiveKit's adaptive stream is size-based; the 15 fps part of 6b is not enforced).
+
+**Verification.** All unit tests pass (new: `PiPGridPlanTests`, five grid tests in `GroupCallManagerTests`); build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Device check: not yet run** (a group video call with 3 phones, the 13 mini minimised for 10 min unplugged: in lime / typing in a lime chat / another app; the grid stays smooth; if it reaches serious, `pip_grid` lines show it dropping to one live cell and coming back).
+
+For plot: the 15 fps request is not enforceable through LiveKit's size-based adaptive stream; the fourth cell is my picture, not empty.

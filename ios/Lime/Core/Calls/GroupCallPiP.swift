@@ -47,13 +47,13 @@ protocol GroupPiP: AnyObject {
     /// Builds the system controller again on the current anchor (keeping the content, the renderer and the subject): the last resort when the
     /// system keeps saying "not possible" after a return from minimising.
     func rebuild()
-    /// LIME-150's spike (Debug only): the window draws these tracks as a grid of live tiles and logs fps and CPU.
-    func showGrid(tracks: [AnyObject])
+    /// LIME-150: the window draws these cells as a grid (live pictures or photos, the speaker ringed); an empty list goes back to the speaker window.
+    func showGrid(_ cells: [PiPGridDisplay])
 }
 
 extension GroupPiP {
-    /// LIME-150's spike (Debug): draw these tracks as a grid in the window. Nothing by default.
-    func showGrid(tracks: [AnyObject]) {}
+    /// LIME-150: the minimised grid. Nothing by default (a test fake need not draw).
+    func showGrid(_ cells: [PiPGridDisplay]) {}
 }
 
 /// What `prepare` does with the call screen's anchor view (LIME-112d). The call screen is rebuilt on every return from minimising, so its
@@ -234,26 +234,25 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
         UIView.animate(withDuration: animate ? 0.2 : 0) { view.alpha = showAvatar ? 1 : 0 }
     }
 
-    #if DEBUG
-    private var spike: PiPGridSpike?
+    private var grid: PiPGridView?
 
-    func showGrid(tracks: [AnyObject]) {
-        let wanted = PiPGridSpike.tileCount
-        guard wanted > 0 else { return }
-        if spike == nil {
-            let grid = PiPGridSpike(tiles: wanted)
-            grid.frame = contentController.view.bounds
-            grid.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            contentController.view.addSubview(grid)
-            contentController.preferredContentSize = wanted == 1 ? Self.placeholder : CGSize(width: 480, height: 480)
-            spike = grid
-            grid.startSampling()
+    func showGrid(_ cells: [PiPGridDisplay]) {
+        guard !cells.isEmpty else {
+            grid?.stop()
+            grid?.removeFromSuperview()
+            grid = nil
+            return
         }
-        spike?.attach(tracks: tracks.compactMap { $0 as? any VideoTrack })
+        if grid == nil {
+            let view = PiPGridView(frame: contentController.view.bounds)
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            contentController.view.addSubview(view)
+            grid = view
+        }
+        // A grid is a square (two side by side: 4:3); the system may still resize it.
+        contentController.preferredContentSize = cells.count == 2 ? CGSize(width: 640, height: 480) : (cells.count == 1 ? Self.placeholder : CGSize(width: 480, height: 480))
+        grid?.update(cells)
     }
-    #else
-    func showGrid(tracks: [AnyObject]) {}
-    #endif
 
     func start() {
         guard let controller, controller.isPictureInPicturePossible else { onFailed?(); return }
@@ -289,11 +288,7 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
     }
 
     func stop() {
-        #if DEBUG
-        spike?.stop()
-        spike?.removeFromSuperview()
-        spike = nil
-        #endif
+        showGrid([])
         controller?.stopPictureInPicture()
         if let old = track, let renderer { Self.detach(renderer, from: old) }
         track = nil
