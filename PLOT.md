@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ TWO-WAY OFFLINE MESSAGING IS PROVEN (1e172). LIME-157 landed and PROVEN (1e176). NEXT FOR TEND: **LIME-156** (sender mesh copy to offline neighbours + the 2 leftovers; DRAFTED 2026-10-17) → **LIME-150's spike** (Phase 1 of `### LIME-150`, with the user on the 3 phones; then items 1–6; 7c likely dropped, 1e154) → **LIME-152** (plot re-surveys first) → before TestFlight: **LIME-158** (security review) + LIME-130 (accessibility).
+**▶ TWO-WAY OFFLINE MESSAGING IS PROVEN (1e172). LIME-157 PROVEN (1e176). LIME-156 PROVEN for 1:1 (1e178). **NEXT FOR TEND: LIME-156b** (group sends make copies too; the delay log) → **LIME-150's spike** (Phase 1 of `### LIME-150`, with the user on the 3 phones; then items 1–6; 7c likely dropped, 1e154) → **LIME-152** (plot re-surveys first) → before TestFlight: **LIME-158** (security review) + LIME-130 (accessibility).
 - **152 was drafted before the mesh work** (2026-10-15): **tend's Phase 1 must re-survey the files it names** and report anything that moved, before building.
 - LIME-144 landed as `67b1c84`: **mesh v1 is wrapped.**
 
@@ -153,6 +153,16 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e178. **LIME-156 PROVEN on devices for 1:1 (2026-10-17 ~14:28 EDT; `/tmp/lime-meshlogs21/`, all three + app logs).** Jean (online) `mesh_queued copy=1` ×3 (`2026`, `a25e`, `07e7`) → the offline 13 mini `mesh_delivered` **~1 s after each send** (`mesh_passed` on Jean's side 5–13 s, after the Hello round). Back online: the 13 mini `dup_dropped server=5`, Jean `dup_dropped server=3`: **nothing twice.** The 13 mini's own offline sends went straight to Jean (`hops=2`) and were uploaded once on reconnecting (`stored 0` for the one the server already had).
+   - **Leftover 1 improved:** no more `hello_requested`; 2 `handshake_timeout stage=services` per phone then `outbound_paused 600 s` (as designed).
+   - **A log bug:** copies log `mesh_delivered after=151200s` (42 h): `core/src/mesh.rs:510` derives the send time as `expires_at − 48 h`, wrong for a 6 h copy → 156b item 2.
+   - (The user asked for clearer device instructions: give a per-phone table — internet / Bluetooth / lime — for every device test from now on. Captured as a pattern.)
+1e177. **LIME-156 LANDED as `107c629` (2026-10-17 14:14), installed on all 3; the device check is the user's.**
+   - Copies: `mesh_outbox.copy = 1`, 6 h, offered only to links whose online bit is false ("unknown" counts as online, so no copy), never uploaded by the sender, not counted in "waiting". The node's `offline_only` set is local; nothing on the air marks a copy.
+   - **(c) the `hello_requested` timeouts:** the same phone reached again as a peripheral while its *inbound* link is the live one (no `CBPeripheral` to match). Now: with a live link, 2 hello timeouts → leave that peripheral alone 10 min.
+   - **(d) the double upload:** the iPad's 300 s seen-window expired while the sender still held the packet → taken as new. Now `mesh_uploaded` (48 h): never re-take or re-upload.
+   - **⚠ GAP: group sends make no copy** (`client/groups.rs` has its own send path). Groups are lime's main use (teachers ↔ classes, families) → **LIME-156b (to draft after the device check).**
+   - **Plot reads at "logs":** Jean `mesh_queued … copy=1` → `mesh_passed`; the 13 mini `mesh_delivered`; online → `dup_dropped`; `hello_requested` timeouts ≤ 1 per 10 min per phone.
 1e176. **157 PROVEN (the user, 2026-10-17 ~14:00: "worked").** The iPad's log (`/tmp/lime-meshlogs20/ipad`): `upload_ok status=200 stored=1` for `7072` + `9b76` (14:00:44–45 EDT), with no session (157's build sends no token). It also uploaded `1527`/`9117` (13:57: the ones Jean had already got by Bluetooth; the server had never had them, so `stored=1`; Jean's client drops the copy). **Every mesh route is now proven sessionless and two-way.** NEXT: LIME-156.
 1e175. **The user's upload test after 157 (2026-10-17 ~13:48 EDT; `/tmp/lime-meshlogs19/`): delivery worked, but NOT via upload.** The 13 mini's 2 messages went **straight to Jean's phone over Bluetooth** (`mesh_delivered hops=2`, 0–1 s; Jean's Bluetooth was on and near), so **no phone uploaded** (no `upload_try` anywhere): **157's sessionless upload is still unproven on a device.** Also seen: the 13 mini fetched 2 items through the iPad (`fetch_reply items=2`, 13:49:16), and Jean's phone relayed fetches (`fetch_relayed 200`) — both directions live in normal use. **To prove 157:** Jean's Bluetooth OFF (or far), the iPad carries, then online → `upload_ok`.
 1e174. **LIME-157 LANDED as `e050510` (2026-10-17 13:00), deployed to staging (the mesh-key guard OK; an unauthenticated POST → 403, not 401), installed on all 3.** Deno 79, core 266. **Upload test A NOT yet rerun** (plot pulled the logs at ~13:05: no `upload_ok` since the deploy). Next: the user runs it → "logs" (plot checks `upload_ok stored=1` from the iPad with no token); then LIME-156.
@@ -6069,7 +6079,29 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Gate:** the user sees Jean's messages arrive on the offline 13 mini.
 **Record:** `## LIME-155` with **For plot:** (Phase 1's (c)/(d) answers; the measured time to arrive). **Commit(s):** one per layer is fine if each is green (`feat(supabase): mesh-fetch…`, `feat(core): …`, `feat(ios): …`), each with `Brief: LIME-155`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
 
-### LIME-156 → `tend` (lime-aa) (after 157; drafted 2026-10-17): an online sender also hands a mesh copy to offline neighbours; two leftovers
+### LIME-156b → `tend` (lime-aa) (NEXT; drafted 2026-10-17): group sends hand mesh copies to offline neighbours too; the delivered-after log
+**Goal:** a group message sent by an online phone reaches group members' offline phones nearby over Bluetooth, as 1:1 messages now do (156); the delay in `mesh_delivered` is right for copies.
+**Evidence:** 156's record: "group sends (`client/groups.rs` has its own send path) leave no copy yet"; 1e178: 1:1 copies proven; copies log `after=151200s`.
+**Assumes:** edit the core (Rust) + tests, Android check, install on the 3 phones, the device check **with the user**, pull logs, commit. **No server, packet or Swift change expected** (report if one is needed).
+**Scope:** `core/src/client/groups.rs` (`send_group_op` ~line 510, `send_group_wire` ~line 619), the shared copy helper 156 added, `core/src/mesh.rs:510` (the delay), tests. **Not:** group calls (never carried), the server, the packet.
+**Phase 1 (read-only; report before editing):** how 156 makes a copy for a 1:1 send and whether `send_group_wire`'s per-member-device loop can call the same helper after each 200; the fan-out cost (a 30-member class → up to ~30+ device copies: say how many packets that is and whether to cap it, e.g. copies only for recipient devices whose owner isn't known to be online — if that isn't knowable, propose a cap and ask the user).
+**The change:**
+1. After a group op's per-device sends return 200, with at least one offline neighbour linked, park a copy per recipient device (`copy = 1`, 6 h) exactly as 1:1 does, through **one shared helper** (no second copy of the logic).
+2. **The delay log:** `mesh_delivered after=` uses the packet's real creation time (store it, or `expires_at − life` with the right life for copies).
+3. **What each party learns:** unchanged from 156 (state "group copies are the same sealed per-device packets").
+4. **Tests:** a group send with an offline neighbour → copies for each member device, none with only online neighbours; an offline member's phone receives the group message over the mesh and shows it once; the delay for a copy is seconds, not hours.
+**Verification:** core tests pass; Android OK; installed on the 3 phones (**name them**).
+**Device check (with the user) — per phone:**
+| Phone | Internet | Bluetooth | lime |
+|---|---|---|---|
+| Jean's phone (sender) | On | On | Open in a group with you + the iPad's account |
+| 13 mini (receiver) | Off (airplane mode) | On | Open in the same group |
+| iPad | any | **Off** | any |
+Jean sends 2 messages + a reaction in the group → they appear on the offline 13 mini within seconds; then the 13 mini online → nothing twice. Logs: Jean `mesh_queued copy=1` per member device, the 13 mini `mesh_delivered after=` a few seconds.
+**Gate:** the user sees the group messages arrive on the offline 13 mini.
+**Record:** `## LIME-156b` with **For plot:** (the fan-out numbers; any cap). **Commit:** `feat(core): group sends hand mesh copies to offline neighbours too`, trailer `Brief: LIME-156`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
+
+### LIME-156 → `tend` (lime-aa) (DONE as `107c629`, PROVEN for 1:1 1e178; groups → 156b; drafted 2026-10-17): an online sender also hands a mesh copy to offline neighbours; two leftovers
 **Goal:** a message sent by an online phone also reaches nearby phones that are offline over Bluetooth (and through them, further offline phones), without online phones uploading duplicates; plus the two leftovers from 1e172.
 **Decided (the user, 1e163: "C"; goal 1e162: "anytime there is no connection, the mesh is our network").** **Plot's design choice (no packet change, no new on-air metadata):** use the online bit from 155. The sender hands a copy **only to linked neighbours whose bit says offline**; online neighbours never get copies, so they never upload them. An offline carrier that later comes online uploads its copy once (server or client dedupe handles it).
 **Assumes:** edit the core (Rust) + the Swift mesh layer, run core + Swift tests, Android check, install on the 3 phones, the device check **with the user**, pull logs, commit. **No server change.**
