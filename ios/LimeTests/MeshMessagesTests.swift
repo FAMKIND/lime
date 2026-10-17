@@ -83,7 +83,7 @@ final class MeshMessagesTests: XCTestCase {
         func stats() -> MeshStats { MeshStats(carried: 0, carriedBytes: 0, received: 0, duplicates: 0, rejected: 0, rateLimited: 0, evicted: 0, expired: 0, mine: 0, probesReceived: 0) }
         func takeMine() throws -> UInt32 { 0 }
         func takeUploadable() -> [MeshUpload] { [] }
-        func uploadAll(transport: Transport, authToken: String) throws -> UInt32 { 0 }
+        func uploadAll(transport: Transport) throws -> UInt32 { 0 }
         func checkServerKey(transport: Transport, authToken: String) -> MeshKeyCheck? { nil }
         func onlineFrame() -> Data { Data([8, 0]) }
         func setRelayOnline(online: Bool) {}

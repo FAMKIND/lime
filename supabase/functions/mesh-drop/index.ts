@@ -4,15 +4,17 @@
 // phone that carries and uploads it cannot read who it is for, and `payload` (base64) is exactly the ciphertext `send` would store for that
 // recipient device. The server opens the header with MESH_ROUTING_SECRET_KEY and then runs the same access check and the same store as
 // `send` for that one recipient device (shared code in `_shared/access.ts`: the signature binds the ciphertext and the device, so a relay
-// cannot swap the payload or redirect it). A signed-in session is required (the relay is not the sender; rate limits count per account and
-// per recipient); de-duplicated by SHA-256(payload) per device as `send` does. Logs nothing identifying. 503 not_configured until the secret
-// exists.
+// cannot swap the payload or redirect it). **No session** (LIME-157): the sender's proof is the authority, so the server never learns which
+// account carried the packet; an Authorization header, if one is sent anyway, is never read. Limits: per recipient (the `send:access:` bucket)
+// and per caller address as a KEYED HASH bucket (`_shared/ipbucket.ts`, never the address). De-duplicated by SHA-256(payload) per device as
+// `send` does. Logs nothing identifying. 503 not_configured until the secret exists.
 
-import { admin, config, rateLimit, requireUser } from "../_shared/db.ts";
+import { admin, config, rateLimit } from "../_shared/db.ts";
 import { fromBase64, isUuid, sha256, toHex } from "../_shared/bytes.ts";
 import { accessDenied, loadAccess, sealedRow, storeRows, verifySealed } from "../_shared/access.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 import { openRoutingHeader, routingKeysFromEnv } from "../_shared/mesh.ts";
+import { ipBucket } from "../_shared/ipbucket.ts";
 
 const MAX_HEADER_BYTES = 1024;
 
@@ -27,13 +29,13 @@ function bytesOf(value: unknown, what: string, max: number): Uint8Array {
 }
 
 Deno.serve(handler(async (req) => {
-  const relay = await requireUser(req);
   const keys = routingKeysFromEnv();
   if (keys.size === 0) throw new HttpError(503, "not_configured", "The mesh is not set up on this server yet.");
   const body = await readJson(req, 512 * 1024);
   const header = bytesOf(body.header, "header", MAX_HEADER_BYTES);
   const payload = bytesOf(body.payload, "payload", config.maxItemBytes());
-  await rateLimit(`mesh-drop:user:${relay}`, 1, config.sendPerMinute(), 60);
+  // Before any cryptography: the caller's address, as a keyed-hash bucket (a generous cap, since many relays share a school network).
+  await rateLimit(await ipBucket(req, "mesh-drop"), 1, 120, 60);
 
   // Only the server can open the header; anything that does not open, or does not say what a header must, is the same 403 as a wrong proof.
   const opened = await openRoutingHeader(keys, header);

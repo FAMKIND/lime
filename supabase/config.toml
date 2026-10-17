@@ -450,3 +450,6 @@ verify_jwt = false
 # LIME-155: relay download takes no session (the server must not learn who relayed); the device's own signature authorises it.
 [functions.mesh-fetch]
 verify_jwt = false
+# LIME-157: so does upload (the sender's signed proof authorises it, not the relay's account).
+[functions.mesh-drop]
+verify_jwt = false

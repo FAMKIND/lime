@@ -15,6 +15,10 @@ An input to the data protection impact assessment, not the assessment itself. Wh
 | What a phone carries for others | an encrypted local store, at most 48 hours | nobody (it is sealed; the carrier cannot read it) |
 | Upload logs on the server | function logs: a reason code, no ids, no keys, no tokens | the operators |
 
+## Uploading a carried packet (LIME-157): what each party learns
+
+`mesh-drop` needs no session. **The relay** (the phone that uploads) learns nothing: the header is sealed. **The server** learns that a packet for device D arrived at time t from a network address; it does **not** learn which account carried it (the request carries no token, and a token sent anyway is never read). Only a keyed hash of the address is rate-limited, for a day; nothing identifying is logged. The sender's signed proof, not the relay's account, authorises the store.
+
 ## Relay download (LIME-155)
 
 An offline phone can ask a nearby online lime phone to fetch its sealed mail. The neighbour sees an opaque request and an opaque, padded reply (not whose mail, not how many items beyond a 4 KiB size bucket) and cannot read either. The server sees that a device's mail was fetched at a time from an address, as when the device fetches for itself, and **not which account relayed** (the request needs no session; the device's own signature authorises it). The relay's network address is the honest remaining limit: only a keyed hash of it is rate-limited, for a day. The request's single-use nonce is kept until it expires (at most 10 minutes) and then forgotten.

@@ -500,10 +500,11 @@ impl MeshEngine {
         }
     }
 
-    /// Hands everything carried to `mesh-drop` (a signed-in session). A packet the server takes, or refuses for good (403: a bad proof or a
+    /// Hands everything carried to `mesh-drop` with no session (LIME-157: the server never learns which account carried it; the sender's signed proof
+    /// inside the sealed header is the authority). A packet the server takes, or refuses for good (403: a bad proof or a
     /// device that is gone), is dropped from the store; a network error, a 5xx or "not configured" keeps it for next time. Returns how many
     /// the server stored.
-    pub fn upload_all(&self, transport: Arc<dyn Transport>, auth_token: String) -> Result<u32, StoreError> {
+    pub fn upload_all(&self, transport: Arc<dyn Transport>) -> Result<u32, StoreError> {
         let mut stored = 0;
         let items = self.take_uploadable();
         if items.is_empty() {
@@ -514,10 +515,7 @@ impl MeshEngine {
             let digest = <Digest>::try_from(item.id.as_slice()).ok();
             let id = digest.as_ref().map(short_id).unwrap_or_default();
             let body = serde_json::json!({ "header": vodozemac::base64_encode(&item.header), "payload": vodozemac::base64_encode(&item.payload) });
-            let headers = vec![
-                HeaderPair { name: "content-type".into(), value: "application/json".into() },
-                HeaderPair { name: "authorization".into(), value: format!("Bearer {auth_token}") },
-            ];
+            let headers = vec![HeaderPair { name: "content-type".into(), value: "application/json".into() }];
             let response = transport.request("POST".into(), "/functions/v1/mesh-drop".into(), headers, serde_json::to_vec(&body).map_err(|_| StoreError::BadMessage)?);
             match response.map(|r| (r.status, r.body)) {
                 Ok((200, body)) => {

@@ -6341,3 +6341,17 @@ Brief: LIME-155. Swift only; no server, crypto or packet change.
 **Device check: not yet run** (needs the three phones with the user: Jean far/Bluetooth off and online, 13 mini in airplane mode beside the online iPad; watch `relay_online_seen on=true`, `fetch_request_sent`, `fetch_relayed status=200`, `fetch_reply items=3`; seconds from Jean's send to arrival).
 
 For plot: causes (a) the bit rode one unlogged GATT notify at link-up and was never repeated; (b) nothing asked again after a miss and the skip was silent; (c) object-identity match let a linked phone be dialled again. Seconds to arrival: pending the device check.
+
+## LIME-157
+
+Brief: LIME-157. `mesh-drop` without a session, so the server never learns who relayed.
+
+- [x] Function: `requireUser` removed; a keyed-hash address bucket (`_shared/ipbucket.ts`, 120 a minute) first, then the existing per-recipient `send:access:` bucket; a bearer token sent anyway is never read.
+- [x] `supabase/config.toml`: `[functions.mesh-drop] verify_jwt = false` (not named in the brief, but without it the gateway still demands a token; same as `mesh-fetch`).
+- [x] Core `upload_all(transport)` and the app call drop the token (no token fetch on upload any more); bindings regenerated.
+- [x] Docs: `docs/api-v2.md` §8; `docs/dpia-mesh.md` "Uploading a carried packet: what each party learns".
+- [x] Tests: Deno 79 pass (no session stores; with a session the same; a garbage token ignored; bad proof 403; replay duplicate; address bucket holds no address, nothing counted per account, logs hold no ids/IP/token); core 266 + integration 23; Swift mesh tests pass; 0 warnings.
+- [x] Staging deployed on the user's go; `check-staging-mesh-key.sh` ok (digest d87134f7…); an unauthenticated POST answers 403 (not 401).
+- [ ] Device: rerun upload test A (installed on Jean's iPhone, the iPad and the 13 mini); plot reads `upload_ok`.
+
+For plot: nothing server-side remembers the relay account any more for upload; the address (keyed hash, a day) is the remaining limit. `verify_jwt = false` was needed in config.

@@ -87,14 +87,22 @@ Deno.test("mesh-drop: a relay uploads a sealed packet, the server stores it for 
     const payload = payloadOf(1);
     const header = toBase64(await sealHeader(LOCAL_PUBLIC, 1, device.deviceId, await signer.sign(payload, device.deviceId)));
 
-    const noSession = await call("mesh-drop", null, { header, payload });
-    assertEquals(noSession.status, 401, "a signed-in session is required");
-    const ok = await call("mesh-drop", relay.token, { header, payload });
+    // LIME-157: no session needed, and a session that is sent anyway is never read (a garbage token changes nothing).
+    const ok = await call("mesh-drop", null, { header, payload });
     assertEquals(ok.status, 200);
     assertEquals(ok.body, { stored: 1, duplicates: 0 });
+    const payload2 = payloadOf(2);
+    const header2 = toBase64(await sealHeader(LOCAL_PUBLIC, 1, device.deviceId, await signer.sign(payload2, device.deviceId)));
+    const withSession = await call("mesh-drop", null, { header: header2, payload: payload2 });
+    assertEquals(withSession.body, { stored: 1, duplicates: 0 }, "with a session: the same");
+    const payload3 = payloadOf(3);
+    const header3 = toBase64(await sealHeader(LOCAL_PUBLIC, 1, device.deviceId, await signer.sign(payload3, device.deviceId)));
+    const garbage = await call("mesh-drop", "not-a-token", { header: header3, payload: payload3 });
+    assertEquals(garbage.status, 200, "the account is not read: even a token that is not one is ignored");
     const { data } = await admin.from("mailbox_items").select("identified, sender_user, size").eq("to_device", device.deviceId);
-    assertEquals(data, [{ identified: false, sender_user: null, size: 100 }], "sealed: the relay is not recorded as the sender");
-    const again = await call("mesh-drop", relay.token, { header, payload });
+    assertEquals(data?.length, 3);
+    assertEquals(data?.every((r) => r.identified === false && r.sender_user === null && r.size === 100), true, "sealed: the relay is not recorded as the sender");
+    const again = await call("mesh-drop", null, { header, payload });
     assertEquals(again.body, { stored: 0, duplicates: 1 }, "a replay is deduplicated, as `send` does");
     // A second relay carrying the same packet (it travelled two ways): also a duplicate, not a second item.
     const other = await newUser();
@@ -114,7 +122,7 @@ Deno.test("mesh-drop refuses what send would: a swapped payload, a redirected de
     const { signer } = await setSignedAccess(bob);
     const payload = payloadOf(2);
     const proof = await signer.sign(payload, device.deviceId);
-    const drop = (header: Uint8Array, p = payload) => call("mesh-drop", relay.token, { header: toBase64(header), payload: p });
+    const drop = (header: Uint8Array, p = payload) => call("mesh-drop", null, { header: toBase64(header), payload: p });
 
     // A relay swaps the payload for something else: the signature no longer fits.
     assertEquals((await drop(await sealHeader(LOCAL_PUBLIC, 1, device.deviceId, proof), payloadOf(3))).status, 403, "a swapped payload");
@@ -126,7 +134,7 @@ Deno.test("mesh-drop refuses what send would: a swapped payload, a redirected de
     assertEquals((await drop(await sealHeader(LOCAL_PUBLIC, 1, device.deviceId, "bm90IGEgc2lnbmF0dXJl"))).status, 403, "garbled");
     // A header for an unknown device, and one that is not a valid routing header at all.
     assertEquals((await drop(await sealHeader(LOCAL_PUBLIC, 1, crypto.randomUUID(), proof))).status, 403, "unknown device");
-    assertEquals((await call("mesh-drop", relay.token, { header: toBase64(crypto.getRandomValues(new Uint8Array(80))), payload })).status, 403, "random bytes");
+    assertEquals((await call("mesh-drop", null, { header: toBase64(crypto.getRandomValues(new Uint8Array(80))), payload })).status, 403, "random bytes");
     assertEquals((await drop(await sealHeader(LOCAL_PUBLIC, 9, device.deviceId, proof))).status, 403, "an unknown key id");
     // The old access key is not accepted here (a header can hold only a signature).
     const dave = await newUser();
@@ -142,9 +150,9 @@ Deno.test("mesh-drop refuses what send would: a swapped payload, a redirected de
     const { data } = await admin.from("mailbox_items").select("to_device").in("to_device", [device.deviceId, second.deviceId]);
     assertEquals(data, []);
     // Bad requests.
-    assertEquals((await call("mesh-drop", relay.token, { header: "", payload })).status, 400);
-    assertEquals((await call("mesh-drop", relay.token, { header: "###", payload })).status, 400);
-    assertEquals((await call("mesh-drop", relay.token, { payload })).status, 400);
+    assertEquals((await call("mesh-drop", null, { header: "", payload })).status, 400);
+    assertEquals((await call("mesh-drop", null, { header: "###", payload })).status, 400);
+    assertEquals((await call("mesh-drop", null, { payload })).status, 400);
     assert(await sha256(new Uint8Array(1)), "(keep the import used)");
   });
 });
@@ -158,15 +166,15 @@ Deno.test("mesh-drop: a revoked device and a user with no signing key on file ar
     const header = toBase64(await sealHeader(LOCAL_PUBLIC, 1, device.deviceId, await signer.sign(payload, device.deviceId)));
     // A rotation by an older build clears the public key: the old signature proves nothing.
     await setAccessKey(bob);
-    assertEquals((await call("mesh-drop", relay.token, { header, payload })).status, 403, "no public key on file");
+    assertEquals((await call("mesh-drop", null, { header, payload })).status, 403, "no public key on file");
     // Restore a key, then revoke the device.
     const { signer: again } = await setSignedAccess(bob);
     const header2 = toBase64(await sealHeader(LOCAL_PUBLIC, 1, device.deviceId, await again.sign(payload, device.deviceId)));
-    assertEquals((await call("mesh-drop", relay.token, { header: header2, payload })).status, 200);
+    assertEquals((await call("mesh-drop", null, { header: header2, payload })).status, 200);
     await admin.from("devices").update({ revoked_at: new Date().toISOString() }).eq("device_id", device.deviceId);
     const payload2 = payloadOf(5);
     const header3 = toBase64(await sealHeader(LOCAL_PUBLIC, 1, device.deviceId, await again.sign(payload2, device.deviceId)));
-    assertEquals((await call("mesh-drop", relay.token, { header: header3, payload: payload2 })).status, 403, "a revoked device");
+    assertEquals((await call("mesh-drop", null, { header: header3, payload: payload2 })).status, 403, "a revoked device");
   });
 });
 
@@ -193,4 +201,31 @@ Deno.test("mesh-key needs a session and answers with the key id and the fingerpr
   } finally {
     await deleteUser(user);
   }
+});
+
+Deno.test("mesh-drop: the limit is a keyed-hash bucket of the address, and the function logs hold no ids, addresses or tokens (LIME-157)", opts, async () => {
+  await withUsers(2, async ([bob, spare]) => {
+    const device = await registerDevice(bob, await newMasterKey());
+    const { signer } = await setSignedAccess(bob);
+    const since = new Date().toISOString();
+    const address = `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+    const payload = payloadOf(7);
+    const header = toBase64(await sealHeader(LOCAL_PUBLIC, 1, device.deviceId, await signer.sign(payload, device.deviceId)));
+    assertEquals((await call("mesh-drop", spare.token, { header, payload }, { "cf-connecting-ip": address })).status, 200);
+    const { data } = await admin.from("rate_limits").select("bucket").like("bucket", "mesh-drop:ip:%");
+    assert((data ?? []).length > 0, "a bucket for the caller's address was taken");
+    for (const row of data ?? []) assertEquals(String(row.bucket).includes(address), false, "the bucket never holds the address");
+    const { data: byUser } = await admin.from("rate_limits").select("bucket").like("bucket", `%${spare.id}%`);
+    assertEquals((byUser ?? []).length, 0, "nothing is counted against an account");
+    try {
+      const logs = await new Deno.Command("docker", { args: ["logs", "--since", since, "supabase_edge_runtime_lime"], stdout: "piped", stderr: "piped" }).output();
+      const text = new TextDecoder().decode(logs.stdout) + new TextDecoder().decode(logs.stderr);
+      for (const secret of [device.deviceId, bob.id, address, spare.token, spare.id]) {
+        assertEquals(text.includes(secret), false, `the logs must not contain ${secret.slice(0, 6)}…`);
+      }
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) throw error;
+      console.warn("docker is not available: the log check was skipped");
+    }
+  });
 });

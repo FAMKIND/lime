@@ -413,15 +413,9 @@ final class MeshService {
         guard let engine, attached, let runner else { return }
         guard let link = store?.currentLink else { if trigger != "tick" { log.record("upload_skip", ["why": "no-session", "trigger": trigger]) }; return }
         guard online else { await runner.uploadIfOnline(online: false, trigger: trigger) { 0 }; return }
-        // Only fetch a token when something is carried (the tick runs every 15 s).
         guard engine.stats().carried > 0 else { return }
-        let token: String
-        do { token = try await link.token() } catch {
-            log.record("upload_skip", ["why": "no-token", "error": String(describing: error), "trigger": trigger])
-            return
-        }
         await runner.uploadIfOnline(online: online, trigger: trigger) {
-            try await Task.detached(priority: .utility) { try engine.uploadAll(transport: link.transport, authToken: token) }.value
+            try await Task.detached(priority: .utility) { try engine.uploadAll(transport: link.transport) }.value
         }
     }
 

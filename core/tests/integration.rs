@@ -106,7 +106,7 @@ fn a_message_travels_by_the_mesh_and_a_relay_uploads_it_through_mesh_drop_to_the
     assert_eq!(relay_mesh.stats().carried, 1);
 
     // The relay reaches the internet: `mesh-drop` opens the sealed header, checks Alice's proof as `send` would, and stores it for Bob.
-    assert_eq!(relay_mesh.upload_all(real.clone(), relay.token.clone()).unwrap(), 1);
+    assert_eq!(relay_mesh.upload_all(real.clone()).unwrap(), 1);
     let upload_notes = relay_mesh.take_notes();
     assert!(upload_notes.iter().any(|n| n.starts_with("upload_try n=1")) && upload_notes.iter().any(|n| n.starts_with("upload_ok id=") && n.contains("status=200")), "the upload is logged: {upload_notes:?}");
     assert_eq!(relay_mesh.stats().carried, 0, "uploaded: no longer carried");
@@ -190,7 +190,7 @@ fn an_offline_message_travels_the_mesh_is_uploaded_by_a_relay_and_alices_later_r
     assert_eq!(state("Love you"), "passed", "another phone took a copy");
 
     // The relay reaches the internet and uploads through the real mesh-drop.
-    assert_eq!(relay_mesh.upload_all(real.clone(), relay.token.clone()).unwrap(), 1);
+    assert_eq!(relay_mesh.upload_all(real.clone()).unwrap(), 1);
     assert_eq!(bob_store.sync(real.clone(), bob.token.clone()).unwrap().received, 1);
     let texts = |s: &lime_core::LimeStore, chat: &str| -> Vec<String> { s.list_messages(chat.to_owned()).unwrap().into_iter().map(|m| m.text).collect() };
     assert_eq!(texts(&bob_store, &chat_with_alice).last().map(String::as_str), Some("Love you"));
