@@ -4404,3 +4404,146 @@ fn a_sync_deletes_unreadable_items_older_than_thirty_days_and_counts_them() {
     assert_eq!(alice.store.take_pending_expired(), 1);
     assert_eq!(alice.store.take_pending_expired(), 0);
 }
+
+// ---- LIME-155: relay download ----
+
+struct FixedReply(std::sync::Mutex<Option<(u16, Vec<u8>)>>);
+impl crate::transport::Transport for FixedReply {
+    fn request(&self, _m: String, _p: String, _h: Vec<crate::transport::HeaderPair>, _b: Vec<u8>) -> Result<crate::transport::TransportResponse, crate::transport::TransportError> {
+        let (status, body) = self.0.lock().unwrap().clone().unwrap_or((503, Vec::new()));
+        Ok(crate::transport::TransportResponse { status, body })
+    }
+}
+
+/// A mesh engine that seals to a server key pair the test holds (so the test can play the server).
+fn fetch_engine(party: &Party, server: &vodozemac::Curve25519SecretKey) -> Arc<crate::MeshEngine> {
+    crate::MeshEngine::new_with_server_key(party.store.clone(), 1, vodozemac::Curve25519PublicKey::from(server).to_bytes().to_vec()).unwrap()
+}
+
+/// The server's side of one request: opens it, checks the device signature, answers with `items` (the mailbox-fetch shape) encrypted to the reply key.
+fn play_server(server: &vodozemac::Curve25519SecretKey, device_public: &vodozemac::Ed25519PublicKey, sealed_frame: &[u8], items: &serde_json::Value, has_more: bool) -> (Vec<u8>, i64, i64) {
+    use crate::mesh::fetch_test_support as f;
+    assert_eq!(sealed_frame[0], 5, "a request frame");
+    let opened = f::open_sealed(server, b"lime-mesh-fetch-v1", &sealed_frame[1..]).expect("the server opens the request");
+    assert_eq!(opened.len(), 91 + 64);
+    let sig = vodozemac::Ed25519Signature::from_slice(&opened[91..]).unwrap();
+    let mut signed = b"lime-mesh-fetch-v1".to_vec();
+    signed.extend_from_slice(&opened[..91]);
+    device_public.verify(&signed, &sig).expect("signed by the device");
+    let after = i64::from_be_bytes(opened[17..25].try_into().unwrap());
+    let ack = i64::from_be_bytes(opened[25..33].try_into().unwrap());
+    let reply_key: [u8; 32] = opened[59..91].try_into().unwrap();
+    let json = serde_json::json!({ "items": items, "has_more": has_more });
+    let mut frame = vec![6u8];
+    frame.extend_from_slice(&f::seal_reply(&reply_key, json.to_string().as_bytes()));
+    (frame, after, ack)
+}
+
+#[test]
+fn an_offline_phone_gets_its_mail_through_a_neighbour_that_is_online_and_the_same_item_later_is_a_duplicate() {
+    let server_keys = vodozemac::Curve25519SecretKey::new();
+    let fake = FakeServer::new();
+    let (alice, transport) = party(&fake, "alice", 1);
+    let (bob, _) = party(&fake, "bob", 2);
+    let (carol, _) = party(&fake, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    sync(&bob, &transport);
+    say(&alice, &bob, &transport, "for the offline phone");
+    // Bob never fetched this one: it waits in his mailbox on the server.
+    let (cursor, ciphertext) = {
+        let state = fake.state.lock().unwrap();
+        let item = state.mailbox.iter().rev().find(|m| m.1 == bob.device).unwrap();
+        (item.0 as i64, item.2.clone())
+    };
+    let item = serde_json::json!([{ "cursor": cursor, "ciphertext": ciphertext, "size": 10, "received_at": "2026-10-16T00:00:00Z" }]);
+
+    let bob_engine = fetch_engine(&bob, &server_keys);
+    let carol_engine = fetch_engine(&carol, &server_keys);
+    carol_engine.set_relay_online(true);
+    // The phones meet: Carol says she can fetch for others.
+    assert!(bob_engine.fetch_neighbours().is_empty());
+    bob_engine.frame(1, carol_engine.online_frame());
+    assert_eq!(bob_engine.fetch_neighbours(), vec![1]);
+    // Bob asks; one request at a time.
+    let request = bob_engine.fetch_frame_for(1).unwrap().expect("a request frame");
+    assert!(bob_engine.fetch_frame_for(1).unwrap().is_none(), "one in flight");
+    // Carol relays: her engine queues a job, her app posts it (here: a transport that plays the server) and sends the answer back.
+    assert!(carol_engine.frame(1, request.clone()).is_empty());
+    let job = carol_engine.take_fetch_jobs().pop().expect("a job for the app to post");
+    assert_eq!(job.link, 1);
+    let device_public = bob.store.load_or_create_account().unwrap().account.ed25519_key();
+    let (reply_frame, after, ack) = play_server(&server_keys, &device_public, &request, &item, false);
+    assert_eq!((after, ack), (0, -1), "the first request: from the start, nothing to acknowledge");
+    let answer = carol_engine.relay_fetch(Arc::new(FixedReply(std::sync::Mutex::new(Some((200, serde_json::to_vec(&serde_json::json!({ "reply": vodozemac::base64_encode(&reply_frame[1..]) })).unwrap()))))), job.request);
+    assert_eq!(answer, reply_frame, "Carol passes the opaque reply back unchanged");
+    // Bob receives it: the message arrives, nothing is pending, and the next request acknowledges what he kept.
+    assert!(bob_engine.frame(1, answer).is_empty(), "no more to ask");
+    assert_eq!(texts_in(&bob, &alice).iter().filter(|t| *t == "for the offline phone").count(), 1);
+    assert_eq!(bob.store.pending_summary().unwrap(), "");
+    let notes = bob_engine.take_notes();
+    assert!(notes.iter().any(|n| n.starts_with("fetch_request_sent")) && notes.iter().any(|n| n.starts_with("fetch_reply items=1")), "{notes:?}");
+    let next = bob_engine.fetch_frame_for(1).unwrap().expect("another request is allowed now");
+    let (_, after, ack) = play_server(&server_keys, &device_public, &next, &serde_json::json!([]), false);
+    assert_eq!((after, ack), (cursor, cursor), "from where it stopped, acknowledging what it kept");
+    // Later online: the server's own copy of the same item is a duplicate, not a second message and not pending.
+    sync(&bob, &transport);
+    assert_eq!(texts_in(&bob, &alice).iter().filter(|t| *t == "for the offline phone").count(), 1);
+    assert_eq!(bob.store.pending_summary().unwrap(), "");
+    assert_eq!(bob.store.take_dup_dropped(), "server=1 mesh=0");
+}
+
+#[test]
+fn a_neighbour_that_is_not_online_refuses_and_relays_at_most_ten_a_minute_and_a_request_times_out() {
+    let server_keys = vodozemac::Curve25519SecretKey::new();
+    let fake = FakeServer::new();
+    let (bob, _) = party(&fake, "bob", 2);
+    let (carol, _) = party(&fake, "carol", 3);
+    let bob_engine = fetch_engine(&bob, &server_keys);
+    let carol_engine = fetch_engine(&carol, &server_keys);
+    carol_engine.frame(1, bob_engine.online_frame()); // Bob is offline: his bit says 0
+    assert!(carol_engine.fetch_neighbours().is_empty(), "an offline phone is not a neighbour to fetch from");
+    // Carol offline: a request is refused at once with a fail frame.
+    carol_engine.frame(1, carol_engine.online_frame()); // her own frame, harmless
+    bob_engine.frame(1, vec![8, 1]);
+    let request = bob_engine.fetch_frame_for(1).unwrap().unwrap();
+    let refused = carol_engine.frame(1, request.clone());
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].bytes, vec![7, 1], "refused: not online");
+    // Online: ten a minute for one link, the eleventh is refused.
+    carol_engine.set_relay_online(true);
+    let mut jobs = 0;
+    for _ in 0..12 {
+        let out = carol_engine.frame(1, request.clone());
+        jobs += carol_engine.take_fetch_jobs().len();
+        if !out.is_empty() { assert_eq!(out[0].bytes[0], 7); }
+    }
+    assert_eq!(jobs, 10, "ten relays a minute for one link");
+    // A request that gets no answer is given up on after 20 s and the next one is built.
+    let engine2 = fetch_engine(&bob, &server_keys);
+    engine2.frame(2, vec![8, 1]);
+    let first = engine2.fetch_frame_at(2, 1_000).unwrap();
+    assert!(first.is_some());
+    assert!(engine2.fetch_frame_at(2, 1_010).unwrap().is_none(), "still waiting at 10 s");
+    assert!(engine2.fetch_frame_at(2, 1_021).unwrap().is_some(), "a new request after 20 s with no reply");
+    assert!(engine2.take_notes().iter().any(|n| n == "fetch_timeout"));
+}
+
+#[test]
+fn a_reply_that_says_an_item_needs_the_internet_stops_the_fetching_until_reset() {
+    let server_keys = vodozemac::Curve25519SecretKey::new();
+    let fake = FakeServer::new();
+    let (bob, _) = party(&fake, "bob", 2);
+    let engine = fetch_engine(&bob, &server_keys);
+    engine.frame(1, vec![8, 1]);
+    let request = engine.fetch_frame_for(1).unwrap().unwrap();
+    let device_public = bob.store.load_or_create_account().unwrap().account.ed25519_key();
+    let opened = crate::mesh::fetch_test_support::open_sealed(&server_keys, b"lime-mesh-fetch-v1", &request[1..]).unwrap();
+    let reply_key: [u8; 32] = opened[59..91].try_into().unwrap();
+    let _ = device_public;
+    let mut frame = vec![6u8];
+    frame.extend_from_slice(&crate::mesh::fetch_test_support::seal_reply(&reply_key, br#"{"items":[],"has_more":true,"blocked":true}"#));
+    assert!(engine.frame(1, frame).is_empty());
+    assert!(engine.fetch_frame_for(1).unwrap().is_none(), "blocked: the rest needs the internet");
+    engine.fetch_reset();
+    assert!(engine.fetch_frame_for(1).unwrap().is_some(), "allowed again after a reset");
+}

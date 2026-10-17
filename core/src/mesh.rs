@@ -69,9 +69,15 @@ pub(crate) fn recipient_tags(delivery_key: &[u8], to_device: &str, now_secs: u64
 /// Seals the routing header with a given ephemeral key (tests pin it; production uses a fresh random one through [`seal_header`]).
 pub(crate) fn seal_header_with(ephemeral: &Curve25519SecretKey, server: &ServerKey, to_device: &str, signed: &str) -> Result<Vec<u8>, StoreError> {
     let plaintext = serde_json::to_vec(&serde_json::json!({ "to_device": to_device, "access": { "signed": signed } })).map_err(|_| StoreError::BadMessage)?;
+    seal_to_server(ephemeral, server, HEADER_INFO, &plaintext)
+}
+
+/// Seals `plaintext` to the server's mesh key: `key_id (1) || ephemeral X25519 public (32) || AES-256-GCM`, with an HKDF label of its own (the
+/// routing header and the relay-fetch request share the construction and never open each other's).
+pub(crate) fn seal_to_server(ephemeral: &Curve25519SecretKey, server: &ServerKey, label: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, StoreError> {
     let ephemeral_public = Curve25519PublicKey::from(ephemeral);
     let shared = ephemeral.diffie_hellman(&Curve25519PublicKey::from_bytes(server.public)).ok_or(StoreError::BadMessage)?;
-    let mut info = HEADER_INFO.to_vec();
+    let mut info = label.to_vec();
     info.push(server.id);
     info.extend_from_slice(ephemeral_public.as_bytes());
     let mut okm = [0u8; 44];
@@ -79,7 +85,7 @@ pub(crate) fn seal_header_with(ephemeral: &Curve25519SecretKey, server: &ServerK
     let cipher = Aes256Gcm::new_from_slice(&okm[..32]).map_err(|_| StoreError::BadMessage)?;
     let mut aad = vec![server.id];
     aad.extend_from_slice(ephemeral_public.as_bytes());
-    let sealed = cipher.encrypt(Nonce::from_slice(&okm[32..]), Payload { msg: &plaintext, aad: &aad }).map_err(|_| StoreError::BadMessage)?;
+    let sealed = cipher.encrypt(Nonce::from_slice(&okm[32..]), Payload { msg: plaintext, aad: &aad }).map_err(|_| StoreError::BadMessage)?;
     let mut out = aad;
     out.extend_from_slice(&sealed);
     Ok(out)
@@ -250,12 +256,19 @@ pub struct MeshEngine {
     delivered: Mutex<std::collections::HashSet<Digest>>,
     /// Lines for the diagnostics log (what was queued, what arrived, after how long and how many hops): drained by `take_notes`.
     notes: Mutex<Vec<String>>,
+    /// Relay download (LIME-155): see `mesh/fetch.rs`.
+    fetch: Mutex<fetch::FetchState>,
 }
+
+mod fetch;
+pub use fetch::MeshFetchJob;
+#[cfg(test)]
+pub(crate) use fetch::tests as fetch_test_support;
 
 impl MeshEngine {
     fn build(store: Arc<LimeStore>, server_key: Option<ServerKey>) -> Arc<Self> {
         let node = MeshNode::new(MeshConfig { seed: now_ms() as u64, ..MeshConfig::default() }, SqlMeshStore { store: store.clone() }, SystemClock);
-        Arc::new(MeshEngine { store, node: Mutex::new(node), server_key, my_tags: Mutex::new(Vec::new()), counters: Mutex::new((0, 0)), delivered: Mutex::new(std::collections::HashSet::new()), notes: Mutex::new(Vec::new()) })
+        Arc::new(MeshEngine { store, node: Mutex::new(node), server_key, my_tags: Mutex::new(Vec::new()), counters: Mutex::new((0, 0)), delivered: Mutex::new(std::collections::HashSet::new()), notes: Mutex::new(Vec::new()), fetch: Mutex::new(fetch::FetchState::default()) })
     }
 
     fn node(&self) -> std::sync::MutexGuard<'_, MeshNode<SqlMeshStore, SystemClock>> {
@@ -418,6 +431,10 @@ impl MeshEngine {
 
     /// A frame arrived on `link`: the frames to send in answer.
     pub fn frame(&self, link: u64, bytes: Vec<u8>) -> Vec<MeshAction> {
+        // Relay download's frames (5 to 8) are not the node's: handled apart, never counted as garbage.
+        if let Some(handled) = self.app_frame(link, &bytes) {
+            return handled;
+        }
         actions(self.node().on_frame(LinkId(link), &bytes))
     }
 
@@ -573,6 +590,19 @@ impl LimeStore {
     /// Mail that came over the mesh: the ciphertexts the server would have stored for this device. They join the inbound queue (sealed, no
     /// sender: exactly as a sealed mailbox item) and are processed at once. A packet that arrives by the mesh and by the mailbox is one message
     /// (the inbound path de-duplicates by op id).
+    /// Items a neighbour fetched for this phone (relay download): stored exactly as `mailbox-fetch`'s are (the server's cursor, so the same item
+    /// twice is one row), then read like any other. Returns how many became messages.
+    pub(crate) fn ingest_fetched(&self, items: Vec<crate::store::pending::Fetched>) -> Result<u32, StoreError> {
+        let _guard = self.lock_protocol();
+        let mut state = self.load_or_create_account()?;
+        let me = state.user_id.clone().filter(|_| state.registered).ok_or(StoreError::NotRegistered)?;
+        {
+            let mut conn = self.lock();
+            crate::store::pending::insert_all(&mut conn, &items, now_ms())?;
+        }
+        self.retry_pending(&mut state, &me)
+    }
+
     pub(crate) fn receive_mesh_payloads(&self, payloads: Vec<Vec<u8>>) -> Result<u32, StoreError> {
         use sha2::{Digest as _, Sha256};
         let _guard = self.lock_protocol();

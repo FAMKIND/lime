@@ -27,6 +27,7 @@ pub(crate) struct PendingRow {
     pub peer_identity: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Fetched {
     pub cursor: i64,
     pub sender_user: Option<String>,
