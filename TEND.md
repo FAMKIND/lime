@@ -6490,3 +6490,7 @@ Brief: LIME-150, after the spike (1e188: build the live grid with a heat guard; 
 **Device check: not yet run** (a group video call with 3 phones, the 13 mini minimised for 10 min unplugged: in lime / typing in a lime chat / another app; the grid stays smooth; if it reaches serious, `pip_grid` lines show it dropping to one live cell and coming back).
 
 For plot: the 15 fps request is not enforceable through LiveKit's size-based adaptive stream; the fourth cell is my picture, not empty.
+
+## LIME-160: passed the user's check (2026-10-17)
+
+No emergency items in a group's ⋯ menu (the user's look). Marked here at the user's word.
