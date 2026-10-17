@@ -191,7 +191,7 @@ impl MeshEngine {
                 // The node offers copies of mail already on the server to a neighbour that says it is offline (LIME-156).
                 let offered = self.node().set_link_online(super::LinkId(link), online);
                 if offered {
-                    self.note(format!("copy_offered link_offline={}", link % 0x10000));
+                    self.note(format!("copy_offered link_offline={:04x}", link & 0xffff));
                 }
                 self.refresh_offline_neighbours();
             }
@@ -249,9 +249,16 @@ impl MeshEngine {
         }
         let highest = reply.items.iter().map(|i| i.cursor).max();
         if !reply.items.is_empty() {
-            if self.store.ingest_fetched(reply.items).is_err() {
-                self.note("fetch_fail why=ingest".into());
-                return None;
+            match self.store.ingest_fetched(reply.items) {
+                // What became messages, and what stayed pending and why (LIME-156b: group items fetched offline must show at once).
+                Ok(shown) => {
+                    let pending = self.store.pending_summary().unwrap_or_default();
+                    self.note(format!("fetch_ingested messages={shown} pending=[{}]", if pending.is_empty() { "none" } else { pending.as_str() }));
+                }
+                Err(_) => {
+                    self.note("fetch_fail why=ingest".into());
+                    return None;
+                }
             }
         }
         if let Some(highest) = highest {

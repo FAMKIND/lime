@@ -645,7 +645,10 @@ impl LimeStore {
             Ok(out)
         };
         // The mesh can take the whole send only if nobody has to be sent identified (that needs the server).
+        let copy_as = park_as;
         let park_as = park_as.filter(|_| identified.is_empty());
+        // Members the server took this send for (LIME-156b): they get a copy for offline neighbours below.
+        let mut served: Vec<(String, Vec<String>)> = Vec::new();
         for chunk in sealed.chunks(SEND_CHUNK / 4 + 1) {
             let answer = call(transport, None, "send", &json!({ "ciphertext": wire_b64, "recipients": sealed_recipients(chunk)? }));
             let (status, _) = match answer {
@@ -669,10 +672,12 @@ impl LimeStore {
                         identified.push((one.0.clone(), one.2.clone()));
                     } else {
                         check(status)?;
+                        served.push((one.0.clone(), one.2.clone()));
                     }
                 }
             } else {
                 check(status)?;
+                served.extend(chunk.iter().map(|(user, _, devices)| (user.clone(), devices.clone())));
             }
         }
         let recipients: Vec<Value> = identified
@@ -682,6 +687,15 @@ impl LimeStore {
         for chunk in recipients.chunks(SEND_CHUNK) {
             let (status, _) = call(transport, Some(token), "send", &json!({ "ciphertext": wire_b64, "recipients": chunk }))?;
             check(status)?;
+        }
+        // The server has it for everyone. If a linked neighbour said it is offline, each member device gets a copy for it on the mesh (the same
+        // helper a 1:1 send uses): handed only to that device's own phone, never sprayed onward (the user's decision, 1e180).
+        if let Some(op_id) = copy_as.filter(|_| self.mesh_offline_neighbours() > 0) {
+            for (user, devices) in &served {
+                for device in devices {
+                    self.park_copy(op_id, user, device, &wire, 2)?;
+                }
+            }
         }
         Ok(())
     }

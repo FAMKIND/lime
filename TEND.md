@@ -6380,3 +6380,27 @@ Brief: LIME-156. No server change, no packet change, no new on-air metadata.
 **Device check: not yet run** (Jean online beside the 13 mini, which is offline; the iPad away or lime closed; Jean sends 2 messages + a reaction; logs: Jean `mesh_queued … copy=1` → `mesh_passed`, 13 mini `mesh_delivered`; then the 13 mini online → `dup_dropped`, nothing twice; `hello_requested` timeouts stop).
 
 For plot: causes (a)–(d) above; copy counts pending the device check.
+
+## LIME-156b
+
+Brief: LIME-156 (groups). No server, packet or Swift change.
+
+**Phase 1.** `send_group_wire` already sends one ciphertext to all sealed members' devices; after its chunks return 200 it now calls the same `park_copy` helper 1:1 uses (kind 2 = group copy). Fan-out: one packet per member device, about 1 KiB each: a 30-member class is about 30 packets (~30 KiB) per message. **Cap decided by the user (1e180): "direct hand-over only; if the sender's own copy space runs short, drop the oldest copies first."**
+
+**Changes.**
+- [x] Group copies: a `mesh_outbox` row per member device (`copy = 2`), 6 h, only with an offline neighbour linked. In the node a copy is handed only to a link whose Hello tags include that copy's recipient tag (never sprayed onward), and offered only to offline links, as 1:1 copies.
+- [x] Copy space: copies are stored at the middle tier (never evict the phone's own mail); at most 600 copy rows, the oldest dropped first (and taken off the mesh); anything over 6 h is dropped.
+- [x] `mesh_delivered after=`: a packet with 6 h or less left is read as a copy (6 h life), else 48 h. An estimate (an ordinary packet 42 h old would read wrong; not seen in practice). A copy's delay is now seconds.
+- [x] `copy_offered` printed the link in decimal; now 4 hex digits like every other link id.
+- [x] Docs: `docs/dpia-mesh.md` (group copies; the shorter expiry is the one on-air difference).
+- [x] Tests: node (copy handling, from 156); core: group send leaves copies only with an offline neighbour linked (per member device, kind 2), never uploaded by its sender, not given to a non-member, the member's copy shows once and the later server copy is a duplicate, delay under 60 s; the oldest copies drop first beyond 600.
+
+**Plot's group test (1e181, `/tmp/lime-meshlogs22`).**
+1. No group copies on Jean: the installed build was 156, which only copied 1:1 sends; the group path exists only from this commit. (`copy_offered link_offline=61150` is 0xeede in decimal; fixed.) Re-test with this build.
+2. Fetched group items not showing offline: I could not reproduce in the core. A test that feeds a never-synced member's whole group mailbox (session key + messages) through `ingest_fetched` shows both messages at once with nothing pending. The pasted logs have no ingest result (the 13 mini's diag stops at 14:29 local, before the 14:34Z fetches), so the cause is not established. **Now logged:** after every fetch reply, `fetch_ingested messages=N pending=[reason=count …]` (what became messages, and what stayed pending and why). The next device run shows whether the items are stuck (`no_group`, `no_session`, …) or stored but not drawn (then it is a reload/UI question in the group chat).
+
+**Verification.** Core 271, mesh 23, sim 12, integration 23 (earlier run), Android check OK, Swift mesh tests pass, 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Device check: not yet run.** Jean (internet, Bluetooth, open in a group with the 13 mini's account) sends 2 messages + a reaction; the 13 mini is in airplane mode with Bluetooth on; the iPad has Bluetooth off. Look for Jean `mesh_queued kind=message copy=2` per member device, the 13 mini `mesh_delivered after=` in seconds, and on the 13 mini `fetch_ingested …` if it relays.
+
+For plot: fan-out ~1 KiB × members per message; cap = direct only + 600 rows, oldest first; item 2 of the group test open until `fetch_ingested` is read.

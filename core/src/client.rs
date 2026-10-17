@@ -875,7 +875,7 @@ impl LimeStore {
                 // The server has it. If a linked neighbour said it is offline, leave a copy on the mesh for it (LIME-156): never sent to the
                 // server again, offered only to offline neighbours, kept 6 hours.
                 if delivery_key.is_some() && self.mesh_can_carry(&op.op_type) && self.mesh_offline_neighbours() > 0 {
-                    self.park_copy(&op.op_id, recipient, &device.device_id, &wire)?;
+                    self.park_copy(&op.op_id, recipient, &device.device_id, &wire, 1)?;
                 }
                 if body.get("checked").and_then(Value::as_bool) != Some(true) {
                     // This server does not check `expect` (an older one): do not keep a cache nobody validates.
@@ -996,13 +996,13 @@ impl LimeStore {
         Ok(())
     }
 
-    /// Keeps a copy of a ciphertext the server already has for offline neighbours (LIME-156). It does not make a message "waiting" and the
+    /// Keeps a copy of a ciphertext the server already has for offline neighbours (LIME-156; `kind` 1, or 2 for a group copy, LIME-156b). It does not make a message "waiting" and the
     /// retry never sends it.
-    pub(crate) fn park_copy(&self, op_id: &str, to_user: &str, to_device: &str, ciphertext: &[u8]) -> Result<(), StoreError> {
+    pub(crate) fn park_copy(&self, op_id: &str, to_user: &str, to_device: &str, ciphertext: &[u8], kind: i64) -> Result<(), StoreError> {
         self.with_conn(|conn| {
             conn.execute(
-                "INSERT OR IGNORE INTO mesh_outbox (op_id, to_user, to_device, ciphertext, created_at, copy) VALUES (?1, ?2, ?3, ?4, ?5, 1)",
-                params![op_id, to_user, to_device, ciphertext, now_ms()],
+                "INSERT OR IGNORE INTO mesh_outbox (op_id, to_user, to_device, ciphertext, created_at, copy) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![op_id, to_user, to_device, ciphertext, now_ms(), kind],
             )
             .map_err(db_err)?;
             Ok(())

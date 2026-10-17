@@ -4493,6 +4493,110 @@ fn a_copy_reaches_the_offline_recipient_by_bluetooth_is_not_given_to_an_online_n
     assert_eq!(b.take_mine().unwrap(), 0);
 }
 
+#[test]
+fn a_group_send_leaves_direct_copies_only_with_an_offline_neighbour_and_each_member_gets_theirs_once() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let (dee, _) = party(&server, "dee", 9);
+    for (x, y) in [(&alice, &bob), (&alice, &carol), (&bob, &carol)] {
+        befriend(x, y, &transport);
+    }
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    alice.store.set_mesh_enabled(true);
+    let (a, b, c, d) = (mesh_engine(&alice), mesh_engine(&bob), mesh_engine(&carol), mesh_engine(&dee));
+    for e in [&a, &b, &c, &d] {
+        e.refresh_tags().unwrap();
+    }
+    // A first group message online so every member holds the group's session.
+    alice.store.queue_text(chat.clone(), "online first".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    // Only an online neighbour: no copies.
+    a.link_up(1);
+    a.frame(1, vec![8, 1]);
+    alice.store.queue_text(chat.clone(), "no copies".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert!(copy_rows(&alice).is_empty(), "online neighbours never get copies");
+    // An offline neighbour: a copy per member device, marked as a group copy.
+    a.frame(1, vec![8, 0]);
+    alice.store.queue_text(chat.clone(), "group copy".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    assert_eq!(copy_rows(&alice).len(), 2, "one copy per member device (bob and carol)");
+    assert!(copy_rows(&alice).iter().all(|r| r.0 == 2));
+    assert_eq!(state_of_chat(&alice, &chat, "group copy"), "sent");
+    assert_eq!(a.pump_outbox().unwrap(), 2);
+    assert!(a.take_uploadable().is_empty(), "its sender never uploads a copy");
+    // A phone that is not a member gets nothing (direct hand-over only); bob gets his and shows it once.
+    mesh_meet_with_bit(&a, &d, Some(false));
+    assert_eq!(d.stats().carried, 0, "a copy is never sprayed to a phone it is not for");
+    mesh_meet_with_bit(&a, &b, Some(false));
+    assert_eq!(b.take_mine().unwrap(), 1, "bob's copy arrives over Bluetooth");
+    let shown = || bob.store.list_messages(chat.clone()).unwrap().iter().filter(|m| m.text == "group copy").count();
+    assert_eq!(shown(), 1);
+    let note = b.take_notes().into_iter().find(|n| n.starts_with("mesh_delivered")).expect("logged");
+    let after: u64 = note.split("after=").nth(1).unwrap().split('s').next().unwrap().parse().unwrap();
+    assert!(after < 60, "a copy's delay is seconds, not hours: {note}");
+    sync(&bob, &transport);
+    assert_eq!(shown(), 1, "the server's copy afterwards is a duplicate");
+    let _ = c;
+}
+
+#[test]
+fn the_oldest_copies_are_dropped_first_when_there_are_too_many() {
+    let server = FakeServer::new();
+    let (alice, _) = party(&server, "alice", 1);
+    let a = mesh_engine(&alice);
+    {
+        let conn = alice.store.lock();
+        for i in 0..605 {
+            conn.execute(
+                "INSERT INTO mesh_outbox (op_id, to_user, to_device, ciphertext, created_at, copy) VALUES ('op', 'u', ?1, x'00', ?2, 2)",
+                rusqlite::params![format!("d{i}"), crate::store::now_ms() - 1000 + i],
+            )
+            .unwrap();
+        }
+    }
+    a.pump_outbox().unwrap();
+    let conn = alice.store.lock();
+    let n: i64 = conn.query_row("SELECT COUNT(*) FROM mesh_outbox", [], |r| r.get(0)).unwrap();
+    let oldest: i64 = conn.query_row("SELECT COUNT(*) FROM mesh_outbox WHERE to_device IN ('d0','d1','d2','d3','d4')", [], |r| r.get(0)).unwrap();
+    assert_eq!((n, oldest), (600, 0), "the five oldest went");
+}
+
+fn state_of_chat(p: &Party, chat: &str, text: &str) -> String {
+    p.store.list_messages(chat.to_string()).unwrap().into_iter().find(|m| m.text == text).unwrap().local_state
+}
+
+#[test]
+fn group_items_fetched_by_a_neighbour_show_at_once_and_what_stays_pending_is_named() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    for (x, y) in [(&alice, &bob), (&alice, &carol), (&bob, &carol)] {
+        befriend(x, y, &transport);
+    }
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    // Bob never syncs: everything Alice sends (the group's session key, then the messages) is what a neighbour fetches for him.
+    alice.store.queue_text(chat.clone(), "fetched one".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    alice.store.queue_text(chat.clone(), "fetched two".into()).unwrap();
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    let items: Vec<crate::store::pending::Fetched> = server
+        .state
+        .lock()
+        .unwrap()
+        .mailbox
+        .iter()
+        .filter(|m| m.1 == bob.device)
+        .map(|m| crate::store::pending::Fetched { cursor: m.0 as i64, sender_user: m.4.clone(), identified: m.3, ciphertext: m.2.clone(), received_at: None })
+        .collect();
+    assert!(items.len() >= 3, "a session key and two messages, at least: {}", items.len());
+    let shown = bob.store.ingest_fetched(items).unwrap();
+    let texts: Vec<String> = bob.store.list_messages(chat.clone()).unwrap().into_iter().map(|m| m.text).collect();
+    assert!(texts.contains(&"fetched one".to_string()) && texts.contains(&"fetched two".to_string()), "shown at once ({shown}): {texts:?}; pending: {}", bob.store.pending_summary().unwrap());
+    assert_eq!(bob.store.pending_summary().unwrap(), "", "nothing is left waiting");
+}
+
 // ---- LIME-155: relay download ----
 
 struct FixedReply(std::sync::Mutex<Option<(u16, Vec<u8>)>>);
@@ -4570,6 +4674,7 @@ fn an_offline_phone_gets_its_mail_through_a_neighbour_that_is_online_and_the_sam
     assert_eq!(bob.store.pending_summary().unwrap(), "");
     let notes = bob_engine.take_notes();
     assert!(notes.iter().any(|n| n.starts_with("fetch_request_sent")) && notes.iter().any(|n| n.starts_with("fetch_reply items=1")), "{notes:?}");
+    assert!(notes.iter().any(|n| n.starts_with("fetch_ingested messages=1 pending=[")), "what became messages and what stayed pending is logged: {notes:?}");
     let next = bob_engine.fetch_frame_for(1).unwrap().expect("another request is allowed now");
     let (_, after, ack) = play_server(&server_keys, &device_public, &next, &serde_json::json!([]), false);
     assert_eq!((after, ack), (cursor, cursor), "from where it stopped, acknowledging what it kept");

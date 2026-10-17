@@ -111,7 +111,8 @@ pub struct MeshNode<S: MeshStore, C: Clock> {
     uploaded: HashMap<Digest, u64>,
     /// Copies of mail this phone already sent to the server (LIME-156): offered only to a neighbour whose online bit says it is offline, never
     /// uploaded by this phone. Local state only; nothing on the air marks them.
-    offline_only: HashSet<Digest>,
+    /// (the value: handed only to its own recipient, never sprayed onward — group copies, LIME-156b)
+    offline_only: HashMap<Digest, bool>,
     /// What each linked neighbour said about being online (`None`: not heard yet, which counts as online: no copy goes out unasked).
     link_online: HashMap<LinkId, bool>,
     /// Packets taken out of the upload list because they were uploaded before (the platform logs `upload_skip why=already_uploaded`).
@@ -142,7 +143,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         let seen_set = seen.iter().map(|(d, _)| *d).collect();
         let uploaded: HashMap<Digest, u64> = store.load_uploaded().into_iter().filter(|(_, at)| now.saturating_sub(*at) <= UPLOADED_MEMORY_SECS).collect();
         let rng = config.seed | 1;
-        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), refused: HashMap::new(), handed: HashSet::new(), uploaded, offline_only: HashSet::new(), link_online: HashMap::new(), already_uploaded: 0, rng, stats: NodeStats::default(), version: 0 }
+        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), refused: HashMap::new(), handed: HashSet::new(), uploaded, offline_only: HashMap::new(), link_online: HashMap::new(), already_uploaded: 0, rng, stats: NodeStats::default(), version: 0 }
     }
 
     pub fn config(&self) -> &MeshConfig {
@@ -189,13 +190,18 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     // ------------------------------------------------------------------ the app's side
 
     /// A packet this phone made: stored with the highest tier, `ttl` hops (shorter with many links), `copies_initial` copies.
-    pub fn enqueue(&mut self, mut packet: Packet) -> Result<Digest, EnqueueError> {
+    pub fn enqueue(&mut self, packet: Packet) -> Result<Digest, EnqueueError> {
+        self.enqueue_as(packet, Tier::Own, self.config.max_lifetime_secs)
+    }
+
+    /// `enqueue` with the tier it is stored at and the longest it may live from now.
+    fn enqueue_as(&mut self, mut packet: Packet, tier: Tier, lifetime: u64) -> Result<Digest, EnqueueError> {
         let now = self.clock.now_secs();
         self.housekeeping();
         if packet.expires_at <= now {
             return Err(EnqueueError::Expired);
         }
-        packet.expires_at = packet.expires_at.min(now + self.config.max_lifetime_secs);
+        packet.expires_at = packet.expires_at.min(now + lifetime.min(self.config.max_lifetime_secs));
         packet.hops_left = self.effective_ttl();
         if packet.wire_len() > self.config.max_packet_bytes {
             return Err(EnqueueError::TooLarge);
@@ -205,30 +211,37 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
             return Ok(digest);
         }
         self.remember_seen(digest);
-        if self.admit(packet, self.config.copies_initial, Tier::Own, now) { Ok(digest) } else { Err(EnqueueError::NoRoom) }
+        if self.admit(packet, self.config.copies_initial, tier, now) { Ok(digest) } else { Err(EnqueueError::NoRoom) }
     }
 
     /// A copy of mail this phone already sent to the server (LIME-156): like [`enqueue`](Self::enqueue), but it lives 6 hours, is offered only to
     /// neighbours that say they are offline, and is never uploaded by this phone.
-    pub fn enqueue_copy(&mut self, mut packet: Packet) -> Result<Digest, EnqueueError> {
-        let now = self.clock.now_secs();
-        packet.expires_at = packet.expires_at.min(now + COPY_LIFETIME_SECS);
-        let digest = self.enqueue(packet)?;
-        self.offline_only.insert(digest);
+    pub fn enqueue_copy(&mut self, packet: Packet, direct: bool) -> Result<Digest, EnqueueError> {
+        let digest = self.enqueue_as(packet, Tier::Contact, COPY_LIFETIME_SECS)?;
+        self.offline_only.insert(digest, direct);
         Ok(digest)
     }
 
+    /// Takes a copy off the mesh (the platform dropped its outbox row: the oldest copies go first when there is no room for more).
+    pub fn discard(&mut self, digest: &Digest) {
+        self.offline_only.remove(digest);
+        if self.carried.remove(digest).is_some() {
+            self.store.remove(digest);
+            self.version += 1;
+        }
+    }
+
     /// Marks a carried packet as a copy again after a restart (the platform remembers which ones are).
-    pub fn mark_offline_only(&mut self, digest: &Digest) {
+    pub fn mark_offline_only(&mut self, digest: &Digest, direct: bool) {
         if self.carried.contains_key(digest) {
-            self.offline_only.insert(*digest);
+            self.offline_only.insert(*digest, direct);
         }
     }
 
     /// A neighbour said whether it is online. Returns whether copies are now on offer to it (it is offline) and were not before.
     pub fn set_link_online(&mut self, link: LinkId, online: bool) -> bool {
         let before = self.link_online.insert(link, online);
-        before != Some(false) && !online && self.carried.keys().any(|d| self.offline_only.contains(d))
+        before != Some(false) && !online && self.carried.keys().any(|d| self.offline_only.contains_key(d))
     }
 
     /// Whether this phone uploaded the packet before.
@@ -274,7 +287,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         let mut out: Vec<Uploadable> = self
             .carried
             .iter()
-            .filter(|(d, c)| !self.uploading.contains(*d) && !self.offline_only.contains(*d) && !self.my_tags.contains(&c.packet.tag) && self.refused.get(*d).map(|(_, after)| *after <= now).unwrap_or(true))
+            .filter(|(d, c)| !self.uploading.contains(*d) && !self.offline_only.contains_key(*d) && !self.my_tags.contains(&c.packet.tag) && self.refused.get(*d).map(|(_, after)| *after <= now).unwrap_or(true))
             .map(|(d, c)| Uploadable { digest: *d, header: c.packet.header.clone(), payload: c.packet.payload.clone() })
             .collect();
         out.sort_by_key(|u| u.digest);
@@ -379,8 +392,10 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
             let Some(digest) = by_short.get(want) else { continue };
             let Some(carried) = self.carried.get(digest) else { continue };
             // A copy of mail already on the server goes only to a neighbour that said it is offline.
-            if self.offline_only.contains(digest) && self.link_online.get(&link) != Some(&false) {
-                continue;
+            if let Some(direct) = self.offline_only.get(digest) {
+                if self.link_online.get(&link) != Some(&false) || (*direct && !peer_tags.contains(&carried.packet.tag)) {
+                    continue;
+                }
             }
             if carried.packet.expires_at <= now {
                 continue;
@@ -481,7 +496,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     fn summary_for(&self, link: LinkId) -> Vec<Short> {
         let mut out = self.summary();
         if !self.offline_only.is_empty() && self.link_online.get(&link) != Some(&false) {
-            let hidden: HashSet<Short> = self.offline_only.iter().map(short).collect();
+            let hidden: HashSet<Short> = self.offline_only.keys().map(short).collect();
             out.retain(|s| !hidden.contains(s));
         }
         out
@@ -515,7 +530,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
             self.stats.expired += 1;
             self.version += 1;
         }
-        self.offline_only.retain(|d| self.carried.contains_key(d));
+        self.offline_only.retain(|d, _| self.carried.contains_key(d));
         self.uploaded.retain(|_, at| now.saturating_sub(*at) <= UPLOADED_MEMORY_SECS);
         while let Some((digest, at)) = self.seen.front().copied() {
             if now.saturating_sub(at) > self.config.seen_window_secs {
@@ -1040,7 +1055,7 @@ mod tests {
     fn a_copy_of_mail_already_on_the_server_goes_only_to_a_neighbour_that_says_it_is_offline_and_is_never_uploaded_by_its_sender() {
         let c = clock();
         let mut sender = node_with(MeshConfig::default(), &c);
-        let copy = sender.enqueue_copy(Packet { expires_at: c.0.get() + 48 * 3600, ..packet(5, 5, &c) }).unwrap();
+        let copy = sender.enqueue_copy(Packet { expires_at: c.0.get() + 48 * 3600, ..packet(5, 5, &c) }, false).unwrap();
         assert!(sender.take_uploadable().is_empty(), "its sender never uploads a copy");
         let mut online = node_with(MeshConfig::default(), &c);
         meet_with_bit(&mut sender, &mut online, Some(true));

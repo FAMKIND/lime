@@ -127,6 +127,9 @@ fn tier_of(value: i64) -> Tier {
     }
 }
 
+/// The most copies of mail already on the server this phone keeps for offline neighbours (about a megabyte at most); the oldest go first.
+const MAX_COPY_ROWS: i64 = 600;
+
 impl MeshStore for SqlMeshStore {
     fn load(&mut self) -> Vec<StoredPacket> {
         let conn = self.store.lock();
@@ -293,16 +296,16 @@ impl MeshEngine {
 
     /// After a restart, the copies this phone parked are marked again (the node loads them as ordinary packets).
     fn remark_copies(&self) {
-        let digests: Vec<Vec<u8>> = {
+        let digests: Vec<(Vec<u8>, i64)> = {
             let conn = self.store.lock();
-            let Ok(mut statement) = conn.prepare("SELECT packet_digest FROM mesh_outbox WHERE copy = 1 AND packet_digest IS NOT NULL") else { return };
-            let rows = statement.query_map([], |r| r.get::<_, Vec<u8>>(0));
+            let Ok(mut statement) = conn.prepare("SELECT packet_digest, copy FROM mesh_outbox WHERE copy > 0 AND packet_digest IS NOT NULL") else { return };
+            let rows = statement.query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?)));
             rows.map(|rows| rows.filter_map(Result::ok).collect()).unwrap_or_default()
         };
         let mut node = self.node();
-        for digest in digests {
+        for (digest, copy) in digests {
             if let Ok(digest) = <Digest>::try_from(digest.as_slice()) {
-                node.mark_offline_only(&digest);
+                node.mark_offline_only(&digest, copy == 2);
             }
         }
     }
@@ -312,11 +315,12 @@ impl MeshEngine {
     }
 
     fn queue(&self, to_user: String, to_device: String, ciphertext: Vec<u8>) -> Result<Option<Digest>, StoreError> {
-        self.queue_as(to_user, to_device, ciphertext, false)
+        self.queue_as(to_user, to_device, ciphertext, 0)
     }
 
-    /// `copy`: mail the server already has (LIME-156), kept 6 hours for offline neighbours only.
-    fn queue_as(&self, to_user: String, to_device: String, ciphertext: Vec<u8>, copy: bool) -> Result<Option<Digest>, StoreError> {
+    /// `copy`: 0 for mail the server does not have yet; 1 for a copy of mail it already has (LIME-156), kept 6 hours for offline neighbours only;
+    /// 2 for a group copy (LIME-156b): the same, handed only to its own recipient and never sprayed onward.
+    fn queue_as(&self, to_user: String, to_device: String, ciphertext: Vec<u8>, copy: u8) -> Result<Option<Digest>, StoreError> {
         let server = self.server_key.ok_or(StoreError::Unavailable)?;
         let now = now_ms().max(0) as u64 / 1000;
         let key = {
@@ -329,7 +333,7 @@ impl MeshEngine {
         let signed = crate::store::delivery::access_signature_b64(&key, &ciphertext, &to_device)?;
         let header = seal_header(&server, &to_device, &signed)?;
         let packet = Packet { tag: recipient_tag(&key, &to_device, day_of(now))?, header, payload: ciphertext, hops_left: 0, expires_at: now + 48 * 3600 };
-        Ok(if copy { self.node().enqueue_copy(packet).ok() } else { self.node().enqueue(packet).ok() })
+        Ok(if copy > 0 { self.node().enqueue_copy(packet, copy == 2).ok() } else { self.node().enqueue(packet).ok() })
     }
 
     fn note(&self, line: String) {
@@ -417,16 +421,37 @@ impl MeshEngine {
     /// runs. Returns how many packets were newly queued (a Hello is worth sending when it is above zero).
     pub fn pump_outbox(&self) -> Result<u32, StoreError> {
         // Copies live 6 hours (LIME-156): older ones are dropped; the packet itself expires on the mesh on its own.
+        // and when there are more than MAX_COPY_ROWS, the oldest go first (LIME-156b: a busy class must not fill the store).
+        let dropped: Vec<Vec<u8>> = {
+            let conn = self.store.lock();
+            let mut statement = conn
+                .prepare(
+                    "SELECT packet_digest FROM mesh_outbox WHERE copy > 0 AND packet_digest IS NOT NULL AND (created_at < ?1 OR rowid IN \
+                     (SELECT rowid FROM mesh_outbox WHERE copy > 0 ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?2))",
+                )
+                .map_err(db_err)?;
+            let rows = statement.query_map(params![now_ms() - 6 * 3600 * 1000, MAX_COPY_ROWS], |r| r.get::<_, Vec<u8>>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            rows
+        };
         {
             let conn = self.store.lock();
-            conn.execute("DELETE FROM mesh_outbox WHERE copy = 1 AND created_at < ?1", params![now_ms() - 6 * 3600 * 1000]).map_err(db_err)?;
+            conn.execute(
+                "DELETE FROM mesh_outbox WHERE copy > 0 AND (created_at < ?1 OR rowid IN (SELECT rowid FROM mesh_outbox WHERE copy > 0 ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?2))",
+                params![now_ms() - 6 * 3600 * 1000, MAX_COPY_ROWS],
+            )
+            .map_err(db_err)?;
         }
-        let rows: Vec<(String, String, String, Vec<u8>, bool)> = {
+        for digest in dropped {
+            if let Ok(digest) = <Digest>::try_from(digest.as_slice()) {
+                self.node().discard(&digest);
+            }
+        }
+        let rows: Vec<(String, String, String, Vec<u8>, u8)> = {
             let conn = self.store.lock();
             let mut statement = conn
                 .prepare("SELECT op_id, to_user, to_device, ciphertext, copy FROM mesh_outbox WHERE packet_digest IS NULL ORDER BY created_at")
                 .map_err(db_err)?;
-            let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get::<_, i64>(4)? != 0))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get::<_, i64>(4)? as u8))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
             rows
         };
         let mut queued = 0;
@@ -435,7 +460,7 @@ impl MeshEngine {
                 let conn = self.store.lock();
                 conn.execute("UPDATE mesh_outbox SET packet_digest = ?3 WHERE op_id = ?1 AND to_device = ?2", params![op_id, to_device, digest.to_vec()]).map_err(db_err)?;
                 drop(conn);
-                self.note(format!("mesh_queued kind=message{} id={} op={}", if copy { " copy=1" } else { "" }, short_id(&digest), op_id.chars().take(4).collect::<String>()));
+                self.note(format!("mesh_queued kind=message{} id={} op={}", match copy { 0 => "", 1 => " copy=1", _ => " copy=2" }, short_id(&digest), op_id.chars().take(4).collect::<String>()));
                 queued += 1;
             }
         }
@@ -507,7 +532,10 @@ impl MeshEngine {
                 if !delivered.insert(m.digest) {
                     continue;
                 }
-                let made = m.expires_at.saturating_sub(48 * 3600);
+                // A copy lives 6 hours and an ordinary packet 48: a packet with 6 hours or less left is taken for a copy (an estimate: it also fits an
+                // ordinary packet 42 hours old, which does not happen in practice).
+                let life = if m.expires_at.saturating_sub(now) <= 6 * 3600 { 6 * 3600 } else { 48 * 3600 };
+                let made = m.expires_at.saturating_sub(life);
                 let probe = m.payload.starts_with(PROBE_PREFIX);
                 self.note(format!(
                     "mesh_delivered kind={} id={} after={}s hops={}",
