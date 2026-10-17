@@ -280,6 +280,21 @@ final class ConversationStore {
         self.link = link
         needsRegistration = pendingRegistration
         if !pendingRegistration { problem = nil }
+        // Anything this phone wrote while it had no link (a "Sent" that never went anywhere) is sent now (LIME-141-fix5).
+        Task { await resendLocalMessages() }
+    }
+
+    /// A signed-in account has an account: a send is always queued, never kept local-only (the demo and tests have none).
+    @ObservationIgnored var accountSignedIn = false
+
+    /// Turns the local-only messages of a registered account into queued sends, in order, and delivers them. Each is converted once.
+    func resendLocalMessages() async {
+        guard accountSignedIn, let core else { return }
+        let n = (try? await Task.detached(priority: .utility) { try core.requeueLocalMessages() }.value) ?? 0
+        guard n > 0 else { return }
+        CallDiagnostics.shared.log("resend_local n=\(n)")
+        await reload()
+        await deliverNow()
     }
 
     /// The link is an offline one (this phone registered before; the registration with the server runs when the internet is back): deliveries still
@@ -290,6 +305,7 @@ final class ConversationStore {
     /// signing in again as the same person loses nothing.
     func disconnect() {
         link = nil
+        accountSignedIn = false
         path = NavigationPath()
     }
 
@@ -610,6 +626,7 @@ final class ConversationStore {
     func wipe() {
         core = nil
         link = nil
+        accountSignedIn = false
         problem = nil
         path = NavigationPath()
         databasePath = nil
@@ -792,11 +809,16 @@ final class ConversationStore {
         #endif
         guard let core else { return }
         let connected = link != nil
+        // A signed-in account never makes a local-only message, with a link or without: it is queued (and sent when a link exists).
+        let queued = connected || accountSignedIn
         let item = try? await Task.detached(priority: .userInitiated) {
-            connected ? try core.queueText(conversationId: id, text: trimmed)
-                      : try core.sendLocalMessage(conversationId: id, text: trimmed)
+            queued ? try core.queueText(conversationId: id, text: trimmed)
+                   : try core.sendLocalMessage(conversationId: id, text: trimmed)
         }.value
-        guard let item, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        guard let item, let index = conversations.firstIndex(where: { $0.id == id }) else {
+            if queued { showBanner("Couldn\u{2019}t queue the message. Try again.") }
+            return
+        }
         conversations[index].messages.append(Message(item))
         if connected { await deliverNow() }
     }

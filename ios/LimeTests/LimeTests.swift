@@ -300,6 +300,25 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(store.conversation(id)).messages.last?.text, "hello")
     }
 
+    /// LIME-141-fix5: with no account (the demo, tests) a send stays on the phone; a signed-in account never makes a local-only message: it is queued, or
+    /// (a phone that never registered) refused with a note, never shown as "Sent" while going nowhere.
+    func testASignedInAccountNeverMakesALocalOnlyMessage() async throws {
+        let store = try await loadedStore()
+        let id = try XCTUnwrap(store.conversations.first).id
+        // No account: local, as before.
+        await store.sendNow("local one", in: id)
+        XCTAssertEqual(try XCTUnwrap(store.conversation(id)).messages.last?.text, "local one")
+        // Signed in, but this phone is not registered (there is nothing to queue to): no local-only message appears.
+        store.accountSignedIn = true
+        let before = try XCTUnwrap(store.conversation(id)).messages.count
+        await store.sendNow("must not be local", in: id)
+        XCTAssertEqual(try XCTUnwrap(store.conversation(id)).messages.count, before, "not appended as a local 'Sent'")
+        XCTAssertNotNil(store.banner, "and the person is told")
+        // Nothing to re-send for an unregistered phone.
+        await store.resendLocalMessages()
+        XCTAssertEqual(try XCTUnwrap(store.conversation(id)).messages.count, before)
+    }
+
     func testBlankSendIsIgnored() async throws {
         let store = try await loadedStore()
         let id = try XCTUnwrap(store.conversations.first).id

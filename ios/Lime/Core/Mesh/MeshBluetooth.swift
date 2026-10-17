@@ -529,11 +529,29 @@ extension MeshBluetooth: @preconcurrency CBPeripheralDelegate {
         handshake.write = characteristics.first { $0.uuid == Self.dataWriteUUID }
         handshake.notify = characteristics.first { $0.uuid == Self.dataNotifyUUID }
         handshake.psm = characteristics.first { $0.uuid == Self.psmUUID }
-        guard let hello = handshake.hello else { return }
+        guard let hello = handshake.hello else {
+            // The hello characteristic is not there (a stale GATT cache from an older build, or a partial list): say what was found and give up on
+            // this connection now instead of waiting for the watchdog; the next try rediscovers.
+            onLog("hello_missing", ["found": characteristics.map { String($0.uuid.uuidString.suffix(4)) }.joined(separator: ",")])
+            handshakes[peripheral.identifier] = nil
+            central?.cancelPeripheralConnection(peripheral)
+            return
+        }
+        handshake.stage = "hello_requested"
+        onLog("hello_read", ["to": "requested"])
         peripheral.readValue(for: hello)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        // A read that fails used to vanish (the handshake then waited for the watchdog): say so, and let go of a hello that cannot be read.
+        if let error {
+            onLog("read_error", ["uuid": String(characteristic.uuid.uuidString.suffix(4)), "error": error.localizedDescription])
+            if characteristic.uuid == Self.helloUUID, handshakes[peripheral.identifier] != nil {
+                handshakes[peripheral.identifier] = nil
+                central?.cancelPeripheralConnection(peripheral)
+            }
+            return
+        }
         guard let value = characteristic.value else { return }
         if characteristic.uuid == Self.helloUUID, let handshake = handshakes[peripheral.identifier] {
             guard let remote = Self.remoteID(from: value) else { return }

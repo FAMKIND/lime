@@ -4277,3 +4277,40 @@ fn the_access_public_key_is_put_on_the_servers_file_again_once_per_launch() {
     sync(&relaunched, &transport);
     assert!(server.state.lock().unwrap().delivery_public.contains_key("alice"), "the first sync of a launch repairs it");
 }
+
+// ---- LIME-141-fix5 ----
+
+#[test]
+fn messages_made_local_only_are_requeued_once_in_order_and_then_sent() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let chat = format!("dm:{}", bob.user);
+    // Two messages written with no link to the server (the "no backend" path), the second a moment later.
+    let first = alice.store.send_local_message(chat.clone(), "first".into()).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(3));
+    let second = alice.store.send_local_message(chat.clone(), "second".into()).unwrap();
+    assert_eq!(first.local_state, "sent_local");
+    assert!(bob_texts(&bob, &alice).iter().all(|t| t != "first" && t != "second"), "Bob has neither: they never left the phone");
+    assert_eq!(alice.store.requeue_local_messages().unwrap(), 2);
+    assert_eq!(alice.store.requeue_local_messages().unwrap(), 0, "once: they are queued sends now");
+    let states: Vec<(String, String)> = alice.store.list_messages(chat.clone()).unwrap().into_iter().filter(|m| m.id == first.id || m.id == second.id).map(|m| (m.text, m.local_state)).collect();
+    assert_eq!(states, vec![("first".to_owned(), "sending".to_owned()), ("second".to_owned(), "sending".to_owned())], "original order, now unsent");
+    alice.store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
+    sync(&bob, &transport);
+    let got = bob_texts(&bob, &alice);
+    assert_eq!(got.iter().filter(|t| *t == "first" || *t == "second").cloned().collect::<Vec<_>>(), vec!["first".to_owned(), "second".to_owned()], "delivered in order, once");
+    assert_eq!(alice.store.requeue_local_messages().unwrap(), 0);
+}
+
+#[test]
+fn a_phone_that_never_registered_requeues_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = LimeStore::open(dir.path().join("lime.db").to_string_lossy().into_owned(), vec![5; 32]).unwrap();
+    assert_eq!(store.requeue_local_messages().unwrap(), 0);
+}
+
+fn bob_texts(bob: &Party, alice: &Party) -> Vec<String> {
+    bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().map(|m| m.text).collect()
+}

@@ -155,6 +155,45 @@ impl LimeStore {
         self.queue(conversation_id, text, None)
     }
 
+    /// Turns the messages this phone wrote while it had no link to the server (`sent_local`: kept on the phone, never sent) into ordinary queued
+    /// sends, in their original order and with their original times, so the next delivery sends them (or parks them for the mesh). Only for a
+    /// registered account; each message is converted once (it is `sending` afterwards). Returns how many.
+    pub fn requeue_local_messages(&self) -> Result<u32, StoreError> {
+        let state = self.load_or_create_account()?;
+        if !(state.registered && state.user_id.is_some()) {
+            return Ok(0);
+        }
+        let now = now_ms();
+        self.with_conn(|conn| {
+            let rows: Vec<(String, String)> = {
+                let mut statement = conn
+                    .prepare("SELECT id, conversation_id FROM messages WHERE sender_id = ?1 AND local_state = 'sent_local' AND op_id IS NULL ORDER BY sent_at, id")
+                    .map_err(db_err)?;
+                let collected = statement
+                    .query_map(params![ME_ID], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                    .map_err(db_err)?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(db_err)?;
+                collected
+            };
+            let mut converted = 0;
+            for (id, conversation) in rows {
+                if conversation.strip_prefix("dm:").is_none() && crate::store::groups::group_id_of(&conversation).is_none() {
+                    continue;
+                }
+                let hlc = tick_hlc(conn, now)?;
+                let parents = order::heads(conn, &conversation)?;
+                conn.execute(
+                    "UPDATE messages SET op_id = id, hlc = ?2, parents = ?3, local_state = 'sending' WHERE id = ?1",
+                    params![id, hlc.render(), json!(parents).to_string()],
+                )
+                .map_err(db_err)?;
+                converted += 1;
+            }
+            Ok(converted)
+        })
+    }
+
     /// Writes a reply in the thread of `root_id` (a message of this conversation). Replying to a reply
     /// answers the same root. Like [`LimeStore::queue_text`] it is `sending` until delivered.
     pub fn queue_reply(

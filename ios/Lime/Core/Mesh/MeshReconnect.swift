@@ -107,9 +107,10 @@ enum MeshAttachGate {
     }
 }
 
-/// Whether a phone relaunched with no internet gets a (pending) link to the server (LIME-141-fix4). Without one every send became a local-only
-/// message that said "Sent" and went nowhere. Only a phone that has signed in and registered here before qualifies; the full registration runs
-/// when the internet is back.
+/// Whether a phone whose registration with the server failed at launch still gets a (pending) link (LIME-141-fix4, fix5). Without one every send
+/// became a local-only message that said "Sent" and went nowhere. **Whatever the failure looked like** (offline, a refresh that failed, a server
+/// error) a signed-in phone gets the link; only an ended session (signed out elsewhere) does not. fix4 also asked "has this phone registered
+/// before?" through a flag that phones signed in earlier never had, so it never took effect on the 13 mini.
 enum OfflineLinkRule {
-    static func shouldConnect(registrationFailedOffline: Bool, accountRegisteredHere: Bool) -> Bool { registrationFailedOffline && accountRegisteredHere }
+    static func shouldConnect(_ problem: ConnectionProblem) -> Bool { problem != .sessionEnded }
 }

@@ -185,11 +185,10 @@ final class MeshReconnectTests: XCTestCase {
         XCTAssertLessThanOrEqual(lowerTries, 3, "the lower phone made at most a couple of tries before the fallback was taken")
     }
 
-    func testAnOfflineRelaunchOfARegisteredPhoneStillGetsALinkSoSendsQueueInsteadOfStayingLocal() {
+    func testAnyFailureToRegisterAtLaunchButAnEndedSessionLeavesAPendingLink() {
         typealias R = OfflineLinkRule
-        XCTAssertTrue(R.shouldConnect(registrationFailedOffline: true, accountRegisteredHere: true))
-        XCTAssertFalse(R.shouldConnect(registrationFailedOffline: true, accountRegisteredHere: false), "a phone that never registered cannot queue")
-        XCTAssertFalse(R.shouldConnect(registrationFailedOffline: false, accountRegisteredHere: true), "another failure is not 'offline'")
+        for problem in [ConnectionProblem.offline, .server, .busy, .other] { XCTAssertTrue(R.shouldConnect(problem), "\(problem): still a pending link, so sends queue") }
+        XCTAssertFalse(R.shouldConnect(.sessionEnded), "signed out elsewhere: no link")
     }
 
     func testTheWordsOfTheStatusesAreShortAndInOrder() {

@@ -94,6 +94,9 @@ final class AccountSession {
             return
         }
         tokens = saved
+        // Phones signed in before the owner was recorded never had it: record it now (it also guards against another account's chats).
+        if defaults.string(forKey: Self.ownerKey) == nil { defaults.set(saved.userID, forKey: Self.ownerKey) }
+        store.accountSignedIn = true
         profile = storedProfile()
         await store.bootstrap(arguments: arguments)
         phase = .signedIn
@@ -108,6 +111,7 @@ final class AccountSession {
         // Someone else's chats and keys are never kept for a different account.
         if let owner = defaults.string(forKey: Self.ownerKey), owner != tokens.userID { store.wipe() }
         defaults.set(tokens.userID, forKey: Self.ownerKey)
+        store.accountSignedIn = true
         self.tokens = tokens
         self.maskedEmail = maskedEmail
         try? SessionKeychain.save(tokens, service: sessionService)
@@ -135,14 +139,19 @@ final class AccountSession {
             // Relaunched with no internet (airplane mode, a locked phone with no signal): this phone registered long ago, so it can still queue
             // and park messages for the mesh. Without a link every send used to become a local-only message that said "Sent" and never went
             // anywhere (LIME-141-fix4). The full registration runs when the internet returns.
-            if OfflineLinkRule.shouldConnect(registrationFailedOffline: problem == .offline, accountRegisteredHere: defaults.string(forKey: Self.ownerKey) == tokens?.userID) { connectOffline(config: config) }
+            if OfflineLinkRule.shouldConnect(problem) {
+                connectOffline(config: config, why: String(describing: problem))
+            } else {
+                CallDiagnostics.shared.log("session link=none why=\(problem)")
+            }
             store.report(problem)
         }
     }
 
     /// A link for a phone that has registered before but cannot reach the server now: sends queue (and park for the mesh) instead of staying local.
-    private func connectOffline(config: BackendConfig) {
+    private func connectOffline(config: BackendConfig, why: String) {
         let transport = URLSessionTransport(baseURL: config.url, apiKey: config.apiKey)
+        CallDiagnostics.shared.log("session link=pending why=\(why)")
         store.connect(makeLink(transport), pendingRegistration: true)
     }
 
@@ -155,6 +164,7 @@ final class AccountSession {
 
     /// Registered: deliver and fetch for real, and listen for the "new items" nudge while the app is open.
     private func goLive(device: DeviceInfo, transport: Transport, config: BackendConfig) async {
+        CallDiagnostics.shared.log("session link=live")
         store.connect(makeLink(transport))
         let store = self.store
         store.myUserID = userID
