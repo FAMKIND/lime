@@ -99,6 +99,55 @@ final class MeshService {
         }
     }
 
+    // MARK: Relay download (LIME-155)
+
+    @ObservationIgnored private var lastFetchAt: Date?
+    @ObservationIgnored private var lastAsked: [UInt64: Date] = [:]
+    @ObservationIgnored private var relayWasOnline = false
+
+    /// This phone can fetch for its neighbours when it is online and signed in: tell the engine, and the neighbours when it changes.
+    func updateRelayState() {
+        guard let engine else { return }
+        let on = MeshFetchRules.relayOnline(online: online, signedIn: store?.accountSignedIn ?? false)
+        engine.setRelayOnline(online: on)
+        if on != relayWasOnline {
+            relayWasOnline = on
+            log.record("relay_online", ["on": String(on)])
+            driver?.broadcastOnline()
+        }
+        if online { engine.fetchReset() }
+    }
+
+    /// Neighbours' requests waiting to be posted: each is posted to `mesh-fetch` with no session, and the answer goes back over the same link.
+    func handleFetchJobs() {
+        guard let engine, let runner else { return }
+        let jobs = engine.takeFetchJobs()
+        guard !jobs.isEmpty else { return }
+        guard let link = store?.currentLink, online else { return }
+        for job in jobs {
+            Task { @MainActor [weak self] in
+                let answer = await Task.detached(priority: .utility) { engine.relayFetch(transport: link.transport, request: job.request) }.value
+                self?.bluetooth.transmit(job.link, answer)
+                runner.drainNotes()
+            }
+        }
+    }
+
+    /// An offline, signed-in phone with a linked neighbour that can fetch for it asks for its mail (at once for a new neighbour, then once a minute).
+    func maybeFetch(trigger: MeshFetchRules.Trigger) {
+        guard let engine, attached else { return }
+        let neighbours = engine.fetchNeighbours()
+        let since = lastFetchAt.map { Date().timeIntervalSince($0) }
+        guard MeshFetchRules.shouldRequest(offline: !online, signedIn: store?.accountSignedIn ?? false, hasOnlineNeighbour: !neighbours.isEmpty, secondsSinceLast: since, trigger: trigger) else { return }
+        // A new neighbour is asked once; the minute timer asks again.
+        if trigger == .neighbour, neighbours.allSatisfy({ lastAsked[$0] != nil }) { return }
+        guard let link = MeshFetchRules.nextNeighbour(candidates: neighbours, lastAsked: lastAsked), let frame = try? engine.fetchFrameFor(link: link) else { return }
+        lastAsked[link] = Date()
+        lastFetchAt = Date()
+        bluetooth.transmit(link, frame)
+        runner?.drainNotes()
+    }
+
     // MARK: Battery log
 
     func setBatteryLog(_ on: Bool) {
@@ -279,8 +328,12 @@ final class MeshService {
         self.driver = driver
         let runner = MeshOutboxRunner(engine: engine, driver: driver, log: { [weak self] kind, detail in self?.log.record(kind, detail) })
         self.runner = runner
+        runner.onFetchedMessages = { [weak self] in Task { @MainActor in await self?.store?.reload() } }
         driver.onFrameHandled = { [weak self, weak runner] in
             runner?.drainNotes()
+            // Relay download (LIME-155): requests a neighbour asked this phone to post, and a new neighbour that can fetch for this phone.
+            self?.handleFetchJobs()
+            self?.maybeFetch(trigger: .neighbour)
             // A phone that is online and was just handed something to carry uploads it at once, not on the next tick.
             Task { @MainActor in
                 guard let self, let engine = self.engine, self.online else { return }
@@ -293,6 +346,7 @@ final class MeshService {
         attached = true
         try? engine.refreshTags()
         log.record("engine_attached")
+        updateRelayState()
         statsTask?.cancel()
         statsTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -306,6 +360,8 @@ final class MeshService {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
                 await self?.afterDelivery(trigger: "tick")
+                self?.updateRelayState()
+                self?.maybeFetch(trigger: .tick)
             }
         }
         Task { @MainActor in await self.afterDelivery() }
@@ -351,6 +407,7 @@ final class MeshService {
                 let came = nowOnline && !self.online
                 self.online = nowOnline
                 self.log.record("connectivity", ["online": String(nowOnline)])
+                self.updateRelayState()
                 // The internet is back: send what waited (it resumes by itself) and upload what is carried.
                 if came { self.keySkipsLogged.remove("offline"); await self.store?.syncNow(); await self.checkServerKeyOnce(); await self.uploadIfOnline(trigger: "connectivity") }
             }

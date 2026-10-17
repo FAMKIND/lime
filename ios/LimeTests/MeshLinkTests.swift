@@ -172,6 +172,14 @@ final class MeshLinkTests: XCTestCase {
         func takeUploadable() -> [MeshUpload] { [] }
         func uploadAll(transport: Transport, authToken: String) throws -> UInt32 { 0 }
         func checkServerKey(transport: Transport, authToken: String) -> MeshKeyCheck? { nil }
+        func onlineFrame() -> Data { Data([8, 0]) }
+        func setRelayOnline(online: Bool) {}
+        func fetchNeighbours() -> [UInt64] { [] }
+        func fetchLinkDown(link: UInt64) {}
+        func fetchFrameFor(link: UInt64) throws -> Data? { nil }
+        func fetchReset() {}
+        func takeFetchJobs() -> [MeshFetchJob] { [] }
+        func relayFetch(transport: Transport, request: Data) -> Data { Data([7, 0]) }
         func uploadDone(id: Data) {}
         func uploadFailed(id: Data) {}
     }
@@ -189,7 +197,7 @@ final class MeshLinkTests: XCTestCase {
         engine.upActions[5] = [action(5, 1), action(5, 2, delay: 120), action(5, 3, delay: 30), action(5, 4)]
         let scheduler = FakeScheduler()
         var sent: [(UInt64, UInt8)] = []
-        let driver = MeshDriver(engine: engine, scheduler: scheduler, transmit: { sent.append(($0, $1[0])) })
+        let driver = MeshDriver(engine: engine, scheduler: scheduler, transmit: { if $1[0] != 8 { sent.append(($0, $1[0])) } })
         driver.linkUp(5)
         XCTAssertEqual(sent.map(\.1), [1, 4], "no delay: now, in the engine's order")
         XCTAssertEqual(scheduler.pending.map(\.0), [120, 30])
@@ -197,12 +205,30 @@ final class MeshLinkTests: XCTestCase {
         XCTAssertEqual(sent.map(\.1), [1, 4, 3, 2], "the delayed ones follow by their delays")
     }
 
+    /// LIME-155: a link that comes up is told whether this phone can fetch for it (the "online" frame, kind 8), and a change reaches every live link.
+    func testALinkUpSendsTheOnlineFrameAndAChangeIsBroadcastToEveryLiveLink() {
+        let engine = FakeEngine()
+        var sent: [(UInt64, UInt8)] = []
+        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), transmit: { if $1[0] == 8 { sent.append(($0, $1[0])) } })
+        driver.linkUp(5)
+        driver.linkUp(6)
+        XCTAssertEqual(sent.map(\.0), [5, 6], "each link hears it when it comes up")
+        sent = []
+        driver.broadcastOnline()
+        XCTAssertEqual(sent.map(\.0), [5, 6], "a change reaches every live link")
+        driver.linkDown(6)
+        sent = []
+        driver.broadcastOnline()
+        XCTAssertEqual(sent.map(\.0), [5], "not a link that went down")
+        XCTAssertTrue(engine.calls.contains("down 6"))
+    }
+
     func testADelayedFrameForALinkThatWentDownIsDropped() {
         let engine = FakeEngine()
         engine.upActions[5] = [action(5, 1, delay: 50)]
         let scheduler = FakeScheduler()
         var sent: [UInt8] = []
-        let driver = MeshDriver(engine: engine, scheduler: scheduler, transmit: { sent.append($1[0]) })
+        let driver = MeshDriver(engine: engine, scheduler: scheduler, transmit: { if $1[0] != 8 { sent.append($1[0]) } })
         driver.linkUp(5)
         driver.linkDown(5)
         scheduler.runAll()
@@ -219,7 +245,7 @@ final class MeshLinkTests: XCTestCase {
         engine.mine = 2
         var sent: [UInt8] = []
         var messages = 0
-        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), transmit: { sent.append($1[0]) })
+        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), transmit: { if $1[0] != 8 { sent.append($1[0]) } })
         driver.onMessages = { messages += $0 }
         driver.linkUp(5)
         sent = []
@@ -238,7 +264,7 @@ final class MeshLinkTests: XCTestCase {
         engine.upActions[8] = [action(8, 2)]
         let clock = Clock()
         var sent: [(UInt64, UInt8)] = []
-        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), now: { clock.now }, transmit: { sent.append(($0, $1[0])) })
+        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), now: { clock.now }, transmit: { if $1[0] != 8 { sent.append(($0, $1[0])) } })
         driver.linkUp(8)
         driver.linkUp(5)
         XCTAssertEqual(sent.map(\.1), [2, 1], "a new link: a Hello at once")
@@ -267,7 +293,7 @@ final class MeshLinkTests: XCTestCase {
         engine.upActions[8] = [action(8, 2)]
         let clock = Clock()
         var sent: [(UInt64, UInt8)] = []
-        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), now: { clock.now }, transmit: { sent.append(($0, $1[0])) })
+        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), now: { clock.now }, transmit: { if $1[0] != 8 { sent.append(($0, $1[0])) } })
         driver.linkUp(5)
         driver.linkUp(8)
         sent = []
@@ -345,6 +371,14 @@ final class MeshLinkTests: XCTestCase {
         func takeUploadable() -> [MeshUpload] { [] }
         func uploadAll(transport: Transport, authToken: String) throws -> UInt32 { 0 }
         func checkServerKey(transport: Transport, authToken: String) -> MeshKeyCheck? { nil }
+        func onlineFrame() -> Data { Data([8, 0]) }
+        func setRelayOnline(online: Bool) {}
+        func fetchNeighbours() -> [UInt64] { [] }
+        func fetchLinkDown(link: UInt64) {}
+        func fetchFrameFor(link: UInt64) throws -> Data? { nil }
+        func fetchReset() {}
+        func takeFetchJobs() -> [MeshFetchJob] { [] }
+        func relayFetch(transport: Transport, request: Data) -> Data { Data([7, 0]) }
         func uploadDone(id: Data) {}
         func uploadFailed(id: Data) {}
     }

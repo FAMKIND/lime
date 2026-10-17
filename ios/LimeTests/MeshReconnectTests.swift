@@ -198,4 +198,32 @@ final class MeshReconnectTests: XCTestCase {
         XCTAssertTrue(DeliveryState.waiting.isInFlight && DeliveryState.passed.isInFlight)
         XCTAssertFalse(DeliveryState.sent.isInFlight)
     }
+
+    // MARK: LIME-155
+
+    func testAnOfflineSignedInPhoneAsksANeighbourThatCanFetchAtOnceThenOnceAMinute() {
+        typealias R = MeshFetchRules
+        XCTAssertTrue(R.shouldRequest(offline: true, signedIn: true, hasOnlineNeighbour: true, secondsSinceLast: nil, trigger: .neighbour), "a new neighbour: at once")
+        XCTAssertTrue(R.shouldRequest(offline: true, signedIn: true, hasOnlineNeighbour: true, secondsSinceLast: 5, trigger: .neighbour), "even if it asked 5 s ago (another neighbour)")
+        XCTAssertFalse(R.shouldRequest(offline: true, signedIn: true, hasOnlineNeighbour: true, secondsSinceLast: 30, trigger: .tick), "not before a minute")
+        XCTAssertTrue(R.shouldRequest(offline: true, signedIn: true, hasOnlineNeighbour: true, secondsSinceLast: 60, trigger: .tick), "after a minute")
+        XCTAssertTrue(R.shouldRequest(offline: true, signedIn: true, hasOnlineNeighbour: true, secondsSinceLast: nil, trigger: .tick))
+        XCTAssertFalse(R.shouldRequest(offline: false, signedIn: true, hasOnlineNeighbour: true, secondsSinceLast: nil, trigger: .neighbour), "online: it fetches for itself")
+        XCTAssertFalse(R.shouldRequest(offline: true, signedIn: false, hasOnlineNeighbour: true, secondsSinceLast: nil, trigger: .neighbour), "no account, nothing to fetch")
+        XCTAssertFalse(R.shouldRequest(offline: true, signedIn: true, hasOnlineNeighbour: false, secondsSinceLast: nil, trigger: .neighbour), "nobody can fetch for it")
+    }
+
+    func testARequestThatTimedOutGoesToTheNextNeighbour() {
+        let t0 = Date(timeIntervalSince1970: 2_000_000)
+        XCTAssertEqual(MeshFetchRules.nextNeighbour(candidates: [3, 4, 9], lastAsked: [:]), 3, "none asked yet: the first")
+        XCTAssertEqual(MeshFetchRules.nextNeighbour(candidates: [3, 4, 9], lastAsked: [3: t0, 4: t0.addingTimeInterval(20)]), 9, "never asked first")
+        XCTAssertEqual(MeshFetchRules.nextNeighbour(candidates: [3, 4], lastAsked: [3: t0.addingTimeInterval(20), 4: t0]), 4, "the one asked least recently")
+        XCTAssertNil(MeshFetchRules.nextNeighbour(candidates: [], lastAsked: [:]))
+    }
+
+    func testAPhoneTellsNeighboursItCanFetchOnlyWhenOnlineAndSignedIn() {
+        XCTAssertTrue(MeshFetchRules.relayOnline(online: true, signedIn: true))
+        XCTAssertFalse(MeshFetchRules.relayOnline(online: false, signedIn: true))
+        XCTAssertFalse(MeshFetchRules.relayOnline(online: true, signedIn: false))
+    }
 }

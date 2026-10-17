@@ -85,6 +85,14 @@ final class MeshMessagesTests: XCTestCase {
         func takeUploadable() -> [MeshUpload] { [] }
         func uploadAll(transport: Transport, authToken: String) throws -> UInt32 { 0 }
         func checkServerKey(transport: Transport, authToken: String) -> MeshKeyCheck? { nil }
+        func onlineFrame() -> Data { Data([8, 0]) }
+        func setRelayOnline(online: Bool) {}
+        func fetchNeighbours() -> [UInt64] { [] }
+        func fetchLinkDown(link: UInt64) {}
+        func fetchFrameFor(link: UInt64) throws -> Data? { nil }
+        func fetchReset() {}
+        func takeFetchJobs() -> [MeshFetchJob] { [] }
+        func relayFetch(transport: Transport, request: Data) -> Data { Data([7, 0]) }
         func uploadDone(id: Data) {}
         func uploadFailed(id: Data) {}
     }
@@ -119,6 +127,21 @@ final class MeshMessagesTests: XCTestCase {
         runner.drainNotes()
         XCTAssertEqual(logged.first?.0, "mesh_delivered")
         XCTAssertEqual(logged.first?.1, ["kind": "probe", "id": "cd34", "after": "9s", "hops": "2"])
+    }
+
+    func testAFetchReplyWithItemsReloadsTheChatsAndOneWithoutDoesNot() {
+        let engine = FakeEngine()
+        var logged: [String] = []
+        let runner = MeshOutboxRunner(engine: engine, driver: nil, log: { kind, _ in logged.append(kind) })
+        var reloads = 0
+        runner.onFetchedMessages = { reloads += 1 }
+        engine.notes = ["fetch_reply items=0 bytes=0 has_more=false"]
+        runner.drainNotes()
+        XCTAssertEqual(reloads, 0, "nothing came")
+        engine.notes = ["fetch_request_sent after=0", "fetch_reply items=3 bytes=900 has_more=false"]
+        runner.drainNotes()
+        XCTAssertEqual(reloads, 1, "three came: reload")
+        XCTAssertEqual(logged, ["fetch_reply", "fetch_request_sent", "fetch_reply"])
     }
 
     func testUploadsRunOnlyWithInternetAndOneAtATime() async {

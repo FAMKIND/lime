@@ -62,6 +62,14 @@ final class MeshDriver {
         liveLinks.insert(link)
         log("link_up", ["link": Self.short(link)])
         announce(link, force: true)
+        // Tell the neighbour whether this phone can fetch for it (relay download, LIME-155).
+        transmit(link, engine.onlineFrame())
+    }
+
+    /// This phone's "I can fetch for you" bit changed: every live link hears it.
+    func broadcastOnline() {
+        let frame = engine.onlineFrame()
+        for link in liveLinks.sorted() { transmit(link, frame) }
     }
 
     func linkDown(_ link: UInt64) {
@@ -69,6 +77,7 @@ final class MeshDriver {
         lastHello[link] = nil
         storm[link] = nil
         engine.linkDown(link: link)
+        engine.fetchLinkDown(link: link)
         log("link_down", ["link": Self.short(link)])
     }
 

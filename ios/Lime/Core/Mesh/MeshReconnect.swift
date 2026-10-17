@@ -114,3 +114,35 @@ enum MeshAttachGate {
 enum OfflineLinkRule {
     static func shouldConnect(_ problem: ConnectionProblem) -> Bool { problem != .sessionEnded }
 }
+
+/// When an offline phone asks a neighbour to fetch its mail, and who it asks (LIME-155). The engine allows one request in flight and gives up on it
+/// after 20 s; these rules decide when to start one and which neighbour is next.
+enum MeshFetchRules {
+    /// While offline, one request a minute.
+    static let interval: TimeInterval = 60
+
+    enum Trigger: Equatable {
+        /// A neighbour that can fetch for me has just appeared (or said so).
+        case neighbour
+        /// The periodic tick while offline.
+        case tick
+    }
+
+    /// Ask only when this phone is offline, signed in (it has an account to fetch for) and a linked neighbour says it can fetch; a new neighbour is
+    /// asked at once, otherwise once a minute.
+    static func shouldRequest(offline: Bool, signedIn: Bool, hasOnlineNeighbour: Bool, secondsSinceLast: TimeInterval?, trigger: Trigger) -> Bool {
+        guard offline, signedIn, hasOnlineNeighbour else { return false }
+        switch trigger {
+        case .neighbour: return true
+        case .tick: return secondsSinceLast.map { $0 >= interval } ?? true
+        }
+    }
+
+    /// The neighbour asked least recently (one that was never asked first), so a request that timed out goes to the next one.
+    static func nextNeighbour(candidates: [UInt64], lastAsked: [UInt64: Date]) -> UInt64? {
+        candidates.min { (lastAsked[$0] ?? .distantPast) < (lastAsked[$1] ?? .distantPast) }
+    }
+
+    /// A phone tells its neighbours it can fetch for them when it is online and signed in.
+    static func relayOnline(online: Bool, signedIn: Bool) -> Bool { online && signedIn }
+}

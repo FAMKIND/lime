@@ -27,6 +27,9 @@ final class MeshOutboxRunner {
     }
 
     /// The engine's notes as log lines ("mesh_delivered kind=message id=ab12 after=9s hops=2" becomes kind `mesh_delivered`, with the rest as details).
+    /// Called when a reply from a neighbour's fetch brought items (relay download): the chats are reloaded.
+    var onFetchedMessages: (() -> Void)?
+
     func drainNotes() {
         for line in engine.takeNotes() {
             let parts = line.split(separator: " ").map(String.init)
@@ -37,6 +40,7 @@ final class MeshOutboxRunner {
                 if pair.count == 2 { detail[pair[0]] = pair[1] }
             }
             log(kind, detail)
+            if kind == "fetch_reply", let items = detail["items"].flatMap({ Int($0) }), items > 0 { onFetchedMessages?() }
         }
     }
 
