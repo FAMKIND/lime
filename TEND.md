@@ -6429,3 +6429,13 @@ For plot: (a) tags were set in time; (b) the Hello re-announce wiped the neighbo
 ## Device results from plot (recorded 2026-10-17)
 
 Plot's device results (PLOT.md 1e153, 1e172, 1e176, 1e178, 1e184), relayed by the user: **112f, 141-fix6, 155, 155-fix, 157, 156, 156b and 156c are PROVEN on the phones.** 159 needs no device check. 160 is pending the user's quick look. (The earlier "Device check: not yet run" lines in the entries above are superseded by this.)
+
+## LIME-150 spike (Phase 1): the instrument
+
+Brief: LIME-150, Phase 1 (the device spike). **Results pending the run with the user.**
+
+**What was built (Debug only, nothing ships).** `ios/Lime/Core/Calls/PiPGridSpike.swift`: when lime is launched with `-lime.pipSpike.tiles N` (N = 1…4) the system window draws N live tiles instead of the speaker window: each tile has its own `AVSampleBufferDisplayLayer` and `GroupPiPFrameRenderer` (the 112c mechanism), asks LiveKit for a 240 × 240 stream (360 × 480 for one tile), and takes the people who have a camera on, repeating them when there are fewer people than tiles. Every 5 s it writes `pip_spike tiles=N lime=front|background fps=[…per tile…] cpu=NN% thermal=… battery=NN%` to the call diagnostics (the app's CPU is summed over its threads). `GroupCallManager.refreshPiP` feeds it; `GroupCallPiP.swift` gets a per-renderer frame counter. Group-call tests pass; build 0 warnings.
+
+**Limit to say plainly:** with three phones there are only two other people, so 4 tiles repeat two streams: it measures 4 layers drawn, and 2 streams decoded, not 4 decoders. A real 4-stream run needs a 4th device with a camera.
+
+**How to run.** Launch on the measuring phone with `xcrun devicectl device process launch --device <id> --terminate-existing com.famkind.lime -lime.pipSpike.tiles 4` (done for the 13 mini). Start a video group call from the other two with cameras on, join on the 13 mini, minimise, then watch lime in front, backgrounded in another app, and typing in a chat. Pull the lines from the diagnostics log.

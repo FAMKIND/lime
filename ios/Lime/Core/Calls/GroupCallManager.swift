@@ -643,6 +643,12 @@ final class GroupCallManager {
         let tile = tiles.first { $0.id == id }
         let pictureShowing = (tile?.secured ?? false) && (tile?.cameraOn ?? false) && video
         pip.show(subject: pipSubjectValue(for: id), track: id.flatMap { media?.videoTrack(for: $0) }, pictureShowing: pictureShowing)
+        #if DEBUG
+        // LIME-150's spike: every other person's picture, as live tiles (only when the spike is switched on).
+        if PiPGridSpike.tileCount > 0 {
+            pip.showGrid(tracks: tiles.filter { !$0.isMe && $0.secured && $0.cameraOn }.compactMap { media?.videoTrack(for: $0.id) })
+        }
+        #endif
     }
 
     // MARK: In the call

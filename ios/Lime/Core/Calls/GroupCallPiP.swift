@@ -47,6 +47,13 @@ protocol GroupPiP: AnyObject {
     /// Builds the system controller again on the current anchor (keeping the content, the renderer and the subject): the last resort when the
     /// system keeps saying "not possible" after a return from minimising.
     func rebuild()
+    /// LIME-150's spike (Debug only): the window draws these tracks as a grid of live tiles and logs fps and CPU.
+    func showGrid(tracks: [AnyObject])
+}
+
+extension GroupPiP {
+    /// LIME-150's spike (Debug): draw these tracks as a grid in the window. Nothing by default.
+    func showGrid(tracks: [AnyObject]) {}
 }
 
 /// What `prepare` does with the call screen's anchor view (LIME-112d). The call screen is rebuilt on every return from minimising, so its
@@ -68,6 +75,9 @@ final class GroupPiPFrameRenderer: NSObject, VideoRenderer, @unchecked Sendable 
     private let apply: @Sendable (CGSize, Int, @escaping @Sendable () -> Void) -> Void
     private let lock = NSLock()
     private var size = CGSize.zero, rotation = -1, applying = false, frameAt: Date?
+    private var frames = 0
+    /// The size LiveKit is asked to keep the track flowing at (a window's size; a grid tile is smaller).
+    var adaptiveSize = CGSize(width: 360, height: 480)
 
     @MainActor init(layer: AVSampleBufferDisplayLayer, apply: @escaping @Sendable (CGSize, Int, @escaping @Sendable () -> Void) -> Void) {
         renderer = layer.sampleBufferRenderer
@@ -75,7 +85,13 @@ final class GroupPiPFrameRenderer: NSObject, VideoRenderer, @unchecked Sendable 
     }
 
     @MainActor var isAdaptiveStreamEnabled: Bool { true }
-    @MainActor var adaptiveStreamSize: CGSize { CGSize(width: 360, height: 480) }
+    @MainActor var adaptiveStreamSize: CGSize { adaptiveSize }
+
+    /// Frames drawn so far (the spike's fps per tile).
+    var frameCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return frames
+    }
 
     var current: (size: CGSize, rotation: Int)? {
         lock.lock(); defer { lock.unlock() }
@@ -92,6 +108,7 @@ final class GroupPiPFrameRenderer: NSObject, VideoRenderer, @unchecked Sendable 
         let newRotation = frame.rotation.rawValue
         lock.lock()
         frameAt = Date()
+        frames += 1
         if applying { lock.unlock(); return }
         let changed = newSize != size || newRotation != rotation
         if changed { applying = true }
@@ -217,6 +234,27 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
         UIView.animate(withDuration: animate ? 0.2 : 0) { view.alpha = showAvatar ? 1 : 0 }
     }
 
+    #if DEBUG
+    private var spike: PiPGridSpike?
+
+    func showGrid(tracks: [AnyObject]) {
+        let wanted = PiPGridSpike.tileCount
+        guard wanted > 0 else { return }
+        if spike == nil {
+            let grid = PiPGridSpike(tiles: wanted)
+            grid.frame = contentController.view.bounds
+            grid.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            contentController.view.addSubview(grid)
+            contentController.preferredContentSize = wanted == 1 ? Self.placeholder : CGSize(width: 480, height: 480)
+            spike = grid
+            grid.startSampling()
+        }
+        spike?.attach(tracks: tracks.compactMap { $0 as? any VideoTrack })
+    }
+    #else
+    func showGrid(tracks: [AnyObject]) {}
+    #endif
+
     func start() {
         guard let controller, controller.isPictureInPicturePossible else { onFailed?(); return }
         if let current = renderer?.current { apply(size: current.size, rotation: current.rotation) }
@@ -251,6 +289,11 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
     }
 
     func stop() {
+        #if DEBUG
+        spike?.stop()
+        spike?.removeFromSuperview()
+        spike = nil
+        #endif
         controller?.stopPictureInPicture()
         if let old = track, let renderer { Self.detach(renderer, from: old) }
         track = nil
