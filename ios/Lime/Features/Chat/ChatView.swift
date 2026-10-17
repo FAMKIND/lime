@@ -621,7 +621,7 @@ struct ChatView: View {
     private func bottomBar(_ conversation: Conversation) -> some View {
         // The mini player floats 4 pt above the composer (its own padding); the rest keeps its 8 pt spacing.
         VStack(spacing: 0) {
-            CallMiniPlayer()
+            CallMiniPlayer(gapBelow: CallMiniPlayer.floatGapAboveComposer)
             bottomRest(conversation)
         }
     }

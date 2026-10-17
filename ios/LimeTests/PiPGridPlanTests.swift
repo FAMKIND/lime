@@ -53,19 +53,19 @@ final class PiPGridPlanTests: XCTestCase {
         XCTAssertTrue(guardian.update(thermal: .critical, now: t0.addingTimeInterval(300)))
     }
 
-    func testTheWindowsCellsFillItInsideATwoPointInsetWithAThinGap() {
+    func testTheWindowsCellsFillItInsideAFourPointInsetWithAFourPointGap() {
         let size = CGSize(width: 480, height: 480)
-        XCTAssertEqual(GroupCallLayout.pipGrid(count: 1, in: size), [CGRect(x: 2, y: 2, width: 476, height: 476)], "2 pt from every edge")
+        XCTAssertEqual(GroupCallLayout.pipGrid(count: 1, in: size), [CGRect(x: 4, y: 4, width: 472, height: 472)], "4 pt from every edge")
         let two = GroupCallLayout.pipGrid(count: 2, in: CGSize(width: 640, height: 480))
-        XCTAssertEqual(two.map(\.minY), [2, 2], "a wide window: side by side")
+        XCTAssertEqual(two.map(\.minY), [4, 4], "a wide window: side by side")
         let stacked = GroupCallLayout.pipGrid(count: 2, in: CGSize(width: 300, height: 480))
-        XCTAssertEqual(stacked.map(\.minX), [2, 2], "a tall window: stacked")
+        XCTAssertEqual(stacked.map(\.minX), [4, 4], "a tall window: stacked")
         let four = GroupCallLayout.pipGrid(count: 4, in: size)
         XCTAssertEqual(four.count, 4)
-        XCTAssertEqual(four[0].width, 237)
-        XCTAssertEqual(four[3].maxX, 478, "2 pt short of the edge")
-        XCTAssertEqual(four[3].maxY, 478)
-        XCTAssertEqual(four[1].minX - four[0].maxX, 2, "a 2 pt gap")
+        XCTAssertEqual(four[0].width, 234)
+        XCTAssertEqual(four[3].maxX, 476, "4 pt short of the edge")
+        XCTAssertEqual(four[3].maxY, 476)
+        XCTAssertEqual(four[1].minX - four[0].maxX, 4, "a 4 pt gap")
         XCTAssertTrue(GroupCallLayout.pipGrid(count: 0, in: size).isEmpty)
     }
 

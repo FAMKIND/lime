@@ -66,13 +66,20 @@ struct CallMiniPlayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var drag: CGFloat = 0
+    /// How far the player floats above what is under it: the tab bar on a screen, the composer in a chat.
+    var gapBelow: CGFloat = CallMiniPlayer.floatGapAboveTabBar
     private var isIOS26: Bool { if #available(iOS 26, *) { true } else { false } }
 
     /// The header's glass circles and capsule are 44 pt (`ToolIconLabel`): the player matches.
     static let height: CGFloat = 44
     static let avatar: CGFloat = 32
     static let button: CGFloat = 36
-    /// The player floats this far from what is above and below it (the tab bar, the composer).
+    /// The player floats this far from what is above it (the call's own content) and below it. Two constants, one per side (LIME-150-fix3): the
+    /// composer's top edge and the tab bar's glass capsule are different things, so the same number can look different. Measured on the 13 mini
+    /// simulator the visible gaps are the same (about 3.3 pt between the two outlines, 10 px at 3x) on both sides, so both are 4 for now.
+    static let floatGapAboveComposer: CGFloat = 4
+    static let floatGapAboveTabBar: CGFloat = 4
+    /// The player's own distance from what is above it.
     static let floatGap: CGFloat = 4
 
     var body: some View {
@@ -82,7 +89,7 @@ struct CallMiniPlayer: View {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     if let edge = store.miniPlayerTuck.edge { tab(edge, video: subject == .group ? store.groupCalls.video : store.calls.video) } else { content(for: subject, at: context.date) }
                 }
-                .padding(.horizontal, store.miniPlayerTuck.isTucked ? 0 : 16).padding(.vertical, Self.floatGap)
+                .padding(.horizontal, store.miniPlayerTuck.isTucked ? 0 : 16).padding(.top, Self.floatGap).padding(.bottom, gapBelow)
                 .frame(maxWidth: .infinity)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("call-mini-player")

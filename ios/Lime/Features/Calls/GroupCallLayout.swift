@@ -44,12 +44,13 @@ enum GroupCallLayout {
         return frames
     }
 
-    /// The minimised window's cells (LIME-150, the "pip" mode of this function): they fill the window inside a 2 pt inset (the system's own
-    /// window corners must not clip a tile) with a thin gap, and the video aspect-fills each. 1 fills it; 2 sit side by side in a wide window and
+    /// The minimised window's cells (LIME-150, the "pip" mode of this function): they fill the window inside a 4 pt inset (the system's own
+    /// window corners must not clip a tile) with a 4 pt gap, and the video aspect-fills each. 1 fills it; 2 sit side by side in a wide window and
     /// stacked in a tall one; 3 or 4 make a 2 x 2.
-    static let pipInset: CGFloat = 2
+    static let pipInset: CGFloat = 4
+    static let pipGap: CGFloat = 4
 
-    static func pipGrid(count: Int, in size: CGSize, gap: CGFloat = 2, inset: CGFloat = pipInset) -> [CGRect] {
+    static func pipGrid(count: Int, in size: CGSize, gap: CGFloat = pipGap, inset: CGFloat = pipInset) -> [CGRect] {
         guard count > 0, size.width > 2 * inset, size.height > 2 * inset else { return [] }
         let area = CGSize(width: size.width - 2 * inset, height: size.height - 2 * inset)
         let columns: Int, rows: Int

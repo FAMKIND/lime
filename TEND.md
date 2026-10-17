@@ -6514,3 +6514,15 @@ Brief: LIME-162, widened by 1e191. The iPad-camera part is separate and answered
 **Verification.** Unit tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini (relaunched with `-lime.pipView ""` so the minimised view has no remembered choice).
 
 **Device check: not yet run** (the first minimise of a fresh launch shows video with no setting touched).
+
+## LIME-150-fix3
+
+Brief: LIME-150-fix3 (the dock gap, plus the grid's gaps and background from 1e193).
+
+**The grid.** [x] Gaps 2 → 4 pt between cells and from the window's edge (`GroupCallLayout.pipGap`, `pipInset`; corners unchanged). [x] The backdrop is `.clear` (the grid and the content view). **What the gaps show in the system window is not checked: iOS does not let me screenshot the floating window, so this is for the user's eyes.** Plot expects the system's black behind it; if the user sees grey or a lighter colour, the next step is pure black, which is one line (`PiPGridView`'s `backgroundColor`). Nothing is faked (no shrinking, nothing drawn outside the window).
+
+**The dock gap: measured, and the two sides are the same.** Phase 1 on the 13 mini simulator (iOS 27, 3x), light mode, screenshots in `~/Desktop/lime-150fix3/`: the player's bottom outline to the next outline below it is **10 px = about 3.3 pt on the Messages list (to the tab bar's capsule) and 10 px = about 3.3 pt in a chat (to the composer)**. Both come from the same 4 pt of padding; the outlines are 1 pt. So there is no measured difference to add, and the brief's "expect 6–10 pt more" does not apply. I did the structural part: the player now has one named constant per side (`floatGapAboveComposer`, `floatGapAboveTabBar`, both 4), so a number can be changed on one side only. **I did not add space**, because by the numbers the gaps already match; if the real phone looks different (iOS 26.x), tell me the gap you want on the tab-bar side (for example 8) and it is one line. Dark-mode screenshots were not taken (the first run stopped before them).
+
+**Verification.** All unit tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini (not relaunched).
+
+**Gate (the user):** the two gaps look the same; the grid's gaps and what shows through them.
