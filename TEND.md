@@ -6438,4 +6438,4 @@ Brief: LIME-150, Phase 1 (the device spike). **Results pending the run with the 
 
 **Limit to say plainly:** with three phones there are only two other people, so 4 tiles repeat two streams: it measures 4 layers drawn, and 2 streams decoded, not 4 decoders. A real 4-stream run needs a 4th device with a camera.
 
-**How to run.** Launch on the measuring phone with `xcrun devicectl device process launch --device <id> --terminate-existing com.famkind.lime -lime.pipSpike.tiles 4` (done for the 13 mini). Start a video group call from the other two with cameras on, join on the 13 mini, minimise, then watch lime in front, backgrounded in another app, and typing in a chat. Pull the lines from the diagnostics log.
+**How to run.** Launch on the measuring phone with `xcrun devicectl device process launch --device <id> --terminate-existing com.famkind.lime -- -lime.pipSpike.tiles 4` (done for the 13 mini). Start a video group call from the other two with cameras on, join on the 13 mini, minimise, then watch lime in front, backgrounded in another app, and typing in a chat. Pull the lines from the diagnostics log.
