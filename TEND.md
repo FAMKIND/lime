@@ -6425,3 +6425,7 @@ Brief: LIME-156. No server or packet change.
 **Device check: not yet run** (see the brief's table; wait 30 s; Jean sends 2 messages + a reaction → on the offline 13 mini within seconds; force-quit and reopen lime on the 13 mini, Jean sends 1 more; then online → nothing twice). Ask: did the 2 fetched messages appear on screen last time?
 
 For plot: (a) tags were set in time; (b) the Hello re-announce wiped the neighbour's tags, so the direct filter refused every copy; (c) reload now follows `fetch_ingested`; whether the items showed is the user's to say.
+
+## Device results from plot (recorded 2026-10-17)
+
+Plot's device results (PLOT.md 1e153, 1e172, 1e176, 1e178, 1e184), relayed by the user: **112f, 141-fix6, 155, 155-fix, 157, 156, 156b and 156c are PROVEN on the phones.** 159 needs no device check. 160 is pending the user's quick look. (The earlier "Device check: not yet run" lines in the entries above are superseded by this.)
