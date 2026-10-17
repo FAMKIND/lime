@@ -5,7 +5,7 @@ Planning state for Lime. Written only by `plot` sessions. `TEND.md` is the execu
 ## TEND: STANDING RULES FOR EVERY BRIEF (read these before any brief; they apply unless the brief says otherwise)
 Adopted 2026-10-15 (the user chose "A": one-line prompts; plot reads TEND.md itself).
 
-**▶ NEXT FOR TEND: LIME-159** (delete unreadable pending items after 30 days; the user's call, 1e166) → **LIME-155** (relay download, sessionless; 1e163–4; 141-fix6 landed, 1e165) → **LIME-157** (`mesh-drop` sessionless; 1e164) → **LIME-156** (sender mesh copy; drafted after 155 is proven) → **LIME-150's spike** (Phase 1 of `### LIME-150`, with the user on the 3 phones; then items 1–6 + 7c incl. the smaller PiP window) → **then LIME-152.** 150-fix2, 112f and 141-fix3 all PASSED (1e153). **Owed by the user, whenever convenient: upload test A** (not repeated since the key change).
+**▶ NEXT FOR TEND: LIME-155** (LIME-159 landed, 1e167); **LIME-160** (emergency out of the chat ⋯ menu; small, 1e167) rides with any next build → (relay download, sessionless; 1e163–4; 141-fix6 landed, 1e165) → **LIME-157** (`mesh-drop` sessionless; 1e164) → **LIME-156** (sender mesh copy; drafted after 155 is proven) → **LIME-150's spike** (Phase 1 of `### LIME-150`, with the user on the 3 phones; then items 1–6 + 7c incl. the smaller PiP window) → **then LIME-152.** 150-fix2, 112f and 141-fix3 all PASSED (1e153). **Owed by the user, whenever convenient: upload test A** (not repeated since the key change).
 - **152 was drafted before the mesh work** (2026-10-15): **tend's Phase 1 must re-survey the files it names** and report anything that moved, before building.
 - LIME-144 landed as `67b1c84`: **mesh v1 is wrapped.**
 
@@ -153,6 +153,8 @@ A prompt of the form **"begin tending"** or **"implement LIME-XX"** means all of
    - **Re-tap is unverified:** `TabRetap.swift` watches touches on `UITabBar` and **matches a private UIKit view class name ("TabBarPlatter")** to find the item frames.
    - **Plot's view: fragile** (any iOS update can rename it), though not a private-API call.
    - **If re-tap fails on a phone, remove `TabRetap.swift` rather than add more hacks; re-tap is nice-to-have.** If it works, keep it but plan a replacement with a supported API.
+1e167. **LIME-159 LANDED as `d0946cf` (2026-10-16 21:19), installed on all 3 (named).** `first_seen` already existed; deletes `no_session`/`decrypt_failed`/`invalid` after 30 days at every `retry_pending`; leaves `new`, `key_mismatch` (waits for the user to accept a key change) and `no_group` (waits for the group) — plot agrees; `pending_expired n=…` logged; the DPIA retention line added. Nothing deletes yet (all rows seen within days).
+   - **DECIDED (the user, 2026-10-16): "remove Emergency and Make emergency group from the ⋯ menu of every chat and group chat; leave it in Settings; we don't want to alarm everyone during daily usage."** Survey: `ChatView.swift:524–531` (`#if DEBUG`, groups only: "Emergency" + "Make this my emergency group"); Settings → Emergency keeps the group picker; starting one is the **long-press on +** in Messages (hidden; kept: it doesn't show in daily use). → **LIME-160 (drafted).** **Standing rule:** no emergency entry points on everyday surfaces (menus, headers, banners); Settings + the hidden long-press only.
 1e166. **DECIDED (the user, 2026-10-16): undecryptable pending items are deleted after 30 days, both kinds** (`no_session`/`decrypt_failed` and `invalid`). → **LIME-159 (drafted, NEXT; before 155, small).** (LIME-158 stays reserved for the pre-TestFlight security review.)
 1e165. **LIME-141-fix6 LANDED as `524e77b` (2026-10-16 21:06).** Core migration 36 `received_ciphertexts` (SHA-256 of the wire bytes, kept 60 days) checked **before** decrypting; both orders; `dup_dropped server=N mesh=M` logged; `pending_summary` now adds `mesh=N oldest_days=D`. 256 core tests, Android OK.
    - **Cause confirmed:** an Olm message can't be decrypted twice, so the second copy never reached the op-id dedupe → `no_session`/`decrypt_failed` for ever.
@@ -6039,7 +6041,18 @@ If the survey turns up related issues, raise them before editing. If a decision 
 **Gate:** the user sees Jean's messages arrive on the offline 13 mini.
 **Record:** `## LIME-155` with **For plot:** (Phase 1's (c)/(d) answers; the measured time to arrive). **Commit(s):** one per layer is fine if each is green (`feat(supabase): mesh-fetch…`, `feat(core): …`, `feat(ios): …`), each with `Brief: LIME-155`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
 
-### LIME-159 → `tend` (lime-aa) (NEXT; drafted 2026-10-16): unreadable pending items are deleted after 30 days
+### LIME-160 → `tend` (lime-aa) (drafted 2026-10-16): emergency out of the chat ⋯ menu; Settings is where it lives
+**Goal:** no chat or group chat's ⋯ menu mentions emergencies; the emergency group is chosen in Settings → Emergency; starting one stays the long-press on + in Messages.
+**Decided (the user, 1e167):** "we don't want to alarm everyone during daily usage."
+**Assumes:** edit, build, run the emergency + chat UI tests, install on the 3 phones, commit. **Visual brief: no new UI tests**; fix the ones that used the menu.
+**Scope:** `ios/Lime/Features/Chat/ChatView.swift` (the `#if DEBUG` block ~lines 524–531 and `makeEmergencyGroup` ~line 106 if nothing else uses it; the `startingEmergency` sheet in the chat only if nothing else opens it), `ios/LimeUITests/EmergencyUITests.swift` (start via the long-press on + or a launch argument instead of `chat-emergency`). **Not:** Settings → Emergency, the long-press on +, the emergency views, the roll-up card in a group (it only shows when an emergency is live).
+**Phase 1 (read-only):** list every other place an emergency action appears in daily UI (menus, headers, banners, empty states); **report them before removing anything else** (this brief removes only the two ⋯ items).
+**The change:** remove "Emergency" and "Make this my emergency group" from the chat ⋯ menu (and the dead code they leave); the Settings footnote stays ("Where statuses go. Start one by long-pressing + in Messages.").
+**Verification:** build 0 warnings; `EmergencyUITests` pass (re-pointed); the chat menu UI tests pass; installed on the 3 phones (**name them**).
+**Gate:** the user opens a group's ⋯ menu: no emergency items; Settings → Emergency still picks the group; long-press + still starts one.
+**Record:** `## LIME-160` with **For plot:** (Phase 1's list). **Commit:** `fix(ios): emergency leaves the chat menu; it lives in Settings`, trailer `Brief: LIME-160`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
+
+### LIME-159 → `tend` (lime-aa) (DONE as `d0946cf`; drafted 2026-10-16): unreadable pending items are deleted after 30 days
 **Goal:** a phone never keeps an incoming item it can't read for more than 30 days.
 **Decided (the user, 1e166):** 30 days, for both kinds: the waiting ones (`no_session`, `decrypt_failed`) and the terminal ones (`invalid`).
 **Assumes:** edit the core (Rust), run the core + Swift tests, Android check, install on the 3 phones, commit.
