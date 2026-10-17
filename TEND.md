@@ -6494,3 +6494,7 @@ For plot: the 15 fps request is not enforceable through LiveKit's size-based ada
 ## LIME-160: passed the user's check (2026-10-17)
 
 No emergency items in a group's ⋯ menu (the user's look). Marked here at the user's word.
+
+### LIME-150: rounded cells and a 2 pt inset (follow-up to `8c7c29c`)
+
+The user found two parts of item 2 missing. Each cell now has its own rounded corners on all four sides (`GroupCallLayout.pipCornerRadius`: 8 pt, rising to 10 pt with the window, continuous curve; the speaker ring follows the same radius) and the cells sit 2 pt in from the window's edge (`GroupCallLayout.pipInset`), so the system's window corners cannot clip a tile. Tests updated (`PiPGridPlanTests`); all pass. Installed on Jean's iPhone, the iPad and the 13 mini. The 10-minute device check follows with the user.

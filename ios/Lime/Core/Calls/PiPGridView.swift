@@ -160,6 +160,11 @@ final class PiPGridView: UIView {
         for (index, frame) in frames.enumerated() where index < slots.count {
             let slot = slots[index]
             slot.container.frame = frame
+            let radius = GroupCallLayout.pipCornerRadius(for: frame.size)
+            slot.container.layer.cornerRadius = radius
+            slot.container.layer.cornerCurve = .continuous
+            slot.ring.cornerRadius = radius
+            slot.ring.cornerCurve = .continuous
             slot.video.frame = slot.container.bounds
             slot.photo?.frame = slot.container.bounds
             slot.ring.frame = slot.container.bounds
