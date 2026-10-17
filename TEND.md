@@ -6453,3 +6453,20 @@ Raw log: `/tmp/lime-pipspike-13mini.log` (67 `pip_spike` lines). The window (sys
 - **Heat:** thermal state nominal → **fair** (about 2½ min in) → **serious** (about 5 min in). The phone was at 100% battery, so battery drain could not be read.
 - **Caveats:** the 4 tiles repeat the same stream(s) (identical fps in all four), so this is 4 layers drawn and 1–2 streams decoded, not 4 decoders; 14 CPU samples came out negative (threads ending between reads) and were dropped; what the window looked like on screen is not in the log.
 - **Read:** the layers keep up, but CPU is high and the phone reached "serious" thermal state within 5 minutes, which a speaker window (one tile) should be compared with before building. Next measurement, if wanted: the same 5 minutes with `-lime.pipSpike.tiles 1`.
+
+### LIME-150 spike: the 1-tile baseline (13 mini, unplugged, 16:18–16:24 local, ~5¼ min)
+
+Raw log: `/tmp/lime-pipspike-13mini-1tile.log` (63 samples). Side by side with the 4-tile run above:
+
+| | 4 tiles (plugged in) | 1 tile (unplugged) |
+|---|---|---|
+| fps per tile, front (median / lowest) | 19.9 / 13.5 | 20.0 / 19.0 (the first sample, 0.0, is the start) |
+| fps, background | 17.7 / 14.9 | 20.0 / 19.2 |
+| CPU front (median / max) | 65% / 79% | 66% / 72% |
+| CPU background (median / max) | 34% / 71% | 30% / 50% |
+| thermal over the run | nominal → fair (2½ min) → **serious** (5 min) | **nominal throughout** |
+| battery | 100% (charging) | 100% → 95% |
+
+- **CPU is the same with 1 tile or 4** (about 65% in front, 30% in the background): the call itself (receiving, decrypting, decoding the streams) is the cost; drawing 3 more layers adds almost none. The 4-tile run did dip lower in fps (13–15 at times).
+- **The thermal difference is not clean:** the 4-tile run was plugged in (charging heats a phone) and the baseline was not, so "serious" cannot be blamed on the tiles. To separate them, run 4 tiles unplugged for 5 minutes.
+- **Battery:** 5 points in about 5 minutes with 1 tile unplugged, the speaker-window baseline.
