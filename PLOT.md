@@ -6202,7 +6202,7 @@ Jean sends 2 messages + a reaction in the group → they appear on the offline 1
 **Gate:** the user sees Jean's messages arrive on the offline 13 mini.
 **Record:** `## LIME-155-fix` with **For plot:** ((a)/(b)/(c) causes; the time). **Commit:** `fix(ios): every neighbour hears the online bit, so an offline phone asks for its mail`, trailer `Brief: LIME-155`. If a decision isn't covered here, stop and ask the user. The rest per the standing rules.
 
-### LIME-160 → `tend` (lime-aa) (DONE as `37b0664`; drafted 2026-10-16): emergency out of the chat ⋯ menu; Settings is where it lives
+### LIME-160 → `tend` (lime-aa) (DONE as `37b0664`; PASSED the user's look 2026-10-17: no emergency items in a group's ⋯ menu; drafted 2026-10-16): emergency out of the chat ⋯ menu; Settings is where it lives
 **Goal:** no chat or group chat's ⋯ menu mentions emergencies; the emergency group is chosen in Settings → Emergency; starting one stays the long-press on + in Messages.
 **Decided (the user, 1e167):** "we don't want to alarm everyone during daily usage."
 **Assumes:** edit, build, run the emergency + chat UI tests, install on the 3 phones, commit. **Visual brief: no new UI tests**; fix the ones that used the menu.
