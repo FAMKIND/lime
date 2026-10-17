@@ -49,11 +49,14 @@ protocol GroupPiP: AnyObject {
     func rebuild()
     /// LIME-150: the window draws these cells as a grid (live pictures or photos, the speaker ringed); an empty list goes back to the speaker window.
     func showGrid(_ cells: [PiPGridDisplay])
+    func gridFrameCounts() -> [String: Int]
 }
 
 extension GroupPiP {
     /// LIME-150: the minimised grid. Nothing by default (a test fake need not draw).
     func showGrid(_ cells: [PiPGridDisplay]) {}
+    /// Frames each grid cell's picture has drawn so far, by participant (for the diagnostics).
+    func gridFrameCounts() -> [String: Int] { [:] }
 }
 
 /// What `prepare` does with the call screen's anchor view (LIME-112d). The call screen is rebuilt on every return from minimising, so its
@@ -235,6 +238,9 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
     }
 
     private var grid: PiPGridView?
+    private var lastGridShape = ""
+
+    func gridFrameCounts() -> [String: Int] { grid?.frameCounts() ?? [:] }
 
     func showGrid(_ cells: [PiPGridDisplay]) {
         guard !cells.isEmpty else {
@@ -243,14 +249,24 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
             grid = nil
             return
         }
+        // A grid is a square (two side by side: 4:3); the system may still resize it.
+        let size = cells.count == 2 ? CGSize(width: 640, height: 480) : (cells.count == 1 ? Self.placeholder : CGSize(width: 480, height: 480))
+        contentController.preferredContentSize = size
+        // The window's view has no size until the system presents it, and a subview made at size zero stays zero when the window grows (the
+        // grid showed no picture on the first minimise, LIME-162): it starts at the wanted size, and follows the window's real bounds as soon as
+        // there are any (checked on every refresh).
+        let bounds = contentController.view.bounds
+        let wanted = bounds.width > 4 && bounds.height > 4 ? bounds : CGRect(origin: .zero, size: size)
         if grid == nil {
-            let view = PiPGridView(frame: contentController.view.bounds)
+            let view = PiPGridView(frame: wanted)
             view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             contentController.view.addSubview(view)
             grid = view
+        } else if let grid, grid.frame.size != wanted.size {
+            grid.frame = wanted
         }
-        // A grid is a square (two side by side: 4:3); the system may still resize it.
-        contentController.preferredContentSize = cells.count == 2 ? CGSize(width: 640, height: 480) : (cells.count == 1 ? Self.placeholder : CGSize(width: 480, height: 480))
+        let shape = "grid \(Int(grid?.frame.width ?? 0))x\(Int(grid?.frame.height ?? 0)) in window \(Int(bounds.width))x\(Int(bounds.height))"
+        if shape != lastGridShape { lastGridShape = shape; CallDiagnostics.shared.log("group pip \(shape)") }
         grid?.update(cells)
     }
 

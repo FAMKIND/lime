@@ -20,7 +20,7 @@ final class CallDiagnostics {
     func log(_ event: String) {
         let stamp = Self.format.string(from: clock())
         lines.append("\(stamp) \(event)")
-        if lines.count > 400 { lines.removeFirst(lines.count - 400) }
+        if lines.count > 2000 { lines.removeFirst(lines.count - 2000) }
         try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 

@@ -172,6 +172,9 @@ final class ConversationStore {
         return manager
     }
 
+    @ObservationIgnored private var quietFetches = 0
+    @ObservationIgnored private var quietSince = Date()
+
     /// A light fetch while a call is ringing or connecting: the mailbox and the call ops, nothing else, and never skipped because a
     /// full sync is running.
     func fetchCallOps() async {
@@ -181,7 +184,19 @@ final class ConversationStore {
         do {
             let token = try await link.token()
             let found = try await Task.detached(priority: .userInitiated) { try core.fetchCallOps(transport: link.transport, authToken: token) }.value
-            diag.log("fetch ok \(Int(Date().timeIntervalSince(started) * 1000)) ms: downloaded \(core.takeDownloaded()), stored \(found), pending [\((try? core.pendingSummary()) ?? "?")]")
+            // Only a fetch that brought something is a line of its own; the quiet ones are counted and summed up once a minute (LIME-162: they
+            // used to be 384 of the log's 400 lines).
+            let downloaded = core.takeDownloaded()
+            if downloaded > 0 || found > 0 {
+                diag.log("fetch ok \(Int(Date().timeIntervalSince(started) * 1000)) ms: downloaded \(downloaded), stored \(found), pending [\((try? core.pendingSummary()) ?? "?")]")
+            } else {
+                quietFetches += 1
+                if Date().timeIntervalSince(quietSince) >= 60 {
+                    diag.log("fetch ok ×\(quietFetches) in the last minute, nothing new")
+                    quietFetches = 0
+                    quietSince = Date()
+                }
+            }
         } catch {
             diag.log("fetch failed \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(error)")
         }

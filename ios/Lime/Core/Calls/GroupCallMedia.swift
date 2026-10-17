@@ -35,6 +35,22 @@ protocol GroupCallMedia: AnyObject {
     func disconnect() async
     /// The picture of a participant for the tile (the LiveKit video track), or nil: only the SwiftUI tile looks inside.
     func videoTrack(for participant: String) -> AnyObject?
+    /// Frames received so far per remote participant (whether or not anything draws them), for the diagnostics.
+    func frameCounts() -> [String: Int]
+}
+
+extension GroupCallMedia {
+    func frameCounts() -> [String: Int] { [:] }
+}
+
+/// Counts a remote video track's frames and draws nothing (LIME-162: tells "the track flows but nothing draws it" from "the track is not flowing").
+final class FrameProbe: NSObject, VideoRenderer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var frames = 0
+    var count: Int { lock.lock(); defer { lock.unlock() }; return frames }
+    @MainActor var isAdaptiveStreamEnabled: Bool { false }
+    @MainActor var adaptiveStreamSize: CGSize { .zero }
+    nonisolated func render(frame: VideoFrame) { lock.lock(); frames += 1; lock.unlock() }
 }
 
 /// LiveKit's Swift SDK as the group call media engine. Every participant has their own sender key; the SDK's frame encryption uses
@@ -105,6 +121,25 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
     func disconnect() async {
         await room?.disconnect()
         room = nil
+    }
+
+    private var probes: [String: (sid: String, probe: FrameProbe)] = [:]
+
+    func frameCounts() -> [String: Int] {
+        guard let room else { return [:] }
+        var out: [String: Int] = [:]
+        for (key, participant) in room.remoteParticipants {
+            let id = key.stringValue
+            guard let track = participant.firstCameraVideoTrack else { continue }
+            let sid = track.sid?.stringValue ?? ""
+            if probes[id]?.sid != sid {
+                let probe = FrameProbe()
+                probes[id] = (sid, probe)
+                DispatchQueue.global(qos: .utility).async { track.add(videoRenderer: probe) }
+            }
+            out[id] = probes[id]?.probe.count ?? 0
+        }
+        return out
     }
 
     func videoTrack(for participant: String) -> AnyObject? {

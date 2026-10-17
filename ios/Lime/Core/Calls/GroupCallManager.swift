@@ -105,6 +105,7 @@ final class GroupCallManager {
     @ObservationIgnored var ringSeconds: Double = 45
     @ObservationIgnored private var media: (any GroupCallMedia)?
     @ObservationIgnored private var poller: Task<Void, Never>?
+    @ObservationIgnored private var probe: Task<Void, Never>?
     @ObservationIgnored private var ringTimeout: Task<Void, Never>?
     @ObservationIgnored private var myParticipant = ""
     /// The index of the key this phone sends with, as the core says (set at join and at every renewal): for the guard.
@@ -310,6 +311,7 @@ final class GroupCallManager {
         media.setMyKey(joined.key, participant: joined.participant, index: Int(joined.keyIndex))
         diag.log("group call: setKey me \(joined.participant.prefix(4))… index \(joined.keyIndex) (LiveKit identity \(joined.participant.prefix(4))…)")
         startPolling()
+        startProbe()
         // My join and my key go out now (they are what the others wait for), while the connection comes up.
         Task { await deliverAndLog() }
         guard let token = await core.token(room: info.room, participant: joined.participant) else {
@@ -600,7 +602,7 @@ final class GroupCallManager {
         guard video, inCall else { return }
         if pip == nil, let made = makePictureInPicture?() {
             pip = made
-            made.onStarted = { [weak self] in self?.pictureInPictureActive = true; self?.minimized = true }
+            made.onStarted = { [weak self] in self?.pictureInPictureActive = true; self?.minimized = true; self?.refreshPiP() }
             made.onStopped = { [weak self] in self?.pictureInPictureActive = false }
             made.onRestore = { [weak self] in self?.pictureInPictureActive = false; self?.minimized = false }
             made.onFailed = { [weak self] in self?.minimized = true }
@@ -728,6 +730,8 @@ final class GroupCallManager {
         let media = self.media
         diag.log("group call: leaving")
         poller?.cancel()
+        probe?.cancel()
+        stopCameraLog()
         network?.stop()
         pip?.stop(); pip = nil; pictureInPictureActive = false
         heatRecheck?.cancel(); heatRecheck = nil; heat.reset(); recentSpeakers = []; lastGridLog = ""
@@ -748,15 +752,79 @@ final class GroupCallManager {
         onFinished?()
     }
 
+    /// How long to wait before looking for call ops again: every second while the call is being set up or anyone's key has not arrived yet (the
+    /// keys travel as mail), every 3 seconds once everyone is in and secured. (It used to poll once a second for the whole call: a fetch every
+    /// 1.4 s, which also filled the call log.)
+    static func pollInterval(phase: Phase, tiles: [Tile]) -> Double {
+        phase != .active || tiles.contains { !$0.secured } ? 1 : 3
+    }
+
     private func startPolling() {
         poller?.cancel()
         poller = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
+                let wait = self.map { Self.pollInterval(phase: $0.phase, tiles: $0.tiles) } ?? 1
+                try? await Task.sleep(for: .seconds(wait))
                 guard let self, !Task.isCancelled, self.phase != .idle else { return }
                 await self.fetchNow?()
                 await self.pump()
                 self.refreshPiP()
+            }
+        }
+    }
+
+    /// What the camera may do here (LIME-162): whether iPadOS lets the camera run next to other apps, and every interruption with its reason.
+    @ObservationIgnored private var cameraObservers: [NSObjectProtocol] = []
+
+    private func logCameraSupport() {
+        guard video, cameraObservers.isEmpty else { return }
+        let session = AVCaptureSession()
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        diag.log("group camera: \(device), multitasking camera access supported=\(session.isMultitaskingCameraAccessSupported) enabled=\(session.isMultitaskingCameraAccessEnabled)")
+        let center = NotificationCenter.default
+        cameraObservers.append(center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: nil, queue: .main) { note in
+            let raw = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int) ?? -1
+            let reason = AVCaptureSession.InterruptionReason(rawValue: raw).map { "\($0)" } ?? "unknown(\(raw))"
+            Task { @MainActor in CallDiagnostics.shared.log("group camera: interrupted, reason \(reason)") }
+        })
+        cameraObservers.append(center.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in CallDiagnostics.shared.log("group camera: interruption ended") }
+        })
+        cameraObservers.append(center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: nil, queue: .main) { note in
+            let error = (note.userInfo?[AVCaptureSessionErrorKey] as? NSError)?.code ?? 0
+            Task { @MainActor in CallDiagnostics.shared.log("group camera: runtime error \(error)") }
+        })
+        cameraObservers.append(center.addObserver(forName: AVCaptureSession.didStartRunningNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in CallDiagnostics.shared.log("group camera: capture started") }
+        })
+        cameraObservers.append(center.addObserver(forName: AVCaptureSession.didStopRunningNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in CallDiagnostics.shared.log("group camera: capture stopped") }
+        })
+    }
+
+    private func stopCameraLog() {
+        for observer in cameraObservers { NotificationCenter.default.removeObserver(observer) }
+        cameraObservers = []
+    }
+
+    /// Every 5 seconds of a video call, per remote person: whether their picture should show and whether frames really arrive, in the full call
+    /// (the track itself, drawn or not) and in the minimised grid's cell (LIME-162).
+    private func startProbe() {
+        probe?.cancel()
+        logCameraSupport()
+        var last: (full: [String: Int], grid: [String: Int], at: Date) = ([:], [:], now())
+        probe = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard let self, self.phase != .idle, self.video else { return }
+                let full = self.media?.frameCounts() ?? [:], grid = self.pip?.gridFrameCounts() ?? [:]
+                let span = max(0.1, self.now().timeIntervalSince(last.at))
+                let parts = self.tiles.filter { !$0.isMe }.map { tile -> String in
+                    func rate(_ now: [String: Int], _ before: [String: Int]) -> String { now[tile.id].map { String(format: "%.1f", Double($0 - (before[tile.id] ?? 0)) / span) } ?? "-" }
+                    return "\(tile.name.prefix(8))(secured=\(tile.secured ? 1 : 0) cam=\(tile.cameraOn ? 1 : 0) track=\(self.media?.videoTrack(for: tile.id) == nil ? 0 : 1) full=\(rate(full, last.full)) grid=\(rate(grid, last.grid)))"
+                }
+                last = (full, grid, self.now())
+                self.diag.log("video_probe view=\(self.minimized || self.pictureInPictureActive ? "minimised" : "full") \(parts.joined(separator: " "))")
             }
         }
     }

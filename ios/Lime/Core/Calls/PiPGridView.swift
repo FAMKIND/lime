@@ -65,6 +65,13 @@ final class PiPGridView: UIView {
 
     /// How many cells are drawn.
     var cellCount: Int { displays.count }
+    /// Frames each cell has drawn so far, by participant id (the diagnostics).
+    func frameCounts() -> [String: Int] {
+        var out: [String: Int] = [:]
+        for (index, item) in displays.enumerated() where index < slots.count { out[item.cell.id] = slots[index].renderer.frameCount }
+        return out
+    }
+
     /// Which cells draw a live picture (a test reads it).
     var liveFlags: [Bool] { displays.map(\.cell.live) }
 

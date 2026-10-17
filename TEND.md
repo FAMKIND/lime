@@ -6498,3 +6498,19 @@ No emergency items in a group's ⋯ menu (the user's look). Marked here at the u
 ### LIME-150: rounded cells and a 2 pt inset (follow-up to `8c7c29c`)
 
 The user found two parts of item 2 missing. Each cell now has its own rounded corners on all four sides (`GroupCallLayout.pipCornerRadius`: 8 pt, rising to 10 pt with the window, continuous curve; the speaker ring follows the same radius) and the cells sit 2 pt in from the window's edge (`GroupCallLayout.pipInset`), so the system's window corners cannot clip a tile. Tests updated (`PiPGridPlanTests`); all pass. Installed on Jean's iPhone, the iPad and the 13 mini. The 10-minute device check follows with the user.
+
+## LIME-162 (so far): the group-call probe, the grid's first-minimise bug, the fetch flood
+
+Brief: LIME-162, widened by 1e191. The iPad-camera part is separate and answered below.
+
+**Found with the probe (13 mini, 17:41–17:44 EDT, Jean's and the iPad's video on).** Every 5 s the call log now says, per remote person, whether a track exists and the frames per second arriving on the track itself and in the grid's cell. On the **first** minimise (17:42:43–17:43:17) the grid cells received 15–17 fps from both people, yet the user saw no video; after the user switched the grid back on by hand (the cells were rebuilt) video showed. So the frames arrived and nothing was drawn: **the grid's view was created before the system window had any size (zero), and a subview made at size zero stays zero when its parent grows** (autoresizing cannot scale nothing), so no cell was laid out. It was not the minimised-view default (the log shows grid mode from the call's start) and not the subscription.
+- [x] Fix: the grid view starts at the wanted size (square, or 4:3 for two cells) and follows the window's real bounds as soon as they exist (checked on every refresh and when the window starts, `onStarted` → `refreshPiP`). Logs `group pip grid WxH in window WxH` on every change so the next run shows it.
+- [x] (e) The fetch flood: `GroupCallManager.startPolling` fetched once a second for the whole call (a fetch every ~1.4 s) and called `refreshPiP` each time. Now once a second only while the call is being set up or anyone's key has not arrived, then every 3 s. A fetch that brought nothing is no longer a log line of its own: one summary per minute ("fetch ok ×N in the last minute, nothing new"). The log cap is 2000 lines (was 400). Confirmed in the pulled logs: 5 fetch lines in the 4-minute call on the 13 mini and 1 on the iPad (the 380-odd others are older lines kept from before).
+- [x] (f) `video_probe` per remote person, every 5 s (see above).
+- [x] Camera log (a/c): `group camera:` lines for the camera's support, every `AVCaptureSession` interruption with its reason, runtime errors, capture started/stopped.
+
+**The iPad's camera (the user: it was full screen and its camera showed on the full call).** The iPad's log: `group camera: iPhone, multitasking camera access supported=true enabled=false` (lime runs there as an iPhone app), `capture started` at 17:41:17, **no interruption** during the call, and Jean's and the 13 mini's pictures arrived at 30 fps on it. So the earlier "iPad camera never comes on" is consistent with Stage Manager, as the user suspects; not reproduced here. The interruption logging stays for a Stage Manager run.
+
+**Verification.** Unit tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini (relaunched with `-lime.pipView ""` so the minimised view has no remembered choice).
+
+**Device check: not yet run** (the first minimise of a fresh launch shows video with no setting touched).
