@@ -166,6 +166,11 @@ pub struct MeshFetchJob {
 }
 
 impl MeshEngine {
+    pub(crate) fn refresh_offline_neighbours(&self) {
+        let offline = self.fetch_state().neighbours.values().filter(|online| !**online).count();
+        self.store.set_mesh_offline_neighbours(offline);
+    }
+
     fn fetch_state(&self) -> std::sync::MutexGuard<'_, FetchState> {
         self.fetch.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -181,7 +186,14 @@ impl MeshEngine {
         let mut actions = Vec::new();
         match kind {
             FRAME_ONLINE => {
-                self.fetch_state().neighbours.insert(link, body.first() == Some(&1));
+                let online = body.first() == Some(&1);
+                self.fetch_state().neighbours.insert(link, online);
+                // The node offers copies of mail already on the server to a neighbour that says it is offline (LIME-156).
+                let offered = self.node().set_link_online(super::LinkId(link), online);
+                if offered {
+                    self.note(format!("copy_offered link_offline={}", link % 0x10000));
+                }
+                self.refresh_offline_neighbours();
             }
             FRAME_REQUEST => {
                 let mut state = self.fetch_state();
@@ -329,6 +341,8 @@ impl MeshEngine {
         if state.pending.as_ref().map(|p| p.0.link) == Some(link) {
             state.pending = None;
         }
+        drop(state);
+        self.refresh_offline_neighbours();
     }
 
     /// The request frame to put on `link` (a neighbour that can fetch for me), or nothing when one is already waiting for its reply, a reply said

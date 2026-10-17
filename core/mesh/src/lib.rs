@@ -70,6 +70,11 @@ pub trait MeshStore {
     /// The seen digests with the time they were seen, read once when the node starts.
     fn load_seen(&mut self) -> Vec<(Digest, u64)>;
     fn save_seen(&mut self, digest: &Digest, at: u64);
+    /// The digests this phone uploaded to the server, with when (kept 48 hours so a neighbour's copy is not taken and uploaded again).
+    fn load_uploaded(&mut self) -> Vec<(Digest, u64)> {
+        Vec::new()
+    }
+    fn save_uploaded(&mut self, _digest: &Digest, _at: u64) {}
 }
 
 /// A [`MeshStore`] that keeps everything in memory (tests, the simulator, a platform that does not persist).
@@ -77,6 +82,7 @@ pub trait MeshStore {
 pub struct MemoryStore {
     pub packets: Vec<StoredPacket>,
     pub seen: Vec<(Digest, u64)>,
+    pub uploaded: Vec<(Digest, u64)>,
 }
 
 impl MeshStore for MemoryStore {
@@ -101,5 +107,11 @@ impl MeshStore for MemoryStore {
         if self.seen.len() > 4096 {
             self.seen.drain(..2048);
         }
+    }
+    fn load_uploaded(&mut self) -> Vec<(Digest, u64)> {
+        self.uploaded.clone()
+    }
+    fn save_uploaded(&mut self, digest: &Digest, at: u64) {
+        self.uploaded.push((*digest, at));
     }
 }

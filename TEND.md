@@ -6355,3 +6355,28 @@ Brief: LIME-157. `mesh-drop` without a session, so the server never learns who r
 - [ ] Device: rerun upload test A (installed on Jean's iPhone, the iPad and the 13 mini); plot reads `upload_ok`.
 
 For plot: nothing server-side remembers the relay account any more for upload; the address (keyed hash, a day) is the remaining limit. `verify_jwt = false` was needed in config.
+
+## LIME-156
+
+Brief: LIME-156. No server change, no packet change, no new on-air metadata.
+
+**Phase 1.**
+- (a) The node knows its links but not their online bit. The engine does: frame 8 lands in `FetchState.neighbours` (by link id). Now `app_frame` also tells the node (`set_link_online`) and the store (`mesh_offline_neighbours`, a counter the send path reads).
+- (b) `pump_outbox` queued every `mesh_outbox` row with no `packet_digest` through `queue()`, and a packet was offered to every link in the Hello. A copy is a row with `copy = 1`; the node keeps a local `offline_only` set (nothing on the air marks it), re-marked from the outbox after a restart.
+- (c) The `hello_requested` timeouts (`/tmp/lime-meshlogs17`, iPad 25 of them, 13 mini 28, Jean 0): the dial happens right beside `frame_out link=…` on an already live link (`wake discover-new links=1`), so it is the same phone, reached again as a peripheral while its inbound link is the live one. The hello read never answers (`Unknown ATT error` once). 155-fix's identifier match cannot match an inbound link (no `CBPeripheral` on it), so: with a live link, two hello timeouts on a peripheral now leave it alone for 10 minutes (60 s without one).
+- (d) The iPad uploaded `85a1` at 14:46:02 and again at 14:49:28. The 13 mini still held it (copies stay with the sender), and the iPad's seen-set window is 300 s: `85a1` was first seen about 14:44:27, so it expired at 14:49:27 and the packet was taken as new a second later. Now the node keeps the digests it uploaded for 48 h (table `mesh_uploaded`), neither takes nor uploads them again, and logs `upload_skip why=already_uploaded`.
+
+**Changes.**
+- [x] 1. After a 200 send of a carryable op with at least one offline neighbour linked: one `mesh_outbox` row per recipient device with `copy = 1`, node packet life 6 h, offered only to a link whose bit is false (left out of the Hello and refused in `on_want` otherwise; unknown counts as online), never uploaded by its sender. A neighbour that says offline gets the Hello again at once (driver). The flush skips copies and they do not count toward a message's "waiting".
+- [x] 2. Carriers unchanged.
+- [x] 3. Leftover 2: 48 h uploaded memory.
+- [x] 4. Leftover 1: see (c).
+- [x] 5. Docs: `docs/dpia-mesh.md`, `docs/api-v2.md`.
+- [x] 6. Tests: node (copy offered only to offline, never uploaded by its sender, 6 h; uploaded packet not taken back after the seen window, kept over a restart, forgotten after 48 h); core (copy only with an offline neighbour linked; reaches the offline recipient over the mesh, not an online neighbour, not uploaded by its sender); Swift (offline bit re-announces once per change; pause 600 s with a live link).
+- Not covered: group sends (`client/groups.rs` has its own send path and leaves no copy yet).
+
+**Verification.** Core 268 + mesh 23 + sim 12 + integration 23 pass; Android check OK; Swift mesh tests pass; 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Device check: not yet run** (Jean online beside the 13 mini, which is offline; the iPad away or lime closed; Jean sends 2 messages + a reaction; logs: Jean `mesh_queued … copy=1` → `mesh_passed`, 13 mini `mesh_delivered`; then the 13 mini online → `dup_dropped`, nothing twice; `hello_requested` timeouts stop).
+
+For plot: causes (a)–(d) above; copy counts pending the device check.

@@ -164,6 +164,20 @@ impl MeshStore for SqlMeshStore {
         // The seen-set only matters for minutes: keep the table small.
         let _ = conn.execute("DELETE FROM mesh_seen WHERE at < ?1", params![at as i64 - 3600]);
     }
+
+    fn load_uploaded(&mut self) -> Vec<(Digest, u64)> {
+        let conn = self.store.lock();
+        let Ok(mut statement) = conn.prepare("SELECT digest, at FROM mesh_uploaded ORDER BY at") else { return Vec::new() };
+        let rows = statement.query_map([], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?)));
+        rows.map(|rows| rows.filter_map(Result::ok).filter_map(|(d, at)| Some((<Digest>::try_from(d.as_slice()).ok()?, at.max(0) as u64))).collect()).unwrap_or_default()
+    }
+
+    fn save_uploaded(&mut self, digest: &Digest, at: u64) {
+        let conn = self.store.lock();
+        let _ = conn.execute("INSERT OR REPLACE INTO mesh_uploaded (digest, at) VALUES (?1, ?2)", params![digest.to_vec(), at as i64]);
+        // Remembered for 48 hours (LIME-156).
+        let _ = conn.execute("DELETE FROM mesh_uploaded WHERE at < ?1", params![at as i64 - 48 * 3600]);
+    }
 }
 
 /// Something the platform must put on a link (the mesh engine's `Action`).
@@ -268,7 +282,29 @@ pub(crate) use fetch::tests as fetch_test_support;
 impl MeshEngine {
     fn build(store: Arc<LimeStore>, server_key: Option<ServerKey>) -> Arc<Self> {
         let node = MeshNode::new(MeshConfig { seed: now_ms() as u64, ..MeshConfig::default() }, SqlMeshStore { store: store.clone() }, SystemClock);
+        let engine = Self::assemble(store, node, server_key);
+        engine.remark_copies();
+        engine
+    }
+
+    fn assemble(store: Arc<LimeStore>, node: MeshNode<SqlMeshStore, SystemClock>, server_key: Option<ServerKey>) -> Arc<Self> {
         Arc::new(MeshEngine { store, node: Mutex::new(node), server_key, my_tags: Mutex::new(Vec::new()), counters: Mutex::new((0, 0)), delivered: Mutex::new(std::collections::HashSet::new()), notes: Mutex::new(Vec::new()), fetch: Mutex::new(fetch::FetchState::default()) })
+    }
+
+    /// After a restart, the copies this phone parked are marked again (the node loads them as ordinary packets).
+    fn remark_copies(&self) {
+        let digests: Vec<Vec<u8>> = {
+            let conn = self.store.lock();
+            let Ok(mut statement) = conn.prepare("SELECT packet_digest FROM mesh_outbox WHERE copy = 1 AND packet_digest IS NOT NULL") else { return };
+            let rows = statement.query_map([], |r| r.get::<_, Vec<u8>>(0));
+            rows.map(|rows| rows.filter_map(Result::ok).collect()).unwrap_or_default()
+        };
+        let mut node = self.node();
+        for digest in digests {
+            if let Ok(digest) = <Digest>::try_from(digest.as_slice()) {
+                node.mark_offline_only(&digest);
+            }
+        }
     }
 
     fn node(&self) -> std::sync::MutexGuard<'_, MeshNode<SqlMeshStore, SystemClock>> {
@@ -276,6 +312,11 @@ impl MeshEngine {
     }
 
     fn queue(&self, to_user: String, to_device: String, ciphertext: Vec<u8>) -> Result<Option<Digest>, StoreError> {
+        self.queue_as(to_user, to_device, ciphertext, false)
+    }
+
+    /// `copy`: mail the server already has (LIME-156), kept 6 hours for offline neighbours only.
+    fn queue_as(&self, to_user: String, to_device: String, ciphertext: Vec<u8>, copy: bool) -> Result<Option<Digest>, StoreError> {
         let server = self.server_key.ok_or(StoreError::Unavailable)?;
         let now = now_ms().max(0) as u64 / 1000;
         let key = {
@@ -288,7 +329,7 @@ impl MeshEngine {
         let signed = crate::store::delivery::access_signature_b64(&key, &ciphertext, &to_device)?;
         let header = seal_header(&server, &to_device, &signed)?;
         let packet = Packet { tag: recipient_tag(&key, &to_device, day_of(now))?, header, payload: ciphertext, hops_left: 0, expires_at: now + 48 * 3600 };
-        Ok(self.node().enqueue(packet).ok())
+        Ok(if copy { self.node().enqueue_copy(packet).ok() } else { self.node().enqueue(packet).ok() })
     }
 
     fn note(&self, line: String) {
@@ -375,21 +416,26 @@ impl MeshEngine {
     /// phone has acknowledged taking a copy, then **"passed"**. Call it after every send attempt, when the mesh starts, and now and then while it
     /// runs. Returns how many packets were newly queued (a Hello is worth sending when it is above zero).
     pub fn pump_outbox(&self) -> Result<u32, StoreError> {
-        let rows: Vec<(String, String, String, Vec<u8>)> = {
+        // Copies live 6 hours (LIME-156): older ones are dropped; the packet itself expires on the mesh on its own.
+        {
+            let conn = self.store.lock();
+            conn.execute("DELETE FROM mesh_outbox WHERE copy = 1 AND created_at < ?1", params![now_ms() - 6 * 3600 * 1000]).map_err(db_err)?;
+        }
+        let rows: Vec<(String, String, String, Vec<u8>, bool)> = {
             let conn = self.store.lock();
             let mut statement = conn
-                .prepare("SELECT op_id, to_user, to_device, ciphertext FROM mesh_outbox WHERE packet_digest IS NULL ORDER BY created_at")
+                .prepare("SELECT op_id, to_user, to_device, ciphertext, copy FROM mesh_outbox WHERE packet_digest IS NULL ORDER BY created_at")
                 .map_err(db_err)?;
-            let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get::<_, i64>(4)? != 0))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
             rows
         };
         let mut queued = 0;
-        for (op_id, to_user, to_device, ciphertext) in rows {
-            if let Some(digest) = self.queue(to_user, to_device.clone(), ciphertext)? {
+        for (op_id, to_user, to_device, ciphertext, copy) in rows {
+            if let Some(digest) = self.queue_as(to_user, to_device.clone(), ciphertext, copy)? {
                 let conn = self.store.lock();
                 conn.execute("UPDATE mesh_outbox SET packet_digest = ?3 WHERE op_id = ?1 AND to_device = ?2", params![op_id, to_device, digest.to_vec()]).map_err(db_err)?;
                 drop(conn);
-                self.note(format!("mesh_queued kind=message id={} op={}", short_id(&digest), op_id.chars().take(4).collect::<String>()));
+                self.note(format!("mesh_queued kind=message{} id={} op={}", if copy { " copy=1" } else { "" }, short_id(&digest), op_id.chars().take(4).collect::<String>()));
                 queued += 1;
             }
         }
@@ -440,6 +486,7 @@ impl MeshEngine {
 
     pub fn link_down(&self, link: u64) {
         self.node().on_link_down(LinkId(link));
+        self.refresh_offline_neighbours();
     }
 
     /// Mail for this phone that arrived over the mesh goes through the normal inbound path (de-duplicated by op id as ever). Returns how many
@@ -507,6 +554,10 @@ impl MeshEngine {
     pub fn upload_all(&self, transport: Arc<dyn Transport>) -> Result<u32, StoreError> {
         let mut stored = 0;
         let items = self.take_uploadable();
+        let skipped = self.node().take_already_uploaded();
+        if skipped > 0 {
+            self.note(format!("upload_skip why=already_uploaded n={skipped}"));
+        }
         if items.is_empty() {
             return Ok(0);
         }
@@ -566,6 +617,17 @@ impl MeshEngine {
             mine: counters.0,
             probes_received: counters.1,
         }
+    }
+}
+
+impl LimeStore {
+    /// How many linked neighbours said they are offline (set by the mesh engine; LIME-156).
+    pub(crate) fn set_mesh_offline_neighbours(&self, count: usize) {
+        self.mesh_offline_neighbours.store(count, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub(crate) fn mesh_offline_neighbours(&self) -> usize {
+        self.mesh_offline_neighbours.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

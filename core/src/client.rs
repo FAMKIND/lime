@@ -872,6 +872,11 @@ impl LimeStore {
                     break;
                 }
                 check(status)?;
+                // The server has it. If a linked neighbour said it is offline, leave a copy on the mesh for it (LIME-156): never sent to the
+                // server again, offered only to offline neighbours, kept 6 hours.
+                if delivery_key.is_some() && self.mesh_can_carry(&op.op_type) && self.mesh_offline_neighbours() > 0 {
+                    self.park_copy(&op.op_id, recipient, &device.device_id, &wire)?;
+                }
                 if body.get("checked").and_then(Value::as_bool) != Some(true) {
                     // This server does not check `expect` (an older one): do not keep a cache nobody validates.
                     self.with_conn(|conn| clear_peer_devices(conn, recipient))?;
@@ -909,7 +914,7 @@ impl LimeStore {
     pub(crate) fn flush_mesh_outbox_locked(&self, transport: &Arc<dyn Transport>, token: &str) -> Result<u32, StoreError> {
         const GIVE_UP_MS: i64 = 48 * 3600 * 1000;
         let rows: Vec<(String, String, String, Vec<u8>, i64)> = self.with_conn(|conn| {
-            let mut statement = conn.prepare("SELECT op_id, to_user, to_device, ciphertext, created_at FROM mesh_outbox ORDER BY created_at, op_id").map_err(db_err)?;
+            let mut statement = conn.prepare("SELECT op_id, to_user, to_device, ciphertext, created_at FROM mesh_outbox WHERE copy = 0 ORDER BY created_at, op_id").map_err(db_err)?;
             let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
             Ok(rows)
         })?;
@@ -918,7 +923,7 @@ impl LimeStore {
             let finish = |sent_ok: bool| -> Result<(), StoreError> {
                 self.with_conn(|conn| {
                     conn.execute("DELETE FROM mesh_outbox WHERE op_id = ?1 AND to_device = ?2", params![op_id, to_device]).map_err(db_err)?;
-                    let left: i64 = conn.query_row("SELECT COUNT(*) FROM mesh_outbox WHERE op_id = ?1", params![op_id], |r| r.get(0)).map_err(db_err)?;
+                    let left: i64 = conn.query_row("SELECT COUNT(*) FROM mesh_outbox WHERE op_id = ?1 AND copy = 0", params![op_id], |r| r.get(0)).map_err(db_err)?;
                     if left == 0 {
                         conn.execute(
                             "UPDATE messages SET local_state = ?2 WHERE id = ?1 AND local_state IN ('waiting', 'passed')",
@@ -989,6 +994,19 @@ impl LimeStore {
         })?;
         self.last_send_parked.store(true, std::sync::atomic::Ordering::Relaxed);
         Ok(())
+    }
+
+    /// Keeps a copy of a ciphertext the server already has for offline neighbours (LIME-156). It does not make a message "waiting" and the
+    /// retry never sends it.
+    pub(crate) fn park_copy(&self, op_id: &str, to_user: &str, to_device: &str, ciphertext: &[u8]) -> Result<(), StoreError> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO mesh_outbox (op_id, to_user, to_device, ciphertext, created_at, copy) VALUES (?1, ?2, ?3, ?4, ?5, 1)",
+                params![op_id, to_user, to_device, ciphertext, now_ms()],
+            )
+            .map_err(db_err)?;
+            Ok(())
+        })
     }
 
     /// The server said what I held about `recipient`'s devices is out of date (409), or names revoked ones (410), and sent the current

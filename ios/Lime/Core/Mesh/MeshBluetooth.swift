@@ -484,7 +484,7 @@ extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
             var backoff = self.backoffs[id] ?? ReconnectBackoff()
             backoff.linkEnded(livedFor: nil)
             self.backoffs[id] = backoff
-            let pause = MeshHandshakeWatchdog.pause(afterFailures: backoff.failures)
+            let pause = MeshHandshakeWatchdog.pause(afterFailures: backoff.failures, linkLive: self.peers.values.contains { $0.up })
             let wait = max(pause, backoff.delay())
             self.notBefore[id] = Date().addingTimeInterval(wait)
             if pause > 0 { self.onLog("outbound_paused", ["seconds": String(Int(pause)), "failures": String(backoff.failures)]) }

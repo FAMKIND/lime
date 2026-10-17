@@ -94,5 +94,12 @@ enum MeshHandshakeWatchdog {
     static let failuresBeforePause = 2
     static let pauseSeconds: TimeInterval = 60
 
-    static func pause(afterFailures failures: Int) -> TimeInterval { failures >= failuresBeforePause ? pauseSeconds : 0 }
+    /// While a link to some phone is live, a peripheral whose hello cannot be read twice is most likely that same phone (its inbound link is the
+    /// live one; the dial is a second try at it) and is left alone for 10 minutes (LIME-156).
+    static let pauseWhileLinkedSeconds: TimeInterval = 600
+
+    static func pause(afterFailures failures: Int, linkLive: Bool = false) -> TimeInterval {
+        guard failures >= failuresBeforePause else { return 0 }
+        return linkLive ? pauseWhileLinkedSeconds : pauseSeconds
+    }
 }

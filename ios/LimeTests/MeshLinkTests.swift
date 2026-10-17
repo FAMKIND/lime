@@ -251,6 +251,19 @@ final class MeshLinkTests: XCTestCase {
         XCTAssertEqual(sent.count, 3, "not a link that is not live")
     }
 
+    /// LIME-156: a neighbour that says it is offline gets this phone's Hello again at once (it may now list copies for it); an online one does not.
+    func testANeighbourThatSaysItIsOfflineIsAnnouncedToAtOnceAndAnOnlineOneIsNot() {
+        let engine = FakeEngine()
+        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), transmit: { _, _ in })
+        driver.linkUp(5)
+        driver.receive(Data([8, 1]), on: 5)
+        XCTAssertEqual(engine.calls.filter { $0 == "up 5" }.count, 1, "online: nothing more")
+        driver.receive(Data([8, 0]), on: 5)
+        XCTAssertEqual(engine.calls.filter { $0 == "up 5" }.count, 2, "offline: the Hello goes again")
+        driver.receive(Data([8, 0]), on: 5)
+        XCTAssertEqual(engine.calls.filter { $0 == "up 5" }.count, 2, "once per change")
+    }
+
     func testADelayedFrameForALinkThatWentDownIsDropped() {
         let engine = FakeEngine()
         engine.upActions[5] = [action(5, 1, delay: 50)]

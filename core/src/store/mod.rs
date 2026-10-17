@@ -237,6 +237,8 @@ pub struct LimeStore {
     pub(crate) last_send_requests: std::sync::atomic::AtomicU32,
     /// The app turned the mesh on ("Help pass on nearby messages"): a sealed send that cannot reach the server is parked in `mesh_outbox` for the mesh.
     pub(crate) mesh_enabled: std::sync::atomic::AtomicBool,
+    /// How many linked neighbours said they are offline (LIME-156): a send that reaches the server then leaves a copy for them on the mesh.
+    pub(crate) mesh_offline_neighbours: std::sync::atomic::AtomicUsize,
     /// My access public key was put on the server's file this run (LIME-142-fix2: re-asserted once per launch, so a server that lost it or never got it is repaired).
     pub(crate) access_confirmed: std::sync::atomic::AtomicBool,
     /// Copies dropped as duplicates since the app last asked: (from the server, from the mesh).
@@ -734,6 +736,7 @@ impl LimeStore {
             downloaded: std::sync::atomic::AtomicU32::new(0),
             last_send_requests: std::sync::atomic::AtomicU32::new(0),
             mesh_enabled: std::sync::atomic::AtomicBool::new(false),
+            mesh_offline_neighbours: std::sync::atomic::AtomicUsize::new(0),
             access_confirmed: std::sync::atomic::AtomicBool::new(false),
             dup_dropped: std::sync::Mutex::new((0, 0)),
             pending_expired: std::sync::atomic::AtomicU32::new(0),

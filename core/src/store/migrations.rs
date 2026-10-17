@@ -556,6 +556,13 @@ const MIGRATIONS: &[&str] = &[
          hash BLOB PRIMARY KEY,
          at   INTEGER NOT NULL
      );",
+    // 37 (LIME-156): a copy of mail the server already has, parked for offline neighbours only (never sent to the server again, never makes a
+    // message "waiting"); and the digests of packets this phone uploaded, kept 48 hours so a neighbour's copy is not taken and uploaded twice.
+    "ALTER TABLE mesh_outbox ADD COLUMN copy INTEGER NOT NULL DEFAULT 0;
+     CREATE TABLE mesh_uploaded (
+         digest BLOB PRIMARY KEY,
+         at     INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

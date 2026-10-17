@@ -19,6 +19,10 @@ An input to the data protection impact assessment, not the assessment itself. Wh
 
 `mesh-drop` needs no session. **The relay** (the phone that uploads) learns nothing: the header is sealed. **The server** learns that a packet for device D arrived at time t from a network address; it does **not** learn which account carried it (the request carries no token, and a token sent anyway is never read). Only a keyed hash of the address is rate-limited, for a day; nothing identifying is logged. The sender's signed proof, not the relay's account, authorises the store.
 
+## Copies for offline neighbours (LIME-156): what each party learns
+
+When a phone with internet sends a message, and a linked neighbour has said (the online bit of LIME-155) that it is offline, the sender also hands that neighbour a copy of the sealed packet over Bluetooth, valid 6 hours. Online neighbours are never given copies, so they do not upload duplicates; the sender never uploads its own copy. **Relays and bystanders** see the same sealed packets as any mesh message (a rotating tag, padded sizes). **One new observable: a phone sends more packets when offline phones are near.** **The server** learns nothing new: copies are not uploaded by the sender, and an offline carrier's later upload looks like any relay upload (a phone remembers for 48 hours which packets it uploaded and does not take or upload them twice). Nothing on the air marks a packet as a copy.
+
 ## Relay download (LIME-155)
 
 An offline phone can ask a nearby online lime phone to fetch its sealed mail. The neighbour sees an opaque request and an opaque, padded reply (not whose mail, not how many items beyond a 4 KiB size bucket) and cannot read either. The server sees that a device's mail was fetched at a time from an address, as when the device fetches for itself, and **not which account relayed** (the request needs no session; the device's own signature authorises it). The relay's network address is the honest remaining limit: only a keyed hash of it is rate-limited, for a day. The request's single-use nonce is kept until it expires (at most 10 minutes) and then forgotten.

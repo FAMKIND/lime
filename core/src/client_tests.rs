@@ -1476,7 +1476,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -4403,6 +4403,94 @@ fn a_sync_deletes_unreadable_items_older_than_thirty_days_and_counts_them() {
     assert_eq!(alice.store.pending_summary().unwrap().split(" |").next().unwrap(), "invalid=1", "the 31-day-old one is gone, the 29-day-old one stays");
     assert_eq!(alice.store.take_pending_expired(), 1);
     assert_eq!(alice.store.take_pending_expired(), 0);
+}
+
+// ---- LIME-156: an online sender leaves a copy for offline neighbours ----
+
+/// `a` meets `b` and hears that `b` is `online` (or nothing), then says its Hello again, as the app does.
+fn mesh_meet_with_bit(a: &crate::MeshEngine, b: &crate::MeshEngine, bit: Option<bool>) {
+    let mut queue: Vec<(bool, Vec<u8>)> = Vec::new();
+    queue.extend(b.link_up(1).into_iter().map(|x| (false, x.bytes)));
+    a.link_up(1);
+    if let Some(on) = bit {
+        a.frame(1, vec![8, u8::from(on)]);
+    }
+    queue.extend(a.link_up(1).into_iter().map(|x| (true, x.bytes)));
+    let mut guard = 0;
+    while !queue.is_empty() {
+        guard += 1;
+        assert!(guard < 5_000);
+        let (to_b, bytes) = queue.remove(0);
+        let answers = if to_b { b.frame(1, bytes) } else { a.frame(1, bytes) };
+        queue.extend(answers.into_iter().map(|x| (!to_b, x.bytes)));
+    }
+    a.link_down(1);
+    b.link_down(1);
+}
+
+fn copy_rows(p: &Party) -> Vec<(i64, i64)> {
+    let conn = p.store.lock();
+    let mut statement = conn.prepare("SELECT copy, created_at FROM mesh_outbox").unwrap();
+    statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|r| r.unwrap()).collect()
+}
+
+#[test]
+fn a_send_that_reached_the_server_leaves_a_copy_only_when_an_offline_neighbour_is_linked() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    alice.store.set_mesh_enabled(true);
+    let a = mesh_engine(&alice);
+    a.refresh_tags().unwrap();
+    // Only an online neighbour is linked: no copy.
+    a.link_up(1);
+    a.frame(1, vec![8, 1]);
+    say(&alice, &bob, &transport, "no copy");
+    assert!(copy_rows(&alice).is_empty(), "online neighbours never get copies");
+    // An offline neighbour is linked: one copy per recipient device, marked copy and not waiting.
+    a.frame(1, vec![8, 0]);
+    say(&alice, &bob, &transport, "a copy");
+    let rows = copy_rows(&alice);
+    assert_eq!(rows.len(), 1, "one copy per recipient device");
+    assert_eq!(rows[0].0, 1, "marked copy");
+    assert_eq!(state_of(&alice, &bob, "a copy"), "sent", "it is on the server: sent, not waiting");
+    // The retry never sends a copy to the server again, and the copy does not hold the message back.
+    let (net, flaky_transport) = flaky(&transport);
+    assert_eq!(alice.store.flush_mesh_outbox(flaky_transport, alice.token.clone()).unwrap(), 0);
+    assert_eq!(copy_rows(&alice).len(), 1, "untouched");
+    assert!(net.online.load(std::sync::atomic::Ordering::SeqCst));
+    // The neighbour leaves: the next send leaves nothing.
+    a.fetch_link_down(1);
+    say(&alice, &bob, &transport, "after it left");
+    assert_eq!(copy_rows(&alice).len(), 1);
+}
+
+#[test]
+fn a_copy_reaches_the_offline_recipient_by_bluetooth_is_not_given_to_an_online_neighbour_and_is_never_uploaded_by_its_sender() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    befriend(&alice, &bob, &transport);
+    alice.store.set_mesh_enabled(true);
+    let (a, b, c) = (mesh_engine(&alice), mesh_engine(&bob), mesh_engine(&carol));
+    for e in [&a, &b, &c] {
+        e.refresh_tags().unwrap();
+    }
+    a.link_up(1);
+    a.frame(1, vec![8, 0]);
+    let (_device, _ciphertext) = mesh_only_message(&server, &alice, &bob, &transport, "by copy");
+    assert_eq!(a.pump_outbox().unwrap(), 1, "the copy is put on the mesh");
+    assert!(a.take_notes().iter().any(|n| n.starts_with("mesh_queued kind=message copy=1")));
+    assert!(a.take_uploadable().is_empty(), "its sender never uploads it");
+    mesh_meet_with_bit(&a, &c, Some(true));
+    assert_eq!(c.stats().carried, 0, "an online neighbour is not offered it");
+    mesh_meet_with_bit(&a, &b, Some(false));
+    assert_eq!(b.take_mine().unwrap(), 1, "the offline recipient gets it over Bluetooth");
+    assert!(bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().iter().any(|m| m.text == "by copy"));
+    // Later the server's own copy is a duplicate, not a second message.
+    assert_eq!(b.take_mine().unwrap(), 0);
 }
 
 // ---- LIME-155: relay download ----

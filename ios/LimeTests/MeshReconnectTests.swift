@@ -152,6 +152,8 @@ final class MeshReconnectTests: XCTestCase {
         XCTAssertEqual(MeshHandshakeWatchdog.pause(afterFailures: 1), 0)
         XCTAssertEqual(MeshHandshakeWatchdog.pause(afterFailures: 2), 60)
         XCTAssertEqual(MeshHandshakeWatchdog.pause(afterFailures: 7), 60)
+        XCTAssertEqual(MeshHandshakeWatchdog.pause(afterFailures: 1, linkLive: true), 0)
+        XCTAssertEqual(MeshHandshakeWatchdog.pause(afterFailures: 2, linkLive: true), 600, "with a live link the same peripheral is left alone for 10 minutes")
         XCTAssertEqual(MeshHandshakeWatchdog.timeout, 10)
     }
 

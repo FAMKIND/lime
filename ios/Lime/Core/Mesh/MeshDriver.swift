@@ -114,6 +114,8 @@ final class MeshDriver {
                 seenOnline[link] = on
                 log("relay_online_seen", ["link": Self.short(link), "on": String(on)])
                 onOnlineSeen?(link, on)
+                // A neighbour that is offline is told what this phone holds for it: copies of mail already on the server are in that Hello (LIME-156).
+                if !on { announce(link, force: true) }
             }
         } else if liveLinks.contains(link), heardFrom.insert(link).inserted {
             // The first frame from a neighbour proves the link carries both ways: say the bit once more, in case the first went astray.
