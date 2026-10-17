@@ -84,6 +84,15 @@ struct LinkState {
     accepted_in_window: u32,
 }
 
+/// What happened to a copy of mail already on the server (LIME-156c), for the platform's log.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CopyEvent {
+    /// The copy went to this link.
+    Handed { link: LinkId, digest: Digest },
+    /// The copy cannot go to this link, and why: `online`, `unknown` (the neighbour has not said), `no_tag_match` (not its recipient).
+    Held { link: LinkId, digest: Digest, why: &'static str },
+}
+
 /// How long a phone remembers it uploaded a packet.
 pub const UPLOADED_MEMORY_SECS: u64 = 48 * 3600;
 /// How long a copy of mail already on the server stays on the mesh.
@@ -117,6 +126,8 @@ pub struct MeshNode<S: MeshStore, C: Clock> {
     link_online: HashMap<LinkId, bool>,
     /// Packets taken out of the upload list because they were uploaded before (the platform logs `upload_skip why=already_uploaded`).
     already_uploaded: u32,
+    copy_events: Vec<CopyEvent>,
+    copy_held_logged: HashSet<(Digest, &'static str)>,
     /// Packets another phone has acknowledged taking (a copy handed over): what "Passed to a nearby phone" is made from.
     handed: HashSet<Digest>,
     rng: u64,
@@ -143,7 +154,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         let seen_set = seen.iter().map(|(d, _)| *d).collect();
         let uploaded: HashMap<Digest, u64> = store.load_uploaded().into_iter().filter(|(_, at)| now.saturating_sub(*at) <= UPLOADED_MEMORY_SECS).collect();
         let rng = config.seed | 1;
-        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), refused: HashMap::new(), handed: HashSet::new(), uploaded, offline_only: HashMap::new(), link_online: HashMap::new(), already_uploaded: 0, rng, stats: NodeStats::default(), version: 0 }
+        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), refused: HashMap::new(), handed: HashSet::new(), uploaded, offline_only: HashMap::new(), link_online: HashMap::new(), already_uploaded: 0, copy_events: Vec::new(), copy_held_logged: HashSet::new(), rng, stats: NodeStats::default(), version: 0 }
     }
 
     pub fn config(&self) -> &MeshConfig {
@@ -179,6 +190,10 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     /// The recipient tags this phone answers to (today's and yesterday's, for each of its devices). Announced in every Hello, so a phone that
     /// holds the last copy of mail for this phone can hand it over when they meet. The platform sets them at start and when the day changes.
     pub fn set_my_tags(&mut self, tags: &[Tag]) {
+        // A Hello carries these tags: when they change, what a Hello would say changed, so the platform sends a new one.
+        if self.my_tags != tags {
+            self.version += 1;
+        }
         self.my_tags = tags.to_vec();
     }
 
@@ -242,6 +257,11 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     pub fn set_link_online(&mut self, link: LinkId, online: bool) -> bool {
         let before = self.link_online.insert(link, online);
         before != Some(false) && !online && self.carried.keys().any(|d| self.offline_only.contains_key(d))
+    }
+
+    /// What happened to copies since the last call (handed over, or held back and why), for the log.
+    pub fn take_copy_events(&mut self) -> Vec<CopyEvent> {
+        std::mem::take(&mut self.copy_events)
     }
 
     /// Whether this phone uploaded the packet before.
@@ -334,7 +354,8 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
     /// A link to another phone is up: answers with this phone's Hello (the summary of what it holds).
     pub fn on_link_up(&mut self, link: LinkId) -> Vec<Action> {
         self.housekeeping();
-        self.links.insert(link, LinkState::default());
+        // A Hello sent again on a live link (a wake, a queued copy) must not forget what the neighbour said about itself (its tags).
+        self.links.entry(link).or_default();
         let hello = Frame::Hello { summary: self.summary_for(link), tags: self.my_tags.iter().take(255).copied().collect() };
         vec![self.send(link, hello)]
     }
@@ -392,8 +413,17 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
             let Some(digest) = by_short.get(want) else { continue };
             let Some(carried) = self.carried.get(digest) else { continue };
             // A copy of mail already on the server goes only to a neighbour that said it is offline.
-            if let Some(direct) = self.offline_only.get(digest) {
-                if self.link_online.get(&link) != Some(&false) || (*direct && !peer_tags.contains(&carried.packet.tag)) {
+            if let Some(direct) = self.offline_only.get(digest).copied() {
+                let why = match self.link_online.get(&link) {
+                    Some(true) => Some("online"),
+                    None => Some("unknown"),
+                    Some(false) if direct && !peer_tags.contains(&carried.packet.tag) => Some("no_tag_match"),
+                    Some(false) => None,
+                };
+                if let Some(why) = why {
+                    if self.copy_held_logged.insert((*digest, why)) {
+                        self.copy_events.push(CopyEvent::Held { link, digest: *digest, why });
+                    }
                     continue;
                 }
             }
@@ -417,6 +447,9 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         let mut actions = Vec::new();
         for (digest, copies, packet, to_recipient) in eligible {
             self.stats.sent_packets += 1;
+            if self.offline_only.contains_key(&digest) {
+                self.copy_events.push(CopyEvent::Handed { link, digest });
+            }
             if let Some(state) = self.links.get_mut(&link) {
                 state.pending.insert(short(&digest), (digest, copies, to_recipient));
             }
@@ -1100,5 +1133,61 @@ mod tests {
         later.uploaded.insert(digest, 0);
         later.housekeeping();
         assert!(!later.was_uploaded(&digest));
+    }
+
+    #[test]
+    fn a_hello_sent_again_on_a_live_link_keeps_the_neighbours_tags_so_a_direct_copy_still_reaches_it() {
+        let c = clock();
+        let mut sender = node_with(MeshConfig::default(), &c);
+        let mut receiver = node_with(MeshConfig::default(), &c);
+        receiver.set_my_tags(&[[7; 16]]);
+        let (ls, lr) = (LinkId(2), LinkId(1));
+        // The receiver (just restarted) says its Hello with its tags; the sender hears it, then hears the receiver is offline.
+        let hello = receiver.on_link_up(lr);
+        let Action::SendFrame { bytes, .. } = hello[0].clone();
+        sender.on_link_up(ls);
+        sender.on_frame(ls, &bytes);
+        sender.set_link_online(ls, false);
+        // A copy is queued after the link is up; the platform says its Hello again on that link.
+        sender.enqueue_copy(Packet { tag: [7; 16], expires_at: c.0.get() + 3600, ..packet(7, 7, &c) }, true).unwrap();
+        let again = sender.on_link_up(ls);
+        let Action::SendFrame { bytes, .. } = again[0].clone();
+        let want = receiver.on_frame(lr, &bytes);
+        let Action::SendFrame { bytes, .. } = want[0].clone();
+        let packets = sender.on_frame(ls, &bytes);
+        assert_eq!(packets.len(), 1, "the copy is handed over in one Hello round, whatever re-announced in between");
+        let events = sender.take_copy_events();
+        assert!(events.iter().any(|e| matches!(e, CopyEvent::Handed { .. })));
+    }
+
+    #[test]
+    fn a_copy_that_cannot_go_says_why_once() {
+        let c = clock();
+        let mut sender = node_with(MeshConfig::default(), &c);
+        sender.enqueue_copy(Packet { tag: [7; 16], expires_at: c.0.get() + 3600, ..packet(7, 7, &c) }, true).unwrap();
+        let digest = sender.carried.keys().next().copied().unwrap();
+        let want = vec![short(&digest)];
+        let l = LinkId(2);
+        sender.on_link_up(l);
+        sender.on_frame(l, &Frame::Want { digests: want.clone() }.encode());
+        sender.set_link_online(l, true);
+        sender.on_frame(l, &Frame::Want { digests: want.clone() }.encode());
+        sender.on_frame(l, &Frame::Want { digests: want.clone() }.encode());
+        sender.set_link_online(l, false);
+        sender.on_frame(l, &Frame::Want { digests: want }.encode());
+        let whys: Vec<&str> = sender.take_copy_events().iter().filter_map(|e| if let CopyEvent::Held { why, .. } = e { Some(*why) } else { None }).collect();
+        assert_eq!(whys, vec!["unknown", "online", "no_tag_match"], "each reason once");
+    }
+
+    #[test]
+    fn changing_this_phones_tags_moves_the_summary_version_so_a_new_hello_goes() {
+        let c = clock();
+        let mut node = node_with(MeshConfig::default(), &c);
+        let before = node.summary_version();
+        node.set_my_tags(&[[1; 16]]);
+        let after = node.summary_version();
+        assert!(after > before);
+        node.set_my_tags(&[[1; 16]]);
+        assert_eq!(node.summary_version(), after, "the same tags change nothing");
     }
 }

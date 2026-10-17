@@ -6404,3 +6404,24 @@ Brief: LIME-156 (groups). No server, packet or Swift change.
 **Device check: not yet run.** Jean (internet, Bluetooth, open in a group with the 13 mini's account) sends 2 messages + a reaction; the 13 mini is in airplane mode with Bluetooth on; the iPad has Bluetooth off. Look for Jean `mesh_queued kind=message copy=2` per member device, the 13 mini `mesh_delivered after=` in seconds, and on the 13 mini `fetch_ingested …` if it relays.
 
 For plot: fan-out ~1 KiB × members per message; cap = direct only + 600 rows, oldest first; item 2 of the group test open until `fetch_ingested` is read.
+
+## LIME-156c
+
+Brief: LIME-156. No server or packet change.
+
+**Phase 1 (`/tmp/lime-meshlogs23`, 18:50–18:52Z).**
+- (a) The 13 mini attached its engine at 18:50:28 and `refreshTags` runs right there (before the link at 18:50:35), so its Hello carried its tags. They were not the problem. (Now logged: `tags_set mine=N contacts=M`.)
+- (b) **The cause.** Jean's copies were queued at 18:50:55 and 18:51:02–09, and a fresh Hello did go on the live link (a queued packet moves the summary version). But `MeshNode::on_link_up` **replaced the link's state with an empty one every time it was called**, and re-announcing a Hello on a live link calls it. That wiped what the neighbour had said about itself (its tags) from its own Hello. The direct filter in `on_want` needs those tags, so every Want for a copy was refused silently: Jean `mesh_queued copy=2` ×6, never `mesh_passed`. Fixed: a Hello sent again keeps the link's state.
+- (c) After `fetch_ingested messages=2` the chat was reloaded only by the earlier `fetch_reply` note; the 1:1 path was the same. In the pasted logs the 2 messages were stored (nothing new pending). **Whether they appeared on screen is for the user to say at the device check.** The reload now also runs on `fetch_ingested messages>0`, once the items are certainly stored.
+
+**Changes.**
+- [x] 1. Tags: set at attach (already so); a change of this phone's tags now moves the summary version, so the platform sends a new Hello (day change, contacts).
+- [x] 2. A Hello sent again keeps the neighbour's tags; `copy_handed link=… id=…` when a copy goes; `copy_held why=online|unknown|no_tag_match link=… id=…` once per copy and reason.
+- [x] 3. Reload on `fetch_ingested messages>0` (1:1 and group alike, the whole store reloads).
+- [x] 4. Tests: a just-restarted receiver (its Hello heard first, then a re-announce) still gets a direct copy in one Hello round; a copy queued after link-up is offered by the next Hello; each held reason is logged once; changing tags moves the version; the existing direct-only tests still pass (a third phone gets nothing).
+
+**Verification.** Core 271, mesh 26, sim 12, integration 23, Android OK, Swift mesh tests pass, 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Device check: not yet run** (see the brief's table; wait 30 s; Jean sends 2 messages + a reaction → on the offline 13 mini within seconds; force-quit and reopen lime on the 13 mini, Jean sends 1 more; then online → nothing twice). Ask: did the 2 fetched messages appear on screen last time?
+
+For plot: (a) tags were set in time; (b) the Hello re-announce wiped the neighbour's tags, so the direct filter refused every copy; (c) reload now follows `fetch_ingested`; whether the items showed is the user's to say.

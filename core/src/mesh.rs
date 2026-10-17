@@ -101,7 +101,7 @@ pub(crate) fn seal_header(server: &ServerKey, to_device: &str, signed: &str) -> 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use lime_mesh::{Action, Clock, Digest, LinkId, MeshConfig, MeshNode, MeshStore, Packet, StoredPacket, Tier};
+use lime_mesh::{Action, Clock, CopyEvent, Digest, LinkId, MeshConfig, MeshNode, MeshStore, Packet, StoredPacket, Tier};
 use rusqlite::params;
 
 use crate::store::{db_err, now_ms, LimeStore};
@@ -336,6 +336,17 @@ impl MeshEngine {
         Ok(if copy > 0 { self.node().enqueue_copy(packet, copy == 2).ok() } else { self.node().enqueue(packet).ok() })
     }
 
+    /// Writes what happened to copies of mail already on the server: `copy_handed`, or `copy_held why=…` once per copy and reason.
+    fn note_copy_events(&self) {
+        let events = self.node().take_copy_events();
+        for event in events {
+            match event {
+                CopyEvent::Handed { link, digest } => self.note(format!("copy_handed link={:04x} id={}", link.0 & 0xffff, short_id(&digest))),
+                CopyEvent::Held { link, digest, why } => self.note(format!("copy_held why={why} link={:04x} id={}", link.0 & 0xffff, short_id(&digest))),
+            }
+        }
+    }
+
     fn note(&self, line: String) {
         let mut notes = self.notes.lock().unwrap_or_else(|e| e.into_inner());
         if notes.len() < 500 {
@@ -383,10 +394,14 @@ impl MeshEngine {
             }
             (mine, contacts)
         };
+        let contacts_len = contacts.len();
         let mut node = self.node();
         node.set_my_tags(&mine);
         node.set_contact_tags(contacts);
+        drop(node);
+        let (own, others) = (mine.len(), contacts_len);
         *self.my_tags.lock().unwrap_or_else(|e| e.into_inner()) = mine;
+        self.note(format!("tags_set mine={own} contacts={others}"));
         Ok(())
     }
 
@@ -506,7 +521,9 @@ impl MeshEngine {
         if let Some(handled) = self.app_frame(link, &bytes) {
             return handled;
         }
-        actions(self.node().on_frame(LinkId(link), &bytes))
+        let out = actions(self.node().on_frame(LinkId(link), &bytes));
+        self.note_copy_events();
+        out
     }
 
     pub fn link_down(&self, link: u64) {

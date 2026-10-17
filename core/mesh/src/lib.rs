@@ -16,7 +16,7 @@ pub mod packet;
 
 pub use config::MeshConfig;
 pub use frame::Frame;
-pub use node::{Action, Delivered, MeshNode, NodeStats, Uploadable};
+pub use node::{Action, CopyEvent, Delivered, MeshNode, NodeStats, Uploadable};
 pub use packet::{bucket_size, Digest, Packet, PacketError, Short, Tag};
 
 /// A radio link to one other phone, named by the platform (one per pair at a time is the platform's job; the core tolerates duplicates).

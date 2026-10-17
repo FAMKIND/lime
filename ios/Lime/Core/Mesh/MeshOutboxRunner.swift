@@ -40,7 +40,9 @@ final class MeshOutboxRunner {
                 if pair.count == 2 { detail[pair[0]] = pair[1] }
             }
             log(kind, detail)
+            // The chats are redrawn once the items are stored: on the reply, and again on "ingested" with messages in it (LIME-156c).
             if kind == "fetch_reply", let items = detail["items"].flatMap({ Int($0) }), items > 0 { onFetchedMessages?() }
+            if kind == "fetch_ingested", let messages = detail["messages"].flatMap({ Int($0) }), messages > 0 { onFetchedMessages?() }
         }
     }
 
