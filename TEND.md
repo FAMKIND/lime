@@ -6439,3 +6439,17 @@ Brief: LIME-150, Phase 1 (the device spike). **Results pending the run with the 
 **Limit to say plainly:** with three phones there are only two other people, so 4 tiles repeat two streams: it measures 4 layers drawn, and 2 streams decoded, not 4 decoders. A real 4-stream run needs a 4th device with a camera.
 
 **How to run.** Launch on the measuring phone with `xcrun devicectl device process launch --device <id> --terminate-existing com.famkind.lime -- -lime.pipSpike.tiles 4` (done for the 13 mini). Start a video group call from the other two with cameras on, join on the 13 mini, minimise, then watch lime in front, backgrounded in another app, and typing in a chat. Pull the lines from the diagnostics log.
+
+### LIME-150 spike: the first run (13 mini, 4 tiles, 15:22–15:28 local, ~5½ min)
+
+Raw log: `/tmp/lime-pipspike-13mini.log` (67 `pip_spike` lines). The window (system PiP) stayed up from 15:23:18 on; lime was in front (including the typing minute) for 52 samples and in the background for 15.
+
+| | samples | fps per tile (all 4 alike) | CPU (one core = 100%) |
+|---|---|---|---|
+| lime in front | 52 | median 19.9, lowest 13.5 | median 65%, max 79% |
+| lime in the background | 15 | median 17.7, lowest 14.9 | median 34%, max 71% |
+
+- **Smoothness:** every tile kept its source rate (about 20 fps, never below 13 in the worst 5 s) in front and in the background; the background did not stall the layers.
+- **Heat:** thermal state nominal → **fair** (about 2½ min in) → **serious** (about 5 min in). The phone was at 100% battery, so battery drain could not be read.
+- **Caveats:** the 4 tiles repeat the same stream(s) (identical fps in all four), so this is 4 layers drawn and 1–2 streams decoded, not 4 decoders; 14 CPU samples came out negative (threads ending between reads) and were dropped; what the window looked like on screen is not in the log.
+- **Read:** the layers keep up, but CPU is high and the phone reached "serious" thermal state within 5 minutes, which a speaker window (one tile) should be compared with before building. Next measurement, if wanted: the same 5 minutes with `-lime.pipSpike.tiles 1`.
