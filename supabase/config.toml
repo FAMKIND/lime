@@ -447,3 +447,6 @@ verify_jwt = false
 verify_jwt = false
 [functions.blob-sweep]
 verify_jwt = false
+# LIME-155: relay download takes no session (the server must not learn who relayed); the device's own signature authorises it.
+[functions.mesh-fetch]
+verify_jwt = false

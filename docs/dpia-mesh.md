@@ -15,6 +15,10 @@ An input to the data protection impact assessment, not the assessment itself. Wh
 | What a phone carries for others | an encrypted local store, at most 48 hours | nobody (it is sealed; the carrier cannot read it) |
 | Upload logs on the server | function logs: a reason code, no ids, no keys, no tokens | the operators |
 
+## Relay download (LIME-155)
+
+An offline phone can ask a nearby online lime phone to fetch its sealed mail. The neighbour sees an opaque request and an opaque, padded reply (not whose mail, not how many items beyond a 4 KiB size bucket) and cannot read either. The server sees that a device's mail was fetched at a time from an address, as when the device fetches for itself, and **not which account relayed** (the request needs no session; the device's own signature authorises it). The relay's network address is the honest remaining limit: only a keyed hash of it is rate-limited, for a day. The request's single-use nonce is kept until it expires (at most 10 minutes) and then forgotten.
+
 ## The proximity risk
 
 Advertising the service UUID tells anyone with a Bluetooth scanner that a lime phone is nearby. That can reveal that someone uses lime (a teacher in a place where that matters) and, over time, patterns of presence. It does not reveal who, nor what is sent.

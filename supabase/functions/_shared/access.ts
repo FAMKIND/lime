@@ -13,7 +13,9 @@ export const SIGNED_LABEL = new TextEncoder().encode("lime-access-v2");
 
 /** Why an access was refused, for the function logs only (LIME-142-fix2): a short code, never an id, key or token. The phone still sees the one 403. */
 export type DenyReason =
-  | "no_public_key" | "bad_signature" | "bad_access_key" | "no_proof" | "header_unopenable" | "header_fields" | "unknown_device" | "revoked_device";
+  | "no_public_key" | "bad_signature" | "bad_access_key" | "no_proof" | "header_unopenable" | "header_fields" | "unknown_device" | "revoked_device"
+  // mesh-fetch (LIME-155)
+  | "fetch_unopenable" | "fetch_fields" | "fetch_expired" | "fetch_device" | "fetch_signature" | "nonce_used" | "rate_limited";
 
 export const accessDenied = (reason?: DenyReason) => {
   console.warn(JSON.stringify({ event: "access_denied", reason: reason ?? "unspecified" }));

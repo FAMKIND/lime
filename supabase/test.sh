@@ -20,4 +20,4 @@ sleep 3
 eval "$(supabase status -o env | grep -E '^(API_URL|DB_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
 export LIME_API_URL="$API_URL" LIME_DB_URL="$DB_URL" LIME_ANON_KEY="$ANON_KEY" LIME_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
 
-exec deno test --allow-net --allow-env --allow-read supabase/tests/ "$@"
+exec deno test --allow-net --allow-env --allow-read --allow-run=docker supabase/tests/ "$@"
