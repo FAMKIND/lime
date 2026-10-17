@@ -34,6 +34,7 @@ Advertising the service UUID tells anyone with a Bluetooth scanner that a lime p
 ## Retention
 
 - On a carrier's phone: until delivered, uploaded or 48 hours, whichever is first.
+- Incoming items a phone cannot read (waiting for a session, undecryptable, or invalid) are **kept at most 30 days on the phone**, then deleted (LIME-159); nothing is sent anywhere when that happens.
 - On the server: a mailbox item until the recipient acknowledges it or it expires (see `api-v2.md`); the mesh adds no new retention, and the upload logs hold reason codes only.
 
 ## Open points for the assessment

@@ -146,3 +146,71 @@ pub(crate) fn remember_received(conn: &Connection, hash: &[u8], now_ms: i64) -> 
 pub(crate) fn came_by_mesh(conn: &Connection, id: i64) -> bool {
     conn.query_row("SELECT cursor < 0 FROM pending_inbound WHERE id = ?1", params![id], |r| r.get::<_, bool>(0)).unwrap_or(false)
 }
+
+/// How long an incoming item this phone cannot read is kept (LIME-159, decided by the user): 30 days, for the waiting ones and the terminal ones.
+pub(crate) const UNREADABLE_KEPT_DAYS: i64 = 30;
+
+/// Deletes the items that have been unreadable for more than 30 days (`no_session`, `decrypt_failed`, `invalid`; any other reason stays), counted from
+/// when this phone first saw each one. A row with no usable arrival time is stamped "first seen now" and never deleted at once. Returns how many went.
+pub(crate) fn expire_unreadable(conn: &Connection, now_ms: i64) -> Result<u32, StoreError> {
+    conn.execute("UPDATE pending_inbound SET first_seen = ?1 WHERE first_seen <= 0", params![now_ms]).map_err(db_err)?;
+    let cutoff = now_ms - UNREADABLE_KEPT_DAYS * 24 * 3600 * 1000;
+    let deleted = conn
+        .execute(
+            "DELETE FROM pending_inbound WHERE reason IN (?1, ?2, ?3) AND first_seen < ?4",
+            params![NO_SESSION, DECRYPT_FAILED, INVALID, cutoff],
+        )
+        .map_err(db_err)?;
+    Ok(deleted as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn_with_rows(rows: &[(&str, i64)], now: i64) -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE pending_inbound (id INTEGER PRIMARY KEY AUTOINCREMENT, cursor INTEGER NOT NULL UNIQUE, sender_user TEXT, identified INTEGER NOT NULL,
+               ciphertext TEXT NOT NULL, received_at TEXT, reason TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, first_seen INTEGER NOT NULL, last_attempt INTEGER);",
+        )
+        .unwrap();
+        for (i, (reason, age_days)) in rows.iter().enumerate() {
+            let first_seen = if *age_days < 0 { 0 } else { now - age_days * 24 * 3600 * 1000 };
+            conn.execute("INSERT INTO pending_inbound (cursor, identified, ciphertext, reason, first_seen) VALUES (?1, 0, 'x', ?2, ?3)", params![i as i64 + 1, reason, first_seen]).unwrap();
+        }
+        conn
+    }
+
+    fn reasons(conn: &Connection) -> Vec<String> {
+        let mut s = conn.prepare("SELECT reason FROM pending_inbound ORDER BY id").unwrap();
+        s.query_map([], |r| r.get::<_, String>(0)).unwrap().map(|r| r.unwrap()).collect()
+    }
+
+    #[test]
+    fn unreadable_items_go_after_thirty_days_and_not_before_and_other_reasons_stay() {
+        let now = 1_900_000_000_000;
+        let conn = conn_with_rows(
+            &[
+                (NO_SESSION, 31), (DECRYPT_FAILED, 31), (INVALID, 31), // too old: deleted
+                (NO_SESSION, 29), (DECRYPT_FAILED, 29), (INVALID, 29), // not yet
+                (KEY_MISMATCH, 90), (NO_GROUP, 90), (NEW, 90), // other reasons: never deleted by this rule
+            ],
+            now,
+        );
+        assert_eq!(expire_unreadable(&conn, now).unwrap(), 3);
+        assert_eq!(reasons(&conn), vec![NO_SESSION, DECRYPT_FAILED, INVALID, KEY_MISMATCH, NO_GROUP, NEW]);
+        assert_eq!(expire_unreadable(&conn, now).unwrap(), 0, "nothing more to delete");
+    }
+
+    #[test]
+    fn a_row_with_no_arrival_time_is_stamped_now_not_deleted_and_goes_thirty_days_later() {
+        let now = 1_900_000_000_000;
+        let conn = conn_with_rows(&[(NO_SESSION, -1)], now);
+        assert_eq!(expire_unreadable(&conn, now).unwrap(), 0, "never deleted on install");
+        let stamped: i64 = conn.query_row("SELECT first_seen FROM pending_inbound", [], |r| r.get(0)).unwrap();
+        assert_eq!(stamped, now);
+        assert_eq!(expire_unreadable(&conn, now + 29 * 24 * 3600 * 1000).unwrap(), 0);
+        assert_eq!(expire_unreadable(&conn, now + 31 * 24 * 3600 * 1000).unwrap(), 1);
+    }
+}

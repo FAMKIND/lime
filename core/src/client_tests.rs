@@ -4379,3 +4379,28 @@ fn a_genuinely_undecryptable_item_still_goes_to_pending() {
     assert!(bob.store.pending_summary().unwrap().contains("invalid=1") || bob.store.pending_summary().unwrap().contains("no_session=1") || bob.store.pending_summary().unwrap().contains("decrypt_failed=1"), "{}", bob.store.pending_summary().unwrap());
     assert_eq!(bob.store.take_dup_dropped(), "", "not a duplicate: it stays for a look");
 }
+
+// ---- LIME-159 ----
+
+#[test]
+fn a_sync_deletes_unreadable_items_older_than_thirty_days_and_counts_them() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    {
+        let mut conn = alice.store.lock();
+        let now = crate::store::now_ms();
+        let day = 24 * 3600 * 1000;
+        let items: Vec<crate::store::pending::Fetched> = [(-1, 31), (-2, 29)]
+            .iter()
+            .map(|(cursor, _)| crate::store::pending::Fetched { cursor: *cursor, sender_user: None, identified: false, ciphertext: "AAAA".into(), received_at: None })
+            .collect();
+        crate::store::pending::insert_all(&mut conn, &items, now).unwrap();
+        conn.execute("UPDATE pending_inbound SET reason = 'invalid', first_seen = ?1 WHERE cursor = -1", rusqlite::params![now - 31 * day]).unwrap();
+        conn.execute("UPDATE pending_inbound SET reason = 'invalid', first_seen = ?1 WHERE cursor = -2", rusqlite::params![now - 29 * day]).unwrap();
+    }
+    assert_eq!(alice.store.pending_summary().unwrap().split(" |").next().unwrap(), "invalid=2");
+    sync(&alice, &transport);
+    assert_eq!(alice.store.pending_summary().unwrap().split(" |").next().unwrap(), "invalid=1", "the 31-day-old one is gone, the 29-day-old one stays");
+    assert_eq!(alice.store.take_pending_expired(), 1);
+    assert_eq!(alice.store.take_pending_expired(), 0);
+}

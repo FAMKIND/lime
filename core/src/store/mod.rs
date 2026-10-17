@@ -241,6 +241,8 @@ pub struct LimeStore {
     pub(crate) access_confirmed: std::sync::atomic::AtomicBool,
     /// Copies dropped as duplicates since the app last asked: (from the server, from the mesh).
     pub(crate) dup_dropped: std::sync::Mutex<(u32, u32)>,
+    /// Unreadable items deleted at 30 days since the app last asked.
+    pub(crate) pending_expired: std::sync::atomic::AtomicU32,
     /// The last send parked at least one ciphertext in `mesh_outbox` (so the message shows "Waiting for signal", not "Sent").
     pub(crate) last_send_parked: std::sync::atomic::AtomicBool,
 }
@@ -734,6 +736,7 @@ impl LimeStore {
             mesh_enabled: std::sync::atomic::AtomicBool::new(false),
             access_confirmed: std::sync::atomic::AtomicBool::new(false),
             dup_dropped: std::sync::Mutex::new((0, 0)),
+            pending_expired: std::sync::atomic::AtomicU32::new(0),
             last_send_parked: std::sync::atomic::AtomicBool::new(false),
         })
     }

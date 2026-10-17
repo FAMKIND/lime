@@ -6250,3 +6250,23 @@ Phase 0: `PLOT.md` committed first (0aaca73).
 **Gate:** none on device beyond the counts: at the next "logs", plot reads `pending [...]` on each phone and any `dup_dropped` lines.
 
 **For plot:** (b)'s breakdown is limited as above; the duplicates stop growing from this build on; the old 17+3 stay unless the user chooses a rule for them.
+
+
+## LIME-159 (unreadable incoming items are deleted after 30 days) — committed; installed on all three phones: Jean's iPhone 12 mini (00008101-…), the iPad (00008103-…) and Shem's iPhone 13 mini (00008110-…)
+
+Phase 0: `PLOT.md` committed first (0134cfd).
+
+**Phase 1 (read-only), reported.** `pending_inbound` **does store an arrival time on this phone**: `first_seen INTEGER NOT NULL` (milliseconds, set when the item is first saved), so the rule counts from when each phone first saw the item (the server's own `received_at` text may be empty and is not used). A row with no usable time cannot exist under the schema (the column is NOT NULL), but a value of 0 or less is treated as "no time". **Reasons in use:** `new`, `no_session`, `decrypt_failed`, `invalid`, `key_mismatch`, `no_group` (the schema comment also lists `sealed_unsupported`, which nothing writes now). **The rule deletes `no_session`, `decrypt_failed` and `invalid`; `new`, `key_mismatch` and `no_group` stay** (a key change waits for you to accept it; a group message waits for its group's creation; neither is "unreadable" in the brief's sense).
+
+**Every item, checked off:**
+- **1 Delete after each sync/retry: DONE.** At the end of every `retry_pending` (so after every sync and every mesh delivery) rows of reason `no_session`, `decrypt_failed` or `invalid` whose `first_seen` is more than 30 days old are deleted (`pending::expire_unreadable`).
+- **2 Rows with no arrival time: DONE.** Stamped "first seen now" (never deleted on install, and not before 30 days after).
+- **3 The log line: DONE.** `pending_expired n=…` in the diagnostics log (counts only) when anything is deleted (`LimeStore::take_pending_expired`, read after each sync).
+- **4 Tests: DONE** (3): a 31-day-old row of each kind is deleted and a 29-day-old one stays, other reasons untouched even at 90 days; a row with no time is stamped, not deleted, and goes 30 days later; **and through a real sync**: of two `invalid` rows (31 and 29 days old) only the older goes, with the count reported once. Core tests 259 + 21 + 12.
+- **Docs:** `docs/dpia-mesh.md`'s retention says unreadable incoming items are kept at most 30 days on the phone.
+
+**What each party learns:** nothing new; it is a local deletion only.
+
+**Verification:** core 259 + 21 + 12, Android OK, Swift tests pass, 0 warnings, Release clean. **Installed on:** Jean's phone, the iPad and the 13 mini (all three builds succeeded and installed). **Gate:** none on device. **Effect to expect:** the old `no_session`/`invalid` rows older than 30 days (the 13 mini's `invalid=17` and 3 `no_session`; Jean's 17+) go at the first sync after install if they are older than 30 days from when they were first seen; since they were seen within the last days, **nothing is deleted yet**, they go 30 days after their first sighting.
+
+**For plot:** the rule counts from `first_seen`; `key_mismatch`, `no_group` and `new` are left alone (say if they should expire too).

@@ -326,6 +326,8 @@ final class ConversationStore {
     func logDuplicates(_ core: LimeStore) {
         let counts = core.takeDupDropped()
         if !counts.isEmpty { CallDiagnostics.shared.log("dup_dropped \(counts)") }
+        let expired = core.takePendingExpired()
+        if expired > 0 { CallDiagnostics.shared.log("pending_expired n=\(expired)") }
     }
 
     /// Delivers what is waiting to be sent, then fetches the mailbox and refreshes the list. Calls

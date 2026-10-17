@@ -401,6 +401,11 @@ impl LimeStore {
         })
     }
 
+    /// How many unreadable incoming items were deleted for being 30 days old, since the last call (the app logs it as `pending_expired`).
+    pub fn take_pending_expired(&self) -> u32 {
+        self.pending_expired.swap(0, std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// How many copies were dropped as duplicates since the last call: "server=2 mesh=1" (empty when none): the app logs it as `dup_dropped`.
     pub fn take_dup_dropped(&self) -> String {
         let mut counts = self.dup_dropped.lock().unwrap_or_else(|e| e.into_inner());
@@ -1383,6 +1388,11 @@ impl LimeStore {
                 }
             }
             if !progress {
+                // Unreadable items are kept at most 30 days (LIME-159); this runs after every sync and every mesh delivery.
+                let expired = self.with_conn(|conn| pending::expire_unreadable(conn, now_ms()))?;
+                if expired > 0 {
+                    self.pending_expired.fetch_add(expired, std::sync::atomic::Ordering::Relaxed);
+                }
                 return Ok(received);
             }
         }
