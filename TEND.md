@@ -6270,3 +6270,26 @@ Phase 0: `PLOT.md` committed first (0134cfd).
 **Verification:** core 259 + 21 + 12, Android OK, Swift tests pass, 0 warnings, Release clean. **Installed on:** Jean's phone, the iPad and the 13 mini (all three builds succeeded and installed). **Gate:** none on device. **Effect to expect:** the old `no_session`/`invalid` rows older than 30 days (the 13 mini's `invalid=17` and 3 `no_session`; Jean's 17+) go at the first sync after install if they are older than 30 days from when they were first seen; since they were seen within the last days, **nothing is deleted yet**, they go 30 days after their first sighting.
 
 **For plot:** the rule counts from `first_seen`; `key_mismatch`, `no_group` and `new` are left alone (say if they should expire too).
+
+
+## LIME-160 (emergency leaves the chat ⋯ menu; Settings is where it lives) — committed; installed on all three phones: Jean's iPhone 12 mini (00008101-…), the iPad (00008103-…) and Shem's iPhone 13 mini (00008110-…)
+
+Phase 0: `PLOT.md` committed first (9c6b187). **Housekeeping:** LIME-155's uncommitted work (waiting for your staging go) was put aside with `git stash` while this brief was built, tested and installed from a clean HEAD, so this build has **none** of 155; the stash is `LIME-155 work in progress` and is restored right after this commit.
+
+**Phase 1 (read-only): every other place an emergency action shows in daily UI** (before removing anything beyond the two ⋯ items):
+- **The "+" long-press menu in Messages** ("Emergency", id `plus-emergency`, and a VoiceOver custom action "Emergency" on the +): kept, as the brief says (it is how an emergency starts).
+- **Settings → Emergency** (a row in Settings, and its screen: group, Safewords, sound, the notes): kept.
+- **In the emergency sheet** the "Send to" row and "Change" (the group picker): kept (it is where a phone with no group chosen picks one; the tests now use it).
+- **In a group's chat, only while an emergency is live:** the roll-up panel (Send my status / End emergency) and the cards: kept (they are not daily).
+- **Messages list:** an emergency message shows as the last line ("Emergency: Safe · …") only when one was sent.
+- **No banners, headers, empty states or other menus** mention emergencies. Nothing else needed removing.
+
+**The change: DONE.** "Emergency" and "Make this my emergency group" are gone from the chat ⋯ menu (direct and group), with the dead code they left: `makeEmergencyGroup`, the chat's `startingEmergency` state and its `EmergencySheet`. The Settings footnote stays ("Where statuses go. Start one by long-pressing + in Messages.").
+
+**Tests:** `EmergencyUITests` (5) re-pointed: they start with the long-press on +, pick the group in the sheet, send, then open the group's chat to see the card and the roll-up; **one new small check** that the group chat's ⋯ menu has no emergency item (`chat-emergency`, `chat-make-emergency-group`, or any button with "emergency" in its label). The chat-menu tests (label, block, mute, header tools, the menu says Mute) and `TabBarUITests`/`ProfileUITests`: 22 run, 1 skipped, 0 failed. Build 0 warnings; Release clean.
+
+**Installed on:** Jean's iPhone 12 mini, the iPad and Shem's iPhone 13 mini (all three builds succeeded and installed).
+
+**Gate (you):** open a group's ⋯ menu: no emergency items; Settings → Emergency still picks the group; long-press + still starts one.
+
+**For plot:** Phase 1's list is above (nothing else in daily UI). A phone with no emergency group chosen now picks it in Settings, or in the sheet's "Send to → Change" at the moment of need.

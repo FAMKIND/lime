@@ -1,6 +1,7 @@
 import XCTest
 
-/// LIME-143 (Debug builds): emergency mode in the demo: start it from a group, send a status, see the card and the panel, end it; and Settings.
+/// LIME-143, LIME-160 (Debug builds): emergency mode in the demo: start it from the long-press on +, choose the group, send a status, see the card and the
+/// panel in the group's chat, end it; Settings. The chat's ⋯ menu has nothing about emergencies.
 @MainActor
 final class EmergencyUITests: XCTestCase {
     private func launch() -> XCUIApplication {
@@ -12,16 +13,24 @@ final class EmergencyUITests: XCTestCase {
 
     private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
 
+    /// Long-press + → Emergency, then pick the group in the sheet ("Send to" → Change), as a phone with no emergency group chosen yet.
+    private func startFromPlus(_ app: XCUIApplication, group: String = "grp:demo1") {
+        let plus = app.buttons["new-message-button"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 10))
+        plus.press(forDuration: 1.0)
+        let item = app.buttons["Emergency"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "the long-press menu has Emergency")
+        item.tap()
+        XCTAssertTrue(any(app, "emergency-call-first").waitForExistence(timeout: 5))
+        any(app, "emergency-change").tap()
+        let pick = any(app, "emergency-group-\(group)")
+        XCTAssertTrue(pick.waitForExistence(timeout: 5), "the groups are offered in the sheet")
+        pick.tap()
+    }
+
     func testStartSendSeeTheCardAndThePanelThenEnd() {
         let app = launch()
-        let row = app.buttons["conversation-row-grp:demo1"]
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
-        row.tap()
-        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 8))
-        app.buttons["chat-more"].tap()
-        let start = app.buttons["chat-emergency"]
-        XCTAssertTrue(start.waitForExistence(timeout: 5), "an Emergency item in the group's menu")
-        start.tap()
+        startFromPlus(app)
         let call = any(app, "emergency-call-first")
         XCTAssertTrue(call.waitForExistence(timeout: 5), "the first thing is Call 911 first")
         XCTAssertTrue(call.label.hasPrefix("Call 911 first if you can") || call.label.contains("first if you can"), call.label)
@@ -35,6 +44,10 @@ final class EmergencyUITests: XCTestCase {
         where_.typeText("Room 204")
         any(app, "emergency-need-help").tap()
         any(app, "emergency-send").tap()
+        // Back in Messages: the group's chat shows the card and the roll-up.
+        let row = app.buttons["conversation-row-grp:demo1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 8))
+        row.tap()
         XCTAssertTrue(any(app, "emergency-panel").waitForExistence(timeout: 8), "the roll-up appears")
         XCTAssertTrue(any(app, "emergency-card-").exists || app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH 'emergency-card-'")).firstMatch.waitForExistence(timeout: 5), "the card is in the chat")
         XCTAssertTrue(app.staticTexts["1 safe \u{00B7} 0 need help"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS '1 need help'")).firstMatch.exists, "the totals")
@@ -76,13 +89,23 @@ final class EmergencyUITests: XCTestCase {
     /// The label is one line on the card at the default text size.
     func testTheCardLabelIsOneLine() {
         let app = launch()
-        app.buttons["conversation-row-grp:demo1"].tap()
-        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 8))
-        app.buttons["chat-more"].tap()
-        app.buttons["chat-emergency"].tap()
+        startFromPlus(app)
         any(app, "emergency-send").tap()
+        app.buttons["conversation-row-grp:demo1"].tap()
         let card = app.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH 'emergency-card-'")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 8))
         XCTAssertLessThan(card.frame.height, 130, "label row, status line and sender: no wrapped label")
+    }
+
+    /// LIME-160: no chat or group chat's ⋯ menu mentions emergencies (they are not for daily use).
+    func testTheGroupChatsMenuHasNothingAboutEmergencies() {
+        let app = launch()
+        app.buttons["conversation-row-grp:demo1"].tap()
+        XCTAssertTrue(app.buttons["chat-more"].waitForExistence(timeout: 8))
+        app.buttons["chat-more"].tap()
+        XCTAssertTrue(app.buttons["chat-group-details"].waitForExistence(timeout: 5), "the menu is open")
+        XCTAssertFalse(app.buttons["chat-emergency"].exists)
+        XCTAssertFalse(app.buttons["chat-make-emergency-group"].exists)
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'emergency'")).firstMatch.exists)
     }
 }

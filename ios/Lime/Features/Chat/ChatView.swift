@@ -41,9 +41,6 @@ struct ChatView: View {
 
     /// Tapping a call bubble asks whether to call back (a stray tap in class must not ring anyone).
     @State private var callBack: CallBubble?
-    #if DEBUG
-    @State private var startingEmergency = false
-    #endif
 
     struct ScrollRequest: Equatable { let id: String; let token = UUID() }
 
@@ -73,9 +70,6 @@ struct ChatView: View {
                 CallChoiceRows(voice: { startCall(conversation, video: false) }, video: { startCall(conversation, video: true) }, idPrefix: "call-back")
                 Button("Cancel", role: .cancel) {}
             }
-            #if DEBUG
-            .sheet(isPresented: $startingEmergency) { EmergencySheet(conversationID: conversation.id) }
-            #endif
             .messageActions(actions, conversationID: conversationID, selection: $selection) { message in
                 store.path.append(ThreadTarget(conversationID: conversationID, rootID: message.id))
             }
@@ -101,15 +95,6 @@ struct ChatView: View {
         }
     }
 
-    #if DEBUG
-    /// The group's ⋯ "Make this my emergency group" (LIME-143).
-    private func makeEmergencyGroup(_ conversation: Conversation) async {
-        var settings = await store.emergencySettings()
-        settings.groupId = conversation.id
-        await store.saveEmergencySettings(settings)
-        store.showBanner("\(conversation.title) is your emergency group")
-    }
-    #endif
 
     // MARK: iOS 26+: system back button, toolbar and scroll edge effect (as in Apple Messages)
 
@@ -521,14 +506,6 @@ struct ChatView: View {
                 .accessibilityIdentifier("chat-mute")
             }
             Divider()
-            #if DEBUG
-            if conversation.isGroup, conversation.groupEnded == nil, !conversation.isRequest {
-                Button { startingEmergency = true } label: { Label("Emergency", systemImage: "exclamationmark.triangle") }
-                    .accessibilityIdentifier("chat-emergency")
-                Button { Task { await makeEmergencyGroup(conversation) } } label: { Label("Make this my emergency group", systemImage: "star") }
-                    .accessibilityIdentifier("chat-make-emergency-group")
-            }
-            #endif
             if conversation.isGroup {
                 Button { store.path.append(GroupTarget(conversationID: conversation.id)) } label: {
                     Label("Group details", systemImage: "person.2")
