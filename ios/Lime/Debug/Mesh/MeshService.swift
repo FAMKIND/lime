@@ -118,6 +118,13 @@ final class MeshService {
         if online { engine.fetchReset() }
     }
 
+    /// Every 30 s the bit is said again on each live link (two bytes), so a neighbour that missed it still hears it.
+    func refreshOnlineBit() {
+        refreshTicks += 1
+        if refreshTicks % 2 == 0 { driver?.broadcastOnline(why: "refresh") }
+    }
+    @ObservationIgnored private var refreshTicks = 0
+
     /// Neighbours' requests waiting to be posted: each is posted to `mesh-fetch` with no session, and the answer goes back over the same link.
     func handleFetchJobs() {
         guard let engine, let runner else { return }
@@ -135,17 +142,34 @@ final class MeshService {
 
     /// An offline, signed-in phone with a linked neighbour that can fetch for it asks for its mail (at once for a new neighbour, then once a minute).
     func maybeFetch(trigger: MeshFetchRules.Trigger) {
-        guard let engine, attached else { return }
+        guard let engine, attached else { return skip("not_attached") }
         let neighbours = engine.fetchNeighbours()
         let since = lastFetchAt.map { Date().timeIntervalSince($0) }
-        guard MeshFetchRules.shouldRequest(offline: !online, signedIn: store?.accountSignedIn ?? false, hasOnlineNeighbour: !neighbours.isEmpty, secondsSinceLast: since, trigger: trigger) else { return }
-        // A new neighbour is asked once; the minute timer asks again.
-        if trigger == .neighbour, neighbours.allSatisfy({ lastAsked[$0] != nil }) { return }
-        guard let link = MeshFetchRules.nextNeighbour(candidates: neighbours, lastAsked: lastAsked), let frame = try? engine.fetchFrameFor(link: link) else { return }
+        let signedIn = store?.accountSignedIn ?? false
+        if let why = MeshFetchRules.skipReason(offline: !online, signedIn: signedIn, neighbours: neighbours, lastAsked: lastAsked, secondsSinceLast: since, trigger: trigger) { return skip(why) }
+        guard !online else { return }
+        guard let link = MeshFetchRules.nextNeighbour(candidates: neighbours, lastAsked: lastAsked) else { return skip("no_candidate") }
+        guard let frame = try? engine.fetchFrameFor(link: link) else { return skip("request_not_built") }
         lastAsked[link] = Date()
         lastFetchAt = Date()
         bluetooth.transmit(link, frame)
         runner?.drainNotes()
+    }
+
+    /// A neighbour's online bit arrived or changed: a changed bit is a new reason to ask, so the link is asked again.
+    func neighbourOnline(link: UInt64, on: Bool) {
+        lastAsked[link] = nil
+        if on { maybeFetch(trigger: .neighbour) }
+    }
+
+    @ObservationIgnored private var skipLogged: [String: Date] = [:]
+
+    /// Why this phone did not ask for mail: one line per reason per minute, so a silent "no" shows in the log.
+    private func skip(_ why: String) {
+        let now = Date()
+        if let last = skipLogged[why], now.timeIntervalSince(last) < 60 { return }
+        skipLogged[why] = now
+        log.record("fetch_skip", ["why": why])
     }
 
     // MARK: Battery log
@@ -329,6 +353,7 @@ final class MeshService {
         let runner = MeshOutboxRunner(engine: engine, driver: driver, log: { [weak self] kind, detail in self?.log.record(kind, detail) })
         self.runner = runner
         runner.onFetchedMessages = { [weak self] in Task { @MainActor in await self?.store?.reload() } }
+        driver.onOnlineSeen = { [weak self] link, on in self?.neighbourOnline(link: link, on: on) }
         driver.onFrameHandled = { [weak self, weak runner] in
             runner?.drainNotes()
             // Relay download (LIME-155): requests a neighbour asked this phone to post, and a new neighbour that can fetch for this phone.
@@ -361,6 +386,7 @@ final class MeshService {
                 try? await Task.sleep(for: .seconds(15))
                 await self?.afterDelivery(trigger: "tick")
                 self?.updateRelayState()
+                self?.refreshOnlineBit()
                 self?.maybeFetch(trigger: .tick)
             }
         }

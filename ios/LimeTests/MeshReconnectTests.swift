@@ -221,6 +221,18 @@ final class MeshReconnectTests: XCTestCase {
         XCTAssertNil(MeshFetchRules.nextNeighbour(candidates: [], lastAsked: [:]))
     }
 
+    /// LIME-155-fix: a "no" says why.
+    func testAnOfflinePhoneThatDoesNotAskSaysWhy() {
+        typealias R = MeshFetchRules
+        let asked: [UInt64: Date] = [4: Date()]
+        XCTAssertNil(R.skipReason(offline: false, signedIn: true, neighbours: [], lastAsked: [:], secondsSinceLast: nil, trigger: .tick), "online: nothing to say")
+        XCTAssertEqual(R.skipReason(offline: true, signedIn: false, neighbours: [4], lastAsked: [:], secondsSinceLast: nil, trigger: .neighbour), "not_signed_in")
+        XCTAssertEqual(R.skipReason(offline: true, signedIn: true, neighbours: [], lastAsked: [:], secondsSinceLast: nil, trigger: .neighbour), "no_online_neighbour")
+        XCTAssertEqual(R.skipReason(offline: true, signedIn: true, neighbours: [4], lastAsked: asked, secondsSinceLast: 10, trigger: .tick), "asked_within_minute")
+        XCTAssertEqual(R.skipReason(offline: true, signedIn: true, neighbours: [4], lastAsked: asked, secondsSinceLast: 10, trigger: .neighbour), "already_asked")
+        XCTAssertNil(R.skipReason(offline: true, signedIn: true, neighbours: [4], lastAsked: [:], secondsSinceLast: nil, trigger: .neighbour), "asks at once")
+    }
+
     func testAPhoneTellsNeighboursItCanFetchOnlyWhenOnlineAndSignedIn() {
         XCTAssertTrue(MeshFetchRules.relayOnline(online: true, signedIn: true))
         XCTAssertFalse(MeshFetchRules.relayOnline(online: false, signedIn: true))

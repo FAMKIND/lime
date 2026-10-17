@@ -223,6 +223,34 @@ final class MeshLinkTests: XCTestCase {
         XCTAssertTrue(engine.calls.contains("down 6"))
     }
 
+    /// LIME-155-fix: the bit is logged each time it goes out (so a missing one shows), goes again when the channel opens and on the first frame
+    /// heard from the neighbour, and a neighbour's bit is logged once per change and handed to the app.
+    func testTheOnlineBitIsLoggedResentOnChannelOpenAndFirstFrameAndSeenOncePerChange() {
+        let engine = FakeEngine()
+        var sent: [Data] = []
+        var logs: [(String, [String: String])] = []
+        var seen: [(UInt64, Bool)] = []
+        let driver = MeshDriver(engine: engine, scheduler: FakeScheduler(), transmit: { if $1[0] == 8 { sent.append($1) } }, log: { logs.append(($0, $1)) })
+        driver.onOnlineSeen = { seen.append(($0, $1)) }
+        driver.linkUp(5)
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertEqual(logs.filter { $0.0 == "relay_online_sent" }.count, 1, "logged when sent")
+        driver.channelOpened(5)
+        XCTAssertEqual(sent.count, 2, "the channel opening says it again")
+        driver.receive(Data([0, 1, 2]), on: 5)
+        XCTAssertEqual(sent.count, 3, "the first frame heard says it once more")
+        driver.receive(Data([0, 1, 2]), on: 5)
+        XCTAssertEqual(sent.count, 3, "only the first")
+        driver.receive(Data([8, 1]), on: 5)
+        driver.receive(Data([8, 1]), on: 5)
+        XCTAssertEqual(seen.map(\.1), [true], "seen once")
+        XCTAssertEqual(logs.filter { $0.0 == "relay_online_seen" }.count, 1)
+        driver.receive(Data([8, 0]), on: 5)
+        XCTAssertEqual(seen.map(\.1), [true, false], "a change is seen again")
+        driver.channelOpened(9)
+        XCTAssertEqual(sent.count, 3, "not a link that is not live")
+    }
+
     func testADelayedFrameForALinkThatWentDownIsDropped() {
         let engine = FakeEngine()
         engine.upActions[5] = [action(5, 1, delay: 50)]

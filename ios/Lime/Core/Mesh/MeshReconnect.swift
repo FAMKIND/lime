@@ -138,6 +138,16 @@ enum MeshFetchRules {
         }
     }
 
+    /// Why an offline phone did not ask (nil: it asks, or it is online and never would). Logged once per reason per minute as `fetch_skip`.
+    static func skipReason(offline: Bool, signedIn: Bool, neighbours: [UInt64], lastAsked: [UInt64: Date], secondsSinceLast: TimeInterval?, trigger: Trigger) -> String? {
+        guard offline else { return nil }
+        if !signedIn { return "not_signed_in" }
+        if neighbours.isEmpty { return "no_online_neighbour" }
+        if !shouldRequest(offline: offline, signedIn: signedIn, hasOnlineNeighbour: true, secondsSinceLast: secondsSinceLast, trigger: trigger) { return "asked_within_minute" }
+        if trigger == .neighbour, neighbours.allSatisfy({ lastAsked[$0] != nil }) { return "already_asked" }
+        return nil
+    }
+
     /// The neighbour asked least recently (one that was never asked first), so a request that timed out goes to the next one.
     static func nextNeighbour(candidates: [UInt64], lastAsked: [UInt64: Date]) -> UInt64? {
         candidates.min { (lastAsked[$0] ?? .distantPast) < (lastAsked[$1] ?? .distantPast) }

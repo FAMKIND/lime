@@ -47,6 +47,11 @@ final class MeshDriver {
     var onMessages: ((Int) -> Void)?
     /// Called after each frame has been handled (the notes the engine made, such as a delivery, can be logged at once).
     var onFrameHandled: (() -> Void)?
+    /// Called when a neighbour's online bit arrived or changed (relay download): the offline phone asks at once.
+    var onOnlineSeen: ((_ link: UInt64, _ on: Bool) -> Void)?
+    private var heardFrom: Set<UInt64> = []
+    private var seenOnline: [UInt64: Bool] = [:]
+    private var sentOnline: [UInt64: Bool] = [:]
 
     init(engine: MeshEngineProtocol, scheduler: MeshScheduler = MainQueueScheduler(), now: @escaping () -> Date = Date.init,
          transmit: @escaping (UInt64, Data) -> Void, log: @escaping (String, [String: String]) -> Void = { _, _ in }) {
@@ -62,20 +67,37 @@ final class MeshDriver {
         liveLinks.insert(link)
         log("link_up", ["link": Self.short(link)])
         announce(link, force: true)
-        // Tell the neighbour whether this phone can fetch for it (relay download, LIME-155).
-        transmit(link, engine.onlineFrame())
+        // Tell the neighbour whether this phone can fetch for it (relay download, LIME-155), from both roles.
+        sendOnline(link, why: "link_up")
     }
 
-    /// This phone's "I can fetch for you" bit changed: every live link hears it.
-    func broadcastOnline() {
+    /// This phone's "I can fetch for you" bit goes out on a link: logged every time, so a missing bit shows in the log.
+    func sendOnline(_ link: UInt64, why: String) {
         let frame = engine.onlineFrame()
-        for link in liveLinks.sorted() { transmit(link, frame) }
+        let on = frame.count > 1 && frame[frame.startIndex + 1] != 0
+        log("relay_online_sent", ["link": Self.short(link), "on": String(on), "why": why])
+        sentOnline[link] = on
+        transmit(link, frame)
+    }
+
+    /// This phone's "I can fetch for you" bit changed (or a while has passed): every live link hears it.
+    func broadcastOnline(why: String = "change") {
+        for link in liveLinks.sorted() { sendOnline(link, why: why) }
+    }
+
+    /// The link's channel opened (L2CAP): a bit sent on the slower GATT path at link-up may have been lost, so it goes again.
+    func channelOpened(_ link: UInt64) {
+        guard liveLinks.contains(link) else { return }
+        sendOnline(link, why: "channel_open")
     }
 
     func linkDown(_ link: UInt64) {
         liveLinks.remove(link)
         lastHello[link] = nil
         storm[link] = nil
+        heardFrom.remove(link)
+        seenOnline[link] = nil
+        sentOnline[link] = nil
         engine.linkDown(link: link)
         engine.fetchLinkDown(link: link)
         log("link_down", ["link": Self.short(link)])
@@ -86,6 +108,17 @@ final class MeshDriver {
         log("frame_in", ["link": Self.short(link), "bytes": String(bytes.count)])
         watchForStorm(link)
         run(engine.frame(link: link, bytes: bytes))
+        if bytes.count == 2, bytes[bytes.startIndex] == 8 {
+            let on = bytes[bytes.startIndex + 1] != 0
+            if seenOnline[link] != on {
+                seenOnline[link] = on
+                log("relay_online_seen", ["link": Self.short(link), "on": String(on)])
+                onOnlineSeen?(link, on)
+            }
+        } else if liveLinks.contains(link), heardFrom.insert(link).inserted {
+            // The first frame from a neighbour proves the link carries both ways: say the bit once more, in case the first went astray.
+            sendOnline(link, why: "first_frame")
+        }
         if let count = try? engine.takeMine(), count > 0 { onMessages?(Int(count)) }
         onFrameHandled?()
         // If this changed what the phone holds, the other links should hear it (once: the debounce and the version see to that).

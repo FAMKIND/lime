@@ -6318,3 +6318,26 @@ No Phase 0 commit: `PLOT.md` had no new changes beyond what was already committe
 **Device check (with you), NOT YET RUN:** Jean's phone online and far away or with Bluetooth off; the 13 mini **offline** (airplane mode, Bluetooth on) with the iPad beside it **online**; Jean sends 2 messages and a reaction → the 13 mini should show them within ~1 min while still offline. Logs: `fetch_request_sent` (13 mini), `fetch_relayed status=200` (iPad), `fetch_reply items=3` (13 mini). Then the 13 mini online → no duplicates; its pending count does not grow.
 
 **For plot:** (c) and (d) are answered above; the measured time to arrive comes with the device check. The relay's address reaches the server (stated as the honest limit). A request that stalls past 20 s goes to the next neighbour; an item too big for one Bluetooth frame (over ~48 KiB) waits for the internet.
+
+## LIME-155-fix
+
+Brief: LIME-155. Swift only; no server, crypto or packet change.
+
+**Phase 1 (read from `/tmp/lime-meshlogs16`, 14:27–14:33Z).**
+- (a) Frame 8 was sent in one place only: `MeshDriver.linkUp` (both roles) and `broadcastOnline` (on a change). It went through `transmit` directly, so it never showed as `frame_out`; the iPad's did leave at 14:27:14.374, but the 13 mini heard nothing from the peripheral until 14:27:47 (about 33 s: the GATT notify path from the peripheral at link-up was lost or late). Nothing resent it once the channel opened or the neighbour spoke.
+- (b) The engine keeps a neighbour's bit per link id (`FetchState.neighbours`) and drops it at `fetch_link_down`; a lost bit is never asked for again, and `maybeFetch` returned silently on every "no".
+- (c) The 13 mini re-dialled the iPad (`handshake_timeout stage=hello_requested`, `outbound_paused`) because the "already linked" test compared `CBPeripheral` objects (`===`); a different object for the same identifier did not match.
+- Item 4 (counts only): Jean's `pending_summary` was `no_session=23 | mesh=3 oldest_days=1` at 10:32, so the 23 are at most 1 day old; the in-app summary does not give the route, and the databases are encrypted. Nothing deleted.
+
+**Changes.**
+- [x] 1. `relay_online_sent link on why` is logged every time the bit goes out (`link_up`, `channel_open`, `first_frame`, `change`, `refresh` every 30 s); sent again when the L2CAP channel opens and on the first frame heard from the neighbour; `relay_online_seen link on` logged once per change.
+- [x] 2. A changed bit clears "already asked" for that link and asks at once (`neighbourOnline`); `fetch_skip why=` (`not_attached`, `not_signed_in`, `no_online_neighbour`, `asked_within_minute`, `already_asked`, `no_candidate`, `request_not_built`), once per reason per minute.
+- [x] 3. `peerFor(peripheral:)` matches by identifier; discovery skips a phone that is linked (`dial_skip why=linked`, once per link).
+- [x] 4. Counts reported above.
+- [x] 5. Tests: the bit is logged, resent on channel open and first frame, seen once per change; `skipReason` reasons. (Both-roles link-up and broadcast tests already existed.)
+
+**Verification.** MeshLinkTests, MeshReconnectTests, MeshMessagesTests pass on the simulator; 0 warnings of ours (one third-party LiveKitWebRTC header warning). Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Device check: not yet run** (needs the three phones with the user: Jean far/Bluetooth off and online, 13 mini in airplane mode beside the online iPad; watch `relay_online_seen on=true`, `fetch_request_sent`, `fetch_relayed status=200`, `fetch_reply items=3`; seconds from Jean's send to arrival).
+
+For plot: causes (a) the bit rode one unlogged GATT notify at link-up and was never repeated; (b) nothing asked again after a miss and the skip was silent; (c) object-identity match let a linked phone be dialled again. Seconds to arrival: pending the device check.

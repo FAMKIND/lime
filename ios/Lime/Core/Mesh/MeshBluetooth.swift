@@ -65,6 +65,7 @@ final class MeshBluetooth: NSObject {
     // Links, by the remote phone's link id.
     @ObservationIgnored private var peers: [UInt64: Peer] = [:]
     @ObservationIgnored private var held: [(UInt64, Data)] = []
+    @ObservationIgnored private var skippedLinked: Set<UInt64> = []
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var dutyTask: Task<Void, Never>?
     @ObservationIgnored private var lastPeerSeen = Date()
@@ -334,7 +335,7 @@ final class MeshBluetooth: NSObject {
         }
     }
 
-    private func peerFor(peripheral: CBPeripheral) -> Peer? { peers.values.first { $0.peripheral === peripheral } }
+    private func peerFor(peripheral: CBPeripheral) -> Peer? { peers.values.first { $0.peripheral?.identifier == peripheral.identifier } }
     private func peerFor(central: CBCentral) -> Peer? { peers.values.first { $0.central?.identifier == central.identifier } }
 
     private func openChannel(_ channel: CBL2CAPChannel, for peer: Peer) {
@@ -342,6 +343,7 @@ final class MeshBluetooth: NSObject {
         peer.streams = streams
         streams.open()
         onLog("l2cap_open", ["link": MeshDriver.short(peer.remote), "psm": String(channel.psm)])
+        driver?.channelOpened(peer.remote)
         // What was waiting on GATT can go over the channel from now on; frames already in GATT fragments finish there.
     }
 }
@@ -441,6 +443,11 @@ extension MeshBluetooth: @preconcurrency CBCentralManagerDelegate {
         let rssi = RSSI.intValue
         guard MeshLinkPolicy.rssiAllowsConnecting(rssi) else { onLog("skip_weak", ["rssi": String(rssi)]); return }
         if let until = rejectedUntil[peripheral.identifier], until > Date() { return }
+        if let linked = peerFor(peripheral: peripheral), linked.up {
+            // Already linked to this phone: no second dial (logged once per link).
+            if skippedLinked.insert(linked.remote).inserted { onLog("dial_skip", ["why": "linked", "link": MeshDriver.short(linked.remote)]) }
+            return
+        }
         guard handshakes[peripheral.identifier] == nil, peerFor(peripheral: peripheral) == nil, peripheral.state == .disconnected else { return }
         if let until = notBefore[peripheral.identifier], until > Date() { return }
         peripherals[peripheral.identifier] = peripheral
