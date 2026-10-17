@@ -322,6 +322,12 @@ final class ConversationStore {
     /// carries when there is internet (LIME-142). Set by the app.
     @ObservationIgnored var afterDelivery: (() async -> Void)?
 
+    /// A message that came twice (the mesh and the server) is dropped by the core; say how many, per route (LIME-141-fix6).
+    func logDuplicates(_ core: LimeStore) {
+        let counts = core.takeDupDropped()
+        if !counts.isEmpty { CallDiagnostics.shared.log("dup_dropped \(counts)") }
+    }
+
     /// Delivers what is waiting to be sent, then fetches the mailbox and refreshes the list. Calls
     /// that arrive while one is running are folded into one more round afterwards.
     func syncNow() async {
@@ -344,6 +350,7 @@ final class ConversationStore {
                 let report = try await Task.detached(priority: .userInitiated) {
                     try core.sync(transport: link.transport, authToken: token)
                 }.value
+                logDuplicates(core)
                 let downloaded = core.takeDownloaded()
                 if downloaded > 0 || report.pending > 0 {
                     CallDiagnostics.shared.log("sync: downloaded \(downloaded), stored \(report.received), pending [\((try? core.pendingSummary()) ?? "?")]")

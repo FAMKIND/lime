@@ -273,6 +273,7 @@ final class MeshService {
         let driver = MeshDriver(engine: engine, transmit: { link, bytes in bluetooth.transmit(link, bytes) }, log: { [weak self] kind, detail in self?.log.record(kind, detail) })
         driver.onMessages = { [weak self] count in
             self?.log.record("mesh_messages", ["count": String(count)])
+            if let core = self?.store?.core, let counts = Optional(core.takeDupDropped()), !counts.isEmpty { self?.log.record("dup_dropped", ["counts": counts]) }
             Task { @MainActor in await self?.store?.reload() }
         }
         self.driver = driver

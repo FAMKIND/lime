@@ -389,8 +389,24 @@ impl LimeStore {
         self.with_conn(|conn| {
             let mut statement = conn.prepare("SELECT reason, COUNT(*) FROM pending_inbound GROUP BY reason ORDER BY reason").map_err(db_err)?;
             let rows = statement.query_map([], |r| Ok(format!("{}={}", r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
-            Ok(rows.join(" "))
+            let mut summary = rows.join(" ");
+            // How many came by the mesh, and how old the oldest is (counts only, never content).
+            let (mesh, oldest): (i64, Option<i64>) = conn
+                .query_row("SELECT COALESCE(SUM(cursor < 0), 0), MIN(first_seen) FROM pending_inbound", [], |r| Ok((r.get(0)?, r.get(1)?)))
+                .map_err(db_err)?;
+            if !summary.is_empty() {
+                summary.push_str(&format!(" | mesh={mesh} oldest_days={}", oldest.map(|t| (now_ms() - t).max(0) / 86_400_000).unwrap_or(0)));
+            }
+            Ok(summary)
         })
+    }
+
+    /// How many copies were dropped as duplicates since the last call: "server=2 mesh=1" (empty when none): the app logs it as `dup_dropped`.
+    pub fn take_dup_dropped(&self) -> String {
+        let mut counts = self.dup_dropped.lock().unwrap_or_else(|e| e.into_inner());
+        let (server, mesh) = *counts;
+        *counts = (0, 0);
+        if server == 0 && mesh == 0 { String::new() } else { format!("server={server} mesh={mesh}") }
     }
 
     /// The longest wait for the core's lock since this was last called, in milliseconds (call diagnostics).
@@ -1334,15 +1350,30 @@ impl LimeStore {
             let rows = self.with_conn(pending::retryable)?;
             let mut progress = false;
             for row in rows {
+                // The same ciphertext may already have become a message (by the other route): an Olm message cannot be decrypted twice, so
+                // look it up first and drop the copy (LIME-141-fix6).
+                let hash = pending::ciphertext_hash(&row.ciphertext);
+                if let Some(hash) = &hash {
+                    let (seen, mesh) = self.with_conn(|conn| Ok((pending::already_received(conn, hash), pending::came_by_mesh(conn, row.id))))?;
+                    if seen {
+                        self.with_conn(|conn| pending::remove(conn, row.id))?;
+                        let mut counts = self.dup_dropped.lock().unwrap_or_else(|e| e.into_inner());
+                        if mesh { counts.1 += 1 } else { counts.0 += 1 }
+                        progress = true;
+                        continue;
+                    }
+                }
                 let outcome = self.process_item(state, me, &row)?;
                 let now = now_ms();
                 match outcome {
                     Outcome::Stored => {
+                        if let Some(hash) = &hash { self.with_conn(|conn| pending::remember_received(conn, hash, now))?; }
                         self.with_conn(|conn| pending::remove(conn, row.id))?;
                         received += 1;
                         progress = true;
                     }
                     Outcome::Duplicate => {
+                        if let Some(hash) = &hash { self.with_conn(|conn| pending::remember_received(conn, hash, now))?; }
                         self.with_conn(|conn| pending::remove(conn, row.id))?;
                         progress = true;
                     }

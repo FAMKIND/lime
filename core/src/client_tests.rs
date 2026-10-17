@@ -1476,7 +1476,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
         let conn = alice.store.lock();
         conn.execute_batch(
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
-             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
+             DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
              PRAGMA user_version = 9;",
         )
@@ -4313,4 +4313,69 @@ fn a_phone_that_never_registered_requeues_nothing() {
 
 fn bob_texts(bob: &Party, alice: &Party) -> Vec<String> {
     bob.store.list_messages(format!("dm:{}", alice.user)).unwrap().into_iter().map(|m| m.text).collect()
+}
+
+// ---- LIME-141-fix6 ----
+
+fn mailbox_ciphertext(server: &Arc<FakeServer>, device: &str) -> Vec<u8> {
+    let state = server.state.lock().unwrap();
+    let item = state.mailbox.iter().rev().find(|m| m.1 == device).unwrap();
+    vodozemac::base64_decode(&item.2).unwrap()
+}
+
+fn texts_in(p: &Party, peer: &Party) -> Vec<String> {
+    p.store.list_messages(format!("dm:{}", peer.user)).unwrap().into_iter().map(|m| m.text).collect()
+}
+
+#[test]
+fn a_message_that_arrives_by_the_mesh_and_then_by_the_server_is_one_message_and_nothing_pending() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    sync(&bob, &transport);
+    say(&alice, &bob, &transport, "mesh then server");
+    let ciphertext = mailbox_ciphertext(&server, &bob.device);
+    // The mesh copy first.
+    assert_eq!(bob.store.receive_mesh_payloads(vec![ciphertext]).unwrap(), 1);
+    assert_eq!(texts_in(&bob, &alice).iter().filter(|t| *t == "mesh then server").count(), 1);
+    // Then the server's copy of the same ciphertext.
+    sync(&bob, &transport);
+    assert_eq!(texts_in(&bob, &alice).iter().filter(|t| *t == "mesh then server").count(), 1, "still one");
+    assert_eq!(bob.store.pending_summary().unwrap(), "", "the server copy is a duplicate, not pending");
+    assert_eq!(bob.store.take_dup_dropped(), "server=1 mesh=0");
+    assert_eq!(bob.store.take_dup_dropped(), "", "counted once");
+}
+
+#[test]
+fn a_message_that_arrives_by_the_server_and_then_by_the_mesh_is_one_message_and_nothing_pending() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    sync(&bob, &transport);
+    say(&alice, &bob, &transport, "server then mesh");
+    let ciphertext = mailbox_ciphertext(&server, &bob.device);
+    sync(&bob, &transport);
+    assert_eq!(texts_in(&bob, &alice).iter().filter(|t| *t == "server then mesh").count(), 1);
+    // The same ciphertext later, over the mesh.
+    assert_eq!(bob.store.receive_mesh_payloads(vec![ciphertext]).unwrap(), 0);
+    assert_eq!(texts_in(&bob, &alice).iter().filter(|t| *t == "server then mesh").count(), 1);
+    assert_eq!(bob.store.pending_summary().unwrap(), "");
+    assert_eq!(bob.store.take_dup_dropped(), "server=0 mesh=1");
+}
+
+#[test]
+fn a_genuinely_undecryptable_item_still_goes_to_pending() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    sync(&bob, &transport);
+    // Bytes that look like an Olm message but were never made for this phone.
+    let mut junk = vec![1u8];
+    junk.extend_from_slice(&[7u8; 120]);
+    bob.store.receive_mesh_payloads(vec![junk]).unwrap();
+    assert!(bob.store.pending_summary().unwrap().contains("invalid=1") || bob.store.pending_summary().unwrap().contains("no_session=1") || bob.store.pending_summary().unwrap().contains("decrypt_failed=1"), "{}", bob.store.pending_summary().unwrap());
+    assert_eq!(bob.store.take_dup_dropped(), "", "not a duplicate: it stays for a look");
 }

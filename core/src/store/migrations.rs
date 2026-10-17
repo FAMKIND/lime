@@ -549,6 +549,13 @@ const MIGRATIONS: &[&str] = &[
      );",
     // 35 (LIME-143-fix): drills were removed; the flag goes (an older build's `drill` field is ignored when read).
     "ALTER TABLE emergency_messages DROP COLUMN drill;",
+    // 36 (LIME-141-fix6): the SHA-256 of every ciphertext this phone has turned into a message (or recognised as one it already had). A message can
+    // arrive twice (the mesh, then the server, or the other way round) and an Olm message cannot be decrypted twice, so the second copy used to sit in
+    // `pending_inbound` for ever. It is now recognised by its hash and dropped.
+    "CREATE TABLE received_ciphertexts (
+         hash BLOB PRIMARY KEY,
+         at   INTEGER NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

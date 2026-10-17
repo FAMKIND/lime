@@ -6228,3 +6228,25 @@ Phase 0: `PLOT.md` committed first (daaaee8).
 **On the phones (with you), NOT YET RUN:** Jean's Bluetooth off; the 13 mini in airplane mode (Bluetooth on), **force-quit and reopen offline**; the app log must say `session link=pending`; send 2 messages → "Waiting for a phone nearby" → "Passed to a nearby phone" (the iPad near, offline); the iPad online → `upload_ok` ×2 → **Jean receives both**; then the 13 mini online → `resend_local n=…` for the old stuck ones → Jean receives them (and whether `39b8` from 1e156 arrived). Pull Jean's log too (unlocked, plugged in).
 
 **For plot:** (a) was the missing `lime.owner` flag (the rule asked a question the phone could not answer); (b) one path: no link after any failed registration; (c) the count arrives with the first `resend_local`; (4) not found, now logged.
+
+
+## LIME-141-fix6 (a message received twice is a duplicate, not a forever-pending item) — committed; installed on the phones that were reachable (see the end)
+
+Phase 0: `PLOT.md` committed first (0aaca73).
+
+**Phase 1 (read-only), reported.**
+- **(a) How the core identifies a message across the two routes: it did not, before.** Both routes end in the same `pending_inbound` table (mesh items get a negative cursor made from the payload's hash; server items the server's cursor) and the same `process_item`. A message is de-duplicated only **after** decryption, by its op id. But an **Olm message cannot be decrypted twice** (its message key is used up), so the second copy never reaches that check: a normal Olm message with no session that can read it is `no_session`, a pre-key one `decrypt_failed`, and both stay for ever. There was **no "seen" record before decrypting.**
+- **(b) What is in Jean's 17–19 and the 13 mini's `invalid=17`: partly unknowable from outside.** The databases are encrypted, so I cannot count by reason or match rows to stored messages. What the diagnostics log gives is only `reason=count`: Jean `no_session=17` then 18, 19 as the server copies of `2cfd` and `97de` arrived (**the two new ones are exactly these duplicates**), the 13 mini `invalid=17 no_session=3`. **`invalid` (17) is a different thing**: it is terminal for a bad signature or an envelope that cannot be believed (for example a sealed message from someone not yet pinned); it is not a duplicate and is not touched. The old `no_session` rows (17 on Jean's phone, 3 on the 13 mini) predate any record of what was received, so they cannot be matched to a stored message. To make the next report concrete, **`pending_summary` now also says how many came by the mesh and how old the oldest is** (counts only, e.g. `no_session=19 | mesh=2 oldest_days=3`).
+- **(c) The reverse order (server first, mesh later): it did not dedupe either** (the mesh copy also became `no_session`); the same fix covers both.
+
+**Every item, checked off:**
+- **1 Check a ciphertext against the messages already received before decrypting: DONE.** Migration 36, `received_ciphertexts` (the SHA-256 of the wire bytes; the same message by the mesh and by the server has the same one). Every item that becomes a message (or is recognised as one already stored) has its hash remembered (kept 60 days); `retry_pending` looks the hash up **before** `process_item` and, on a match, drops the item and counts it by route. `LimeStore::take_dup_dropped()` returns `server=N mesh=M`, and the app writes **`dup_dropped server=N mesh=M`** to the diagnostics log after each sync and to the mesh log after a mesh delivery.
+- **2 Both orders: DONE and tested** (mesh then server; server then mesh).
+- **3 A one-time clean-up of existing pending rows that match a stored message: NOT DONE, and I do not think it can be.** There is no record from before this change of which ciphertexts became messages, so no existing row can be proven a duplicate; deleting old `no_session` rows by guess could lose a real message that is only waiting for its session. **They stay** (Jean 17+2, the 13 mini 3). If you want them gone, the safe rule is a decision for you (for example "delete `no_session`/`decrypt_failed` rows older than N days"); I did not add it.
+- **4 Tests: DONE** (3, 256 core tests in all): mesh then server → one message, `pending_summary` empty, `dup_dropped server=1 mesh=0`; server then mesh → same with `mesh=1`; **a ciphertext this phone cannot read still goes to pending** and is not counted as a duplicate.
+
+**Verification:** core 256 + 21 + 12, local integration 23, Android OK; Swift mesh/store/chat tests pass; 0 warnings; Release clean; installed on the phones that were reachable (below).
+
+**Gate:** none on device beyond the counts: at the next "logs", plot reads `pending [...]` on each phone and any `dup_dropped` lines.
+
+**For plot:** (b)'s breakdown is limited as above; the duplicates stop growing from this build on; the old 17+3 stay unless the user chooses a rule for them.

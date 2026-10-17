@@ -122,3 +122,27 @@ pub(crate) fn count(conn: &Connection) -> Result<u32, StoreError> {
     })
     .map_err(db_err)
 }
+
+/// The SHA-256 of an item's ciphertext (the wire bytes): the same message by the mesh and by the server has the same one.
+pub(crate) fn ciphertext_hash(ciphertext_base64: &str) -> Option<Vec<u8>> {
+    use sha2::{Digest, Sha256};
+    let wire = vodozemac::base64_decode(ciphertext_base64).ok()?;
+    Some(Sha256::digest(wire).to_vec())
+}
+
+/// Whether this ciphertext has already become a message (or was recognised as one we had).
+pub(crate) fn already_received(conn: &Connection, hash: &[u8]) -> bool {
+    conn.query_row("SELECT 1 FROM received_ciphertexts WHERE hash = ?1", params![hash], |_| Ok(())).is_ok()
+}
+
+/// Remembers a ciphertext that has been dealt with; forgets the ones older than 60 days.
+pub(crate) fn remember_received(conn: &Connection, hash: &[u8], now_ms: i64) -> Result<(), StoreError> {
+    conn.execute("INSERT OR IGNORE INTO received_ciphertexts (hash, at) VALUES (?1, ?2)", params![hash, now_ms]).map_err(db_err)?;
+    conn.execute("DELETE FROM received_ciphertexts WHERE at < ?1", params![now_ms - 60 * 24 * 3600 * 1000]).map_err(db_err)?;
+    Ok(())
+}
+
+/// Whether a waiting item came by the mesh (its cursor is negative: the mesh has no server cursor).
+pub(crate) fn came_by_mesh(conn: &Connection, id: i64) -> bool {
+    conn.query_row("SELECT cursor < 0 FROM pending_inbound WHERE id = ?1", params![id], |r| r.get::<_, bool>(0)).unwrap_or(false)
+}
