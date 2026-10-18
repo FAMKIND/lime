@@ -6711,3 +6711,24 @@ Brief: LIME-152d (a long-press keeps the pressed message visible, like iMessage)
 Installed on Jean's iPhone, the iPad and the 13 mini.
 
 **Gate (the user):** long-press any message: you see it, the reactions above, the menu below, like iMessage. Tell me what is off (a photo, a long message, near the edges, big text).
+
+## LIME-152e
+
+Brief: LIME-152e (the user's three new sounds). The originals were copied to a scratch folder outside the repo and are not committed.
+
+**What was done.** `ios/tools/process-sound.py` (new; `afconvert` only) makes each CAF: mono, 16-bit, 44.1 kHz; pure leading/trailing silence (below -60 dBFS) trimmed keeping 5 ms; RMS -16 dBFS (lowered if the peak would pass -1 dBFS: none needed it); an 8 ms raised-cosine fade at both ends; for the two loops the cut moved to the nearest zero crossing. File names unchanged.
+
+| File | Source | Duration | RMS | Peak | First 50 ms / last 50 ms |
+|---|---|---|---|---|---|
+| `lime-chime.caf` | `lime-chime.m4a` 2.963 s (not cut further) | 2.963 s | -16.0 dBFS | -5.6 dBFS | -29.3 / -23.6 dBFS (not a loop) |
+| `lime-ringback.caf` | `lime-dialtone.m4a` 9.225 s | 9.215 s | -16.0 dBFS | -9.9 dBFS | -13.9 / -18.4 dBFS |
+| `lime-ring.caf` | `lime-ringtone.m4a` 12.637 s | 12.637 s | -16.0 dBFS | -3.4 dBFS | -20.9 / -47.0 dBFS |
+
+**Loops.** Both loops start and end on a zero sample (seam step 0.0000), so no click. The ringback starts and ends on sound, so it loops with an 8 ms dip at the seam (not a pause); the ringtone ends on a soft decay (-47 dBFS) and restarts at -21 dBFS. Whether the loops sound smooth is for the user's ear. `lime-ring.caf` is 12.6 s, well under CallKit's 30 s.
+
+**Code/tests/docs.** No file name or duration constant in the app changed. `SoundFileTests` asserted a bundled chime of at most 2 s: it is now 3 s for the bundled chime (the user's 2.96 s; a sound a person adds is still trimmed to 2 s). `make-call-tones.py` no longer writes `lime-ringback.caf` (it would have overwritten the user's sound); README updated with the sources (names only), durations, levels and how.
+
+All unit tests pass; build 0 warnings of ours. Installed on Jean's iPhone and the iPad; **the 13 mini failed to install** (CoreDevice 12040, "the developer disk image could not be mounted": the phone needs to be unlocked, trusted and its Developer Mode/disk image fixed in Xcode's Devices window).
+**Not done:** a listen in the simulator (sound cannot be heard from here; the bundle test checks the files are there and within limits).
+
+**Gate (the user, on a phone):** one listen each: a message arriving (the chime), calling someone (the "Calling…" tone looping), being called (the ringtone looping).

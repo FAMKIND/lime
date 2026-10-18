@@ -40,6 +40,6 @@ def write(name, samples):
     print(f"{caf}: {len(samples) / RATE:.2f} s")
 
 level = 10 ** (-18 / 20)
-write("lime-ringback", tone([440, 480], 2.0, level) + silence(4.0))
+# lime-ringback.caf is no longer a generated tone: it is the user's own "calling" sound (LIME-152e, tools/process-sound.py), so it is not written here.
 write("lime-connect", tone([1046.5], 0.09, level) + tone([1318.5], 0.09, level))
 write("lime-end", tone([659.3], 0.12, level) + tone([523.3], 0.18, level))

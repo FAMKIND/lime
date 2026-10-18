@@ -6,7 +6,8 @@ final class SoundFileTests: XCTestCase {
     func testTheBundleHasTheChimeAndTheRingtoneWithinTheirLimits() throws {
         let chime = try XCTUnwrap(Bundle.main.url(forResource: "lime-chime", withExtension: "caf"), "lime-chime.caf is bundled")
         let ring = try XCTUnwrap(Bundle.main.url(forResource: "lime-ring", withExtension: "caf"), "lime-ring.caf is bundled")
-        XCTAssertLessThanOrEqual(try XCTUnwrap(CustomSounds.duration(of: chime)), 2.0, "a message chime is at most 2 s")
+        // The user's own chime is 2.96 s (LIME-152e: not to be cut further); a message sound the person adds is still trimmed to 2 s.
+        XCTAssertLessThanOrEqual(try XCTUnwrap(CustomSounds.duration(of: chime)), 3.0, "the bundled message chime is at most 3 s")
         XCTAssertLessThan(try XCTUnwrap(CustomSounds.duration(of: ring)), 30.0, "iOS plays a notification sound for under 30 s")
         XCTAssertEqual(SoundFiles.chime, "lime-chime.caf")
         XCTAssertEqual(CallRingtone.callKitSoundName, "lime-ring.caf")
