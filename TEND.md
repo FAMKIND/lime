@@ -6748,3 +6748,11 @@ Brief: LIME-152a-fix (chats open blank again; the composer under the keyboard on
 **Gate (the user, the 13 mini once it is installed):** open ten chats in a row: none blank; fresh launch → open a chat → tap to type: the whole composer above the keyboard the first time. If either still happens, say "logs" right after: the `composer keyboard …` lines are what I need.
 
 For plot: (1) no failing test and no bisect; the change is the per-frame state in 152d's `MessageBubble`. (2) the constraint-sized accessory (152a) is the suspect; changed to intrinsic size.
+
+## LIME-152a-fix: the blank chat, reproduced on the real phone (the user's 13 mini, 11:53–11:54)
+
+The DEBUG `chat_open` log (added at the user's request) on Jean's chat: **140 messages = 151 rows**, which was **one row over `eagerRows = 150`**, the limit for laying a chat out whole. Over it, the chat uses a `LazyVStack`. The log shows the lazy stack's problem exactly (six opens, identical each time): layout #3 reports a **content height of 18,408 pt**, the scroll-to-newest puts the offset at ~17,720, and at +250 ms the content **collapses to 11,734 pt**; the three `scrollTo bottom` calls (0, 120, 350 ms) then change nothing because the offset is already at the (new) end, but the rows there were never laid out: a blank chat until you drag. That is LIME-134's failure, back because Jean's chat is a little longer than the limit. (It is not 152d's frame state or 152a's accessory: the layout and the scroll are the lazy stack's own.)
+
+**Changed:** `eagerRows` 150 → **600** (a chat up to 600 rows is laid out whole, so its height is exact and it opens at the newest message). The open log now says `path=eager|lazy`. **A new UI test (a 200-message chat opened five times) passes, but it also passed with the old limit in the simulator: it is a guard, not a failing-before test.** A chat over 600 rows still uses the lazy stack and can still open blank (the real fix for those is to show only the newest rows first: not done). The cost of laying out up to 600 rows at once is unmeasured: the next open log (`+Nms`) will show it on the phone.
+
+Installed on Jean's iPhone, the iPad and the 13 mini (relaunched). All the chat-open, first-focus and unit tests pass; build 0 warnings of ours. The keyboard half of 152a-fix is still unconfirmed on the phone.

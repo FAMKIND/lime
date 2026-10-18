@@ -936,15 +936,17 @@ final class ConversationStore {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
-        case "chat-long":
+        case "chat-long", "chat-long-200":
             // A long chat (LIME-134): messages of every height, for opening it again and again.
             let pat = Person(id: "pat", name: "Pat Doe")
             let words = ["Fractions", "recess", "the bus", "field trip forms", "parent night", "the new schedule", "reading groups", "a substitute"]
             var messages: [Message] = []
-            for i in 1...60 {
+            // `chat-long-200`: 200 messages (over 150 rows: the size of Jean's chat on the phone, which opened blank).
+            let count = screen == "chat-long-200" ? 200 : 60
+            for i in 1...count {
                 let body = (0..<(1 + (i * 7) % 5)).map { k in words[(i * 3 + k) % words.count] }.joined(separator: ", ")
                 let text = "Message \(i): \(body)" + (i % 9 == 0 ? ". Could you also look at the long list of things for Friday, because it has a lot of lines and wraps over several rows." : "")
-                messages.append(Message(id: "m\(i)", senderID: i % 3 == 0 ? nil : "pat", text: text, date: Date().addingTimeInterval(Double(i - 61) * 1_800), state: i % 3 == 0 ? .sent : .received))
+                messages.append(Message(id: "m\(i)", senderID: i % 3 == 0 ? nil : "pat", text: text, date: Date().addingTimeInterval(Double(i - count - 1) * 1_800), state: i % 3 == 0 ? .sent : .received))
             }
             conversations.insert(Conversation(id: "dm:long", title: pat.name, members: [pat], messages: messages), at: 0)
             path.append("dm:long")

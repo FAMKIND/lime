@@ -187,7 +187,7 @@ struct ChatView: View {
                 for delay in [0, 120, 350] {
                     try? await Task.sleep(for: .milliseconds(delay))
                     #if DEBUG
-                    openProbe.log("scrollTo bottom after \(delay) ms: rows=\(ChatRow.rows(for: conversation).count) messages=\(conversation.messages.count) loaded=\(store.isLoaded) target=\(openProbe.snap.contentH > 0 ? "laid out" : "not laid out yet")")
+                    openProbe.log("scrollTo bottom after \(delay) ms: rows=\(ChatRow.rows(for: conversation).count) path=\(ChatRow.rows(for: conversation).count <= Self.eagerRows ? "eager" : "lazy") messages=\(conversation.messages.count) loaded=\(store.isLoaded) target=\(openProbe.snap.contentH > 0 ? "laid out" : "not laid out yet")")
                     #endif
                     proxy.scrollTo("bottom", anchor: .bottom)
                     #if DEBUG
@@ -253,7 +253,10 @@ struct ChatView: View {
     }
 
     /// Above this many rows a chat is laid out lazily.
-    private static let eagerRows = 150
+    /// Chats up to this many rows are laid out whole (their height is exact, so they always open at the newest message). It was 150 and Jean's chat
+    /// (151 rows) fell just over it into the lazy stack: its height estimate was 18,408 pt against a real 11,734 pt (the phone's log), the first scroll
+    /// landed in rows that were never laid out and the chat opened blank until you dragged (LIME-152a-fix).
+    private static let eagerRows = 600
 
     @ViewBuilder
     private func chatRows(_ rows: [ChatRow], in conversation: Conversation, lastOwnID: String?) -> some View {
