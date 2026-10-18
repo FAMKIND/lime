@@ -6793,3 +6793,45 @@ Phase 0: `PLOT.md` committed first (`eccb8a3`); LIME-158's debug aids (ghost fix
 **Gate (the user):** relaunch lime on the three phones; the log on each should show `group call: recovered from a killed session`; the old stuck call clears (card / chat line no longer live); then start a fresh group video call and have everyone join. Then back to LIME-158's 3(a).
 
 **For plot:** the 6-hour net is a judgement call (no heartbeat exists); if a bystander phone must know a call is really live, that needs a presence signal (a server or LiveKit-room query), which is a separate brief and a privacy decision. Also: the debug ghost-leaver build is on all three phones for 158.
+
+## LIME-158 (the in-house security review and the external audit's scope) — committed; **no critical or high finding**; the gate is yours
+
+Phase 0: `PLOT.md` committed first. Installed (for the device test) on Jean's iPhone, the iPad and the 13 mini; the ghost-leaver build runs on the 13 mini with `-lime-ghost-leave`. **No product behaviour was changed by this brief**; the only code added is Debug-only test aids (the ghost leaver and richer probe lines: `4c5256c`, `007e963`, and the follow-up `GroupCallManager.swift` commit listed under LIME-165). Two docs written:
+- `docs/security-review-2026-10.md`: threat model, an evidence line (file:line, test or command) for every checklist item, section 3, the findings table, what was not covered, the commands run.
+- `docs/audit-scope.md`: for an external auditor (architecture in two pages, components and sizes, threat model, focus areas, out of scope, how to build and run; **auditors get a fresh `git clone` of the agreed commit, never a working copy** — the working copy holds `data/auth.json` with real emails and password hashes).
+
+**Tools (installed with the user's approval, "yes, install cargo-audit and gitleaks"):** `gitleaks 8.30.1` via brew, `cargo-audit 0.22.2` via `cargo install`. Results: `cargo audit`: 4 advisories on `rustls 0.23.45`, **dev-dependency only** (via `ureq`, the integration tests), not in the app. `gitleaks`: git history 541 commits, 8 hits; working tree 31 hits; all triaged: public local test mesh key, test fixtures, anon-role keys in gitignored files, build artefacts; **no real secret**. My own `git grep` for private keys, JWTs and AWS/Slack/Stripe patterns: none. Staging mesh key: `check-staging-mesh-key.sh` OK (read-only; no staging queries beyond that).
+
+**Findings (ids + severities):** critical 0, high 0, **medium 2**, **low 9**, info 5.
+| Id | Sev | One line |
+|---|---|---|
+| F-04 | medium | Hello gives this phone's daily recipient tags to every linked phone (strangers too) → a nearby stranger can recognise one phone across places for 24-48 h. Fix: per-link blinded tags |
+| F-02 | medium | `send` still accepts the legacy bearer-style `{sealed: access_key}` proof; its own comment says remove before TestFlight |
+| F-03 | low | DB key/files readable after first unlock until reboot (AfterFirstUnlock): a decision, say so in the privacy text |
+| F-04b | low | copy packets live 6 h, ordinary 48 h: "sender was online" (3b). Fix: same life |
+| F-04c | low | the relay's IP reaches the server and platform logs (3d). Disclose; oblivious relay before wide launch |
+| F-04d | low | own packets leave with no jitter: send time + "originated here" visible to a neighbour (3e). Fix: batch-start jitter keeping order |
+| F-05 | low | `call-diagnostics.log` is plain text in Caches and written in Release |
+| F-06 | low | `livekit-token` gives a token for any room id to any signed-in user (no membership check possible); non-members cannot decrypt |
+| F-07 | low | `users-devices`, `profile-set`, `undelivered-take`, `delivery-access-set`, `keys-upload`, `mailbox-ack` have no rate limit of their own; `users-devices` is readable by any signed-in user |
+| F-08 | low | account enumeration via `identify` / `signup-start` (by design) |
+| F-14 | low | `data/auth.json`: real emails + PBKDF2 hashes in the working copy (gitignored, never committed): auditors get a fresh clone |
+| F-09 | info | `npm:@supabase/supabase-js@2` unpinned major |
+| F-10 | info | `rustls` advisories, dev-dependency only |
+| F-11 | info | `clientIp` trusts `cf-connecting-ip` / last `x-forwarded-for` |
+| F-12 | info | group-call key / room id from two UUIDv4s (244 bits, structured) |
+| F-13 | info | `blob-sweep` reads the DB before checking its secret |
+
+**Section 3 results (per phone), device test 3(a): PASSED BY INFERENCE (the user's decision: "no more 3(a) runs").**
+| Phone | Role | Result |
+|---|---|---|
+| iPhone 13 mini (`-lime-ghost-leave`) | B, the leaver | decoded A (~5 fps) and C (~10 fps) before leaving (matching the SDK's own decoded counts); after leaving at 15:11:28 the ghost decoded **0 new frames for 90 s** (totals frozen at 491 and 413); an earlier valid run (14:10) read 0 for ~6 min |
+| Jean's iPhone 12 mini | A, stayed in, sending | stayed in the call and saw C (user) |
+| iPad Pro 12.9" (5th gen) | C, stayed in, sending | stayed in the call and saw A (user) |
+The inference (user): LIME-163's device check showed a phone that *rejoins* holding only the renewed key decrypts everyone, so media is sent with the renewed key; a leaver holds only the old key; 0 frames for 90 s is consistent. **Not proven directly:** packets arriving at the ghost while frames stay undecodable. The probe now logs packets/bytes received, but that run was not made; **left for the independent audit.** The runs also found and fixed: the first ghost ended itself (my bug), and LIME-165's recovery ran during a normal leave (fixed, tests pass). 3(b)-(e) are analysed in the review (what an attacker learns, practicality, fix and cost; no fix made).
+
+**Also noticed (not findings):** senders in the test calls were slow (Jean's iPhone 12 mini ~5-8 fps, the iPad ~10-20 fps, at 360x640 or 720x1280): a send-side rate/adaptation matter, separate from 158; the Release gate `check-release-no-bluetooth.sh` passes (exit 0), and the mesh/Bluetooth is Debug-only today.
+
+**Verification:** both docs exist; every checklist line has evidence; section 3 has results; cargo audit, dependency and secrets scans summarised; core 278 pass, `check-android.sh` OK, Swift call tests 50 pass.
+
+**For plot:** (1) findings above with ids and severities: nothing critical or high, so no stop; critique them before fix briefs; suggested order: F-02 (remove the legacy proof, before TestFlight), F-04 (+F-04b/d in the same mesh protocol pass), F-07 (one-line rate limits), F-05, F-09/F-10/F-12 (small hygiene). (2) 3(a) is "passed by inference": the packets-vs-frames proof is in `docs/audit-scope.md` as an item for the auditor. (3) The audit scope assumes the repo may go open source (decide before applying) and that auditors get a **fresh clone**. (4) Slow video senders in the test calls (5-20 fps) deserve their own look (not security).
