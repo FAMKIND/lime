@@ -753,7 +753,8 @@ final class GroupCallManager {
     /// A phone that has left a call but stays connected to its LiveKit room with the keys it had (the review's test that someone who left cannot read
     /// on after the others renewed their keys): it logs, every 5 s, the frames it can still decrypt per person, and each frame cryptor state.
     private func startGhost(_ media: GroupCallMedia, names: [String: String]) {
-        endGhost()
+        ghostTask?.cancel(); ghostTask = nil
+        if let old = ghostMedia { Task { await old.disconnect() } }   // an earlier ghost only; never the one being started
         ghostMedia = media
         FrameProbe.keepsTracksFlowing = true
         _ = media.frameCounts()   // attach the counters now, while the pictures still flow
@@ -767,8 +768,8 @@ final class GroupCallManager {
             for _ in 0..<72 {
                 try? await Task.sleep(for: .seconds(5))
                 guard let self, !Task.isCancelled, let media = self.ghostMedia else { return }
-                let now = media.frameCounts()
-                let parts = now.map { id, count in "\(names[id] ?? String(id.prefix(4)))=\(count - (last[id] ?? 0)) frames" }.sorted()
+                let now = media.frameCounts(), details = media.trackDetails()
+                let parts = now.map { id, count in "\(names[id] ?? String(id.prefix(4)))=\(count - (last[id] ?? 0)) frames sdk[\(details[id] ?? "-")]" }.sorted()
                 last = now
                 self.diag.log("GHOST probe (frames decrypted in the last 5 s): \(parts.joined(separator: " "))")
             }
@@ -899,11 +900,11 @@ final class GroupCallManager {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 guard let self, self.phase != .idle, self.video else { return }
-                let full = self.media?.frameCounts() ?? [:], grid = self.pip?.gridFrameCounts() ?? [:]
+                let full = self.media?.frameCounts() ?? [:], grid = self.pip?.gridFrameCounts() ?? [:], details = self.media?.trackDetails() ?? [:]
                 let span = max(0.1, self.now().timeIntervalSince(last.at))
                 let parts = self.tiles.filter { !$0.isMe }.map { tile -> String in
                     func rate(_ now: [String: Int], _ before: [String: Int]) -> String { now[tile.id].map { String(format: "%.1f", Double($0 - (before[tile.id] ?? 0)) / span) } ?? "-" }
-                    return "\(tile.name.prefix(8))(secured=\(tile.secured ? 1 : 0) cam=\(tile.cameraOn ? 1 : 0) track=\(self.media?.videoTrack(for: tile.id) == nil ? 0 : 1) full=\(rate(full, last.full)) grid=\(rate(grid, last.grid)))"
+                    return "\(tile.name.prefix(8))(secured=\(tile.secured ? 1 : 0) cam=\(tile.cameraOn ? 1 : 0) track=\(self.media?.videoTrack(for: tile.id) == nil ? 0 : 1) full=\(rate(full, last.full)) grid=\(rate(grid, last.grid)) sdk[\(details[tile.id] ?? "-")])"
                 }
                 last = (full, grid, self.now())
                 self.diag.log("video_probe view=\(self.minimized || self.pictureInPictureActive ? "minimised" : "full") \(parts.joined(separator: " "))")

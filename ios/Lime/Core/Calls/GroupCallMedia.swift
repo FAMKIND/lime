@@ -37,10 +37,13 @@ protocol GroupCallMedia: AnyObject {
     func videoTrack(for participant: String) -> AnyObject?
     /// Frames received so far per remote participant (whether or not anything draws them), for the diagnostics.
     func frameCounts() -> [String: Int]
+    /// What the SDK says about each remote camera track, for the diagnostics (subscribed, enabled, muted, decoder frames per second, size, dropped).
+    func trackDetails() -> [String: String]
 }
 
 extension GroupCallMedia {
     func frameCounts() -> [String: Int] { [:] }
+    func trackDetails() -> [String: String] { [:] }
 }
 
 /// Counts a remote video track's frames and draws nothing (LIME-162: tells "the track flows but nothing draws it" from "the track is not flowing").
@@ -146,8 +149,24 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
                 let probe = FrameProbe()
                 probes[id] = (sid, probe)
                 DispatchQueue.global(qos: .utility).async { track.add(videoRenderer: probe) }
+                Task { await track.set(reportStatistics: true) }
             }
             out[id] = probes[id]?.probe.count ?? 0
+        }
+        return out
+    }
+
+    func trackDetails() -> [String: String] {
+        guard let room else { return [:] }
+        var out: [String: String] = [:]
+        for (key, participant) in room.remoteParticipants {
+            guard let publication = participant.firstCameraPublication as? RemoteTrackPublication else { continue }
+            var text = "sub=\(publication.isSubscribed ? 1 : 0) on=\(publication.isEnabled ? 1 : 0) muted=\(publication.isMuted ? 1 : 0)"
+            if let inbound = publication.track?.statistics?.inboundRtpStream.first {
+                text += " dec=\(inbound.framesDecoded.map(String.init) ?? "-") drop=\(inbound.framesDropped.map(String.init) ?? "-")"
+                text += " sdkfps=\(inbound.framesPerSecond.map { String(format: "%.0f", $0) } ?? "-") size=\(inbound.frameWidth.map(String.init) ?? "-")x\(inbound.frameHeight.map(String.init) ?? "-")"
+            }
+            out[key.stringValue] = text
         }
         return out
     }
