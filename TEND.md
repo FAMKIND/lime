@@ -6732,3 +6732,19 @@ All unit tests pass; build 0 warnings of ours. Installed on Jean's iPhone and th
 **Not done:** a listen in the simulator (sound cannot be heard from here; the bundle test checks the files are there and within limits).
 
 **Gate (the user, on a phone):** one listen each: a message arriving (the chime), calling someone (the "Calling…" tone looping), being called (the ringtone looping).
+
+## LIME-152a-fix
+
+Brief: LIME-152a-fix (chats open blank again; the composer under the keyboard on the first focus). **Neither could be reproduced in the simulator; both were changed at their most likely causes, unproven until the user's phone.**
+
+**(1) The blank chat.** LIME-134's `ChatOpensUITests` (open a long chat six times, with an arrival, with the keyboard) **passes at HEAD in the simulator**, so there is no failing test and I did not bisect to a guilty commit (the demo chat is in memory and quick; the real one loads and decrypts). The suspect in the brief is the likely one: 152d made **every bubble report its global frame into `@State` on every geometry change**, and a chat's frames change on every frame of the push animation and of every scroll, so every bubble was redrawn each time and the list's first layout and `scrollTo("bottom")` were competing with that churn. **Changed:** the frame is kept in a plain `FrameBox` (a class property SwiftUI does not observe), read only at the long-press; nothing is redrawn when a frame moves. 152d's menu still works (its UI test passes).
+
+**(2) The first focus.** `FirstFocusUITests` (fresh launch → open a chat → tap the composer → the add, emoji and Aa buttons hittable and above the keyboard; again after dismissing; again in another chat) **passes in the simulator too**, with the software keyboard. The likeliest cause is the accessory I made in 152a: a `UIView` sized by **a height constraint on itself** (0, then 60). UIKit adds its own "encapsulated layout height" to an accessory and a constraint-sized one fights it, so the keyboard's reported frame, and with it the composer's place, can be wrong until the accessory has settled (the second focus). **Changed** to the pattern UIKit documents: the accessory has `autoresizingMask = .flexibleHeight` and an `intrinsicContentSize` (0 while hidden, 60 while shown), changed with `invalidateIntrinsicContentSize()`; no constraints on the view.
+
+**Phase 1 logging (DEBUG).** Every keyboard frame change now writes `composer keyboard <willChangeFrame|didShow|didHide> end=… accessory=… field=… screen=…` to the call diagnostics log (the same file "logs" pulls), so a first focus that goes wrong shows what the keyboard, the accessory and the field each said.
+
+**Tests.** `FirstFocusUITests` (new) plus the 152a, 152d, 134 and the messages suites and the unit tests all pass; build 0 warnings of ours. Installed on Jean's iPhone and the iPad; **the 13 mini again failed** (CoreDevice 12040, the developer disk image could not be mounted: it needs to be unlocked/trusted and its Developer Mode or disk image fixed in Xcode).
+
+**Gate (the user, the 13 mini once it is installed):** open ten chats in a row: none blank; fresh launch → open a chat → tap to type: the whole composer above the keyboard the first time. If either still happens, say "logs" right after: the `composer keyboard …` lines are what I need.
+
+For plot: (1) no failing test and no bisect; the change is the per-frame state in 152d's `MessageBubble`. (2) the constraint-sized accessory (152a) is the suspect; changed to intrinsic size.

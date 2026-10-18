@@ -179,6 +179,9 @@ enum LinkInput {
 final class ComposerTextView: UITextView {
     static let plainTypingAttributes: [NSAttributedString.Key: Any] = [.font: ComposerDocument.baseFont(), .foregroundColor: UIColor.label]
     private var accessory: UIView?
+    #if DEBUG
+    private var keyboardObservers: [NSObjectProtocol] = []
+    #endif
     weak var model: RichComposerModel?
 
     /// Tab and Shift-Tab on a hardware keyboard indent and outdent inside a list; elsewhere Tab does what it did.
@@ -197,6 +200,21 @@ final class ComposerTextView: UITextView {
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
+        #if DEBUG
+        // What the keyboard, the accessory and the field each say, on every keyboard frame change (LIME-152a-fix: the first focus came out wrong).
+        let center = NotificationCenter.default
+        for name in [UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardDidShowNotification, UIResponder.keyboardDidHideNotification] {
+            keyboardObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect) ?? .zero
+                let what = note.name.rawValue.replacingOccurrences(of: "UIKeyboard", with: "").replacingOccurrences(of: "Notification", with: "")
+                MainActor.assumeIsolated {
+                    guard let self, self.window != nil else { return }
+                    let field = self.convert(self.bounds, to: nil)
+                    CallDiagnostics.shared.log("composer keyboard \(what) end=\(Int(end.minY))-\(Int(end.maxY)) accessory=\(Int(self.inputAccessoryView?.frame.height ?? -1)) field=\(Int(field.minY))-\(Int(field.maxY)) screen=\(Int(UIScreen.main.bounds.height))")
+                }
+            })
+        }
+        #endif
         // The caret, the selection and its handles are the system's blue, never the accent.
         tintColor = Theme.selectionUIColor
     }
@@ -230,15 +248,16 @@ final class ComposerTextView: UITextView {
 /// The toolbar's home: a clear strip the keyboard carries, holding the SwiftUI capsule.
 final class FormattingAccessory: UIView {
     private let host: UIHostingController<FormattingToolbar>
-    private var heightConstraint: NSLayoutConstraint!
     static let shownHeight: CGFloat = 60
+    private var shown = false
 
     init(model: RichComposerModel) {
         host = UIHostingController(rootView: FormattingToolbar(model: model))
         super.init(frame: CGRect(x: 0, y: 0, width: 320, height: 0))
-        translatesAutoresizingMaskIntoConstraints = false
-        heightConstraint = heightAnchor.constraint(equalToConstant: 0)
-        heightConstraint.isActive = true
+        // The pattern UIKit documents for an accessory that changes height: the autoresizing mask and an intrinsic size, no constraints on
+        // the view itself (a constraint-sized accessory fights the "encapsulated layout height" the keyboard adds, and the keyboard's frame, and
+        // so the composer's place above it, came out wrong the first time, LIME-152a-fix).
+        autoresizingMask = .flexibleHeight
         backgroundColor = .clear
         clipsToBounds = true
         host.view.backgroundColor = .clear
@@ -252,14 +271,14 @@ final class FormattingAccessory: UIView {
         ])
     }
 
+    override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: shown ? Self.shownHeight : 0) }
+
     /// The strip is as tall as the toolbar while it shows and nothing while it does not; only the height changes.
-    func setShown(_ shown: Bool) {
-        let target: CGFloat = shown ? Self.shownHeight : 0
-        guard heightConstraint.constant != target else { return }
-        heightConstraint.constant = target
-        host.view.alpha = shown ? 1 : 0
-        setNeedsLayout()
-        layoutIfNeeded()
+    func setShown(_ on: Bool) {
+        guard shown != on else { return }
+        shown = on
+        host.view.alpha = on ? 1 : 0
+        invalidateIntrinsicContentSize()
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }

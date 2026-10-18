@@ -728,6 +728,9 @@ struct ChatView: View {
     }
 }
 
+/// A frame kept without telling SwiftUI (a class property is not observed).
+final class FrameBox { var frame: CGRect = .zero }
+
 struct MessageBubble: View {
     let message: Message
     let sender: Person?
@@ -761,8 +764,9 @@ struct MessageBubble: View {
     /// Only the bubble and the sender's name (no avatar, footer or replies): the lifted copy the long-press menu shows (LIME-152d).
     var liftedOnly = false
     @Environment(\.menuFrameSink) private var menuFrameSink
-    /// Where the bubble is on the screen, so the menu can lift a copy of it to the same place.
-    @State private var contentFrame: CGRect = .zero
+    /// Where the bubble is on the screen, so the menu can lift a copy of it to the same place. A plain box, not state: the frame changes
+    /// while a chat is opening and while it scrolls, and SwiftUI must not redraw every bubble each time (LIME-152a-fix).
+    @State private var frameBox = FrameBox()
     @Environment(\.pressedLink) private var pressedLink
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 36
 
@@ -876,7 +880,7 @@ struct MessageBubble: View {
                 }
             }
         }
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { contentFrame = $0 }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frameBox.frame = $0 }
         .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { lift() } }
         .environment(\.mediaLongPress, selection == nil && onActions != nil ? MediaLongPress(messageID: message.id, action: { lift() }) : nil)
         .environment(\.mediaSelecting, selection != nil)
@@ -886,7 +890,7 @@ struct MessageBubble: View {
     private func lift() {
         guard onActions != nil else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        menuFrameSink?.set(contentFrame)
+        menuFrameSink?.set(frameBox.frame)
         onActions?()
     }
 
