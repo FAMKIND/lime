@@ -63,18 +63,25 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
     private var myIdentity = ""
     private var myKeyIndex: Int32 = 0
 
+    /// Every key is installed in LiveKit's slot 0, whatever index the core gave it (LIME-163). The Swift SDK never tells the frame cryptors which
+    /// slot to use (`RTCFrameCryptor.keyIndex` is not reachable), so media is always sent and read with slot 0: a key kept at slot 1, 2, 3 after
+    /// someone left was never what frames used, and a phone that rejoined (and was sent only the sender's current key, at its renewed index) found
+    /// nothing in slot 0 for them and stayed on "securely connecting" for ever. The core's index still orders the renewals; here the newest key
+    /// simply replaces the older one for that person.
+    nonisolated static let slot: Int32 = 0
+
     func setKey(_ key: Data, participant: String, index: Int) {
-        keyProvider.setKey(keyData: key, participantId: participant, index: Int32(index))
-        // `setKey` moves the provider's one "current index" (what this phone sends with): someone else's key must not change it.
-        keyProvider.setCurrentKeyIndex(myKeyIndex)
+        keyProvider.setKey(keyData: key, participantId: participant, index: Self.slot)
+        // `setKey` moves the provider's one "current index" (what data packets are sealed with): someone else's key must not change it.
+        keyProvider.setCurrentKeyIndex(Self.slot)
         if participant != myIdentity, !myIdentity.isEmpty { onEvent?(.sendIndexReset(Int(myKeyIndex))) }
     }
 
     func setMyKey(_ key: Data, participant: String, index: Int) {
         myIdentity = participant
         myKeyIndex = Int32(index)
-        keyProvider.setKey(keyData: key, participantId: participant, index: Int32(index))
-        keyProvider.setCurrentKeyIndex(myKeyIndex)
+        keyProvider.setKey(keyData: key, participantId: participant, index: Self.slot)
+        keyProvider.setCurrentKeyIndex(Self.slot)
     }
 
     private var lowBandwidth = false

@@ -6553,3 +6553,22 @@ The user asked for this part of fix5 now (it is item 4 of plot's brief); the res
 - Not checked: the real floating window on the phone (it cannot be screenshotted); the images use a 14 pt corner radius as a stand-in.
 
 All unit tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+## LIME-163
+
+Brief: LIME-163 (a rejoiner never decrypts the others after keys were renewed).
+
+**Phase 1 (read from the logs `/tmp/lime-calllogs12/` and the LiveKit Swift SDK source in the package checkout).**
+- A received key reaches LiveKit as `BaseKeyProvider.setKey(keyData:participantId:index:)` with per-participant keys (`isSharedKey: false`); the key ring has 16 slots.
+- **The Swift SDK never tells the frame cryptors which slot to use.** `RTCFrameCryptor` has a `keyIndex` property (`RTCFrameCryptor.h`), but `E2EEManager` keeps its cryptors private and never sets it; `setCurrentKeyIndex` only moves the provider's own number, which the SDK uses for data packets (`E2EEManager.swift:332`), not for media. So media is sent and read with the cryptors' default slot, 0.
+- That fits every line of the logs: with everyone at index 0 all works; after someone leaves, the others install their renewed keys at slots 1, 2, 3 (`setKey me … index N`), which media never uses, so the sender's frames still carry the key in slot 0; a rejoiner is sent only the sender's current key (index N), finds nothing in slot 0 and stays on `missing_key` (the cryptor logs no further change, so no `ok` ever follows); a phone that rejoins itself restarts at index 0, which is why the others suddenly see it; "send index reset to 0" is `setCurrentKeyIndex` being put back after each remote `setKey` and is harmless.
+- It also means that, as built, **the renewal after someone leaves did not change the key frames are sent with** (slot 0 kept the old key unless it was overwritten), so a person who left could still read a call until now.
+- This is a reading of the SDK and the logs; it is **not proven on the phones until the device check**.
+
+**The change.** [x] `LiveKitGroupMedia` installs every key, mine and everyone's, in slot 0 (`LiveKitGroupMedia.slot`); the core's index still orders renewals and is kept in the logs. A newer key simply replaces the older one for that person. [x] Log `key installed for X (core index N, media slot 0)`. [x] The existing guard still warns if this phone's send index and the core's differ. Trade-off: no old-and-new overlap while a renewal travels (a second or two of failed frames from the renewing person until the others hold the new key, as the key arrives with the mail poll).
+
+**Tests.** `GroupCallManagerTests`: three rounds of renewed keys from two people never touch this phone's own send key, each person's newest key reaches the media layer at the core's index, and the media layer's slot is 0. (A real decryption test needs LiveKit and a server; the device check is the proof.)
+
+**Verification.** All group-call tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Device check: not yet run.** A 3-phone video call; the 13 mini leaves and rejoins twice, then Jean leaves and rejoins: everyone sees everyone each time within about 5 s (`frame cryptor … ok` for all after each rejoin, and `video_probe` `secured=1`, frames flowing). If it still fails, the slot reading is wrong and the next step is to reach the cryptor's `keyIndex` directly.

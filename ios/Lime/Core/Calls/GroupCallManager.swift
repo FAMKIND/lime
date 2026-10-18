@@ -509,6 +509,7 @@ final class GroupCallManager {
                 media?.setKey(key, participant: event.participant, index: Int(event.keyIndex))
                 keyed.insert(event.participant)
                 diag.log("group call: key received from \(event.participant.prefix(4))… (index \(event.keyIndex)) accepted; setKey \(event.participant.prefix(4))… (LiveKit identity \(event.participant.prefix(4))…)")
+                diag.log("group call: key installed for \(event.participant.prefix(4))… (core index \(event.keyIndex), media slot \(LiveKitGroupMedia.slot))")
                 refreshSecured(event.participant)
             case "my_key" where event.callId == callID:
                 // The core renewed MY key because someone left: this phone sends with it from now on (before the others' copies arrive: they keep

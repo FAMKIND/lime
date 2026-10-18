@@ -496,6 +496,25 @@ final class GroupCallManagerTests: XCTestCase {
         await manager.leave()
     }
 
+    /// LIME-163: a received key goes to the media layer for that person only, however many times people left before, and never moves this phone's own
+    /// send key; the media layer keeps every key in the one slot that frames really use.
+    func testAReceivedKeyNeverTouchesMyOwnSendKeyAndLiveKitUsesOneSlotForEveryKey() async {
+        let (manager, _, media, core, _, _) = await pipCall(speakers: 2)
+        let bob = core.others[0].participant, carol = core.others[1].participant
+        let sends = media.mySendKeys.count
+        for (round, index) in [UInt32(1), 2, 3].enumerated() {
+            for (user, who) in [("u0", bob), ("u1", carol)] {
+                manager.handle([GroupCallEvent(kind: "key", callId: core.info.callId, conversationId: "grp:g1", userId: user, name: "x", participant: who, video: true, ring: false,
+                                               key: Data(repeating: UInt8(10 + round), count: 32), keyIndex: index, durationMs: 0, reason: "")])
+            }
+        }
+        XCTAssertEqual(media.mySendKeys.count, sends, "someone else's key never changes what this phone sends with")
+        XCTAssertEqual(media.keys[bob]?.1, 3, "their newest key, at the core's index")
+        XCTAssertEqual(media.keys[carol]?.1, 3)
+        XCTAssertEqual(LiveKitGroupMedia.slot, 0, "frames are sent and read with slot 0: every key is installed there")
+        await manager.leave()
+    }
+
     func testTheWindowShowsThePhotoWhenTheCameraIsOffOrTheKeyIsMissingAndNeverNothing() async {
         let (manager, pip, media, core, _, _) = await pipCall(speakers: 1)
         let bob = core.others[0].participant
