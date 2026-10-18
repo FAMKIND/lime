@@ -164,6 +164,7 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
             var text = "sub=\(publication.isSubscribed ? 1 : 0) on=\(publication.isEnabled ? 1 : 0) muted=\(publication.isMuted ? 1 : 0)"
             if let inbound = publication.track?.statistics?.inboundRtpStream.first {
                 text += " dec=\(inbound.framesDecoded.map(String.init) ?? "-") drop=\(inbound.framesDropped.map(String.init) ?? "-")"
+                text += " pkts=\(inbound.packetsReceived.map(String.init) ?? "-") bytes=\(inbound.bytesReceived.map(String.init) ?? "-")"
                 text += " sdkfps=\(inbound.framesPerSecond.map { String(format: "%.0f", $0) } ?? "-") size=\(inbound.frameWidth.map(String.init) ?? "-")x\(inbound.frameHeight.map(String.init) ?? "-")"
             }
             out[key.stringValue] = text

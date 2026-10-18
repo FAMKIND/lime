@@ -185,6 +185,9 @@ final class GroupCallManager {
         self.isOtherCallActive = isOtherCallActive
         self.now = now
         self.makeMedia = makeMedia
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-lime-ghost-leave") { CallDiagnostics.shared.log("GHOST: armed (-lime-ghost-leave): leaving a call keeps this phone in the room") }
+        #endif
         // The system call screen's buttons also reach the one-to-one calls: each handler passes on what is not about a group call.
         let answer = system.onAnswer, end = system.onEnd, mute = system.onMute
         system.onAnswer = { [weak self] id in
@@ -439,7 +442,7 @@ final class GroupCallManager {
 
     /// Sends what is owed, then handles what arrived. The app calls this after every fetch; a call also does it once a second.
     func pump() async {
-        if phase == .idle, !busy { await recoverKilledSession() }
+        if phase == .idle, !busy, !finishing { await recoverKilledSession() }
         // Events first: when the core renewed my key, this phone switches to it before the others are sent theirs (LIME-112e).
         handle(core.takeEvents())
         await deliverAndLog()
@@ -808,8 +811,13 @@ final class GroupCallManager {
     }
     #endif
 
+    /// True while `finish` runs, so the recovery in `pump` does not leave the call in the core a moment before the normal leave does.
+    @ObservationIgnored private var finishing = false
+
     private func finish(notify: Bool, tellCore: Bool = true) async {
         guard phase != .idle || !callID.isEmpty else { return }
+        finishing = true
+        defer { finishing = false }
         let id = callID
         let media = self.media
         #if DEBUG
@@ -838,7 +846,10 @@ final class GroupCallManager {
         // LIME-158 section 3(a): a leaver that stays in the LiveKit room with its old keys and takes no part in the key exchange.
         if notify, ProcessInfo.processInfo.arguments.contains("-lime-ghost-leave"), let media {
             startGhost(media, names: ghostNames)
-        } else { await media?.disconnect() }
+        } else {
+            if ProcessInfo.processInfo.arguments.contains("-lime-ghost-leave") { diag.log("GHOST: armed but not used (notify=\(notify), media=\(media == nil ? "none" : "yes"))") }
+            await media?.disconnect()
+        }
         #else
         await media?.disconnect()
         #endif
