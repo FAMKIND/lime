@@ -6773,3 +6773,23 @@ Brief: LIME-164 (every chat opens at its newest messages, however long).
 Installed on Jean's iPhone, the iPad and the 13 mini (relaunched).
 
 **Gate (the user):** open Jean's chat and the longest group ten times each: never blank; scroll up through history smoothly (older pages appear above without a jump); a search hit in an old message lands on it. Say "logs" if anything is off: `chat_open` shows the window and each older page.
+
+## LIME-165 (a force-quit mid-call no longer locks a phone out of calls) — committed; installed on all three phones; **the gate is yours**
+
+Phase 0: `PLOT.md` committed first (`eccb8a3`); LIME-158's debug aids (ghost fix + SDK probe fields) went in their own commit first (`007e963`), so this commit holds only 165.
+
+**Survey (matched the brief):** `local_join` refused on `call.joined` (`group_calls.rs`), `local_start` and `local_join` on `my_current_call`; a killed session never ran `local_leave`, so `joined = 1` stayed. The other phones' participants stayed `left_at IS NULL` for ever, so `live_call` kept the call live and the chat line kept saying "live". `apply` already knows the sender's `device`, which the stale-session rule uses.
+
+**The change:**
+1. **Recover on launch / idle (core `recover_group_calls`, Swift `recoverKilledSession`).** Any call this phone still marks joined is left properly with `local_leave` (the leave goes to the others, who renew their keys); a half-made join (no participant of mine) is just cleared. The app runs it on every sync's `pump()` while no call is going (this covers launch), and at the top of `start` and `join` (inside the busy guard). It logs `group call: recovered from a killed session (call …)` and sends the owed leave at once.
+2. **Stale participants.** (a) A device is in one call at a time: when a `group.call.join` arrives from a device, any other open participant of that device, in any call, is marked left (a `left` event, my key renewed if I am in that call, the call ends if nobody is left). (b) A call this phone is **not in** ends when nobody ever joined and the starter's 2 minutes (the existing `LIVE_WITHOUT_PEOPLE_MS`) are up, or when its newest sign of life is older than **6 hours** (`STALE_CALL_MS`). The chat line stops saying "live" (outcome "completed"; a rung call nobody joined reads as before); the end time is the last sign of life, not "now", so no 6-hour duration appears.
+   - **Why 6 hours and not minutes: the brief said pick N from the existing timeouts, and none fits.** The existing ones are 60 s and 120 s. There is **no heartbeat**: a healthy quiet call sends no ops, so a short limit would end real calls on the phones of people watching the chat (they could no longer join). A phone *in* a call never uses the limit (the media server's "gone" decides there). The 6 h is only the net for a call whose every phone was killed and never came back. The common killed-everyone case clears on relaunch through item 1.
+3. **The card.** It already said "Return to call" when the manager is in that call; the lock-out case (the core says joined, the manager is not) is gone after item 1. A join the core refuses now says **"That call has ended."** when the call is gone (and "Couldn't join the call." otherwise). The start alert text is unchanged: after recovery the remaining refusals are about the group.
+
+**Tests:** core: a killed phone's join is refused, then recovery leaves, Bob sees the leave, she rejoins with a new identity and a fresh start works after everyone leaves; everyone killed → Carol's card and chat line stop saying live; a device that joins again drops its old session; a call nobody joined (3 min) and a 7-hour-old call end on a bystander. Swift: pump/start/join recover when idle and not in a call; a refused join for an ended call says so. **Core 278 pass, Android check OK, Swift LimeTests 474 pass (10 skipped), 0 warnings of ours.** Installed on Jean's iPhone, the iPad and the 13 mini (Debug).
+
+**What each party learns:** nothing new: the leave is the same signed op a hang-up sends; no new server call, no new metadata.
+
+**Gate (the user):** relaunch lime on the three phones; the log on each should show `group call: recovered from a killed session`; the old stuck call clears (card / chat line no longer live); then start a fresh group video call and have everyone join. Then back to LIME-158's 3(a).
+
+**For plot:** the 6-hour net is a judgement call (no heartbeat exists); if a bystander phone must know a call is really live, that needs a presence signal (a server or LiveKit-room query), which is a separate brief and a privacy decision. Also: the debug ghost-leaver build is on all three phones for 158.

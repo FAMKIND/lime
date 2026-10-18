@@ -269,10 +269,17 @@ fn finish_if_empty(conn: &Connection, call: &CallRow, me: &str, now: i64) -> Res
     if anyone == 0 || !active_participants(conn, &call.call_id)?.is_empty() {
         return Ok(());
     }
+    end_call(conn, call, me, now, now)
+}
+
+/// Ends a call: the chat line, the call history and the "ended" event. `ended` is when the call is taken to have ended (the last moment anything
+/// was known to happen in it; `now` for an ordinary end).
+fn end_call(conn: &Connection, call: &CallRow, me: &str, ended: i64, now: i64) -> Result<(), StoreError> {
     let Some(fresh) = call_row(conn, &call.call_id)? else { return Ok(()) };
     if fresh.ended_at.is_some() {
         return Ok(());
     }
+    let now = ended.max(fresh.started_at).min(now);
     conn.execute("UPDATE group_calls SET ended_at = ?2, joined = 0 WHERE call_id = ?1", params![call.call_id, now]).map_err(db_err)?;
     conn.execute("DELETE FROM group_call_outbox WHERE call_id = ?1 AND op_type = 'group.call.key'", params![call.call_id]).map_err(db_err)?;
     let duration = (now - fresh.started_at).max(0);
@@ -386,6 +393,8 @@ pub(crate) fn apply(conn: &Connection, me: &str, sender: &str, device: &str, gro
                 if call.joined {
                     enqueue_my_key_to(conn, &call, sender)?;
                 }
+                // A phone is in one call at a time: whatever else that device was in (a killed session never sent its leave) is over.
+                drop_device_elsewhere(conn, me, device, &participant, now)?;
             }
         }
         "group.call.key" => {
@@ -451,6 +460,71 @@ pub(crate) fn apply(conn: &Connection, me: &str, sender: &str, device: &str, gro
             }
         }
         _ => {}
+    }
+    Ok(())
+}
+
+/// A call that has shown no sign of life for this long is over on a phone that is not in it. There is no heartbeat (a quiet call sends no ops),
+/// so a short limit would end real calls on the phones of people watching the chat; this one is only the net for calls whose every phone was
+/// killed and never came back. Phones that are in the call do not use it: the media server's "gone" decides there.
+pub(crate) const STALE_CALL_MS: i64 = 6 * 60 * 60 * 1000;
+
+/// This device has joined `keep` (a new participant): any other participant of the same device, in any call, belongs to a session that is gone.
+fn drop_device_elsewhere(conn: &Connection, me: &str, device: &str, keep: &str, now: i64) -> Result<(), StoreError> {
+    let stale: Vec<(String, String, String)> = {
+        let mut statement = conn
+            .prepare("SELECT call_id, participant, user_id FROM group_call_participants WHERE device_id = ?1 AND participant <> ?2 AND left_at IS NULL")
+            .map_err(db_err)?;
+        let rows = statement.query_map(params![device, keep], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+        rows
+    };
+    for (call_id, participant, user) in stale {
+        let Some(call) = call_row(conn, &call_id)?.filter(|c| c.ended_at.is_none() && c.my_participant.as_deref() != Some(participant.as_str())) else { continue };
+        conn.execute("UPDATE group_call_participants SET left_at = ?3 WHERE call_id = ?1 AND participant = ?2", params![call_id, participant, now]).map_err(db_err)?;
+        push_event(conn, "left", &call, &user, &participant, json!({}), now)?;
+        rotate_my_key(conn, &call, me, now)?;
+        finish_if_empty(conn, &call, me, now)?;
+    }
+    Ok(())
+}
+
+/// After a kill (force-quit, crash, the system): a call this phone still marks joined has no media session in this process, so it is left
+/// properly, as if the person had hung up (the others get the leave and renew their keys). Returns the calls recovered.
+pub(crate) fn recover_killed(conn: &Connection, me: &str, now: i64) -> Result<Vec<String>, StoreError> {
+    let calls: Vec<CallRow> = {
+        let mut statement = conn.prepare(&format!("SELECT {CALL_COLUMNS} FROM group_calls WHERE joined = 1 AND ended_at IS NULL")).map_err(db_err)?;
+        let rows = statement.query_map([], read_call).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+        rows
+    };
+    let mut recovered = Vec::new();
+    for call in calls {
+        local_leave(conn, me, &call.call_id, now)?;
+        // A row marked joined with no participant of mine (a half-made join) is simply cleared.
+        conn.execute("UPDATE group_calls SET joined = 0, my_key = NULL WHERE call_id = ?1 AND joined = 1", params![call.call_id]).map_err(db_err)?;
+        recovered.push(call.call_id);
+    }
+    Ok(recovered)
+}
+
+/// Ends the calls this phone is not in that nobody is left in for real: no one ever joined and the starter's two minutes are up, or the newest
+/// sign of life is older than [`STALE_CALL_MS`]. The chat line stops saying "live" and the call joins the history.
+pub(crate) fn expire_stale(conn: &Connection, me: &str, now: i64) -> Result<(), StoreError> {
+    let calls: Vec<CallRow> = {
+        let mut statement = conn.prepare(&format!("SELECT {CALL_COLUMNS} FROM group_calls WHERE joined = 0 AND ended_at IS NULL")).map_err(db_err)?;
+        let rows = statement.query_map([], read_call).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+        rows
+    };
+    for call in calls {
+        let newest: Option<i64> = conn
+            .query_row("SELECT MAX(joined_at) FROM group_call_participants WHERE call_id = ?1", params![call.call_id], |r| r.get(0))
+            .map_err(db_err)?;
+        let sign_of_life = newest.unwrap_or(call.started_at).max(call.started_at);
+        let nobody_came = newest.is_none() && now - call.started_at > LIVE_WITHOUT_PEOPLE_MS;
+        if !nobody_came && now - sign_of_life <= STALE_CALL_MS {
+            continue;
+        }
+        conn.execute("UPDATE group_call_participants SET left_at = ?2 WHERE call_id = ?1 AND left_at IS NULL", params![call.call_id, now]).map_err(db_err)?;
+        end_call(conn, &call, me, if nobody_came { call.started_at } else { sign_of_life }, now)?;
     }
     Ok(())
 }

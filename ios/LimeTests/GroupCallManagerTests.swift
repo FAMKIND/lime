@@ -16,6 +16,11 @@ final class GroupCallManagerTests: XCTestCase {
         var servers = [IceServer(urls: ["turn:turn.example.org:3478"], username: "u", credential: "c")]
         var queued: [GroupCallEvent] = []
         var refuseStart = false
+        /// Calls a killed session left joined (LIME-165): the next `recover` returns and clears them. `joinError`: the core refuses a join, and the call is gone after it.
+        var stuck: [String] = []
+        var joinError: Error?
+        private var callGone = false
+        private(set) var recoverCalls = 0
         /// What the core says the four emoji are now (the real one is tested in the core).
         var emoji = GroupCallEmojiState(ready: false, waiting: 1, emoji: [])
         private(set) var asked = 0
@@ -27,7 +32,9 @@ final class GroupCallManagerTests: XCTestCase {
             started += 1
             return info
         }
+        func recover() async -> [String] { recoverCalls += 1; defer { stuck = [] }; return stuck }
         func join(callID: String) async throws -> GroupCallJoin {
+            if let joinError { callGone = true; throw joinError }
             joined += 1
             return GroupCallJoin(call: info, participant: String(repeating: "11", count: 16), key: joinKey, keyIndex: 0, participants: others)
         }
@@ -38,7 +45,7 @@ final class GroupCallManagerTests: XCTestCase {
         func deliver() async -> GroupCallSendReport? { delivered += 1; return report }
         func requestKey(callID: String, participant: String) async { requested.append(participant) }
         func takeEvents() -> [GroupCallEvent] { defer { queued = [] }; return queued }
-        func activeCall(conversationID: String) -> GroupCallInfo? { info }
+        func activeCall(conversationID: String) -> GroupCallInfo? { callGone ? nil : info }
         func title(of conversationID: String) -> String { "Grade 4 Team" }
         func emojiState(callID: String) -> GroupCallEmojiState? { asked += 1; return emoji }
         func isCustomNamed(conversationID: String) -> Bool { customNamed }
@@ -135,6 +142,33 @@ final class GroupCallManagerTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(core.delivered >= 1, "my join and key are sent without waiting for the call to connect")
         await manager.leave()
+    }
+
+    func testAKilledSessionIsLeftOnAnIdlePumpAndBeforeTheNextStartOrJoin() async {
+        let (manager, core, _, _) = make()
+        core.stuck = [String(repeating: "cd", count: 32)]
+        await manager.pump()
+        XCTAssertEqual(core.recoverCalls, 1)
+        XCTAssertEqual(core.delivered, 2, "the pump's own send, and the leave the recovery owes the others")
+        core.stuck = [String(repeating: "ef", count: 32)]
+        let ok = await manager.start(conversationID: "grp:g1", title: "T", video: false)
+        XCTAssertTrue(ok, "a stuck phone starts a call at once after relaunch")
+        XCTAssertEqual(core.recoverCalls, 2, "start recovered first")
+        // In a call there is nothing to recover: the pump leaves the core alone.
+        core.stuck = [String(repeating: "ab", count: 32)]
+        await manager.pump()
+        XCTAssertEqual(core.recoverCalls, 2)
+        XCTAssertEqual(core.stuck.count, 1)
+        await manager.leave()
+    }
+
+    func testAJoinTheCoreRefusesBecauseTheCallEndedSaysSo() async {
+        let core = FakeCore()
+        core.joinError = AuthError.network
+        let (manager, _, _, _) = make(core: core)
+        let ok = await manager.join(callID: core.info.callId, conversationID: "grp:g1", title: "T", video: true)
+        XCTAssertFalse(ok)
+        XCTAssertEqual(manager.notice, "That call has ended.")
     }
 
     func testAlwaysRelayConnectsRelayOnlyAndRefusesWithoutCredentials() async {

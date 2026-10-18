@@ -153,6 +153,21 @@ impl LimeStore {
         self.with_conn(|conn| rules::local_leave(conn, &me, &call_id, now_ms()))
     }
 
+    /// Clears what a killed session left behind (LIME-165): a call this phone still marks as joined is left properly (the others get the leave and
+    /// renew their keys; `deliver_group_call_ops` sends it), and calls nobody is really in stop showing as live. Returns the calls left.
+    /// The app calls it while no call is going (launch, every sync) and before starting or joining one.
+    pub fn recover_group_calls(&self) -> Result<Vec<String>, StoreError> {
+        let _guard = self.lock_protocol();
+        let state = self.load_or_create_account()?;
+        let Some(me) = state.user_id.clone().filter(|_| state.registered) else { return Ok(Vec::new()) };
+        self.with_conn(|conn| {
+            let now = now_ms();
+            let recovered = rules::recover_killed(conn, &me, now)?;
+            rules::expire_stale(conn, &me, now)?;
+            Ok(recovered)
+        })
+    }
+
     /// The media server says this participant is gone without a leave (their phone dropped): treated as having left, and the people still
     /// in the call get a new key.
     pub fn group_call_participant_gone(&self, call_id: String, participant: String) -> Result<(), StoreError> {

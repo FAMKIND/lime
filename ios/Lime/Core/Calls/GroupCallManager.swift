@@ -10,6 +10,9 @@ protocol GroupCallCore: AnyObject {
     func start(conversationID: String, video: Bool) async throws -> GroupCallInfo
     func join(callID: String) async throws -> GroupCallJoin
     func leave(callID: String) async
+    /// Clears what a killed session left behind: calls this phone still marks joined are left properly, and calls nobody is really in stop being live
+    /// (LIME-165). Returns the calls it left.
+    func recover() async -> [String]
     func participantGone(callID: String, participant: String) async
     func token(room: String, participant: String) async -> LiveKitToken?
     func iceServers() async -> [IceServer]
@@ -24,6 +27,10 @@ protocol GroupCallCore: AnyObject {
     func emojiState(callID: String) -> GroupCallEmojiState?
     /// A person chose this group's name (renamed it, or typed another than the default): the core decides, so every phone agrees.
     func isCustomNamed(conversationID: String) -> Bool
+}
+
+extension GroupCallCore {
+    func recover() async -> [String] { [] }
 }
 
 /// One group call at a time (LIME-112b). A thin adapter: LimeCore decides everything about the call and its keys; LiveKit carries the
@@ -252,6 +259,7 @@ final class GroupCallManager {
         guard phase == .idle, !busy, !isOtherCallActive() else { notice = "End your current call to start another."; return false }
         busy = true
         defer { busy = false }
+        await recoverKilledSession()
         do {
             let info = try await core.start(conversationID: conversationID, video: video)
             diag.log("group call: start video=\(video), \(info.participantCount) in it")
@@ -274,6 +282,7 @@ final class GroupCallManager {
         busy = true
         defer { busy = false }
         dismissIncoming()
+        await recoverKilledSession()
         let info = core.activeCall(conversationID: conversationID)
         guard let info, info.callId == callID else { notice = "That call has ended."; return false }
         // Joining as voice publishes no camera until the camera is turned on in the call; by default a join is as the call was started.
@@ -284,7 +293,9 @@ final class GroupCallManager {
         let joined: GroupCallJoin
         do { joined = try await core.join(callID: info.callId) } catch {
             diag.log("group call: join refused (\(error))")
-            notice = "Couldn\u{2019}t join the call."
+            // Say what happened: a call that ended in the meantime is not "couldn't join".
+            notice = core.activeCall(conversationID: info.conversationId)?.callId == info.callId ? "Couldn\u{2019}t join the call." : "That call has ended."
+            changes += 1
             return false
         }
         invite = nil
@@ -428,10 +439,21 @@ final class GroupCallManager {
 
     /// Sends what is owed, then handles what arrived. The app calls this after every fetch; a call also does it once a second.
     func pump() async {
+        if phase == .idle, !busy { await recoverKilledSession() }
         // Events first: when the core renewed my key, this phone switches to it before the others are sent theirs (LIME-112e).
         handle(core.takeEvents())
         await deliverAndLog()
         checkStuckTiles()
+    }
+
+    /// A force-quit, a crash or the system skipped the leave: the core still has this phone in the call, which refuses every new start and join
+    /// (LIME-165). With no call going in this process, leave it properly (the others get the leave and renew their keys) and clear dead calls.
+    private func recoverKilledSession() async {
+        let recovered = await core.recover()
+        guard !recovered.isEmpty else { return }
+        for id in recovered { diag.log("group call: recovered from a killed session (call \(id.prefix(8)))") }
+        _ = await core.deliver()
+        changes += 1
     }
 
     private func deliverAndLog() async {

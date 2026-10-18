@@ -4858,3 +4858,126 @@ fn a_reply_that_says_an_item_needs_the_internet_stops_the_fetching_until_reset()
     engine.fetch_reset();
     assert!(engine.fetch_frame_for(1).unwrap().is_some(), "allowed again after a reset");
 }
+
+// ---- LIME-165: a force-quit mid-call no longer locks a phone out of calls
+
+fn call_line(p: &Party, call_id: &str) -> String {
+    let conn = p.store.lock();
+    conn.query_row("SELECT body FROM messages WHERE id = ?1", rusqlite::params![crate::store::calls::call_message_id(call_id)], |r| r.get::<_, String>(0)).unwrap()
+}
+
+#[test]
+fn a_phone_killed_mid_call_leaves_properly_on_relaunch_and_can_join_and_start_again() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let a = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let _b = bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    gc_events(&alice);
+    gc_events(&bob);
+    // Alice is force-quit: no leave was sent. The stuck state: her core still says she is in the call, so both a join and a start are refused.
+    assert!(alice.store.join_group_call(call.call_id.clone()).is_err(), "already joined: refused (today's lock-out)");
+    // Relaunch: she leaves properly, and Bob is told.
+    assert_eq!(alice.store.recover_group_calls().unwrap(), vec![call.call_id.clone()]);
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert!(gc_events(&bob).iter().any(|e| e.kind == "left" && e.participant == a.participant), "the others see Alice leave");
+    assert!(alice.store.recover_group_calls().unwrap().is_empty(), "nothing left to recover the second time");
+    // She can join the same live call again (Bob is still in it) with a new identity.
+    let again = alice.store.join_group_call(call.call_id.clone()).unwrap();
+    assert_ne!(again.participant, a.participant);
+    // Everyone leaves: the call ends; a fresh start works.
+    alice.store.leave_group_call(call.call_id.clone()).unwrap();
+    bob.store.leave_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let next = alice.store.start_group_call(chat.clone(), false).unwrap();
+    assert_ne!(next.call_id, call.call_id);
+}
+
+#[test]
+fn a_call_everyone_was_killed_in_stops_being_live_once_they_relaunch() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), true).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    alice.store.join_group_call(call.call_id.clone()).unwrap();
+    bob.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert_eq!(carol.store.active_group_call(chat.clone()).unwrap().map(|c| c.participant_count), Some(2), "Carol sees 2 people there");
+    // Alice and Bob are both killed; nothing is sent. Carol still sees the call as live.
+    assert!(carol.store.active_group_call(chat.clone()).unwrap().is_some());
+    alice.store.recover_group_calls().unwrap();
+    bob.store.recover_group_calls().unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert_eq!(carol.store.active_group_call(chat.clone()).unwrap(), None, "everyone left: not live any more");
+    assert!(call_line(&carol, &call.call_id).contains("\"outcome\":\"completed\""), "the chat line is no longer live");
+}
+
+#[test]
+fn a_device_that_joins_a_call_again_drops_its_old_session_from_the_roster() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    let call = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    let group_id = chat.strip_prefix("grp:").unwrap().to_owned();
+    let join = |participant: &str| crate::protocol::Op {
+        op_id: format!("j-{participant}"),
+        op_type: "group.call.join".into(),
+        conversation_id: chat.clone(),
+        hlc: "0".into(),
+        parents: vec![],
+        payload: serde_json::json!({ "call_id": call.call_id, "participant": participant }),
+        sig: String::new(),
+    };
+    let (first, second) = ("a1".repeat(16), "b2".repeat(16));
+    {
+        let conn = carol.store.lock();
+        crate::store::group_calls::apply(&conn, "carol", "alice", "alice-device", &group_id, &join(&first), crate::store::now_ms()).unwrap();
+    }
+    assert_eq!(carol.store.active_group_call(chat.clone()).unwrap().map(|c| c.participant_count), Some(1));
+    {
+        let conn = carol.store.lock();
+        crate::store::group_calls::apply(&conn, "carol", "alice", "alice-device", &group_id, &join(&second), crate::store::now_ms()).unwrap();
+    }
+    assert_eq!(carol.store.active_group_call(chat.clone()).unwrap().map(|c| c.participant_count), Some(1), "the killed session no longer counts: one Alice, not two");
+    let events = gc_events(&carol);
+    assert!(events.iter().any(|e| e.kind == "left" && e.participant == first));
+}
+
+#[test]
+fn a_call_nobody_joined_or_nobody_has_shown_life_in_for_hours_ends_on_a_phone_that_is_not_in_it() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, chat) = call_team(&server);
+    // 1. Started, nobody ever came, three minutes ago: the chat line is still "live" today.
+    let empty = alice.store.start_group_call(chat.clone(), false).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert!(call_line(&bob, &empty.call_id).contains("\"outcome\":\"live\""));
+    for p in [&alice, &bob, &carol] {
+        let conn = p.store.lock();
+        conn.execute("UPDATE group_calls SET started_at = ?2 WHERE call_id = ?1", rusqlite::params![empty.call_id, crate::store::now_ms() - 180_000]).unwrap();
+    }
+    for p in [&alice, &bob, &carol] {
+        p.store.recover_group_calls().unwrap();
+    }
+    assert!(!call_line(&bob, &empty.call_id).contains("\"outcome\":\"live\""), "no longer shown as live");
+    // 2. Someone joined, then every phone went away: seven hours of silence.
+    let call = {
+        let c = carol.store.start_group_call(chat.clone(), false).unwrap();
+        gc_settle(&[&alice, &bob, &carol], &transport);
+        c
+    };
+    alice.store.join_group_call(call.call_id.clone()).unwrap();
+    gc_settle(&[&alice, &bob, &carol], &transport);
+    assert_eq!(bob.store.active_group_call(chat.clone()).unwrap().map(|c| c.call_id), Some(call.call_id.clone()));
+    let seven_hours = 7 * 60 * 60 * 1000;
+    {
+        let conn = bob.store.lock();
+        conn.execute("UPDATE group_call_participants SET joined_at = joined_at - ?2 WHERE call_id = ?1", rusqlite::params![call.call_id, seven_hours]).unwrap();
+        conn.execute("UPDATE group_calls SET started_at = started_at - ?2 WHERE call_id = ?1", rusqlite::params![call.call_id, seven_hours]).unwrap();
+    }
+    bob.store.recover_group_calls().unwrap();
+    assert_eq!(bob.store.active_group_call(chat.clone()).unwrap(), None);
+    assert!(!call_line(&bob, &call.call_id).contains("\"outcome\":\"live\""));
+}

@@ -22,6 +22,11 @@ final class StoreGroupCallCore: GroupCallCore {
         _ = try? await Task.detached(priority: .userInitiated) { try core.leaveGroupCall(callId: callID) }.value
     }
 
+    func recover() async -> [String] {
+        guard let core = store?.core else { return [] }
+        return (try? await Task.detached(priority: .userInitiated) { try core.recoverGroupCalls() }.value) ?? []
+    }
+
     func participantGone(callID: String, participant: String) async {
         guard let core = store?.core else { return }
         _ = try? await Task.detached(priority: .userInitiated) { try core.groupCallParticipantGone(callId: callID, participant: participant) }.value
