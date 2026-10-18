@@ -438,6 +438,8 @@ extension EnvironmentValues {
     @Entry var mediaLongPress: MediaLongPress? = nil
     /// Select mode: media do not react to taps (the row toggles instead).
     @Entry var mediaSelecting = false
+    /// Where the pressed bubble is on the screen: set by the bubble at a long-press, read by the message menu (LIME-152d).
+    @Entry var menuFrameSink: ((CGRect) -> Void)? = nil
     /// The conversation the visible messages are in (so the picture viewer can react to the message).
     @Entry var chatConversationID: Conversation.ID? = nil
 }

@@ -758,10 +758,29 @@ struct MessageBubble: View {
     /// Select mode: `nil` outside it, otherwise whether this message is selected; tapping toggles.
     var selection: Bool? = nil
     var onToggleSelect: (() -> Void)? = nil
+    /// Only the bubble and the sender's name (no avatar, footer or replies): the lifted copy the long-press menu shows (LIME-152d).
+    var liftedOnly = false
+    @Environment(\.menuFrameSink) private var menuFrameSink
+    /// Where the bubble is on the screen, so the menu can lift a copy of it to the same place.
+    @State private var contentFrame: CGRect = .zero
     @Environment(\.pressedLink) private var pressedLink
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 36
 
     var body: some View {
+        if liftedOnly {
+            VStack(alignment: message.isOwn ? .trailing : .leading, spacing: 4) {
+                if showName, let sender {
+                    Text(sender.name).font(Theme.caption.weight(.medium)).foregroundStyle(Theme.text)
+                }
+                content
+            }
+            .allowsHitTesting(false)
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         HStack(alignment: .top, spacing: 8) {
             if let selection, !message.isOwn { selectionCircle(selection) }
             if message.isOwn { Spacer(minLength: 56) }
@@ -857,9 +876,18 @@ struct MessageBubble: View {
                 }
             }
         }
-        .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { onActions?() } }
-        .environment(\.mediaLongPress, selection == nil ? onActions.map { MediaLongPress(messageID: message.id, action: $0) } : nil)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { contentFrame = $0 }
+        .onLongPressGesture(minimumDuration: 0.4) { if selection == nil { lift() } }
+        .environment(\.mediaLongPress, selection == nil && onActions != nil ? MediaLongPress(messageID: message.id, action: { lift() }) : nil)
         .environment(\.mediaSelecting, selection != nil)
+    }
+
+    /// A long-press: a light haptic, the bubble's place on the screen, then the menu.
+    private func lift() {
+        guard onActions != nil else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        menuFrameSink?(contentFrame)
+        onActions?()
     }
 
     private var hasReactions: Bool { !message.reactions.isEmpty && !message.deleted }

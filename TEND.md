@@ -6693,3 +6693,21 @@ Brief: LIME-152c (a video shows a real frame, not a blur; the Shared grid is sha
 **Gate (the user):** send a video from the 13 mini: the bubble shows a sharp frame on both phones (on the 13 mini at once; on Jean's once the message arrives); a profile's Shared grid is sharp for photos you have and for videos with a poster. Videos sent before this build keep the blur.
 
 For plot: the budget numbers above (poster ≤ 30 000 bytes, descriptors ≤ 44 000), not the brief's 40 KB.
+
+## LIME-152d
+
+Brief: LIME-152d (a long-press keeps the pressed message visible, like iMessage).
+
+**Phase 1.** The long-press was a custom overlay (`MessageActionsHost.menu`): a 35% black dim and, in the middle of the screen, the reaction row and the actions card; the pressed message was not in it, so there was no context. iOS's own `.contextMenu(menuItems:preview:)` can lift a message but cannot put our reaction bar above it in the same stack, so I kept the custom overlay and made it lift a copy of the message.
+
+**Changes.**
+- [x] 1. On long-press: a light haptic; the bubble reports where it is on the screen (`menuFrameSink`, its global frame); the overlay draws a **copy of the message (`MessageBubble(liftedOnly:)`, sharp and full size, with the sender's name above it in a group) at that place**, **the reaction bar just above it** and **the actions just below it**; the chat behind dims and blurs (`ultraThinMaterial` + a light dim). Pure placement (`MessageMenuLayout.place`): the message stays where it was; near the top or bottom the whole stack moves the least that makes the bar and the menu fit; a message taller than the room is capped and fades out at its bottom edge. Tapping outside, or any action, closes it as before.
+- [x] 2. Own (right) and others' (left) messages keep their side; the bar and menu line up with it and stay inside the screen. Groups: the name stays above the message. Replies use the same host and bubble. The reaction bar is a little narrower (40 pt buttons) so it fits a 375 pt screen beside the menu's margins.
+- [x] 3. VoiceOver: the lifted copy is hidden from it; the actions and the reaction row keep their labels and ids. Reduce Motion: a short fade instead of the spring; Reduce Transparency: a solid dark dim instead of blur.
+- [x] 4. Tests: `MessageMenuLayoutTests` (middle, near the top, near the bottom, a tall message capped, the side lining up, the name's room); `LongPressUITests` (the message, the reactions and the actions are all on screen at once, the reactions above and the actions below, the message about where it was, and choosing a reaction closes it). All `LimeUITestsMessages` and the unit tests pass; build 0 warnings of ours.
+- Screenshots (simulator, light and dark): `~/Desktop/lime-152d/` — other's message, own message, one near the bottom, a file. Not shot: a photo, a long text capped, a group with a name, near the very top.
+- Not tried: Dynamic Type at the accessibility sizes (the menu is not scrolled yet: the placement caps the message, not the menu).
+
+Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Gate (the user):** long-press any message: you see it, the reactions above, the menu below, like iMessage. Tell me what is off (a photo, a long message, near the edges, big text).

@@ -6,6 +6,8 @@ import UIKit
 @Observable
 final class MessageActionsState {
     var menu: Message?
+    /// Where the pressed bubble was on the screen (global coordinates), for lifting a copy of it to the same place.
+    var menuFrame: CGRect = .zero
     var editing: Message?
     var editText = ""
     var picking: Message?
@@ -36,13 +38,19 @@ struct MessageActionsHost: ViewModifier {
     @Binding var selection: Set<Message.ID>?
     var onReply: (Message) -> Void = { _ in }
     @Environment(ConversationStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    /// The measured sizes of the reaction bar and the actions, for placing them around the lifted message (estimates until measured).
+    @State private var reactionSize = CGSize(width: 290, height: 56)
+    @State private var actionsSize = CGSize(width: 260, height: 7 * 48)
 
     func body(content: Content) -> some View {
         content
+            .environment(\.menuFrameSink) { state.menuFrame = $0 }
             .overlay {
                 if let message = state.menu { menu(for: message) }
             }
-            .animation(.easeOut(duration: 0.15), value: state.menu?.id)
+            .animation(reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.3, dampingFraction: 0.85), value: state.menu?.id)
             .task(id: state.menu?.id) {
                 // A file that was never opened here and is gone from the server cannot be forwarded: say so in the menu.
                 guard let message = state.menu, !message.attachments.isEmpty, !(await store.canForward([message])) else { return }
@@ -117,20 +125,83 @@ struct MessageActionsHost: ViewModifier {
     // MARK: The menu
 
     private func menu(for message: Message) -> some View {
-        ZStack {
-            Color.black.opacity(0.35).ignoresSafeArea()
-                .onTapGesture { state.menu = nil }
-                .accessibilityHidden(true)
-            VStack(spacing: 10) {
+        GeometryReader { geo in
+            let area = geo.frame(in: .global)
+            let placement = state.menuFrame == .zero ? nil : MessageMenuLayout.place(
+                bubble: state.menuFrame.offsetBy(dx: -area.minX, dy: -area.minY),
+                nameHeight: showsName(message) ? 18 : 0,
+                bar: reactionSize, menu: actionsSize,
+                in: CGRect(origin: .zero, size: geo.size))
+            ZStack(alignment: .topLeading) {
+                backdrop
+                if let placement {
+                    // The pressed message, lifted to where it was: sharp, full size (a long one capped with a fade); the reactions above it, the actions below.
+                    liftedBubble(message, placement: placement)
+                    reactionBar(message).fixedSize().onGeometryChange(for: CGSize.self) { $0.size } action: { reactionSize = $0 }
+                        .position(x: placement.bar.midX, y: placement.bar.midY)
+                    actionsMenu(message).frame(width: MessageMenuLayout.menuWidth).fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { actionsSize = $0 }
+                        .position(x: placement.menu.midX, y: placement.menu.midY)
+                        .accessibilityElement(children: .contain).accessibilityIdentifier("message-actions")
+                } else {
+                    // No place was recorded (a menu opened some other way): the two pieces stacked in the middle, as before.
+                    VStack(spacing: 10) { reactionBar(message); actionsMenu(message) }
+                        .frame(maxWidth: 300).shadow(color: .black.opacity(0.25), radius: 18, y: 6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityElement(children: .contain).accessibilityIdentifier("message-actions")
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
+    }
+
+    /// The chat dims and blurs behind the lifted message (a solid dim with Reduce Transparency).
+    private var backdrop: some View {
+        Group {
+            if reduceTransparency { Color.black.opacity(0.6) }
+            else { Rectangle().fill(.ultraThinMaterial).overlay(Color.black.opacity(0.18)) }
+        }
+        .ignoresSafeArea()
+        .onTapGesture { state.menu = nil }
+        .accessibilityHidden(true)
+    }
+
+    private func showsName(_ message: Message) -> Bool {
+        guard !message.isOwn, let conversation = store.conversation(conversationID), conversation.isGroup else { return false }
+        return store.person(message.senderID, in: conversation) != nil
+    }
+
+    private func liftedBubble(_ message: Message, placement: MessageMenuLayout.Placement) -> some View {
+        let conversation = store.conversation(conversationID)
+        let sender = conversation.flatMap { store.person(message.senderID, in: $0) }
+        return MessageBubble(message: message, sender: sender, showAvatar: false, showName: showsName(message), conversationID: conversationID, liftedOnly: true)
+            .frame(width: placement.bubble.width, alignment: message.isOwn ? .trailing : .leading)
+            .frame(maxHeight: placement.bubble.height, alignment: .top)
+            .clipped()
+            .mask(alignment: .top) {
+                // A message too tall for the screen fades out at its bottom edge.
+                if placement.isCapped {
+                    LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.85), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom)
+                } else { Color.black }
+            }
+            .shadow(color: .black.opacity(0.22), radius: 14, y: 4)
+            .position(x: placement.bubble.midX, y: placement.bubble.midY)
+            .accessibilityHidden(true)
+            .accessibilityIdentifier("lifted-bubble")
+    }
+
+    @ViewBuilder
+    private func reactionBar(_ message: Message) -> some View {
                 if !message.deleted && !message.state.isInFlight && message.state != .failed {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 2) {
                         ForEach(ConversationStore.quickReactions, id: \.self) { emoji in
                             let mine = message.reactions.first { $0.emoji == emoji }?.mine ?? false
                             Button {
                                 state.menu = nil
                                 Task { await store.toggleReaction(emoji, on: message, in: conversationID) }
                             } label: {
-                                Text(emoji).font(.system(size: 28)).frame(width: 44, height: 44)
+                                Text(emoji).font(.system(size: 28)).frame(width: 40, height: 44)
                                     .background(mine ? Theme.pressed : Color.clear, in: Circle())
                             }
                             .buttonStyle(.plain)
@@ -147,13 +218,16 @@ struct MessageActionsHost: ViewModifier {
                         .buttonStyle(.plain)
                         .accessibilityLabel("More emoji").accessibilityIdentifier("react-more")
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .padding(.horizontal, 8).padding(.vertical, 6)
                     .background(Theme.canvas, in: Capsule())
                     .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5))
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("reaction-row")
                 }
-                VStack(spacing: 0) {
+    }
+
+    private func actionsMenu(_ message: Message) -> some View {
+        VStack(spacing: 0) {
                     if !message.deleted, !inThread, !message.state.isInFlight, message.state != .failed {
                         row("arrowshape.turn.up.left", "Reply", id: "reply-in-thread") { state.menu = nil; onReply(message) }
                     }
@@ -203,12 +277,6 @@ struct MessageActionsHost: ViewModifier {
                 }
                 .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
-            }
-            .frame(maxWidth: 300)
-            .shadow(color: .black.opacity(0.25), radius: 18, y: 6)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("message-actions")
-        }
     }
 
     private func row(_ symbol: String, _ title: String, id: String, destructive: Bool = false, last: Bool = false, action: @escaping () -> Void) -> some View {
@@ -505,5 +573,44 @@ struct ForwardSheet: View {
             if done { store.showBanner(targets.count == 1 ? "Forwarded" : "Forwarded to \(targets.count) chats") }
             finish(done)
         }
+    }
+}
+
+
+/// Where the pieces of the long-press menu go (LIME-152d): the pressed message stays where it was, the reactions sit just above it and the actions
+/// just below; when that does not fit the screen the whole stack moves the least that makes it fit, and a message taller than the room is capped.
+enum MessageMenuLayout {
+    static let gap: CGFloat = 10
+    static let margin: CGFloat = 8
+    static let menuWidth: CGFloat = 270
+
+    struct Placement: Equatable {
+        var bubble: CGRect
+        var bar: CGRect
+        var menu: CGRect
+        /// The message was cut to fit (it fades out at the bottom).
+        var isCapped: Bool
+    }
+
+    /// `bubble` is the message's frame, `nameHeight` the sender's name above it (groups, others' messages), `bar` and `menu` the sizes of the
+    /// reaction bar and the actions, all in the coordinates of `area` (the visible part of the screen).
+    static func place(bubble: CGRect, nameHeight: CGFloat, bar: CGSize, menu: CGSize, in area: CGRect) -> Placement {
+        let above = bar.height + gap + nameHeight
+        let below = gap + menu.height
+        let room = area.height - above - below
+        let capped = bubble.height > room
+        let height = capped ? max(60, room) : bubble.height
+        let lowest = area.minY + above
+        let highest = area.maxY - below - height
+        let top = highest < lowest ? lowest : min(max(bubble.minY, lowest), highest)
+        let rect = CGRect(x: bubble.minX, y: top, width: bubble.width, height: height)
+        // The bar and the menu line up with the side the message is on, kept inside the screen.
+        func slide(_ size: CGSize) -> CGFloat {
+            let wanted = bubble.midX > area.midX ? rect.maxX - size.width : rect.minX
+            return min(max(wanted, area.minX + margin), max(area.minX + margin, area.maxX - margin - size.width))
+        }
+        let barRect = CGRect(x: slide(bar), y: top - nameHeight - gap - bar.height, width: bar.width, height: bar.height)
+        let menuRect = CGRect(x: slide(menu), y: top + height + gap, width: menu.width, height: menu.height)
+        return Placement(bubble: rect, bar: barRect, menu: menuRect, isCapped: capped)
     }
 }
