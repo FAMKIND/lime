@@ -3,12 +3,13 @@
 // call with a new hash and a new public key. A call without `access_public_key` (an older build) CLEARS the stored one: a public key left from
 // the previous delivery key must never outlive a rotation.
 
-import { admin, requireUser } from "../_shared/db.ts";
+import { admin, config, rateLimit, requireUser } from "../_shared/db.ts";
 import { fromBase64, toPgBytea } from "../_shared/bytes.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
   const userId = await requireUser(req);
+  await rateLimit(`access-set:${userId}`, 1, config.accessSetPerMinute(), 60);
   const body = await readJson(req);
   let hash: Uint8Array;
   try {

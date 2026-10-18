@@ -18,6 +18,18 @@ export const config = {
   lookupPerMinute: () => intFromEnv("LIME_RATE_LOOKUP_PER_MIN", 30),
   /** Public profile reads (other people's display names) per minute per user. */
   profilePerMinute: () => intFromEnv("LIME_RATE_PROFILE_PER_MIN", 120),
+  /** Device lists read (`users-devices`) per minute per user: a first send to a big group reads one list per member. */
+  deviceListPerMinute: () => intFromEnv("LIME_RATE_DEVICE_LIST_PER_MIN", 120),
+  /** Profile edits per minute per user. */
+  profileSetPerMinute: () => intFromEnv("LIME_RATE_PROFILE_SET_PER_MIN", 30),
+  /** Undelivered-message reports taken (`undelivered-take`) per minute per user. */
+  undeliveredPerMinute: () => intFromEnv("LIME_RATE_UNDELIVERED_PER_MIN", 60),
+  /** Delivery-key (access proof) uploads per minute per user: registration, a block, a new phone. */
+  accessSetPerMinute: () => intFromEnv("LIME_RATE_ACCESS_SET_PER_MIN", 20),
+  /** One-time-key uploads per minute per user. */
+  keysUploadPerMinute: () => intFromEnv("LIME_RATE_KEYS_UPLOAD_PER_MIN", 30),
+  /** Mailbox acknowledgements per minute per user: one after each fetch. */
+  ackPerMinute: () => intFromEnv("LIME_RATE_ACK_PER_MIN", 120),
   /** Device registrations per hour per user. */
   registerPerHour: () => intFromEnv("LIME_RATE_REGISTER_PER_HOUR", 10),
   /** Guards (implementation limits, not protocol): recipients per send, keys per upload, items per fetch. */

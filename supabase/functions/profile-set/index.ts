@@ -2,12 +2,13 @@
 // signed-in user's own profile. The directory fields only (api-v2.md section 2). A verified
 // session is required. Usernames follow the web app's rules and are unique ignoring case.
 
-import { admin, requireUser } from "../_shared/db.ts";
+import { admin, config, rateLimit, requireUser } from "../_shared/db.ts";
 import { graphemeCount, MAX_ABOUT_LENGTH, MAX_NAME_LENGTH, usernameError } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
   const userId = await requireUser(req);
+  await rateLimit(`profile-set:${userId}`, 1, config.profileSetPerMinute(), 60);
   const body = await readJson(req);
   const displayName = typeof body.display_name === "string" ? body.display_name.trim() : "";
   if (graphemeCount(displayName) < 1 || graphemeCount(displayName) > MAX_NAME_LENGTH) {

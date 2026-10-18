@@ -1,10 +1,11 @@
 // POST mailbox-ack: deletes the caller's items up to and including a cursor.
 
-import { admin, requireDevice, requireUser } from "../_shared/db.ts";
+import { admin, config, rateLimit, requireDevice, requireUser } from "../_shared/db.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
   const userId = await requireUser(req);
+  await rateLimit(`ack:${userId}`, 1, config.ackPerMinute(), 60);
   const body = await readJson(req);
   const device = await requireDevice(userId, body.device_id);
   const upTo = Number(body.up_to_cursor);

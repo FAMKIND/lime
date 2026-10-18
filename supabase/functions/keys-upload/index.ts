@@ -1,12 +1,13 @@
 // POST keys-upload: a batch of one-time keys for the caller's own device. Returns how many
 // unclaimed keys remain, so the client can top the pool up (it uploads 50; it tops up below 20).
 
-import { admin, config, requireDevice, requireUser } from "../_shared/db.ts";
+import { admin, config, rateLimit, requireDevice, requireUser } from "../_shared/db.ts";
 import { fromBase64 } from "../_shared/bytes.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
   const userId = await requireUser(req);
+  await rateLimit(`keys-upload:${userId}`, 1, config.keysUploadPerMinute(), 60);
   const body = await readJson(req);
   const device = await requireDevice(userId, body.device_id);
 
