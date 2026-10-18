@@ -246,7 +246,8 @@ struct ProfileView: View {
                 } label: { Image(systemName: muted ? "bell.slash" : "bell") }
                 .accessibilityLabel(muted ? "Unmute" : "Mute").accessibilityIdentifier("profile-mute")
                 Button { Task { await store.setPinned(conversation.id, !conversation.isPinned) } } label: {
-                    Image(systemName: conversation.isPinned ? "pin.slash" : "pin")
+                    // The pin glyph fills its frame more than the bell's: one step smaller, so it reads the same size (LIME-152b).
+                    Image(systemName: conversation.isPinned ? "pin.slash" : "pin").imageScale(.small)
                 }
                 .accessibilityLabel(conversation.isPinned ? "Unpin" : "Pin").accessibilityIdentifier("profile-pin")
             }

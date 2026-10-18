@@ -6659,3 +6659,19 @@ Brief: LIME-152a (the composer never hides under the keyboard; Note to Self open
 **Installed** on Jean's iPhone, the iPad and the 13 mini.
 
 **Gate (the user, the 13 mini):** select-all + delete in a long draft (and in replies) never hides the tool row; Note to Self's avatar opens your profile. If the composer still goes under the keyboard, tell me what you did just before (the text size, whether the formatting row was open, the keyboard type) and I will chase it on the phone.
+
+## LIME-152b (items 1–3; item 4, the "You …" wording, removed by the user: untouched)
+
+Brief: LIME-152. Visual; the user checks on the phone (maybe the next day).
+
+**Phase 1.** `ConversationAvatar` is drawn in Messages, the chat header, the Calls tab, the mini player, search, the message-action sheet and the group invite; `PiPGroupAvatarView` is the UIKit twin for the floating window. Both now read one plan. (Event wording: not touched.)
+
+**Changes.**
+- [x] 1. Group pictures: `GroupAvatarPlan` now has `.pair`, `.triangle` and `.ring` plus `spots(circles:)` (diameter and centres as fractions of the avatar's side, one set of numbers for both renderers) and a ring width. 2 in all: the two overlapping circles (kept); **3 in all: a triangle** (top, bottom left, bottom right); **4 in all: a circle of circles** (top, right, bottom, left, overlapping a little); 5+: the first three others and a "+N" (N counts you) on the four positions. Every circle has a thin ring so faces read where they overlap. The rule and its numbers are in `docs/screens/group-avatar.md` for Android. Renders (simulator, light and dark, sizes 36, 52, 120): `~/Desktop/lime-152b/avatars-light.png`, `avatars-dark.png`.
+- [x] 2. The profile's Pin/Unpin icon is one step smaller (`imageScale(.small)`) so it reads the same size as the bell and ⋯ (screenshot `profile-light.png`; by eye it now sits a touch smaller than the bell, say if it should go back up a half step).
+- [x] 3. The emergency roll-up folds: one line by default, "Emergency · 2 safe · 1 needs help · 24 students ›" (tap to open), with **anyone who needs help always listed under it**; the opened panel is today's, with its header as the fold control (chevron). VoiceOver reads the summary and "Double-tap to expand"; Reduce Motion: no slide. `EmergencyUITests` updated (folded summary, the helper visible, then expand).
+- Not done: screenshots of the emergency panel folded and expanded, the mini player and the chat header with the new pictures (the avatar renders stand for them), and the Messages list with real groups of 2, 3, 4 and 6; the event lines (item 4 removed).
+
+All unit tests and `EmergencyUITests` pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Gate (the user, maybe the next day):** the group pictures read well at every size; the pin matches; the panel folds.

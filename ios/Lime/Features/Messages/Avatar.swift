@@ -63,7 +63,7 @@ struct ConversationAvatar: View {
 
     @Environment(ConversationStore.self) private var store: ConversationStore?
 
-    /// The members' composite, including me (LIME-150): two overlapping circles for a pair, a quadrant cluster otherwise.
+    /// The members' composite, including me (LIME-150, LIME-152b): overlapping circles with thin rings (two, a triangle, a circle of four).
     @ViewBuilder
     private var plan: some View {
         let me = store?.meProvider() ?? SampleData.me
@@ -71,26 +71,32 @@ struct ConversationAvatar: View {
         case .single(let person):
             AvatarView(person: person, size: size)
         case .pair(let front, let back):
-            let d = size * GroupAvatarPlan.pairDiameter
-            ZStack {
-                AvatarView(person: back, size: d).offset(x: size * GroupAvatarPlan.pairBack.x, y: size * GroupAvatarPlan.pairBack.y)
-                AvatarView(person: front, size: d)
-                    .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: max(1.5, size * 0.04)))
-                    .offset(x: size * GroupAvatarPlan.pairFront.x, y: size * GroupAvatarPlan.pairFront.y)
-            }
-        case .cluster(let shown, let extra):
-            let d = size * 0.52
-            ZStack {
-                ForEach(Array(shown.enumerated()), id: \.element.id) { index, person in
-                    let q = GroupAvatarPlan.quadrant(index)
-                    AvatarView(person: person, size: d).offset(x: size * q.x, y: size * q.y)
+            circles([.person(back), .person(front)])
+        case .triangle(let people):
+            circles(people.map { .person($0) })
+        case .ring(let shown, let extra):
+            circles(shown.map { .person($0) } + (extra > 0 ? [.more(extra)] : []))
+        }
+    }
+
+    private enum Item { case person(Person), more(Int) }
+
+    private func circles(_ items: [Item]) -> some View {
+        let spots = GroupAvatarPlan.spots(circles: items.count)
+        let d = size * spots.diameter
+        return ZStack {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                let at = spots.centres[min(index, spots.centres.count - 1)]
+                Group {
+                    switch item {
+                    case .person(let person): AvatarView(person: person, size: d)
+                    case .more(let extra):
+                        Circle().fill(Theme.surface).frame(width: d, height: d)
+                            .overlay(Text("+\(extra)").font(.system(size: d * 0.38, weight: .medium)).foregroundStyle(Theme.text))
+                    }
                 }
-                if extra > 0 {
-                    let q = GroupAvatarPlan.quadrant(3)
-                    Circle().fill(Theme.surface).frame(width: d, height: d)
-                        .overlay(Text("+\(extra)").font(.system(size: d * 0.38, weight: .medium)).foregroundStyle(Theme.text))
-                        .offset(x: size * q.x, y: size * q.y)
-                }
+                .overlay(Circle().strokeBorder(Theme.canvas, lineWidth: GroupAvatarPlan.ringWidth(side: size)))
+                .offset(x: size * at.x, y: size * at.y)
             }
         }
     }

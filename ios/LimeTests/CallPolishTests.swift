@@ -13,13 +13,13 @@ final class CallPolishTests: XCTestCase {
     }
 
     func testThreeOrFourInAllIsTheClusterOfEveryoneWithMeLast() {
-        XCTAssertEqual(GroupAvatarPlan.make(others: people(2), me: me), .cluster(shown: people(2) + [me], extra: 0))
-        XCTAssertEqual(GroupAvatarPlan.make(others: people(3), me: me), .cluster(shown: people(3) + [me], extra: 0))
+        XCTAssertEqual(GroupAvatarPlan.make(others: people(2), me: me), .triangle(people(2) + [me]))
+        XCTAssertEqual(GroupAvatarPlan.make(others: people(3), me: me), .ring(shown: people(3) + [me], extra: 0))
     }
 
     func testMoreThanFourShowsThreeAndAPlusNThatCountsMe() {
-        XCTAssertEqual(GroupAvatarPlan.make(others: people(4), me: me), .cluster(shown: Array(people(4).prefix(3)), extra: 2))
-        XCTAssertEqual(GroupAvatarPlan.make(others: people(7), me: me), .cluster(shown: Array(people(7).prefix(3)), extra: 5))
+        XCTAssertEqual(GroupAvatarPlan.make(others: people(4), me: me), .ring(shown: Array(people(4).prefix(3)), extra: 2))
+        XCTAssertEqual(GroupAvatarPlan.make(others: people(7), me: me), .ring(shown: Array(people(7).prefix(3)), extra: 5))
     }
 
     func testTheUIKitTwinDrawsThePair() {

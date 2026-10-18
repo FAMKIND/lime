@@ -382,9 +382,6 @@ final class PiPGroupAvatarView: UIView {
     private let photo = UIImageView()
     private let emojiLabel = UILabel()
 
-    /// How the cluster is laid out: a pair (you and one other: two overlapping circles, the other in front with a ring) or the quadrant cluster.
-    private var isPair = false
-
     @MainActor init(groupID: String, name: String, emoji: String?, members people: [Person], me: Person? = nil) {
         super.init(frame: .zero)
         backgroundColor = UIColor(white: 0.08, alpha: 1)
@@ -405,8 +402,9 @@ final class PiPGroupAvatarView: UIView {
                 // The picture includes me (LIME-150): the same plan as the chat's avatar.
                 switch GroupAvatarPlan.make(others: people, me: me) {
                 case .single(let person): addMember(person)
-                case .pair(let front, let back): isPair = true; addMember(back); addMember(front)
-                case .cluster(let shown, let extra): for person in shown { addMember(person) }; if extra > 0 { addMore(extra) }
+                case .pair(let front, let back): addMember(back); addMember(front)
+                case .triangle(let people): for person in people { addMember(person) }
+                case .ring(let shown, let extra): for person in shown { addMember(person) }; if extra > 0 { addMore(extra) }
                 }
             } else {
                 let shown = people.count > 4 ? Array(people.prefix(3)) : Array(people.prefix(4))
@@ -468,25 +466,15 @@ final class PiPGroupAvatarView: UIView {
         photo.frame = circle.bounds
         emojiLabel.frame = circle.bounds
         emojiLabel.font = .systemFont(ofSize: side * 0.5)
-        if isPair {
-            let d = side * GroupAvatarPlan.pairDiameter
-            let spots = [GroupAvatarPlan.pairBack, GroupAvatarPlan.pairFront]
-            for (index, member) in members.enumerated() where index < spots.count {
-                member.circle.frame = CGRect(x: side / 2 + side * spots[index].x - d / 2, y: side / 2 + side * spots[index].y - d / 2, width: d, height: d)
-                member.circle.layer.cornerRadius = d / 2
-                member.circle.layer.borderWidth = index == 1 ? max(1.5, side * 0.04) : 0
-                member.circle.layer.borderColor = UIColor(white: 0.08, alpha: 1).cgColor
-                member.photo?.frame = member.circle.bounds
-                member.label?.frame = member.circle.bounds
-                member.label?.font = .systemFont(ofSize: d * 0.38, weight: .medium)
-            }
-            return
-        }
-        let d = side * 0.52, o = side * 0.24
+        // The same plan as the chat's avatar: overlapping circles with thin rings.
+        let spots = GroupAvatarPlan.spots(circles: members.count)
+        let d = side * spots.diameter
         for (index, member) in members.enumerated() {
-            let cx = side / 2 + (index % 2 == 0 ? -o : o), cy = side / 2 + (index < 2 ? -o : o)
-            member.circle.frame = CGRect(x: cx - d / 2, y: cy - d / 2, width: d, height: d)
+            let at = spots.centres[min(index, spots.centres.count - 1)]
+            member.circle.frame = CGRect(x: side / 2 + side * at.x - d / 2, y: side / 2 + side * at.y - d / 2, width: d, height: d)
             member.circle.layer.cornerRadius = d / 2
+            member.circle.layer.borderWidth = members.count > 1 ? GroupAvatarPlan.ringWidth(side: side) : 0
+            member.circle.layer.borderColor = UIColor(white: 0.08, alpha: 1).cgColor
             member.photo?.frame = member.circle.bounds
             member.label?.frame = member.circle.bounds
             member.label?.font = .systemFont(ofSize: d * 0.38, weight: .medium)

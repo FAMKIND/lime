@@ -300,10 +300,56 @@ struct EmergencyPanel: View {
     @State private var rollup: EmergencyRollup?
     @State private var showSheet = false
     @State private var confirmEnd = false
+    /// Folded to one line by default (LIME-152b); anyone who needs help stays listed under it.
+    @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private func toggle() {
+        if reduceMotion { expanded.toggle() } else { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }
+    }
+
+    /// "Emergency · 2 safe · 1 needs help · 24 students".
+    static func summary(safe: Int, needHelp: Int, students: Int) -> String {
+        "Emergency \u{00B7} \(safe) safe \u{00B7} \(needHelp) \(needHelp == 1 ? "needs" : "need") help \u{00B7} \(EmergencyCopy.studentsWords(students))"
+    }
 
     private func name(_ entry: RollupEntry) -> String {
         guard let id = entry.userId else { return "You" }
         return conversation.members.first { $0.id == id }?.name ?? "Someone"
+    }
+
+    /// The folded panel: one line (tap to open) and, under it, everyone who needs help.
+    @ViewBuilder
+    private func foldedPanel(_ rollup: EmergencyRollup) -> some View {
+        let line = Self.summary(safe: Int(rollup.safe), needHelp: Int(rollup.needHelp), students: Int(rollup.studentsTotal))
+        Button(action: toggle) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.red).accessibilityHidden(true)
+                Text(line).font(Theme.secondary.weight(.semibold)).lineLimit(2).multilineTextAlignment(.leading)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
+            }
+            .frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(line).accessibilityHint("Double-tap to expand")
+        .accessibilityIdentifier("emergency-summary")
+        ForEach(Array(rollup.entries.enumerated()).filter { $0.element.status == "need_help" }, id: \.offset) { index, entry in
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(name(entry)).font(Theme.body.weight(.semibold))
+                    Spacer()
+                    Text(EmergencyCopy.statusWords(entry.status)).font(Theme.body).foregroundStyle(Color.red)
+                }
+                let detail = [EmergencyCopy.situationWords(entry.situation), EmergencyCopy.studentsWords(Int(entry.students)), entry.place].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
+                Text(detail).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+            .onTapGesture { if let id = entry.userId, store.conversation("dm:\(id)") != nil { store.path.append("dm:\(id)") } }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("emergency-help-\(index)")
+        }
     }
 
     var body: some View {
@@ -311,11 +357,21 @@ struct EmergencyPanel: View {
         VStack(spacing: 0) {
             if let rollup {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill").accessibilityHidden(true)
-                        Text(EmergencyCopy.label).font(.system(.caption, design: .default, weight: .semibold)).tracking(1).foregroundStyle(Color.red)
-                        Spacer()
+                  if !expanded {
+                    foldedPanel(rollup)
+                  } else {
+                    Button(action: toggle) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill").accessibilityHidden(true)
+                            Text(EmergencyCopy.label).font(.system(.caption, design: .default, weight: .semibold)).tracking(1).foregroundStyle(Color.red)
+                            Spacer()
+                            Image(systemName: "chevron.up").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
+                        }
+                        .frame(minHeight: 44).contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Emergency details").accessibilityHint("Double-tap to fold")
+                    .accessibilityIdentifier("emergency-fold")
                     Text("\(rollup.safe) safe \u{00B7} \(rollup.needHelp) need help \u{00B7} \(rollup.noResponse) no response \u{00B7} \(EmergencyCopy.studentsWords(Int(rollup.studentsTotal)))")
                         .font(Theme.title).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("emergency-totals")
@@ -353,6 +409,7 @@ struct EmergencyPanel: View {
                         }
                         .accessibilityIdentifier("emergency-end")
                     }
+                  }
                 }
                 .foregroundStyle(Theme.text)
                 .padding(16)
