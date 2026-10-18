@@ -86,6 +86,11 @@ struct GroupCallView: View {
                 }
             }
             .padding(.leading, 8)
+            if let note = call.cameraNote {
+                Text(note).font(.footnote).foregroundStyle(.white.opacity(0.9)).padding(.leading, 8)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("group-call-camera-note")
+            }
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 8)

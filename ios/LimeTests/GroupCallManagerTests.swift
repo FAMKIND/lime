@@ -544,6 +544,15 @@ final class GroupCallManagerTests: XCTestCase {
         XCTAssertFalse(PiPGridPlan.mode(video: true, choice: nil, others: 2).why.isEmpty)
     }
 
+    /// LIME-162: what a person is told when the system pauses their camera.
+    func testAPausedCameraSaysWhyInWordsAndOrdinaryInterruptionsSayNothing() {
+        XCTAssertEqual(GroupCameraNote.text(for: .videoDeviceNotAvailableWithMultipleForegroundApps), "Camera paused: this iPad allows the camera only when lime is full screen.")
+        XCTAssertNotNil(GroupCameraNote.text(for: .videoDeviceNotAvailableDueToSystemPressure))
+        XCTAssertNotNil(GroupCameraNote.text(for: .videoDeviceInUseByAnotherClient))
+        XCTAssertNil(GroupCameraNote.text(for: .videoDeviceNotAvailableInBackground), "going to the background is not news")
+        XCTAssertNil(GroupCameraNote.text(for: .audioDeviceInUseByAnotherClient))
+    }
+
     func testTheWindowShowsThePhotoWhenTheCameraIsOffOrTheKeyIsMissingAndNeverNothing() async {
         let (manager, pip, media, core, _, _) = await pipCall(speakers: 1)
         let bob = core.others[0].participant

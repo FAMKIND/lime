@@ -6607,3 +6607,17 @@ Brief: LIME-150-fix6 (the mini player blurred and doubled since the glass change
 **Verification.** All unit tests and `CallMiniPlayerUITests` pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
 
 **Gate (the user):** the player crisp (tuck and untuck ten times: never doubled or blurred); the tab the same width as iOS's, next to a stashed PiP.
+
+## LIME-162 (the iPad's camera: the user-facing message)
+
+Brief: LIME-162, the remaining part. The grid regression, the fetch flood and the per-person video probe landed earlier (see "LIME-162 (so far)" above).
+
+- (a) Done earlier: `group camera:` log lines (support, every interruption with its reason, runtime errors, capture started/stopped).
+- (b) Full screen: the iPad's camera showed on the full call screen and its log shows capture started and **no interruption** (17:41:17). **Stage Manager: not yet run** (needs the user on the iPad).
+- (c) On the iPad (lime runs there as an iPhone app): `isMultitaskingCameraAccessSupported=true`, `isMultitaskingCameraAccessEnabled=false`. Turning it on needs the `com.apple.developer.avfoundation.multitasking-camera-access` entitlement (an Apple-approved capability) and a handle on LiveKit's own capture session, which the Swift SDK does not expose; neither is done here.
+- (d) Answered: the 1.4 s fetch was `startPolling`, a once-a-second poll for the whole call; now 1 s only until everyone's key is in, then every 3 s.
+- [x] The change: when the system pauses the camera, the call says why. `GroupCameraNote` maps the interruption reason to words: iPad Stage Manager / Split View / Slide Over (`videoDeviceNotAvailableWithMultipleForegroundApps`): "Camera paused: this iPad allows the camera only when lime is full screen."; too hot; another app is using it. Going to the background or an audio interruption says nothing. It shows under the call's timer (`GroupCallView`, id `group-call-camera-note`) and clears when the interruption ends; the others keep seeing the photo. Unit test for the mapping; all group-call tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini (Jean's phone was locked when I relaunched it).
+
+**Device check (the user):** on the iPad in a group video call with the camera on, put lime in a Stage Manager window (or Split View): the message should appear under the timer and the others see the photo; back to full screen: it clears and the others see the video again. I will pull the iPad's log for the interruption reason.
+
+For plot: (c) as above (entitlement and SDK access needed to keep the camera in Stage Manager); the interruption reason seen is pending the Stage Manager run.

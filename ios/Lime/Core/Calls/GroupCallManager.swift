@@ -791,6 +791,8 @@ final class GroupCallManager {
 
     /// What the camera may do here (LIME-162): whether iPadOS lets the camera run next to other apps, and every interruption with its reason.
     @ObservationIgnored private var cameraObservers: [NSObjectProtocol] = []
+    /// Why this phone's camera is paused by the system, in words for the person (nil: it is not): shown under the call's timer.
+    private(set) var cameraNote: String?
 
     private func logCameraSupport() {
         guard video, cameraObservers.isEmpty else { return }
@@ -798,13 +800,21 @@ final class GroupCallManager {
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
         diag.log("group camera: \(device), multitasking camera access supported=\(session.isMultitaskingCameraAccessSupported) enabled=\(session.isMultitaskingCameraAccessEnabled)")
         let center = NotificationCenter.default
-        cameraObservers.append(center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: nil, queue: .main) { note in
+        cameraObservers.append(center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: nil, queue: .main) { [weak self] note in
+            guard let self else { return }
             let raw = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int) ?? -1
             let reason = AVCaptureSession.InterruptionReason(rawValue: raw).map { "\($0)" } ?? "unknown(\(raw))"
-            Task { @MainActor in CallDiagnostics.shared.log("group camera: interrupted, reason \(reason)") }
+            Task { @MainActor in
+                CallDiagnostics.shared.log("group camera: interrupted, reason \(reason)")
+                self.cameraNote = AVCaptureSession.InterruptionReason(rawValue: raw).flatMap(GroupCameraNote.text(for:))
+            }
         })
-        cameraObservers.append(center.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: nil, queue: .main) { _ in
-            Task { @MainActor in CallDiagnostics.shared.log("group camera: interruption ended") }
+        cameraObservers.append(center.addObserver(forName: AVCaptureSession.interruptionEndedNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                CallDiagnostics.shared.log("group camera: interruption ended")
+                self.cameraNote = nil
+            }
         })
         cameraObservers.append(center.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: nil, queue: .main) { note in
             let error = (note.userInfo?[AVCaptureSessionErrorKey] as? NSError)?.code ?? 0
@@ -819,6 +829,7 @@ final class GroupCallManager {
     }
 
     private func stopCameraLog() {
+        cameraNote = nil
         for observer in cameraObservers { NotificationCenter.default.removeObserver(observer) }
         cameraObservers = []
     }
@@ -868,3 +879,17 @@ extension GroupCallManager {
     }
 }
 #endif
+
+
+/// What to tell a person when the system pauses their camera during a group call (LIME-162): iPadOS pauses it for an app that is not alone on the
+/// screen (Stage Manager, Split View, Slide Over) unless the app has multitasking camera access, and the others then see only the photo.
+enum GroupCameraNote {
+    static func text(for reason: AVCaptureSession.InterruptionReason) -> String? {
+        switch reason {
+        case .videoDeviceNotAvailableWithMultipleForegroundApps: "Camera paused: this iPad allows the camera only when lime is full screen."
+        case .videoDeviceNotAvailableDueToSystemPressure: "Camera paused: this device is too hot."
+        case .videoDeviceInUseByAnotherClient: "Camera paused: another app is using it."
+        default: nil
+        }
+    }
+}
