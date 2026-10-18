@@ -6621,3 +6621,25 @@ Brief: LIME-162, the remaining part. The grid regression, the fetch flood and th
 **Device check (the user):** on the iPad in a group video call with the camera on, put lime in a Stage Manager window (or Split View): the message should appear under the timer and the others see the photo; back to full screen: it clears and the others see the video again. I will pull the iPad's log for the interruption reason.
 
 For plot: (c) as above (entitlement and SDK access needed to keep the camera in Stage Manager); the interruption reason seen is pending the Stage Manager run.
+
+## LIME-161
+
+Brief: LIME-161 (new mesh packets go out at once, in the order they were made). No server change, no packet-format change, no new frame kind.
+
+**Phase 1.**
+- (a) The path from `enqueue` to a packet on a live link was: `enqueue` moves the summary version → the platform sends a Hello (`packetQueued`) → the neighbour answers `Want` → `on_want` → `Frame::Packet`, and **`send` adds a random jitter of 10–220 ms to every packet frame** (`MeshConfig`: `jitter_min_ms`/`jitter_max_ms`). The jitter is so two relays' forwards do not line up in time; it is not for the phone's own mail. The platform delays each frame by its hint, so **different random delays also reorder frames sent back to back**.
+- (b) A reaction whose message is missing is already handled: it is stored by the message's id (`set_reaction`) and shows when the message does; an edit or a delete is held in `early_message_ops` and applied by `apply_waiting` when the message is stored (the reload follows `mesh_messages`). So the receiver half already worked ("by design"); what was missing were the logs.
+- (c) Order was **not** kept: `on_want` sorted by tier, then `received_at` (whole seconds), then **digest**, so a message and a reaction made in the same second left in digest (random) order, and each frame then got its own random jitter.
+
+**Changes.**
+- [x] 1. Push at once: `MeshNode::push_new` puts a new packet on every live link that may have it, under the same rules as a Want (the one-packet logic is now `plan_offer`, used by both: copies only to an offline neighbour, group copies only to their own recipient, the recipient gets it whatever the copies), skipping a link whose summary already lists it or that has it waiting for an Ack. The engine calls it in `pump_outbox` for what it just queued and hands the frames out with `take_pushed`; the Swift runner puts them on the radio (`mesh_pushed`) before the usual Hello, which stays as the catch-up for links that come up later.
+- [x] 2. Order: each carried packet gets an arrival counter (`seq`), kept over a restart by arrival time; `on_want` and `push_new` send in that order (tier first, then creation order). **Packets this phone made (and copies it leaves) go out with no jitter**; only what it forwards for others keeps the 10–220 ms jitter (so a message and its reaction cannot be reordered by their own delays).
+- [x] 3. Receiver: already held and applied; now logged as `held_for_target n=…` and `applied_held n=…` (edits and deletes; a reaction needs no holding).
+- [x] 4. Tests: node (a new packet leaves at once in creation order with no jitter and not twice; wanted packets keep creation order whatever their digests; a forwarded packet keeps its jitter; a pushed copy still follows the copy rules), core (a message and its reaction queued offline leave in order at once and arrive in order; a reaction whose frame arrives first shows when its message arrives).
+- What each party learns: unchanged, except that a phone's own packets no longer carry the random delay: the timing of a phone's own sends is now exact. State it for LIME-158.
+
+**Verification.** Core 273, mesh 30, sim 12, integration 23, Android OK; Swift tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Device check: not yet run** (the 13 mini offline, Bluetooth on, in a chat with Jean; send a message then immediately react, 3 times: each message on Jean's phone within about 1 s and its reaction right after; the 13 mini's `mesh_queued` → `mesh_passed` ≤ 1 s).
+
+For plot: (a)–(c) above; the measured times follow the device check.

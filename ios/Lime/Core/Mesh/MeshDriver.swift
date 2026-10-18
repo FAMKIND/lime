@@ -139,6 +139,13 @@ final class MeshDriver {
         for link in liveLinks.sorted() { announce(link, force: false) }
     }
 
+    /// New packets the engine put on the live links the moment they were queued (LIME-161): onto the radio now (no Hello and Want round first).
+    func sendPushed(_ actions: [MeshAction]) {
+        guard !actions.isEmpty else { return }
+        log("mesh_pushed", ["frames": String(actions.count)])
+        run(actions)
+    }
+
     /// This phone queued a packet (a message or a test packet): tell every live link.
     func packetQueued() {
         lastVersion = engine.summaryVersion()

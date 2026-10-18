@@ -21,7 +21,8 @@ final class MeshOutboxRunner {
     @discardableResult
     func pump() -> UInt32 {
         let queued = (try? engine.pumpOutbox()) ?? 0
-        if queued > 0 { driver?.packetQueued() }
+        // The new packets leave at once, in the order they were made; the Hello that follows is the catch-up.
+        if queued > 0 { driver?.sendPushed(engine.takePushed()); driver?.packetQueued() }
         drainNotes()
         return queued
     }

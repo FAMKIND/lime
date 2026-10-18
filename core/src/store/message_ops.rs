@@ -149,6 +149,7 @@ pub(crate) fn apply(conn: &Connection, sender: &str, conversation: &str, op: &Op
             return set_reaction(conn, target, sender, op, at);
         }
         if matches!(op.op_type.as_str(), EDIT | DELETE) {
+            EARLY_HELD.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             conn.execute(
                 "INSERT OR IGNORE INTO early_message_ops (target, op_type, sender, hlc, payload) VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![target, op.op_type, sender, at, op.payload.to_string()],
@@ -241,6 +242,15 @@ pub(crate) fn set_text(conn: &Connection, id: &str, text: &str, at: &str) -> Res
     Ok(())
 }
 
+/// How many edits or deletes were held because their message was not here yet, and how many were applied when it arrived (the diagnostics log:
+/// `held_for_target`, `applied_held`; LIME-161). A reaction needs no holding: it is stored by the message's id and shows when the message does.
+static EARLY_HELD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static EARLY_APPLIED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+pub(crate) fn take_early_counts() -> (u32, u32) {
+    (EARLY_HELD.swap(0, std::sync::atomic::Ordering::Relaxed), EARLY_APPLIED.swap(0, std::sync::atomic::Ordering::Relaxed))
+}
+
 /// A message just arrived: apply any edit or delete that got here first.
 pub(crate) fn apply_waiting(conn: &Connection, message_id: &str, conversation: &str) -> Result<(), StoreError> {
     let mut statement = conn
@@ -252,6 +262,7 @@ pub(crate) fn apply_waiting(conn: &Connection, message_id: &str, conversation: &
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
     conn.execute("DELETE FROM early_message_ops WHERE target = ?1", params![message_id]).map_err(db_err)?;
+    EARLY_APPLIED.fetch_add(waiting.len() as u32, std::sync::atomic::Ordering::Relaxed);
     for (op_type, sender, hlc, payload) in waiting {
         let payload: Value = serde_json::from_str(&payload).unwrap_or(Value::Null);
         let op = Op { op_id: String::new(), op_type, conversation_id: conversation.to_owned(), hlc, parents: vec![], payload, sig: String::new() };

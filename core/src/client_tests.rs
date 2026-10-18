@@ -4597,6 +4597,81 @@ fn group_items_fetched_by_a_neighbour_show_at_once_and_what_stays_pending_is_nam
     assert_eq!(bob.store.pending_summary().unwrap(), "", "nothing is left waiting");
 }
 
+// ---- LIME-161: new packets go out at once, in order ----
+
+/// Frames in a `take_pushed` answer, as bytes in the order they would leave.
+fn pushed_frames(e: &crate::MeshEngine) -> Vec<Vec<u8>> {
+    e.take_pushed().into_iter().map(|a| a.bytes).collect()
+}
+
+#[test]
+fn a_message_and_the_reaction_made_after_it_leave_at_once_in_order_and_a_reaction_that_arrives_first_shows_when_its_message_does() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    alice.store.set_mesh_enabled(true);
+    let (a, b) = (mesh_engine(&alice), mesh_engine(&bob));
+    a.refresh_tags().unwrap();
+    b.refresh_tags().unwrap();
+    // The two phones are linked (Hellos heard), and Alice is offline.
+    a.link_up(1);
+    for hello in b.link_up(1) {
+        a.frame(1, hello.bytes);
+    }
+    let (net, offline) = flaky(&transport);
+    net.online.store(false, std::sync::atomic::Ordering::SeqCst);
+    let chat_a = format!("dm:{}", bob.user);
+    let sent = alice.store.queue_text(chat_a.clone(), "lunch at noon?".into()).unwrap();
+    alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap();
+    alice.store.react(chat_a.clone(), sent.id.clone(), "👍".into(), true).unwrap();
+    alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap();
+    // One pump: both are queued and go onto the live link now, with no Hello and no Want.
+    assert_eq!(a.pump_outbox().unwrap(), 2);
+    let frames = pushed_frames(&a);
+    assert_eq!(frames.len(), 2, "both frames leave at once");
+    assert!(a.take_notes().iter().any(|n| n.starts_with("mesh_pushed n=2")));
+    // Delivered in order: the message, then its reaction.
+    b.frame(1, frames[0].clone());
+    assert_eq!(b.take_mine().unwrap(), 1, "the message first");
+    b.frame(1, frames[1].clone());
+    b.take_mine().unwrap();
+    let chat_b = format!("dm:{}", alice.user);
+    assert_eq!(item_of(&bob, &chat_b, &sent.id).reactions.len(), 1, "and its reaction right after");
+}
+
+#[test]
+fn a_reaction_that_arrives_before_its_message_is_there_when_the_message_arrives() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    alice.store.set_mesh_enabled(true);
+    let (a, b) = (mesh_engine(&alice), mesh_engine(&bob));
+    a.refresh_tags().unwrap();
+    b.refresh_tags().unwrap();
+    a.link_up(1);
+    for hello in b.link_up(1) {
+        a.frame(1, hello.bytes);
+    }
+    let (net, offline) = flaky(&transport);
+    net.online.store(false, std::sync::atomic::Ordering::SeqCst);
+    let chat_a = format!("dm:{}", bob.user);
+    let sent = alice.store.queue_text(chat_a.clone(), "first".into()).unwrap();
+    alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap();
+    alice.store.react(chat_a.clone(), sent.id.clone(), "🎉".into(), true).unwrap();
+    alice.store.deliver_queued(offline.clone(), alice.token.clone()).unwrap();
+    a.pump_outbox().unwrap();
+    let frames = pushed_frames(&a);
+    // The reaction's frame reaches Bob first (the radio reordered them).
+    b.frame(1, frames[1].clone());
+    b.take_mine().unwrap();
+    b.frame(1, frames[0].clone());
+    assert_eq!(b.take_mine().unwrap(), 1);
+    let chat_b = format!("dm:{}", alice.user);
+    assert_eq!(item_of(&bob, &chat_b, &sent.id).reactions.len(), 1, "applied the moment the message arrived");
+}
+
 // ---- LIME-155: relay download ----
 
 struct FixedReply(std::sync::Mutex<Option<(u16, Vec<u8>)>>);

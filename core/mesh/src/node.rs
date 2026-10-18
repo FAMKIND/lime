@@ -72,6 +72,8 @@ struct Carried {
     copies: u8,
     tier: Tier,
     received_at: u64,
+    /// Order of arrival at this node (a counter: `received_at` is whole seconds, and two packets made in the same second must keep their order).
+    seq: u64,
 }
 
 #[derive(Default)]
@@ -128,6 +130,7 @@ pub struct MeshNode<S: MeshStore, C: Clock> {
     already_uploaded: u32,
     copy_events: Vec<CopyEvent>,
     copy_held_logged: HashSet<(Digest, &'static str)>,
+    next_seq: u64,
     /// Packets another phone has acknowledged taking (a copy handed over): what "Passed to a nearby phone" is made from.
     handed: HashSet<Digest>,
     rng: u64,
@@ -143,10 +146,19 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         for stored in store.load() {
             if let Ok(packet) = Packet::decode(&stored.bytes) {
                 if packet.expires_at > now {
-                    carried.insert(packet.digest(), Carried { packet, copies: stored.copies.clamp(1, config.copies_cap), tier: stored.tier, received_at: stored.received_at });
+                    carried.insert(packet.digest(), Carried { packet, copies: stored.copies.clamp(1, config.copies_cap), tier: stored.tier, received_at: stored.received_at, seq: 0 });
                 }
             }
         }
+        // What was carried before a restart keeps its order: by when it arrived, then by digest.
+        let mut order: Vec<(u64, Digest)> = carried.iter().map(|(d, c): (&Digest, &Carried)| (c.received_at, *d)).collect();
+        order.sort();
+        for (seq, (_, digest)) in order.iter().enumerate() {
+            if let Some(c) = carried.get_mut(digest) {
+                c.seq = seq as u64;
+            }
+        }
+        let next_seq = order.len() as u64;
         let mut seen: VecDeque<(Digest, u64)> = store.load_seen().into_iter().filter(|(_, at)| now.saturating_sub(*at) <= config.seen_window_secs).collect();
         while seen.len() > config.seen_capacity {
             seen.pop_front();
@@ -154,7 +166,7 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         let seen_set = seen.iter().map(|(d, _)| *d).collect();
         let uploaded: HashMap<Digest, u64> = store.load_uploaded().into_iter().filter(|(_, at)| now.saturating_sub(*at) <= UPLOADED_MEMORY_SECS).collect();
         let rng = config.seed | 1;
-        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), refused: HashMap::new(), handed: HashSet::new(), uploaded, offline_only: HashMap::new(), link_online: HashMap::new(), already_uploaded: 0, copy_events: Vec::new(), copy_held_logged: HashSet::new(), rng, stats: NodeStats::default(), version: 0 }
+        MeshNode { config, store, clock, carried, seen, seen_set, links: HashMap::new(), contact_tags: HashSet::new(), my_tags: Vec::new(), uploading: HashSet::new(), refused: HashMap::new(), handed: HashSet::new(), uploaded, offline_only: HashMap::new(), link_online: HashMap::new(), already_uploaded: 0, copy_events: Vec::new(), copy_held_logged: HashSet::new(), next_seq, rng, stats: NodeStats::default(), version: 0 }
     }
 
     pub fn config(&self) -> &MeshConfig {
@@ -402,58 +414,109 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         if want.is_empty() { Vec::new() } else { vec![self.send(link, Frame::Want { digests: want })] }
     }
 
+    /// What this phone would hand `link` for one carried packet, under every rule: a copy of mail already on the server only to an offline
+    /// neighbour (and a group copy only to its own recipient), nothing expired, the recipient gets it whatever the copies, anyone else half the
+    /// copies and one hop less. `(copies handed, the packet to put on the wire, whether it goes to its recipient)`.
+    fn plan_offer(&mut self, link: LinkId, digest: &Digest, peer_tags: &[Tag], now: u64, cap: u8) -> Option<(u8, Packet, bool)> {
+        let carried = self.carried.get(digest)?;
+        // A copy of mail already on the server goes only to a neighbour that said it is offline.
+        if let Some(direct) = self.offline_only.get(digest).copied() {
+            let why = match self.link_online.get(&link) {
+                Some(true) => Some("online"),
+                None => Some("unknown"),
+                Some(false) if direct && !peer_tags.contains(&carried.packet.tag) => Some("no_tag_match"),
+                Some(false) => None,
+            };
+            if let Some(why) = why {
+                if self.copy_held_logged.insert((*digest, why)) {
+                    self.copy_events.push(CopyEvent::Held { link, digest: *digest, why });
+                }
+                return None;
+            }
+        }
+        if carried.packet.expires_at <= now {
+            return None;
+        }
+        if peer_tags.contains(&carried.packet.tag) {
+            // The recipient is here: hand it over, whatever the hops and copies.
+            Some((1, carried.packet.clone(), true))
+        } else if carried.copies > 1 && carried.packet.hops_left >= 1 {
+            let give = carried.copies / 2;
+            let mut out = carried.packet.clone();
+            out.hops_left = (carried.packet.hops_left - 1).min(cap);
+            Some((give, out, false))
+        } else {
+            None
+        }
+    }
+
+    /// Whether this phone made the packet itself (or is leaving a copy of its own mail): such a packet goes out at once, in order; only what it
+    /// forwards for others gets the relay jitter.
+    fn is_authored(&self, digest: &Digest) -> bool {
+        self.offline_only.contains_key(digest) || self.carried.get(digest).map(|c| c.tier == Tier::Own).unwrap_or(false)
+    }
+
     fn on_want(&mut self, link: LinkId, wanted: Vec<Short>) -> Vec<Action> {
         let now = self.clock.now_secs();
         let by_short: HashMap<Short, Digest> = self.carried.keys().map(|d| (short(d), *d)).collect();
         let peer_tags = self.links.get(&link).map(|l| l.peer_tags.clone()).unwrap_or_default();
         let cap = self.effective_ttl();
-        // Best first: higher tier, then older (it has waited longest).
+        // Best first: higher tier, then in the order they arrived here (a message before the reaction made after it).
         let mut eligible: Vec<(Digest, u8, Packet, bool)> = Vec::new();
         for want in wanted.iter().take(self.config.want_max) {
             let Some(digest) = by_short.get(want) else { continue };
-            let Some(carried) = self.carried.get(digest) else { continue };
-            // A copy of mail already on the server goes only to a neighbour that said it is offline.
-            if let Some(direct) = self.offline_only.get(digest).copied() {
-                let why = match self.link_online.get(&link) {
-                    Some(true) => Some("online"),
-                    None => Some("unknown"),
-                    Some(false) if direct && !peer_tags.contains(&carried.packet.tag) => Some("no_tag_match"),
-                    Some(false) => None,
-                };
-                if let Some(why) = why {
-                    if self.copy_held_logged.insert((*digest, why)) {
-                        self.copy_events.push(CopyEvent::Held { link, digest: *digest, why });
-                    }
-                    continue;
-                }
-            }
-            if carried.packet.expires_at <= now {
-                continue;
-            }
-            if peer_tags.contains(&carried.packet.tag) {
-                // The recipient is here: hand it over, whatever the hops and copies.
-                eligible.push((*digest, 1, carried.packet.clone(), true));
-            } else if carried.copies > 1 && carried.packet.hops_left >= 1 {
-                let give = carried.copies / 2;
-                let mut out = carried.packet.clone();
-                out.hops_left = (carried.packet.hops_left - 1).min(cap);
-                eligible.push((*digest, give, out, false));
+            if let Some((copies, packet, to_recipient)) = self.plan_offer(link, digest, &peer_tags, now, cap) {
+                eligible.push((*digest, copies, packet, to_recipient));
             }
         }
         eligible.sort_by_key(|(d, _, _, _)| {
             let c = &self.carried[d];
-            (std::cmp::Reverse(c.tier), c.received_at, *d)
+            (std::cmp::Reverse(c.tier), c.seq, *d)
         });
         let mut actions = Vec::new();
         for (digest, copies, packet, to_recipient) in eligible {
-            self.stats.sent_packets += 1;
-            if self.offline_only.contains_key(&digest) {
-                self.copy_events.push(CopyEvent::Handed { link, digest });
+            actions.push(self.packet_action(link, &digest, copies, packet, to_recipient));
+        }
+        actions
+    }
+
+    /// Records a packet as sent on `link` (waiting for its Ack) and makes the frame: at once for what this phone made, with the relay jitter for
+    /// what it forwards.
+    fn packet_action(&mut self, link: LinkId, digest: &Digest, copies: u8, packet: Packet, to_recipient: bool) -> Action {
+        self.stats.sent_packets += 1;
+        if self.offline_only.contains_key(digest) {
+            self.copy_events.push(CopyEvent::Handed { link, digest: *digest });
+        }
+        let immediate = self.is_authored(digest);
+        if let Some(state) = self.links.get_mut(&link) {
+            state.pending.insert(short(digest), (*digest, copies, to_recipient));
+            state.peer_summary.insert(short(digest));
+        }
+        let frame = Frame::Packet { copies, bytes: packet.encode() };
+        let delay_ms = if immediate { 0 } else { self.jitter() };
+        Action::SendFrame { link, bytes: frame.encode(), delay_ms }
+    }
+
+    /// New packets this phone just made (or copies it left): put on every live link that may have them, now, in the order they were made, without
+    /// waiting for a Hello and a Want (LIME-161). A link that already lists the packet, or has it waiting for an Ack, is skipped; Hello and Want stay as
+    /// the catch-up for links that come up later.
+    pub fn push_new(&mut self, digests: &[Digest]) -> Vec<Action> {
+        let now = self.clock.now_secs();
+        let cap = self.effective_ttl();
+        let mut links: Vec<LinkId> = self.links.keys().copied().collect();
+        links.sort();
+        let mut actions = Vec::new();
+        for link in links {
+            let peer_tags = self.links.get(&link).map(|l| l.peer_tags.clone()).unwrap_or_default();
+            for digest in digests {
+                let known = self.links.get(&link).map(|l| l.peer_summary.contains(&short(digest)) || l.pending.contains_key(&short(digest))).unwrap_or(true);
+                if known {
+                    continue;
+                }
+                if let Some((copies, packet, to_recipient)) = self.plan_offer(link, digest, &peer_tags, now, cap) {
+                    actions.push(self.packet_action(link, digest, copies, packet, to_recipient));
+                }
             }
-            if let Some(state) = self.links.get_mut(&link) {
-                state.pending.insert(short(&digest), (digest, copies, to_recipient));
-            }
-            actions.push(self.send(link, Frame::Packet { copies, bytes: packet.encode() }));
         }
         actions
     }
@@ -632,7 +695,9 @@ impl<S: MeshStore, C: Clock> MeshNode<S, C> {
         }
         let stored = StoredPacket { bytes: packet.encode(), copies, tier, received_at: now };
         self.store.save(&stored);
-        self.carried.insert(digest, Carried { packet, copies, tier, received_at: now });
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.carried.insert(digest, Carried { packet, copies, tier, received_at: now, seq });
         self.version += 1;
         true
     }
@@ -1189,5 +1254,96 @@ mod tests {
         assert!(after > before);
         node.set_my_tags(&[[1; 16]]);
         assert_eq!(node.summary_version(), after, "the same tags change nothing");
+    }
+
+    /// A link that is up and whose Hello has been heard (`tags` its owner's).
+    fn linked(node: &mut Node, link: u64, tags: Vec<Tag>) {
+        node.on_link_up(LinkId(link));
+        node.on_frame(LinkId(link), &Frame::Hello { summary: Vec::new(), tags }.encode());
+    }
+
+    #[test]
+    fn a_new_packet_goes_to_a_linked_neighbour_at_once_in_the_order_it_was_made_without_a_hello_round() {
+        let c = clock();
+        let mut sender = node_with(MeshConfig::default(), &c);
+        linked(&mut sender, 1, vec![[9; 16]]);
+        // A message and, 100 ms later, a reaction to it (the same second: `received_at` alone could not tell them apart).
+        let message = sender.enqueue(packet(1, 1, &c)).unwrap();
+        let reaction = sender.enqueue(packet(1, 2, &c)).unwrap();
+        let actions = sender.push_new(&[message, reaction]);
+        assert_eq!(actions.len(), 2, "both frames leave now, with no Hello and no Want");
+        let order: Vec<Digest> = actions
+            .iter()
+            .map(|a| {
+                let Action::SendFrame { bytes, delay_ms, .. } = a;
+                assert_eq!(*delay_ms, 0, "what this phone made goes out at once: no relay jitter");
+                match Frame::decode(bytes) {
+                    Some(Frame::Packet { bytes, .. }) => Packet::decode(&bytes).unwrap().digest(),
+                    other => panic!("not a packet: {other:?}"),
+                }
+            })
+            .collect();
+        assert_eq!(order, vec![message, reaction], "a message always leaves before the reaction made after it");
+        // Pushed once: a second push (or a Hello round) does not send them again.
+        assert!(sender.push_new(&[message, reaction]).is_empty());
+    }
+
+    #[test]
+    fn packets_wanted_in_one_round_keep_the_order_they_were_made_whatever_their_digests() {
+        let c = clock();
+        let mut sender = node_with(MeshConfig::default(), &c);
+        let made: Vec<Digest> = (1..=12).map(|n| sender.enqueue(packet(1, n, &c)).unwrap()).collect();
+        let l = LinkId(1);
+        sender.on_link_up(l);
+        let wanted: Vec<Short> = made.iter().rev().map(short).collect();
+        let sent: Vec<Digest> = sender
+            .on_frame(l, &Frame::Want { digests: wanted }.encode())
+            .iter()
+            .map(|a| {
+                let Action::SendFrame { bytes, .. } = a;
+                match Frame::decode(bytes) {
+                    Some(Frame::Packet { bytes, .. }) => Packet::decode(&bytes).unwrap().digest(),
+                    other => panic!("not a packet: {other:?}"),
+                }
+            })
+            .collect();
+        assert_eq!(sent, made, "creation order, not the order asked for and not the digests' order");
+    }
+
+    #[test]
+    fn only_what_this_phone_forwards_for_others_keeps_the_relay_jitter() {
+        let c = clock();
+        let mut relay = node_with(MeshConfig::default(), &c);
+        let mut author = node_with(MeshConfig::default(), &c);
+        let l = LinkId(1);
+        // Someone else's packet, handed to the relay.
+        let theirs = packet(4, 4, &c);
+        author.enqueue(theirs.clone()).unwrap();
+        author.on_link_up(l);
+        let digest = theirs.digest();
+        let Action::SendFrame { bytes, .. } = author.on_frame(l, &Frame::Want { digests: vec![short(&digest)] }.encode())[0].clone();
+        relay.on_link_up(l);
+        relay.on_frame(l, &bytes);
+        // The relay forwards it on: jitter applies (10 to 220 ms).
+        relay.on_link_up(LinkId(2));
+        let forwarded = relay.on_frame(LinkId(2), &Frame::Want { digests: vec![short(&digest)] }.encode());
+        let Action::SendFrame { delay_ms, .. } = forwarded[0].clone();
+        assert!((10..=220).contains(&delay_ms), "a forwarded packet keeps its jitter: {delay_ms}");
+    }
+
+    #[test]
+    fn a_pushed_copy_still_follows_the_copy_rules() {
+        let c = clock();
+        let mut sender = node_with(MeshConfig::default(), &c);
+        linked(&mut sender, 1, vec![[7; 16]]);
+        linked(&mut sender, 2, vec![[7; 16]]);
+        linked(&mut sender, 3, vec![[8; 16]]);
+        sender.set_link_online(LinkId(1), true);
+        sender.set_link_online(LinkId(2), false);
+        sender.set_link_online(LinkId(3), false);
+        let copy = sender.enqueue_copy(Packet { tag: [7; 16], expires_at: c.0.get() + 3600, ..packet(7, 7, &c) }, true).unwrap();
+        let pushed = sender.push_new(&[copy]);
+        let links: Vec<u64> = pushed.iter().map(|a| { let Action::SendFrame { link, .. } = a; link.0 }).collect();
+        assert_eq!(links, vec![2], "an online neighbour and a phone that is not its recipient get nothing");
     }
 }

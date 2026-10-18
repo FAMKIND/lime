@@ -275,6 +275,8 @@ pub struct MeshEngine {
     notes: Mutex<Vec<String>>,
     /// Relay download (LIME-155): see `mesh/fetch.rs`.
     fetch: Mutex<fetch::FetchState>,
+    /// Packets pushed to live links at once when they were queued (LIME-161): taken by the platform with `take_pushed` and put on the radio.
+    pushed: Mutex<Vec<MeshAction>>,
 }
 
 mod fetch;
@@ -291,7 +293,7 @@ impl MeshEngine {
     }
 
     fn assemble(store: Arc<LimeStore>, node: MeshNode<SqlMeshStore, SystemClock>, server_key: Option<ServerKey>) -> Arc<Self> {
-        Arc::new(MeshEngine { store, node: Mutex::new(node), server_key, my_tags: Mutex::new(Vec::new()), counters: Mutex::new((0, 0)), delivered: Mutex::new(std::collections::HashSet::new()), notes: Mutex::new(Vec::new()), fetch: Mutex::new(fetch::FetchState::default()) })
+        Arc::new(MeshEngine { store, node: Mutex::new(node), server_key, my_tags: Mutex::new(Vec::new()), counters: Mutex::new((0, 0)), delivered: Mutex::new(std::collections::HashSet::new()), notes: Mutex::new(Vec::new()), fetch: Mutex::new(fetch::FetchState::default()), pushed: Mutex::new(Vec::new()) })
     }
 
     /// After a restart, the copies this phone parked are marked again (the node loads them as ordinary packets).
@@ -470,6 +472,7 @@ impl MeshEngine {
             rows
         };
         let mut queued = 0;
+        let mut made: Vec<Digest> = Vec::new();
         for (op_id, to_user, to_device, ciphertext, copy) in rows {
             if let Some(digest) = self.queue_as(to_user, to_device.clone(), ciphertext, copy)? {
                 let conn = self.store.lock();
@@ -477,6 +480,15 @@ impl MeshEngine {
                 drop(conn);
                 self.note(format!("mesh_queued kind=message{} id={} op={}", match copy { 0 => "", 1 => " copy=1", _ => " copy=2" }, short_id(&digest), op_id.chars().take(4).collect::<String>()));
                 queued += 1;
+                made.push(digest);
+            }
+        }
+        // New packets go to the live links at once, in the order they were made (the Hello and Want round stays as the catch-up).
+        if !made.is_empty() {
+            let actions = actions(self.node().push_new(&made));
+            if !actions.is_empty() {
+                self.note(format!("mesh_pushed n={} frames={}", made.len(), actions.len()));
+                self.pushed.lock().unwrap_or_else(|e| e.into_inner()).extend(actions);
             }
         }
         // Which of them has another phone taken?
@@ -499,8 +511,20 @@ impl MeshEngine {
         Ok(queued)
     }
 
+    /// The frames for packets that were put on the live links the moment they were queued (LIME-161): the platform puts them on the radio now.
+    pub fn take_pushed(&self) -> Vec<MeshAction> {
+        std::mem::take(&mut *self.pushed.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
     /// Lines for the diagnostics log since the last call (queued, passed, delivered with the delay and hops). Four-character ids only.
     pub fn take_notes(&self) -> Vec<String> {
+        let (held, applied) = crate::store::message_ops::take_early_counts();
+        if held > 0 {
+            self.note(format!("held_for_target n={held}"));
+        }
+        if applied > 0 {
+            self.note(format!("applied_held n={applied}"));
+        }
         std::mem::take(&mut *self.notes.lock().unwrap_or_else(|e| e.into_inner()))
     }
 

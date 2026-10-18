@@ -93,6 +93,7 @@ final class MeshMessagesTests: XCTestCase {
         func fetchReset() {}
         func takeFetchJobs() -> [MeshFetchJob] { [] }
         func relayFetch(transport: Transport, request: Data) -> Data { Data([7, 0]) }
+        func takePushed() -> [MeshAction] { [] }
         func uploadDone(id: Data) {}
         func uploadFailed(id: Data) {}
     }
