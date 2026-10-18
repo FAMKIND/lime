@@ -5,7 +5,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import postgres from "npm:postgres@3";
 import {
   admin, ANON_KEY, API_URL, call, ciphertext, DB_URL, deleteUser, newMasterKey, newUser, otk, randomBytes,
-  registerDevice, setAccessKey, type TestUser,
+  randomSigner, registerDevice, sendSigned, setAccessKey, signedTo, type TestUser,
 } from "./helpers.ts";
 import { toBase64 } from "../functions/_shared/bytes.ts";
 
@@ -89,16 +89,16 @@ Deno.test("sealed send needs no token and the right access key; an identified se
     const accessKey = await setAccessKey(bob);
 
     // Right key, NO Authorization header at all: accepted.
-    const ok = await call("send", null, { ciphertext: ciphertext(), recipients: [{ to_device: device.deviceId, access: { sealed: accessKey } }] });
+    const ok = await sendSigned(accessKey, device.deviceId);
     assertEquals(ok.status, 200);
     assertEquals(ok.body.stored, 1);
 
     // A wrong key: 403, and nothing is stored.
-    const wrong = await call("send", null, { ciphertext: ciphertext(), recipients: [{ to_device: device.deviceId, access: { sealed: toBase64(randomBytes(16)) } }] });
+    const wrong = await sendSigned(await randomSigner(), device.deviceId);
     assertEquals(wrong.status, 403);
     // A user with no access key set cannot be sent to sealed.
     const carolDevice = await registerDevice(alice, await newMasterKey());
-    const noKey = await call("send", null, { ciphertext: ciphertext(), recipients: [{ to_device: carolDevice.deviceId, access: { sealed: accessKey } }] });
+    const noKey = await sendSigned(accessKey, carolDevice.deviceId);
     assertEquals(noKey.status, 403);
 
     // An identified send needs a user token and records the sender.
@@ -134,9 +134,9 @@ Deno.test("fan-out to 3 devices: each fetches only its own items", opts, async (
     const res = await call("send", null, {
       ciphertext: payload,
       recipients: [
-        { to_device: bobDevices[0].deviceId, access: { sealed: bobKey } },
-        { to_device: bobDevices[1].deviceId, access: { sealed: bobKey } },
-        { to_device: carolDevice.deviceId, access: { sealed: carolKey } },
+        await signedTo(bobKey, bobDevices[0].deviceId, payload),
+        await signedTo(bobKey, bobDevices[1].deviceId, payload),
+        await signedTo(carolKey, carolDevice.deviceId, payload),
       ],
     });
     assertEquals(res.status, 200);
@@ -158,7 +158,7 @@ Deno.test("ack deletes up to the cursor and nothing else", opts, async () => {
     const device = await registerDevice(bob, await newMasterKey());
     const key = await setAccessKey(bob);
     for (let i = 0; i < 3; i++) {
-      await call("send", null, { ciphertext: ciphertext(32 + i), recipients: [{ to_device: device.deviceId, access: { sealed: key } }] });
+      await sendSigned(key, device.deviceId, ciphertext(32 + i));
     }
     const items = (await fetchItems(bob, device.deviceId)).body.items;
     assertEquals(items.length, 3);
@@ -179,14 +179,14 @@ Deno.test("de-duplication: the same ciphertext twice is one item per device", op
     const device = await registerDevice(bob, await newMasterKey());
     const key = await setAccessKey(bob);
     const same = ciphertext(80);
-    const body = { ciphertext: same, recipients: [{ to_device: device.deviceId, access: { sealed: key } }] };
+    const body = { ciphertext: same, recipients: [await signedTo(key, device.deviceId, same)] };
     assertEquals((await call("send", null, body)).body.stored, 1);
     const second = await call("send", null, body);
     assertEquals(second.body.stored, 0);
     assertEquals(second.body.duplicates, 1);
     assertEquals((await fetchItems(bob, device.deviceId)).body.items.length, 1);
     // A different ciphertext is a new item.
-    await call("send", null, { ...body, ciphertext: ciphertext(80) });
+    await sendSigned(key, device.deviceId, ciphertext(80));
     assertEquals((await fetchItems(bob, device.deviceId)).body.items.length, 2);
   });
 });
@@ -195,7 +195,7 @@ Deno.test("the item size limit is 64 KB", opts, async () => {
   await withUsers(1, async ([bob]) => {
     const device = await registerDevice(bob, await newMasterKey());
     const key = await setAccessKey(bob);
-    const send = (size: number) => call("send", null, { ciphertext: ciphertext(size), recipients: [{ to_device: device.deviceId, access: { sealed: key } }] });
+    const send = (size: number) => sendSigned(key, device.deviceId, ciphertext(size));
     assertEquals((await send(65536)).status, 200);
     const tooBig = await send(65537);
     assertEquals(tooBig.status, 413);
@@ -208,12 +208,14 @@ Deno.test("rate limits trip: sends, claims and registrations", opts, async () =>
     const device = await registerDevice(bob, await newMasterKey());
     const key = await setAccessKey(bob);
     // 121 recipient-items in one minute for one access key is over the 120 limit.
-    const recipients = Array.from({ length: 121 }, () => ({ to_device: device.deviceId, access: { sealed: key } }));
-    const sends = await call("send", null, { ciphertext: ciphertext(), recipients });
+    const batch = ciphertext();
+    const proof = await signedTo(key, device.deviceId, batch);
+    const recipients = Array.from({ length: 121 }, () => proof);
+    const sends = await call("send", null, { ciphertext: batch, recipients });
     assertEquals(sends.status, 429);
     assertEquals(sends.body.error, "rate_limited");
     // The same key is now over its window: even one more item is refused until the minute passes.
-    assertEquals((await call("send", null, { ciphertext: ciphertext(), recipients: recipients.slice(0, 1) })).status, 429);
+    assertEquals((await call("send", null, { ciphertext: batch, recipients: recipients.slice(0, 1) })).status, 429);
 
     // 60 key claims per minute per user.
     for (let i = 0; i < 60; i++) assertEquals((await call("keys-claim", claimer.token, { user_id: bob.id })).status, 200);
@@ -279,7 +281,7 @@ Deno.test("expiry: items older than 30 days are deleted, newer ones stay, and th
   await withUsers(1, async ([bob]) => {
     const device = await registerDevice(bob, await newMasterKey());
     const key = await setAccessKey(bob);
-    const send = () => call("send", null, { ciphertext: ciphertext(), recipients: [{ to_device: device.deviceId, access: { sealed: key } }] });
+    const send = () => sendSigned(key, device.deviceId);
     await send();
     await send();
     const items = (await fetchItems(bob, device.deviceId)).body.items;
@@ -319,7 +321,7 @@ Deno.test("a revoked device can neither fetch nor be sent to", opts, async () =>
     await admin.from("devices").update({ revoked_at: new Date().toISOString() }).eq("device_id", device.deviceId);
     assertEquals((await fetchItems(bob, device.deviceId)).status, 403);
     assertEquals((await call("mailbox-ack", bob.token, { device_id: device.deviceId, up_to_cursor: 1 })).status, 403);
-    assertEquals((await call("send", null, { ciphertext: ciphertext(), recipients: [{ to_device: device.deviceId, access: { sealed: key } }] })).status, 403);
+    assertEquals((await sendSigned(key, device.deviceId)).status, 403);
     assertEquals((await call("users-devices", bob.token, { user_id: bob.id })).body.devices.length, 0, "a revoked device is not listed");
   });
 });

@@ -55,7 +55,7 @@ Deno.serve(handler(async (req) => {
   if (device.revoked_at !== null) throw accessDenied("revoked_device");
   const payloadHash = await sha256(payload);
   const stored = await loadAccess(db, device.user_id as string, new Map());
-  const bucketKey = await verifySealed(stored, { signed: routing.access.signed }, toDevice, payloadHash, false);
+  const bucketKey = await verifySealed(stored, { signed: routing.access.signed }, toDevice, payloadHash);
   await rateLimit(`send:access:${toHex(bucketKey)}`, 1, config.sendPerMinute(), 60);
 
   const storedDevices = await storeRows(db, [sealedRow(toDevice, payload, payloadHash)]);

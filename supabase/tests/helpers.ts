@@ -148,14 +148,6 @@ export function otk(count: number, prefix = "k"): { key_id: string; key: string 
 
 export const sha256Bytes = sha256;
 
-/** Gives `user` an access key (returns the key as base64); the server only ever gets its hash. */
-export async function setAccessKey(user: TestUser): Promise<string> {
-  const accessKey = randomBytes(16);
-  const res = await call("delivery-access-set", user.token, { access_key_hash: toBase64(await sha256Bytes(accessKey)) });
-  if (res.status !== 200) throw new Error(`delivery-access-set failed: ${res.status}`);
-  return toBase64(accessKey);
-}
-
 export function ciphertext(size = 64): string {
   return toBase64(randomBytes(size));
 }
@@ -167,14 +159,8 @@ export type AccessSigner = {
   sign: (ciphertextBase64: string, toDevice: string) => Promise<string>;
 };
 
-/** Gives `user` signed access (and the old access key too, as the app does during the overlap): returns the signer and the access key. */
-export async function setSignedAccess(user: TestUser): Promise<{ signer: AccessSigner; accessKey: string }> {
-  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair;
-  const publicKey = toBase64(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
-  const accessKey = randomBytes(16);
-  const res = await call("delivery-access-set", user.token, { access_key_hash: toBase64(await sha256Bytes(accessKey)), access_public_key: publicKey });
-  if (res.status !== 200) throw new Error(`delivery-access-set failed: ${res.status} ${JSON.stringify(res.body)}`);
-  const signer: AccessSigner = {
+function signerFor(pair: CryptoKeyPair, publicKey: string): AccessSigner {
+  return {
     publicKey,
     sign: async (ct, toDevice) => {
       const message = new Uint8Array([
@@ -185,5 +171,46 @@ export async function setSignedAccess(user: TestUser): Promise<{ signer: AccessS
       return toBase64(new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, pair.privateKey, message)));
     },
   };
-  return { signer, accessKey: toBase64(accessKey) };
+}
+
+/** A signer whose public key nobody holds (a stranger trying to send). */
+export async function randomSigner(): Promise<AccessSigner> {
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair;
+  return signerFor(pair, toBase64(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))));
+}
+
+/**
+ * Gives `user` signed access, as the app does (the hash of an access key is still uploaded with the public key: `delivery-access-set` takes it;
+ * the access key itself is no longer accepted by `send`, LIME-166). Returns the signer and the old access key (for the test that it is refused).
+ */
+export async function setSignedAccess(user: TestUser): Promise<{ signer: AccessSigner; accessKey: string }> {
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair;
+  const publicKey = toBase64(new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey)));
+  const accessKey = randomBytes(16);
+  const res = await call("delivery-access-set", user.token, { access_key_hash: toBase64(await sha256Bytes(accessKey)), access_public_key: publicKey });
+  if (res.status !== 200) throw new Error(`delivery-access-set failed: ${res.status} ${JSON.stringify(res.body)}`);
+  return { signer: signerFor(pair, publicKey), accessKey: toBase64(accessKey) };
+}
+
+/** What an older build did (and a block still does): sets only the hash of an access key, no public key. Returns the key as base64. */
+export async function setHashOnlyAccessKey(user: TestUser): Promise<string> {
+  const accessKey = randomBytes(16);
+  const res = await call("delivery-access-set", user.token, { access_key_hash: toBase64(await sha256Bytes(accessKey)) });
+  if (res.status !== 200) throw new Error(`delivery-access-set failed: ${res.status}`);
+  return toBase64(accessKey);
+}
+
+/** Gives `user` signed access and returns the signer (what most tests need to send to this user). */
+export async function setAccessKey(user: TestUser): Promise<AccessSigner> {
+  return (await setSignedAccess(user)).signer;
+}
+
+/** One recipient entry with a signed proof for this ciphertext and device. */
+export async function signedTo(signer: AccessSigner, toDevice: string, ct: string): Promise<{ to_device: string; access: { signed: string } }> {
+  return { to_device: toDevice, access: { signed: await signer.sign(ct, toDevice) } };
+}
+
+/** A sealed send of one ciphertext to one device, signed by `signer`, with no Authorization header. */
+export async function sendSigned(signer: AccessSigner, toDevice: string, ct: string = ciphertext(), extra: Record<string, unknown> = {}) {
+  return await call("send", null, { ciphertext: ct, recipients: [await signedTo(signer, toDevice, ct)], ...extra });
 }

@@ -3,7 +3,7 @@
 
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
-  admin, call, ciphertext, deleteUser, newMasterKey, newUser, otk, registerDevice, setAccessKey, type MasterKey, type TestUser,
+  admin, call, ciphertext, deleteUser, newMasterKey, newUser, otk, randomSigner, registerDevice, sendSigned, setAccessKey, type MasterKey, type TestUser,
 } from "./helpers.ts";
 import { sha256, toHex } from "../functions/_shared/bytes.ts";
 
@@ -19,7 +19,6 @@ async function withUsers<T>(count: number, fn: (users: TestUser[]) => Promise<T>
 }
 
 const masterHash = async (master: MasterKey) => toHex(await sha256(new TextEncoder().encode(master.publicKey)));
-const sealed = (device: string, key: string) => [{ to_device: device, access: { sealed: key } }];
 const mailboxCount = async (device: string) => (await admin.from("mailbox_items").select("cursor").eq("to_device", device)).data?.length ?? 0;
 
 Deno.test("send with a matching expect is stored and says it was checked; without expect nothing changes", opts, async () => {
@@ -29,12 +28,12 @@ Deno.test("send with a matching expect is stored and says it was checked; withou
     const key = await setAccessKey(bob);
     const expect = { [bob.id]: { devices: [device.deviceId], master: await masterHash(master) } };
 
-    const ok = await call("send", null, { ciphertext: ciphertext(), recipients: sealed(device.deviceId, key), expect });
+    const ok = await sendSigned(key, device.deviceId, ciphertext(), { expect });
     assertEquals(ok.status, 200);
     assertEquals(ok.body.checked, true);
     assertEquals(ok.body.stored, 1);
 
-    const old = await call("send", null, { ciphertext: ciphertext(), recipients: sealed(device.deviceId, key) });
+    const old = await sendSigned(key, device.deviceId);
     assertEquals(old.status, 200);
     assertEquals(old.body.checked, false, "an old client's send is not checked, and not refused");
 
@@ -54,7 +53,7 @@ Deno.test("a new device (or a changed master key) is a 409 with the current list
     const expect = { [bob.id]: { devices: [first.deviceId], master: await masterHash(master) } };
     const second = await registerDevice(bob, master);   // a linked device: the same master key
 
-    const stale = await call("send", null, { ciphertext: ciphertext(), recipients: sealed(first.deviceId, key), expect });
+    const stale = await sendSigned(key, first.deviceId, ciphertext(), { expect });
     assertEquals(stale.status, 409);
     assertEquals(stale.body.error, "devices_changed");
     assertEquals(stale.body.stale.length, 1);
@@ -69,12 +68,12 @@ Deno.test("a new device (or a changed master key) is a 409 with the current list
 
     // With the list the 409 gave, the retry goes through.
     const fresh = { [bob.id]: { devices: [first.deviceId, second.deviceId], master: await masterHash(master) } };
-    const retry = await call("send", null, { ciphertext: ciphertext(), recipients: sealed(first.deviceId, key), expect: fresh });
+    const retry = await sendSigned(key, first.deviceId, ciphertext(), { expect: fresh });
     assertEquals(retry.status, 200);
 
     // A changed master key is also stale, even with the same device ids.
     const wrongMaster = { [bob.id]: { devices: [first.deviceId, second.deviceId], master: "00".repeat(32) } };
-    const changed = await call("send", null, { ciphertext: ciphertext(), recipients: sealed(first.deviceId, key), expect: wrongMaster });
+    const changed = await sendSigned(key, first.deviceId, ciphertext(), { expect: wrongMaster });
     assertEquals(changed.status, 409);
     assertEquals(changed.body.stale[0].master_changed, true);
   });
@@ -88,7 +87,7 @@ Deno.test("a revoked device is a 410 for someone who holds the access key; the k
     const expect = { [bob.id]: { devices: [old.deviceId], master: await masterHash(master) } };
     await admin.from("devices").update({ revoked_at: new Date().toISOString() }).eq("device_id", old.deviceId);
 
-    const gone = await call("send", null, { ciphertext: ciphertext(), recipients: sealed(old.deviceId, key), expect });
+    const gone = await sendSigned(key, old.deviceId, ciphertext(), { expect });
     assertEquals(gone.status, 410);
     assertEquals(gone.body.error, "devices_revoked");
     assertEquals(gone.body.revoked, [old.deviceId]);
@@ -96,11 +95,11 @@ Deno.test("a revoked device is a 410 for someone who holds the access key; the k
     assertEquals(gone.body.stale[0].devices, [], "no live device is left");
 
     // Not a holder of the key: the same 403 as for any wrong key. Nothing about the revocation leaks.
-    const stranger = await call("send", null, { ciphertext: ciphertext(), recipients: sealed(old.deviceId, "AAAAAAAAAAAAAAAAAAAAAA=="), expect });
+    const stranger = await sendSigned(await randomSigner(), old.deviceId, ciphertext(), { expect });
     assertEquals(stranger.status, 403);
 
     // Without expect a revoked device is refused as before (403 sealed; 404 identified).
-    assertEquals((await call("send", null, { ciphertext: ciphertext(), recipients: sealed(old.deviceId, key) })).status, 403);
+    assertEquals((await sendSigned(key, old.deviceId)).status, 403);
     assertEquals(await mailboxCount(old.deviceId), 0);
   });
 });
@@ -110,15 +109,12 @@ Deno.test("a bad expect is a 400 and an expect for someone else's devices never 
     const master = await newMasterKey();
     const device = await registerDevice(bob, master);
     const key = await setAccessKey(bob);
-    const bad = await call("send", null, { ciphertext: ciphertext(), recipients: sealed(device.deviceId, key), expect: { nope: 1 } });
+    const bad = await sendSigned(key, device.deviceId, ciphertext(), { expect: { nope: 1 } });
     assertEquals(bad.status, 400);
-    const empty = await call("send", null, { ciphertext: ciphertext(), recipients: sealed(device.deviceId, key), expect: {} });
+    const empty = await sendSigned(key, device.deviceId, ciphertext(), { expect: {} });
     assertEquals(empty.status, 400);
-    // A wrong access key gets 403 whatever expect says (the 409 body is only for a holder of the key).
-    const wrongKey = await call("send", null, {
-      ciphertext: ciphertext(), recipients: sealed(device.deviceId, "AAAAAAAAAAAAAAAAAAAAAA=="),
-      expect: { [bob.id]: { devices: [], master: "00" } },
-    });
+    // A wrong signature gets 403 whatever expect says (the 409 body is only for a holder of the key).
+    const wrongKey = await sendSigned(await randomSigner(), device.deviceId, ciphertext(), { expect: { [bob.id]: { devices: [], master: "00" } } });
     assertEquals(wrongKey.status, 403);
   });
 });

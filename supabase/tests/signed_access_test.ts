@@ -2,7 +2,7 @@
 // to that device only. Run with ./supabase/test.sh.
 
 import { assertEquals } from "jsr:@std/assert@1";
-import { call, ciphertext, deleteUser, newMasterKey, newUser, randomBytes, registerDevice, setAccessKey, setSignedAccess, type TestUser } from "./helpers.ts";
+import { call, ciphertext, deleteUser, newMasterKey, newUser, randomBytes, registerDevice, setHashOnlyAccessKey, setSignedAccess, type TestUser } from "./helpers.ts";
 import { toBase64 } from "../functions/_shared/bytes.ts";
 
 const opts = { sanitizeOps: false, sanitizeResources: false };
@@ -62,7 +62,7 @@ Deno.test("a signature from another key, a short or garbled one, or no public ke
     const dave = await newUser();
     try {
       const daveDevice = await registerDevice(dave, await newMasterKey());
-      await setAccessKey(dave);
+      await setHashOnlyAccessKey(dave);
       assertEquals((await sendTo([{ to_device: daveDevice.deviceId, access: { signed: await signer.sign(ct, daveDevice.deviceId) } }], ct)).status, 403, "no public key on file");
     } finally {
       await deleteUser(dave);
@@ -78,35 +78,30 @@ Deno.test("a signature from another key, a short or garbled one, or no public ke
   });
 });
 
-Deno.test("the older sealed (access key) path still works during the overlap, and one batch can mix both", opts, async () => {
+Deno.test("the removed sealed (access key) proof is refused with the same opaque 403, alone or inside a batch (LIME-166, F-02)", opts, async () => {
   await withUsers(2, async ([bob, carol]) => {
     const bobDevice = await registerDevice(bob, await newMasterKey());
     const carolDevice = await registerDevice(carol, await newMasterKey());
-    const { signer, accessKey: bobKey } = await setSignedAccess(bob); // Bob's build is new and still sets the hash too
-    const carolKey = await setAccessKey(carol); // Carol's is an older build: hash only
+    const { signer, accessKey: bobKey } = await setSignedAccess(bob); // Bob has both a public key and an access-key hash on file
+    const carolKey = await setHashOnlyAccessKey(carol);
     const ct = ciphertext();
 
-    assertEquals((await sendTo([{ to_device: bobDevice.deviceId, access: { sealed: bobKey } }], ct)).status, 200, "the old key still works for Bob");
-    const mixed = await sendTo([
-      { to_device: bobDevice.deviceId, access: { signed: await signer.sign(ct, bobDevice.deviceId) } },
-      { to_device: carolDevice.deviceId, access: { sealed: carolKey } },
-    ], ciphertext(90));
-    assertEquals(mixed.status, 403, "(the first ciphertext differs from the one signed, so this whole batch is refused)");
+    // The right access key, which used to be accepted, is now refused: for a user who has signed access too, and for one with only the hash.
+    assertEquals((await sendTo([{ to_device: bobDevice.deviceId, access: { sealed: bobKey } }], ct)).status, 403, "the access key is not a proof any more");
+    assertEquals((await sendTo([{ to_device: carolDevice.deviceId, access: { sealed: carolKey } }], ct)).status, 403);
+    const refused = await sendTo([{ to_device: bobDevice.deviceId, access: { sealed: bobKey } }], ct);
+    assertEquals(refused.body.error, "access_denied", "the same opaque answer as any wrong proof");
+
+    // A batch with one removed-style proof stores nothing for anyone (all or nothing), even if the other recipient's signature is right.
     const ct2 = ciphertext(100);
-    const ok = await sendTo([
+    const mixed = await sendTo([
       { to_device: bobDevice.deviceId, access: { signed: await signer.sign(ct2, bobDevice.deviceId) } },
       { to_device: carolDevice.deviceId, access: { sealed: carolKey } },
     ], ct2);
-    assertEquals(ok.status, 200);
-    assertEquals(ok.body.stored, 2, "one signed and one sealed recipient in the same batch");
-
-    // All or nothing: one bad proof in a batch stores nothing for anyone.
-    const ct3 = ciphertext(110);
-    const bad = await sendTo([
-      { to_device: bobDevice.deviceId, access: { signed: await signer.sign(ct3, bobDevice.deviceId) } },
-      { to_device: carolDevice.deviceId, access: { sealed: toBase64(randomBytes(16)) } },
-    ], ct3);
-    assertEquals(bad.status, 403);
+    assertEquals(mixed.status, 403);
+    const signedOnly = await sendTo([{ to_device: bobDevice.deviceId, access: { signed: await signer.sign(ct2, bobDevice.deviceId) } }], ct2);
+    assertEquals(signedOnly.status, 200);
+    assertEquals(signedOnly.body.stored, 1, "nothing was stored by the refused batch, so this is the first copy");
   });
 });
 
@@ -118,7 +113,7 @@ Deno.test("a rotation without a public key clears the old one, and a bad public 
     assertEquals((await sendTo([{ to_device: device.deviceId, access: { signed: await signer.sign(ct, device.deviceId) } }], ct)).status, 200);
 
     // An older build rotates the key (a block): hash only. The previous delivery key's public key must not survive.
-    await setAccessKey(bob);
+    await setHashOnlyAccessKey(bob);
     const ct2 = ciphertext(70);
     assertEquals((await sendTo([{ to_device: device.deviceId, access: { signed: await signer.sign(ct2, device.deviceId) } }], ct2)).status, 403, "the public key is cleared");
 

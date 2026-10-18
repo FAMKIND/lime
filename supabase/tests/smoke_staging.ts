@@ -3,7 +3,7 @@
 
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { ANON_KEY, API_URL, call, ciphertext, deleteUser, newMasterKey, newUnverifiedUser, newUser, registerDevice, setAccessKey } from "./helpers.ts";
+import { ANON_KEY, API_URL, call, ciphertext, deleteUser, newMasterKey, newUnverifiedUser, newUser, registerDevice, sendSigned, setAccessKey } from "./helpers.ts";
 
 const alice = await newUser(); // the sender (never needs a token for a sealed send)
 const bob = await newUser();
@@ -12,7 +12,7 @@ try {
   const accessKey = await setAccessKey(bob);
   const payload = ciphertext(96);
 
-  const sent = await call("send", null, { ciphertext: payload, recipients: [{ to_device: device.deviceId, access: { sealed: accessKey } }] });
+  const sent = await sendSigned(accessKey, device.deviceId, payload);
   assertEquals(sent.status, 200, "sealed send");
   assertEquals(sent.body.stored, 1);
 
@@ -69,7 +69,7 @@ try {
       return outcome;
     };
     const owner = await listen(bob.token, async () => {
-      await call("send", null, { ciphertext: ciphertext(), recipients: [{ to_device: device.deviceId, access: { sealed: accessKey } }] });
+      await sendSigned(accessKey, device.deviceId);
     });
     assert(owner.joined && owner.nudge !== null, "the device's owner joins its private channel and is nudged");
     const stranger = await listen(alice.token);

@@ -1,19 +1,20 @@
 // The sealed-access check and the mailbox store, shared by `send` and `mesh-drop` (LIME-140): the same proof, the same rules, one copy.
 //
 // A sealed proof is `{ signed }` (LIME-139: an Ed25519 signature over "lime-access-v2" || SHA-256(ciphertext) || the device's 16 UUID bytes,
-// checked against the recipient's public key) or, during the overlap, `{ sealed }` (the access key; `mesh-drop` does not take it).
+// checked against the recipient's public key). The older `{ sealed }` (a shared access key presented as it was) was removed in LIME-166 (finding F-02):
+// it is now the same opaque 403 as any other missing proof.
 
-import { constantTimeEqual, fromBase64, fromPgBytea, sha256, toPgBytea, uuidBytes, verifyEd25519 } from "./bytes.ts";
+import { fromBase64, fromPgBytea, sha256, toPgBytea, uuidBytes, verifyEd25519 } from "./bytes.ts";
 import { HttpError } from "./http.ts";
 
-export type Access = { hash: Uint8Array | null; publicKey: Uint8Array | null };
+export type Access = { publicKey: Uint8Array | null };
 
 /** What a signed send signs: a label, SHA-256 of the ciphertext and the recipient device's 16 raw UUID bytes (one message to one device only). */
 export const SIGNED_LABEL = new TextEncoder().encode("lime-access-v2");
 
 /** Why an access was refused, for the function logs only (LIME-142-fix2): a short code, never an id, key or token. The phone still sees the one 403. */
 export type DenyReason =
-  | "no_public_key" | "bad_signature" | "bad_access_key" | "no_proof" | "header_unopenable" | "header_fields" | "unknown_device" | "revoked_device"
+  | "no_public_key" | "bad_signature" | "no_proof" | "header_unopenable" | "header_fields" | "unknown_device" | "revoked_device"
   // mesh-fetch (LIME-155)
   | "fetch_unopenable" | "fetch_fields" | "fetch_expired" | "fetch_device" | "fetch_signature" | "nonce_used" | "rate_limited";
 
@@ -28,9 +29,8 @@ type Db = any;
 /** The recipient user's stored proofs (cached per call). */
 export async function loadAccess(db: Db, userId: string, cache: Map<string, Access>): Promise<Access> {
   if (!cache.has(userId)) {
-    const { data } = await db.from("delivery_access").select("access_key_hash, access_public_key").eq("user_id", userId).maybeSingle();
+    const { data } = await db.from("delivery_access").select("access_public_key").eq("user_id", userId).maybeSingle();
     cache.set(userId, {
-      hash: data?.access_key_hash ? fromPgBytea(data.access_key_hash as string) : null,
       publicKey: data?.access_public_key ? fromPgBytea(data.access_public_key as string) : null,
     });
   }
@@ -38,40 +38,28 @@ export async function loadAccess(db: Db, userId: string, cache: Map<string, Acce
 }
 
 /**
- * Checks one recipient's sealed proof. Returns the key the rate limit is counted against (per recipient, never per sender). Anything wrong
- * (no proof, a wrong or short signature, no key on file, a wrong access key) throws the same 403, so nothing leaks about which part failed.
- * `allowAccessKey` is false for `mesh-drop`, which takes only signatures.
+ * Checks one recipient's sealed proof, a signature. Returns the key the rate limit is counted against (per recipient, never per sender). Anything
+ * wrong (no proof, the removed `{ sealed }` access key, a wrong or short signature, no key on file) throws the same 403, so nothing leaks about
+ * which part failed.
  */
 export async function verifySealed(
-  stored: Access, access: { signed?: unknown; sealed?: unknown }, toDevice: string, ciphertextHash: Uint8Array, allowAccessKey = true,
+  stored: Access, access: { signed?: unknown }, toDevice: string, ciphertextHash: Uint8Array,
 ): Promise<Uint8Array> {
-  if (typeof access.signed === "string") {
-    let signature: Uint8Array;
-    try {
-      signature = fromBase64(access.signed);
-    } catch {
-      throw accessDenied("bad_signature");
-    }
-    if (!stored.publicKey) throw accessDenied("no_public_key");
-    if (signature.length !== 64) throw accessDenied("bad_signature");
-    const message = new Uint8Array(SIGNED_LABEL.length + 32 + 16);
-    message.set(SIGNED_LABEL, 0);
-    message.set(ciphertextHash, SIGNED_LABEL.length);
-    message.set(uuidBytes(toDevice), SIGNED_LABEL.length + 32);
-    if (!(await verifyEd25519(stored.publicKey, signature, message))) throw accessDenied("bad_signature");
-    return await sha256(stored.publicKey);
-  }
-  if (!allowAccessKey || typeof access.sealed !== "string") throw accessDenied("no_proof");
-  let presented: Uint8Array;
+  if (typeof access.signed !== "string") throw accessDenied("no_proof");
+  let signature: Uint8Array;
   try {
-    presented = fromBase64(access.sealed);
+    signature = fromBase64(access.signed);
   } catch {
-    throw accessDenied("bad_access_key");
+    throw accessDenied("bad_signature");
   }
-  if (presented.length !== 16) throw accessDenied("bad_access_key");
-  const presentedHash = await sha256(presented);
-  if (!stored.hash || !constantTimeEqual(stored.hash, presentedHash)) throw accessDenied("bad_access_key");
-  return presentedHash;
+  if (!stored.publicKey) throw accessDenied("no_public_key");
+  if (signature.length !== 64) throw accessDenied("bad_signature");
+  const message = new Uint8Array(SIGNED_LABEL.length + 32 + 16);
+  message.set(SIGNED_LABEL, 0);
+  message.set(ciphertextHash, SIGNED_LABEL.length);
+  message.set(uuidBytes(toDevice), SIGNED_LABEL.length + 32);
+  if (!(await verifyEd25519(stored.publicKey, signature, message))) throw accessDenied("bad_signature");
+  return await sha256(stored.publicKey);
 }
 
 /** Wakes the devices' Realtime channels (a private channel only its owner may join) with { type: "new" } and no content. */

@@ -1,8 +1,8 @@
 // POST send: a fan-out batch { ciphertext, recipients: [{ to_device, access }] }.
 //
-// `access` is { signed: "<Ed25519 signature, base64>" } (LIME-139: no user token needed; the server learns nothing about the sender), the
-// older { sealed: "<access_key, base64>" } (kept during the overlap; remove it once every device has updated, before TestFlight) or { identified: true } (a user token is required; the item records the
-// sender, so a stranger's first message can land in Requests). The server stores one item per
+// `access` is { signed: "<Ed25519 signature, base64>" } (LIME-139: no user token needed; the server learns nothing about the sender) or
+// { identified: true } (a user token is required; the item records the sender, so a stranger's first message can land in Requests). The older
+// { sealed: "<access_key>" } was removed in LIME-166: it gets the same opaque 403 as any missing proof. The server stores one item per
 // recipient device, de-duplicated by SHA-256(ciphertext) per device, then nudges the device's
 // Realtime channel (a private channel only its owner may join) with { type: "new" } (no content).
 //
@@ -22,7 +22,7 @@ import { fromBase64, isUuid, sha256, toHex } from "../_shared/bytes.ts";
 import { type Access, accessDenied, loadAccess, sealedRow, storeRows, verifySealed } from "../_shared/access.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
-type Recipient = { to_device: string; access: { signed?: unknown; sealed?: unknown; identified?: unknown } };
+type Recipient = { to_device: string; access: { signed?: unknown; identified?: unknown } };
 
 type Expected = { devices: Set<string>; master: string };
 
@@ -104,13 +104,11 @@ Deno.serve(handler(async (req) => {
       identifiedItems++;
       continue;
     }
-    // Sealed (signed, or the older access key). A wrong key or signature, a missing key and an unknown device all look the same: 403.
+    // Sealed (signed). A wrong signature, a missing proof (the removed access key included) and an unknown device all look the same: 403.
     // (A revoked device is the same without `expect`; with it, the proof is checked first and a revoked device is then reported, to the
     // holder of the key only.)
-    const signed = typeof r.access.signed === "string";
     if (!device) throw accessDenied("unknown_device");
     if (revoked && !checking) throw accessDenied("revoked_device");
-    if (!signed && typeof r.access.sealed !== "string") throw accessDenied("no_proof");
     const stored = await loadAccess(db, device.user_id as string, accessByUser);
     const bucketKey = await verifySealed(stored, r.access, id, ciphertextHash);
     if (revoked) {

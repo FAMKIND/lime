@@ -4,7 +4,7 @@
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  admin, ANON_KEY, API_URL, call, ciphertext, deleteUser, newMasterKey, newUser, registerDevice, setAccessKey, type TestUser,
+  admin, ANON_KEY, API_URL, call, ciphertext, deleteUser, newMasterKey, newUser, registerDevice, sendSigned, setAccessKey, type TestUser,
 } from "./helpers.ts";
 
 const opts = { sanitizeOps: false, sanitizeResources: false };
@@ -129,7 +129,7 @@ Deno.test("Realtime: the nudge is on a private channel only the device's owner c
   await withUsers(2, async ([bob, mallory]) => {
     const device = await registerDevice(bob, await newMasterKey());
     const key = await setAccessKey(bob);
-    const send = () => call("send", null, { ciphertext: ciphertext(), recipients: [{ to_device: device.deviceId, access: { sealed: key } }] });
+    const send = () => sendSigned(key, device.deviceId);
 
     // The owner joins and is nudged, with no content.
     const owner = await listen(bob.token, device.deviceId, async () => { await send(); });
@@ -165,7 +165,7 @@ Deno.test("a verified session with new keys replaces the account's keys: old dev
     const identified = ciphertext(80);
     const sealed = ciphertext(90);
     assertEquals((await call("send", sender.token, { ciphertext: identified, recipients: [{ to_device: oldDevice.deviceId, access: { identified: true } }] })).status, 200);
-    assertEquals((await call("send", null, { ciphertext: sealed, recipients: [{ to_device: oldDevice.deviceId, access: { sealed: accessKey } }] })).status, 200);
+    assertEquals((await sendSigned(accessKey, oldDevice.deviceId, sealed)).status, 200);
     assertEquals((await call("mailbox-fetch", owner.token, { device_id: oldDevice.deviceId, after: 0 })).body.items.length, 2);
 
     // A phone with brand-new keys registers from the same verified session.

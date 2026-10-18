@@ -140,7 +140,7 @@ Deno.test("mesh-drop refuses what send would: a swapped payload, a redirected de
     const dave = await newUser();
     try {
       const daveDevice = await registerDevice(dave, await newMasterKey());
-      const key = await setAccessKey(dave);
+      const { accessKey: key } = await setSignedAccess(dave);
       const sealedKeyHeader = await sealHeader(LOCAL_PUBLIC, 1, daveDevice.deviceId, key);
       assertEquals((await drop(sealedKeyHeader)).status, 403, "an access key is not a signature");
     } finally {
