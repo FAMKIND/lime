@@ -6592,3 +6592,18 @@ Brief: LIME-150-fix5 (item 4, the ring and the space, landed earlier).
 **Installed** on Jean's iPhone, the iPad and the 13 mini.
 
 **Device check (the user, all three phones):** minimise / return / minimise 5 times in a 3-person video call with no setting touched, on the phone that started the call and on the two that answered → the grid every time, no flicker; tuck the mini player beside a stashed PiP → they look like a pair, and the tuck flows. Please also pull the logs after (`pip mode=…`, `group pip aspect`).
+
+## LIME-150-fix6
+
+Brief: LIME-150-fix6 (the mini player blurred and doubled since the glass change; the tab as narrow as iOS's).
+
+**Cause (reproduced in the simulator).** After a tuck and untuck the player's text, avatar and buttons stayed ghosted and doubled inside the capsule (`~/Desktop/lime-150fix6/` run before the fix): the player and the tab shared one glass id inside a `GlassEffectContainer` (150-fix5's morph), and when the glass view for one was swapped for the other, the whole view (its text and buttons included, not only the capsule shape) went through the container's materialise blur and did not settle. It was not the glass sitting over the content: the content was already the foreground of its capsule.
+
+**Changes.**
+- [x] The morph is **removed**: the player is its own plain glass capsule (`limeGlass`), the tab its own dark glass (`TabGlass`); the container, the shared id and the namespace are gone. After 10 tuck/untuck cycles in the simulator the player is crisp (`untucked-after-10.png`). Reduce Motion (the short cross-fade) and Reduce Transparency (a solid dark tab) are kept. **The brief asked to keep the morph; it is the morph that blurs the content, so it is dropped rather than kept broken. A morph that moves only the glass shape, with the content a separate layer, would be a larger rebuild of the player's layout: say if you want it.**
+- [x] The tab is **24 pt wide** (iOS's stashed tab: about 46 px of a 724 px screenshot at 3x ≈ 24 pt visible) × 48 pt tall, a heavy white chevron (15 pt) centred; frame measured in the simulator at 24 × 48. The chevron sits close to the edge and looks a little skewed, as iOS's does.
+- Not done: screenshots on the 13 mini device (a still screenshot of the device's screen cannot be taken from here), and the tab **beside iOS's stashed PiP tab** (no stashed PiP is available to me). The images are from the simulator (iOS 27, glass looks grey over a light background).
+
+**Verification.** All unit tests and `CallMiniPlayerUITests` pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Gate (the user):** the player crisp (tuck and untuck ten times: never doubled or blurred); the tab the same width as iOS's, next to a stashed PiP.

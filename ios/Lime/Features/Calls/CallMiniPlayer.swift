@@ -66,8 +66,6 @@ struct CallMiniPlayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var drag: CGFloat = 0
-    /// The player and its tab are one piece of glass that flows from one shape to the other (iOS 26 `glassEffectID`).
-    @Namespace private var glassSpace
     /// How far the player floats above what is under it: the tab bar on a screen, the composer in a chat.
     var gapBelow: CGFloat = CallMiniPlayer.floatGapAboveTabBar
     private var isIOS26: Bool { if #available(iOS 26, *) { true } else { false } }
@@ -88,10 +86,8 @@ struct CallMiniPlayer: View {
         Group {
             if let subject = CallMiniPlayerRule.subject(groupInCall: store.groupCalls.inCall, groupMinimized: store.groupCalls.minimized,
                                                         callInCall: store.calls.inCall, callMinimized: store.calls.minimized) {
-                GlassMorphContainer {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        if let edge = store.miniPlayerTuck.edge { tab(edge, video: subject == .group ? store.groupCalls.video : store.calls.video) } else { content(for: subject, at: context.date) }
-                    }
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    if let edge = store.miniPlayerTuck.edge { tab(edge, video: subject == .group ? store.groupCalls.video : store.calls.video) } else { content(for: subject, at: context.date) }
                 }
                 .padding(.horizontal, store.miniPlayerTuck.isTucked ? 0 : 16).padding(.top, Self.floatGap).padding(.bottom, gapBelow)
                 .frame(maxWidth: .infinity)
@@ -114,13 +110,16 @@ struct CallMiniPlayer: View {
     /// The edge tab (iOS's stashed-PiP pattern, LIME-150-fix4): a small warm handle as tall as the player with a bold chevron that points the way it
     /// will open (tucked at the right edge: `chevron.left`; at the left: `chevron.right`). Tap or swipe it back out to bring the player back.
     static let tabHeight: CGFloat = 48
+    /// As wide as iOS's own stashed-video tab: about 24 pt of it shows at the screen's edge (46 px of a 724 px wide screenshot, 3x), so the chevron
+    /// sits close to the edge and looks a little skewed, as iOS's does.
+    static let tabWidth: CGFloat = 24
     private func tab(_ edge: CallMiniPlayerTuck.Edge, video: Bool) -> some View {
         HStack(spacing: 0) {
             if edge == .trailing { Spacer(minLength: 0) }
             Button(action: untuck) {
-                Image(systemName: edge == .trailing ? "chevron.left" : "chevron.right").font(.system(size: 19, weight: .heavy)).foregroundStyle(.white)
-                    .frame(width: 44, height: Self.tabHeight)
-                    .modifier(TabGlass(edge: edge, reduceTransparency: reduceTransparency, space: glassSpace))
+                Image(systemName: edge == .trailing ? "chevron.left" : "chevron.right").font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
+                    .frame(width: Self.tabWidth, height: Self.tabHeight)
+                    .modifier(TabGlass(edge: edge, reduceTransparency: reduceTransparency))
             }
             .buttonStyle(.plain)
             .gesture(DragGesture(minimumDistance: 12).onEnded { value in
@@ -209,7 +208,7 @@ struct CallMiniPlayer: View {
                 if reduceTransparency { RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.canvas).overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5)) }
                 else { Color.clear.limeGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous)) }
             } else if reduceTransparency { Capsule().fill(Theme.canvas).overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5)) }
-            else { Color.clear.modifier(PlayerGlass(shape: Capsule(), space: glassSpace)) }
+            else { Color.clear.modifier(PlayerGlass(shape: Capsule())) }
         }
         .offset(x: drag)
         .simultaneousGesture(DragGesture(minimumDistance: 16)
@@ -262,33 +261,18 @@ extension View {
 }
 
 
-/// Holds the player's glass and the tab's together so one flows into the other (iOS 26); a plain container before that.
-struct GlassMorphContainer<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View {
-        if #available(iOS 26.0, *) { GlassEffectContainer(spacing: 0) { content } } else { content }
-    }
-}
-
-/// The player's capsule glass, with the id the tab shares (the morph).
+/// The player's capsule glass. (It once shared a glass id with the tab so the capsule flowed into it; the morph left the player's text and buttons
+/// blurred and doubled after a tuck, LIME-150-fix6, so each is its own plain piece of glass.)
 struct PlayerGlass<S: InsettableShape>: ViewModifier {
     let shape: S
-    let space: Namespace.ID
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: shape).glassEffectID("call-mini", in: space)
-        } else {
-            content.limeGlass(in: shape)
-        }
-    }
+    func body(content: Content) -> some View { content.limeGlass(in: shape) }
 }
 
 /// The tucked tab, like iOS's own stashed-video tab: dark Liquid Glass (dark in light and dark mode) with a white chevron, flush to the screen
-/// edge and rounded on the inner side, only as tall as the player. Shares the player's glass id so the capsule visibly flows into it.
+/// edge and rounded on the inner side, only as tall as the player.
 struct TabGlass: ViewModifier {
     let edge: CallMiniPlayerTuck.Edge
     let reduceTransparency: Bool
-    let space: Namespace.ID
 
     private var shape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(topLeadingRadius: edge == .trailing ? 20 : 0, bottomLeadingRadius: edge == .trailing ? 20 : 0,
@@ -299,7 +283,7 @@ struct TabGlass: ViewModifier {
         if reduceTransparency {
             content.background(shape.fill(Color(white: 0.12)))
         } else if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.tint(Color.black.opacity(0.72)), in: shape).glassEffectID("call-mini", in: space)
+            content.glassEffect(.regular.tint(Color.black.opacity(0.72)), in: shape)
         } else {
             content.background(shape.fill(Color.black.opacity(0.6)))
         }
