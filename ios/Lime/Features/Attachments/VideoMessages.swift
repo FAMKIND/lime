@@ -61,7 +61,7 @@ enum VideoProcessing {
         let size = await displaySize(of: asset)
         let thumb = poster.map(AttachmentProcessing.thumbnail) ?? Data()
         let item = OutgoingAttachment(bytes: data, name: "Video.mp4", mime: "video/mp4", width: UInt32(size.width), height: UInt32(size.height),
-                                      durationMs: UInt32(seconds * 1000), thumb: thumb)
+                                      durationMs: UInt32(seconds * 1000), thumb: thumb, poster: poster.map(AttachmentProcessing.poster) ?? Data())
         return (item, poster)
     }
 
@@ -102,6 +102,9 @@ struct VideoTile: View {
                 Theme.surface
                 if let poster {
                     Image(uiImage: poster).resizable().scaledToFill()
+                } else if let sharp = UIImage(data: item.poster) {
+                    // The sender's real frame, sharp (LIME-152c).
+                    Image(uiImage: sharp).resizable().scaledToFill()
                 } else if let thumb = UIImage(data: item.thumb) {
                     Image(uiImage: thumb).resizable().scaledToFill().blur(radius: 8).clipped()
                 }

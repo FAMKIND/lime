@@ -252,7 +252,7 @@ extension ChatComposer {
     static var demoVideoDraft: DraftAttachment {
         let picture = ConversationStore.demoPicture(0.75, size: CGSize(width: 640, height: 360))
         let item = OutgoingAttachment(bytes: Data(count: 3_000), name: "Video.mp4", mime: "video/mp4", width: 640, height: 360, durationMs: 31_000,
-                                      thumb: AttachmentProcessing.thumbnail(picture))
+                                      thumb: AttachmentProcessing.thumbnail(picture), poster: Data())
         return DraftAttachment(outgoing: item, preview: picture)
     }
 

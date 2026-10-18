@@ -133,6 +133,8 @@ pub struct AttachmentInfo {
     pub duration_ms: Option<u32>,
     /// A tiny preview image (JPEG), empty when there is none.
     pub thumb: Vec<u8>,
+    /// A sharp cover frame for a video (about 480 px JPEG), empty when there is none (older messages: the blurred thumbnail is all there is).
+    pub poster: Vec<u8>,
     /// This phone holds the decrypted file.
     pub downloaded: bool,
     /// Removed from this phone on purpose (by hand or by "Keep media"): it cannot be downloaded again.
@@ -793,7 +795,7 @@ pub(crate) fn attachment_infos(conn: &Connection, message_id: &str) -> Vec<Attac
             let removed = attachments::is_removed(conn, message_id, &d.id);
             AttachmentInfo {
                 id: d.id, mime: d.mime, name: d.name, size: d.size, width: d.width, height: d.height, duration_ms: d.duration_ms,
-                thumb: d.thumb, downloaded, removed,
+                thumb: d.thumb, poster: d.poster, downloaded, removed,
             }
         })
         .collect()

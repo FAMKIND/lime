@@ -18,6 +18,8 @@ pub struct OutgoingAttachment {
     pub duration_ms: Option<u32>,
     /// A tiny preview (JPEG, at most 2 KB), or empty.
     pub thumb: Vec<u8>,
+    /// A video's sharp cover frame (JPEG, about 480 px, at most 30 KB), or empty.
+    pub poster: Vec<u8>,
 }
 
 /// How far a transfer has got.
@@ -32,7 +34,7 @@ pub struct TransferProgress {
 /// Text that goes with attachments is shorter, so the whole message stays within one mailbox item.
 const MAX_CAPTION_BYTES: usize = 8_000;
 /// All descriptors together, as JSON, stay under this.
-const MAX_DESCRIPTOR_BYTES: usize = 30_000;
+const MAX_DESCRIPTOR_BYTES: usize = 44_000;
 
 #[uniffi::export]
 impl LimeStore {
@@ -56,6 +58,7 @@ impl LimeStore {
                 || item.mime.len() > 100
                 || !item.mime.contains('/')
                 || item.thumb.len() > 2048
+                || item.poster.len() > files::MAX_POSTER
             {
                 return Err(StoreError::Rejected);
             }
@@ -70,8 +73,16 @@ impl LimeStore {
                 height: item.height,
                 duration_ms: item.duration_ms,
                 thumb: item.thumb,
+                poster: item.poster,
             };
             prepared.push((descriptor, item.bytes));
+        }
+        // The message has a size budget: when the posters do not all fit, the last ones go (their videos keep the blurred thumbnail).
+        while files::payload_value(&prepared.iter().map(|(d, _)| d.clone()).collect::<Vec<_>>()).to_string().len() > MAX_DESCRIPTOR_BYTES {
+            match prepared.iter_mut().rev().find(|(d, _)| !d.poster.is_empty()) {
+                Some((d, _)) => d.poster.clear(),
+                None => break,
+            }
         }
         let descriptors: Vec<Descriptor> = prepared.iter().map(|(d, _)| d.clone()).collect();
         if files::payload_value(&descriptors).to_string().len() > MAX_DESCRIPTOR_BYTES {
@@ -320,6 +331,7 @@ impl LimeStore {
                 height: preview.image_height,
                 duration_ms: None,
                 thumb: Vec::new(),
+                poster: Vec::new(),
             };
             (descriptor, Some(preview.image.clone()))
         });

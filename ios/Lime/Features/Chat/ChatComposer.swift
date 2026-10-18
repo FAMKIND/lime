@@ -213,7 +213,7 @@ struct ChatComposer: View {
     private func finishVoice() {
         guard let note = recorder.finish(), let onSendAttachments else { return }
         let voice = OutgoingAttachment(bytes: note.bytes, name: "Voice message.m4a", mime: "audio/mp4", width: nil, height: nil,
-                                       durationMs: UInt32(note.durationMs), thumb: Data(note.waveform))
+                                       durationMs: UInt32(note.durationMs), thumb: Data(note.waveform), poster: Data())
         onSendAttachments([voice], "")
     }
 

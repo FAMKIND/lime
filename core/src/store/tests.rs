@@ -466,7 +466,7 @@ mod protocol_state {
                 "DROP INDEX olm_sessions_by_peer; DROP TABLE olm_sessions;
                  CREATE TABLE olm_sessions (peer_user_id TEXT NOT NULL, peer_device_id TEXT NOT NULL, peer_identity_key TEXT NOT NULL,
                      session_pickle TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (peer_user_id, peer_identity_key));
-                 ALTER TABLE group_call_participants DROP COLUMN key_hash; ALTER TABLE group_call_participants DROP COLUMN key_index; ALTER TABLE group_call_participants DROP COLUMN rekeys_at_join; ALTER TABLE group_calls DROP COLUMN last_rekey_at; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded;
+                 ALTER TABLE group_call_participants DROP COLUMN key_hash; ALTER TABLE group_call_participants DROP COLUMN key_index; ALTER TABLE group_call_participants DROP COLUMN rekeys_at_join; ALTER TABLE group_calls DROP COLUMN last_rekey_at; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; ALTER TABLE message_attachments DROP COLUMN poster;
                  PRAGMA user_version = 27;",
             )
             .unwrap();

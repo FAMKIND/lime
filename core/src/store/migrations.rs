@@ -563,6 +563,8 @@ const MIGRATIONS: &[&str] = &[
          digest BLOB PRIMARY KEY,
          at     INTEGER NOT NULL
      );",
+    // 38 (LIME-152c): a video's sharp poster frame, inside the encrypted message like the thumbnail (older rows have none).
+    "ALTER TABLE message_attachments ADD COLUMN poster BLOB;",
 ];
 
 /// The schema version this build writes.

@@ -20,6 +20,9 @@ pub(crate) const MAX_BYTES: usize = 50 * 1024 * 1024;
 /// Attachments per message (an album of photos).
 pub(crate) const MAX_PER_MESSAGE: usize = 10;
 const MAX_THUMB: usize = 2048;
+/// A video's poster frame (LIME-152c): a sharp cover inside the encrypted message, at most this many bytes of JPEG. One that is larger is ignored
+/// on receipt (the blur shows), never a reason to refuse the message.
+pub(crate) const MAX_POSTER: usize = 30_000;
 
 /// What a message says about one attachment (all inside the encrypted message).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +38,8 @@ pub(crate) struct Descriptor {
     pub height: Option<u32>,
     pub duration_ms: Option<u32>,
     pub thumb: Vec<u8>,
+    /// A sharp JPEG cover for a video (about 480 px), or empty (older senders, other kinds of file).
+    pub poster: Vec<u8>,
 }
 
 impl Descriptor {
@@ -47,6 +52,7 @@ impl Descriptor {
         if let Some(h) = self.height { value["h"] = json!(h); }
         if let Some(d) = self.duration_ms { value["duration_ms"] = json!(d); }
         if !self.thumb.is_empty() { value["thumb"] = json!(vodozemac::base64_encode(&self.thumb)); }
+        if !self.poster.is_empty() { value["poster"] = json!(vodozemac::base64_encode(&self.poster)); }
         value
     }
 
@@ -64,7 +70,9 @@ impl Descriptor {
             None => Vec::new(),
             Some(t) => vodozemac::base64_decode(t).ok().filter(|b| b.len() <= MAX_THUMB)?,
         };
-        Some(Descriptor { id, key, digest, size, mime, name, width: number("w"), height: number("h"), duration_ms: number("duration_ms"), thumb })
+        // A poster that does not decode or is too big is left out: the message is still good, the cover just stays the blur.
+        let poster = text("poster").and_then(|t| vodozemac::base64_decode(t).ok()).filter(|b| b.len() <= MAX_POSTER).unwrap_or_default();
+        Some(Descriptor { id, key, digest, size, mime, name, width: number("w"), height: number("h"), duration_ms: number("duration_ms"), thumb, poster })
     }
 }
 
@@ -168,11 +176,12 @@ fn insert_as(conn: &Connection, message_id: &str, position: i64, d: &Descriptor,
     };
     conn.execute(
         "INSERT OR IGNORE INTO message_attachments
-           (attachment_id, message_id, position, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes, role)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+           (attachment_id, message_id, position, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes, role, poster)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             d.id, message_id, position, vodozemac::base64_encode(&d.key), d.digest, d.size as i64, d.mime, d.name,
-            d.width, d.height, d.duration_ms, if d.thumb.is_empty() { None } else { Some(&d.thumb) }, bytes.map(<[u8]>::to_vec).or(copied), role
+            d.width, d.height, d.duration_ms, if d.thumb.is_empty() { None } else { Some(&d.thumb) }, bytes.map(<[u8]>::to_vec).or(copied), role,
+            if d.poster.is_empty() { None } else { Some(&d.poster) }
         ],
     )
     .map_err(db_err)?;
@@ -193,12 +202,13 @@ fn from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(Descriptor, bool)> {
             height: r.get(7)?,
             duration_ms: r.get(8)?,
             thumb: r.get::<_, Option<Vec<u8>>>(9)?.unwrap_or_default(),
+            poster: r.get::<_, Option<Vec<u8>>>(11)?.unwrap_or_default(),
         },
         r.get::<_, bool>(10)?,
     ))
 }
 
-const COLUMNS: &str = "attachment_id, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes IS NOT NULL";
+const COLUMNS: &str = "attachment_id, key, digest, size, mime, name, width, height, duration_ms, thumb, bytes IS NOT NULL, poster";
 
 /// A message's files in order (not its link preview's picture), with whether this phone holds each one's bytes.
 pub(crate) fn for_message(conn: &Connection, message_id: &str) -> Result<Vec<(Descriptor, bool)>, StoreError> {
@@ -363,7 +373,7 @@ mod tests {
     fn a_descriptor_survives_json_and_a_malformed_one_is_refused() {
         let d = Descriptor {
             id: id(), key: new_key(), digest: digest_hex(b"x"), size: 1, mime: "image/jpeg".into(), name: "a.jpg".into(),
-            width: Some(10), height: Some(20), duration_ms: None, thumb: vec![1, 2, 3],
+            width: Some(10), height: Some(20), duration_ms: None, thumb: vec![1, 2, 3], poster: vec![4, 5, 6],
         };
         assert_eq!(Descriptor::parse(&d.to_json()), Some(d.clone()));
         let mut bad = d.to_json();
@@ -378,6 +388,17 @@ mod tests {
         let mut thumb = d.to_json();
         thumb["thumb"] = json!(vodozemac::base64_encode(vec![0u8; 3000]));
         assert_eq!(Descriptor::parse(&thumb), None, "an oversized thumbnail");
+        // A poster over its bound is ignored, not a reason to refuse the message; a good one is kept; none is none.
+        let mut poster = d.to_json();
+        poster["poster"] = json!(vodozemac::base64_encode(vec![1u8; MAX_POSTER + 1]));
+        assert_eq!(Descriptor::parse(&poster).map(|p| p.poster.len()), Some(0), "an oversized poster is left out");
+        poster["poster"] = json!(vodozemac::base64_encode(vec![1u8; MAX_POSTER]));
+        assert_eq!(Descriptor::parse(&poster).map(|p| p.poster.len()), Some(MAX_POSTER));
+        poster["poster"] = json!("not base64 !!!");
+        assert_eq!(Descriptor::parse(&poster).map(|p| p.poster.len()), Some(0), "a poster that does not decode is left out");
+        let mut without = d.to_json();
+        without.as_object_mut().unwrap().remove("poster");
+        assert_eq!(Descriptor::parse(&without).map(|p| p.poster.len()), Some(0), "an older message has none");
         assert_eq!(parse_payload(&json!({ "attachments": vec![d.to_json(); 11] })), None, "too many");
         assert_eq!(parse_payload(&json!({ "text": "x" })), Some(vec![]));
     }

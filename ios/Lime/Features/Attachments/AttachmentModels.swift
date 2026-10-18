@@ -14,6 +14,8 @@ struct AttachmentItem: Identifiable, Hashable, Sendable {
     let durationMs: Int?
     /// A tiny blurred preview, shown until the picture itself is here.
     let thumb: Data
+    /// A sharp cover frame for a video (LIME-152c); empty for older videos, which keep the blurred thumbnail.
+    var poster = Data()
     var downloaded: Bool
     /// Removed from this phone on purpose ("Media removed"); it is not fetched again.
     var removed = false
@@ -47,6 +49,7 @@ struct AttachmentItem: Identifiable, Hashable, Sendable {
         self.init(id: info.id, mime: info.mime, name: info.name, size: Int64(info.size), width: info.width.map(Int.init), height: info.height.map(Int.init),
                   durationMs: info.durationMs.map(Int.init), thumb: info.thumb, downloaded: info.downloaded)
         removed = info.removed
+        poster = info.poster
     }
 }
 
@@ -95,6 +98,8 @@ enum AttachmentProcessing {
     static let maxPhotoEdge: CGFloat = 2048
     static let maxFileBytes = 50 * 1024 * 1024
     static let maxThumbBytes = 2048
+    /// A video's cover: JPEG, about 480 px on the long side, at most this many bytes (the core's bound is 30 KB; the message has a budget too).
+    static let maxPosterBytes = 24_000
     static let maxPerMessage = 10
 
     enum Problem: Error, Equatable { case tooLarge, unreadable }
@@ -105,7 +110,7 @@ enum AttachmentProcessing {
         let upright = redraw(image, maxEdge: maxPhotoEdge)
         guard let jpeg = upright.jpegData(compressionQuality: 0.8), jpeg.count <= maxFileBytes else { return nil }
         return OutgoingAttachment(bytes: jpeg, name: name, mime: "image/jpeg", width: UInt32(upright.size.width * upright.scale), height: UInt32(upright.size.height * upright.scale),
-                                  durationMs: nil, thumb: thumbnail(image))
+                                  durationMs: nil, thumb: thumbnail(image), poster: Data())
     }
 
     /// At most `maxEdge` pixels on the long edge, orientation applied, no metadata.
@@ -136,6 +141,17 @@ enum AttachmentProcessing {
         return Data()
     }
 
+    /// A sharp cover frame for a video: 480 px on the long side at quality 0.7, made smaller until it fits `maxPosterBytes`.
+    static func poster(_ image: UIImage) -> Data {
+        for edge in [480, 420, 360, 300, 240] as [CGFloat] {
+            let small = redraw(image, maxEdge: edge)
+            for quality in [0.7, 0.55, 0.4] as [CGFloat] {
+                if let data = small.jpegData(compressionQuality: quality), data.count <= maxPosterBytes { return data }
+            }
+        }
+        return Data()
+    }
+
     /// A file from the document picker (already copied into the app's reach by the picker).
     static func file(at url: URL) throws -> OutgoingAttachment {
         let scoped = url.startAccessingSecurityScopedResource()
@@ -149,9 +165,22 @@ enum AttachmentProcessing {
         let mime = type?.preferredMIMEType ?? "application/octet-stream"
         // A picture sent as a file is still sent as a picture.
         if type?.conforms(to: .image) == true, let image = UIImage(data: data), let photo = photo(image, name: url.lastPathComponent) { return photo }
-        return OutgoingAttachment(bytes: data, name: url.lastPathComponent, mime: mime, width: nil, height: nil, durationMs: nil, thumb: Data())
+        return OutgoingAttachment(bytes: data, name: url.lastPathComponent, mime: mime, width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data())
     }
 
     /// Metadata kinds found in encoded image data (a processed photo has none of the personal ones).
     static func personalMetadata(in data: Data) -> [String] { PhotoProcessing.personalMetadata(in: data) }
+}
+
+
+/// Which picture stands for an attachment in a grid or a bubble (LIME-152c): the file itself when this phone has it, else a video's sharp poster,
+/// else the tiny blurred thumbnail.
+enum AttachmentCover: Equatable {
+    case full, poster, thumb, none
+
+    static func pick(kind: AttachmentItem.Kind, hasFull: Bool, hasPoster: Bool, hasThumb: Bool) -> AttachmentCover {
+        if hasFull { return .full }
+        if kind == .video, hasPoster { return .poster }
+        return hasThumb ? .thumb : .none
+    }
 }

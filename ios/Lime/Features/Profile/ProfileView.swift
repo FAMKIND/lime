@@ -430,10 +430,24 @@ struct CallLine: View {
 
 private struct MediaCell: View {
     let item: AttachmentItem
+    @Environment(ConversationStore.self) private var store
+    /// The picture itself when this phone already has it (never fetched just to fill the grid).
+    @State private var full: UIImage?
+
+    /// Downloaded picture, else a video's sharp poster, else the tiny thumbnail.
+    private var best: UIImage? {
+        switch AttachmentCover.pick(kind: item.kind, hasFull: full != nil, hasPoster: !item.poster.isEmpty, hasThumb: !item.thumb.isEmpty) {
+        case .full: return full
+        case .poster: return UIImage(data: item.poster)
+        case .thumb: return UIImage(data: item.thumb)
+        case .none: return nil
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                if let image = UIImage(data: item.thumb) { Image(uiImage: image).resizable().scaledToFill() } else { Color(white: 0.3) }
+                if let image = best { Image(uiImage: image).resizable().scaledToFill() } else { Color(white: 0.3) }
                 if item.kind == .video { Image(systemName: "play.fill").foregroundStyle(.white).font(.title3) }
             }
             .frame(width: geo.size.width, height: geo.size.width).clipped()
@@ -441,6 +455,10 @@ private struct MediaCell: View {
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .accessibilityLabel(item.kind == .video ? "Video" : "Photo")
+        .task(id: item.id) {
+            // Only what is already on the phone: a picture that was never downloaded stays the thumbnail.
+            if item.kind == .image, item.downloaded, !item.removed { full = await store.image(for: item) }
+        }
     }
 }
 

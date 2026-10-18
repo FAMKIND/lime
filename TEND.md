@@ -6675,3 +6675,21 @@ Brief: LIME-152. Visual; the user checks on the phone (maybe the next day).
 All unit tests and `EmergencyUITests` pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
 
 **Gate (the user, maybe the next day):** the group pictures read well at every size; the pin matches; the panel folds.
+
+## LIME-152c
+
+Brief: LIME-152c (a video shows a real frame, not a blur; the Shared grid is sharp). No server change.
+
+**Phase 1.** The thumbnail (`thumb`, at most 2 KB) is made on the sender's phone (`AttachmentProcessing.thumbnail`, a ~40 px JPEG) and travels in the attachment descriptor inside the encrypted message (`core/src/store/attachments.rs`, `Descriptor`), kept in the `message_attachments` table. An unknown descriptor field is ignored by an older app (the parser only reads the fields it knows), so a new optional `poster` is safe. The size budget: the descriptors of one message are capped at **30 000 bytes of JSON** and the server's item limit is 64 KiB with a caption of up to 8 KB; base64 makes a 40 KB poster 53 KB, so the brief's "≤ ~40 KB" cannot be met as stated. **Decided within the brief's intent:** a poster is at most **30 000 bytes** of JPEG (the phone aims at 24 KB: 480 px, quality 0.7, smaller until it fits), and the descriptor budget is raised to **44 000 bytes**. The Shared grid took its image from the thumbnail only.
+
+**Changes.**
+- [x] 1. Core: `Descriptor.poster` (optional, in the message, base64 like the thumbnail), `OutgoingAttachment.poster` / `AttachmentInfo.poster` (UniFFI), migration 38 (`message_attachments.poster`). A poster over 30 000 bytes is refused at the sender and **ignored (not a reason to refuse the message)** on receipt; one that does not decode is ignored; when several videos' posters do not all fit the message budget the last ones are dropped (their videos keep the blur). Swift: `AttachmentProcessing.poster` (480 px, ≤ 24 KB), set for a video at send; the video bubble shows the sender's local frame, else the poster, else the blur.
+- [x] 2. The Shared grid (`MediaCell`): the picture itself when this phone already has it (a photo that is downloaded), else a video's poster, else the thumbnail; never a download just to fill the grid (`AttachmentCover.pick`).
+- [x] 3. `docs/api-v2.md` §6: the poster's bound, that it is end-to-end encrypted like the thumbnail, the budget and the fall-backs.
+- [x] 4. Tests: core (a poster travels inside the message; over 30 KB refused; three videos with 24 KB posters keep the first and drop the last; an older video with no poster keeps its thumbnail; the parser leaves out an oversized or undecodable poster), Swift (a poster is about 480 px and within 24 KB, much bigger than the 2 KB blur; the cover is the file, then the poster, then the thumbnail; an older message has no poster).
+
+**Verification.** Core 274 + integration 23, Android OK, Swift unit tests and `LimeUITestsMessages` pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini. **Not done:** screenshots of a video bubble before and after and of the Shared grid (the demo's videos carry no real frame); they are for the real phones.
+
+**Gate (the user):** send a video from the 13 mini: the bubble shows a sharp frame on both phones (on the 13 mini at once; on Jean's once the message arrives); a profile's Shared grid is sharp for photos you have and for videos with a poster. Videos sent before this build keep the blur.
+
+For plot: the budget numbers above (poster ≤ 30 000 bytes, descriptors ≤ 44 000), not the brief's 40 KB.

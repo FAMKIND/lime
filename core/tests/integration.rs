@@ -1063,8 +1063,8 @@ fn attachments_through_the_real_server_are_ciphertext_delete_after_the_last_fetc
             chat.clone(),
             "the files".into(),
             vec![
-                lime_core::OutgoingAttachment { bytes: photo.clone(), name: "photo.jpg".into(), mime: "image/jpeg".into(), width: Some(10), height: Some(10), duration_ms: None, thumb: vec![1; 200] },
-                lime_core::OutgoingAttachment { bytes: document.clone(), name: "plan.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![] },
+                lime_core::OutgoingAttachment { bytes: photo.clone(), name: "photo.jpg".into(), mime: "image/jpeg".into(), width: Some(10), height: Some(10), duration_ms: None, thumb: vec![1; 200], poster: vec![] },
+                lime_core::OutgoingAttachment { bytes: document.clone(), name: "plan.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![] },
             ],
             None,
         )
@@ -1159,7 +1159,7 @@ fn a_voice_note_and_a_video_travel_as_ciphertext_and_a_download_survives_an_inte
     let video: Vec<u8> = (0..3_200_000u32).map(|i| (i.wrapping_mul(2246822519) >> 24) as u8).collect();   // four chunks
     let chat = alice_store.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
     let make = |bytes: &Vec<u8>, name: &str, mime: &str, duration: u32, thumb: Vec<u8>| lime_core::OutgoingAttachment {
-        bytes: bytes.clone(), name: name.into(), mime: mime.into(), width: None, height: None, duration_ms: Some(duration), thumb,
+        bytes: bytes.clone(), name: name.into(), mime: mime.into(), width: None, height: None, duration_ms: Some(duration), thumb, poster: vec![],
     };
     alice_store.send_attachments(chat.clone(), "".into(), vec![make(&voice, "Voice message.m4a", "audio/mp4", 12_000, (0..64).collect())], None).unwrap();
     alice_store.send_attachments(chat.clone(), "".into(), vec![make(&video, "clip.mp4", "video/mp4", 30_000, vec![7; 300])], None).unwrap();
@@ -1275,7 +1275,7 @@ fn reactions_edit_and_delete_for_everyone_through_the_real_server_with_two_accou
     let chat_a = alice_store.start_dm(bob.id.clone(), "Bob Brown".into()).unwrap();
     let sent = alice_store.queue_text(chat_a.clone(), "the original words".into()).unwrap();
     let attached = alice_store
-        .send_attachments(chat_a.clone(), "with a file".into(), vec![lime_core::OutgoingAttachment { bytes: vec![5u8; 4000], name: "f.bin".into(), mime: "application/octet-stream".into(), width: None, height: None, duration_ms: None, thumb: vec![] }], None)
+        .send_attachments(chat_a.clone(), "with a file".into(), vec![lime_core::OutgoingAttachment { bytes: vec![5u8; 4000], name: "f.bin".into(), mime: "application/octet-stream".into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![] }], None)
         .unwrap();
     alice_store.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
     bob_store.sync(transport.clone(), bob.token.clone()).unwrap();
@@ -1329,7 +1329,7 @@ fn forward_link_card_and_my_own_chat_through_the_real_server() {
     let to_carol = a.start_dm(carol.id.clone(), "Carol Cruz".into()).unwrap();
 
     // A photo to Bob, then forwarded to Carol: the same file on the server, shared (no second upload).
-    let file = lime_core::OutgoingAttachment { bytes: (0..5000u32).map(|i| (i % 253) as u8).collect(), name: "p.jpg".into(), mime: "image/jpeg".into(), width: Some(10), height: Some(10), duration_ms: None, thumb: vec![] };
+    let file = lime_core::OutgoingAttachment { bytes: (0..5000u32).map(|i| (i % 253) as u8).collect(), name: "p.jpg".into(), mime: "image/jpeg".into(), width: Some(10), height: Some(10), duration_ms: None, thumb: vec![], poster: vec![] };
     let sent = a.send_attachments(to_bob.clone(), "look".into(), vec![file.clone()], None).unwrap();
     a.deliver_queued(transport.clone(), alice.token.clone()).unwrap();
     let attachment_rows = || admin.every_table().into_iter().find(|(t, _)| t == "attachments").map(|(_, rows)| serde_json::from_str::<serde_json::Value>(&rows).map(|v| v.as_array().map_or(0, Vec::len)).unwrap_or(0));
@@ -1389,8 +1389,8 @@ fn a_forward_of_files_through_the_real_server_is_sent_on_the_senders_phone_and_a
     sync(2);
     let to_bo = stores[0].start_dm(accounts[1].id.clone(), "Bo Brown".into()).unwrap();
     let pdf: Vec<u8> = (0..1_300_000u32).map(|i| (i.wrapping_mul(2654435761) >> 24) as u8).collect();
-    let pic = |seed: u8| lime_core::OutgoingAttachment { bytes: vec![seed; 3000], name: format!("{seed}.jpg"), mime: "image/jpeg".into(), width: Some(10), height: Some(10), duration_ms: None, thumb: vec![] };
-    let file = stores[0].send_attachments(to_bo.clone(), "".into(), vec![lime_core::OutgoingAttachment { bytes: pdf.clone(), name: "plan.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![] }], None).unwrap();
+    let pic = |seed: u8| lime_core::OutgoingAttachment { bytes: vec![seed; 3000], name: format!("{seed}.jpg"), mime: "image/jpeg".into(), width: Some(10), height: Some(10), duration_ms: None, thumb: vec![], poster: vec![] };
+    let file = stores[0].send_attachments(to_bo.clone(), "".into(), vec![lime_core::OutgoingAttachment { bytes: pdf.clone(), name: "plan.pdf".into(), mime: "application/pdf".into(), width: None, height: None, duration_ms: None, thumb: vec![], poster: vec![] }], None).unwrap();
     let album = stores[0].send_attachments(to_bo.clone(), "trip".into(), vec![pic(1), pic(2), pic(3)], None).unwrap();
     deliver(0).unwrap();
     sync(1);

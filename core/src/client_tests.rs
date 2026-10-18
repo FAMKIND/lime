@@ -2080,6 +2080,7 @@ fn pic(seed: u8, size: usize) -> crate::OutgoingAttachment {
         height: Some(480),
         duration_ms: None,
         thumb: vec![seed; 300],
+        poster: Vec::new(),
     }
 }
 
@@ -2221,6 +2222,46 @@ fn attachment_limits_and_attachment_only_messages() {
 }
 
 #[test]
+fn a_videos_poster_travels_inside_the_message_the_budget_drops_the_last_ones_and_a_message_without_one_still_has_its_thumbnail() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let video = |seed: u8, poster: usize| crate::OutgoingAttachment {
+        bytes: vec![seed; 5_000],
+        name: "Video.mp4".into(),
+        mime: "video/mp4".into(),
+        width: Some(1280),
+        height: Some(720),
+        duration_ms: Some(12_000),
+        thumb: vec![seed; 400],
+        poster: vec![seed; poster],
+    };
+    let chat = format!("dm:{}", bob.user);
+    // A poster over its bound is refused at the sender.
+    assert!(alice.store.send_attachments(chat.clone(), "".into(), vec![video(1, 30_001)], None).is_err(), "a poster over 30 KB");
+    // One video with a 24 KB poster: it fits, and arrives as sent.
+    let one = alice.store.send_attachments(chat.clone(), "".into(), vec![video(2, 24_000)], None).unwrap();
+    assert_eq!(one.attachments[0].poster.len(), 24_000);
+    // Three videos with 24 KB posters do not all fit one message: the first keeps its poster, the later ones fall back to the blurred thumbnail.
+    let three = alice.store.send_attachments(chat.clone(), "".into(), vec![video(3, 24_000), video(4, 24_000), video(5, 24_000)], None).unwrap();
+    let kept: Vec<usize> = three.attachments.iter().map(|a| a.poster.len()).collect();
+    assert_eq!(kept[0], 24_000, "the first poster is kept: {kept:?}");
+    assert_eq!(*kept.last().unwrap(), 0, "the last one is dropped to fit: {kept:?}");
+    assert!(three.attachments.iter().all(|a| a.thumb.len() == 400), "every video keeps its thumbnail");
+    // A video with no poster (an older sender) is as it always was.
+    let old = alice.store.send_attachments(chat.clone(), "".into(), vec![video(6, 0)], None).unwrap();
+    assert!(old.attachments[0].poster.is_empty() && old.attachments[0].thumb.len() == 400);
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let received = bob.store.list_messages(format!("dm:{}", alice.user)).unwrap();
+    let got = |len: usize| received.iter().find(|m| m.attachments.first().map(|a| a.poster.len()) == Some(len) && len > 0).is_some();
+    assert!(got(24_000), "Bob has the sharp cover");
+    let plain = received.iter().find(|m| m.attachments.first().map(|a| a.name.as_str()) == Some("Video.mp4") && m.attachments[0].poster.is_empty()).expect("a video with the blur only");
+    assert_eq!(plain.attachments[0].thumb.len(), 400);
+}
+
+#[test]
 fn a_group_member_can_send_a_photo_and_every_member_can_download_it() {
     let server = FakeServer::new();
     let (alice, bob, carol, transport, chat) = team(&server);
@@ -2262,6 +2303,7 @@ fn an_interrupted_download_resumes_with_only_the_missing_chunks_and_reports_prog
         height: Some(720),
         duration_ms: Some(30_000),
         thumb: vec![9; 400],
+        poster: Vec::new(),
     };
     alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![video.clone()], None).unwrap();
     deliver(&alice, &transport);
@@ -2326,6 +2368,7 @@ fn an_upload_reports_progress_and_a_voice_note_carries_its_waveform_and_duration
         height: None,
         duration_ms: Some(23_500),
         thumb: (0..64u8).map(|i| i * 2).collect(),   // the waveform: one byte per bar
+        poster: Vec::new(),
     };
     let sent = alice.store.send_attachments(format!("dm:{}", bob.user), "".into(), vec![voice.clone()], None).unwrap();
     assert_eq!(sent.text, "");
