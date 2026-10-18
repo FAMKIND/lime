@@ -886,7 +886,7 @@ struct MessageBubble: View {
     private func lift() {
         guard onActions != nil else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        menuFrameSink?(contentFrame)
+        menuFrameSink?.set(contentFrame)
         onActions?()
     }
 

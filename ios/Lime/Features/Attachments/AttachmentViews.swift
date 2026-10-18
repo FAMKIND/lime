@@ -439,9 +439,15 @@ extension EnvironmentValues {
     /// Select mode: media do not react to taps (the row toggles instead).
     @Entry var mediaSelecting = false
     /// Where the pressed bubble is on the screen: set by the bubble at a long-press, read by the message menu (LIME-152d).
-    @Entry var menuFrameSink: ((CGRect) -> Void)? = nil
+    @Entry var menuFrameSink: MenuFrameSink? = nil
     /// The conversation the visible messages are in (so the picture viewer can react to the message).
     @Entry var chatConversationID: Conversation.ID? = nil
+}
+
+/// Tells the message menu where the pressed bubble is. Always equal to another (it only calls the same state), so the environment does not refresh needlessly.
+struct MenuFrameSink: Equatable {
+    let set: (CGRect) -> Void
+    static func == (lhs: MenuFrameSink, rhs: MenuFrameSink) -> Bool { true }
 }
 
 /// The action a long-press on media runs, comparable (by message) so the environment does not refresh needlessly.

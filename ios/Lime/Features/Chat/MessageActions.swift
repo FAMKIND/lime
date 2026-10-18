@@ -46,7 +46,7 @@ struct MessageActionsHost: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .environment(\.menuFrameSink) { state.menuFrame = $0 }
+            .environment(\.menuFrameSink, MenuFrameSink { state.menuFrame = $0 })
             .overlay {
                 if let message = state.menu { menu(for: message) }
             }
