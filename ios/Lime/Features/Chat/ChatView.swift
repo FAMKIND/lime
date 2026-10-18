@@ -351,13 +351,14 @@ struct ChatView: View {
         }
     }
 
-    /// A one-to-one chat's header (the avatar or the name), and the ⋯ menu's Profile, open the person's profile.
+    /// A one-to-one chat's header (the avatar or the name), and the ⋯ menu's Profile, open the person's profile; in Note to Self, your own.
     private func canOpenProfile(_ conversation: Conversation) -> Bool {
-        !conversation.isGroup && !conversation.isRequest && conversation.id != store.selfChatID && conversation.members.first != nil
+        !conversation.isGroup && !conversation.isRequest && conversation.members.first != nil
     }
 
     private func openProfile(_ conversation: Conversation) {
         guard canOpenProfile(conversation), let person = conversation.members.first else { return }
+        if conversation.id == store.selfChatID { store.openMyProfile(); return }
         store.path.append(ProfileRoute(userID: person.id, name: conversation.title, conversationID: conversation.id))
     }
 

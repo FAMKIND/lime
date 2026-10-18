@@ -1039,6 +1039,12 @@ final class ConversationStore {
         case "attachments", "attachments-draft", "attachments-media", "attachments-remote", "attachment-viewer":
             loadDemoAttachments(draft: screen == "attachments-draft", screen: screen ?? "attachments")
             path.append("dm:att")
+        case "note-to-self":
+            let myself = meProvider()
+            conversations = [Conversation(id: "dm:\(myself.id)", title: myself.name, members: [myself], messages: [
+                Message(id: "n1", senderID: nil, text: "Buy markers", date: Date().addingTimeInterval(-300), state: .sent),
+            ])]
+            path.append("dm:\(myself.id)")
         case "chat-verified":
             let grace = Person(id: "grace", name: "Grace Hopper")
             conversations = [Conversation(id: "dm:grace", title: grace.name, members: [grace], messages: [

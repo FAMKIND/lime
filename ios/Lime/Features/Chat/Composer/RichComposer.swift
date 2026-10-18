@@ -208,43 +208,62 @@ final class ComposerTextView: UITextView {
         insertText(string) // plain text only: no one else's styling comes along
     }
 
-    /// Shows or hides the toolbar that sits above the keyboard.
+    /// When all the text fits, the text view shows it from the top (a stale scroll offset after a delete left it scrolled by lines that are gone).
+    func settleScroll() {
+        let room = bounds.height - adjustedContentInset.top - adjustedContentInset.bottom
+        if contentSize.height <= room + 0.5, contentOffset.y != -adjustedContentInset.top { setContentOffset(CGPoint(x: 0, y: -adjustedContentInset.top), animated: false) }
+    }
+
+    /// Shows or hides the toolbar that sits above the keyboard. The strip it lives in is installed once, at height 0, and only changes its height
+    /// (LIME-152a): swapping the accessory in and out and reloading the input views made the keyboard drop and come back every time the selection
+    /// started or ended, and the composer, following it, could end up half under the keyboard.
     func setToolbar(visible: Bool, model: RichComposerModel) {
-        if visible, inputAccessoryView == nil {
+        if accessory == nil {
             let view = FormattingAccessory(model: model)
             accessory = view
             inputAccessoryView = view
-            reloadInputViews()
-        } else if !visible, inputAccessoryView != nil {
-            inputAccessoryView = nil
-            accessory = nil
-            reloadInputViews()
         }
+        (accessory as? FormattingAccessory)?.setShown(visible)
     }
 }
 
 /// The toolbar's home: a clear strip the keyboard carries, holding the SwiftUI capsule.
 final class FormattingAccessory: UIView {
     private let host: UIHostingController<FormattingToolbar>
+    private var heightConstraint: NSLayoutConstraint!
+    static let shownHeight: CGFloat = 60
 
     init(model: RichComposerModel) {
         host = UIHostingController(rootView: FormattingToolbar(model: model))
-        super.init(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
-        autoresizingMask = .flexibleHeight
+        super.init(frame: CGRect(x: 0, y: 0, width: 320, height: 0))
+        translatesAutoresizingMaskIntoConstraints = false
+        heightConstraint = heightAnchor.constraint(equalToConstant: 0)
+        heightConstraint.isActive = true
         backgroundColor = .clear
+        clipsToBounds = true
         host.view.backgroundColor = .clear
+        host.view.alpha = 0
         host.safeAreaRegions = []
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addSubview(host.view)
         NSLayoutConstraint.activate([
             host.view.leadingAnchor.constraint(equalTo: leadingAnchor), host.view.trailingAnchor.constraint(equalTo: trailingAnchor),
-            host.view.topAnchor.constraint(equalTo: topAnchor), host.view.bottomAnchor.constraint(equalTo: bottomAnchor),
+            host.view.topAnchor.constraint(equalTo: topAnchor), host.view.heightAnchor.constraint(equalToConstant: Self.shownHeight),
         ])
+    }
+
+    /// The strip is as tall as the toolbar while it shows and nothing while it does not; only the height changes.
+    func setShown(_ shown: Bool) {
+        let target: CGFloat = shown ? Self.shownHeight : 0
+        guard heightConstraint.constant != target else { return }
+        heightConstraint.constant = target
+        host.view.alpha = shown ? 1 : 0
+        setNeedsLayout()
+        layoutIfNeeded()
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
-    override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: 60) }
 }
 
 struct RichComposerField: UIViewRepresentable {
@@ -359,6 +378,8 @@ struct RichComposerField: UIViewRepresentable {
             if textView.selectedRange != selection { textView.selectedRange = selection }
             if selection.length == 0 { setTyping(textView, caret: selection.location) }
             model.didEdit()
+            // After a delete the text may fit again: the text view's own content goes back to the top (it scrolls itself, never its container).
+            DispatchQueue.main.async { [weak textView] in (textView as? ComposerTextView)?.settleScroll() }
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {

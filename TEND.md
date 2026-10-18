@@ -6643,3 +6643,19 @@ Brief: LIME-161 (new mesh packets go out at once, in the order they were made). 
 **Device check: not yet run** (the 13 mini offline, Bluetooth on, in a chat with Jean; send a message then immediately react, 3 times: each message on Jean's phone within about 1 s and its reaction right after; the 13 mini's `mesh_queued` → `mesh_passed` ≤ 1 s).
 
 For plot: (a)–(c) above; the measured times follow the device check.
+
+## LIME-152a
+
+Brief: LIME-152a (the composer never hides under the keyboard; Note to Self opens your profile).
+
+**(2) Note to Self.** `ChatView.canOpenProfile` excluded the self chat (`conversation.id != store.selfChatID`), so the header tap and the ⋯ Profile did nothing there. Now both open your own profile (`store.openMyProfile()`, the same screen as your header avatar); "nothing to block or label" in that chat's menu is kept. New debug demo screen `note-to-self`; a UI test taps the header and asserts the profile screen opens. **Passes.**
+
+**(1) The keyboard and the composer: NOT reproduced; a likely cause fixed, unproven.**
+- Phase 1: I could not reproduce "half the composer under the keyboard" in the simulator (iPhone 13 mini, iOS 27) with: a 6-line draft, select all + delete, partial deletes, with the formatting row open, repeated 3 times, sampling the composer's and the keyboard's frames every 100 ms after the delete: the tool row stayed above the keyboard throughout (the first 200 ms after a delete read as the keyboard off screen, but that also happens after a one-character delete with no selection, so I take it for the test harness, not the app). I did not try an accessibility text size or a real device.
+- What I did find that fits "sometimes": the formatting toolbar is the text view's `inputAccessoryView`, and it was **swapped in and out with `reloadInputViews()` every time the selection started or ended** (so exactly when you select, then delete): that re-lays out the keyboard, a plausible source of a race with the composer shrinking. Now the strip is installed once at height 0 and only changes its height (no reload, no keyboard re-layout).
+- Also: after a delete the text view goes back to showing its content from the top when it all fits (`settleScroll`), so a stale scroll offset cannot hold the composer's own content scrolled; the text view scrolls itself, never its container.
+- Tests: `Composer152aUITests`: a six-line draft, select all, delete, a partial delete, and the formatting row open then delete: the add, emoji and Aa buttons are hittable and above the keyboard. They pass (they also passed before the change, since the bug does not show in the simulator). All `LimeUITestsMessages` (the composer and formatting tests) and the unit tests pass; build 0 warnings of ours.
+
+**Installed** on Jean's iPhone, the iPad and the 13 mini.
+
+**Gate (the user, the 13 mini):** select-all + delete in a long draft (and in replies) never hides the tool row; Note to Self's avatar opens your profile. If the composer still goes under the keyboard, tell me what you did just before (the text size, whether the formatting row was open, the keyboard type) and I will chase it on the phone.
