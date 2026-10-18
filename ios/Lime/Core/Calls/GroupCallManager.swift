@@ -246,6 +246,9 @@ final class GroupCallManager {
     /// Starts a call in a group (or joins the one that is on) and connects. `false` when another call is going or the core refuses.
     @discardableResult
     func start(conversationID: String, title: String, video: Bool) async -> Bool {
+        #if DEBUG
+        await endGhostNow()
+        #endif
         guard phase == .idle, !busy, !isOtherCallActive() else { notice = "End your current call to start another."; return false }
         busy = true
         defer { busy = false }
@@ -263,6 +266,9 @@ final class GroupCallManager {
     /// Joins a live call (the chat's Join, a ring answered).
     @discardableResult
     func join(callID: String, conversationID: String, title: String, video: Bool, withVideo: Bool? = nil) async -> Bool {
+        #if DEBUG
+        await endGhostNow()
+        #endif
         guard phase == .idle, !busy else { return false }
         if isOtherCallActive() { notice = "End your current call to join this one."; return false }
         busy = true
@@ -740,10 +746,52 @@ final class GroupCallManager {
     /// Hang up.
     func leave() async { await finish(notify: true) }
 
+    #if DEBUG
+    @ObservationIgnored private var ghostMedia: GroupCallMedia?
+    @ObservationIgnored private var ghostTask: Task<Void, Never>?
+
+    /// A phone that has left a call but stays connected to its LiveKit room with the keys it had (the review's test that someone who left cannot read
+    /// on after the others renewed their keys): it logs, every 5 s, the frames it can still decrypt per person, and each frame cryptor state.
+    private func startGhost(_ media: GroupCallMedia, names: [String: String]) {
+        endGhost()
+        ghostMedia = media
+        FrameProbe.keepsTracksFlowing = true
+        _ = media.frameCounts()   // attach the counters now, while the pictures still flow
+        diag.log("GHOST: left the call, still in the room with the old keys")
+        media.onEvent = { [weak self] event in
+            guard case .secured(let id, _, let state) = event else { return }
+            self?.diag.log("GHOST frame cryptor \(names[id] ?? String(id.prefix(4))) \(state)")
+        }
+        ghostTask = Task { @MainActor [weak self] in
+            var last: [String: Int] = [:]
+            for _ in 0..<72 {
+                try? await Task.sleep(for: .seconds(5))
+                guard let self, !Task.isCancelled, let media = self.ghostMedia else { return }
+                let now = media.frameCounts()
+                let parts = now.map { id, count in "\(names[id] ?? String(id.prefix(4)))=\(count - (last[id] ?? 0)) frames" }.sorted()
+                last = now
+                self.diag.log("GHOST probe (frames decrypted in the last 5 s): \(parts.joined(separator: " "))")
+            }
+            await self?.endGhostNow()
+        }
+    }
+
+    private func endGhost() { Task { await endGhostNow() } }
+
+    private func endGhostNow() async {
+        ghostTask?.cancel(); ghostTask = nil
+        FrameProbe.keepsTracksFlowing = false
+        if let media = ghostMedia { ghostMedia = nil; await media.disconnect(); diag.log("GHOST: ended") }
+    }
+    #endif
+
     private func finish(notify: Bool, tellCore: Bool = true) async {
         guard phase != .idle || !callID.isEmpty else { return }
         let id = callID
         let media = self.media
+        #if DEBUG
+        let ghostNames = Dictionary(uniqueKeysWithValues: tiles.map { ($0.id, $0.name) })
+        #endif
         diag.log("group call: leaving")
         poller?.cancel()
         probe?.cancel()
@@ -763,7 +811,14 @@ final class GroupCallManager {
         minimized = false
         speakerOn = false
         if notify { system.reportEnded(callID: Self.systemID(id), answeredOrOutgoing: true) }
+        #if DEBUG
+        // LIME-158 section 3(a): a leaver that stays in the LiveKit room with its old keys and takes no part in the key exchange.
+        if notify, ProcessInfo.processInfo.arguments.contains("-lime-ghost-leave"), let media {
+            startGhost(media, names: ghostNames)
+        } else { await media?.disconnect() }
+        #else
         await media?.disconnect()
+        #endif
         if tellCore { await core.leave(callID: id); _ = await core.deliver() }
         onFinished?()
     }

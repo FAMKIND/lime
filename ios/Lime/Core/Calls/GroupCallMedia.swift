@@ -48,8 +48,11 @@ final class FrameProbe: NSObject, VideoRenderer, @unchecked Sendable {
     private let lock = NSLock()
     private var frames = 0
     var count: Int { lock.lock(); defer { lock.unlock() }; return frames }
-    @MainActor var isAdaptiveStreamEnabled: Bool { false }
-    @MainActor var adaptiveStreamSize: CGSize { .zero }
+    /// Off: it only counts what other renderers keep subscribed. On (the review's leaver test, when nothing else draws): it keeps the tracks flowing at a
+    /// small size so a count of zero means "cannot decrypt", not "nobody asked for the picture".
+    nonisolated(unsafe) static var keepsTracksFlowing = false
+    @MainActor var isAdaptiveStreamEnabled: Bool { Self.keepsTracksFlowing }
+    @MainActor var adaptiveStreamSize: CGSize { Self.keepsTracksFlowing ? CGSize(width: 160, height: 120) : .zero }
     nonisolated func render(frame: VideoFrame) { lock.lock(); frames += 1; lock.unlock() }
 }
 
