@@ -6863,3 +6863,22 @@ Phase 0: `PLOT.md` committed first. The originals (`lime-chime.m4a`, `lime-dialt
 - **Tests:** the bundle-sounds test still checks the durations and names; new `testTheUsersThreeSoundsAreStereoAtTheSourceRate` (2 channels, 44.1 kHz, the lengths). **Swift LimeTests 475 pass (10 skipped), 0 warnings of ours.** Installed on Jean's iPhone, the iPad and the 13 mini (Debug).
 - **Gate (the user):** a message chime, the "Calling…" tone, and an incoming call (1:1 and group) on another phone: all three sound like the originals, and the incoming call rings with lime's ringtone, not the phone's.
 - **For plot:** the ring is quieter than the other two by design of "no normalisation" (RMS -17.8 against -9.2 and -14.2): that is the originals' own levels. If the ring or the Calling tone feels too loud or too quiet next to the chime, say which and by how much, and it becomes a gain choice.
+
+## LIME-166 (pre-TestFlight hardening from LIME-158) — items 1-7 committed, one commit each; installed on all three phones; **STAGING NOT DEPLOYED: waiting for the user's "go"**
+
+Phase 0: `PLOT.md` committed first. Commits (trailer `Brief: LIME-166`):
+| # | Finding | Commit | What |
+|---|---|---|---|
+| 1 | F-02 (medium) | `de4e7ad` | `send` takes only signed proofs. **Phase 1 result:** no production sender uses `{ sealed }`: the core's send signs (`client_tests.rs` asserts no `access.sealed` on the wire), `mesh-drop` already refused it, and the web prototype does not send. The only callers were the Deno tests (api_v2, chat, send_expect, smoke_staging, signed_access, mesh), moved to signed proofs through new helpers (`sendSigned`, `signedTo`, `randomSigner`, `setHashOnlyAccessKey`). Removed the `sealed` branch, `allowAccessKey`, the hash from `Access`, the `bad_access_key` reason. New test: a `{ sealed }` proof, alone or in a batch, is the same opaque 403. `docs/api-v2.md` updated (the hash is still uploaded and stored; dropping it is a later migration brief). |
+| 2 | F-05 (low) | `f77fca5` | `CallDiagnostics`: a file only in Debug (written with `.completeFileProtection`; a line logged while locked stays in memory and is written with the next one); **in Release it is memory-only, no file, and a file an earlier build left is removed**. The Share button was already Debug-only. 3 new tests. |
+| 3 | F-07 (low) + F-11 note | `132f91b` | rate limits per user per minute, all configurable (`LIME_RATE_*`): **users-devices 120** (a first send to a big group reads one list per member), **mailbox-ack 120** (one per fetch; a busy phone fetched ~26/min), **undelivered-take 60**, **keys-upload 30**, **profile-set 30**, **delivery-access-set 20**. 6 new Deno tests (the limit + 1 call is a 429). F-11 (the proxy assumption for `cf-connecting-ip` / `x-forwarded-for`) written into `docs/api-v2.md`. |
+| 4 | F-12 (info) | `b21418f` | the group-call sender key, room id and identity: 32 uniform bytes from the OS (`getrandom` 0.2, already in the build); a test that the UUID version/variant bits are gone. |
+| 5 | F-13 (info) | `108f4af` | `blob-sweep` refuses a missing or empty secret before any database read; 2 new assertions. |
+| 6 | F-09 (info) | `12b769e` | `@supabase/supabase-js` pinned to **2.117.2** in `_shared/db.ts` and every test file. |
+| 7 | F-10 (info) | `8b73340` | `cargo update -p rustls` (0.23.45 to 0.23.46); **`cargo audit`: 0 vulnerabilities** (exit 0). |
+
+**Also noticed (not done, brief did not list them):** `mailbox-fetch` and `signup-set-password` have no rate limit of their own either (my F-07 list in the review missed them; `mailbox-fetch` is the hot path, so a limit needs a number from real use). Ask if you want them folded in.
+
+**Verification (local):** Deno **85 pass** (79 before, +6 rate-limit tests, the rewritten sealed test replaced the overlap one), core **279 pass**, core integration **23 pass** (after items 1, 3 and 7), `check-android.sh` OK, Swift LimeTests **478 pass** (10 skipped), `check-release-no-bluetooth.sh` OK (Release builds), 0 warnings of ours, `cargo audit` clean. **Installed (Debug) on Jean's iPhone, the iPad and the 13 mini.**
+
+**Staging deploy:** NOT done. After the user's "go": `./supabase/deploy-staging.sh` (its guard `check-staging-mesh-key.sh` passes today), then the smoke test (`supabase/smoke-staging.sh`), then the phones' smoke test: a message both ways, a group call, an attachment.
