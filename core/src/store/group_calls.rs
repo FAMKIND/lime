@@ -46,9 +46,9 @@ fn is_hex(text: &str, min: usize, max: usize) -> bool {
 }
 
 pub(crate) fn random_bytes32() -> [u8; 32] {
+    // 32 uniform bytes from the OS random source (the review's F-12: two concatenated UUIDv4s have fixed version and variant bits, so 244 bits).
     let mut out = [0u8; 32];
-    out[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
-    out[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+    getrandom::getrandom(&mut out).expect("the operating system's random source");
     out
 }
 

@@ -4981,3 +4981,23 @@ fn a_call_nobody_joined_or_nobody_has_shown_life_in_for_hours_ends_on_a_phone_th
     assert_eq!(bob.store.active_group_call(chat.clone()).unwrap(), None);
     assert!(!call_line(&bob, &call.call_id).contains("\"outcome\":\"live\""));
 }
+
+#[test]
+fn the_group_call_key_and_ids_are_32_uniform_bytes_not_two_uuids() {
+    // Two UUIDv4s would have the version nibble (byte 6 and 22) always 4 and the variant bits (byte 8 and 24) always 10xx.
+    let mut version_nibbles = std::collections::HashSet::new();
+    let mut variants = std::collections::HashSet::new();
+    let mut all = std::collections::HashSet::new();
+    for _ in 0..400 {
+        let key = crate::store::group_calls::random_bytes32();
+        version_nibbles.insert(key[6] >> 4);
+        version_nibbles.insert(key[22] >> 4);
+        variants.insert(key[8] >> 6);
+        variants.insert(key[24] >> 6);
+        assert!(all.insert(key), "no repeats");
+    }
+    assert!(version_nibbles.len() > 8, "the version bits vary: {version_nibbles:?}");
+    assert_eq!(variants.len(), 4, "the variant bits vary: {variants:?}");
+    assert_eq!(crate::store::group_calls::random_hex(32).len(), 64);
+    assert_eq!(crate::store::group_calls::random_hex(16).len(), 32);
+}
