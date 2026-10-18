@@ -6756,3 +6756,20 @@ The DEBUG `chat_open` log (added at the user's request) on Jean's chat: **140 me
 **Changed:** `eagerRows` 150 → **600** (a chat up to 600 rows is laid out whole, so its height is exact and it opens at the newest message). The open log now says `path=eager|lazy`. **A new UI test (a 200-message chat opened five times) passes, but it also passed with the old limit in the simulator: it is a guard, not a failing-before test.** A chat over 600 rows still uses the lazy stack and can still open blank (the real fix for those is to show only the newest rows first: not done). The cost of laying out up to 600 rows at once is unmeasured: the next open log (`+Nms`) will show it on the phone.
 
 Installed on Jean's iPhone, the iPad and the 13 mini (relaunched). All the chat-open, first-focus and unit tests pass; build 0 warnings of ours. The keyboard half of 152a-fix is still unconfirmed on the phone.
+
+## LIME-164
+
+Brief: LIME-164 (every chat opens at its newest messages, however long).
+
+**Phase 1.** The list was a `ScrollView` over a `VStack` (a chat of up to 600 rows, the 152a-fix stop-gap) or a `LazyVStack` above that, `defaultScrollAnchor(.bottom)` and retried `scrollTo("bottom")`; search hits and quotes jump with `scrollRequest`. The store already holds **all** of a chat's messages in memory (`listMessages` loads them all), so the paging is only in the view: no store change was needed. Search hits, the focus message from a result and the find arrows all go through `scrollRequest`. (The cost of 600 eager rows on the 13 mini was not measured: the window makes it moot.)
+
+**Changes.**
+- [x] A **newest-first window** (`ChatWindow`, pure): the chat lays out the **newest 60 rows** whole (an eager `VStack`, so its height is exact and it opens at the newest message on the first frame); the eager/lazy split and `eagerRows` are gone. Older rows are added **60 at a time when you scroll within 500 pt of the top** (iOS 18 and later: `onScrollGeometryChange`), and always by a tap on an "Earlier messages" row at the top (iOS 17, and for VoiceOver). **Your place is kept:** the list's content height and offset are tracked in a plain box (no redraws); after a page is added the offset is set to its old value plus the height the older rows added (`ScrollPosition.scrollTo(y:)`), so what you are looking at does not move. The phone-side log of the simulator run: `older page: window 60→120 rows; content 6990→13920, offset was 484, set to 7413`, and so on to the oldest.
+- [x] **Jumps** (a search hit, a result's focus message, the find arrows): `jump(to:)` widens the window to include the message with some context (`ChatWindow.covering`), waits a moment for the layout and then scrolls to it.
+- [x] The `chat_open` log gains `window=N of M rows` and `older page: …` lines.
+- Tests: `ChatWindowTests` (the newest rows shown and the rest counted, pages of 60 stopping at the oldest, a jump widening the window); `ChatOpensUITests`: a 2,000-message chat opens at its newest message five times, a 200-message chat likewise, a short chat shows everything with no "Earlier messages" row, scrolling up through a 240-message chat loads older pages until the first message and back down. All pass, with the existing 134, first-focus and long-press tests; build 0 warnings of ours. (The UI tests did not fail before the change in the simulator, as with the stop-gap; the proof is the phone.)
+- **Unproven/limits:** a jump to a very old message widens the window to include everything in between (up to the whole chat), so it lays out many rows at once; the window never shrinks while the chat is open; the unread marker has no separate jump (it is not in this chat). Not run: the search jump on the simulator (its path is the same `scrollRequest`).
+
+Installed on Jean's iPhone, the iPad and the 13 mini (relaunched).
+
+**Gate (the user):** open Jean's chat and the longest group ten times each: never blank; scroll up through history smoothly (older pages appear above without a jump); a search hit in an old message lands on it. Say "logs" if anything is off: `chat_open` shows the window and each older page.

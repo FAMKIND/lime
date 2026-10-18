@@ -936,13 +936,13 @@ final class ConversationStore {
         case "requests": path.append(MessagesRoute.requests)
         case "request-chat": path.append(MessagesRoute.requests); path.append("dm:ada")
         case "chat": path.append("dm:sam")
-        case "chat-long", "chat-long-200":
+        case let name? where name == "chat-long" || name.hasPrefix("chat-long-"):
             // A long chat (LIME-134): messages of every height, for opening it again and again.
             let pat = Person(id: "pat", name: "Pat Doe")
             let words = ["Fractions", "recess", "the bus", "field trip forms", "parent night", "the new schedule", "reading groups", "a substitute"]
             var messages: [Message] = []
             // `chat-long-200`: 200 messages (over 150 rows: the size of Jean's chat on the phone, which opened blank).
-            let count = screen == "chat-long-200" ? 200 : 60
+            let count = Int(name.dropFirst("chat-long-".count)) ?? 60   // `chat-long-400`, `chat-long-2000`: that many messages
             for i in 1...count {
                 let body = (0..<(1 + (i * 7) % 5)).map { k in words[(i * 3 + k) % words.count] }.joined(separator: ", ")
                 let text = "Message \(i): \(body)" + (i % 9 == 0 ? ". Could you also look at the long list of things for Friday, because it has a lot of lines and wraps over several rows." : "")

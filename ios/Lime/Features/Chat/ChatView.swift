@@ -32,6 +32,14 @@ struct ChatView: View {
     @State private var openProbe = ChatOpenProbe()
     #endif
     @State private var scrollRequest: ScrollRequest?
+    /// How many of the newest rows are laid out (LIME-164): the first page, growing as you scroll up.
+    @State private var windowRows = ChatWindow.first
+    /// The opening scroll is done: only now does scrolling near the top load older rows.
+    @State private var openSettled = false
+    /// The list's content height and offset, kept in a plain box (no redraws), to keep your place when older rows are added.
+    @State private var metrics = ScrollMetrics()
+    @State private var loadingOlder = false
+    @State private var restorer = ScrollRestorer()
     @FocusState private var findFocused: Bool
     // The long-press menu and Select mode (LIME-105).
     @State private var actions = MessageActionsState()
@@ -150,24 +158,33 @@ struct ChatView: View {
     private func messageScroll(_ conversation: Conversation, top: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                let rows = ChatRow.rows(for: conversation)
+                let all = ChatRow.rows(for: conversation)
+                let rows = Array(ChatWindow.shown(all, window: windowRows))
+                let hidden = ChatWindow.hidden(total: all.count, window: windowRows)
                 let lastOwnID = conversation.messages.last(where: { $0.isOwn && !$0.isSystem })?.id
-                // A chat that fits in memory is laid out whole, so its height is known and it opens at the newest message every
-                // time. A lazy stack estimates the height of the rows it has not drawn, and `defaultScrollAnchor(.bottom)` then lands
-                // in a region that was never laid out (a blank chat until you drag) or at the top (LIME-134). Only a very long chat
-                // stays lazy, and it is scrolled to the bottom again once its rows have been drawn.
-                Group {
-                    if rows.count <= Self.eagerRows {
-                        VStack(spacing: 0) { chatRows(rows, in: conversation, lastOwnID: lastOwnID) }
-                    } else {
-                        LazyVStack(spacing: 0) { chatRows(rows, in: conversation, lastOwnID: lastOwnID) }
+                // The newest rows are laid out whole (their height is exact, so the chat opens at the newest message on the first frame however long
+                // it is); older ones are added a page at a time as you scroll near the top, keeping your place (LIME-164). A lazy stack estimated
+                // the height of rows it had not drawn, and the first scroll landed in a region that was never laid out: a blank chat until a drag.
+                VStack(spacing: 0) {
+                    if hidden > 0 {
+                        Button { loadOlder(proxy: proxy, firstShown: rows.first?.id, total: all.count) } label: {
+                            Text("Earlier messages").font(Theme.caption.weight(.medium)).foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("chat-earlier")
                     }
+                    chatRows(rows, in: conversation, lastOwnID: lastOwnID)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, top)
                 .padding(.bottom, 8)
             }
             .accessibilityIdentifier("chat-scroll")
+            .modifier(OlderOnScrollModifier(metrics: metrics, restorer: restorer, enabled: openSettled && !loadingOlder && ChatWindow.hidden(total: ChatRow.rows(for: conversation).count, window: windowRows) > 0) {
+                let all = ChatRow.rows(for: conversation)
+                loadOlder(proxy: proxy, firstShown: ChatWindow.shown(all, window: windowRows).first?.id, total: all.count)
+            })
             #if DEBUG
             .modifier(ChatOpenProbeModifier(probe: openProbe, conversationID: conversationID, messages: conversation.messages.count, loaded: store.isLoaded))
             #endif
@@ -183,11 +200,12 @@ struct ChatView: View {
                 guard focusMessageID == nil else { return }
                 #if DEBUG
                 openProbe.open(conversationID, messages: conversation.messages.count, loaded: store.isLoaded)
+                openProbe.log("window=\(windowRows) of \(ChatRow.rows(for: conversation).count) rows")
                 #endif
                 for delay in [0, 120, 350] {
                     try? await Task.sleep(for: .milliseconds(delay))
                     #if DEBUG
-                    openProbe.log("scrollTo bottom after \(delay) ms: rows=\(ChatRow.rows(for: conversation).count) path=\(ChatRow.rows(for: conversation).count <= Self.eagerRows ? "eager" : "lazy") messages=\(conversation.messages.count) loaded=\(store.isLoaded) target=\(openProbe.snap.contentH > 0 ? "laid out" : "not laid out yet")")
+                    openProbe.log("scrollTo bottom after \(delay) ms: rows=\(ChatRow.rows(for: conversation).count) window=\(windowRows) messages=\(conversation.messages.count) loaded=\(store.isLoaded) target=\(openProbe.snap.contentH > 0 ? "laid out" : "not laid out yet")")
                     #endif
                     proxy.scrollTo("bottom", anchor: .bottom)
                     #if DEBUG
@@ -195,6 +213,7 @@ struct ChatView: View {
                     openProbe.log("  after the scroll: \(openProbe.snap.text)")
                     #endif
                 }
+                openSettled = true
             }
             .onChange(of: verticalSizeClass) { _, _ in
                 Task { try? await Task.sleep(for: .milliseconds(250)); proxy.scrollTo("bottom", anchor: .bottom) }
@@ -235,7 +254,7 @@ struct ChatView: View {
                 guard let focusMessageID else { return }
                 try? await Task.sleep(for: .milliseconds(250))
                 highlightedID = focusMessageID
-                scrollRequest = ScrollRequest(id: focusMessageID)
+                jump(to: focusMessageID, in: conversation)
                 try? await Task.sleep(for: .seconds(4))
                 if highlightedID == focusMessageID && !finding { withAnimation { highlightedID = nil } }
             }
@@ -252,11 +271,43 @@ struct ChatView: View {
         }
     }
 
-    /// Above this many rows a chat is laid out lazily.
-    /// Chats up to this many rows are laid out whole (their height is exact, so they always open at the newest message). It was 150 and Jean's chat
-    /// (151 rows) fell just over it into the lazy stack: its height estimate was 18,408 pt against a real 11,734 pt (the phone's log), the first scroll
-    /// landed in rows that were never laid out and the chat opened blank until you dragged (LIME-152a-fix).
-    private static let eagerRows = 600
+    /// One more page of older rows, keeping the place: what is on screen stays exactly where it is while the older rows appear above it.
+    private func loadOlder(proxy: ScrollViewProxy, firstShown: String?, total: Int) {
+        let next = ChatWindow.grown(window: windowRows, total: total)
+        guard next > windowRows, !loadingOlder else { return }
+        loadingOlder = true
+        let before = (height: metrics.contentH, offset: metrics.offsetY)
+        windowRows = next
+        Task { @MainActor in
+            // Wait for the new layout (the content grows by the height of the older rows), then put the offset back by that much.
+            for _ in 0..<30 {
+                try? await Task.sleep(for: .milliseconds(30))
+                if metrics.contentH != before.height { break }
+            }
+            #if DEBUG
+            openProbe.log("older page: window \(windowRows - ChatWindow.page)→\(next) rows; content \(Int(before.height))→\(Int(metrics.contentH)), offset was \(Int(before.offset)), set to \(Int(before.offset + (metrics.contentH - before.height)))")
+            #endif
+            if let scrollToY = restorer.scrollToY, metrics.contentH != before.height {
+                scrollToY(before.offset + (metrics.contentH - before.height))
+            } else if let firstShown {
+                proxy.scrollTo(firstShown, anchor: .top)
+            }
+            try? await Task.sleep(for: .milliseconds(120))
+            loadingOlder = false
+        }
+    }
+
+    /// Makes sure a message is among the rows shown, then asks for the scroll to it (a search hit, a quote, the unread marker).
+    private func jump(to id: String, in conversation: Conversation) {
+        let all = ChatRow.rows(for: conversation)
+        if let index = all.firstIndex(where: { $0.id == id }) {
+            windowRows = ChatWindow.covering(index: index, total: all.count, window: windowRows)
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(120))
+            scrollRequest = ScrollRequest(id: id)
+        }
+    }
 
     @ViewBuilder
     private func chatRows(_ rows: [ChatRow], in conversation: Conversation, lastOwnID: String?) -> some View {
@@ -411,7 +462,7 @@ struct ChatView: View {
             return
         }
         highlightedID = hit.messageID
-        scrollRequest = ScrollRequest(id: hit.messageID)
+        if let conversation = store.conversation(conversationID) { jump(to: hit.messageID, in: conversation) } else { scrollRequest = ScrollRequest(id: hit.messageID) }
     }
 
     /// The field, "3 of 12", the arrows (up is older) and Done.
@@ -1380,3 +1431,50 @@ struct ChatOpenProbeModifier: ViewModifier {
     }
 }
 #endif
+
+
+/// A scroll view's content height and offset, kept without telling SwiftUI.
+final class ScrollMetrics { var contentH: CGFloat = 0; var offsetY: CGFloat = 0 }
+
+/// How to scroll the chat's list to an offset (set by the list on iOS 18 and later; nil before).
+final class ScrollRestorer { var scrollToY: ((CGFloat) -> Void)? }
+
+/// Tracks the list's size and offset and, near the top of a chat, loads the next page of older rows (iOS 18 and later; earlier systems have the
+/// "Earlier messages" button). `restorer` lets the chat put the offset back after rows are added above.
+struct OlderOnScrollModifier: ViewModifier {
+    let metrics: ScrollMetrics
+    let restorer: ScrollRestorer
+    let enabled: Bool
+    let load: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            Positioned(content: content, metrics: metrics, restorer: restorer, enabled: enabled, load: load)
+        } else { content }
+    }
+
+    @available(iOS 18, *)
+    private struct Positioned<Content: View>: View {
+        let content: Content
+        let metrics: ScrollMetrics
+        let restorer: ScrollRestorer
+        let enabled: Bool
+        let load: () -> Void
+        @State private var position = ScrollPosition()
+
+        var body: some View {
+            content
+                .scrollPosition($position)
+                .onAppear { restorer.scrollToY = { y in position.scrollTo(y: y) } }
+                .onScrollGeometryChange(for: ScrollMetricsSnap.self) {
+                    ScrollMetricsSnap(contentH: $0.contentSize.height, offsetY: $0.contentOffset.y + $0.contentInsets.top)
+                } action: { _, new in
+                    metrics.contentH = new.contentH
+                    metrics.offsetY = new.offsetY
+                    if enabled, new.offsetY < 500 { load() }
+                }
+        }
+    }
+}
+
+struct ScrollMetricsSnap: Equatable { var contentH: CGFloat; var offsetY: CGFloat }

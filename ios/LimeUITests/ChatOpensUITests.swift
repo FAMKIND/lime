@@ -6,7 +6,7 @@ import XCTest
 final class ChatOpensUITests: XCTestCase {
     private func app(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        let screen = extra.contains("-lime-demo-two-hundred") ? "chat-long-200" : "chat-long"
+        let screen = extra.first { $0.hasPrefix("-lime-demo-long=") }.map { "chat-long-" + $0.dropFirst("-lime-demo-long=".count) } ?? "chat-long"
         app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", screen] + extra
         app.launch()
         return app
@@ -75,12 +75,50 @@ final class ChatOpensUITests: XCTestCase {
     /// Jean's chat on the phone had 151 rows and fell just over the old limit of 150 for being laid out whole: it opened blank. A 200-message
     /// chat (over 150 rows) must open at its newest message every time too.
     func testAChatOfTwoHundredMessagesOpensAtTheNewestMessageEveryTimeNotBlank() {
-        let app = app(["-lime-demo-two-hundred"])
+        let app = app(["-lime-demo-long=200"])
         assertNotBlank(app, newest: "Message 200", "first open")
         for round in 1...4 {
             closeChat(app)
             app.buttons["conversation-row-dm:long"].tap()
             assertNotBlank(app, newest: "Message 200", "open \(round)")
         }
+    }
+
+    /// A very long chat (2,000 messages) opens at its newest message on the first frame, every time: only the newest rows are laid out.
+    func testAChatOfTwoThousandMessagesOpensAtTheNewestMessageEveryTime() {
+        let app = app(["-lime-demo-long=2000"])
+        assertNotBlank(app, newest: "Message 2000", "first open")
+        for round in 1...4 {
+            closeChat(app)
+            app.buttons["conversation-row-dm:long"].tap()
+            assertNotBlank(app, newest: "Message 2000", "open \(round)")
+        }
+    }
+
+    /// Scrolling to the top loads older pages, and what you are looking at does not jump; the oldest message is reachable.
+    func testScrollingUpLoadsOlderPagesWithoutJumpingAndReachesTheFirstMessage() {
+        let app = app(["-lime-demo-long=240"])
+        assertNotBlank(app, newest: "Message 240", "first open")
+        let scroll = any(app, "chat-scroll")
+        var reached = false
+        for _ in 0..<40 {
+            scroll.swipeDown(velocity: .fast)
+            if message(app, containing: "Message 1:").exists && message(app, containing: "Message 1:").isHittable { reached = true; break }
+        }
+        XCTAssertTrue(reached, "scrolling up through 240 messages reaches the first one (older pages load as you go)")
+        // And back down to the newest.
+        for _ in 0..<40 {
+            scroll.swipeUp(velocity: .fast)
+            if message(app, containing: "Message 240").isHittable { break }
+        }
+        XCTAssertTrue(message(app, containing: "Message 240").isHittable, "and back to the newest")
+    }
+
+    /// A short chat still works: no "Earlier messages" row, everything shown.
+    func testAShortChatShowsEverythingWithNoEarlierRow() {
+        let app = app(["-lime-demo-long=20"])
+        assertNotBlank(app, newest: "Message 20", "short chat")
+        XCTAssertFalse(any(app, "chat-earlier").exists, "nothing is hidden")
+        XCTAssertTrue(message(app, containing: "Message 1:").waitForExistence(timeout: 3), "the first message is there")
     }
 }
