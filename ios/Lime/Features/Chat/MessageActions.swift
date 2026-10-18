@@ -46,6 +46,8 @@ struct MessageActionsHost: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // The chat stays recognisable behind the lifted message: a light blur (LIME-152f), never a solid grey. Reduce Transparency: no blur.
+            .blur(radius: state.menu != nil && !reduceTransparency ? 4 : 0)
             .environment(\.menuFrameSink, MenuFrameSink { state.menuFrame = $0 })
             .overlay {
                 if let message = state.menu { menu(for: message) }
@@ -156,12 +158,9 @@ struct MessageActionsHost: ViewModifier {
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
     }
 
-    /// The chat dims and blurs behind the lifted message (a solid dim with Reduce Transparency).
+    /// The chat dims lightly behind the lifted message; the blur is on the chat itself (above). A lighter solid dim with Reduce Transparency.
     private var backdrop: some View {
-        Group {
-            if reduceTransparency { Color.black.opacity(0.6) }
-            else { Rectangle().fill(.ultraThinMaterial).overlay(Color.black.opacity(0.18)) }
-        }
+        Color.black.opacity(reduceTransparency ? 0.3 : 0.15)
         .ignoresSafeArea()
         .onTapGesture { state.menu = nil }
         .accessibilityHidden(true)

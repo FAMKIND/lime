@@ -6835,3 +6835,14 @@ The inference (user): LIME-163's device check showed a phone that *rejoins* hold
 **Verification:** both docs exist; every checklist line has evidence; section 3 has results; cargo audit, dependency and secrets scans summarised; core 278 pass, `check-android.sh` OK, Swift call tests 50 pass.
 
 **For plot:** (1) findings above with ids and severities: nothing critical or high, so no stop; critique them before fix briefs; suggested order: F-02 (remove the legacy proof, before TestFlight), F-04 (+F-04b/d in the same mesh protocol pass), F-07 (one-line rate limits), F-05, F-09/F-10/F-12 (small hygiene). (2) 3(a) is "passed by inference": the packets-vs-frames proof is in `docs/audit-scope.md` as an item for the auditor. (3) The audit scope assumes the repo may go open source (decide before applying) and that auditors get a **fresh clone**. (4) Slow video senders in the test calls (5-20 fps) deserve their own look (not security).
+
+## LIME-152f (the long-press shows the chat faintly; the pin back to its size) — committed; installed on all three phones; **the gate is yours**
+
+Phase 0: `PLOT.md` committed first.
+
+- **1. Backdrop.** 152d's `ultraThinMaterial` (a heavy fixed blur that read as solid grey) is gone. Now the chat itself is blurred lightly while the menu is open (`.blur(radius: 4)` on the host's content, animated with the menu) and a light dim (15% black) sits behind the lifted message, so bubbles, the header and the composer are recognisable. Reduce Transparency on: no blur and a 30% solid dim (never an opaque grey). I tried 6 pt / 18% first: the bubbles were too faint to recognise, so I went lighter than the brief's example (4 pt / 15%); say if you want it back toward 6-8.
+- **2. The pin.** 152b's `imageScale(.small)` and its comment removed: the profile pin is its old size.
+- **Screenshots** (simulator, light and dark; a temporary UI test took them and is not committed): `~/Desktop/lime-152f/`: `longpress-light/dark.png` (Sam's chat, "Are you coming to the staff meeting?"), `profile-light/dark.png` (the header with the bell, the pin, the more button).
+- **Verification:** build 0 warnings of ours; Swift LimeTests 474 pass (10 skipped); the long-press UI flow ran in the screenshot test. Visual brief: no new tests. Installed on Jean's iPhone, the iPad and the 13 mini (Debug).
+- **Gate (the user):** long-press a message in a busy chat: the chat is faintly visible behind it; open a profile: the pin looks as it did.
+- **For plot:** if the blur is still too strong or too weak on the phone, it is one number (`radius: 4`, `opacity 0.15`) in `MessageActions.swift`.
