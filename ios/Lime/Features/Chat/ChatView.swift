@@ -27,6 +27,10 @@ struct ChatView: View {
     /// without this it would search again and open Replies again.
     @State private var searchedQuery: String?
     @State private var highlightedID: String?
+    #if DEBUG
+    /// What a chat's opening did (LIME-152a-fix), written to the diagnostics log.
+    @State private var openProbe = ChatOpenProbe()
+    #endif
     @State private var scrollRequest: ScrollRequest?
     @FocusState private var findFocused: Bool
     // The long-press menu and Select mode (LIME-105).
@@ -164,6 +168,9 @@ struct ChatView: View {
                 .padding(.bottom, 8)
             }
             .accessibilityIdentifier("chat-scroll")
+            #if DEBUG
+            .modifier(ChatOpenProbeModifier(probe: openProbe, conversationID: conversationID, messages: conversation.messages.count, loaded: store.isLoaded))
+            #endif
             .environment(\.chatConversationID, conversationID)
             .linkOpening()
             .attachmentPresenting()
@@ -174,9 +181,19 @@ struct ChatView: View {
                 // enough on every iOS version (a chat pushed at launch opened at its top on iOS 18); this is a no-op when it worked.
                 // Not for a search result's jump to a message.
                 guard focusMessageID == nil else { return }
+                #if DEBUG
+                openProbe.open(conversationID, messages: conversation.messages.count, loaded: store.isLoaded)
+                #endif
                 for delay in [0, 120, 350] {
                     try? await Task.sleep(for: .milliseconds(delay))
+                    #if DEBUG
+                    openProbe.log("scrollTo bottom after \(delay) ms: rows=\(ChatRow.rows(for: conversation).count) messages=\(conversation.messages.count) loaded=\(store.isLoaded) target=\(openProbe.snap.contentH > 0 ? "laid out" : "not laid out yet")")
+                    #endif
                     proxy.scrollTo("bottom", anchor: .bottom)
+                    #if DEBUG
+                    try? await Task.sleep(for: .milliseconds(60))
+                    openProbe.log("  after the scroll: \(openProbe.snap.text)")
+                    #endif
                 }
             }
             .onChange(of: verticalSizeClass) { _, _ in
@@ -1307,3 +1324,56 @@ struct CallChoiceRows: View {
             .accessibilityIdentifier("\(idPrefix)-video")
     }
 }
+
+
+#if DEBUG
+/// A chat's open, in numbers, for the diagnostics log (a class, so logging never redraws the chat).
+@MainActor
+final class ChatOpenProbe {
+    struct Snap: Equatable {
+        var contentH: CGFloat = 0, visibleH: CGFloat = 0, offsetY: CGFloat = 0, insetTop: CGFloat = 0, insetBottom: CGFloat = 0
+        var text: String { "content \(Int(contentH)) pt, visible \(Int(visibleH)) pt, offset \(Int(offsetY)), insets \(Int(insetTop))/\(Int(insetBottom))" }
+    }
+    private(set) var snap = Snap()
+    private var started = Date()
+    private var id = ""
+    private var layouts = 0
+
+    func open(_ id: String, messages: Int, loaded: Bool) {
+        started = Date(); self.id = id; layouts = 0
+        log("open: messages=\(messages) loaded=\(loaded)")
+    }
+
+    func log(_ line: String) {
+        let ms = Int(Date().timeIntervalSince(started) * 1000)
+        CallDiagnostics.shared.log("chat_open +\(ms)ms \(id.suffix(6)): \(line)")
+    }
+
+    func layout(_ new: Snap) {
+        guard new != snap else { return }
+        snap = new
+        layouts += 1
+        if layouts <= 12 || Date().timeIntervalSince(started) < 3 { log("layout #\(layouts): \(new.text)") }
+    }
+
+    func messagesChanged(_ count: Int, loaded: Bool) { log("messages now \(count) loaded=\(loaded)") }
+}
+
+struct ChatOpenProbeModifier: ViewModifier {
+    let probe: ChatOpenProbe
+    let conversationID: String
+    let messages: Int
+    let loaded: Bool
+
+    func body(content: Content) -> some View {
+        let base = content
+            .onAppear { probe.log("scroll view appeared: messages=\(messages) loaded=\(loaded)") }
+            .onChange(of: messages) { _, count in probe.messagesChanged(count, loaded: loaded) }
+        if #available(iOS 18, *) {
+            base.onScrollGeometryChange(for: ChatOpenProbe.Snap.self) {
+                ChatOpenProbe.Snap(contentH: $0.contentSize.height, visibleH: $0.visibleRect.height, offsetY: $0.contentOffset.y, insetTop: $0.contentInsets.top, insetBottom: $0.contentInsets.bottom)
+            } action: { _, new in probe.layout(new) }
+        } else { base }
+    }
+}
+#endif
