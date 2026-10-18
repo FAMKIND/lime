@@ -113,7 +113,7 @@ private struct SignedInView: View {
                     GroupDetailsView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ThreadTarget.self) { target in
-                    ThreadView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
+                    ThreadView(target: target).toolbar(.hidden, for: .tabBar)
                 }
                 .navigationDestination(for: ChatTarget.self) { target in
                     ChatView(conversationID: target.conversationID, focusMessageID: target.messageID, focusWords: target.words)

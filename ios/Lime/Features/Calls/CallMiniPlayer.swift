@@ -107,13 +107,15 @@ struct CallMiniPlayer: View {
     private func tuck(_ edge: CallMiniPlayerTuck.Edge) { animate { store.miniPlayerTuck.tuck(to: edge) } }
     private func untuck() { animate { store.miniPlayerTuck.show() } }
 
-    /// The edge tab: a small warm handle with the call icon, in the same vertical place. Tap or swipe it back out to bring the player back.
+    /// The edge tab (iOS's stashed-PiP pattern, LIME-150-fix4): a small warm handle as tall as the player with a bold chevron that points the way it
+    /// will open (tucked at the right edge: `chevron.left`; at the left: `chevron.right`). Tap or swipe it back out to bring the player back.
+    static let tabHeight: CGFloat = 48
     private func tab(_ edge: CallMiniPlayerTuck.Edge, video: Bool) -> some View {
         HStack(spacing: 0) {
             if edge == .trailing { Spacer(minLength: 0) }
             Button(action: untuck) {
-                Image(systemName: video ? "video" : "phone").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.text)
-                    .frame(width: 44, height: 64)
+                Image(systemName: edge == .trailing ? "chevron.left" : "chevron.right").font(.system(size: 19, weight: .heavy)).foregroundStyle(Theme.text)
+                    .frame(width: 44, height: Self.tabHeight)
                     .background(UnevenRoundedRectangle(topLeadingRadius: edge == .trailing ? 18 : 0, bottomLeadingRadius: edge == .trailing ? 18 : 0,
                                                        bottomTrailingRadius: edge == .leading ? 18 : 0, topTrailingRadius: edge == .leading ? 18 : 0)
                         .fill(Theme.pressed))

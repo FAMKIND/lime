@@ -71,19 +71,23 @@ struct ThreadView: View {
             }
         }
         .messageActions(actions, conversationID: target.conversationID, inThread: true, selection: $selection)
-        .safeAreaInset(edge: .bottom) {
-            if let selection {
-                SelectionBar(count: selection.count,
-                             onDelete: { actions.deleting = messages.filter { selection.contains($0.id) } },
-                             onForward: { actions.requestForward(messages.filter { selection.contains($0.id) }, store: store) })
-            } else {
-            ChatComposer(model: composerModel, onSend: { markdown in
-                Task { await store.sendReply(markdown, root: target.rootID, in: target.conversationID) }
-            }, onSendAttachments: { items, caption in
-                store.sendAttachments(items, caption: caption, in: target.conversationID, replyTo: target.rootID)
-            }, onSendPreview: { markdown, preview in
-                Task { await store.sendNow(markdown, preview: preview, in: target.conversationID, replyTo: target.rootID) }
-            })
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // The call mini player floats above this screen's own composer, as in a chat (LIME-150-fix4); below it would be the home indicator.
+            VStack(spacing: 0) {
+                CallMiniPlayer(gapBelow: CallMiniPlayer.floatGapAboveComposer)
+                if let selection {
+                    SelectionBar(count: selection.count,
+                                 onDelete: { actions.deleting = messages.filter { selection.contains($0.id) } },
+                                 onForward: { actions.requestForward(messages.filter { selection.contains($0.id) }, store: store) })
+                } else {
+                    ChatComposer(model: composerModel, onSend: { markdown in
+                        Task { await store.sendReply(markdown, root: target.rootID, in: target.conversationID) }
+                    }, onSendAttachments: { items, caption in
+                        store.sendAttachments(items, caption: caption, in: target.conversationID, replyTo: target.rootID)
+                    }, onSendPreview: { markdown, preview in
+                        Task { await store.sendNow(markdown, preview: preview, in: target.conversationID, replyTo: target.rootID) }
+                    })
+                }
             }
         }
         .safeAreaInset(edge: .top) {

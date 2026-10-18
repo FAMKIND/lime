@@ -6526,3 +6526,19 @@ Brief: LIME-150-fix3 (the dock gap, plus the grid's gaps and background from 1e1
 **Verification.** All unit tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini (not relaunched).
 
 **Gate (the user):** the two gaps look the same; the grid's gaps and what shows through them.
+
+## LIME-150-fix4
+
+Brief: LIME-150-fix4 (one mini-player gap on every screen; even grid gaps; the black grid backdrop; the chevron tab).
+
+**Phase 1 (survey, 13 mini simulator, 3x).** The player is placed two ways: a chat puts it above its composer; every other screen uses `.callMiniPlayerInset()` (a bottom safe-area inset). **The replies screen (`ThreadView`) used the inset on the outside of its own composer, so the player sat BELOW the replies composer** (screenshot: composer, then the player under it, above the home indicator): that was the inconsistency. Messages, Calls, Jam, profile, shared lists, requests and search have the tab bar (or nothing) below, and the measured visible gap there equals the chat's (10 px = about 3.3 pt both, see 150-fix3). Group details hides the tab bar and has no composer: the player sits at the bottom safe area, nothing below to compare. I did not screenshot every screen (Calls, Jam, profile, search use the same inset as Messages).
+
+**Changes.**
+- [x] 1. Replies: `ThreadView` now puts the player above its composer (and above the selection bar) in its own bottom inset, with the chat's gap constant; `RootView` no longer wraps `ThreadView` in the inset. Screenshot after: the player is above the composer with the same gap as in a chat (`~/Desktop/lime-150fix4/after/replies.png`). Before: seen in the run before the fix (the "before" files were overwritten by the after run, a mistake in my screenshot test's output folder).
+- [x] 2. The grid: the layout was already exactly even (4 pt between columns, between rows and from the window's edge, whatever the shape: `pipGap == pipInset`); now asserted for 1–4 cells in five window shapes (`PiPGridPlanTests`). Video aspect-fills its cell, so there is no extra letterbox space.
+- [x] 3. The grid backdrop is pure black (the grid and the content view), 4 pt around and between the cells.
+- [x] 4. The tucked tab: a bold chevron pointing the way it opens (`chevron.left` at the right edge, `chevron.right` at the left), 48 pt tall like the player, same narrow width, warm-neutral fill and edge-hugging shape; replaces the call icon. Tap/swipe back, VoiceOver and Reduce Motion kept. Screenshots: `after/tab-right.png`, `after/tab-left.png` (light only).
+
+**Verification.** All unit tests and `CallMiniPlayerUITests` pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
+
+**Gate (the user, on the phone):** the same gap on every screen including replies; the grid's gaps even on black; the chevron tab.

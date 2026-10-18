@@ -74,4 +74,22 @@ final class PiPGridPlanTests: XCTestCase {
         XCTAssertEqual(GroupCallLayout.pipCornerRadius(for: CGSize(width: 190, height: 190)), 9.5)
         XCTAssertEqual(GroupCallLayout.pipCornerRadius(for: CGSize(width: 400, height: 400)), 10)
     }
+
+    func testTheGapsBetweenColumnsAndBetweenRowsAndFromTheEdgeAreTheSameInEveryShape() {
+        for size in [CGSize(width: 480, height: 480), CGSize(width: 640, height: 480), CGSize(width: 300, height: 480), CGSize(width: 480, height: 270), CGSize(width: 270, height: 480)] {
+            for count in 1...4 {
+                let cells = GroupCallLayout.pipGrid(count: count, in: size)
+                XCTAssertEqual(cells.count, count)
+                let edge = GroupCallLayout.pipInset
+                XCTAssertEqual(cells.map(\.minX).min(), edge, "\(count) in \(size)")
+                XCTAssertEqual(cells.map(\.minY).min(), edge)
+                XCTAssertEqual(size.width - (cells.map(\.maxX).max() ?? 0), edge, accuracy: 0.01)
+                XCTAssertEqual(size.height - (cells.map(\.maxY).max() ?? 0), edge, accuracy: 0.01)
+                // Between neighbours: the horizontal gap and the vertical gap are the same number, the edge's.
+                for a in cells { for b in cells where b.minX > a.maxX - 0.01 && abs(b.minY - a.minY) < 0.01 { XCTAssertEqual(b.minX - a.maxX, GroupCallLayout.pipGap, accuracy: 0.01) } }
+                for a in cells { for b in cells where b.minY > a.maxY - 0.01 && abs(b.minX - a.minX) < 0.01 { XCTAssertEqual(b.minY - a.maxY, GroupCallLayout.pipGap, accuracy: 0.01) } }
+            }
+        }
+        XCTAssertEqual(GroupCallLayout.pipGap, GroupCallLayout.pipInset, "the gap between cells is the gap around the grid")
+    }
 }

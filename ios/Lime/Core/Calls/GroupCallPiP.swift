@@ -257,7 +257,7 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
         // there are any (checked on every refresh).
         let bounds = contentController.view.bounds
         let wanted = bounds.width > 4 && bounds.height > 4 ? bounds : CGRect(origin: .zero, size: size)
-        contentController.view.backgroundColor = .clear
+        contentController.view.backgroundColor = .black
         if grid == nil {
             let view = PiPGridView(frame: wanted)
             view.autoresizingMask = [.flexibleWidth, .flexibleHeight]

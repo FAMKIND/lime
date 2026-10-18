@@ -34,8 +34,8 @@ final class PiPGridView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        // No backdrop of its own (LIME-150-fix3): the gaps show whatever the system's window draws behind the content.
-        backgroundColor = .clear
+        // Pure black behind the cells (LIME-150-fix4): with the 4 pt around the grid and between the cells it reads as separate screens with thin seams.
+        backgroundColor = .black
         for _ in 0..<Self.maxCells {
             let slot = Slot()
             slot.container.clipsToBounds = true
