@@ -49,12 +49,15 @@ protocol GroupPiP: AnyObject {
     func rebuild()
     /// LIME-150: the window draws these cells as a grid (live pictures or photos, the speaker ringed); an empty list goes back to the speaker window.
     func showGrid(_ cells: [PiPGridDisplay])
+    /// The speaker's window takes over: the grid view goes.
+    func clearGrid()
     func gridFrameCounts() -> [String: Int]
 }
 
 extension GroupPiP {
     /// LIME-150: the minimised grid. Nothing by default (a test fake need not draw).
     func showGrid(_ cells: [PiPGridDisplay]) {}
+    func clearGrid() { showGrid([]) }
     /// Frames each grid cell's picture has drawn so far, by participant (for the diagnostics).
     func gridFrameCounts() -> [String: Int] { [:] }
 }
@@ -242,16 +245,32 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
 
     func gridFrameCounts() -> [String: Int] { grid?.frameCounts() ?? [:] }
 
+    /// Frames from the last size the window was told about: the window's aspect is set once per change of cell count, never per refresh.
+    private var aspectCells = 0
+
+    /// Grid mode: the grid view is installed and on show (the speaker's own picture is let go).
+    private var gridMode: Bool { grid != nil && grid?.isHidden == false }
+
+    func clearGrid() {
+        grid?.stop()
+        grid?.removeFromSuperview()
+        grid = nil
+        aspectCells = 0
+    }
+
     func showGrid(_ cells: [PiPGridDisplay]) {
         guard !cells.isEmpty else {
-            grid?.stop()
-            grid?.removeFromSuperview()
-            grid = nil
+            // Nobody to draw this second: the grid stays installed, out of sight (it is not torn down and built again).
+            grid?.isHidden = true
             return
         }
         // A grid is a square (two side by side: 4:3); the system may still resize it.
         let size = cells.count == 2 ? CGSize(width: 640, height: 480) : (cells.count == 1 ? Self.placeholder : CGSize(width: 480, height: 480))
-        contentController.preferredContentSize = size
+        if cells.count != aspectCells {
+            aspectCells = cells.count
+            contentController.preferredContentSize = size
+            CallDiagnostics.shared.log("group pip aspect \(Int(size.width))x\(Int(size.height)) for \(cells.count) cells")
+        }
         // The window's view has no size until the system presents it, and a subview made at size zero stays zero when the window grows (the
         // grid showed no picture on the first minimise, LIME-162): it starts at the wanted size, and follows the window's real bounds as soon as
         // there are any (checked on every refresh).
@@ -266,6 +285,7 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
         } else if let grid, grid.frame.size != wanted.size {
             grid.frame = wanted
         }
+        grid?.isHidden = false
         let shape = "grid \(Int(grid?.frame.width ?? 0))x\(Int(grid?.frame.height ?? 0)) in window \(Int(bounds.width))x\(Int(bounds.height))"
         if shape != lastGridShape { lastGridShape = shape; CallDiagnostics.shared.log("group pip \(shape)") }
         grid?.update(cells)
@@ -273,7 +293,10 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
 
     func start() {
         guard let controller, controller.isPictureInPicturePossible else { onFailed?(); return }
-        if let current = renderer?.current { apply(size: current.size, rotation: current.rotation) }
+        // The speaker's window sets its aspect from its last picture; in grid mode the grid already set it (its last size overriding that was the
+        // 720 x 1280 flip in the log).
+        if !gridMode, let current = renderer?.current { apply(size: current.size, rotation: current.rotation) }
+        CallDiagnostics.shared.log("group pip start mode=\(gridMode ? "grid" : "speaker") window=\(Int(contentController.view.bounds.width))x\(Int(contentController.view.bounds.height))")
         controller.startPictureInPicture()
     }
 
@@ -305,7 +328,7 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
     }
 
     func stop() {
-        showGrid([])
+        clearGrid()
         controller?.stopPictureInPicture()
         if let old = track, let renderer { Self.detach(renderer, from: old) }
         track = nil

@@ -6572,3 +6572,23 @@ Brief: LIME-163 (a rejoiner never decrypts the others after keys were renewed).
 **Verification.** All group-call tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
 
 **Device check: not yet run.** A 3-phone video call; the 13 mini leaves and rejoins twice, then Jean leaves and rejoins: everyone sees everyone each time within about 5 s (`frame cryptor … ok` for all after each rejoin, and `video_probe` `secured=1`, frames flowing). If it still fails, the slot reading is wrong and the next step is to reach the cryptor's `keyIndex` directly.
+
+## LIME-150-fix5 (items 1, 1b, 2, 3)
+
+Brief: LIME-150-fix5 (item 4, the ring and the space, landed earlier).
+
+**Phase 1 (item 1; from the iPad's and the 13 mini's logs and the code).**
+- Why the speaker path ran while Grid was the mode: `refreshPiP` chose per call whether to draw the grid from `video && view == grid && **someone else is in the room right now**`. Any moment with nobody else (a person leaving, a rejoin, the first seconds of a join) took the speaker path (`pip.show(…)`, `pip.showGrid([])` which **tore the grid down**), the next refresh built it again: the flipping in the 13 mini's log. The grid view was also removed and rebuilt each time.
+- What set the window's aspect: the speaker path (`apply(size:rotation:)` from the speaker picture's last size, **and `start()` re-applied that last size, 720 × 1280, even in grid mode**) and the grid (`preferredContentSize` set on every refresh, every 1–3 s). Two owners, so two sizes in turn.
+- 1b (a phone that joined by answering): the iPad's log shows the grid built from the start of its call and sized at the window's start, so I could **not** find a callee-only path that starts in the speaker mode; what the user saw (one person's photo until Speaker then Grid in the people sheet) matches the same grid being torn down and rebuilt by the room-empty flip and by `start()`'s 720 × 1280 override. The people-sheet round trip builds a fresh grid, which is why it cured it. **Unproven for the callee until the device check on all three phones.**
+
+**Changes.**
+- [x] 2. One owner per mode: `PiPGridPlan.mode(video:choice:others:)` decides from the call and the choice only (never from who is here this second); `pip mode=grid|speaker why=…` is logged on every change. In grid mode the speaker path does not run (it is told once, at the switch, to let go); with nobody else the grid stays installed but hidden and the group's own picture shows (no teardown); `clearGrid()` only when the mode changes to speaker or the call ends. The window's aspect is set once per change of cell count (`group pip aspect WxH for N cells`), and `start()` no longer re-applies the speaker's last size in grid mode (`group pip start mode=… window=…` is logged).
+- [x] 1b. Same code path for a phone that answered a ring; nothing callee-specific remains to fall back to. Needs the user's check on Jean's phone and the iPad.
+- [x] 3. The tucked tab is iOS 26 Liquid Glass: dark tinted glass (dark in light and dark mode), a white bold chevron, flush to the screen edge and rounded on the inner side (20 pt), 48 pt tall like the player. The player's capsule and the tab share a `GlassEffectContainer` and `glassEffectID`, so the capsule flows into the tab and back (Reduce Motion: the short cross-fade stays; Reduce Transparency: a solid dark tab; before iOS 26: a dark translucent fill). Gestures, VoiceOver and the edge-tab behaviour kept. Screenshots of both edges, light and dark (simulator) in `~/Desktop/lime-150fix5/`: the simulator's glass looks grey over a light background, and the dark-mode run did not switch the appearance (its screenshots look light); iOS's own stashed tab was not available beside them. **The morph is not seen by me** (a still image), so it is for the user's eyes.
+
+**Tests.** `GroupCallManagerTests`: grid mode never shows a picture in the speaker window and a person leaving does not tear the grid down; the mode comes from the call and the choice, not the room (`PiPGridPlan.mode`). All unit tests and `CallMiniPlayerUITests` pass; build 0 warnings of ours.
+
+**Installed** on Jean's iPhone, the iPad and the 13 mini.
+
+**Device check (the user, all three phones):** minimise / return / minimise 5 times in a 3-person video call with no setting touched, on the phone that started the call and on the two that answered → the grid every time, no flicker; tuck the mini player beside a stashed PiP → they look like a pair, and the tuck flows. Please also pull the logs after (`pip mode=…`, `group pip aspect`).

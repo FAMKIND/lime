@@ -34,6 +34,15 @@ enum PiPGridPlan {
         choice ?? (others <= 4 ? .grid : .speaker)
     }
 
+    /// Who owns the window while minimised (LIME-150-fix5): the grid or the speaker's single picture, one at a time, decided from the kind of
+    /// call, the person's choice and the number of people, and **not** from whether someone happens to be in the room this second (a person
+    /// leaving and rejoining used to flip the window between the two). `why` is what the log says.
+    static func mode(video: Bool, choice: View?, others: Int) -> (mode: View, why: String) {
+        if !video { return (.speaker, "voice call") }
+        if let choice { return (choice, "chosen: \(choice.rawValue)") }
+        return others <= 4 ? (.grid, "default for \(others) other people") : (.speaker, "default for \(others) other people")
+    }
+
     /// The cells in order. `recent` lists the other people by how lately they spoke (newest first); `speakerID` is the one person kept live
     /// when the heat guard has made the grid lighter; `allLive` is false then.
     static func cells(people: [Person], recent: [String], speakerID: String?, allLive: Bool) -> [Cell] {

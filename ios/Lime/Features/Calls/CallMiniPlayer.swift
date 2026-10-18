@@ -66,6 +66,8 @@ struct CallMiniPlayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var drag: CGFloat = 0
+    /// The player and its tab are one piece of glass that flows from one shape to the other (iOS 26 `glassEffectID`).
+    @Namespace private var glassSpace
     /// How far the player floats above what is under it: the tab bar on a screen, the composer in a chat.
     var gapBelow: CGFloat = CallMiniPlayer.floatGapAboveTabBar
     private var isIOS26: Bool { if #available(iOS 26, *) { true } else { false } }
@@ -86,8 +88,10 @@ struct CallMiniPlayer: View {
         Group {
             if let subject = CallMiniPlayerRule.subject(groupInCall: store.groupCalls.inCall, groupMinimized: store.groupCalls.minimized,
                                                         callInCall: store.calls.inCall, callMinimized: store.calls.minimized) {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    if let edge = store.miniPlayerTuck.edge { tab(edge, video: subject == .group ? store.groupCalls.video : store.calls.video) } else { content(for: subject, at: context.date) }
+                GlassMorphContainer {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        if let edge = store.miniPlayerTuck.edge { tab(edge, video: subject == .group ? store.groupCalls.video : store.calls.video) } else { content(for: subject, at: context.date) }
+                    }
                 }
                 .padding(.horizontal, store.miniPlayerTuck.isTucked ? 0 : 16).padding(.top, Self.floatGap).padding(.bottom, gapBelow)
                 .frame(maxWidth: .infinity)
@@ -114,11 +118,9 @@ struct CallMiniPlayer: View {
         HStack(spacing: 0) {
             if edge == .trailing { Spacer(minLength: 0) }
             Button(action: untuck) {
-                Image(systemName: edge == .trailing ? "chevron.left" : "chevron.right").font(.system(size: 19, weight: .heavy)).foregroundStyle(Theme.text)
+                Image(systemName: edge == .trailing ? "chevron.left" : "chevron.right").font(.system(size: 19, weight: .heavy)).foregroundStyle(.white)
                     .frame(width: 44, height: Self.tabHeight)
-                    .background(UnevenRoundedRectangle(topLeadingRadius: edge == .trailing ? 18 : 0, bottomLeadingRadius: edge == .trailing ? 18 : 0,
-                                                       bottomTrailingRadius: edge == .leading ? 18 : 0, topTrailingRadius: edge == .leading ? 18 : 0)
-                        .fill(Theme.pressed))
+                    .modifier(TabGlass(edge: edge, reduceTransparency: reduceTransparency, space: glassSpace))
             }
             .buttonStyle(.plain)
             .gesture(DragGesture(minimumDistance: 12).onEnded { value in
@@ -207,7 +209,7 @@ struct CallMiniPlayer: View {
                 if reduceTransparency { RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.canvas).overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5)) }
                 else { Color.clear.limeGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous)) }
             } else if reduceTransparency { Capsule().fill(Theme.canvas).overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5)) }
-            else { Color.clear.limeGlass(in: Capsule()) }
+            else { Color.clear.modifier(PlayerGlass(shape: Capsule(), space: glassSpace)) }
         }
         .offset(x: drag)
         .simultaneousGesture(DragGesture(minimumDistance: 16)
@@ -256,5 +258,50 @@ extension View {
     /// Reserves the bottom of a screen for the call mini player (and shows it there), so the last row is never covered.
     func callMiniPlayerInset() -> some View {
         safeAreaInset(edge: .bottom, spacing: 0) { CallMiniPlayer() }
+    }
+}
+
+
+/// Holds the player's glass and the tab's together so one flows into the other (iOS 26); a plain container before that.
+struct GlassMorphContainer<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        if #available(iOS 26.0, *) { GlassEffectContainer(spacing: 0) { content } } else { content }
+    }
+}
+
+/// The player's capsule glass, with the id the tab shares (the morph).
+struct PlayerGlass<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let space: Namespace.ID
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: shape).glassEffectID("call-mini", in: space)
+        } else {
+            content.limeGlass(in: shape)
+        }
+    }
+}
+
+/// The tucked tab, like iOS's own stashed-video tab: dark Liquid Glass (dark in light and dark mode) with a white chevron, flush to the screen
+/// edge and rounded on the inner side, only as tall as the player. Shares the player's glass id so the capsule visibly flows into it.
+struct TabGlass: ViewModifier {
+    let edge: CallMiniPlayerTuck.Edge
+    let reduceTransparency: Bool
+    let space: Namespace.ID
+
+    private var shape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(topLeadingRadius: edge == .trailing ? 20 : 0, bottomLeadingRadius: edge == .trailing ? 20 : 0,
+                               bottomTrailingRadius: edge == .leading ? 20 : 0, topTrailingRadius: edge == .leading ? 20 : 0, style: .continuous)
+    }
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(shape.fill(Color(white: 0.12)))
+        } else if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.tint(Color.black.opacity(0.72)), in: shape).glassEffectID("call-mini", in: space)
+        } else {
+            content.background(shape.fill(Color.black.opacity(0.6)))
+        }
     }
 }

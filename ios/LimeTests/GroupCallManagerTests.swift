@@ -79,6 +79,8 @@ final class GroupCallManagerTests: XCTestCase {
         private(set) var subjects: [PiPSubject] = []
         private(set) var grids: [[PiPGridDisplay]] = []
         func showGrid(_ cells: [PiPGridDisplay]) { grids.append(cells) }
+        private(set) var clears = 0
+        func clearGrid() { clears += 1; grids.append([]) }
         func prepare(sourceView: UIView, subject: PiPSubject) { prepared += 1; anchors.append(sourceView) }
         func show(subject: PiPSubject, track: AnyObject?, pictureShowing: Bool) { subjects.append(subject); shown.append((subject.name, track != nil, pictureShowing)) }
         func start() { started += 1; startedFrom.append(anchors.last); onStarted?() }
@@ -469,7 +471,7 @@ final class GroupCallManagerTests: XCTestCase {
         let (manager, pip, _, core, _, _) = await pipCall(speakers: 2)
         manager.handle(media: .speaking([core.others[0].participant]))
         XCTAssertEqual(pip.shown.last?.person, "Bob")
-        XCTAssertEqual(pip.grids.last?.count, 0, "no grid in the speaker view")
+        XCTAssertTrue(pip.grids.allSatisfy(\.isEmpty), "no grid in the speaker view")
         await manager.leave()
     }
 
@@ -513,6 +515,33 @@ final class GroupCallManagerTests: XCTestCase {
         XCTAssertEqual(media.keys[carol]?.1, 3)
         XCTAssertEqual(LiveKitGroupMedia.slot, 0, "frames are sent and read with slot 0: every key is installed there")
         await manager.leave()
+    }
+
+    /// LIME-150-fix5: Grid mode owns the window.
+    func testGridModeNeverTakesTheSpeakerPathAndSomeoneLeavingDoesNotFlipTheWindow() async {
+        let (manager, pip, media, core, _, _) = await pipCall(speakers: 2, grid: true)
+        secure(manager, core, media, [0, 1])
+        manager.handle(media: .speaking([core.others[0].participant]))
+        let before = pip.shown.count
+        XCTAssertTrue(pip.shown.allSatisfy { $0.picture == false }, "the speaker window never shows a picture while the grid owns the window")
+        // Both leave, one rejoins: the mode does not change, so the grid is never cleared and the speaker path does not run.
+        manager.handle([event("left", participant: core.others[0].participant), event("left", participant: core.others[1].participant)])
+        manager.refreshPiP()
+        XCTAssertEqual(pip.clears, 0, "the grid is not torn down while nobody is here")
+        XCTAssertTrue(pip.shown.dropFirst(before).allSatisfy { $0.picture == false })
+        manager.handle(media: .speaking([]))
+        XCTAssertTrue(pip.shown.allSatisfy { $0.picture == false })
+        await manager.leave()
+    }
+
+    func testTheModeComesFromTheCallAndTheChoiceNotFromWhoIsInTheRoom() {
+        XCTAssertEqual(PiPGridPlan.mode(video: true, choice: nil, others: 0).mode, .grid)
+        XCTAssertEqual(PiPGridPlan.mode(video: true, choice: nil, others: 2).mode, .grid)
+        XCTAssertEqual(PiPGridPlan.mode(video: true, choice: nil, others: 6).mode, .speaker)
+        XCTAssertEqual(PiPGridPlan.mode(video: true, choice: .speaker, others: 2).mode, .speaker)
+        XCTAssertEqual(PiPGridPlan.mode(video: true, choice: .grid, others: 9).mode, .grid)
+        XCTAssertEqual(PiPGridPlan.mode(video: false, choice: .grid, others: 2).mode, .speaker, "a voice call has no grid")
+        XCTAssertFalse(PiPGridPlan.mode(video: true, choice: nil, others: 2).why.isEmpty)
     }
 
     func testTheWindowShowsThePhotoWhenTheCameraIsOffOrTheKeyIsMissingAndNeverNothing() async {

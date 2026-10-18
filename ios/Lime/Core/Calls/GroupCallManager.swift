@@ -152,6 +152,8 @@ final class GroupCallManager {
     @ObservationIgnored var thermalState: () -> ProcessInfo.ThermalState = { ProcessInfo.processInfo.thermalState }
     @ObservationIgnored private var heatRecheck: Task<Void, Never>?
     @ObservationIgnored private var lastGridLog = ""
+    /// Who owns the minimised window now (nil: not decided yet).
+    @ObservationIgnored private var pipMode: PiPGridPlan.View?
     @ObservationIgnored var speakerHoldSeconds: Double = 2
     /// Minimise was pressed: the app opens the group's chat (so the person can type while talking).
     @ObservationIgnored var onMinimize: ((String) -> Void)?
@@ -667,14 +669,27 @@ final class GroupCallManager {
         if id != pipSubject { pipSubject = id; pipSubjectSince = now() }
         let tile = tiles.first { $0.id == id }
         let pictureShowing = (tile?.secured ?? false) && (tile?.cameraOn ?? false) && video
-        let showGrid = video && pipView == .grid && !tiles.filter { !$0.isMe }.isEmpty
-        if !showGrid {
+        // One owner of the window per mode (LIME-150-fix5): the mode comes from the call and the choice, never from who is in the room this second.
+        let others = tiles.filter { !$0.isMe }.count
+        let decided = PiPGridPlan.mode(video: video, choice: pipViewChoice, others: others)
+        if decided.mode != pipMode {
+            diag.log("pip mode=\(decided.mode.rawValue) why=\(decided.why)")
+            let before = pipMode
+            pipMode = decided.mode
+            // The window's other owner lets go once, at the switch.
+            if decided.mode == .grid { pip.show(subject: pipSubjectValue(for: id), track: nil, pictureShowing: false) }
+            if before == .grid { pip.clearGrid() }
+        }
+        guard decided.mode == .grid else {
             pip.show(subject: pipSubjectValue(for: id), track: id.flatMap { media?.videoTrack(for: $0) }, pictureShowing: pictureShowing)
+            return
+        }
+        guard others > 0 else {
+            // Nobody else is here this second: the grid stays installed (hidden) and the group's own picture shows; it comes back with the next person.
+            pip.show(subject: pipSubjectValue(for: nil), track: nil, pictureShowing: false)
             pip.showGrid([])
             return
         }
-        // The grid: the speaker window's own single picture is let go (no second sink on the same track), the cells draw instead.
-        pip.show(subject: pipSubjectValue(for: id), track: nil, pictureShowing: false)
         let thermal = thermalState()
         heat.update(thermal: thermal, now: now())
         let people = tiles.map { PiPGridPlan.Person(id: $0.id, name: $0.name, isMe: $0.isMe, speaking: $0.speaking, hasPicture: $0.secured && $0.cameraOn) }
@@ -735,7 +750,7 @@ final class GroupCallManager {
         stopCameraLog()
         network?.stop()
         pip?.stop(); pip = nil; pictureInPictureActive = false
-        heatRecheck?.cancel(); heatRecheck = nil; heat.reset(); recentSpeakers = []; lastGridLog = ""
+        heatRecheck?.cancel(); heatRecheck = nil; heat.reset(); recentSpeakers = []; lastGridLog = ""; pipMode = nil
         anchorView = nil
         pipSubject = nil; lastOtherSpeaker = nil
         phase = .idle
