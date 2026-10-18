@@ -2,7 +2,7 @@
 // the LOCAL stack (the emailed codes are read from its mail catcher). Run with ./supabase/test.sh.
 
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 import { toBase64 } from "../functions/_shared/bytes.ts";
 import {
   admin, ANON_KEY, API_URL, call, clearMailbox, emailedCode, newMasterKey, pause, randomBytes, registerDevice, sessionIdOf,

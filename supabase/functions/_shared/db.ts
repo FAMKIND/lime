@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.117.2";
 import { HttpError } from "./http.ts";
 import { accountConfig, config } from "./config.ts";
 

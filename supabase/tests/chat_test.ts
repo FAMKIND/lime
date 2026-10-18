@@ -2,7 +2,7 @@
 // private per-device Realtime channel. Against the LOCAL stack: ./supabase/test.sh
 
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 import {
   admin, ANON_KEY, API_URL, call, ciphertext, deleteUser, newMasterKey, newUser, registerDevice, sendSigned, setAccessKey, type TestUser,
 } from "./helpers.ts";

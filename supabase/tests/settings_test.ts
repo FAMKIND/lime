@@ -2,7 +2,7 @@
 // Against the LOCAL stack (the emailed codes come from its mail catcher): ./supabase/test.sh
 
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 import { admin, ANON_KEY, API_URL, call, clearMailbox, deleteUser, emailedCode, newUser, pause, sessionIdOf, type TestUser } from "./helpers.ts";
 
 const opts = { sanitizeOps: false, sanitizeResources: false };

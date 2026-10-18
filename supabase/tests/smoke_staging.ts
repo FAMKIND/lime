@@ -2,7 +2,7 @@
 // users, one sealed send, one fetch, one ack. The throwaway users are always deleted.
 
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 import { ANON_KEY, API_URL, call, ciphertext, deleteUser, newMasterKey, newUnverifiedUser, newUser, registerDevice, sendSigned, setAccessKey } from "./helpers.ts";
 
 const alice = await newUser(); // the sender (never needs a token for a sealed send)

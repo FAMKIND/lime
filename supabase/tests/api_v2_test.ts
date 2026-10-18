@@ -1,7 +1,7 @@
 // API v2 core against the local Supabase stack. Run with ./supabase/test.sh.
 
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.117.2";
 import postgres from "npm:postgres@3";
 import {
   admin, ANON_KEY, API_URL, call, ciphertext, DB_URL, deleteUser, newMasterKey, newUser, otk, randomBytes,
