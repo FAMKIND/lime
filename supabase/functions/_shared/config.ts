@@ -43,6 +43,11 @@ export const accountConfig = {
   /** Identify / sign-in attempts per minute per client address. */
   identifyPerMinute: () => intFromEnv("LIME_RATE_IDENTIFY_PER_MIN", 30),
   signInPerTenMinutes: () => intFromEnv("LIME_RATE_SIGNIN_PER_10MIN", 10),
+  /** Setting or changing a password (`signup-set-password`, `password-change-verify`) per ten minutes per user: a person does it once. */
+  setPasswordPer10Min: () => intFromEnv("LIME_RATE_SET_PASSWORD_PER_10MIN", 10),
+  /** Code checks with no session (`signup-verify`, `reset-verify`) per ten minutes per client address, on top of the five wrong tries per code.
+   *  Generous enough for a staff room signing up at once behind one school address. */
+  verifyPerAddressPer10Min: () => intFromEnv("LIME_RATE_VERIFY_PER_10MIN", 60),
   /** Emails asked for (sign-up, sign-in code, reset) per hour per address. */
   emailPerHour: () => intFromEnv("LIME_RATE_EMAIL_PER_HOUR", 10),
 };

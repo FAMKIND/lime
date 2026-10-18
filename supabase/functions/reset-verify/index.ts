@@ -2,11 +2,12 @@
 // new password in one step. Having proved the email by code and chosen the password, the new
 // session has both steps and is verified.
 
-import { admin } from "../_shared/db.ts";
-import { CODE_PATTERN, authCall, MAX_CODE_ATTEMPTS, MIN_PASSWORD_LENGTH, resolveEmail, sha256Hex, verifiedSessionFor } from "../_shared/auth.ts";
+import { admin, accountConfig, rateLimit } from "../_shared/db.ts";
+import { CODE_PATTERN, authCall, clientIp, MAX_CODE_ATTEMPTS, MIN_PASSWORD_LENGTH, resolveEmail, sha256Hex, verifiedSessionFor } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
+  await rateLimit(`verify:ip:${clientIp(req)}`, 1, accountConfig.verifyPerAddressPer10Min(), 600);
   const body = await readJson(req);
   const identifier = typeof body.identifier === "string" ? body.identifier : typeof body.email === "string" ? body.email : "";
   const email = identifier.trim() ? await resolveEmail(identifier) : null;

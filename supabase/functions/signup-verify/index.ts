@@ -2,11 +2,12 @@
 // returns the new session. The session has proven the email only: it must still set a password
 // (signup-set-password) before it can do anything.
 
-import { admin, sessionIdOf } from "../_shared/db.ts";
-import { CODE_PATTERN, authCall, MAX_CODE_ATTEMPTS, normaliseEmail, sha256Hex } from "../_shared/auth.ts";
+import { admin, accountConfig, rateLimit, sessionIdOf } from "../_shared/db.ts";
+import { CODE_PATTERN, authCall, clientIp, MAX_CODE_ATTEMPTS, normaliseEmail, sha256Hex } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
+  await rateLimit(`verify:ip:${clientIp(req)}`, 1, accountConfig.verifyPerAddressPer10Min(), 600);
   const body = await readJson(req);
   const email = normaliseEmail(body.email);
   if (typeof body.code !== "string" || !CODE_PATTERN.test(body.code)) {

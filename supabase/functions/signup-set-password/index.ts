@@ -2,12 +2,13 @@
 // proved its email by code, for an account with no profile yet, may call it; it then has both
 // steps (the code, and the password it just chose). It returns a fresh, verified session.
 
-import { admin, requireSession } from "../_shared/db.ts";
+import { admin, accountConfig, rateLimit, requireSession } from "../_shared/db.ts";
 import { MIN_PASSWORD_LENGTH, verifiedSessionFor } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
   const session = await requireSession(req);
+  await rateLimit(`setpw:${session.userId}`, 1, accountConfig.setPasswordPer10Min(), 600);
   const body = await readJson(req);
   const password = typeof body.password === "string" ? body.password : "";
   if (password.length < MIN_PASSWORD_LENGTH || password.length > 256) {

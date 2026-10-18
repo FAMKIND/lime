@@ -1,12 +1,13 @@
 // POST password-change-verify { code, new_password }: step two. The emailed code (5 wrong tries, then
 // locked) and the new password. Changing a password ends the account's other sessions, so a fresh
 // session that has passed both steps is returned, as for a password reset.
-import { admin, requireUser } from "../_shared/db.ts";
+import { admin, accountConfig, rateLimit, requireUser } from "../_shared/db.ts";
 import { CODE_PATTERN, authCall, MAX_CODE_ATTEMPTS, MIN_PASSWORD_LENGTH, verifiedSessionFor } from "../_shared/auth.ts";
 import { handler, HttpError, json, readJson } from "../_shared/http.ts";
 
 Deno.serve(handler(async (req) => {
   const userId = await requireUser(req);
+  await rateLimit(`pwchange-set:${userId}`, 1, accountConfig.setPasswordPer10Min(), 600);
   const body = await readJson(req);
   const password = typeof body.new_password === "string" ? body.new_password : "";
   if (typeof body.code !== "string" || !CODE_PATTERN.test(body.code)) throw new HttpError(400, "bad_request", "The code is 6 to 8 digits.");
