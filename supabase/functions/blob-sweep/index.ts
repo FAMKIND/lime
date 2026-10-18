@@ -16,9 +16,11 @@ function sameText(a: string, b: string): boolean {
 
 Deno.serve(handler(async (req) => {
   if (req.method !== "POST") throw new HttpError(405, "method_not_allowed", "Use POST.");
+  // No secret, nothing to compare: refused before any database read (review finding F-13).
+  const presented = req.headers.get("x-sweep-secret") ?? "";
+  if (presented === "" || presented.length > 256) throw new HttpError(401, "unauthorized", "Not allowed.");
   const db = admin();
   const { data: target } = await db.from("sweep_target").select("secret").eq("id", 1).maybeSingle();
-  const presented = req.headers.get("x-sweep-secret") ?? "";
   if (!target || !sameText(presented, target.secret)) throw new HttpError(401, "unauthorized", "Not allowed.");
 
   const now = new Date().toISOString();

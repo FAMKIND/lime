@@ -106,6 +106,8 @@ Deno.test("delete after the last recipient has fetched it, and the sweep removes
     const secret = await sweepSecret();
     const sweep = (s: string) => fetch(`${API_URL}/functions/v1/blob-sweep`, { method: "POST", headers: { "x-sweep-secret": s, apikey: ANON_KEY } });
     assertEquals((await sweep("wrong")).status, 401);
+    assertEquals((await sweep("")).status, 401, "an empty secret");
+    assertEquals((await fetch(`${API_URL}/functions/v1/blob-sweep`, { method: "POST", headers: { apikey: ANON_KEY } })).status, 401, "no secret header at all");
     const first = await (await sweep(secret)).json();
     assertEquals((await admin.from("attachments").select("id").eq("id", id)).data!.length, 1, "not expired yet: kept");
     assert(first.attachments >= 0);
