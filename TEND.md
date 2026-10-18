@@ -6864,7 +6864,7 @@ Phase 0: `PLOT.md` committed first. The originals (`lime-chime.m4a`, `lime-dialt
 - **Gate (the user):** a message chime, the "Calling…" tone, and an incoming call (1:1 and group) on another phone: all three sound like the originals, and the incoming call rings with lime's ringtone, not the phone's.
 - **For plot:** the ring is quieter than the other two by design of "no normalisation" (RMS -17.8 against -9.2 and -14.2): that is the originals' own levels. If the ring or the Calling tone feels too loud or too quiet next to the chime, say which and by how much, and it becomes a gain choice.
 
-## LIME-166 (pre-TestFlight hardening from LIME-158) — items 1-7 committed, one commit each; installed on all three phones; **STAGING NOT DEPLOYED: waiting for the user's "go"**
+## LIME-166 (pre-TestFlight hardening from LIME-158) — items 1-8 committed, one commit each; **deployed to staging on the user's "go"; staging smoke test passed**; installed on all three phones; the phone check is the user's
 
 Phase 0: `PLOT.md` committed first. Commits (trailer `Brief: LIME-166`):
 | # | Finding | Commit | What |
@@ -6881,4 +6881,10 @@ Phase 0: `PLOT.md` committed first. Commits (trailer `Brief: LIME-166`):
 
 **Verification (local):** Deno **85 pass** (79 before, +6 rate-limit tests, the rewritten sealed test replaced the overlap one), core **279 pass**, core integration **23 pass** (after items 1, 3 and 7), `check-android.sh` OK, Swift LimeTests **478 pass** (10 skipped), `check-release-no-bluetooth.sh` OK (Release builds), 0 warnings of ours, `cargo audit` clean. **Installed (Debug) on Jean's iPhone, the iPad and the 13 mini.**
 
-**Staging deploy:** NOT done. After the user's "go": `./supabase/deploy-staging.sh` (its guard `check-staging-mesh-key.sh` passes today), then the smoke test (`supabase/smoke-staging.sh`), then the phones' smoke test: a message both ways, a group call, an attachment.
+**Item 8 (added by the user with the go): `915b2ce`.** Rate limits on the password and code functions: **`signup-set-password` and `password-change-verify` 10 per ten minutes per user** (a person does it once; separate buckets), **`signup-verify` and `reset-verify` 60 per ten minutes per client address** (no session; on top of the five wrong tries per code; 60 so a staff room signing up behind one school address is not blocked, the same address limits the sign-up start already use 30 a minute). Configurable (`LIME_RATE_SET_PASSWORD_PER_10MIN`, `LIME_RATE_VERIFY_PER_10MIN`). 4 new Deno tests; the tests use a fixed `cf-connecting-ip` (the helper makes up a new address per call) and tolerate a fixed-window edge. **`mailbox-fetch` left for real-use numbers, as asked.** (`code-verify`, `code-resend`, `reset-start`, `signup-start` already had their own limits.)
+
+**Verification (local, final):** Deno **89 pass**, core 279, core integration 23, `check-android.sh` OK, Swift LimeTests 478, Release gate OK, `cargo audit` clean, 0 warnings of ours.
+
+**Staging (on the user's "go"):** `./supabase/deploy-staging.sh` ran to the end (exit 0): migrations (none new), all 33 functions deployed, the limit secrets unchanged (the new limits use their code defaults), the mesh-key guard OK (staging digest `d87134f7a5371c6e`, not the local test key). **`./supabase/smoke-staging.sh` passed** (the checks of the settings, a signed send, fetch and ack, the account checks, the chat checks; throwaway users deleted). Not run: a staging check that a `{ sealed }` proof is refused (the local Deno test covers it; say if you want it on staging with a throwaway user).
+
+**Gate (the user), on the phones (Debug build installed on Jean's iPhone, the iPad and the 13 mini; they talk to staging, now updated):** a message both ways, a group call, an attachment. If anything says "slow down" (a 429) in ordinary use, tell me which action: that is a limit set too low.
