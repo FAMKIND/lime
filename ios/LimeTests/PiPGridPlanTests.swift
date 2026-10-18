@@ -55,16 +55,16 @@ final class PiPGridPlanTests: XCTestCase {
 
     func testTheWindowsCellsFillItInsideAFourPointInsetWithAFourPointGap() {
         let size = CGSize(width: 480, height: 480)
-        XCTAssertEqual(GroupCallLayout.pipGrid(count: 1, in: size), [CGRect(x: 4, y: 4, width: 472, height: 472)], "4 pt from every edge")
+        XCTAssertEqual(GroupCallLayout.pipGrid(count: 1, in: size), [CGRect(x: 8, y: 8, width: 464, height: 464)], "8 pt from every edge")
         let two = GroupCallLayout.pipGrid(count: 2, in: CGSize(width: 640, height: 480))
-        XCTAssertEqual(two.map(\.minY), [4, 4], "a wide window: side by side")
+        XCTAssertEqual(two.map(\.minY), [8, 8], "a wide window: side by side")
         let stacked = GroupCallLayout.pipGrid(count: 2, in: CGSize(width: 300, height: 480))
-        XCTAssertEqual(stacked.map(\.minX), [4, 4], "a tall window: stacked")
+        XCTAssertEqual(stacked.map(\.minX), [8, 8], "a tall window: stacked")
         let four = GroupCallLayout.pipGrid(count: 4, in: size)
         XCTAssertEqual(four.count, 4)
-        XCTAssertEqual(four[0].width, 234)
-        XCTAssertEqual(four[3].maxX, 476, "4 pt short of the edge")
-        XCTAssertEqual(four[3].maxY, 476)
+        XCTAssertEqual(four[0].width, 230)
+        XCTAssertEqual(four[3].maxX, 472, "8 pt short of the edge")
+        XCTAssertEqual(four[3].maxY, 472)
         XCTAssertEqual(four[1].minX - four[0].maxX, 4, "a 4 pt gap")
         XCTAssertTrue(GroupCallLayout.pipGrid(count: 0, in: size).isEmpty)
     }
@@ -90,6 +90,30 @@ final class PiPGridPlanTests: XCTestCase {
                 for a in cells { for b in cells where b.minY > a.maxY - 0.01 && abs(b.minX - a.minX) < 0.01 { XCTAssertEqual(b.minY - a.maxY, GroupCallLayout.pipGap, accuracy: 0.01) } }
             }
         }
-        XCTAssertEqual(GroupCallLayout.pipGap, GroupCallLayout.pipInset, "the gap between cells is the gap around the grid")
+        XCTAssertGreaterThan(GroupCallLayout.pipInset, GroupCallLayout.pipGap, "more space from the window's corners than between cells")
+        XCTAssertTrue((6...8).contains(GroupCallLayout.pipInset), "about 6 to 8 pt from the window's edge")
+    }
+
+    /// The speaker's ring is drawn inside each cell, and no cell (or its ring) is clipped by the system window's rounded corners, for 1 to 4 cells
+    /// at the smallest and the largest window sizes, in both shapes.
+    func testNoCellOrRingIsClippedByTheWindowsCornersForOneToFourCellsAtTheSmallestAndLargestSizes() {
+        let sizes = [CGSize(width: 119, height: 212), CGSize(width: 212, height: 119), CGSize(width: 165, height: 124), CGSize(width: 240, height: 240),
+                     CGSize(width: 480, height: 480), CGSize(width: 720, height: 1280), CGSize(width: 1280, height: 720)]
+        for size in sizes {
+            for count in 1...4 {
+                for cell in GroupCallLayout.pipGrid(count: count, in: size) {
+                    let radius = GroupCallLayout.pipCornerRadius(for: cell.size)
+                    XCTAssertTrue(GroupCallLayout.clearsWindowCorners(cell, cornerRadius: radius, in: size), "\(count) cells in \(size): \(cell)")
+                    XCTAssertGreaterThanOrEqual(cell.minX, GroupCallLayout.pipInset)
+                    XCTAssertGreaterThanOrEqual(cell.minY, GroupCallLayout.pipInset)
+                    XCTAssertLessThanOrEqual(cell.maxX, size.width - GroupCallLayout.pipInset + 0.01)
+                    XCTAssertLessThanOrEqual(cell.maxY, size.height - GroupCallLayout.pipInset + 0.01)
+                    XCTAssertLessThanOrEqual(radius * 2, min(cell.width, cell.height), "the corner radius fits the cell")
+                }
+            }
+        }
+        // The check has teeth: the old 2 pt inset with a 14 pt window corner clipped a cell's corner.
+        let tight = GroupCallLayout.pipGrid(count: 1, in: CGSize(width: 119, height: 212), gap: 4, inset: 2)[0]
+        XCTAssertFalse(GroupCallLayout.clearsWindowCorners(tight, cornerRadius: 8, in: CGSize(width: 119, height: 212), windowRadius: 20))
     }
 }

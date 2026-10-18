@@ -6542,3 +6542,14 @@ Brief: LIME-150-fix4 (one mini-player gap on every screen; even grid gaps; the b
 **Verification.** All unit tests and `CallMiniPlayerUITests` pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.
 
 **Gate (the user, on the phone):** the same gap on every screen including replies; the grid's gaps even on black; the chevron tab.
+
+## LIME-150-fix5, item 4 only: the speaker's ring and the space around the grid
+
+The user asked for this part of fix5 now (it is item 4 of plot's brief); the rest of fix5 (Grid mode owning the window, the tab matching iOS) is not done here.
+
+- [x] The ring is a border of a layer exactly the size of its cell with the cell's own radius, so it is drawn inside the rounded rectangle, never centred on or outside the edge.
+- [x] The space from the window's edge is **8 pt** (was 4): `GroupCallLayout.pipInset`. Chosen from the system window's corner radius (about 14 pt at its smallest size): a cell's corner arc (8–10 pt) needs only about 2 pt to clear that, so 8 leaves the ring's 3 pt stroke and the window's corners well clear. The gap between cells stays 4 pt, equal both ways (columns, rows). `GroupCallLayout.clearsWindowCorners` checks it.
+- [x] Checked 1–4 cells, each speaking in turn, at the smallest (119 × 212) and largest (720 × 1280) window sizes: rendered images of the real `PiPGridView` inside a 14 pt rounded window (`~/Desktop/lime-150fix4/ring-smallest.png`, `ring-largest.png`): every ring is complete and inside its cell, clear of the corners. A unit test asserts no cell is clipped for 1–4 cells in seven window sizes (portrait and landscape, 119 × 212 up to 1280 × 720); another keeps the gaps equal.
+- Not checked: the real floating window on the phone (it cannot be screenshotted); the images use a 14 pt corner radius as a stand-in.
+
+All unit tests pass; build 0 warnings of ours. Installed on Jean's iPhone, the iPad and the 13 mini.

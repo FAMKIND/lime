@@ -47,8 +47,31 @@ enum GroupCallLayout {
     /// The minimised window's cells (LIME-150, the "pip" mode of this function): they fill the window inside a 4 pt inset (the system's own
     /// window corners must not clip a tile) with a 4 pt gap, and the video aspect-fills each. 1 fills it; 2 sit side by side in a wide window and
     /// stacked in a tall one; 3 or 4 make a 2 x 2.
-    static let pipInset: CGFloat = 4
+    /// Space from the window's edge: the system window's own rounded corners (about 14 pt at its smallest size) and the speaker's ring must never
+    /// clip a cell, so it is a little more than the corner needs (see `clearsWindowCorners`). The gap between cells is smaller and the same both ways.
+    static let pipInset: CGFloat = 8
     static let pipGap: CGFloat = 4
+    /// About the radius of the system's floating window corners.
+    static let pipWindowCornerRadius: CGFloat = 14
+
+    /// Whether a cell's rounded corner lies inside the window's rounded corners (so nothing of the cell, or of a ring drawn inside it, is clipped).
+    static func clearsWindowCorners(_ cell: CGRect, cornerRadius: CGFloat, in size: CGSize, windowRadius: CGFloat = pipWindowCornerRadius) -> Bool {
+        let windowRect = CGRect(origin: .zero, size: size)
+        guard windowRect.contains(cell) else { return false }
+        // The outermost point of each of the cell's four corner arcs (on the diagonal) must be inside the window's matching corner circle.
+        let k = cornerRadius * (1 - 1 / 2.0.squareRoot())
+        let corners: [(CGPoint, CGPoint)] = [
+            (CGPoint(x: cell.minX + k, y: cell.minY + k), CGPoint(x: windowRadius, y: windowRadius)),
+            (CGPoint(x: cell.maxX - k, y: cell.minY + k), CGPoint(x: size.width - windowRadius, y: windowRadius)),
+            (CGPoint(x: cell.minX + k, y: cell.maxY - k), CGPoint(x: windowRadius, y: size.height - windowRadius)),
+            (CGPoint(x: cell.maxX - k, y: cell.maxY - k), CGPoint(x: size.width - windowRadius, y: size.height - windowRadius)),
+        ]
+        for (point, centre) in corners {
+            let inCornerZone = abs(point.x - centre.x) > 0 && ((point.x < windowRadius && centre.x == windowRadius) || (point.x > size.width - windowRadius && centre.x == size.width - windowRadius)) && ((point.y < windowRadius && centre.y == windowRadius) || (point.y > size.height - windowRadius && centre.y == size.height - windowRadius))
+            if inCornerZone, hypot(point.x - centre.x, point.y - centre.y) > windowRadius { return false }
+        }
+        return true
+    }
 
     static func pipGrid(count: Int, in size: CGSize, gap: CGFloat = pipGap, inset: CGFloat = pipInset) -> [CGRect] {
         guard count > 0, size.width > 2 * inset, size.height > 2 * inset else { return [] }

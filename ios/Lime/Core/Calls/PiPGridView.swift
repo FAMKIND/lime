@@ -175,6 +175,8 @@ final class PiPGridView: UIView {
             slot.ring.cornerCurve = .continuous
             slot.video.frame = slot.container.bounds
             slot.photo?.frame = slot.container.bounds
+            // The ring is a border of a layer exactly the size of the cell, with the cell's own radius: drawn inside the rounded rectangle, never
+            // centred on or outside its edge.
             slot.ring.frame = slot.container.bounds
             let text = (slot.label.text ?? "") as NSString
             let width = min(frame.width - 8, text.size(withAttributes: [.font: slot.label.font as Any]).width + 14)
