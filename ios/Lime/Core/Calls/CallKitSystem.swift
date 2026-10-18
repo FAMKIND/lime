@@ -16,6 +16,11 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
         configuration.maximumCallsPerCallGroup = 1
         configuration.supportedHandleTypes = [.generic]
         configuration.includesCallsInRecents = false
+        // An incoming call rings with lime's ringtone, not the phone's default (LIME-152g): CallKit takes a sound in the app bundle.
+        configuration.ringtoneSound = CallRingtone.callKitSoundName
+        let ringName = CallRingtone.callKitSoundName as NSString
+        let found = Bundle.main.url(forResource: ringName.deletingPathExtension, withExtension: ringName.pathExtension) != nil
+        CallDiagnostics.shared.log("callkit ringtone=\(CallRingtone.callKitSoundName) found=\(found)")
         CallDiagnostics.shared.log("callkit provider created (the only one)")
         return CXProvider(configuration: configuration)
     }()

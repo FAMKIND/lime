@@ -2,25 +2,28 @@
 
 - `lime-chime.caf`: the message chime (2.96 s, the user's own sound, LIME-152e). The default Sound in Settings → Notifications; used for local notifications
   (`UNNotificationSound(named:)`) and the in-app banner sound (`SystemArrivalFeedback`, which follows the silent switch).
-- `lime-ring.caf`: the call ringtone (12.64 s, the user's own sound, LIME-152e; under iOS's 30 s limit). `CallRingtone.callKitSoundName` names it for CallKit's
-  `CXProviderConfiguration.ringtoneSound` (LIME-111 uses it; it loops while ringing).
+- `lime-ring.caf`: the call ringtone (12.64 s, the user's own sound; under iOS's 30 s limit). `CallKitSystem` hands `CallRingtone.callKitSoundName` to
+  `CXProviderConfiguration.ringtoneSound` (LIME-152g; before that nothing assigned it and CallKit played the phone's default ringtone, although this file
+  said it did); it loops while ringing. The log line `callkit ringtone=lime-ring.caf found=true` says the file resolved in the bundle.
 
 The originals stay **out of git**: only these converted files are committed. A new version drops in by replacing the CAFs (keep the names).
 
-## The current three (LIME-152e, 2026-10-18)
+## The current three (LIME-152g, 2026-10-18)
 
-The user's own sounds (rights theirs), processed by `ios/tools/process-sound.py` (`afconvert` only; pass `--loop` for the two that loop):
+The user's own sounds (rights theirs), processed by `ios/tools/process-sound.py` (`afconvert` and `afinfo` only; pass `--loop` for the two that loop).
+**The rule: as the source.** Stereo stays stereo, the sample rate is the source's, linear PCM 16-bit, **no loudness normalisation**. Only pure
+leading and trailing silence (below -60 dBFS) is trimmed, keeping 5 ms; a peak ceiling of -1 dBFS lowers the whole file only if the source peaks
+above it; an 8 ms raised-cosine fade at both ends, and for the two loops the cut moved to the nearest zero crossing so a loop has no click at its seam.
+(LIME-152e had made them mono and set every file to an RMS of -16 dBFS, which changed how they sound.)
 
-| File | Source | Duration | RMS | Peak | Seam (first 50 ms / last 50 ms, step) |
-|---|---|---|---|---|---|
-| `lime-chime.caf` | `lime-chime.m4a` (2.963 s, already trimmed by the user: not cut further) | 2.963 s | -16.0 dBFS | -5.6 dBFS | not a loop |
-| `lime-ringback.caf` (the "Calling…" tone, looped by the app) | `lime-dialtone.m4a` (9.225 s) | 9.215 s | -16.0 dBFS | -9.9 dBFS | -13.9 / -18.4 dBFS, step 0 |
-| `lime-ring.caf` (CallKit loops it; under 30 s) | `lime-ringtone.m4a` (12.637 s) | 12.637 s | -16.0 dBFS | -3.4 dBFS | -20.9 / -47.0 dBFS, step 0 |
+| File | Source | Format | Duration | RMS | Peak (source peak) | Seam (first 50 ms / last 50 ms, step) | Size |
+|---|---|---|---|---|---|---|---|
+| `lime-chime.caf` | `lime-chime.m4a` (stereo AAC, 2.963 s) | 2 ch, 44.1 kHz, 16-bit | 2.963 s | -14.2 dBFS | -1.0 (source 0.0, lowered 1 dB) | -27.6 / -22.0 dBFS, not a loop | 527 KB |
+| `lime-ringback.caf` (the "Calling…" tone, looped by the app) | `lime-dialtone.m4a` (stereo AAC, 9.225 s) | 2 ch, 44.1 kHz, 16-bit | 9.215 s | -9.2 dBFS | -1.0 (source 0.0, lowered 1 dB) | -7.1 / -12.5 dBFS, step 0 | 1.6 MB |
+| `lime-ring.caf` (CallKit loops it; under 30 s) | `lime-ringtone.m4a` (stereo AAC, 12.637 s) | 2 ch, 44.1 kHz, 16-bit | 12.637 s | -17.8 dBFS | -4.8 (unchanged) | -22.8 / -48.5 dBFS, step 0 | 2.2 MB |
 
-Mono, 16-bit, 44.1 kHz CAF. Pure leading and trailing silence (below -60 dBFS) trimmed, keeping 5 ms; the level set to an RMS of -16 dBFS (no
-file needed the -1 dBFS peak limit); an 8 ms raised-cosine fade at both ends of each file, and for the two loops the cut moved to the nearest zero
-crossing, so a loop has no click at its seam (the last and first samples are both zero). The ringback starts and ends on sound, so it loops
-with an 8 ms dip at the seam, not a pause.
+The three together are about 4.4 MB (they were 2.2 MB as mono). The ringback starts and ends on sound, so it loops with an 8 ms dip at the seam,
+not a pause.
 
 ## How the earlier ones were made
 

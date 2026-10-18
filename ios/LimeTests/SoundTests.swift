@@ -12,6 +12,18 @@ final class SoundFileTests: XCTestCase {
         XCTAssertEqual(SoundFiles.chime, "lime-chime.caf")
         XCTAssertEqual(CallRingtone.callKitSoundName, "lime-ring.caf")
     }
+
+    /// LIME-152g: the three of the user's own sounds keep the originals' quality (stereo, the source's 44.1 kHz, linear PCM 16-bit), not a mono
+    /// loudness-normalised copy.
+    func testTheUsersThreeSoundsAreStereoAtTheSourceRate() throws {
+        for (name, seconds) in [("lime-chime", 2.963), ("lime-ringback", 9.215), ("lime-ring", 12.637)] {
+            let url = try XCTUnwrap(Bundle.main.url(forResource: name, withExtension: "caf"), "\(name).caf is bundled")
+            let file = try AVAudioFile(forReading: url)
+            XCTAssertEqual(file.fileFormat.channelCount, 2, "\(name) is stereo, as the original")
+            XCTAssertEqual(file.fileFormat.sampleRate, 44_100, "\(name) keeps the source's sample rate")
+            XCTAssertEqual(Double(file.length) / file.fileFormat.sampleRate, seconds, accuracy: 0.02, "\(name) keeps its length")
+        }
+    }
 }
 
 @MainActor

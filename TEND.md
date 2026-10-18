@@ -6846,3 +6846,20 @@ Phase 0: `PLOT.md` committed first.
 - **Verification:** build 0 warnings of ours; Swift LimeTests 474 pass (10 skipped); the long-press UI flow ran in the screenshot test. Visual brief: no new tests. Installed on Jean's iPhone, the iPad and the 13 mini (Debug).
 - **Gate (the user):** long-press a message in a busy chat: the chat is faintly visible behind it; open a profile: the pin looks as it did.
 - **For plot:** if the blur is still too strong or too weak on the phone, it is one number (`radius: 4`, `opacity 0.15`) in `MessageActions.swift`.
+
+## LIME-152g (the sounds keep the originals' quality; incoming calls ring with lime's ringtone) — committed; installed on all three phones; **the gate is yours**
+
+Phase 0: `PLOT.md` committed first. The originals (`lime-chime.m4a`, `lime-dialtone.m4a`, `lime-ringtone.m4a`, on the Desktop) were copied to a scratch folder outside the repo; they are not committed.
+
+- **1. The three CAFs, as the source.** `ios/tools/process-sound.py` rewritten: same channel count (stereo stays stereo), the source's sample rate (read with `afinfo`), linear PCM 16-bit, **no loudness normalisation**; only pure leading/trailing silence trimmed (below -60 dBFS, keeping 5 ms), a **-1 dBFS peak ceiling only if the source exceeds it**, 8 ms fades, zero-crossing cuts on the two loops. The sources are stereo AAC at 44.1 kHz, so 16-bit PCM was kept (24-bit would add nothing to an AAC decode). `afinfo` of the results:
+  | File | Format | Duration | RMS | Peak (source peak) | Size |
+  |---|---|---|---|---|---|
+  | `lime-chime.caf` | 2 ch, 44.1 kHz, Int16 | 2.963 s (the user's, unchanged) | -14.2 dBFS | -1.0 (source 0.0: lowered 1 dB) | 527 KB |
+  | `lime-ringback.caf` (loop) | 2 ch, 44.1 kHz, Int16 | 9.215 s | -9.2 dBFS | -1.0 (source 0.0: lowered 1 dB) | 1.6 MB |
+  | `lime-ring.caf` (loop) | 2 ch, 44.1 kHz, Int16 | 12.637 s (under 30 s) | -17.8 dBFS | -4.8 (unchanged) | 2.2 MB |
+  Loop seams: step 0 on both. **Bundle size: the three together are about 4.4 MB (they were 2.2 MB as mono).** The chime and the dial tone were at 0 dBFS in the originals, so each got the 1 dB ceiling; the ringtone is exactly the source. README updated with the new rule and the table; it no longer claims LIME-111 passes the ringtone.
+- **2. The ringtone.** `CallKitSystem`'s provider configuration now sets `ringtoneSound = CallRingtone.callKitSoundName` and logs `callkit ringtone=lime-ring.caf found=true` (seen in the log on the 13 mini after install). Both 1:1 and group calls go through CallKit's provider, so both ring with it. **Not heard on a phone yet** (that is your gate).
+- **3. README** fixed (above).
+- **Tests:** the bundle-sounds test still checks the durations and names; new `testTheUsersThreeSoundsAreStereoAtTheSourceRate` (2 channels, 44.1 kHz, the lengths). **Swift LimeTests 475 pass (10 skipped), 0 warnings of ours.** Installed on Jean's iPhone, the iPad and the 13 mini (Debug).
+- **Gate (the user):** a message chime, the "Calling…" tone, and an incoming call (1:1 and group) on another phone: all three sound like the originals, and the incoming call rings with lime's ringtone, not the phone's.
+- **For plot:** the ring is quieter than the other two by design of "no normalisation" (RMS -17.8 against -9.2 and -14.2): that is the originals' own levels. If the ring or the Calling tone feels too loud or too quiet next to the chime, say which and by how much, and it becomes a gain choice.
