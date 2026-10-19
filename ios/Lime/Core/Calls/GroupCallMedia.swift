@@ -39,11 +39,14 @@ protocol GroupCallMedia: AnyObject {
     func frameCounts() -> [String: Int]
     /// What the SDK says about each remote camera track, for the diagnostics (subscribed, enabled, muted, decoder frames per second, size, dropped).
     func trackDetails() -> [String: String]
+    /// What this phone's own camera is doing, for the diagnostics (LIME-171): the capture, and each simulcast layer's size, rate, limit and bitrate.
+    func sendDetails() -> String
 }
 
 extension GroupCallMedia {
     func frameCounts() -> [String: Int] { [:] }
     func trackDetails() -> [String: String] { [:] }
+    func sendDetails() -> String { "" }
 }
 
 /// Counts a remote video track's frames and draws nothing (LIME-162: tells "the track flows but nothing draws it" from "the track is not flowing").
@@ -100,10 +103,17 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
         return CameraCaptureOptions(dimensions: Dimensions(width: Int32(plan.width), height: Int32(plan.height)), fps: plan.fps)
     }
 
-    /// nil with Low Data Mode off (LiveKit's own simulcast); on: one small layer with a cap.
+    /// Low Data Mode: one small layer with a cap. Otherwise three layers (`CallVideoPlan.normalLayers`: 30 / 24 / 20 fps), so a grid cell fed from the
+    /// middle or low layer still moves smoothly (LIME-171).
     private var videoPublishOptions: VideoPublishOptions? {
-        guard lowData, let bitrate = CallVideoPlan.maxBitrate(lowData: true), let fps = CallVideoPlan.maxFps(lowData: true) else { return nil }
-        return VideoPublishOptions(encoding: VideoEncoding(maxBitrate: bitrate, maxFps: fps), simulcast: false)
+        if lowData, let bitrate = CallVideoPlan.maxBitrate(lowData: true), let fps = CallVideoPlan.maxFps(lowData: true) {
+            return VideoPublishOptions(encoding: VideoEncoding(maxBitrate: bitrate, maxFps: fps), simulcast: false)
+        }
+        guard let high = CallVideoPlan.normalLayers.first else { return nil }
+        let lower = CallVideoPlan.normalLayers.dropFirst().map {
+            VideoParameters(dimensions: Dimensions(width: Int32($0.width), height: Int32($0.height)), encoding: VideoEncoding(maxBitrate: $0.maxBitrate, maxFps: $0.maxFps))
+        }
+        return VideoPublishOptions(encoding: VideoEncoding(maxBitrate: high.maxBitrate, maxFps: high.maxFps), simulcast: true, simulcastLayers: Array(lower))
     }
 
     func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool, lowBandwidth: Bool) async throws {
@@ -150,8 +160,9 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
                 if let audio = remote.track as? RemoteAudioTrack { audio.volume = volume }
                 if remote.kind == .video, remote.source == .camera {
                     let low = lowData
+                    let quality: VideoQuality = low ? .low : .high
                     Task {
-                        try? await remote.set(videoQuality: low ? .low : .high)
+                        try? await remote.set(videoQuality: quality)
                         if low { try? await remote.set(preferredFPS: 15) }
                     }
                 }
@@ -218,10 +229,32 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
                 text += " dec=\(inbound.framesDecoded.map(String.init) ?? "-") drop=\(inbound.framesDropped.map(String.init) ?? "-")"
                 text += " pkts=\(inbound.packetsReceived.map(String.init) ?? "-") bytes=\(inbound.bytesReceived.map(String.init) ?? "-")"
                 text += " sdkfps=\(inbound.framesPerSecond.map { String(format: "%.0f", $0) } ?? "-") size=\(inbound.frameWidth.map(String.init) ?? "-")x\(inbound.frameHeight.map(String.init) ?? "-")"
+                text += " lost=\(inbound.packetsLost.map(String.init) ?? "-") freeze=\(inbound.freezeCount.map(String.init) ?? "-") jit=\(inbound.jitter.map { String(format: "%.0fms", $0 * 1000) } ?? "-")"
             }
             out[key.stringValue] = text
         }
         return out
+    }
+
+    func sendDetails() -> String {
+        guard let track = room?.localParticipant.firstCameraPublication?.track as? LocalVideoTrack, let stats = track.statistics else { return "" }
+        var parts: [String] = []
+        if let source = stats.videoSource.first {
+            parts.append("capture=\(source.width.map(String.init) ?? "-")x\(source.height.map(String.init) ?? "-")@\(source.framesPerSecond.map { String(format: "%.0f", $0) } ?? "-")")
+        }
+        for layer in stats.outboundRtpStream.sorted(by: { ($0.frameWidth ?? 0) > ($1.frameWidth ?? 0) }) {
+            let size = "\(layer.frameWidth.map(String.init) ?? "-")x\(layer.frameHeight.map(String.init) ?? "-")"
+            let fps = layer.framesPerSecond.map { String(format: "%.0f", $0) } ?? "-"
+            let target = layer.targetBitrate.map { String(format: "%.0fk", $0 / 1000) } ?? "-"
+            parts.append("[\(layer.rid ?? "-") \(size)@\(fps) enc=\(layer.framesEncoded.map(String.init) ?? "-") sent=\(layer.framesSent.map(String.init) ?? "-") limit=\(layer.qualityLimitationReason?.rawValue ?? "-") tgt=\(target)]")
+        }
+        if let remote = stats.remoteInboundRtpStream.first {
+            parts.append("rtt=\(remote.roundTripTime.map { String(format: "%.0fms", $0 * 1000) } ?? "-") lost=\(remote.fractionLost.map { String(format: "%.2f", $0) } ?? "-")")
+        }
+        if let pair = stats.iceCandidatePair.first(where: { $0.nominated == true }) {
+            parts.append("avail=\(pair.availableOutgoingBitrate.map { String(format: "%.0fk", $0 / 1000) } ?? "-")")
+        }
+        return parts.joined(separator: " ")
     }
 
     func videoTrack(for participant: String) -> AnyObject? {
@@ -285,7 +318,10 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
     nonisolated func room(_ room: Room, participant: LocalParticipant, didPublishTrack publication: LocalTrackPublication) {
         guard let id = participant.identity?.stringValue else { return }
         let source = publication.source
+        let track = publication.track
         Task { @MainActor in
+            // Statistics on my own camera: the numbers the call diagnostics report (LIME-171).
+            if source == .camera { await track?.set(reportStatistics: true) }
             if source == .camera { self.emit(.camera(participant: id, on: true)) }
             self.emit(.tracks(participant: id))
         }

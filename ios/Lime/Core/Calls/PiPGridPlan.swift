@@ -70,6 +70,15 @@ enum PiPGridPlan {
     static func liveCount(_ cells: [Cell]) -> Int { cells.filter(\.live).count }
 }
 
+/// The size of picture a grid cell asks LiveKit for, in pixels (LIME-171). It was 360×480 for the speaker and 240×240 for everyone else, which LiveKit
+/// answered with the lowest layer (180×320, at most 15 fps) for any cell that was not speaking. A cell is about 330×250 pixels on the screen, so the
+/// middle layer (360×640) is the right one for every visible cell and the high layer for the speaker or a single cell filling the window.
+enum GridLayerRequest {
+    static func size(speaking: Bool, cellCount: Int) -> CGSize {
+        speaking || cellCount == 1 ? CGSize(width: 720, height: 960) : CGSize(width: 360, height: 480)
+    }
+}
+
 /// The heat guard (LIME-150 6b): when the phone reaches the serious thermal state the grid keeps only the speaker live, and goes back to all
 /// live after two minutes at fair or nominal, so it never flaps.
 struct PiPHeatGuard {

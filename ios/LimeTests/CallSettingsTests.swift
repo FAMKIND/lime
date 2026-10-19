@@ -136,4 +136,26 @@ final class CallSettingsTests: XCTestCase {
             XCTAssertEqual(track.source.volume, volume, accuracy: 0.001, "\(volume)")
         }
     }
+
+    // MARK: Layers and the grid (LIME-171)
+
+    func testANormalGroupCallPublishesThreeLayersAtThirtyTwentyFourAndTwentyFrames() {
+        let layers = CallVideoPlan.normalLayers
+        XCTAssertEqual(layers.map(\.name), ["high", "mid", "low"])
+        XCTAssertEqual(layers.map(\.maxFps), [30, 24, 20], "LiveKit's own presets were 30 / 20 / 15: a grid cell never moved faster than 20 or 15")
+        XCTAssertEqual(layers.map(\.width), [1280, 640, 320])
+        XCTAssertEqual(layers.map(\.height), [720, 360, 180])
+        XCTAssertEqual(layers.map(\.maxBitrate), [1_700_000, 450_000, 150_000], "the same bitrates as before: only the rate went up")
+    }
+
+    func testAGridCellAsksForTheMiddleLayerAndTheSpeakerOrAWholeWindowForTheHighOne() {
+        // Layers are chosen by the size asked for: up to 360×640 is the middle layer, more is the high one, never the 180p floor for a visible cell.
+        let others = GridLayerRequest.size(speaking: false, cellCount: 4)
+        XCTAssertEqual(others, CGSize(width: 360, height: 480))
+        XCTAssertGreaterThan(others.width, 320, "past the low layer's 320 pixels")
+        XCTAssertGreaterThan(others.height, 320)
+        XCTAssertLessThanOrEqual(others.width, 360, "and no more than the middle layer's 360")
+        XCTAssertEqual(GridLayerRequest.size(speaking: true, cellCount: 4), CGSize(width: 720, height: 960))
+        XCTAssertEqual(GridLayerRequest.size(speaking: false, cellCount: 1), CGSize(width: 720, height: 960), "a single cell fills the window")
+    }
 }

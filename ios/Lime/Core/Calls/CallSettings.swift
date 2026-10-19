@@ -106,6 +106,23 @@ enum CallVideoPlan {
         return Capture(width: 1280, height: 720, fps: 24)
     }
 
+    /// One simulcast layer a phone publishes (LIME-171). LiveKit's own presets send 30 / 20 / 15 fps for the 720p / 360p / 180p layers, so a grid cell, which
+    /// is fed from the 360p or 180p layer, never got more than 20 or 15 fps; the measured calls showed that cap, not the network, the CPU or the heat.
+    struct Layer: Equatable {
+        var name: String
+        var width: Int
+        var height: Int
+        var maxBitrate: Int
+        var maxFps: Int
+    }
+
+    /// The layers of a normal group call (Low Data Mode sends one small capped layer instead): high 720p at 30, middle 360p at 24, low 180p at 20.
+    static let normalLayers: [Layer] = [
+        Layer(name: "high", width: 1280, height: 720, maxBitrate: 1_700_000, maxFps: 30),
+        Layer(name: "mid", width: 640, height: 360, maxBitrate: 450_000, maxFps: 24),
+        Layer(name: "low", width: 320, height: 180, maxBitrate: 150_000, maxFps: 20),
+    ]
+
     /// The bitrate cap (bits per second), or nil for no cap beyond what WebRTC chooses itself.
     static func maxBitrate(lowData: Bool) -> Int? { lowData ? lowDataMaxBitrate : nil }
     static func maxFps(lowData: Bool) -> Int? { lowData ? 15 : nil }

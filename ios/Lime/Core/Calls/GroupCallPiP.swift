@@ -52,6 +52,7 @@ protocol GroupPiP: AnyObject {
     /// The speaker's window takes over: the grid view goes.
     func clearGrid()
     func gridFrameCounts() -> [String: Int]
+    func gridRequestedSizes() -> [String: String]
 }
 
 extension GroupPiP {
@@ -60,6 +61,7 @@ extension GroupPiP {
     func clearGrid() { showGrid([]) }
     /// Frames each grid cell's picture has drawn so far, by participant (for the diagnostics).
     func gridFrameCounts() -> [String: Int] { [:] }
+    func gridRequestedSizes() -> [String: String] { [:] }
 }
 
 /// What `prepare` does with the call screen's anchor view (LIME-112d). The call screen is rebuilt on every return from minimising, so its
@@ -244,6 +246,7 @@ final class GroupCallPictureInPicture: NSObject, GroupPiP, AVPictureInPictureCon
     private var lastGridShape = ""
 
     func gridFrameCounts() -> [String: Int] { grid?.frameCounts() ?? [:] }
+    func gridRequestedSizes() -> [String: String] { grid?.requestedSizes() ?? [:] }
 
     /// Frames from the last size the window was told about: the window's aspect is set once per change of cell count, never per refresh.
     private var aspectCells = 0

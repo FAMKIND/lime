@@ -73,6 +73,16 @@ final class PiPGridView: UIView {
         return out
     }
 
+    /// The picture size each cell asks for, by participant id (the diagnostics: "req=360x480").
+    func requestedSizes() -> [String: String] {
+        var out: [String: String] = [:]
+        for (index, item) in displays.enumerated() where index < slots.count {
+            let size = slots[index].renderer.adaptiveSize
+            out[item.cell.id] = "\(Int(size.width))x\(Int(size.height))"
+        }
+        return out
+    }
+
     /// Which cells draw a live picture (a test reads it).
     var liveFlags: [Bool] { displays.map(\.cell.live) }
 
@@ -120,7 +130,7 @@ final class PiPGridView: UIView {
             }
             // The picture.
             let wanted = item.cell.live ? (item.track as? any VideoTrack) : nil
-            slot.renderer.adaptiveSize = item.cell.speaking || displays.count == 1 ? CGSize(width: 360, height: 480) : CGSize(width: 240, height: 240)
+            slot.renderer.adaptiveSize = GridLayerRequest.size(speaking: item.cell.speaking, cellCount: displays.count)
             if wanted?.sid != slot.track?.sid {
                 detach(slot)
                 slot.video.displayLayer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)

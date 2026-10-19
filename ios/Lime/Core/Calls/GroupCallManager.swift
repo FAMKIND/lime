@@ -933,14 +933,17 @@ final class GroupCallManager {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 guard let self, self.phase != .idle, self.video else { return }
-                let full = self.media?.frameCounts() ?? [:], grid = self.pip?.gridFrameCounts() ?? [:], details = self.media?.trackDetails() ?? [:]
+                let full = self.media?.frameCounts() ?? [:], grid = self.pip?.gridFrameCounts() ?? [:], details = self.media?.trackDetails() ?? [:], requested = self.pip?.gridRequestedSizes() ?? [:]
                 let span = max(0.1, self.now().timeIntervalSince(last.at))
                 let parts = self.tiles.filter { !$0.isMe }.map { tile -> String in
                     func rate(_ now: [String: Int], _ before: [String: Int]) -> String { now[tile.id].map { String(format: "%.1f", Double($0 - (before[tile.id] ?? 0)) / span) } ?? "-" }
-                    return "\(tile.name.prefix(8))(secured=\(tile.secured ? 1 : 0) cam=\(tile.cameraOn ? 1 : 0) track=\(self.media?.videoTrack(for: tile.id) == nil ? 0 : 1) full=\(rate(full, last.full)) grid=\(rate(grid, last.grid)) sdk[\(details[tile.id] ?? "-")])"
+                    return "\(tile.name.prefix(8))(secured=\(tile.secured ? 1 : 0) cam=\(tile.cameraOn ? 1 : 0) track=\(self.media?.videoTrack(for: tile.id) == nil ? 0 : 1) full=\(rate(full, last.full)) grid=\(rate(grid, last.grid)) req=\(requested[tile.id] ?? "-") sdk[\(details[tile.id] ?? "-")])"
                 }
                 last = (full, grid, self.now())
                 self.diag.log("video_probe view=\(self.minimized || self.pictureInPictureActive ? "minimised" : "full") \(parts.joined(separator: " "))")
+                // This phone's own picture and how hard it is working (LIME-171): where the frames are lost.
+                if let send = self.media?.sendDetails(), !send.isEmpty { self.diag.log("video_send \(send)") }
+                self.diag.log("video_env thermal=\(PiPHeatGuard.name(self.thermalState())) cpu=\(ProcessLoad.cpuPercent())% lowpower=\(ProcessInfo.processInfo.isLowPowerModeEnabled ? 1 : 0)")
             }
         }
     }
