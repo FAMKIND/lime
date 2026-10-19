@@ -23,3 +23,19 @@ enum ChatWindow {
         return max(window, min(total, total - index + context))
     }
 }
+
+/// The replies a thread lays out (LIME-173): the newest 200, with a button for earlier ones, so the list can be an eager stack whose height is exact.
+enum ThreadWindow {
+    static let first = 200
+    static let page = 100
+
+    static func shown<T>(_ replies: [T], window: Int) -> ArraySlice<T> { replies.suffix(max(0, window)) }
+    static func hidden(replies: Int, window: Int) -> Int { max(0, replies - window) }
+    static func grown(window: Int, replies: Int) -> Int { min(replies, window + page) }
+
+    /// A window that includes the reply at `index` (oldest first) with some context above it: never smaller than `window`.
+    static func covering(index: Int, replies: Int, window: Int, context: Int = 20) -> Int {
+        guard index >= 0, index < replies else { return window }
+        return max(window, min(replies, replies - index + context))
+    }
+}

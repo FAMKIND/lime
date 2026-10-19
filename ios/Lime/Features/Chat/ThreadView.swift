@@ -20,8 +20,33 @@ struct ThreadView: View {
     @FocusState private var findFocused: Bool
     @State private var actions = MessageActionsState()
     @State private var selection: Set<Message.ID>?
+    /// How many of the newest replies are laid out (LIME-173); a thread rarely has more, and older ones come with the button under the root.
+    @State private var replyWindow = ThreadWindow.first
 
     private var messages: [Message] { store.threads[target.rootID] ?? [] }
+
+    /// Where the screen rests when it opens (and after a turn to landscape): the newest reply, or with none the first line of the root message.
+    private func settle(_ proxy: ScrollViewProxy) {
+        if messages.count > 1 {
+            proxy.scrollTo("bottom", anchor: .bottom)
+        } else if let root = messages.first {
+            proxy.scrollTo(root.id, anchor: .top)
+        }
+    }
+
+    /// Scrolls to a message (a search hit, a find match): an older reply outside the window brings the window out to it first.
+    private func reveal(_ id: String, proxy: ScrollViewProxy) {
+        if let index = messages.dropFirst().firstIndex(where: { $0.id == id }) {
+            let replyIndex = index - 1
+            let needed = ThreadWindow.covering(index: replyIndex, replies: messages.count - 1, window: replyWindow)
+            if needed != replyWindow {
+                replyWindow = needed
+                Task { try? await Task.sleep(for: .milliseconds(80)); withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) } }
+                return
+            }
+        }
+        withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
+    }
     private var conversation: Conversation? { store.conversation(target.conversationID) }
 
     var body: some View {
@@ -29,7 +54,9 @@ struct ThreadView: View {
             Theme.canvas.ignoresSafeArea()
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    // An eager stack, not a lazy one (LIME-173): a lazy stack's estimated height collapses after the scroll, so a very tall first message left
+                    // the screen blank until a touch. Here the height is exact and the first frame is right (as in chats since LIME-164).
+                    VStack(spacing: 0) {
                         if let root = messages.first {
                             bubble(root, isRoot: true).id(root.id)
                             HStack(spacing: 10) {
@@ -39,7 +66,17 @@ struct ThreadView: View {
                             }
                             .padding(.vertical, 10)
                             .accessibilityElement(children: .combine)
-                            ForEach(messages.dropFirst()) { reply in bubble(reply, isRoot: false).id(reply.id) }
+                            let hidden = ThreadWindow.hidden(replies: messages.count - 1, window: replyWindow)
+                            if hidden > 0 {
+                                Button { replyWindow = ThreadWindow.grown(window: replyWindow, replies: messages.count - 1) } label: {
+                                    Text("Show \(min(hidden, ThreadWindow.page)) earlier \(min(hidden, ThreadWindow.page) == 1 ? "reply" : "replies")")
+                                        .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("thread-earlier")
+                            }
+                            ForEach(ThreadWindow.shown(Array(messages.dropFirst()), window: replyWindow)) { reply in bubble(reply, isRoot: false).id(reply.id) }
                         }
                         Color.clear.frame(height: 1).id("bottom")
                     }
@@ -48,25 +85,27 @@ struct ThreadView: View {
                 .accessibilityIdentifier("thread-scroll")
                 .environment(\.chatConversationID, target.conversationID)
                 .scrollDismissesKeyboard(.interactively)
-                .defaultScrollAnchor(.bottom)
+                // With replies it opens at the newest one; with none, at the top of the message they hang from (a long one reads from its first line).
+                .defaultScrollAnchor(messages.count > 1 ? .bottom : .top)
                 // After a turn to landscape (or when it first appears) the newest message is brought clear of the composer.
                 .onChange(of: verticalSizeClass) { _, _ in
-                    Task { try? await Task.sleep(for: .milliseconds(250)); proxy.scrollTo("bottom", anchor: .bottom) }
+                    Task { try? await Task.sleep(for: .milliseconds(250)); settle(proxy) }
                 }
-                .task { try? await Task.sleep(for: .milliseconds(250)); proxy.scrollTo("bottom", anchor: .bottom) }
+                .task { try? await Task.sleep(for: .milliseconds(250)); settle(proxy) }
                 .linkOpening()
                 .attachmentPresenting()
-                .onChange(of: messages.count) {
-                    withAnimation { proxy.scrollTo("bottom") }
+                .onChange(of: messages.count) { _, count in
+                    // A reply arrived: show it. The root message loading (0 to 1) is not a reply: it keeps its first line at the top.
+                    if count > 1 { withAnimation { proxy.scrollTo("bottom") } } else { settle(proxy) }
                     Task { await store.markThreadRead(target.rootID, in: target.conversationID) }
                 }
                 .onChange(of: scrollRequest) { _, _ in
                     guard let id = target.focusMessageID else { return }
-                    withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
+                    reveal(id, proxy: proxy)
                 }
                 .onChange(of: findScroll) { _, id in
                     guard let id else { return }
-                    withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
+                    reveal(id, proxy: proxy)
                 }
             }
         }

@@ -988,6 +988,25 @@ final class ConversationStore {
             ])]
             path.append("dm:rae")
             if screen == "thread-open" { path.append(ThreadTarget(conversationID: "dm:rae", rootID: "t1")) }
+        case "thread-long", "thread-many":
+            // LIME-173: a Replies screen opened straight away: either a root message of ~60 lines with no replies, or a short root with 30 replies.
+            let rae = Person(id: "rae", name: "Rae Torres")
+            let long = (1...60).map { String(format: "Line %02d of a very long message about the book fair, the schedule and who brings what.", $0) }.joined(separator: "\n\n")
+            let text = screen == "thread-long" ? long : "Who can cover **recess duty** this week?"
+            var replies: [Message] = []
+            if screen == "thread-many" {
+                for n in 1...30 {
+                    let mine = n % 2 == 0
+                    let when: Date = now.addingTimeInterval(-7_000 + Double(n) * 120)
+                    replies.append(Message(id: "r\(n)", senderID: mine ? nil : "rae", text: String(format: "Reply number %02d", n), date: when, state: mine ? .sent : .received))
+                }
+            }
+            let rootMessage = Message(id: "t1", senderID: "rae", text: text, date: now.addingTimeInterval(-7_200),
+                                      thread: ThreadInfo(replyCount: replies.count, lastReplyAt: now.addingTimeInterval(-600), repliers: [rae], unread: 0))
+            demoThreads = ["t1": [Message(id: "t1", senderID: "rae", text: text, date: now.addingTimeInterval(-7_200))] + replies]
+            conversations = [Conversation(id: "dm:rae", title: rae.name, members: [rae], messages: [rootMessage])]
+            path.append("dm:rae")
+            path.append(ThreadTarget(conversationID: "dm:rae", rootID: "t1"))
         case "links":
             // A link and an underline side by side, in each kind of bubble.
             let pat = Person(id: "pat", name: "Pat Rivera")
