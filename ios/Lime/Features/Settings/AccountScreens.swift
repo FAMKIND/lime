@@ -88,7 +88,7 @@ struct ChangePasswordScreen: View {
                     .accessibilityIdentifier("pw-code")
                 if let message = model.errorMessage { error(message) }
                 primary("Change password", enabled: model.canVerify, busy: model.isBusy, id: "pw-verify") { await model.verify() }
-                Button("Back") { model.back() }.font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+                Button("Back") { model.back() }.font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                     .accessibilityIdentifier("pw-back")
             case .done:
                 VStack(spacing: 12) {
@@ -241,7 +241,7 @@ struct BlockedScreen: View {
                                             self.blocked = await store.blockedPeople()
                                         }
                                     }
-                                    .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                                    .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk)
                                     .padding(.horizontal, 14).frame(minHeight: 36)
                                     .background(Theme.accent, in: Capsule())
                                     .accessibilityIdentifier("unblock-\(person.conversationId)")
@@ -339,6 +339,10 @@ struct CustomizeScreen: View {
                 }
             }
             SettingsFootnote(text: "Appearance applies to the whole app and is kept on this iPhone.")
+            SettingsCard {
+                SettingsRow(symbol: "textformat.size", title: "Text size & font", route: .textSize, id: "settings-text-size", showsDivider: false)
+            }
+            SettingsFootnote(text: "Make lime's text bigger or smaller, or change its font, without changing the whole iPhone.")
         }
     }
 }

@@ -27,7 +27,7 @@ struct EmergencyCardView: View {
             HStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 12, weight: .semibold)).accessibilityHidden(true)
                 Text(EmergencyCopy.label)
-                    .font(.system(.caption2, design: .default, weight: .semibold)).tracking(1)
+                    .font(Theme.font(.caption2, weight: .semibold)).tracking(1)
                     .lineLimit(typeSize.isAccessibilitySize ? nil : 1).minimumScaleFactor(0.8)
             }
             .foregroundStyle(Color.red)
@@ -73,7 +73,7 @@ struct EmergencySheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Text(EmergencyCopy.label).font(Theme.title.weight(.bold)).tracking(1.4).foregroundStyle(Color.red)
+                    Text(EmergencyCopy.label).font(Theme.font(.body, weight: .bold)).tracking(1.4).foregroundStyle(Color.red)
                     Spacer()
                     Button("Close") { dismiss() }.font(Theme.body).frame(minWidth: 60, minHeight: 60)
                         .accessibilityIdentifier("emergency-close")
@@ -325,7 +325,7 @@ struct EmergencyPanel: View {
         Button(action: toggle) {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.red).accessibilityHidden(true)
-                Text(line).font(Theme.secondary.weight(.semibold)).lineLimit(2).multilineTextAlignment(.leading)
+                Text(line).font(Theme.font(.subheadline, weight: .semibold)).lineLimit(2).multilineTextAlignment(.leading)
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
             }
@@ -337,7 +337,7 @@ struct EmergencyPanel: View {
         ForEach(Array(rollup.entries.enumerated()).filter { $0.element.status == "need_help" }, id: \.offset) { index, entry in
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(name(entry)).font(Theme.body.weight(.semibold))
+                    Text(name(entry)).font(Theme.font(.body, weight: .semibold))
                     Spacer()
                     Text(EmergencyCopy.statusWords(entry.status)).font(Theme.body).foregroundStyle(Color.red)
                 }
@@ -363,7 +363,7 @@ struct EmergencyPanel: View {
                     Button(action: toggle) {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill").accessibilityHidden(true)
-                            Text(EmergencyCopy.label).font(.system(.caption, design: .default, weight: .semibold)).tracking(1).foregroundStyle(Color.red)
+                            Text(EmergencyCopy.label).font(Theme.font(.caption, weight: .semibold)).tracking(1).foregroundStyle(Color.red)
                             Spacer()
                             Image(systemName: "chevron.up").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textSecondary).accessibilityHidden(true)
                         }
@@ -378,7 +378,7 @@ struct EmergencyPanel: View {
                     ForEach(Array(rollup.entries.enumerated()), id: \.offset) { index, entry in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
-                                Text(name(entry)).font(Theme.body.weight(.semibold))
+                                Text(name(entry)).font(Theme.font(.body, weight: .semibold))
                                 Spacer()
                                 Text(EmergencyCopy.statusWords(entry.status)).font(Theme.body)
                             }
@@ -399,12 +399,12 @@ struct EmergencyPanel: View {
                     }
                     HStack(spacing: 10) {
                         Button { showSheet = true } label: {
-                            Text("Send my status").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                            Text("Send my status").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk)
                                 .padding(.horizontal, 16).frame(minHeight: 48).background(Theme.accent, in: Capsule())
                         }
                         .accessibilityIdentifier("emergency-update")
                         Button { confirmEnd = true } label: {
-                            Text("End emergency").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+                            Text("End emergency").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                                 .padding(.horizontal, 16).frame(minHeight: 48).overlay(Capsule().strokeBorder(Theme.text.opacity(0.5), lineWidth: 1))
                         }
                         .accessibilityIdentifier("emergency-end")

@@ -33,7 +33,7 @@ struct ThreadView: View {
                         if let root = messages.first {
                             bubble(root, isRoot: true).id(root.id)
                             HStack(spacing: 10) {
-                                Text(replyCountText).font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                                Text(replyCountText).font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                                     .accessibilityIdentifier("thread-count")
                                 Rectangle().fill(Theme.hairline).frame(height: 0.5)
                             }
@@ -110,7 +110,7 @@ struct ThreadView: View {
                     }
                     VStack(alignment: .leading, spacing: 0) {
                         Text(rootAuthor(messages.first).map { "Replies · \($0.name)" } ?? "Replies")
-                            .font(.system(.headline, design: .default, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                            .font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                         Text(replyCountText).font(Theme.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                             .accessibilityIdentifier("replies-subtitle")
                     }
@@ -208,7 +208,7 @@ struct ThreadView: View {
                 .disabled(findIndex >= findHits.count - 1 || findHits.isEmpty)
                 .accessibilityLabel("Next match").accessibilityIdentifier("replies-find-down")
             Button("Done") { stopFinding() }
-                .font(Theme.secondary.weight(.semibold))
+                .font(Theme.font(.subheadline, weight: .semibold))
                 .accessibilityIdentifier("replies-find-done")
         }
         .foregroundStyle(Theme.text)

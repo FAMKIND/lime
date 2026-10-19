@@ -110,7 +110,7 @@ struct NotificationsScreen: View {
                     Button("Open iOS Settings") {
                         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                     }
-                    .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+                    .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                     .accessibilityIdentifier("notif-open-settings")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -155,7 +155,7 @@ struct NotificationsScreen: View {
                             }
                             Spacer()
                             Button("Unmute") { notifications.settings.unmute(entry.conversationID) }
-                                .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+                                .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                                 .accessibilityIdentifier("unmute-\(entry.conversationID)")
                         }
                         .padding(.horizontal, 18).frame(minHeight: 58)
@@ -185,7 +185,7 @@ struct NotificationExplainerSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Image(systemName: "bell.badge").font(.system(size: 34)).foregroundStyle(Theme.text)
-            Text("Know when a teacher writes").font(.system(.title2, design: .default, weight: .bold)).foregroundStyle(Theme.text)
+            Text("Know when a teacher writes").font(Theme.font(.title2, weight: .bold)).foregroundStyle(Theme.text)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 10) {
                 Text("Lime can alert you to new messages. Messages are decrypted on this iPhone, so what an alert says never passes through a server.")

@@ -143,7 +143,9 @@ struct MessageActionsHost: ViewModifier {
                     liftedBubble(message, placement: placement)
                     reactionBar(message).fixedSize().onGeometryChange(for: CGSize.self) { $0.size } action: { reactionSize = $0 }
                         .position(x: placement.bar.midX, y: placement.bar.midY)
-                    actionsMenu(message).frame(width: MessageMenuLayout.menuWidth).fixedSize(horizontal: false, vertical: true)
+                    // The menu's rows keep to a size that fits beside the message on a small screen at the largest text size; the message itself
+                    // follows the full size (LIME-168).
+                    actionsMenu(message).dynamicTypeSize(...DynamicTypeSize.xxxLarge).frame(width: MessageMenuLayout.menuWidth).fixedSize(horizontal: false, vertical: true)
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { actionsSize = $0 }
                         .position(x: placement.menu.midX, y: placement.menu.midY)
                         .accessibilityElement(children: .contain).accessibilityIdentifier("message-actions")
@@ -371,7 +373,7 @@ struct EmojiPickerSheet: View {
                 }
             }
             Button { systemKeyboard = true } label: {
-                Label("Search all emoji", systemImage: "magnifyingglass").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                Label("Search all emoji", systemImage: "magnifyingglass").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
                     .frame(maxWidth: .infinity, minHeight: 48).background(Theme.surface, in: Capsule())
             }
             .accessibilityIdentifier("emoji-search-all")

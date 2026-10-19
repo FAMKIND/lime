@@ -359,7 +359,7 @@ private struct ProblemBanner: View {
             }
             if problem.needsSignIn {
                 Button { Task { await session.endSession() } } label: {
-                    Text("Sign in").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                    Text("Sign in").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk)
                         .padding(.horizontal, 18).frame(minHeight: 40)
                         .background(Theme.accent, in: Capsule())
                 }
@@ -415,6 +415,7 @@ struct OfflineSheet: View {
 /// The first row of Messages while strangers' first messages are waiting.
 private struct RequestsRow: View {
     let count: Int
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         NavigationLink(value: MessagesRoute.requests) {
@@ -430,13 +431,16 @@ private struct RequestsRow: View {
                     Text(count == 1 ? "1 person wants to message you" : "\(count) people want to message you")
                         .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                 }
-                Spacer(minLength: 4)
-                Text("\(count)")
-                    .font(Theme.caption.weight(.semibold))
-                    .foregroundStyle(Theme.accentInk)
-                    .frame(minWidth: 22)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Theme.accent, in: Capsule())
+                // At the accessibility sizes the sentence already says how many; the badge would only squeeze it.
+                if !typeSize.isAccessibilitySize {
+                    Spacer(minLength: 4)
+                    Text("\(count)")
+                        .font(Theme.font(.caption, weight: .semibold))
+                        .foregroundStyle(Theme.accentInk)
+                        .frame(minWidth: 22)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Theme.accent, in: Capsule())
+                }
             }
             .padding(.horizontal, 8).padding(.vertical, 12)
             .contentShape(Rectangle())
@@ -458,7 +462,7 @@ private struct EmptyChatsView: View {
         VStack(spacing: 20) {
             VStack(spacing: 6) {
                 Text("No chats yet")
-                    .font(.system(.title2, design: .default, weight: .bold))
+                    .font(Theme.font(.title2, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .accessibilityIdentifier("empty-title")
                 Text("Get started")
@@ -509,7 +513,7 @@ private struct RecoveryNotice: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("recovery-notice")
             Button("OK") { store.dismissRecoveryNotice() }
-                .font(Theme.secondary.weight(.semibold))
+                .font(Theme.font(.subheadline, weight: .semibold))
                 .foregroundStyle(Theme.text)
                 .accessibilityIdentifier("recovery-notice-dismiss")
         }
@@ -649,7 +653,10 @@ struct ConversationRow: View {
     var leadingInset: CGFloat = 0
     var trailingInset: CGFloat = 0
     @Environment(NotificationCoordinator.self) private var notifications
-    @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 52
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var scaledAvatar: CGFloat = 52
+    /// The picture grows with the text, but not past a size where it would crowd the words out (LIME-168).
+    private var avatarSize: CGFloat { min(scaledAvatar, 64) }
 
     /// The photo or video thumbnail in the preview line (32-36 pt).
     static let thumbnailSize: CGFloat = 34
@@ -681,11 +688,12 @@ struct ConversationRow: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("row-avatar-\(conversation.id)")
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                // At the accessibility sizes the time goes under the name instead of squeezing it.
+                (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))) {
                     Text(conversation.title)
-                        .font(Theme.title.weight(conversation.isUnread ? .bold : .semibold))
+                        .font(Theme.font(.body, weight: conversation.isUnread ? .bold : .semibold))
                         .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                         .layoutPriority(2)
                         .accessibilityIdentifier("row-title-\(conversation.id)")
                     if let label {
@@ -693,17 +701,17 @@ struct ConversationRow: View {
                     }
                     if notifications.settings.isMuted(conversation.id) {
                         Image(systemName: "bell.slash.fill")
-                            .font(.caption)
+                            .font(Theme.font(.caption))
                             .foregroundStyle(Theme.textSecondary)
                             .accessibilityIdentifier("muted-\(conversation.id)")
                     }
                     if conversation.isPinned {
                         Image(systemName: "pin.fill")
-                            .font(.caption)
+                            .font(Theme.font(.caption))
                             .foregroundStyle(Theme.textSecondary)
                             .accessibilityIdentifier("pinned-\(conversation.id)")
                     }
-                    Spacer(minLength: 4)
+                    if !typeSize.isAccessibilitySize { Spacer(minLength: 4) }
                     Text(time)
                         .font(Theme.secondary)
                         .foregroundStyle(Theme.textSecondary)
@@ -754,7 +762,7 @@ struct ConversationRow: View {
                     .accessibilityIdentifier("row-line2-\(conversation.id)")
             }
         } else {
-            previewText.font(Theme.secondary.weight(conversation.isUnread ? .semibold : .regular))
+            previewText.font(Theme.font(.subheadline, weight: conversation.isUnread ? .semibold : .regular))
                 .foregroundStyle(conversation.isUnread ? Theme.text : Theme.textSecondary).lineLimit(2)
         }
     }
@@ -833,7 +841,7 @@ struct GroupRowAction: Equatable {
 struct CountBadge: View {
     let count: Int
     var size: CGFloat = 22
-    var font: Font = Theme.caption.weight(.semibold)
+    var font: Font = Theme.font(.caption, weight: .semibold)
 
     nonisolated static func text(_ count: Int) -> String { count > 99 ? "99+" : "\(count)" }
 

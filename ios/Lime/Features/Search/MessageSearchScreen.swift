@@ -121,7 +121,7 @@ struct MessageSearchScreen: View {
     }
 
     private func sectionTitle(_ text: String) -> some View {
-        Text(text).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+        Text(text).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 2)
             .accessibilityAddTraits(.isHeader)
     }

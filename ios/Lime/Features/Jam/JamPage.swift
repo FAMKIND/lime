@@ -11,7 +11,7 @@ struct JamPage: View {
             VStack(spacing: 14) {
                 Image(systemName: "book.pages").font(.system(size: 80, weight: .regular)).foregroundStyle(Theme.textSecondary)
                     .padding(.bottom, 10).accessibilityHidden(true)
-                Text("Jam is coming").font(.title.weight(.bold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
+                Text("Jam is coming").font(Theme.font(.title, weight: .bold)).foregroundStyle(Theme.text).multilineTextAlignment(.center)
                     .accessibilityIdentifier("jam-title")
                 Text("A space for teachers to share lessons, stories and videos. Teachers learn best by watching teachers teach.")
                     .font(Theme.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center).lineLimit(3)

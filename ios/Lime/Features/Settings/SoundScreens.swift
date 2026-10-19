@@ -60,11 +60,11 @@ struct AddSoundSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    Text(kind == .message ? "Your message sound" : "Your call sound").font(.system(.title3, design: .default, weight: .bold)).foregroundStyle(Theme.text).padding(.top, 16)
+                    Text(kind == .message ? "Your message sound" : "Your call sound").font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).padding(.top, 16)
                     Text(kind == .message ? "Pick a short sound. Lime keeps up to 2 seconds of it." : "Pick a sound. Lime keeps up to 29 seconds of it.")
                         .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                     Button { picking = true } label: {
-                        Text(source == nil ? "Choose a file…" : "Choose another file…").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                        Text(source == nil ? "Choose a file…" : "Choose another file…").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.accentInk)
                             .frame(maxWidth: .infinity, minHeight: 50).background(Theme.accent, in: Capsule())
                     }
                     .accessibilityIdentifier("sound-choose-file")
@@ -76,7 +76,7 @@ struct AddSoundSheet: View {
                                 HStack { Text("Length").font(Theme.body); Spacer(); Text(format(length)).font(Theme.body.monospacedDigit()).foregroundStyle(Theme.textSecondary) }
                                 Slider(value: $length, in: 0.1...max(maxLength, 0.2)).accessibilityIdentifier("sound-length")
                                 Button { if let source { SoundPreview.shared.play(source, from: start, for: length) } } label: {
-                                    Label("Preview", systemImage: "play.fill").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                                    Label("Preview", systemImage: "play.fill").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
                                 }
                                 .accessibilityIdentifier("sound-preview")
                             }
@@ -86,7 +86,7 @@ struct AddSoundSheet: View {
                             TextField("Name", text: $name).font(Theme.body).padding(.horizontal, 18).frame(minHeight: 54).accessibilityIdentifier("sound-name")
                         }
                         Button { save() } label: {
-                            Text("Save").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                            Text("Save").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.accentInk)
                                 .frame(maxWidth: .infinity, minHeight: 50).background(Theme.accent, in: Capsule())
                         }
                         .accessibilityIdentifier("sound-save")

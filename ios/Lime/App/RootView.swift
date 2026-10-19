@@ -210,7 +210,7 @@ struct ComingSoonBanner: View {
     var body: some View {
         if let text = store.banner {
             Text(text)
-                .font(Theme.secondary.weight(.medium))
+                .font(Theme.font(.subheadline, weight: .medium))
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .limeGlass()

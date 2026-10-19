@@ -226,14 +226,14 @@ struct CallMiniPlayer: View {
         VStack(alignment: .leading, spacing: 0) {
             if typeSize.isAccessibilitySize {
                 // Accessibility sizes: everything wraps and the player grows, never clips.
-                Text(name).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
-                Text(forms[0]).font(.footnote).foregroundStyle(Theme.textSecondary)
+                Text(name).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
+                Text(forms[0]).font(Theme.font(.footnote)).foregroundStyle(Theme.textSecondary)
             } else {
-                Text(name).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(name).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                 ViewThatFits(in: .horizontal) {
                     ForEach(forms, id: \.self) { Text($0).lineLimit(1) }
                 }
-                .font(.footnote).foregroundStyle(Theme.textSecondary)
+                .font(Theme.font(.footnote)).foregroundStyle(Theme.textSecondary)
             }
         }
     }

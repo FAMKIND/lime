@@ -46,7 +46,28 @@ enum ComposerDocument {
 
     // MARK: Fonts
 
-    static func baseFont() -> UIFont { UIFont.preferredFont(forTextStyle: .body) }
+    /// The body font in lime's typeface and text size (LIME-168): scaled with the phone's size, or with lime's own when Settings → Text size
+    /// overrides it (UIKit does not see SwiftUI's Dynamic Type override, so the category is passed explicitly).
+    static func baseFont() -> UIFont {
+        let preferences = TextPreferences.shared
+        let traits = preferences.overrideCategory.map { UITraitCollection(preferredContentSizeCategory: $0) }
+        let basis = preferences.typeface.postScriptName(for: .regular).flatMap { UIFont(name: $0, size: 17) } ?? UIFont.systemFont(ofSize: 17)
+        return UIFontMetrics(forTextStyle: .body).scaledFont(for: basis, compatibleWith: traits)
+    }
+
+    /// `base` with bold and/or italic; a typeface with no italic gets a slant instead, so italics still show.
+    static func styled(_ base: UIFont, traits: UIFontDescriptor.SymbolicTraits) -> UIFont {
+        guard !traits.isEmpty else { return base }
+        if let descriptor = base.fontDescriptor.withSymbolicTraits(traits) {
+            let font = UIFont(descriptor: descriptor, size: base.pointSize)
+            if !traits.contains(.traitItalic) || font.fontDescriptor.symbolicTraits.contains(.traitItalic) { return font }
+        }
+        var slanted = base
+        if traits.contains(.traitBold), let bold = base.fontDescriptor.withSymbolicTraits(.traitBold) { slanted = UIFont(descriptor: bold, size: base.pointSize) }
+        guard traits.contains(.traitItalic) else { return slanted }
+        let slant = CGAffineTransform(a: 1, b: 0, c: CGFloat(tan(14.0 * Double.pi / 180)), d: 1, tx: 0, ty: 0)
+        return UIFont(descriptor: slanted.fontDescriptor.withMatrix(slant), size: base.pointSize)
+    }
 
     /// Applies what the attributes mean to the characters: fonts, indents and the code background. Run after
     /// any edit; it only sets visuals, never the attributes that carry meaning.
@@ -64,8 +85,8 @@ enum ComposerDocument {
             var font = base
             if inline || block == .code {
                 font = UIFont.monospacedSystemFont(ofSize: base.pointSize * 0.92, weight: traits.contains(.traitBold) ? .bold : .regular)
-            } else if !traits.isEmpty, let descriptor = base.fontDescriptor.withSymbolicTraits(traits) {
-                font = UIFont(descriptor: descriptor, size: base.pointSize)
+            } else if !traits.isEmpty {
+                font = styled(base, traits: traits)
             }
             text.addAttribute(.font, value: font, range: range)
             if inline || block == .code {

@@ -177,7 +177,7 @@ enum LinkInput {
 /// The composer's text: an ordinary text view, except that a paste is plain text and its input accessory
 /// is the formatting toolbar.
 final class ComposerTextView: UITextView {
-    static let plainTypingAttributes: [NSAttributedString.Key: Any] = [.font: ComposerDocument.baseFont(), .foregroundColor: UIColor.label]
+    static var plainTypingAttributes: [NSAttributedString.Key: Any] { [.font: ComposerDocument.baseFont(), .foregroundColor: UIColor.label] }
     private var accessory: UIView?
     #if DEBUG
     private var keyboardObservers: [NSObjectProtocol] = []
@@ -310,6 +310,14 @@ struct RichComposerField: UIViewRepresentable {
     func updateUIView(_ view: ComposerTextView, context: Context) {
         context.coordinator.model = model
         view.setToolbar(visible: model.toolbarVisible, model: model)
+        // A change of lime's text size or typeface (Settings → Customize → Text size) restyles what is typed.
+        _ = context.environment.dynamicTypeSize
+        let base = ComposerDocument.baseFont()
+        if view.font?.fontName != base.fontName || view.font?.pointSize != base.pointSize {
+            view.font = base
+            ComposerDocument.restyle(view.textStorage)
+            view.typingAttributes = ComposerDocument.typingAttributes(in: view.textStorage, caret: view.selectedRange.location)
+        }
     }
 
     /// Grows with the text, up to five lines.

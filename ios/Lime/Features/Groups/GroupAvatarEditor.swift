@@ -74,7 +74,7 @@ struct GroupAvatarEditor: View {
 
     private func pill(_ symbol: String, _ title: String, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+            Label(title, systemImage: symbol).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                 .padding(.horizontal, 14).frame(minHeight: 40).background(Theme.surface, in: Capsule())
         }
         .buttonStyle(.plain)

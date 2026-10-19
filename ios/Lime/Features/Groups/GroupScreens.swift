@@ -80,7 +80,7 @@ struct GroupPickerScreen: View {
                             .accessibilityIdentifier("group-no-teachers")
                     }
                     ForEach(sections) { section in
-                        Text(section.letter).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                        Text(section.letter).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                             .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4).accessibilityAddTraits(.isHeader)
                         ForEach(section.teachers) { teacher in
                             let on = chosen.contains(teacher.person.id)
@@ -185,7 +185,7 @@ struct GroupNameScreen: View {
                             .accessibilityIdentifier("group-name-count")
                     }
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("\(members.count + 1) members").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                        Text("\(members.count + 1) members").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
                                 ForEach(people) { person in
@@ -425,7 +425,7 @@ struct GroupDetailsView: View {
                 renaming = true
             } label: {
                 HStack(spacing: 6) {
-                    Text(details.name).font(.system(.title2, design: .default, weight: .bold)).foregroundStyle(Theme.text)
+                    Text(details.name).font(Theme.font(.title2, weight: .bold)).foregroundStyle(Theme.text)
                     if details.canRename {
                         Image(systemName: "pencil").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text)
                             .frame(width: 26, height: 26).background(Theme.pressed, in: Circle())
@@ -494,7 +494,7 @@ struct GroupDetailsView: View {
                 .accessibilityIdentifier("group-member-open-\(member.userId)")
                 if member.canRemove {
                     Button { removing = member } label: {
-                        Text("Remove").font(Theme.secondary.weight(.semibold)).foregroundStyle(Color.red)
+                        Text("Remove").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Color.red)
                             .padding(.horizontal, 10).frame(minHeight: 36)
                     }
                     .accessibilityIdentifier("group-remove-\(member.userId)")

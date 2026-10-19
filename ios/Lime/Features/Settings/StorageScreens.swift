@@ -142,11 +142,11 @@ struct ChatMediaScreen: View {
                     Button(selected.count == files.count ? "Select none" : "Select all") {
                         selected = selected.count == files.count ? [] : Set(files.map(\.id))
                     }
-                    .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+                    .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                     .accessibilityIdentifier("media-select-all")
                     Spacer()
                     Button(role: .destructive) { confirming = true } label: {
-                        Text(selected.isEmpty ? "Delete" : "Delete \(selected.count)").font(Theme.secondary.weight(.semibold))
+                        Text(selected.isEmpty ? "Delete" : "Delete \(selected.count)").font(Theme.font(.subheadline, weight: .semibold))
                     }
                     .disabled(selected.isEmpty)
                     .accessibilityIdentifier("media-delete")

@@ -186,7 +186,7 @@ struct NewMessageSheet: View {
                             if typed.isEmpty { actions }
                             ForEach(sections) { section in
                                 Text(section.letter)
-                                    .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                                    .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                                     .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4)
                                     .id("section-\(section.letter)")
                                     .accessibilityAddTraits(.isHeader)
@@ -198,7 +198,7 @@ struct NewMessageSheet: View {
                             }
                             if typed.isEmpty && !others.isEmpty {
                                 Text("More")
-                                    .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                                    .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                                     .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 4)
                                     .accessibilityAddTraits(.isHeader)
                                 actionRow("person.crop.circle.badge.plus", "Invite teachers to Lime", id: "action-invite") { inviting = true }
@@ -352,7 +352,7 @@ struct SheetHeader<Trailing: View>: View {
 
     var body: some View {
         ZStack {
-            Text(title).font(.system(.headline, design: .default, weight: .semibold)).foregroundStyle(Theme.text)
+            Text(title).font(Theme.font(.headline, weight: .semibold)).foregroundStyle(Theme.text)
                 .accessibilityAddTraits(.isHeader)
             HStack {
                 switch leading {

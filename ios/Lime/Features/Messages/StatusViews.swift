@@ -66,7 +66,7 @@ struct StatusSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    Text("Your status").font(.system(.title3, design: .default, weight: .bold)).foregroundStyle(Theme.text).padding(.top, 16)
+                    Text("Your status").font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).padding(.top, 16)
                     Text("Only people you chat with can see it. There is no last seen.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                     SettingsCard {
                         ForEach(UserStatus.allCases) { status in
@@ -167,7 +167,7 @@ struct WorkHoursScreen: View {
                                 if on { settings.hours.days.remove(weekday) } else { settings.hours.days.insert(weekday) }
                                 changed()
                             } label: {
-                                Text(letters[weekday - 1]).font(Theme.body.weight(.semibold))
+                                Text(letters[weekday - 1]).font(Theme.font(.body, weight: .semibold))
                                     .foregroundStyle(on ? Theme.accentInk : Theme.text)
                                     .frame(width: 38, height: 38).background(on ? Theme.accent : Theme.pressed, in: Circle())
                             }

@@ -155,7 +155,7 @@ struct ImageTile: View {
     private func placeholder(_ symbol: String, _ title: String, detail: String?) -> some View {
         VStack(spacing: 4) {
             Image(systemName: symbol).font(.system(size: 22))
-            Text(title).font(Theme.secondary.weight(.semibold))
+            Text(title).font(Theme.font(.subheadline, weight: .semibold))
             if let detail { Text(detail).font(Theme.caption) }
             if !item.removed { AvailabilityText(item: item).font(Theme.caption) }
         }
@@ -309,7 +309,7 @@ struct AttachmentViewer: View {
                 .accessibilityLabel("Close").accessibilityIdentifier("attachment-viewer-close")
                 Spacer()
                 if items.count > 1 {
-                    Text("\(page + 1) of \(items.count)").font(Theme.secondary.weight(.semibold)).foregroundStyle(.white)
+                    Text("\(page + 1) of \(items.count)").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 12).padding(.vertical, 6).background(.ultraThinMaterial, in: Capsule())
                         .accessibilityIdentifier("attachment-viewer-count")
                 }

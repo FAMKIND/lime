@@ -24,12 +24,12 @@ struct CallNamePill<Picture: View>: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 picture
-                Text(name).font(.headline).foregroundStyle(.white).lineLimit(1)
+                Text(name).font(Theme.font(.headline, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
                 if let count {
-                    Text("\(count)").font(.headline).foregroundStyle(.white.opacity(0.85)).fixedSize().layoutPriority(1)
+                    Text("\(count)").font(Theme.font(.headline, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).fixedSize().layoutPriority(1)
                         .accessibilityIdentifier("call-name-pill-count")
                 }
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                Image(systemName: "chevron.right").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
             }
             .padding(.leading, 6).padding(.trailing, 12).padding(.vertical, 6)
             .background(.black.opacity(0.35), in: Capsule())
@@ -52,8 +52,8 @@ struct CallEmojiChip: View {
     var body: some View {
         if waiting {
             HStack(spacing: 5) {
-                Image(systemName: "lock.fill").font(.caption2)
-                Text("Waiting for everyone\u{2019}s keys\u{2026}").font(.footnote).lineLimit(1)
+                Image(systemName: "lock.fill").font(Theme.font(.caption2))
+                Text("Waiting for everyone\u{2019}s keys\u{2026}").font(Theme.font(.footnote)).lineLimit(1)
             }
             .foregroundStyle(.white.opacity(0.85))
             .padding(.horizontal, 10).frame(minHeight: 44)
@@ -63,9 +63,9 @@ struct CallEmojiChip: View {
         } else if !emoji.isEmpty {
             Button(action: action) {
                 HStack(spacing: 5) {
-                    Image(systemName: "lock.fill").font(.caption2)
+                    Image(systemName: "lock.fill").font(Theme.font(.caption2))
                     // The same order, left to right, for everyone (so they compare the same way), whatever the language.
-                    HStack(spacing: 2) { ForEach(Array(emoji.enumerated()), id: \.offset) { Text($1.emoji).font(.callout) } }
+                    HStack(spacing: 2) { ForEach(Array(emoji.enumerated()), id: \.offset) { Text($1.emoji).font(Theme.font(.callout)) } }
                         .environment(\.layoutDirection, .leftToRight)
                         .id(emoji.map(\.emoji).joined())
                         .transition(.opacity)
@@ -93,7 +93,7 @@ struct CallEmojiSheet: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "lock.fill").font(.title2).foregroundStyle(.white.opacity(0.8)).padding(.top, 28).accessibilityHidden(true)
+            Image(systemName: "lock.fill").font(Theme.font(.title2)).foregroundStyle(.white.opacity(0.8)).padding(.top, 28).accessibilityHidden(true)
             HStack(spacing: 14) {
                 ForEach(Array(emoji.enumerated()), id: \.offset) { Text($1.emoji).font(.system(size: 52)) }
             }
@@ -102,14 +102,14 @@ struct CallEmojiSheet: View {
             .accessibilityLabel("Emoji: \(emoji.map(\.name).joined(separator: ", "))")
             .accessibilityIdentifier("call-emoji-large")
             Text(explanation)
-                .font(.body).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.9))
+                .font(Theme.font(.body)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.9))
                 .accessibilityIdentifier("call-emoji-explanation")
             if let changeNote {
-                Text(changeNote).font(.callout).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.9))
+                Text(changeNote).font(Theme.font(.callout)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.9))
                     .accessibilityIdentifier("call-emoji-change-note")
             }
             Text(footnote)
-                .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.6))
+                .font(Theme.font(.footnote)).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.6))
             Spacer()
         }
         .padding(.horizontal, 24)

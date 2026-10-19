@@ -301,7 +301,7 @@ struct VoiceBubble: View {
                     .accessibilityIdentifier("voice-time-\(item.id)")
                 if isCurrent {
                     Button { player.cycleRate() } label: {
-                        Text(rateText).font(Theme.caption.weight(.bold)).foregroundStyle(ink)
+                        Text(rateText).font(Theme.font(.caption, weight: .bold)).foregroundStyle(ink)
                             .padding(.horizontal, 6).padding(.vertical, 1)
                             .background(ink.opacity(0.14), in: Capsule())
                     }

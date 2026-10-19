@@ -8,6 +8,7 @@ struct LimeApp: App {
     @AppStorage(AppearanceSetting.storageKey) private var appearance = AppearanceSetting.system.rawValue
 
     init() {
+        FontRegistrar.registerAll()   // lime's own typefaces (LIME-168), before the first text is drawn
         let store = ConversationStore()
         let config = BackendConfig.current
         var auth: (any AuthService)? = config.map { LiveAuthService(config: $0) }
@@ -33,6 +34,8 @@ struct LimeApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .limeTextSize()
+                .onAppear { WindowTextSize.start() }
                 .environment(store)
                 .environment(session)
                 .environment(notifications)

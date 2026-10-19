@@ -77,7 +77,7 @@ struct GroupCallView: View {
             HStack(spacing: 8) {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(status(at: context.date)).monospacedDigit()
-                        .font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                        .font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.85))
                         .accessibilityIdentifier("call-status")
                 }
                 if call.phase == .active {
@@ -87,7 +87,7 @@ struct GroupCallView: View {
             }
             .padding(.leading, 8)
             if let note = call.cameraNote {
-                Text(note).font(.footnote).foregroundStyle(.white.opacity(0.9)).padding(.leading, 8)
+                Text(note).font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.9)).padding(.leading, 8)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("group-call-camera-note")
             }
@@ -220,7 +220,7 @@ struct GroupCallView: View {
                         .accessibilitySortPriority(0.5)
                 }
                 if tiles.count > shown.count {
-                    Text("+\(tiles.count - shown.count) more").font(.footnote).foregroundStyle(.white.opacity(0.7)).padding(8)
+                    Text("+\(tiles.count - shown.count) more").font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.7)).padding(8)
                         .background(.black.opacity(0.4), in: Capsule()).position(x: geo.size.width / 2, y: geo.size.height - 14)
                         .accessibilityLabel("\(tiles.count - shown.count) more people, see the people list")
                 }
@@ -299,10 +299,10 @@ struct GroupTileView: View {
     /// Their name and state, as a pill (a crossed microphone and "Muted", or a waveform when speaking).
     private var namePill: some View {
         HStack(spacing: 6) {
-            if tile.muted { Image(systemName: "mic.slash.fill").font(.caption) }
-            else if tile.speaking { Image(systemName: "waveform").font(.caption) }
-            Text(tile.name).font(.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
-            if tile.muted && !compact { Text("Muted").font(.caption2).lineLimit(1) }
+            if tile.muted { Image(systemName: "mic.slash.fill").font(Theme.font(.caption)) }
+            else if tile.speaking { Image(systemName: "waveform").font(Theme.font(.caption)) }
+            Text(tile.name).font(Theme.font(.footnote, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+            if tile.muted && !compact { Text("Muted").font(Theme.font(.caption2)).lineLimit(1) }
         }
         .foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 4)
         .background(.black.opacity(0.55), in: Capsule()).padding(6)
@@ -343,7 +343,7 @@ struct GroupTileView: View {
         if !tile.secured {
             VStack(spacing: 6) {
                 ProgressView().tint(.white)
-                Text("Connecting securely\u{2026}").font(.footnote).foregroundStyle(.white.opacity(0.85)).multilineTextAlignment(.center)
+                Text("Connecting securely\u{2026}").font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.85)).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(8)
@@ -383,8 +383,8 @@ struct GroupPeopleSheet: View {
                 Section("People") {
                     ForEach(store.groupCalls.tiles) { tile in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(tile.name).font(.body)
-                            Text(detail(tile)).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Text(tile.name).font(Theme.font(.body))
+                            Text(detail(tile)).font(Theme.font(.footnote)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
                         .accessibilityElement(children: .combine)
                     }
@@ -449,8 +449,8 @@ struct GroupIncomingBanner: View {
         if let ring = store.groupCalls.incoming, !store.groupCalls.inCall {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(ring.callerName) started a \(ring.video ? "video" : "voice") call").font(.subheadline.weight(.semibold))
-                    Text(ring.title).font(.footnote).foregroundStyle(.secondary)
+                    Text("\(ring.callerName) started a \(ring.video ? "video" : "voice") call").font(Theme.font(.subheadline, weight: .semibold))
+                    Text(ring.title).font(Theme.font(.footnote)).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Decline") { store.groupCalls.declineIncoming() }
@@ -511,12 +511,12 @@ struct GroupInviteSheet: View {
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 12) {
                     Button { store.groupCalls.dismissInvite() } label: {
-                        Text("Dismiss").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                        Text("Dismiss").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
                             .frame(maxWidth: .infinity, minHeight: 48).background(Theme.surface, in: Capsule())
                     }
                     .accessibilityIdentifier("group-invite-dismiss")
                     Button { Task { await store.groupCalls.acceptInvite() } } label: {
-                        Text("Join").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                        Text("Join").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.accentInk)
                             .frame(maxWidth: .infinity, minHeight: 48).background(Theme.accent, in: Capsule())
                     }
                     .accessibilityIdentifier("group-invite-join")

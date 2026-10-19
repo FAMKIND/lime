@@ -16,7 +16,7 @@ struct ProfileSettingsScreen: View {
             NavigationLink(value: SettingsRoute.photo) {
                 VStack(spacing: 8) {
                     AvatarView(person: session.mePerson, size: 110)
-                    Text("Edit Photo").font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+                    Text("Edit Photo").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                 }
             }
             .buttonStyle(.plain).padding(.top, 8)

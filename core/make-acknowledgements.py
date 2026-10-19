@@ -80,6 +80,23 @@ lines.append("  documentation and/or other materials provided with the distribut
 lines.append("  contributors may be used to endorse or promote products derived from this software without specific prior written")
 lines.append("  permission. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED")
 lines.append("  WARRANTIES ARE DISCLAIMED. The Apache-2.0 text for LiveKit is among the licence texts at the end of this file.\n")
+# The typefaces lime offers in Settings -> Customize -> Text size & font (LIME-168): SIL Open Font License 1.1, texts kept with the fonts.
+fonts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ios", "Lime", "Resources", "Fonts")
+if os.path.isdir(fonts_dir):
+    ofl = sorted(f for f in os.listdir(fonts_dir) if f.endswith("-OFL.txt"))
+    lines.append("TYPEFACES (Settings, Customize, Text size and font)")
+    lines.append("---------------------------------------------------")
+    lines.append("Lime offers these open-source typefaces, used under the SIL Open Font License, Version 1.1 (the text follows).")
+    lines.append("Only the Regular, Medium, SemiBold and Bold weights are bundled. Figtree, Space Grotesk, Atkinson Hyperlegible Next and")
+    lines.append("Newsreader are static copies cut from the originals' variable fonts and reduced to Latin letters (Newsreader also has a")
+    lines.append("larger line gap); IBM Plex Mono is bundled unmodified (its Reserved Font Name is kept). No font is sold on its own.")
+    lines.append("The copyright notice of each:")
+    for name in ofl:
+        first = open(os.path.join(fonts_dir, name), encoding="utf-8", errors="replace").read().strip().splitlines()[0]
+        lines.append("  " + first)
+    lines.append("")
+    if ofl:
+        lines.append(open(os.path.join(fonts_dir, ofl[0]), encoding="utf-8", errors="replace").read().strip() + "\n")
 lines.append("LIBRARIES")
 lines.append("---------")
 for name, version, lic, repo, shas in rows:

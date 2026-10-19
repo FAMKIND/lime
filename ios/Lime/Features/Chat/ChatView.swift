@@ -168,7 +168,7 @@ struct ChatView: View {
                 VStack(spacing: 0) {
                     if hidden > 0 {
                         Button { loadOlder(proxy: proxy, firstShown: rows.first?.id, total: all.count) } label: {
-                            Text("Earlier messages").font(Theme.caption.weight(.medium)).foregroundStyle(Theme.textSecondary)
+                            Text("Earlier messages").font(Theme.font(.caption, weight: .medium)).foregroundStyle(Theme.textSecondary)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         }
                         .buttonStyle(.plain)
@@ -315,7 +315,7 @@ struct ChatView: View {
                         switch row.kind {
                         case .day(let text):
                             Text(text)
-                                .font(Theme.caption.weight(.medium))
+                                .font(Theme.font(.caption, weight: .medium))
                                 .foregroundStyle(Theme.textSecondary)
                                 .padding(.vertical, 12)
                                 .accessibilityAddTraits(.isHeader)
@@ -372,7 +372,7 @@ struct ChatView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
                     Text(conversation.title)
-                        .font(Theme.secondary.weight(.semibold))
+                        .font(Theme.font(.subheadline, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
                     // "Verified in person" (they scanned each other's QR codes): a small seal after the name, with the date when tapped.
@@ -500,7 +500,7 @@ struct ChatView: View {
                 .disabled(findIndex >= findHits.count - 1 || findHits.isEmpty)
                 .accessibilityLabel("Next match").accessibilityIdentifier("find-down")
             Button("Done") { stopFinding() }
-                .font(Theme.secondary.weight(.semibold))
+                .font(Theme.font(.subheadline, weight: .semibold))
                 .accessibilityIdentifier("find-done")
         }
         .foregroundStyle(Theme.text)
@@ -553,6 +553,8 @@ struct ChatView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)
+        // The bar of buttons keeps to a size that fits one line across the screen; the messages below follow the full size (LIME-168).
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     /// The ⋯ menu: mute this chat's notifications (1 hour, 8 hours, 1 week, always), or unmute it.
@@ -783,7 +785,7 @@ struct ChatView: View {
             Button {
                 Task { await store.deleteChat(conversation.id); store.path = NavigationPath() }
             } label: {
-                Text("Remove from my list").font(Theme.body.weight(.semibold)).foregroundStyle(Color.red).frame(maxWidth: .infinity, minHeight: 48)
+                Text("Remove from my list").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Color.red).frame(maxWidth: .infinity, minHeight: 48)
             }
             .accessibilityIdentifier("group-ended-remove")
         }
@@ -839,13 +841,15 @@ struct MessageBubble: View {
     /// while a chat is opening and while it scrolls, and SwiftUI must not redraw every bubble each time (LIME-152a-fix).
     @State private var frameBox = FrameBox()
     @Environment(\.pressedLink) private var pressedLink
-    @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 36
+    @ScaledMetric(relativeTo: .body) private var scaledAvatar: CGFloat = 36
+    /// Grows with the text, but not so far that it crowds the bubble (LIME-168).
+    private var avatarSize: CGFloat { min(scaledAvatar, 48) }
 
     var body: some View {
         if liftedOnly {
             VStack(alignment: message.isOwn ? .trailing : .leading, spacing: 4) {
                 if showName, let sender {
-                    Text(sender.name).font(Theme.caption.weight(.medium)).foregroundStyle(Theme.text)
+                    Text(sender.name).font(Theme.font(.caption, weight: .medium)).foregroundStyle(Theme.text)
                 }
                 content
             }
@@ -873,7 +877,7 @@ struct MessageBubble: View {
             BubbleColumn(trailing: message.isOwn, spacing: 4) {
                 if showName, let sender {
                     Text(sender.name)
-                        .font(Theme.caption.weight(.medium))
+                        .font(Theme.font(.caption, weight: .medium))
                         .foregroundStyle(Theme.text)
                 }
                 // Top to bottom: the bubble; one footer row (reactions on the leading side, the time and status on the trailing
@@ -1021,13 +1025,13 @@ struct MessageBubble: View {
             ForEach(shown) { chip in
                 HStack(spacing: 3) {
                     Text(chip.emoji).font(.system(size: 14))
-                    if chip.count > 1 { Text("\(chip.count)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.text) }
+                    if chip.count > 1 { Text("\(chip.count)").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.text) }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(chip.mine ? Theme.chipFillMine : Theme.chipFill, in: Capsule())
             }
             if more > 0 {
-                Text("+\(more)").font(Theme.caption.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                Text("+\(more)").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Theme.chipFill, in: Capsule())
             }
@@ -1193,7 +1197,7 @@ struct CallBubbleView: View {
             HStack(spacing: 8) {
                 // No LIVE badge and no green here (LIME-150): a quiet card. The LIVE badge lives in the mini player.
                 Image(systemName: call.video ? "video" : "phone").font(Theme.body).foregroundStyle(Theme.text)
-                Text(call.title(startedBy: callerName)).font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                Text(call.title(startedBy: callerName)).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
                     .accessibilityIdentifier("call-bubble-title")
             }
             if !people.isEmpty {
@@ -1205,7 +1209,7 @@ struct CallBubbleView: View {
             }
             Text(who).font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("call-card-who")
             Button(action: { onTap?() }) {
-                Text(returning ? "Return to call" : "Join call").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                Text(returning ? "Return to call" : "Join call").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
                     .frame(maxWidth: .infinity, minHeight: 44).background(Theme.pressed, in: Capsule())
             }
             .buttonStyle(.plain)
@@ -1339,7 +1343,7 @@ struct NearbyOfferBar: View {
                         MeshService.shared.setNearby(true)
                         dismissed = true
                     } label: {
-                        Text(NearbyMode.offerButton).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.accentInk)
+                        Text(NearbyMode.offerButton).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk)
                             .padding(.horizontal, 16).frame(minHeight: 44).background(Theme.accent, in: Capsule())
                     }
                     .accessibilityIdentifier("nearby-offer-on")

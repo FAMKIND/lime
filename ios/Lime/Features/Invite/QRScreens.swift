@@ -181,7 +181,7 @@ struct ScanResult: View {
         switch verdict {
         case .verified:
             Label("Verified in person", systemImage: "checkmark.seal.fill")
-                .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.text)
+                .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                 .padding(.horizontal, 14).padding(.vertical, 8).background(Theme.surface, in: Capsule())
                 .accessibilityIdentifier("scan-verified")
         case .mismatch:

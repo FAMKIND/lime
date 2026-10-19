@@ -23,7 +23,8 @@ struct CallSearchRoute: Hashable {}
 struct CallRowView: View {
     let group: CallGroup
     @Environment(ConversationStore.self) private var store
-    @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 52
+    @ScaledMetric(relativeTo: .body) private var scaledAvatar: CGFloat = 52
+    private var avatarSize: CGFloat { min(scaledAvatar, 64) }
 
     /// A group's call: its history row carries the group's conversation id (LIME-112b).
     private func isGroupCall(_ call: CallRecord) -> Bool { call.peerID.hasPrefix("grp:") }
@@ -60,7 +61,7 @@ struct CallRowView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(call.peerName + (group.count > 1 ? " (\(group.count))" : ""))
-                                .font(Theme.title.weight(.semibold))
+                                .font(Theme.font(.body, weight: .semibold))
                                 .foregroundStyle(missed ? Color.red : Theme.text)
                                 .lineLimit(1)
                                 .accessibilityIdentifier("call-row-name")
@@ -68,7 +69,7 @@ struct CallRowView: View {
                             Text(CallGrouping.timeLabel(call.date)).font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                         }
                         HStack(spacing: 5) {
-                            Image(systemName: call.outgoing ? "arrow.up.right" : "arrow.down.left").font(.caption)
+                            Image(systemName: call.outgoing ? "arrow.up.right" : "arrow.down.left").font(Theme.font(.caption))
                             Text(call.video ? "Video" : "Voice")
                         }
                         .font(Theme.secondary).foregroundStyle(Theme.textSecondary)
@@ -273,7 +274,7 @@ struct CallSearchScreen: View {
     }
 
     private func title(_ text: String) -> some View {
-        Text(text).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+        Text(text).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4).accessibilityAddTraits(.isHeader)
     }
 
@@ -341,7 +342,7 @@ struct NewCallSheet: View {
                             }
                             ForEach(sections) { section in
                                 Text(section.letter)
-                                    .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                                    .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                                     .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4)
                                     .id("section-\(section.letter)")
                                     .accessibilityAddTraits(.isHeader)
@@ -356,7 +357,7 @@ struct NewCallSheet: View {
                             }
                             if !groupChats.isEmpty {
                                 Text("Groups")
-                                    .font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                                    .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                                     .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 4)
                                     .accessibilityAddTraits(.isHeader)
                                 ForEach(groupChats) { group in

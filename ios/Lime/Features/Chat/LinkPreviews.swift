@@ -99,7 +99,7 @@ struct LinkCardView: View {
                     .frame(width: width, height: width / 1.9).clipped()
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(Theme.secondary.weight(.semibold)).foregroundStyle(isOwn ? Theme.ownBubbleInk : Theme.text).lineLimit(2)
+                Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(isOwn ? Theme.ownBubbleInk : Theme.text).lineLimit(2)
                     .accessibilityIdentifier("link-card-title")
                 Text(site).font(Theme.caption).foregroundStyle(isOwn ? Theme.ownBubbleInk.opacity(0.7) : Theme.textSecondary).lineLimit(1)
                     .accessibilityIdentifier("link-card-site")

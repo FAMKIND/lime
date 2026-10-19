@@ -55,7 +55,7 @@ struct AboutView: View {
                         .accessibilityIdentifier("self-test-result")
                 case .finished(let report):
                     Text(result.passed ? "Encryption self-test: passed ✓" : "Encryption self-test: failed")
-                        .font(Theme.body.weight(.semibold))
+                        .font(Theme.font(.body, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .accessibilityIdentifier("self-test-result")
                     Text(report.detail)
@@ -71,7 +71,7 @@ struct AboutView: View {
                 case false?: Text("Storage: not encrypted")
                 }
             }
-            .font(Theme.body.weight(.semibold))
+            .font(Theme.font(.body, weight: .semibold))
             .foregroundStyle(Theme.text)
             .accessibilityIdentifier("storage-result")
             #if DEBUG
@@ -87,12 +87,12 @@ struct AboutView: View {
                 .accessibilityIdentifier("sealed-contacts")
                 .task { sealedContacts = await store.sealedContactCount() }
             Button("Load sample chats") { Task { await store.loadSampleChats() } }
-                .font(Theme.secondary.weight(.semibold))
+                .font(Theme.font(.subheadline, weight: .semibold))
                 .foregroundStyle(Theme.text)
                 .accessibilityIdentifier("load-sample-chats")
             #endif
             Button("Sign out", role: .destructive) { confirmingSignOut = true }
-                .font(Theme.secondary.weight(.semibold))
+                .font(Theme.font(.subheadline, weight: .semibold))
                 .accessibilityIdentifier("sign-out")
             Button("Done") { dismiss() }
                 .buttonStyle(.borderedProminent)

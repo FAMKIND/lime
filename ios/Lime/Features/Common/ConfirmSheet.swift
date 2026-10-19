@@ -15,7 +15,7 @@ private struct ConfirmSheetModifier<Actions: View, Message: View>: ViewModifier 
         content.sheet(isPresented: $isPresented) {
             VStack(spacing: 10) {
                 Text(title)
-                    .font(.system(.title3, design: .default, weight: .bold)).foregroundStyle(Theme.text)
+                    .font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("confirm-title")
@@ -56,7 +56,7 @@ private struct SheetHeightKey: PreferenceKey {
 struct ConfirmButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Theme.title.weight(configuration.role == .cancel ? .regular : .semibold))
+            .font(Theme.font(.body, weight: configuration.role == .cancel ? .regular : .semibold))
             .foregroundStyle(configuration.role == .destructive ? Color.red : Theme.text)
             .frame(maxWidth: .infinity, minHeight: 52)
             .background(Theme.surface.opacity(configuration.isPressed ? 0.7 : 1), in: Capsule())

@@ -224,7 +224,7 @@ struct AddToMessageSheet: View {
 
     private var header: some View {
         ZStack {
-            Text("Add to your message").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+            Text("Add to your message").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
                 .lineLimit(1).minimumScaleFactor(0.75).padding(.horizontal, 96)
                 .accessibilityAddTraits(.isHeader)
             HStack {
@@ -235,7 +235,7 @@ struct AddToMessageSheet: View {
                 .accessibilityLabel("Close").accessibilityIdentifier("add-close")
                 Spacer()
                 Button(action: onPhotos) {
-                    Text("Photos").font(Theme.body.weight(.semibold)).foregroundStyle(Theme.text)
+                    Text("Photos").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
                         .padding(.horizontal, 16).frame(height: 44).limeGlass(in: Capsule())
                 }
                 .accessibilityIdentifier("composer-photo-library")
@@ -291,7 +291,7 @@ private struct RecentTile: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(alignment: .bottomLeading) {
                 if item.isVideo {
-                    Label(Self.clock(item.duration), systemImage: "video.fill").font(.caption2.weight(.semibold)).foregroundStyle(.white)
+                    Label(Self.clock(item.duration), systemImage: "video.fill").font(Theme.font(.caption2, weight: .semibold)).foregroundStyle(.white)
                         .shadow(radius: 2).padding(6)
                 }
             }

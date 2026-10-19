@@ -78,10 +78,16 @@ enum Theme {
 
     // Typography. The web app uses Montserrat (`--seed-font-ui`); the native app uses
     // the system font (SF) for now. Whether to bundle Montserrat is a later decision.
-    static let title = Font.system(.body, design: .default, weight: .semibold)
-    static let body = Font.system(.body)
-    static let secondary = Font.system(.subheadline)
-    static let caption = Font.system(.caption)
+    static var title: Font { font(.body, weight: .semibold) }
+    static var body: Font { font(.body) }
+    static var secondary: Font { font(.subheadline) }
+    static var caption: Font { font(.caption) }
+
+    /// A text style in lime's typeface (LIME-168): the system font by default, or the one chosen in Settings → Customize → Text size. Always
+    /// scales with Dynamic Type and lime's own size. Reading it inside a view's body makes the view follow a change of typeface.
+    static func font(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
+        TextPreferences.shared.typeface.font(style, weight: weight)
+    }
 
     /// The web app's avatar pastels (`--lime-avatar-0…7`), light and dark.
     private static let avatarLight: [UInt32] = [0xFEB2BF, 0xFED2CA, 0xF3BF91, 0xEFDF91, 0x92D4FF, 0xD1DEFE, 0xD9BAFF, 0x99EEFF]

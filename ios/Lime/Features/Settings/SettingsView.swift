@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Where Settings can go.
 enum SettingsRoute: Hashable {
-    case profile, account, privacy, blocked, keys, devices, notifications, customize, about, acknowledgements, changePassword, myQR, photo, storage, workHours, emergency
+    case profile, account, privacy, blocked, keys, devices, notifications, customize, textSize, about, acknowledgements, changePassword, myQR, photo, storage, workHours, emergency
     case chatMedia(String)
 }
 
@@ -37,6 +37,7 @@ struct SettingsView: View {
                     case .devices: LinkedDevicesScreen()
                     case .notifications: NotificationsScreen()
                     case .customize: CustomizeScreen()
+                    case .textSize: TextSizeScreen()
                     case .about: AboutScreen()
                     case .acknowledgements: AcknowledgementsScreen()
                     case .changePassword: ChangePasswordScreen()
@@ -61,7 +62,7 @@ struct SettingsView: View {
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
             "profile": .profile, "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
-            "notifications": .notifications, "customize": .customize, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "crop": .photo, "storage": .storage, "work-hours": .workHours,
+            "notifications": .notifications, "customize": .customize, "text-size": .textSize, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "crop": .photo, "storage": .storage, "work-hours": .workHours,
         ]
         return names.compactMap { table[$0] }
     }
@@ -127,7 +128,7 @@ struct SettingsView: View {
 
     private var header: some View {
         ZStack {
-            Text("Settings").font(.system(.title3, design: .default, weight: .bold)).foregroundStyle(Theme.text)
+            Text("Settings").font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text)
                 .accessibilityAddTraits(.isHeader)
             HStack {
                 Spacer()

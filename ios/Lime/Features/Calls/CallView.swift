@@ -57,7 +57,7 @@ struct CallView: View {
                     header(call)
                     if call.phase == .outgoing && call.showUnreachableHint {
                         Text("\(call.peerName)\u{2019}s phone may be off or lime closed")
-                            .font(.footnote).foregroundStyle(.white.opacity(0.7))
+                            .font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.7))
                             .accessibilityIdentifier("call-unreachable-hint")
                     }
                     Spacer()
@@ -65,7 +65,7 @@ struct CallView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16).padding(.top, 8)
                 if let toast = call.route.toast {
-                    Text(toast).font(.footnote.weight(.medium)).foregroundStyle(.white)
+                    Text(toast).font(Theme.font(.footnote, weight: .medium)).foregroundStyle(.white)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(.black.opacity(0.6), in: Capsule())
                         .frame(maxHeight: .infinity, alignment: .top).padding(.top, 70)
@@ -213,7 +213,7 @@ struct CallView: View {
             HStack(spacing: 8) {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(call.statusText(at: context.date)).monospacedDigit()
-                        .font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                        .font(Theme.font(.subheadline)).foregroundStyle(.white.opacity(0.85))
                         .accessibilityIdentifier("call-status")
                 }
                 if call.phase == .active {
@@ -221,7 +221,7 @@ struct CallView: View {
                 }
                 if call.remoteMuted && call.phase == .active {
                     Label("Muted", systemImage: "mic.slash.fill").labelStyle(.titleAndIcon)
-                        .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                        .font(Theme.font(.caption, weight: .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.2), in: Capsule())
                         .accessibilityLabel("\(call.peerName) is muted")
                         .accessibilityIdentifier("call-remote-muted")
@@ -233,7 +233,7 @@ struct CallView: View {
             }
             if call.cameraPaused {
                 Text("Your camera is paused while lime is in a window")
-                    .font(.footnote).foregroundStyle(.white.opacity(0.85)).padding(.leading, 8)
+                    .font(Theme.font(.footnote)).foregroundStyle(.white.opacity(0.85)).padding(.leading, 8)
                     .accessibilityIdentifier("call-camera-paused")
             }
         }
@@ -248,13 +248,13 @@ struct CallView: View {
     private func personSheet(_ call: CallManager) -> some View {
         VStack(spacing: 16) {
             AvatarView(person: person(store), size: 88).padding(.top, 24)
-            Text(call.peerName).font(.title2.weight(.semibold))
+            Text(call.peerName).font(Theme.font(.title2, weight: .semibold))
             Button {
                 showPerson = false
                 call.minimize()
                 store.openFromNotification("dm:\(call.peerID)", thread: nil)
             } label: {
-                Label("Message", systemImage: "message").font(.headline).frame(maxWidth: .infinity, minHeight: 48)
+                Label("Message", systemImage: "message").font(Theme.font(.headline, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 48)
             }
             .buttonStyle(.borderedProminent).tint(Theme.accent).foregroundStyle(Theme.accentInk)
             .accessibilityIdentifier("call-person-message")

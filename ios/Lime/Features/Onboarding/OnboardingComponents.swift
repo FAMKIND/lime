@@ -40,7 +40,7 @@ struct OnboardingScaffold<Content: View>: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(title)
-                        .font(.system(.largeTitle, design: .default, weight: .bold))
+                        .font(Theme.font(.largeTitle, weight: .bold))
                         .foregroundStyle(Theme.text)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
@@ -86,7 +86,7 @@ struct OnboardingField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(Theme.caption.weight(.medium))
+                .font(Theme.font(.caption, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
             Group {
                 if isSecure {
@@ -123,7 +123,7 @@ struct PrimaryButton: View {
     var body: some View {
         Button(action: action) {
             Group {
-                if isBusy { ProgressView() } else { Text(title).font(Theme.body.weight(.semibold)) }
+                if isBusy { ProgressView() } else { Text(title).font(Theme.font(.body, weight: .semibold)) }
             }
             .foregroundStyle(Theme.accentInk)
             .frame(maxWidth: .infinity, minHeight: 54)
@@ -143,7 +143,7 @@ struct NextButton: View {
     var body: some View {
         Button(action: action) {
             Group {
-                if isBusy { ProgressView() } else { Text("Next").font(Theme.body.weight(.semibold)) }
+                if isBusy { ProgressView() } else { Text("Next").font(Theme.font(.body, weight: .semibold)) }
             }
             .foregroundStyle(isEnabled || isBusy ? Theme.accentInk : Theme.textSecondary.opacity(0.7))
             .frame(minWidth: 72, minHeight: 48)

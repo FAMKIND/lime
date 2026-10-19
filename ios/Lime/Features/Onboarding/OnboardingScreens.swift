@@ -29,7 +29,7 @@ struct WelcomeView: View {
             Spacer(minLength: 24)
             VStack(spacing: 10) {
                 Text("Connect All Teachers")
-                    .font(.system(.title, design: .default, weight: .bold))
+                    .font(Theme.font(.title, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Theme.text)
                     .accessibilityIdentifier("welcome-headline")
@@ -133,7 +133,7 @@ struct ConfirmationSheet: View {
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                     Text(confirmation.detail)
-                        .font(.system(.title3, design: .default, weight: .semibold))
+                        .font(Theme.font(.title3, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("confirmation-detail")
@@ -149,7 +149,7 @@ struct ConfirmationSheet: View {
                     VStack(spacing: 10) {
                         PrimaryButton(title: "Yes", identifier: "confirm-yes", isBusy: model.isBusy) { Task { await model.confirmIdentifier() } }
                         Button("Edit") { model.editIdentifier() }
-                            .font(Theme.body.weight(.semibold))
+                            .font(Theme.font(.body, weight: .semibold))
                             .foregroundStyle(Theme.text)
                             .frame(maxWidth: .infinity, minHeight: 48)
                             .accessibilityIdentifier("confirm-edit")
@@ -223,13 +223,13 @@ struct CodeScreen: View {
             HStack {
                 let seconds = model.resendSeconds(at: now)
                 Button(seconds == 0 ? "Resend code" : "Resend code in \(seconds)s") { Task { await model.resendCode() } }
-                    .font(Theme.secondary.weight(.semibold))
+                    .font(Theme.font(.subheadline, weight: .semibold))
                     .foregroundStyle(seconds == 0 ? Theme.text : Theme.textSecondary)
                     .disabled(seconds > 0 || model.isBusy)
                     .accessibilityIdentifier("resend-code")
                 Spacer()
                 Button("Edit") { model.back() }
-                    .font(Theme.secondary.weight(.semibold))
+                    .font(Theme.font(.subheadline, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .accessibilityIdentifier("code-edit")
             }
@@ -274,7 +274,7 @@ struct PasswordScreen: View {
                 }
                 .focused($focused, equals: .password)
                 Button("Forgot password?") { Task { await model.forgotPassword() } }
-                    .font(Theme.secondary.weight(.semibold))
+                    .font(Theme.font(.subheadline, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .accessibilityIdentifier("forgot-password")
             } else {

@@ -174,7 +174,7 @@ struct ProfileView: View {
         }
         .overlay(alignment: .bottom) {
             if copied {
-                Text("Copied").font(.footnote.weight(.medium)).foregroundStyle(.white)
+                Text("Copied").font(Theme.font(.footnote, weight: .medium)).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 8).background(.black.opacity(0.7), in: Capsule())
                     .padding(.bottom, 30).accessibilityIdentifier("profile-copied")
             }
@@ -187,10 +187,10 @@ struct ProfileView: View {
         VStack(spacing: 6) {
             AvatarView(person: person, size: 96, showsStatus: true).padding(.top, 12)
             HStack(spacing: 6) {
-                Text(displayName).font(.title2.weight(.semibold)).foregroundStyle(Theme.text)
+                Text(displayName).font(Theme.font(.title2, weight: .semibold)).foregroundStyle(Theme.text)
                     .accessibilityIdentifier("profile-name")
                 if conversation?.verified == true {
-                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.text).font(.callout).accessibilityLabel("Verified in person")
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.text).font(Theme.font(.callout)).accessibilityLabel("Verified in person")
                 }
             }
             let line = [profile?.username.map { "@\($0)" }, profile?.school].compactMap { $0 }.joined(separator: " \u{00B7} ")
@@ -334,7 +334,7 @@ struct ProfileView: View {
 
     private func titledCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary).padding(.leading, 6)
+            Text(title).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary).padding(.leading, 6)
             content().background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
     }
@@ -344,7 +344,7 @@ struct ProfileView: View {
     @ViewBuilder
     private var shared: some View {
         let context = route.isGroupContext ? "Shared in \(store.conversation(route.sharedConversation)?.title ?? "this group")" : "Shared"
-        Text(context).font(Theme.secondary.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+        Text(context).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 6).accessibilityIdentifier("profile-shared-title")
         let media = sharedMedia, files = sharedFiles, links = sharedLinks
         if !media.isEmpty {
@@ -447,7 +447,7 @@ private struct MediaCell: View {
         GeometryReader { geo in
             ZStack {
                 if let image = best { Image(uiImage: image).resizable().scaledToFill() } else { Color(white: 0.3) }
-                if item.kind == .video { Image(systemName: "play.fill").foregroundStyle(.white).font(.title3) }
+                if item.kind == .video { Image(systemName: "play.fill").foregroundStyle(.white).font(Theme.font(.title3)) }
             }
             .frame(width: geo.size.width, height: geo.size.width).clipped()
         }
@@ -466,7 +466,7 @@ private struct FileRow: View {
     var body: some View {
         let file = message.attachments.first { $0.kind != .image && $0.kind != .video }
         HStack(spacing: 12) {
-            Image(systemName: "doc").font(.title3).foregroundStyle(Theme.text)
+            Image(systemName: "doc").font(Theme.font(.title3)).foregroundStyle(Theme.text)
             VStack(alignment: .leading, spacing: 1) {
                 Text(file?.name ?? "File").font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
                 Text(message.date.formatted(date: .abbreviated, time: .omitted)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
@@ -485,7 +485,7 @@ private struct LinkRow: View {
     }
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "link").font(.title3).foregroundStyle(Theme.text)
+            Image(systemName: "link").font(Theme.font(.title3)).foregroundStyle(Theme.text)
             VStack(alignment: .leading, spacing: 1) {
                 Text(message.linkPreview?.title ?? url).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
                 Text(message.date.formatted(date: .abbreviated, time: .omitted)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
