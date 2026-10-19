@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Where Settings can go.
 enum SettingsRoute: Hashable {
-    case profile, account, privacy, blocked, keys, devices, notifications, customize, textSize, about, acknowledgements, changePassword, myQR, photo, storage, workHours, emergency
+    case profile, account, privacy, blocked, keys, devices, notifications, calls, customize, textSize, about, acknowledgements, changePassword, myQR, photo, storage, workHours, emergency
     case chatMedia(String)
 }
 
@@ -36,6 +36,7 @@ struct SettingsView: View {
                     case .keys: KeysScreen()
                     case .devices: LinkedDevicesScreen()
                     case .notifications: NotificationsScreen()
+                    case .calls: CallSettingsScreen()
                     case .customize: CustomizeScreen()
                     case .textSize: TextSizeScreen()
                     case .about: AboutScreen()
@@ -62,7 +63,7 @@ struct SettingsView: View {
     static func route(from names: [String]) -> [SettingsRoute] {
         let table: [String: SettingsRoute] = [
             "profile": .profile, "account": .account, "privacy": .privacy, "blocked": .blocked, "keys": .keys, "devices": .devices,
-            "notifications": .notifications, "customize": .customize, "text-size": .textSize, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "crop": .photo, "storage": .storage, "work-hours": .workHours,
+            "notifications": .notifications, "customize": .customize, "text-size": .textSize, "calls": .calls, "about": .about, "ack": .acknowledgements, "password": .changePassword, "my-qr": .myQR, "photo": .photo, "crop": .photo, "storage": .storage, "work-hours": .workHours,
         ]
         return names.compactMap { table[$0] }
     }
@@ -94,6 +95,7 @@ struct SettingsView: View {
                     SettingsRow(symbol: "bell", title: "Notifications", value: notifications.settings.enabled ? "On" : "Off",
                                 route: .notifications, id: "settings-notifications")
                     SettingsRow(symbol: "clock", title: "Work hours", value: StatusSettings.shared.hours.enabled ? "On" : "Off", route: .workHours, id: "settings-work-hours")
+                    SettingsRow(symbol: "phone", title: "Calls", route: .calls, id: "settings-calls")
                     SettingsRow(symbol: "paintpalette", title: "Customize", route: .customize, id: "settings-customize", showsDivider: false)
                 }
                 SettingsCard {

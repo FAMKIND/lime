@@ -91,18 +91,31 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
     }
 
     private var lowBandwidth = false
+    /// Settings → Calls → Low Data Mode (LIME-169): a smaller, slower picture and a bitrate cap going out, the lowest layer asked for coming in.
+    private var lowData = CallSettings.shared.lowDataMode
+    private var settingsObserver: NSObjectProtocol?
+
     private var cameraOptions: CameraCaptureOptions {
-        lowBandwidth ? CameraCaptureOptions(dimensions: Dimensions(width: 848, height: 480), fps: 24) : CameraCaptureOptions(dimensions: .h720_169, fps: 30)
+        let plan = CallVideoPlan.capture(lowData: lowData, cellular: lowBandwidth, group: true)
+        return CameraCaptureOptions(dimensions: Dimensions(width: Int32(plan.width), height: Int32(plan.height)), fps: plan.fps)
+    }
+
+    /// nil with Low Data Mode off (LiveKit's own simulcast); on: one small layer with a cap.
+    private var videoPublishOptions: VideoPublishOptions? {
+        guard lowData, let bitrate = CallVideoPlan.maxBitrate(lowData: true), let fps = CallVideoPlan.maxFps(lowData: true) else { return nil }
+        return VideoPublishOptions(encoding: VideoEncoding(maxBitrate: bitrate, maxFps: fps), simulcast: false)
     }
 
     func connect(url: String, token: String, identity: String, iceServers: [IceServer], relayOnly: Bool, microphone: Bool, camera: Bool, lowBandwidth: Bool) async throws {
         myIdentity = identity
         self.lowBandwidth = lowBandwidth
+        lowData = CallSettings.shared.lowDataMode
         let relay = ConnectOptions(
             iceServers: iceServers.map { LiveKit.IceServer(urls: $0.urls, username: $0.username, credential: $0.credential) },
             iceTransportPolicy: relayOnly ? .relay : .all)
         let options = RoomOptions(
             defaultCameraCaptureOptions: cameraOptions,
+            defaultVideoPublishOptions: videoPublishOptions ?? VideoPublishOptions(),
             adaptiveStream: true,
             dynacast: true,
             encryptionOptions: EncryptionOptions(keyProvider: keyProvider, encryptionType: .gcm))
@@ -110,19 +123,56 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
         self.room = room
         try await room.connect(url: url, token: token, connectOptions: relay, roomOptions: options)
         if microphone { _ = try? await room.localParticipant.setMicrophone(enabled: true) }
-        if camera { _ = try? await room.localParticipant.setCamera(enabled: true, captureOptions: cameraOptions) }
+        if camera { _ = try? await room.localParticipant.setCamera(enabled: true, captureOptions: cameraOptions, publishOptions: videoPublishOptions) }
+        applyPlaybackSettings()
+        settingsObserver = NotificationCenter.default.addObserver(forName: CallSettings.changed, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in await self?.settingsChanged() }
+        }
+    }
+
+    /// A change in Settings → Calls reaches the call that is running.
+    private func settingsChanged() async {
+        let wanted = CallSettings.shared.lowDataMode
+        if wanted != lowData {
+            lowData = wanted
+            await republishCamera()
+        }
+        applyPlaybackSettings()
+    }
+
+    /// The others' voices at the chosen volume, and (Low Data Mode) the lowest layer and rate of their video. Also for people who join later.
+    private func applyPlaybackSettings() {
+        guard let room else { return }
+        let volume = CallSettings.shared.volume
+        for participant in room.remoteParticipants.values {
+            for publication in participant.trackPublications.values {
+                guard let remote = publication as? RemoteTrackPublication else { continue }
+                if let audio = remote.track as? RemoteAudioTrack { audio.volume = volume }
+                if remote.kind == .video, remote.source == .camera {
+                    let low = lowData
+                    Task {
+                        try? await remote.set(videoQuality: low ? .low : .high)
+                        if low { try? await remote.set(preferredFPS: 15) }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A new capture size and publish limits need a new capture: off and on again (a brief gap for the others).
+    private func republishCamera() async {
+        guard let participant = room?.localParticipant, participant.isCameraEnabled() else { return }
+        _ = try? await participant.setCamera(enabled: false)
+        _ = try? await participant.setCamera(enabled: true, captureOptions: cameraOptions, publishOptions: videoPublishOptions)
     }
 
     func setMicrophone(_ on: Bool) async { _ = try? await room?.localParticipant.setMicrophone(enabled: on) }
-    func setCamera(_ on: Bool) async { _ = try? await room?.localParticipant.setCamera(enabled: on, captureOptions: on ? cameraOptions : nil) }
+    func setCamera(_ on: Bool) async { _ = try? await room?.localParticipant.setCamera(enabled: on, captureOptions: on ? cameraOptions : nil, publishOptions: on ? videoPublishOptions : nil) }
 
     func setLowBandwidth(_ on: Bool) async {
         guard on != lowBandwidth else { return }
         lowBandwidth = on
-        guard let participant = room?.localParticipant, participant.isCameraEnabled() else { return }
-        // A new capture size needs a new capture: off and on again (a brief gap for the others).
-        _ = try? await participant.setCamera(enabled: false)
-        _ = try? await participant.setCamera(enabled: true, captureOptions: cameraOptions)
+        await republishCamera()
     }
 
     func flipCamera() async {
@@ -132,6 +182,8 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
     }
 
     func disconnect() async {
+        if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
+        settingsObserver = nil
         await room?.disconnect()
         room = nil
     }
@@ -218,6 +270,7 @@ final class LiveKitGroupMedia: NSObject, GroupCallMedia, RoomDelegate {
         let source = publication.source
         let muted = publication.isMuted
         Task { @MainActor in
+            self.applyPlaybackSettings()   // a voice or a picture that arrives after the call began gets the settings too
             if source == .camera { self.emit(.camera(participant: id, on: !muted)) }
             if source == .microphone { self.emit(.microphone(participant: id, muted: muted)) }
             self.emit(.tracks(participant: id))

@@ -11,19 +11,39 @@ final class CallKitSystem: NSObject, CallSystem, CXProviderDelegate {
     var onMute: ((String, Bool) -> Void)?
     /// One provider for the whole process: a second one would fight the first (and the system resets both).
     private static let sharedProvider: CXProvider = {
+        let configuration = makeConfiguration(includeInRecents: CallSettings.shared.includeInRecents)
+        let ringName = CallRingtone.callKitSoundName as NSString
+        let found = Bundle.main.url(forResource: ringName.deletingPathExtension, withExtension: ringName.pathExtension) != nil
+        CallDiagnostics.shared.log("callkit ringtone=\(CallRingtone.callKitSoundName) found=\(found)")
+        CallDiagnostics.shared.log("callkit provider created (the only one), recents=\(configuration.includesCallsInRecents)")
+        let provider = CXProvider(configuration: configuration)
+        // Include in Recents (LIME-169) changes at once: the provider takes a new configuration, no restart.
+        nonisolated(unsafe) let live = provider
+        NotificationCenter.default.addObserver(forName: CallSettings.changed, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                let wanted = CallSettings.shared.includeInRecents
+                guard live.configuration.includesCallsInRecents != wanted else { return }
+                live.configuration = makeConfiguration(includeInRecents: wanted)
+                CallDiagnostics.shared.log("callkit recents=\(wanted)")
+            }
+        }
+        return provider
+    }()
+
+    /// Whether the shared provider is set to show calls in Recents now (for the tests of Settings → Calls).
+    static var providerIncludesRecents: Bool { sharedProvider.configuration.includesCallsInRecents }
+
+    /// The system call screen's configuration. Calls show in the Phone app's Recents only when the person asked for it (off by default).
+    nonisolated static func makeConfiguration(includeInRecents: Bool) -> CXProviderConfiguration {
         let configuration = CXProviderConfiguration()
         configuration.supportsVideo = true
         configuration.maximumCallsPerCallGroup = 1
         configuration.supportedHandleTypes = [.generic]
-        configuration.includesCallsInRecents = false
+        configuration.includesCallsInRecents = includeInRecents
         // An incoming call rings with lime's ringtone, not the phone's default (LIME-152g): CallKit takes a sound in the app bundle.
         configuration.ringtoneSound = CallRingtone.callKitSoundName
-        let ringName = CallRingtone.callKitSoundName as NSString
-        let found = Bundle.main.url(forResource: ringName.deletingPathExtension, withExtension: ringName.pathExtension) != nil
-        CallDiagnostics.shared.log("callkit ringtone=\(CallRingtone.callKitSoundName) found=\(found)")
-        CallDiagnostics.shared.log("callkit provider created (the only one)")
-        return CXProvider(configuration: configuration)
-    }()
+        return configuration
+    }
     private var provider: CXProvider { Self.sharedProvider }
     private static var systemCount = 0
     private(set) var audioActive = false

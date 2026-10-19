@@ -43,12 +43,19 @@ protocol CallMedia: AnyObject {
     func apply(answer: String) async throws
     func add(candidate: String, mid: String?, index: Int32) async
     func setMuted(_ muted: Bool)
+    /// Settings → Calls (LIME-169), applied to the call that is running: Low Data Mode and the other person's volume.
+    func settingsChanged()
     func setVideo(_ on: Bool)
     func flipCamera()
     func setSpeaker(_ on: Bool)
     /// The system (CallKit) has not activated the audio session: do it here. `false` when nothing needed doing.
     func activateAudioFallback(video: Bool) -> Bool
     func close()
+}
+
+extension CallMedia {
+    /// Nothing to apply (the test doubles).
+    func settingsChanged() {}
 }
 
 enum CallMediaError: Error { case notStarted, failed }
@@ -78,6 +85,10 @@ final class WebRTCMedia: NSObject, CallMedia {
     private var audioTrack: RTCAudioTrack?
     private var videoTrack: RTCVideoTrack?
     private var capturer: RTCCameraVideoCapturer?
+    /// The other person's voice, to set its playout volume (Settings → Calls → Call volume).
+    private var remoteAudio: RTCAudioTrack?
+    private var lowData = CallSettings.shared.lowDataMode
+    private var settingsObserver: NSObjectProtocol?
     var hasLocalVideo: Bool { videoTrack != nil }
     private var front = true
     private var wantsVideo = false
@@ -124,6 +135,10 @@ final class WebRTCMedia: NSObject, CallMedia {
         guard let connection = Self.factory.peerConnection(with: configuration, constraints: constraints, delegate: self) else { throw CallMediaError.failed }
         self.connection = connection
         wantsVideo = video
+        lowData = CallSettings.shared.lowDataMode
+        settingsObserver = NotificationCenter.default.addObserver(forName: CallSettings.changed, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.settingsChanged() }
+        }
         if let view = remoteView as? RTCMTLVideoView {
             remoteSlot.setRenderer(FrameLogger(target: view) { [weak self] size in
                 CallDiagnostics.shared.log("remote video first frame \(Int(size.width))x\(Int(size.height))")
@@ -197,11 +212,12 @@ final class WebRTCMedia: NSObject, CallMedia {
         guard let capturer else { return }
         let position: AVCaptureDevice.Position = front ? .front : .back
         guard let device = RTCCameraVideoCapturer.captureDevices().first(where: { $0.position == position }) ?? RTCCameraVideoCapturer.captureDevices().first else { return }
-        // About 720p at 24 fps; WebRTC adapts it down on a weak network.
+        // About 720p at 24 fps (Low Data Mode: 360p at 15); WebRTC adapts it down on a weak network.
+        let plan = CallVideoPlan.capture(lowData: lowData, group: false)
         let formats = RTCCameraVideoCapturer.supportedFormats(for: device)
-        let format = formats.min { abs(CMVideoFormatDescriptionGetDimensions($0.formatDescription).width - 1280) < abs(CMVideoFormatDescriptionGetDimensions($1.formatDescription).width - 1280) } ?? formats.first
+        let format = formats.min { abs(Int(CMVideoFormatDescriptionGetDimensions($0.formatDescription).width) - plan.width) < abs(Int(CMVideoFormatDescriptionGetDimensions($1.formatDescription).width) - plan.width) } ?? formats.first
         guard let format else { return }
-        let fps = min(24, Int(format.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 24))
+        let fps = min(plan.fps, Int(format.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? Double(plan.fps)))
         capturer.startCapture(with: device, format: format, fps: fps)
     }
 
@@ -325,6 +341,36 @@ final class WebRTCMedia: NSObject, CallMedia {
 
     func setMuted(_ muted: Bool) { audioTrack?.isEnabled = !muted }
 
+    /// A change in Settings → Calls reaches the call that is running.
+    func settingsChanged() {
+        let wanted = CallSettings.shared.lowDataMode
+        if wanted != lowData {
+            lowData = wanted
+            if capturer != nil, videoTrack != nil { capturer?.stopCapture { [weak self] in Task { @MainActor in self?.startCapture() } } }
+            applySenderLimits()
+        }
+        applyVolume()
+    }
+
+    /// Low Data Mode caps what the video sender may use; off removes the cap again.
+    private func applySenderLimits() {
+        guard let connection else { return }
+        for transceiver in connection.transceivers where transceiver.mediaType == .video {
+            let sender = transceiver.sender
+            let parameters = sender.parameters
+            for encoding in parameters.encodings {
+                encoding.maxBitrateBps = CallVideoPlan.maxBitrate(lowData: lowData).map { NSNumber(value: $0) }
+                encoding.maxFramerate = CallVideoPlan.maxFps(lowData: lowData).map { NSNumber(value: $0) }
+            }
+            sender.parameters = parameters
+        }
+    }
+
+    /// The other person's voice at the chosen volume (1 is the phone's own; WebRTC takes up to 10).
+    private func applyVolume() {
+        remoteAudio?.source.volume = CallSettings.shared.volume
+    }
+
     func setVideo(_ on: Bool) { videoTrack?.isEnabled = on }
 
     func flipCamera() {
@@ -341,6 +387,9 @@ final class WebRTCMedia: NSObject, CallMedia {
 
     /// Tears everything down in the order WebRTC needs: stop the camera and wait for it, take the views off the tracks, then close.
     func close() {
+        if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
+        settingsObserver = nil
+        remoteAudio = nil
         statsTask?.cancel(); statsTask = nil
         interruptionObservers.forEach { NotificationCenter.default.removeObserver($0) }
         interruptionObservers = []
@@ -391,6 +440,7 @@ extension WebRTCMedia: RTCPeerConnectionDelegate {
         let connected = newState == .connected || newState == .completed
         let failed = newState == .failed
         Task { @MainActor in
+            if connected { self.applySenderLimits(); self.applyVolume() }
             if connected { onConnection?(true) } else if failed { onConnection?(false) }
         }
     }
@@ -413,8 +463,10 @@ extension WebRTCMedia: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams mediaStreams: [RTCMediaStream]) {
         let track = rtpReceiver.track as? RTCVideoTrack
         let kind = rtpReceiver.track?.kind ?? "?"
+        nonisolated(unsafe) let audio = rtpReceiver.track as? RTCAudioTrack
         Task { @MainActor in
             CallDiagnostics.shared.log("remote receiver added: \(kind)")
+            if let audio { self.remoteAudio = audio; self.applyVolume() }
             if let track { self.remoteSlot.setSource(TrackSource(track)) }
         }
     }
