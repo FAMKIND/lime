@@ -43,6 +43,8 @@ struct MessageActionsHost: ViewModifier {
     /// The measured sizes of the reaction bar and the actions, for placing them around the lifted message (estimates until measured).
     @State private var reactionSize = CGSize(width: 290, height: 56)
     @State private var actionsSize = CGSize(width: 260, height: 7 * 48)
+    /// The sender's name row above a lifted message in a group (the caption line and the 4 pt gap), scaling with the text size.
+    @ScaledMetric(relativeTo: .caption) private var nameRowHeight: CGFloat = 22
 
     func body(content: Content) -> some View {
         content
@@ -131,7 +133,7 @@ struct MessageActionsHost: ViewModifier {
             let area = geo.frame(in: .global)
             let placement = state.menuFrame == .zero ? nil : MessageMenuLayout.place(
                 bubble: state.menuFrame.offsetBy(dx: -area.minX, dy: -area.minY),
-                nameHeight: showsName(message) ? 18 : 0,
+                nameHeight: showsName(message) ? nameRowHeight : 0,
                 bar: reactionSize, menu: actionsSize,
                 in: CGRect(origin: .zero, size: geo.size))
             ZStack(alignment: .topLeading) {
@@ -174,18 +176,22 @@ struct MessageActionsHost: ViewModifier {
     private func liftedBubble(_ message: Message, placement: MessageMenuLayout.Placement) -> some View {
         let conversation = store.conversation(conversationID)
         let sender = conversation.flatMap { store.person(message.senderID, in: $0) }
+        // The lifted copy is the sender's name (a group, others' messages) above the bubble; the measured frame is the bubble's alone. The copy sits
+        // with its bottom on the bubble's bottom and the name rising into the room `place` kept for it, so nothing is clipped; only a message too
+        // tall for the screen is cut (from the bottom, with a fade).
+        let extra = showsName(message) ? nameRowHeight : 0
+        let capped = placement.isCapped
         return MessageBubble(message: message, sender: sender, showAvatar: false, showName: showsName(message), conversationID: conversationID, liftedOnly: true)
             .frame(width: placement.bubble.width, alignment: message.isOwn ? .trailing : .leading)
-            .frame(maxHeight: placement.bubble.height, alignment: .top)
-            .clipped()
+            .frame(height: placement.bubble.height + extra, alignment: capped ? .top : (message.isOwn ? .bottomTrailing : .bottomLeading))
             .mask(alignment: .top) {
                 // A message too tall for the screen fades out at its bottom edge.
-                if placement.isCapped {
+                if capped {
                     LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.85), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom)
-                } else { Color.black }
+                } else { Color.black.padding(.top, -400) }   // not a clip: whatever rises above the frame (a taller name row) stays visible
             }
             .shadow(color: .black.opacity(0.22), radius: 14, y: 4)
-            .position(x: placement.bubble.midX, y: placement.bubble.midY)
+            .position(x: placement.bubble.midX, y: placement.bubble.midY - extra / 2)
             .accessibilityHidden(true)
             .accessibilityIdentifier("lifted-bubble")
     }

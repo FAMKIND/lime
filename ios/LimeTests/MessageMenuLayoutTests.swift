@@ -58,4 +58,28 @@ final class MessageMenuLayoutTests: XCTestCase {
         let p = MessageMenuLayout.place(bubble: bubble, nameHeight: 18, bar: bar, menu: menu, in: area)
         XCTAssertEqual(p.bar.maxY, p.bubble.minY - 18 - MessageMenuLayout.gap, accuracy: 0.01, "room for the name above the message")
     }
+
+    /// LIME-152h: a two-line message, with a sender's name above it, is shown whole at the very bottom and the very top: the stack moves, the
+    /// message is never cut.
+    func testATwoLineMessageWithANameIsWholeAtTheVeryBottomAndTheVeryTop() {
+        let name: CGFloat = 22
+        for y in [area.maxY - 52, area.minY] {
+            let bubble = CGRect(x: 20, y: y, width: 220, height: 52)
+            let p = MessageMenuLayout.place(bubble: bubble, nameHeight: name, bar: bar, menu: menu, in: area)
+            XCTAssertFalse(p.isCapped, "a two-line message is never capped (y \(y))")
+            XCTAssertEqual(p.bubble.size, bubble.size, "its full size")
+            XCTAssertGreaterThanOrEqual(p.bar.minY, area.minY, "the bar is on the screen")
+            XCTAssertLessThanOrEqual(p.menu.maxY, area.maxY, "the menu is on the screen")
+            XCTAssertEqual(p.bar.maxY + MessageMenuLayout.gap + name, p.bubble.minY, accuracy: 0.01, "the bar, then the name's room, then the message")
+            XCTAssertEqual(p.menu.minY, p.bubble.maxY + MessageMenuLayout.gap, accuracy: 0.01, "the menu right below the whole message")
+        }
+    }
+
+    func testOnlyAMessageTallerThanTheRoomIsCapped() {
+        let room = area.height - (bar.height + MessageMenuLayout.gap) - (MessageMenuLayout.gap + menu.height)
+        let fits = MessageMenuLayout.place(bubble: CGRect(x: 20, y: 300, width: 200, height: room), nameHeight: 0, bar: bar, menu: menu, in: area)
+        XCTAssertFalse(fits.isCapped, "exactly the room that is left is still whole")
+        let tall = MessageMenuLayout.place(bubble: CGRect(x: 20, y: 300, width: 200, height: room + 1), nameHeight: 0, bar: bar, menu: menu, in: area)
+        XCTAssertTrue(tall.isCapped)
+    }
 }

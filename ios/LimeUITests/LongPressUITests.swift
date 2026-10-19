@@ -31,4 +31,23 @@ final class LongPressUITests: LimeUITestCase {
         any(app, "react-👍").tap()
         XCTAssertTrue(reactions.waitForNonExistence(timeout: 5), "choosing closes it")
     }
+
+    /// LIME-152h: someone's message in a group, near the bottom, is lifted with the whole stack kept on the screen: the message's text above the
+    /// actions and fully visible. (That its last line is not clipped is checked in the screenshots: a clip does not change an element's frame.)
+    func testAGroupMessageNearTheBottomIsLiftedOnScreenAboveTheActions() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "group"]
+        app.launch()
+        let text = "I can bring the permission forms"
+        let bubble = app.staticTexts[text].firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 8))
+        bubble.press(forDuration: 0.8)
+        let actions = any(app, "message-actions")
+        let reactions = any(app, "reaction-row")
+        XCTAssertTrue(actions.waitForExistence(timeout: 5))
+        let screen = app.windows.firstMatch.frame
+        let copies = app.staticTexts.matching(NSPredicate(format: "label == %@", text)).allElementsBoundByIndex
+        XCTAssertTrue(copies.contains { screen.contains($0.frame) && $0.frame.maxY <= actions.frame.minY && $0.frame.minY >= reactions.frame.maxY },
+                      "a whole copy sits between the reactions and the actions: \(copies.map(\.frame))")
+    }
 }
