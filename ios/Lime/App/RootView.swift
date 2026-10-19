@@ -134,6 +134,9 @@ private struct SignedInView: View {
         NavigationStack(path: path) {
             CallHistoryView().callMiniPlayerInset()
                 .navigationDestination(for: CallSearchRoute.self) { _ in CallSearchScreen().callMiniPlayerInset() }
+                .navigationDestination(for: GroupTarget.self) { target in
+                    GroupDetailsView(target: target).callMiniPlayerInset().toolbar(.hidden, for: .tabBar)
+                }
                 .navigationDestination(for: ProfileRoute.self) { ProfileView(route: $0).callMiniPlayerInset() }
                 .navigationDestination(for: SharedListRoute.self) { SharedListView(route: $0).callMiniPlayerInset() }
         }

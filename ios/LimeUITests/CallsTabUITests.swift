@@ -41,16 +41,55 @@ final class CallsTabUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts.matching(identifier: "call-row-name").count, 4)
     }
 
-    func testTheTrailingButtonRepeatsTheKindAndTapOpensTheDetails() {
+    func testTheTrailingButtonRepeatsTheKindAndTheAvatarOpensTheDetails() {
         let app = app()
         openCalls(app)
         XCTAssertTrue(app.buttons["Video call Sam Park"].waitForExistence(timeout: 5), "a video call's button is a video button")
         XCTAssertTrue(app.buttons["Call Lee Wong"].exists, "a voice call's button is a phone button")
-        app.buttons.matching(identifier: "call-history-row").firstMatch.tap()
-        XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 5), "a call row opens the profile")
+        // The picture is the way to the details (LIME-170): the row itself calls back.
+        app.buttons.matching(identifier: "call-row-avatar").firstMatch.tap()
+        XCTAssertTrue(any(app, "profile-screen").waitForExistence(timeout: 5), "the avatar opens the profile")
         XCTAssertTrue(app.buttons["profile-message"].exists && app.buttons["profile-voice"].exists && app.buttons["profile-video"].exists)
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "profile-call-line").count, 2, "both missed calls are listed on the Calls section")
         XCTAssertFalse(app.tabBars.firstMatch.isHittable, "the tab bar hides in the profile, as in a chat")
+    }
+
+    /// LIME-170: tapping a call in the list calls that person again the same way, as the iPhone's Phone app does; nothing looks different.
+    func testTappingAVoiceCallRowCallsBackWithVoice() {
+        let app = app()
+        openCalls(app)
+        XCTAssertTrue(app.buttons.matching(identifier: "call-history-row").firstMatch.waitForExistence(timeout: 5))
+        app.buttons.matching(identifier: "call-history-row").firstMatch.tap()   // Lee, voice
+        XCTAssertTrue(app.buttons["call-end"].waitForExistence(timeout: 10), "the call screen: it called back")
+        XCTAssertFalse(app.buttons["call-video"].exists, "a voice call has no camera button")
+        XCTAssertFalse(any(app, "profile-screen").exists, "the row no longer opens the profile")
+    }
+
+    func testTappingAVideoCallRowCallsBackWithVideo() {
+        let app = app()
+        openCalls(app)
+        let rows = app.buttons.matching(identifier: "call-history-row")
+        XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 5))
+        rows.element(boundBy: 1).tap()   // Sam, video
+        XCTAssertTrue(app.buttons["call-end"].waitForExistence(timeout: 10), "the call screen")
+        XCTAssertTrue(app.buttons["call-video"].exists && app.buttons["call-flip"].exists, "a video call, as before")
+    }
+
+    func testTheRoundButtonOnTheRightCallsBackToo() {
+        let app = app()
+        openCalls(app)
+        XCTAssertTrue(app.buttons["Call Lee Wong"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["Call Lee Wong"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["call-end"].waitForExistence(timeout: 10), "the same call-back")
+    }
+
+    func testARowReadsItsNameKindAndTimeAndOffersDetailsToVoiceOver() {
+        let app = app()
+        openCalls(app)
+        let row = app.buttons.matching(identifier: "call-history-row").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.label.hasPrefix("Lee Wong (2), Voice call, "), "name, kind, time: \(row.label)")
+        XCTAssertTrue(row.label.contains("missed"), "a missed call says so: \(row.label)")
     }
 
     func testSwipeLeftDeletesARow() {

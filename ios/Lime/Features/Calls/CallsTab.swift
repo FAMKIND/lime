@@ -19,6 +19,19 @@ extension CallRecord {
 /// The call tab's search screen is pushed onto the tab's path.
 struct CallSearchRoute: Hashable {}
 
+/// What tapping a call in the history does (LIME-170): a person is called again the same way; a group is joined if its call is on now, else a new
+/// one is started.
+enum CallBackAction: Equatable {
+    case callPerson
+    case joinGroup(callID: String)
+    case startGroup
+
+    static func decide(isGroup: Bool, liveCallID: String?) -> CallBackAction {
+        guard isGroup else { return .callPerson }
+        return liveCallID.map { .joinGroup(callID: $0) } ?? .startGroup
+    }
+}
+
 /// One history row: avatar with its status badge, name (red when missed, "(3)" when grouped), kind, time, and the call-back button.
 struct CallRowView: View {
     let group: CallGroup
@@ -29,13 +42,34 @@ struct CallRowView: View {
     /// A group's call: its history row carries the group's conversation id (LIME-112b).
     private func isGroupCall(_ call: CallRecord) -> Bool { call.peerID.hasPrefix("grp:") }
 
-    private func openOrJoin(_ call: CallRecord) {
-        guard let live = store.groupCalls.core.activeCall(conversationID: call.peerID) else { return }
-        Task { _ = await store.groupCalls.join(callID: live.callId, conversationID: call.peerID, title: call.peerName, video: live.video) }
+    /// Calls them again the way the call was made, as the iPhone's Phone app does (LIME-170): a person, the same kind; a group, joining its call
+    /// if one is on now, else starting a new one. The row and the round button on its right do the same thing.
+    private func callBack(_ call: CallRecord) {
+        let live = isGroupCall(call) ? store.groupCalls.core.activeCall(conversationID: call.peerID) : nil
+        switch CallBackAction.decide(isGroup: isGroupCall(call), liveCallID: live?.callId) {
+        case .callPerson:
+            Task { _ = await store.calls.start(peerID: call.peerID, name: call.peerName, video: call.video) }
+        case .joinGroup(let callID):
+            Task { _ = await store.groupCalls.join(callID: callID, conversationID: call.peerID, title: call.peerName, video: live?.video ?? call.video) }
+        case .startGroup:
+            Task { _ = await store.groupCalls.start(conversationID: call.peerID, title: call.peerName, video: call.video) }
+        }
     }
 
-    private func startAgain(_ call: CallRecord) {
-        Task { _ = await store.groupCalls.start(conversationID: call.peerID, title: call.peerName, video: call.video) }
+    /// The details a tap on a call used to open: the person's profile with these calls listed, or the group's details.
+    private func openDetails(_ call: CallRecord) {
+        if isGroupCall(call) {
+            if store.conversation(call.peerID) != nil { store.callPath.append(GroupTarget(conversationID: call.peerID)) }
+        } else {
+            store.callPath.append(ProfileRoute(userID: call.peerID, name: call.peerName, callIDs: group.records.map(\.id)))
+        }
+    }
+
+    /// What VoiceOver reads for the row: "Sam Park, Video call, 8:29 PM, missed".
+    private func rowLabel(_ call: CallRecord, missed: Bool) -> String {
+        let name = call.peerName + (group.count > 1 ? " (\(group.count))" : "")
+        let note = call.outcome.silencedNote ?? (call.outcome == .unavailable ? "Unavailable" : nil)
+        return "\(name), \(call.video ? "Video" : "Voice") call, \(CallGrouping.timeLabel(call.date))" + (missed ? ", missed" : "") + (note.map { ", \($0)" } ?? "")
     }
 
     /// The person as the chats know them (their colour and label), or a plain one.
@@ -48,16 +82,20 @@ struct CallRowView: View {
         let call = group.first
         let missed = group.isMissedIncoming
         HStack(spacing: 12) {
-            Button {
-                if isGroupCall(call) { openOrJoin(call) } else { store.callPath.append(ProfileRoute(userID: call.peerID, name: call.peerName, callIDs: group.records.map(\.id))) }
-            } label: {
+            // The picture opens the details (nothing looks different); the rest of the row calls back.
+            Button { openDetails(call) } label: {
+                if isGroupCall(call), let chat = store.conversation(call.peerID) {
+                    // A group call shows the group as the chat does: its photo, else its members' photos.
+                    ConversationAvatar(conversation: chat, size: avatarSize)
+                } else {
+                    AvatarView(person: person(call), size: avatarSize)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(call.peerName), details")
+            .accessibilityIdentifier("call-row-avatar")
+            Button { callBack(call) } label: {
                 HStack(spacing: 12) {
-                    if isGroupCall(call), let chat = store.conversation(call.peerID) {
-                        // A group call shows the group as the chat does: its photo, else its members' photos.
-                        ConversationAvatar(conversation: chat, size: avatarSize)
-                    } else {
-                        AvatarView(person: person(call), size: avatarSize)
-                    }
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(call.peerName + (group.count > 1 ? " (\(group.count))" : ""))
@@ -79,13 +117,15 @@ struct CallRowView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(rowLabel(call, missed: missed))
+            .accessibilityHint("Double-tap to call back")
+            .accessibilityAction(named: "Details") { openDetails(call) }
             .accessibilityIdentifier("call-history-row")
-            Button {
-                if isGroupCall(call) { startAgain(call) } else { Task { _ = await store.calls.start(peerID: call.peerID, name: call.peerName, video: call.video) } }
-            } label: {
+            Button { callBack(call) } label: {
                 Image(systemName: call.video ? "video" : "phone").font(.system(size: 17))
                     .foregroundStyle(Theme.text).frame(width: 40, height: 40)
                     .background(Theme.surface, in: Circle())
