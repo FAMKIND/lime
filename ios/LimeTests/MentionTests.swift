@@ -105,22 +105,26 @@ final class MentionStyleTests: XCTestCase {
 /// LIME-181b privacy: a username is searched on this phone only, and only where the person's profile already shows it.
 final class MentionPrivacyTests: XCTestCase {
     func testSomeoneWhoHidesFromSearchIsNotFoundByUsernameAndShowsByNameInUsernameMode() {
-        // What profile-get returns for a person who hid themselves: the name only.
-        let hidden = PublicProfile(userId: "h", displayName: "Hana Hidden", username: nil, school: nil, aboutEmoji: nil, aboutText: nil)
-        let open = PublicProfile(userId: "o", displayName: "Omar Open", username: "omar.o", school: nil, aboutEmoji: nil, aboutText: nil)
-        let usernames = MentionCandidate.usernames(from: ["h": hidden, "o": open])
+        // A person who hides shares no username (the core forgets it on their null), so the member has none.
+        let people = [Person(id: "h", name: "Hana Hidden", tone: 0), Person(id: "o", name: "Omar Open", tone: 1, username: "omar.o")]
+        let usernames = MentionCandidate.usernames(from: people)
         XCTAssertNil(usernames["h"], "no username is known for them")
-        let people = [Person(id: "h", name: "Hana Hidden", tone: 0), Person(id: "o", name: "Omar Open", tone: 1)]
         XCTAssertEqual(MentionCandidate.matches(for: "omar.o", people: people, everyone: false, usernames: usernames).map(\.id), ["o"])
-        // Even the handle they might use elsewhere does not find them: only the name does.
         XCTAssertEqual(MentionCandidate.matches(for: "hana.h", people: people, everyone: false, usernames: usernames).map(\.id), [])
         XCTAssertEqual(MentionCandidate.matches(for: "hana", people: people, everyone: false, usernames: usernames).map(\.id), ["h"])
         let context = MentionContext(meID: "me", name: { $0 == "h" ? "Hana Hidden" : nil }, username: { usernames[$0] }, open: { _ in })
         XCTAssertEqual(context.shown("h", style: .username), "@Hana Hidden", "Username mode shows their name")
     }
 
+    func testAReceivedUsernameShowsInTheListAndInUsernameMode() {
+        let people = [Person(id: "j", name: "Jean Chung", tone: 0, username: "jean.c")]
+        let usernames = MentionCandidate.usernames(from: people)
+        XCTAssertEqual(MentionCandidate.matches(for: "jean.c", people: people, everyone: false, usernames: usernames).first?.username, "jean.c")
+        let context = MentionContext(meID: "me", name: { _ in "Jean Chung" }, username: { usernames[$0] }, open: { _ in })
+        XCTAssertEqual(context.shown("j", style: .username), "@jean.c")
+    }
+
     func testAnEmptyUsernameCountsAsNone() {
-        let blank = PublicProfile(userId: "b", displayName: "Bo", username: "", school: nil, aboutEmoji: nil, aboutText: nil)
-        XCTAssertTrue(MentionCandidate.usernames(from: ["b": blank]).isEmpty)
+        XCTAssertTrue(MentionCandidate.usernames(from: [Person(id: "b", name: "Bo", tone: 0, username: "")]).isEmpty)
     }
 }

@@ -23,7 +23,7 @@ fn tone_of(user: &str) -> u32 {
     user.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(u32::from(b))) % 8
 }
 
-fn ensure_person(conn: &Connection, user: &str) -> Result<(), StoreError> {
+pub(crate) fn ensure_person(conn: &Connection, user: &str) -> Result<(), StoreError> {
     conn.execute("INSERT OR IGNORE INTO people (id, name, tone) VALUES (?1, ?1, ?2)", params![user, tone_of(user)]).map_err(db_err)?;
     Ok(())
 }

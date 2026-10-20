@@ -1478,7 +1478,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             PRAGMA user_version = 9;",
+             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -5000,4 +5000,61 @@ fn the_group_call_key_and_ids_are_32_uniform_bytes_not_two_uuids() {
     assert_eq!(variants.len(), 4, "the variant bits vary: {variants:?}");
     assert_eq!(crate::store::group_calls::random_hex(32).len(), 64);
     assert_eq!(crate::store::group_calls::random_hex(16).len(), 32);
+}
+
+// ---------------------------------------------------------------- LIME-184: usernames shared inside the encryption
+
+#[test]
+fn a_username_reaches_group_members_and_contacts_inside_the_encryption_and_hiding_clears_it() {
+    let server = FakeServer::new();
+    let (alice, bob, carol, transport, _chat) = team(&server);
+    let (dave, _) = party(&server, "dave", 4);
+    let of = |p: &Party, who: &Party| p.store.shared_username(who.user.clone());
+
+    // Alice shares a username: the people in her group get it (Bob and Carol), a stranger does not.
+    alice.store.set_my_shared_username(Some("alice.a".into())).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    sync(&dave, &transport);
+    assert_eq!(of(&bob, &alice).as_deref(), Some("alice.a"));
+    assert_eq!(of(&carol, &alice).as_deref(), Some("alice.a"));
+    assert_eq!(of(&dave, &alice), None, "someone she shares no chat with learns nothing");
+    // It shows with the member in the chat.
+    let group = group_chat(&bob).unwrap();
+    assert_eq!(group.members.iter().find(|m| m.id == alice.user).and_then(|m| m.username.clone()).as_deref(), Some("alice.a"));
+
+    // The same value again tells nobody twice; a change reaches everyone.
+    let calls = server.state.lock().unwrap().calls;
+    alice.store.set_my_shared_username(Some("alice.a".into())).unwrap();
+    deliver(&alice, &transport);
+    assert_eq!(server.state.lock().unwrap().calls, calls, "not sent twice");
+    alice.store.set_my_shared_username(Some("alice.b".into())).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(of(&bob, &alice).as_deref(), Some("alice.b"), "the newest wins");
+
+    // "Hide me from search" shares nothing: null, and receivers forget it.
+    alice.store.set_my_shared_username(None).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    assert_eq!(of(&bob, &alice), None);
+    assert_eq!(of(&carol, &alice), None);
+
+    // A username from someone I share no chat with is ignored.
+    dave.store.set_my_shared_username(Some("dave.d".into())).unwrap();
+    deliver(&dave, &transport);
+    sync(&alice, &transport);
+    assert_eq!(of(&alice, &dave), None);
+}
+
+#[test]
+fn someone_who_never_shared_a_username_is_not_told_that_it_is_gone() {
+    let server = FakeServer::new();
+    let (alice, bob, _carol, transport, _chat) = team(&server);
+    alice.store.set_my_shared_username(None).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(bob.store.shared_username(alice.user.clone()), None);
 }

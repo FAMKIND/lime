@@ -44,6 +44,7 @@ const DELIVERY_KEY_SHARE: &str = "delivery_key.share";
 /// The control op that tells a contact my profile photo changed, so they refresh it now (LIME-98b-fix).
 const PROFILE_CHANGED: &str = "profile.changed";
 use crate::store::status::STATUS_CHANGED;
+use crate::store::usernames::USERNAME_SET;
 
 /// Why one send did not go through.
 enum SendError {
@@ -228,6 +229,7 @@ impl LimeStore {
             self.refresh_my_photo_if_stale(&transport, &auth_token);
             self.deliver_photo_notices(&transport, &auth_token, &mut state, &me);
             self.deliver_status_notices(&transport, &auth_token, &mut state, &me);
+            self.deliver_username_notices(&transport, &auth_token, &mut state, &me);
             // What was kept for the mesh while offline goes now, as it was made.
             let _ = self.flush_mesh_outbox_locked(&transport, &auth_token);
         }
@@ -1209,6 +1211,18 @@ impl LimeStore {
         }
     }
 
+    /// Tells everyone I share a chat with what username I share (LIME-184): accepted contacts and the people in my groups, whoever has not yet been
+    /// told the current version. Errors leave them due; nothing waits on this.
+    fn deliver_username_notices(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
+        let Ok((username, version, due)) = self.with_conn(|conn| crate::store::usernames::due(conn, me)) else { return };
+        for peer in due {
+            let payload = crate::store::usernames::payload(username.as_deref());
+            if self.send_control_op(transport, token, state, me, &peer, USERNAME_SET, payload).is_ok() {
+                let _ = self.with_conn(|conn| crate::store::usernames::mark_sent(conn, &peer, version));
+            }
+        }
+    }
+
     /// Tells everyone queued that my photo changed. Errors leave the person queued; nothing waits on this.
     fn deliver_photo_notices(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
         let Ok(peers) = self.with_conn(crate::store::photos::queued_notices) else { return };
@@ -1523,7 +1537,8 @@ impl LimeStore {
         let is_changed = inner.op.op_type == PROFILE_CHANGED;
         let is_status = inner.op.op_type == STATUS_CHANGED;
         let is_call = crate::store::calls::is_call_op(&inner.op.op_type);
-        let is_control = is_share || is_changed || is_status || is_call;
+        let is_username = inner.op.op_type == USERNAME_SET;
+        let is_control = is_share || is_changed || is_status || is_username || is_call;
         let is_message_op = crate::store::message_ops::is_message_op(&inner.op.op_type);
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
@@ -1650,6 +1665,13 @@ impl LimeStore {
                     if let Some(status) = crate::store::status::parse(&inner.op.payload) {
                         crate::store::status::store_contact(conn, &sender, &status, remote_hlc.wall)?;
                     }
+                }
+                return Ok(Some(Stored::Control));
+            }
+            if is_username {
+                // Someone I share a chat with told me their username (or `null`: forget it). Not a message.
+                if let Some(username) = crate::store::usernames::parse(&inner.op.payload) {
+                    crate::store::usernames::store_received(conn, &me, &sender, username.as_deref(), remote_hlc.wall)?;
                 }
                 return Ok(Some(Stored::Control));
             }

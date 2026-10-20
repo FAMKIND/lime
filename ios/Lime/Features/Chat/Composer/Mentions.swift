@@ -11,10 +11,12 @@ struct MentionCandidate: Identifiable, Equatable {
     var person: Person? = nil
     var isEveryone: Bool { id == MentionContext.everyone }
 
-    /// The usernames this phone can already see: only those the public profiles it fetched carry. Someone who hides from search comes back from the
-    /// server with a name only, so they have no entry here and are found, and shown, by name alone (LIME-181b).
-    static func usernames(from profiles: [String: PublicProfile]) -> [String: String] {
-        profiles.compactMapValues { $0.username.flatMap { $0.isEmpty ? nil : $0 } }
+    /// The usernames this phone was told inside the encryption (LIME-184), by user id. Someone who hides from search shares none, so they have no entry
+    /// and are found, and shown, by name alone.
+    static func usernames(from people: [Person]) -> [String: String] {
+        var result: [String: String] = [:]
+        for person in people { if let handle = person.username, !handle.isEmpty { result[person.id] = handle } }
+        return result
     }
 
     private static func fold(_ text: String) -> String { text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
@@ -119,7 +121,7 @@ extension ConversationStore {
         return MentionContext(
             meID: me.id,
             name: { who in who == me.id ? me.name : members.first { $0.id == who }?.name },
-            username: { [weak self] who in self?.publicProfiles[who]?.username },
+            username: { who in members.first { $0.id == who }?.username },
             open: { [weak self] who in
                 let name = who == me.id ? me.name : members.first { $0.id == who }?.name ?? ""
                 self?.openProfile(ProfileRoute(userID: who, name: name, conversationID: id, isMe: who == me.id))
@@ -136,9 +138,7 @@ struct ComposerMentionSource: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: conversation?.members ?? [], initial: true) { _, members in model.mentionPeople = members }
-            .onChange(of: store.publicProfiles, initial: true) { _, profiles in
-                model.mentionUsernames = MentionCandidate.usernames(from: profiles)
-            }
+            .onChange(of: conversation?.members ?? [], initial: true) { _, members in model.mentionUsernames = MentionCandidate.usernames(from: members) }
             .task(id: conversation?.id) {
                 guard let conversation, conversation.isGroupChat else { model.mentionEveryone = false; return }
                 let role = await store.groupDetails(conversation.id)?.myRole

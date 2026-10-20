@@ -161,7 +161,7 @@ extension ConversationStore {
         var people: [(id: String, name: String, role: String)] = [("me", "You", owner ? "owner" : "member")]
         for user in memberIDs { people.append((user, known[user]?.name ?? user, "member")) }
         demoGroups[id] = DemoGroup(name: name, emoji: emoji, people: people)
-        let others = people.filter { $0.id != "me" }.map { Person(id: $0.id, name: $0.name) }
+        let others = people.filter { $0.id != "me" }.map { Person(id: $0.id, name: $0.name, username: known[$0.id]?.username) }
         var conversation = Conversation(id: id, title: name, members: others, messages: [], isGroupChat: true, emoji: emoji)
         conversation.myRole = owner ? "owner" : "member"
         conversation.messages.append(Message(id: "sys-\(id)-1", senderID: nil, text: "You created the group “\(name)”", date: Date(), state: .system))

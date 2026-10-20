@@ -7,6 +7,8 @@ struct Person: Identifiable, Hashable, Sendable {
     let tone: Int
     /// My private label for this person ("Grade 4 · Lincoln"): shown beside their name, only on this phone.
     var label: String? = nil
+    /// The username they told this phone inside the encryption (LIME-184); nil if they did not or hid it.
+    var username: String? = nil
 
     var initials: String {
         let parts = name.split(separator: " ").prefix(2)
@@ -53,6 +55,10 @@ enum DeliveryState: String, Hashable, Sendable {
 
 extension Person {
     /// A person's colour comes from their user id alone, the same on every screen and every phone.
+    init(id: String, name: String, username: String?) {
+        self.init(id: id, name: name, tone: AvatarTone.tone(for: id), label: nil, username: username)
+    }
+
     init(id: String, name: String) {
         self.init(id: id, name: name, tone: AvatarTone.tone(for: id))
     }
@@ -239,7 +245,7 @@ extension Conversation {
     init(_ summary: ConversationSummary, messages: [MessageItem]) {
         self.init(
             id: summary.id, title: summary.title,
-            members: summary.members.map { Person(id: $0.id, name: $0.name, tone: Int($0.tone), label: $0.label) },
+            members: summary.members.map { Person(id: $0.id, name: $0.name, tone: Int($0.tone), label: $0.label, username: $0.username) },
             messages: messages.map(Message.init),
             isPinned: summary.isPinned, unread: Int(summary.unread),
             isRequest: summary.requestState == "pending", keyChangePending: summary.keyChangePending, verified: summary.verified,

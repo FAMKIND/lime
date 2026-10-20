@@ -565,6 +565,12 @@ const MIGRATIONS: &[&str] = &[
      );",
     // 38 (LIME-152c): a video's sharp poster frame, inside the encrypted message like the thumbnail (older rows have none).
     "ALTER TABLE message_attachments ADD COLUMN poster BLOB;",
+    // 39 (LIME-184): usernames shared inside the encryption. `people.username` is what a person last told this phone (`username_at`: their clock);
+    // `my_username` is what this phone shares, with a version that grows on every change; `username_sent` is the version each person was last told.
+    "ALTER TABLE people ADD COLUMN username TEXT;
+     ALTER TABLE people ADD COLUMN username_at INTEGER NOT NULL DEFAULT 0;
+     CREATE TABLE my_username (id INTEGER PRIMARY KEY CHECK (id = 1), username TEXT, version INTEGER NOT NULL);
+     CREATE TABLE username_sent (peer_user_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL);",
 ];
 
 /// The schema version this build writes.

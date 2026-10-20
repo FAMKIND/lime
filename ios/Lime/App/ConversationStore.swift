@@ -43,7 +43,19 @@ final class ConversationStore {
 
     private(set) var core: LimeStore? {
         // The call history lives in the encrypted store: follow it as it opens and closes.
-        didSet { CallLog.shared.attach(core.map { CoreCallHistory($0) }) }
+        didSet {
+            CallLog.shared.attach(core.map { CoreCallHistory($0) })
+            applySharedUsername()
+        }
+    }
+    /// The username this phone shares with the people it chats with, inside the encryption (LIME-184): the account's, or none while "Hide me from
+    /// search" is on. Set by the account session.
+    var sharedUsernameProvider: () -> String? = { nil }
+
+    /// Tells the core what to share; it sends to whoever has not been told this version (the same value again sends nothing).
+    func applySharedUsername() {
+        guard let core else { return }
+        try? core.setMySharedUsername(username: sharedUsernameProvider())
     }
     private var bannerTask: Task<Void, Never>?
 
@@ -896,8 +908,8 @@ final class ConversationStore {
         isDemo = true
         let now = Date()
         let ada = Person(id: "ada", name: "Ada Lovelace")
-        let sam = Person(id: "sam", name: "Sam Park")
-        let lee = Person(id: "lee", name: "Lee Wong")
+        let sam = Person(id: "sam", name: "Sam Park", username: "sam.park")
+        let lee = Person(id: "lee", name: "Lee Wong", username: "lee.wong")
         conversations = [
             Conversation(id: "dm:ada", title: ada.name, members: [ada], messages: [
                 Message(id: "d1", senderID: "ada", text: "Hello! Do you have the field trip forms?", date: now.addingTimeInterval(-600)),

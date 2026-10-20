@@ -24,6 +24,7 @@ pub(crate) mod threads;
 pub(crate) mod link_preview;
 pub(crate) mod storage;
 pub(crate) mod status;
+pub(crate) mod usernames;
 pub(crate) mod calls;
 pub(crate) mod emergency;
 pub(crate) mod group_calls;
@@ -118,6 +119,8 @@ pub struct MemberInfo {
     pub tone: u32,
     /// My private label for this person (shown only to me), if I gave one.
     pub label: Option<String>,
+    /// The username they told this phone inside the encryption (LIME-184); none if they did not, or hid it.
+    pub username: Option<String>,
 }
 
 /// One attachment of a message, as the app shows it (the key and digest stay in the core).
@@ -817,7 +820,7 @@ fn latest_activity(conn: &Connection, conversation_id: &str) -> Result<(Option<M
 fn members_of(conn: &Connection, conversation_id: &str) -> Result<Vec<MemberInfo>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT p.id, p.name, p.tone, l.label FROM members m JOIN people p ON p.id = m.person_id
+            "SELECT p.id, p.name, p.tone, l.label, p.username FROM members m JOIN people p ON p.id = m.person_id
              LEFT JOIN contact_labels l ON l.user_id = p.id
              WHERE m.conversation_id = ?1 AND p.id != ?2 ORDER BY m.position",
         )
@@ -831,6 +834,7 @@ fn members_of(conn: &Connection, conversation_id: &str) -> Result<Vec<MemberInfo
                 name,
                 tone: r.get(2)?,
                 label: r.get(3)?,
+                username: r.get(4)?,
             })
         })
         .map_err(db_err)?

@@ -43,6 +43,7 @@ final class AccountSession {
         self.defaults = defaults
         store.registrar = { [weak self] in await self?.registerDevice() }
         store.meProvider = { [weak self] in self?.mePerson ?? SampleData.me }
+        store.sharedUsernameProvider = { [weak self] in self?.profile.flatMap { $0.hideFromSearch ? nil : $0.username } }
     }
 
     var hasBackend: Bool { auth != nil }
@@ -99,6 +100,7 @@ final class AccountSession {
         store.accountSignedIn = true
         profile = storedProfile()
         await store.bootstrap(arguments: arguments)
+        store.applySharedUsername()
         phase = .signedIn
         await registerDevice()
         if let loaded = try? await auth.loadProfile(tokens: saved) { setProfile(loaded) }
@@ -320,6 +322,7 @@ final class AccountSession {
         if let data = try? JSONEncoder().encode(StoredProfile(profile)) {
             defaults.set(data, forKey: Self.profileKey)
         }
+        store.applySharedUsername()
     }
 
     private func storedProfile() -> Profile? {
