@@ -48,11 +48,23 @@ struct ChatComposer: View {
                 RecordingBar(recorder: recorder, dragX: dragX)
             } else {
                 ZStack(alignment: .topLeading) {
-                    RichComposerField(model: model)
+                    RichComposerField(model: model, maxHeight: model.expanded ? model.expandedFieldHeight : model.fieldCap, fills: model.expanded)
                         .onAppear { model.hasText = false }
                     if !model.hasText {
                         Text("Send message…").font(Theme.body).foregroundStyle(Theme.textSecondary)
                             .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }
+                // Over five lines: the same field made taller, from just below the header to the keyboard (LIME-176).
+                .overlay(alignment: .topTrailing) {
+                    if model.isLong || model.expanded {
+                        Button { trace("composer tap expand"); model.toggleExpanded() } label: {
+                            Image(systemName: model.expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel(model.expanded ? "Collapse message" : "Expand message")
+                        .accessibilityIdentifier(model.expanded ? "composer-collapse" : "composer-expand")
                     }
                 }
             }
@@ -122,7 +134,9 @@ struct ChatComposer: View {
                 FormattingToolbar(model: model).transition(.opacity)
             }
         }
+        .background { if model.expanded { Theme.canvas } }
         .animation(.easeOut(duration: 0.2), value: model.showsStrip)
+        .onDisappear { model.expanded = false }
         .sheet(item: $model.linkRequest) { request in LinkSheet(request: request, composer: model) }
         .sheet(isPresented: $choosing) {
             AddToMessageSheet(

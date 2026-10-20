@@ -32,6 +32,31 @@ final class RichComposerModel {
     var toolbarVisible: Bool { pinned || hasSelection }
     /// The composer has the keyboard (set by the text view's delegate).
     var editing = false
+
+    // MARK: Size (LIME-176)
+
+    /// The text is over five lines: the expand button shows.
+    private(set) var isLong = false
+    /// The composer fills the screen below the header (the same text view, made taller).
+    var expanded = false
+    /// What the sizing is worked out from: the window, and how much of it the keyboard covers (set by the text view and the composer).
+    var windowHeight: CGFloat = 0
+    var topInset: CGFloat = 0
+    var bottomInset: CGFloat = 0
+    var keyboardHeight: CGFloat = 0
+
+    private var line: CGFloat { textView?.font?.lineHeight ?? 20 }
+    var fieldCap: CGFloat {
+        ComposerSizing.maxFieldHeight(window: windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height, keyboard: keyboardHeight, bottomInset: bottomInset, strip: showsStrip, line: line)
+    }
+    var expandedFieldHeight: CGFloat {
+        ComposerSizing.expandedFieldHeight(window: windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height, keyboard: keyboardHeight, topInset: topInset, bottomInset: bottomInset, strip: showsStrip, line: line)
+    }
+
+    func toggleExpanded() {
+        expanded.toggle()
+        UIAccessibility.post(notification: .announcement, argument: expanded ? "Expanded" : "Collapsed")
+    }
     /// The strip is laid out under the composer, above the keyboard, in the composer's own stack (LIME-174: as the keyboard's accessory its height was
     /// left out of the composer's place with the emoji keyboard, and it covered the tool row). It shows while the keyboard does.
     var showsStrip: Bool { toolbarVisible && editing }
@@ -52,6 +77,8 @@ final class RichComposerModel {
         hasText = false
         plainText = ""
         hasSelection = false
+        isLong = false
+        expanded = false
         refresh()
     }
 
@@ -197,6 +224,11 @@ final class RichComposerModel {
     func didEdit() {
         hasText = !(textView?.text.isEmpty ?? true)
         plainText = textView?.text ?? ""
+        if let textView, textView.bounds.width > 0 {
+            let fitted = textView.sizeThatFits(CGSize(width: textView.bounds.width, height: .greatestFiniteMagnitude)).height
+            isLong = fitted > ComposerSizing.minimumHeight(line: line) + 1
+        }
+        if !hasText || !isLong { expanded = false }
         refresh()
         textView?.invalidateIntrinsicContentSize()
     }
@@ -289,8 +321,21 @@ final class ComposerTextView: UITextView {
     @objc private func indentList() { model?.shiftList(indent: true) }
     @objc private func outdentList() { model?.shiftList(indent: false) }
 
+    private var sizingObservers: [NSObjectProtocol] = []
+
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
+        // How much of the window the keyboard covers, for the composer's room (LIME-176).
+        for name in [UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification] {
+            sizingObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect) ?? .zero
+                let hiding = note.name == UIResponder.keyboardWillHideNotification
+                MainActor.assumeIsolated {
+                    guard let self, let window = self.window, let model = self.model else { return }
+                    model.keyboardHeight = hiding ? 0 : max(0, window.bounds.maxY - window.convert(end, from: nil).minY)
+                }
+            })
+        }
         #if DEBUG
         // What the keyboard, the accessory and the field each say, on every keyboard frame change (LIME-152a-fix: the first focus came out wrong).
         let center = NotificationCenter.default
@@ -312,6 +357,18 @@ final class ComposerTextView: UITextView {
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
+    /// Tells the model how big the window is whenever it changes (a turn, Stage Manager, a split), so the composer's room follows (LIME-176).
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let window, let model else { return }
+        let height = window.bounds.height, top = window.safeAreaInsets.top, bottom = window.safeAreaInsets.bottom
+        if height != model.windowHeight || top != model.topInset || bottom != model.bottomInset {
+            DispatchQueue.main.async { [weak model] in
+                model?.windowHeight = height; model?.topInset = top; model?.bottomInset = bottom
+            }
+        }
+    }
+
     override func paste(_ sender: Any?) {
         guard let string = UIPasteboard.general.string else { return }
         insertText(string) // plain text only: no one else's styling comes along
@@ -326,6 +383,9 @@ final class ComposerTextView: UITextView {
 
 struct RichComposerField: UIViewRepresentable {
     let model: RichComposerModel
+    /// The most the field grows to (or, when `fills`, its height); worked out by the composer from the window and the keyboard.
+    var maxHeight: CGFloat?
+    var fills = false
 
     func makeUIView(context: Context) -> ComposerTextView {
         let view = ComposerTextView()
@@ -348,6 +408,13 @@ struct RichComposerField: UIViewRepresentable {
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
         context.coordinator.model = model
+        // The field grew or shrank (a taller cap, the keyboard going, expanding): the caret stays in view.
+        let size = (maxHeight ?? 0) + (fills ? 100_000 : 0)
+        if context.coordinator.lastSize != size {
+            context.coordinator.lastSize = size
+            view.invalidateIntrinsicContentSize()
+            DispatchQueue.main.async { [weak view] in if let view, view.isFirstResponder { view.scrollRangeToVisible(view.selectedRange) } }
+        }
         // A change of lime's text size or typeface (Settings → Customize → Text size) restyles what is typed.
         _ = context.environment.dynamicTypeSize
         let base = ComposerDocument.baseFont()
@@ -358,12 +425,14 @@ struct RichComposerField: UIViewRepresentable {
         }
     }
 
-    /// Grows with the text, up to five lines.
+    /// Grows with the text up to `maxHeight` (never under five lines); expanded, it takes the whole of it.
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 280
         let line = uiView.font?.lineHeight ?? 20
+        let cap = max(maxHeight ?? 0, ComposerSizing.minimumHeight(line: line))
+        if fills { return CGSize(width: width, height: cap) }
         let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
-        return CGSize(width: width, height: min(max(fitted, line + 16), line * 5 + 16))
+        return CGSize(width: width, height: min(max(fitted, line + 16), cap))
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(model) }
@@ -373,6 +442,7 @@ struct RichComposerField: UIViewRepresentable {
         var model: RichComposerModel
         /// Setting the typing attributes or the selection ourselves must not run the handlers again.
         private var updating = false
+        var lastSize: CGFloat = 0
         /// An automatic list start that Backspace can still undo (any other edit or caret move clears it).
         private var autoStart: ComposerDocument.AutoStart?
         init(_ model: RichComposerModel) { self.model = model }
