@@ -35,8 +35,11 @@ final class Mention181UITests: LimeUITestCase {
         field.typeText("hi @le")
         XCTAssertTrue(suggestion(app, "lee").waitForExistence(timeout: 5))
         XCTAssertFalse(suggestion(app, "sam").exists, "narrowed by what was typed")
+        XCTAssertTrue(suggestion(app, "lee").staticTexts["Lee Wong"].exists, "the row shows the name")
+        XCTAssertTrue(suggestion(app, "lee").staticTexts["@lee.wong"].exists, "and the username under it, where the profile is known")
         suggestion(app, "lee").tap()
-        XCTAssertFalse(suggestion(app, "lee").exists, "the list closes")
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: suggestion(app, "lee"))
+        waitForExpectations(timeout: 5)   // it fades out
         XCTAssertEqual(field.value as? String, "hi [@Lee Wong](mention:lee) ", "the field holds the mention (its value is the message as it will be sent)")
         field.typeText("look")
         app.buttons["send-button"].tap()
@@ -44,6 +47,22 @@ final class Mention181UITests: LimeUITestCase {
         XCTAssertTrue(mention.waitForExistence(timeout: 8), "the bubble has a mention element")
         mention.tap()
         XCTAssertTrue(app.descendants(matching: .any)["profile-screen"].waitForExistence(timeout: 20), "tapping it opens their profile")
+    }
+
+    func testTheListFloatsAboveTheComposerAndDoesNotGrowIt() {
+        let app = open("", screen: "group")
+        let field = field(app)
+        let composer = app.textViews["composer-field"]
+        let before = composer.frame
+        field.typeText("@")
+        let first = suggestion(app, "lee")
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        let panel = app.descendants(matching: .any)["mention-suggestions"]
+        XCTAssertTrue(panel.exists)
+        XCTAssertEqual(composer.frame.height, before.height, accuracy: 0.5, "the composer's height is the same with the list open")
+        XCTAssertEqual(composer.frame.minY, before.minY, accuracy: 0.5, "and it has not moved")
+        XCTAssertLessThanOrEqual(first.frame.maxY, composer.frame.minY, "the rows sit above the composer")
+        XCTAssertGreaterThan(first.frame.minY, app.windows.firstMatch.frame.minY + 40, "never under the header")
     }
 
     func testBackspaceRemovesAWholeMention() {

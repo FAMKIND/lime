@@ -38,6 +38,8 @@ final class RichComposerModel {
     /// The people "@" can offer (the chat's members except me), and whether "@everyone" is offered (a group's owner or admin). Set by the chat.
     var mentionPeople: [Person] = []
     var mentionEveryone = false
+    /// Where the composer starts on the screen (global y), set by the composer; the chat floats the @ list just above it.
+    var composerTop: CGFloat = 0
     /// The usernames this phone already knows (public profiles it has fetched), by user id.
     var mentionUsernames: [String: String] = [:]
     /// The "@word" being typed (its place in the text) and who matches it; empty when no list shows.
@@ -65,6 +67,7 @@ final class RichComposerModel {
         let shown = MentionStyle.stored() == .username ? (candidate.username ?? candidate.name) : candidate.name
         let caret = ComposerDocument.insertMention(shown, id: candidate.id, replacing: query.range, in: textView.textStorage)
         textView.selectedRange = NSRange(location: caret, length: 0)
+        textView.becomeFirstResponder()   // the panel floats over the messages: a tap there must not put the keyboard away
         mentionQuery = nil
         mentionMatches = []
         textView.delegate?.textViewDidChange?(textView)

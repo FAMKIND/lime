@@ -7,6 +7,8 @@ struct MentionCandidate: Identifiable, Equatable {
     let detail: String?
     /// Their username, when this phone already knows it.
     var username: String? = nil
+    /// For the avatar.
+    var person: Person? = nil
     var isEveryone: Bool { id == MentionContext.everyone }
 
     /// The usernames this phone can already see: only those the public profiles it fetched carry. Someone who hides from search comes back from the
@@ -25,7 +27,7 @@ struct MentionCandidate: Identifiable, Equatable {
         var contains: [MentionCandidate] = []
         for person in people {
             let handle = usernames[person.id]
-            let candidate = MentionCandidate(id: person.id, name: person.name, detail: person.label, username: handle)
+            let candidate = MentionCandidate(id: person.id, name: person.name, detail: person.label, username: handle, person: person)
             if wanted.isEmpty { starts.append(candidate); continue }
             let name = Self.fold(person.name)
             let words = name.split(separator: " ").map(String.init)
@@ -45,45 +47,65 @@ struct MentionCandidate: Identifiable, Equatable {
     }
 }
 
-/// The list above the composer while "@" is being typed.
+/// The list that floats above the composer while "@" is being typed: its own Liquid Glass panel over the messages (LIME-181c), not part of the
+/// composer, which keeps its height. About five rows, then it scrolls; fewer when the window is short, so it never goes under the header.
 struct MentionSuggestions: View {
     let matches: [MentionCandidate]
+    /// The room there is above the composer's top (the window below the header), so a landscape window gets fewer rows.
+    var room: CGFloat = .infinity
     let pick: (MentionCandidate) -> Void
-    @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 48
+    @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 52
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Kept after the list empties so it can fade out with its last rows.
+    @State private var shown: [MentionCandidate] = []
+
+    private var row: CGFloat { max(rowHeight, 44) }
+    private var height: CGFloat { max(row, min(row * 5, room.isFinite ? room : row * 5)) }
 
     var body: some View {
+        ZStack {
+            if !shown.isEmpty { panel.transition(reduceMotion ? .identity : .opacity) }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: shown.isEmpty)
+        .onChange(of: matches, initial: true) { _, now in shown = now }
+        .padding(.horizontal, 12)
+    }
+
+    private var panel: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(matches) { candidate in
+                ForEach(shown) { candidate in
                     Button { pick(candidate) } label: {
-                        HStack(spacing: 8) {
-                            Text(candidate.isEveryone ? "@everyone" : candidate.name).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
-                            if let handle = candidate.username {
-                                Text("@" + handle).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        HStack(spacing: 10) {
+                            if let person = candidate.person {
+                                AvatarView(person: person, size: 32)
+                            } else {
+                                Image(systemName: "person.3.fill").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+                                    .frame(width: 32, height: 32).background(Theme.pressed, in: Circle())
                             }
-                            if let detail = candidate.detail {
-                                Text("· " + detail).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(candidate.isEveryone ? "@everyone" : candidate.name).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+                                if let second = candidate.isEveryone ? candidate.detail : candidate.username.map({ "@" + $0 }) {
+                                    Text(second).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                                }
                             }
                             Spacer(minLength: 0)
                         }
-                        .padding(.horizontal, 14)
-                        .frame(maxWidth: .infinity, minHeight: max(rowHeight, 44), alignment: .leading)
+                        .padding(.horizontal, 16).padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, minHeight: row, alignment: .leading)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(candidate.isEveryone ? "Everyone, notify the group" : candidate.name)
+                    .accessibilityLabel(candidate.isEveryone ? "Everyone, notify the group" : candidate.username.map { "\(candidate.name), \($0)" } ?? candidate.name)
                     .accessibilityIdentifier("mention-suggestion-\(candidate.id)")
                 }
             }
         }
-        // About eight rows, then it scrolls.
-        .frame(maxHeight: max(rowHeight, 44) * 8)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.bubbleEdge, lineWidth: 0.5))
-        .padding(.horizontal, 4).padding(.bottom, 6)
+        .frame(height: min(height, row * CGFloat(shown.count)))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .limeGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Suggestions, \(matches.count) \(matches.count == 1 ? "person" : "people")")
+        .accessibilityLabel("Suggestions, \(shown.count) \(shown.count == 1 ? "person" : "people")")
         .accessibilityIdentifier("mention-suggestions")
     }
 }
@@ -129,4 +151,28 @@ extension View {
     func composerMentions(_ model: RichComposerModel, in conversation: Conversation?) -> some View {
         modifier(ComposerMentionSource(model: model, conversation: conversation))
     }
+}
+
+/// The @ list as its own floating glass panel over the messages, about 8 pt above the composer (LIME-181c). It is placed by the chat, not inside the
+/// composer, so the composer keeps its height and the panel's rows can be tapped.
+struct MentionPanelOverlay: ViewModifier {
+    let model: RichComposerModel
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            GeometryReader { proxy in
+                let bottom = proxy.frame(in: .global).maxY
+                let gap = max(0, bottom - model.composerTop + 8)
+                // Between the header and the composer: a short (landscape) window gets fewer rows and never goes under the header.
+                let room = model.composerTop - 8 - (model.topInset + ComposerSizing.headerHeight)
+                MentionSuggestions(matches: model.mentionMatches, room: room) { model.pick($0) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, gap)
+            }
+        }
+    }
+}
+
+extension View {
+    func mentionPanel(_ model: RichComposerModel) -> some View { modifier(MentionPanelOverlay(model: model)) }
 }

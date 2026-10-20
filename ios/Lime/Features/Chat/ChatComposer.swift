@@ -34,6 +34,12 @@ struct ChatComposer: View {
     private var voiceEnabled: Bool { onSendAttachments != nil }
 
     var body: some View {
+        composerStack
+            // The composer's top, so the chat can float the @ list just above it (LIME-181c).
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { model.composerTop = $0 }
+    }
+
+    private var composerStack: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let fraction = preparingVideo {
                 HStack(spacing: 10) {
@@ -42,7 +48,6 @@ struct ChatComposer: View {
                 }
                 .padding(.horizontal, 6).padding(.top, 8).accessibilityIdentifier("video-preparing")
             }
-            if !model.mentionMatches.isEmpty { MentionSuggestions(matches: model.mentionMatches) { model.pick($0) } }
             if !drafts.isEmpty { DraftStrip(drafts: drafts) { draft in drafts.removeAll { $0.id == draft.id } } }
             if let previewDraft { previewCard(previewDraft) }
             if recorder.isRecording {

@@ -58,9 +58,9 @@ final class MentionTests: XCTestCase {
         XCTAssertEqual(String(drawn.characters), "@Jean C.", "the current name, not the written one")
         XCTAssertEqual(drawn.runs.first?.link.flatMap(MentionContext.userID(from:)), "u1")
         XCTAssertNil(drawn.runs.first?.underlineStyle, "not underlined: it is not a web link")
-        XCTAssertNil(drawn.runs.first?.backgroundColor, "not me")
+        XCTAssertNil(drawn.runs.first?.backgroundColor, "no highlight")
         let mine = Span(text: "@Shem", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: "u2")
-        XCTAssertNotNil(MessageRender.attributed([mine], ink: .black, link: .green, mentions: context).runs.first?.backgroundColor, "mine is a little stronger")
+        XCTAssertNil(MessageRender.attributed([mine], ink: .black, link: .green, mentions: context).runs.first?.backgroundColor, "not even a mention of me (LIME-181c)")
         let unknown = MessageRender.attributed([span], ink: .black, link: .green, mentions: nil)
         XCTAssertEqual(String(unknown.characters), "@Jean Chung", "the written words when the person is not known")
     }
@@ -73,8 +73,8 @@ final class MentionStyleTests: XCTestCase {
     private func mention(_ id: String) -> Span {
         Span(text: "@written", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: id)
     }
-    private func text(_ id: String, _ style: MentionStyle, own: Bool = false) -> AttributedString {
-        MessageRender.attributed([mention(id)], ink: .black, link: .green, mentions: context, mentionStyle: style, isOwn: own)
+    private func text(_ id: String, _ style: MentionStyle) -> AttributedString {
+        MessageRender.attributed([mention(id)], ink: .black, link: .green, mentions: context, mentionStyle: style)
     }
 
     func testFullNameModeShowsTheNameAndUsernameModeShowsTheHandleWhenKnown() {
@@ -87,12 +87,11 @@ final class MentionStyleTests: XCTestCase {
         XCTAssertEqual(String(text("zz", .username).characters), "@written", "and to the written words when the person is not known at all")
     }
 
-    func testOnlyAReceivedMentionOfMeOrEveryoneHasAHighlight() {
-        XCTAssertNotNil(text("me", .fullName).runs.first?.backgroundColor, "received, of me")
-        XCTAssertNotNil(text(MentionContext.everyone, .fullName).runs.first?.backgroundColor, "received, everyone")
-        XCTAssertNil(text("u1", .fullName).runs.first?.backgroundColor, "received, of someone else: coloured text")
-        XCTAssertNil(text("me", .fullName, own: true).runs.first?.backgroundColor, "my own bubble, even of myself")
-        XCTAssertNil(text(MentionContext.everyone, .fullName, own: true).runs.first?.backgroundColor)
+    func testNoMentionHasAHighlightInAnyBubble() {
+        for id in ["me", "u1", MentionContext.everyone] {
+            XCTAssertNil(text(id, .fullName).runs.first?.backgroundColor, id)
+            XCTAssertNil(text(id, .username).runs.first?.backgroundColor, id)
+        }
     }
 
     func testSuggestionsMatchAUsernameToo() {
