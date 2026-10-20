@@ -55,15 +55,19 @@ for Swift with LiveKit's own build of WebRTC (livekit/webrtc-xcframework) and it
 TYPEFACES (Settings, Customize, Text size and font)
 ---------------------------------------------------
 Lime offers these open-source typefaces, used under the SIL Open Font License, Version 1.1 (the text follows).
-Only the Regular, Medium, SemiBold and Bold weights are bundled. Figtree, Space Grotesk, Atkinson Hyperlegible Next and
-Newsreader are static copies cut from the originals' variable fonts and reduced to Latin letters (Newsreader also has a
-larger line gap); IBM Plex Mono is bundled unmodified (its Reserved Font Name is kept). No font is sold on its own.
-The copyright notice of each:
+Only the Regular, Medium, SemiBold and Bold weights are bundled (Comic Neue: Regular and Bold, the weights it has).
+Figtree, Atkinson Hyperlegible Next, Newsreader, Mozilla Text and Mozilla Headline are static copies cut from the originals'
+variable fonts and reduced to Latin letters (Newsreader also has a larger line gap). Comic Neue, Lexend and Lora are the
+projects' own static files, bundled unmodified (Lexend and Lora declare Reserved Font Names, which are kept). No font is
+sold on its own. The copyright notice of each:
   Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next)
+  Copyright 2014 The Comic Neue Project Authors (https://github.com/crozynski/comicneue)
   Copyright 2022 The Figtree Project Authors (https://github.com/erikdkennedy/figtree)
-  Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"
+  Copyright 2018 The Lexend Project Authors (https://github.com/googlefonts/lexend), with Reserved Font Name "RevReading Lexend"
+  Copyright 2011 The Lora Project Authors (https://github.com/cyrealtype/Lora-Cyrillic), with Reserved Font Name "Lora"
+  Copyright 2025 The Mozilla Headline Project Authors (https://github.com/mozilla/mozilla-headline-type)
+  Copyright 2025 The Mozilla Text Project Authors (https://github.com/mozilla/mozilla-text-type)
   Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)
-  Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)
 
 Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next)
 

@@ -82,9 +82,26 @@ final class TextPreferencesTests: XCTestCase {
                 guard let name = face.postScriptName(for: weight) else { XCTAssertEqual(face, .system); continue }
                 XCTAssertNotNil(UIFont(name: name, size: 17), "\(name) is bundled and registered")
             }
+            for style in face.bundledStyles where face != .system {
+                XCTAssertNotNil(UIFont(name: "\(face.fileStem ?? "")-\(style)", size: 17), "\(face.title) \(style) is bundled")
+            }
         }
         XCTAssertEqual(LimeTypeface.figtree.postScriptName(for: .black), "Figtree-Bold", "the nearest weight")
-        XCTAssertEqual(LimeTypeface.plexMono.postScriptName(for: .light), "IBMPlexMono-Regular")
+        XCTAssertEqual(LimeTypeface.lora.postScriptName(for: .light), "Lora-Regular")
+        // Comic Neue has Regular and Bold only: the nearest one.
+        XCTAssertEqual(LimeTypeface.comicNeue.postScriptName(for: .medium), "ComicNeue-Regular")
+        XCTAssertEqual(LimeTypeface.comicNeue.postScriptName(for: .semibold), "ComicNeue-Bold")
+        XCTAssertEqual(LimeTypeface.comicNeue.postScriptName(for: .bold), "ComicNeue-Bold")
+    }
+
+    func testTheNineFacesAreOfferedInOrderAndAnUnknownStoredFaceFallsBackToSystem() {
+        XCTAssertEqual(LimeTypeface.allCases.map(\.title), ["System", "Figtree", "Atkinson Hyperlegible Next", "Lexend", "Mozilla Text", "Mozilla Headline", "Comic Neue", "Newsreader", "Lora"])
+        XCTAssertEqual(LimeTypeface.lexend.detail, "Dyslexia-friendly")
+        let d = defaults()
+        d.set("spaceGrotesk", forKey: TextPreferences.fontKey)
+        XCTAssertEqual(TextPreferences(defaults: d).typeface, .system, "a face that is gone falls back to System")
+        d.set("plexMono", forKey: TextPreferences.fontKey)
+        XCTAssertEqual(TextPreferences(defaults: d).typeface, .system)
     }
 
     func testTheComposersFontFollowsTheTypefaceAndTheSize() {

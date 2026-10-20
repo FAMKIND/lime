@@ -26,9 +26,9 @@ struct TextStep: Equatable, Identifiable {
     static let defaultStep = 2
 }
 
-/// The typefaces on offer: the system font (SF Pro) and five open ones (SIL Open Font License; credits in Acknowledgements).
+/// The typefaces on offer: the system font (SF Pro) and eight open ones (SIL Open Font License; credits in Acknowledgements).
 enum LimeTypeface: String, CaseIterable, Identifiable {
-    case system, figtree, spaceGrotesk, atkinson, newsreader, plexMono
+    case system, figtree, atkinson, lexend, mozillaText, mozillaHeadline, comicNeue, newsreader, lora
 
     var id: String { rawValue }
 
@@ -36,10 +36,13 @@ enum LimeTypeface: String, CaseIterable, Identifiable {
         switch self {
         case .system: "System"
         case .figtree: "Figtree"
-        case .spaceGrotesk: "Space Grotesk"
         case .atkinson: "Atkinson Hyperlegible Next"
+        case .lexend: "Lexend"
+        case .mozillaText: "Mozilla Text"
+        case .mozillaHeadline: "Mozilla Headline"
+        case .comicNeue: "Comic Neue"
         case .newsreader: "Newsreader"
-        case .plexMono: "IBM Plex Mono"
+        case .lora: "Lora"
         }
     }
 
@@ -47,10 +50,13 @@ enum LimeTypeface: String, CaseIterable, Identifiable {
         switch self {
         case .system: "The iPhone's own font"
         case .figtree: "Clean and friendly"
-        case .spaceGrotesk: "A pop of energy"
         case .atkinson: "Made for low vision"
+        case .lexend: "Dyslexia-friendly"
+        case .mozillaText: "Warm and open"
+        case .mozillaHeadline: "Bold and compact"
+        case .comicNeue: "Casual, like handwriting"
         case .newsreader: "A serif for reading"
-        case .plexMono: "Monospaced"
+        case .lora: "A soft serif"
         }
     }
 
@@ -59,10 +65,13 @@ enum LimeTypeface: String, CaseIterable, Identifiable {
         switch self {
         case .system: nil
         case .figtree: "Figtree"
-        case .spaceGrotesk: "SpaceGrotesk"
         case .atkinson: "AtkinsonHyperlegibleNext"
+        case .lexend: "Lexend"
+        case .mozillaText: "MozillaText"
+        case .mozillaHeadline: "MozillaHeadline"
+        case .comicNeue: "ComicNeue"
         case .newsreader: "Newsreader"
-        case .plexMono: "IBMPlexMono"
+        case .lora: "Lora"
         }
     }
 
@@ -72,16 +81,26 @@ enum LimeTypeface: String, CaseIterable, Identifiable {
         return Font.custom(name, size: style.basePointSize, relativeTo: style)
     }
 
-    /// The font file for a weight: Regular, Medium, SemiBold or Bold (the nearest one).
+    /// The weights bundled for this face (Comic Neue comes in Light, Regular and Bold only: Regular and Bold are bundled).
+    var bundledStyles: [String] {
+        switch self {
+        case .comicNeue: ["Regular", "Bold"]
+        default: ["Regular", "Medium", "SemiBold", "Bold"]
+        }
+    }
+
+    /// The font file for a weight: the nearest bundled one.
     func postScriptName(for weight: Font.Weight) -> String? {
         guard let stem = fileStem else { return nil }
-        let style: String
+        let wanted: String
         switch weight {
-        case .ultraLight, .thin, .light, .regular: style = "Regular"
-        case .medium: style = "Medium"
-        case .semibold: style = "SemiBold"
-        default: style = "Bold"
+        case .ultraLight, .thin, .light, .regular: wanted = "Regular"
+        case .medium: wanted = "Medium"
+        case .semibold: wanted = "SemiBold"
+        default: wanted = "Bold"
         }
+        let style: String
+        if bundledStyles.contains(wanted) { style = wanted } else { style = wanted == "Medium" ? "Regular" : "Bold" }   // Comic Neue: 500 is nearer 400, 600 nearer 700
         return "\(stem)-\(style)"
     }
 }

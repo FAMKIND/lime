@@ -30,7 +30,7 @@ final class TextSizeUITests: LimeUITestCase {
         // The font tab: six faces, one checked.
         app.segmentedControls["text-size-tabs"].buttons["Font"].tap()
         XCTAssertTrue(app.buttons["font-system"].waitForExistence(timeout: 5))
-        for id in ["font-system", "font-figtree", "font-spaceGrotesk", "font-atkinson", "font-newsreader", "font-plexMono"] {
+        for id in ["font-system", "font-figtree", "font-atkinson", "font-lexend", "font-mozillaText", "font-mozillaHeadline", "font-comicNeue", "font-newsreader", "font-lora"] {
             XCTAssertTrue(app.buttons[id].exists, id)
         }
         XCTAssertTrue(app.buttons["font-system"].isSelected)
