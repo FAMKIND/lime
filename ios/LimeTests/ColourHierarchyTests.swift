@@ -83,7 +83,7 @@ final class ColourHierarchyTests: XCTestCase {
     }
 
     private func spans(_ text: String) -> [Span] {
-        [Span(text: text, bold: false, italic: false, underline: false, strike: false, code: false, link: nil)]
+        [Span(text: text, bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil)]
     }
 
     private func highlighted(_ text: AttributedString) -> [String: Color] {
@@ -114,9 +114,9 @@ final class ColourHierarchyTests: XCTestCase {
 
     func testAHighlightAcrossStyledRunsStaysOnTheWord() {
         let styled = [
-            Span(text: "the ", bold: false, italic: false, underline: false, strike: false, code: false, link: nil),
-            Span(text: "plan", bold: true, italic: false, underline: false, strike: false, code: false, link: nil),
-            Span(text: "ning day", bold: false, italic: false, underline: false, strike: false, code: false, link: nil),
+            Span(text: "the ", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil),
+            Span(text: "plan", bold: true, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil),
+            Span(text: "ning day", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil),
         ]
         let text = MessageRender.attributed(styled, ink: .black, link: .green, find: FindStyle(words: ["plan"], current: false))
         let colored = text.runs.filter { $0.backgroundColor != nil }.map { String(text[$0.range].characters) }.joined()

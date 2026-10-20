@@ -1730,6 +1730,10 @@ fn insert_received_message(
         None => None,
         Some(id) => Some(resolve_root(conn, conversation, id)?.unwrap_or_else(|| id.to_owned())),
     };
+    // Mentions of people outside the chat (or a forged @everyone) are kept as plain words (LIME-181).
+    let restricted = crate::store::message_ops::restrict_mentions(conn, conversation, sender, text);
+    let (text, plain) = if restricted == text { (text, plain.to_owned()) } else { (restricted.as_str(), crate::format::plain_text(&restricted)) };
+    let plain = plain.as_str();
     let shown = remote_wall.min(now);
     let inserted = conn
         .execute(

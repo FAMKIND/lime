@@ -42,6 +42,7 @@ struct ChatComposer: View {
                 }
                 .padding(.horizontal, 6).padding(.top, 8).accessibilityIdentifier("video-preparing")
             }
+            if !model.mentionMatches.isEmpty { MentionSuggestions(matches: model.mentionMatches) { model.pick($0) } }
             if !drafts.isEmpty { DraftStrip(drafts: drafts) { draft in drafts.removeAll { $0.id == draft.id } } }
             if let previewDraft { previewCard(previewDraft) }
             if recorder.isRecording {
@@ -397,11 +398,13 @@ struct ChatComposer: View {
 struct LinkOpening: ViewModifier {
     @State private var pending: URL?
     @State private var pressed: URL?
+    @Environment(\.mentionContext) private var mentions
 
     func body(content: Content) -> some View {
         content
             .environment(\.pressedLink, pressed)
             .environment(\.openURL, OpenURLAction { url in
+                if let id = MentionContext.userID(from: url) { mentions?.open(id); return .handled }
                 pressed = url
                 Task { try? await Task.sleep(for: .milliseconds(350)); if pressed == url { pressed = nil } }
                 if MessageRender.opensWithoutAsking(url) { return .systemAction }

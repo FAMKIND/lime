@@ -12,24 +12,26 @@ struct FormattedMessageText: View {
     var pressed: String? = nil
     /// Words to highlight (in-chat find, or a message opened from search).
     var find: FindStyle? = nil
+    /// Who the mentions are (LIME-181); nil outside a chat.
+    @Environment(\.mentionContext) private var mentions
 
     var body: some View {
         let blocks = MessageRender.blocks(markdown)
         if blocks.count == 1, case .paragraph(let spans) = blocks[0] {
             // The common case, one paragraph, is a single piece of text.
-            Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+            Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                     switch block {
                     case .paragraph(let spans):
-                        Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+                        Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                     case .list(let items):
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(Array(MessageRender.numbered(items).enumerated()), id: \.offset) { _, row in
                                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                                     Text(row.marker).font(Theme.body).foregroundStyle(ink).frame(minWidth: 14, alignment: .trailing)
-                                    Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed, find: find)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+                                    Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                                 }
                                 .padding(.leading, CGFloat(min(row.item.level, maxListLevel())) * 18)
                                 .accessibilityElement(children: .combine)
@@ -92,11 +94,11 @@ enum MessageRender {
         guard let regex = try? NSRegularExpression(pattern: #"\bhttps?://[^\s<>"']+"#, options: [.caseInsensitive]) else { return spans }
         var out: [Span] = []
         for span in spans {
-            guard span.link == nil, !span.code, span.text.range(of: "://") != nil else { out.append(span); continue }
+            guard span.link == nil, span.mention == nil, !span.code, span.text.range(of: "://") != nil else { out.append(span); continue }
             let text = span.text as NSString
             var cursor = 0
             func piece(_ s: String, link: String? = nil) -> Span {
-                Span(text: s, bold: span.bold, italic: span.italic, underline: span.underline, strike: span.strike, code: false, link: link)
+                Span(text: s, bold: span.bold, italic: span.italic, underline: span.underline, strike: span.strike, code: false, link: link, mention: nil)
             }
             for match in regex.matches(in: span.text, range: NSRange(location: 0, length: text.length)) {
                 var range = match.range
@@ -116,9 +118,13 @@ enum MessageRender {
         return out
     }
 
-    static func attributed(_ spans: [Span], ink: Color, link linkColor: Color, pressed: String? = nil, find: FindStyle? = nil) -> AttributedString {
+    static func attributed(_ spans: [Span], ink: Color, link linkColor: Color, pressed: String? = nil, find: FindStyle? = nil, mentions: MentionContext? = nil) -> AttributedString {
         var result = AttributedString()
         for span in autoLinked(spans) {
+            if let id = span.mention {
+                result.append(mention(span, id: id, ink: ink, link: linkColor, mentions: mentions))
+                continue
+            }
             var piece = AttributedString(span.text)
             var intent: InlinePresentationIntent = []
             if span.bold { intent.insert(.stronglyEmphasized) }
@@ -138,6 +144,18 @@ enum MessageRender {
         }
         if let find { highlight(&result, find) }
         return result
+    }
+
+    /// A mention (LIME-181): "@" and the name this phone knows now (the written words if it does not), bold in the bubble's link colour (the
+    /// weight and the @ mean it is not colour alone), not underlined. Tapping a person opens their profile; yours has a soft highlight behind it.
+    static func mention(_ span: Span, id: String, ink: Color, link linkColor: Color, mentions: MentionContext?) -> AttributedString {
+        let known = id == MentionContext.everyone ? nil : mentions?.name(id)
+        var piece = AttributedString(known.map { "@" + $0 } ?? span.text)
+        piece.inlinePresentationIntent = .stronglyEmphasized
+        piece.foregroundColor = linkColor
+        if id != MentionContext.everyone, let url = URL(string: MentionContext.scheme + ":" + id) { piece.link = url }
+        if let mentions, id == mentions.meID || id == MentionContext.everyone { piece.backgroundColor = linkColor.opacity(0.18) }
+        return piece
     }
 
     /// A highlight behind each word that starts with a typed word (the same rule the search uses), the
@@ -166,4 +184,25 @@ enum MessageRender {
 
     /// Only these links open without asking (anything else, http and mailto here, asks first).
     static func opensWithoutAsking(_ url: URL) -> Bool { url.scheme?.lowercased() == "https" }
+}
+
+
+/// Who the mentions in a chat are, for drawing and tapping them (LIME-181).
+struct MentionContext {
+    static let everyone = "everyone"
+    /// The scheme a drawn mention's tap link carries (`lime-mention:<user id>`).
+    static let scheme = "lime-mention"
+    let meID: String
+    /// The name this phone knows for a person in this chat now.
+    let name: (String) -> String?
+    /// Opens a person's profile.
+    let open: @MainActor (String) -> Void
+
+    static func userID(from url: URL) -> String? {
+        url.scheme == scheme ? String(url.absoluteString.dropFirst(scheme.count + 1)) : nil
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var mentionContext: MentionContext? = nil
 }

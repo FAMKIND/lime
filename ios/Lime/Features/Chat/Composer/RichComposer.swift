@@ -33,6 +33,41 @@ final class RichComposerModel {
     /// The composer has the keyboard (set by the text view's delegate).
     var editing = false
 
+    // MARK: Mentions (LIME-181)
+
+    /// The people "@" can offer (the chat's members except me), and whether "@everyone" is offered (a group's owner or admin). Set by the chat.
+    var mentionPeople: [Person] = []
+    var mentionEveryone = false
+    /// The "@word" being typed (its place in the text) and who matches it; empty when no list shows.
+    private(set) var mentionQuery: (range: NSRange, text: String)?
+    private(set) var mentionMatches: [MentionCandidate] = []
+
+    /// Looks at the caret: opens, narrows or closes the suggestion list.
+    func updateMention() {
+        guard let textView, textView.selectedRange.length == 0,
+              let trigger = ComposerDocument.mentionTrigger(in: textView.textStorage, caret: textView.selectedRange.location) else {
+            if mentionQuery != nil { mentionQuery = nil; mentionMatches = [] }
+            return
+        }
+        let matches = MentionCandidate.matches(for: trigger.query, people: mentionPeople, everyone: mentionEveryone)
+        if matches.isEmpty { mentionQuery = nil; mentionMatches = []; return }
+        mentionQuery = (trigger.range, trigger.query)
+        if matches != mentionMatches { mentionMatches = matches }
+    }
+
+    func dismissMentions() { mentionQuery = nil; mentionMatches = [] }
+
+    /// Puts the chosen person in place of the "@word", with a space after it.
+    func pick(_ candidate: MentionCandidate) {
+        guard let textView, let query = mentionQuery else { return }
+        let caret = ComposerDocument.insertMention(candidate.name, id: candidate.id, replacing: query.range, in: textView.textStorage)
+        textView.selectedRange = NSRange(location: caret, length: 0)
+        mentionQuery = nil
+        mentionMatches = []
+        textView.delegate?.textViewDidChange?(textView)
+        UIAccessibility.post(notification: .announcement, argument: "Mentioned \(candidate.name)")
+    }
+
     // MARK: Size (LIME-176)
 
     /// The text is over five lines: the expand button shows.
@@ -73,6 +108,7 @@ final class RichComposerModel {
         guard let textView else { return }
         textView.attributedText = NSAttributedString()
         textView.typingAttributes = ComposerTextView.plainTypingAttributes
+        dismissMentions()
         pinned = false
         hasText = false
         plainText = ""
@@ -229,6 +265,7 @@ final class RichComposerModel {
             isLong = fitted > ComposerSizing.minimumHeight(line: line) + 1
         }
         if !hasText || !isLong { expanded = false }
+        updateMention()
         refresh()
         textView?.invalidateIntrinsicContentSize()
     }
@@ -460,6 +497,19 @@ struct RichComposerField: UIViewRepresentable {
             let storage = textView.textStorage
             let pending = autoStart
             autoStart = nil
+            // A mention is one unit (LIME-181): an edit that touches part of it takes all of it, and nothing is typed inside it.
+            if range.length > 0 || range.location > 0 {
+                let whole = ComposerDocument.expandedToMentions(range, in: storage)
+                let inside = range.length == 0 ? ComposerDocument.mentionRange(in: storage, at: range.location).flatMap { $0.location < range.location ? $0 : nil } : nil
+                if inside != nil { return false }
+                if whole != range {
+                    let typing = ComposerDocument.typingAttributes(in: storage, caret: whole.location)
+                    storage.replaceCharacters(in: whole, with: NSAttributedString(string: text, attributes: text.isEmpty ? nil : typing))
+                    textView.selectedRange = NSRange(location: whole.location + (text as NSString).length, length: 0)
+                    changed(textView)
+                    return false
+                }
+            }
             // Tab typed as text (an external keyboard, or a test) indents inside a list; elsewhere it is a tab.
             if text == "\t", ComposerDocument.state(in: storage, selection: range, typing: [:]).inList {
                 model.shiftList(indent: true)
@@ -523,6 +573,15 @@ struct RichComposerField: UIViewRepresentable {
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard !updating else { return }
             if let started = autoStart, textView.selectedRange != NSRange(location: started.caret, length: 0) { autoStart = nil }
+            // The caret never sits inside a mention: it goes to the nearer edge.
+            if textView.selectedRange.length == 0, let mention = ComposerDocument.mentionRange(in: textView.textStorage, at: textView.selectedRange.location),
+               mention.location < textView.selectedRange.location {
+                let caret = textView.selectedRange.location - mention.location < NSMaxRange(mention) - textView.selectedRange.location ? mention.location : NSMaxRange(mention)
+                updating = true
+                textView.selectedRange = NSRange(location: caret, length: 0)
+                updating = false
+            }
+            model.updateMention()
             // The caret never sits inside a list marker.
             let selection = textView.selectedRange
             if selection.length == 0 {

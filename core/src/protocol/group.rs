@@ -51,7 +51,7 @@ impl Role {
         }
     }
 
-    fn can_manage(self) -> bool {
+    pub(crate) fn can_manage(self) -> bool {
         matches!(self, Role::Owner | Role::Admin)
     }
 }

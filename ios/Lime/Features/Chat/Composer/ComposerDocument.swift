@@ -15,6 +15,8 @@ extension NSAttributedString.Key {
     static let limeStart = NSAttributedString.Key("lime.start")
     /// On the characters of a list marker ("• ", "2. ") and nowhere else, so a marker that an edit has cut in half can be told from the words.
     static let limeMarker = NSAttributedString.Key("lime.marker")
+    /// On the characters of a mention (LIME-181): the mentioned person's user id (or "everyone"). The characters are one unit: an edit takes all or none.
+    static let limeMention = NSAttributedString.Key("lime.mention")
 }
 
 enum InlineFormat: CaseIterable {
@@ -88,6 +90,10 @@ enum ComposerDocument {
             } else if !traits.isEmpty {
                 font = styled(base, traits: traits)
             }
+            if attributes[.limeMention] != nil {
+                font = styled(base, traits: [.traitBold])
+                text.addAttribute(.foregroundColor, value: UIColor(Theme.linkOther), range: range)
+            }
             text.addAttribute(.font, value: font, range: range)
             if inline || block == .code {
                 text.addAttribute(.backgroundColor, value: ink.withAlphaComponent(0.10), range: range)
@@ -113,6 +119,54 @@ enum ComposerDocument {
             location = NSMaxRange(paragraph)
         }
         text.endEditing()
+    }
+
+    // MARK: Mentions (LIME-181)
+
+    /// The mention that covers `location` (the whole run of it), if any. A caret at either edge is not inside it.
+    static func mentionRange(in text: NSAttributedString, at location: Int) -> NSRange? {
+        guard location >= 0, location < text.length else { return nil }
+        var range = NSRange(location: 0, length: 0)
+        guard let id = text.attribute(.limeMention, at: location, longestEffectiveRange: &range, in: NSRange(location: 0, length: text.length)) as? String, !id.isEmpty else { return nil }
+        return range
+    }
+
+    /// `range` made to take whole mentions: a mention it touches in part is taken completely.
+    static func expandedToMentions(_ range: NSRange, in text: NSAttributedString) -> NSRange {
+        guard range.length > 0 else { return range }
+        var result = range
+        if let first = mentionRange(in: text, at: range.location) { result = NSUnionRange(result, first) }
+        if let last = mentionRange(in: text, at: NSMaxRange(range) - 1) { result = NSUnionRange(result, last) }
+        return result
+    }
+
+    /// The "@word" being typed just before the caret: the "@" must start the text or follow white space, the words after it contain no
+    /// line break and are at most 30 characters, and none of it is already a mention. `range` covers the "@" and what follows.
+    static func mentionTrigger(in text: NSAttributedString, caret: Int) -> (range: NSRange, query: String)? {
+        let string = text.string as NSString
+        guard caret > 0, caret <= string.length else { return nil }
+        var at = caret - 1
+        while at >= 0, caret - at <= 31 {
+            let character = string.character(at: at)
+            if character == 0x0A || character == 0x0D { return nil }
+            if character == 0x40 {   // "@"
+                let startsWord = at == 0 || CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(string.character(at: at - 1)) ?? "x")
+                guard startsWord, mentionRange(in: text, at: at) == nil else { return nil }
+                let range = NSRange(location: at, length: caret - at)
+                return (range, string.substring(with: NSRange(location: at + 1, length: caret - at - 1)))
+            }
+            at -= 1
+        }
+        return nil
+    }
+
+    /// Puts a mention in place of `range`, with a plain space after it; returns where the caret goes.
+    @discardableResult
+    static func insertMention(_ name: String, id: String, replacing range: NSRange, in text: NSMutableAttributedString) -> Int {
+        let mention = NSMutableAttributedString(string: "@" + name, attributes: [.limeMention: id])
+        mention.append(NSAttributedString(string: " "))
+        text.replaceCharacters(in: range, with: mention)
+        return range.location + mention.length
     }
 
     // MARK: Paragraphs
@@ -204,7 +258,7 @@ enum ComposerDocument {
                     flushParagraph() // a blank line ends the paragraph
                 } else {
                     var lineSpans = spans(in: text, range: content)
-                    if !paragraph.isEmpty { lineSpans.insert(Span(text: "\n", bold: false, italic: false, underline: false, strike: false, code: false, link: nil), at: 0) }
+                    if !paragraph.isEmpty { lineSpans.insert(Span(text: "\n", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil), at: 0) }
                     paragraph.append(contentsOf: lineSpans)
                 }
             }
@@ -223,7 +277,7 @@ enum ComposerDocument {
                 text: (text.string as NSString).substring(with: run),
                 bold: attributes[.limeBold] != nil, italic: attributes[.limeItalic] != nil,
                 underline: attributes[.underlineStyle] != nil, strike: attributes[.strikethroughStyle] != nil,
-                code: attributes[.limeCode] != nil, link: link))
+                code: attributes[.limeCode] != nil, link: link, mention: attributes[.limeMention] as? String))
         }
         return result
     }
@@ -253,7 +307,8 @@ enum ComposerDocument {
                 if span.underline { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
                 if span.strike { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
                 if span.code { attributes[.limeCode] = true }
-                if let link = span.link, let url = URL(string: link) { attributes[.link] = url }
+                if let id = span.mention { attributes[.limeMention] = id }
+                else if let link = span.link, let url = URL(string: link) { attributes[.link] = url }
                 append(span.text, attributes)
             }
         }

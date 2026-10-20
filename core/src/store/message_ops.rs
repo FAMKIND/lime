@@ -179,7 +179,8 @@ pub(crate) fn apply(conn: &Connection, sender: &str, conversation: &str, op: &Op
                 if !newer(at, edit_hlc.as_deref()) {
                     return Ok(());
                 }
-                set_text(conn, target, text, at)
+                let text = restrict_mentions(conn, conversation, sender, text);
+                set_text(conn, target, &text, at)
             }
         }
         _ => Ok(()),
@@ -313,4 +314,19 @@ pub(crate) fn payload(target: &str, at: &str, extra: Value) -> Value {
         map.extend(extra.clone());
     }
     value
+}
+
+/// What a received message may keep of its mentions (LIME-181): someone who is not in the chat becomes plain `@Name`, and `@everyone` counts only
+/// from a group's owner or an admin (never in a 1:1). In a 1:1 the two people are the sender and me.
+pub(crate) fn restrict_mentions(conn: &Connection, conversation: &str, sender: &str, text: &str) -> String {
+    if !text.contains("(mention:") {
+        return text.to_owned();
+    }
+    if let Some(group_id) = crate::store::groups::group_id_of(conversation) {
+        let state = crate::store::groups::state_of(conn, group_id).unwrap_or_default();
+        let everyone_ok = state.role_of(sender).is_some_and(|role| role.can_manage());
+        return crate::format::restrict_mentions(text, &|id| state.is_member(id), everyone_ok);
+    }
+    let me = crate::store::my_user_id(conn);
+    crate::format::restrict_mentions(text, &|id| id == sender || id == me, false)
 }

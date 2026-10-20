@@ -44,10 +44,10 @@ final class LinkColourTests: XCTestCase {
 
     func testALinkIsGreenAndUnderlinedWhileAnUnderlineKeepsTheTextColour() {
         let spans = [
-            Span(text: "plain ", bold: false, italic: false, underline: false, strike: false, code: false, link: nil),
-            Span(text: "underlined", bold: false, italic: false, underline: true, strike: false, code: false, link: nil),
-            Span(text: " and ", bold: false, italic: false, underline: false, strike: false, code: false, link: nil),
-            Span(text: "link", bold: false, italic: false, underline: false, strike: false, code: false, link: "https://limechat.org"),
+            Span(text: "plain ", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil),
+            Span(text: "underlined", bold: false, italic: false, underline: true, strike: false, code: false, link: nil, mention: nil),
+            Span(text: " and ", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: nil),
+            Span(text: "link", bold: false, italic: false, underline: false, strike: false, code: false, link: "https://limechat.org", mention: nil),
         ]
         let text = MessageRender.attributed(spans, ink: .black, link: .green)
         var byWord: [String: AttributedString.Runs.Run] = [:]

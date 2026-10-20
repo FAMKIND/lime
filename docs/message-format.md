@@ -15,6 +15,7 @@ The text of a Lime message is **Markdown, from a small fixed subset**, carried i
 | Bulleted list | `- item` (or `* item`) | Up to three levels (LIME-137): indent each level by two spaces (a tab is one level; four or more spaces is level 3). Shown as •, ◦, ▪. Clients before LIME-137 read level 3 as level 2. |
 | Numbered list | `1. item` | The app counts on from the first number of a run, separately for each level; a bullet, or going back up to a shallower item, starts the deeper levels again. The same rule is the core's `list_markers`. |
 | Link | `[text](https://…)` | **http, https and mailto only**, with something after the scheme. Anything else stays text. |
+| Mention | `[@Name](mention:<user id>)` | LIME-181. The target is a well-formed user id, or the reserved `mention:everyone`; anything else stays text. One atomic run: styles inside it are dropped. `plain_text` gives `@Name`. On receipt the core keeps a mention only if that person is in the conversation, and `mention:everyone` only from a group owner or admin; otherwise it becomes the plain words `@Name`. |
 | Literal character | `\*` | A backslash before ASCII punctuation makes it literal. |
 
 A newline is a line break; a blank line separates paragraphs. A marker only counts when it touches the words (`2 * 3 * 4` is text) and closes on the same paragraph.
@@ -41,4 +42,4 @@ If styles sit so close together that a marker run could be read two ways, the wr
 
 - **Drawing:** the core's blocks (paragraphs, lists, code blocks) are drawn as native text: styled runs, bullets and numbers, code in a sideways-scrolling monospaced block. Links are tappable; a link that is not https asks before opening. Own and other bubbles keep their colours.
 - **Writing:** the composer is a live text editor (you see bold, not asterisks). It keeps styles as attributes and asks the core to write the Markdown when you send. Pasting is plain text only. Selecting text, or tapping **Aa**, shows the formatting toolbar above the keyboard.
-- **Not included:** text colour and highlight (the subset has none, and they would not render the same on every platform or in previews), mentions, reactions and attachments (later briefs).
+- **Not included:** text colour and highlight (the subset has none, and they would not render the same on every platform or in previews), reactions and attachments (later briefs). Mention notifications, muting and jumping to mentions are LIME-182.

@@ -3,7 +3,7 @@ import XCTest
 
 final class AutoLinkTests: XCTestCase {
     private func plain(_ text: String, link: String? = nil, code: Bool = false) -> Span {
-        Span(text: text, bold: false, italic: false, underline: false, strike: false, code: code, link: link)
+        Span(text: text, bold: false, italic: false, underline: false, strike: false, code: code, link: link, mention: nil)
     }
 
     func testBareWebAddressesBecomeLinksInAnyCaseOfTheScheme() {

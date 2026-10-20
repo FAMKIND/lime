@@ -2,7 +2,7 @@
 //!
 //! The subset is exactly: **bold** (`**x**`), *italic* (`*x*`), underline (`__x__`, a Lime extension: it works inside words too, so a message typed by hand as snake__case__name would underline; the composer escapes every underscore it writes),
 //! strikethrough (`~~x~~`), inline `code`, fenced code blocks, bulleted (`- `) and numbered (`1. `)
-//! lists with up to three levels (0 to 2), and links (`[text](url)`, http, https and mailto only). Everything
+//! lists with up to three levels (0 to 2), links (`[text](url)`, http, https and mailto only) and mentions (`[@Name](mention:<user id>)`, LIME-181). Everything
 //! else is plain text: nothing here rejects a message, unknown syntax is just text. A backslash
 //! before an ASCII punctuation mark makes it literal.
 //!
@@ -21,6 +21,21 @@ pub struct Span {
     pub code: bool,
     /// An allowed link address (http, https or mailto), or none.
     pub link: Option<String>,
+    /// A mention (LIME-181): the mentioned person's user id (or [`EVERYONE`]); `text` is what was written (`@Name`). A mention is one atomic run
+    /// with no styles of its own, and never has a link.
+    pub mention: Option<String>,
+}
+
+/// The reserved mention of everyone in a group (only a group admin's counts).
+pub const EVERYONE: &str = "everyone";
+
+/// A mention's target as written after `mention:`: a user id of ordinary characters, or [`EVERYONE`].
+pub fn valid_mention_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
+}
+
+fn mention_id(url: &str) -> Option<&str> {
+    url.strip_prefix("mention:").filter(|id| valid_mention_id(id))
 }
 
 /// One item of a list. `level` is 0, or 1 or 2 for a nested item (at most [`MAX_LIST_LEVEL`]).
@@ -210,11 +225,19 @@ pub fn parse_inline(text: &str) -> Vec<Span> {
             match parse_link(&chars, i) {
                 Some((inner, url, next)) => {
                     flush(&mut literal, &mut tokens);
-                    let mut spans = parse_inline(&inner);
-                    for span in &mut spans {
-                        span.link = Some(url.clone());
+                    if let Some(id) = mention_id(&url) {
+                        // One atomic run: the words as written, with no styles inside it.
+                        let words: String = parse_inline(&inner).iter().map(|s| s.text.as_str()).collect();
+                        if !words.trim().is_empty() {
+                            tokens.push(Token::Atom(vec![Span { text: words, mention: Some(id.to_owned()), ..Span::default() }]));
+                        }
+                    } else {
+                        let mut spans = parse_inline(&inner);
+                        for span in &mut spans {
+                            span.link = Some(url.clone());
+                        }
+                        tokens.push(Token::Atom(spans));
                     }
-                    tokens.push(Token::Atom(spans));
                     i = next;
                 }
                 None => {
@@ -296,7 +319,7 @@ fn parse_link(chars: &[char], start: usize) -> Option<(String, String, usize)> {
     let end = (close + 2..chars.len()).find(|&j| chars[j] == ')')?;
     let url: String = chars[close + 2..end].iter().collect();
     let url = url.trim();
-    (allowed_link(url) && !url.chars().any(char::is_whitespace)).then(|| {
+    ((allowed_link(url) || mention_id(url).is_some()) && !url.chars().any(char::is_whitespace)).then(|| {
         (chars[start + 1..close].iter().collect::<String>(), url.to_owned(), end + 1)
     })
 }
@@ -371,6 +394,10 @@ fn resolve(mut tokens: Vec<Token>) -> Vec<Span> {
         }
         let mut span = base.cloned().unwrap_or_default();
         span.text = text.to_owned();
+        if span.mention.is_some() {
+            spans.push(span);
+            return;
+        }
         span.bold |= counts[0] > 0;
         span.italic |= counts[1] > 0;
         span.underline |= counts[2] > 0;
@@ -417,7 +444,7 @@ fn merge(spans: Vec<Span>) -> Vec<Span> {
 }
 
 fn same_look(a: &Span, b: &Span) -> bool {
-    (a.bold, a.italic, a.underline, a.strike, a.code, &a.link) == (b.bold, b.italic, b.underline, b.strike, b.code, &b.link)
+    (a.bold, a.italic, a.underline, a.strike, a.code, &a.link, &a.mention) == (b.bold, b.italic, b.underline, b.strike, b.code, &b.link, &b.mention)
 }
 
 // ---------------------------------------------------------------- the plain words
@@ -439,6 +466,39 @@ pub fn plain_text(text: &str) -> String {
         }
     }
     lines.join("\n")
+}
+
+// ---------------------------------------------------------------- mentions on receipt
+
+/// What a phone keeps of a mention it received (LIME-181): a mention of someone who is not in the conversation, or `@everyone` from someone
+/// who may not use it, becomes the plain words `@Name`. `is_member` says who is in the chat; `everyone_ok` whether the sender may mention everyone.
+pub fn restrict_mentions(text: &str, is_member: &dyn Fn(&str) -> bool, everyone_ok: bool) -> String {
+    if !text.contains("(mention:") {
+        return text.to_owned();
+    }
+    let mut changed = false;
+    let mut fix = |spans: &mut Vec<Span>| {
+        for span in spans.iter_mut() {
+            let keep = match span.mention.as_deref() {
+                None => true,
+                Some(EVERYONE) => everyone_ok,
+                Some(id) => is_member(id),
+            };
+            if !keep {
+                span.mention = None;
+                changed = true;
+            }
+        }
+    };
+    let mut blocks = parse(text);
+    for block in &mut blocks {
+        match block {
+            Block::Paragraph { spans } => fix(spans),
+            Block::ItemList { items } => items.iter_mut().for_each(|item| fix(&mut item.spans)),
+            Block::Code { .. } => {}
+        }
+    }
+    if changed { serialize(&blocks) } else { text.to_owned() }
 }
 
 // ---------------------------------------------------------------- writing
@@ -555,7 +615,7 @@ fn escape_line_starts(text: &str) -> String {
 /// the markers around a run always close in the reverse order they opened.
 fn write_spans(spans: &[Span]) -> String {
     let spans: Vec<Span> = merge(spans.to_vec());
-    let written = write_level(&spans, 0);
+    let written = write_with_mentions(&spans);
     // Styles that sit unusually close together (a marker run that could be read two ways) are the one
     // case where reading the text back could show stray markers. Check, and if the words would not
     // survive, write the words without their styles: the message is never garbled.
@@ -568,6 +628,24 @@ fn write_spans(spans: &[Span]) -> String {
         let plain: Vec<Span> = spans.iter().map(|s| Span { text: s.text.clone(), ..Span::default() }).collect();
         write_level(&merge(plain), 0)
     }
+}
+
+/// Mentions are written whole (`[@Name](mention:id)`, the name escaped); the runs between them take the usual styles.
+fn write_with_mentions(spans: &[Span]) -> String {
+    let mut out = String::new();
+    let mut run: Vec<Span> = Vec::new();
+    for span in spans {
+        match &span.mention {
+            Some(id) if mention_id(&format!("mention:{id}")).is_some() => {
+                out.push_str(&write_level(&run, 0));
+                run.clear();
+                out.push_str(&format!("[{}](mention:{id})", escape_text(&span.text)));
+            }
+            _ => run.push(Span { mention: None, ..span.clone() }),
+        }
+    }
+    out.push_str(&write_level(&run, 0));
+    out
 }
 
 fn write_level(spans: &[Span], depth: usize) -> String {
@@ -786,6 +864,42 @@ mod tests {
     }
     fn para(spans: Vec<Span>) -> Vec<Block> {
         vec![Block::Paragraph { spans }]
+    }
+
+    fn mention(text: &str, id: &str) -> Span {
+        Span { mention: Some(id.into()), ..s(text) }
+    }
+
+    #[test]
+    fn a_mention_parses_writes_and_reads_as_plain_words() {
+        let text = "hi [@Jean Chung](mention:u-1.2) there";
+        assert_eq!(parse(text), para(vec![s("hi "), mention("@Jean Chung", "u-1.2"), s(" there")]));
+        assert_eq!(normalise(text), text, "the written form is stable");
+        assert_eq!(plain_text(text), "hi @Jean Chung there");
+        assert_eq!(parse("[@all](mention:everyone)"), para(vec![mention("@all", EVERYONE)]));
+        assert_eq!(parse("[**@Jean**](mention:u1)"), para(vec![mention("@Jean", "u1")]), "styles inside a mention are dropped");
+    }
+
+    #[test]
+    fn a_mention_with_a_bad_id_stays_text() {
+        for bad in ["[@x](mention:)", "[@x](mention:a b)", "[@x](mention:a/b)", "[@x](mention:<b>)"] {
+            let spans = match &parse(bad)[..] {
+                [Block::Paragraph { spans }] => spans.clone(),
+                other => panic!("{other:?}"),
+            };
+            assert!(spans.iter().all(|s| s.mention.is_none() && s.link.is_none()), "{bad}");
+        }
+    }
+
+    #[test]
+    fn mentions_outside_the_chat_and_a_forged_everyone_become_plain_words() {
+        let text = "[@Jean](mention:u1) [@Eve](mention:u2) [@all](mention:everyone)";
+        let member = |id: &str| id == "u1";
+        let got = restrict_mentions(text, &member, false);
+        assert_eq!(plain_text(&got), "@Jean @Eve @all");
+        assert_eq!(got, "[@Jean](mention:u1) @Eve @all");
+        assert_eq!(restrict_mentions(text, &member, true), "[@Jean](mention:u1) @Eve [@all](mention:everyone)");
+        assert_eq!(restrict_mentions("no mentions", &member, false), "no mentions");
     }
 
     #[test]
@@ -1051,6 +1165,7 @@ mod tests {
                     strike: !code && rng.next(4) == 0,
                     code,
                     link: (rng.next(6) == 0).then(|| "https://x.y".to_owned()),
+                    mention: None,
                 });
             }
             let blocks = vec![Block::Paragraph { spans }];

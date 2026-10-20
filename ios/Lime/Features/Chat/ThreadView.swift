@@ -95,6 +95,7 @@ struct ThreadView: View {
                 }
                 .task { try? await Task.sleep(for: .milliseconds(250)); settle(proxy) }
                 .linkOpening()
+                .environment(\.mentionContext, conversation.map { store.mentionContext(for: $0) })
                 .attachmentPresenting()
                 .onChange(of: messages.count) { _, count in
                     // A reply arrived: show it. The root message loading (0 to 1) is not a reply: it keeps its first line at the top.
@@ -128,6 +129,7 @@ struct ThreadView: View {
                     }, onSendPreview: { markdown, preview in
                         Task { await store.sendNow(markdown, preview: preview, in: target.conversationID, replyTo: target.rootID) }
                     })
+                    .composerMentions(composerModel, in: conversation)
                 }
             }
         }
