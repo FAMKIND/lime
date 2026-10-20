@@ -5,9 +5,11 @@ struct AvatarView: View {
     var size: CGFloat = 52
     /// Shows the person's status badge at the bottom-right (for a contact who shared one, or me).
     var showsStatus = false
+    /// For a toolbar button (iOS 26 paints its label one colour): the badge keeps its own colours.
+    var badgeKeepsColours = false
 
     var body: some View {
-        content.statusBadge(showsStatus ? person.id : nil, size: size)
+        content.statusBadge(showsStatus ? person.id : nil, size: size, keepsColours: badgeKeepsColours)
     }
 
     @ViewBuilder

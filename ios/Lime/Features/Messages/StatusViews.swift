@@ -29,18 +29,34 @@ struct StatusBadge: View {
 
 extension View {
     /// Puts a person's status badge on their avatar (nothing when they have none).
-    func statusBadge(_ userID: String?, size: CGFloat) -> some View { modifier(StatusBadgeModifier(userID: userID, avatarSize: size)) }
+    /// `keepsColours` is for an avatar inside an iOS 26 toolbar button, whose glass paints a label in one translucent colour: the badge is then drawn as a picture that keeps its own (LIME-179).
+    func statusBadge(_ userID: String?, size: CGFloat, keepsColours: Bool = false) -> some View {
+        modifier(StatusBadgeModifier(userID: userID, avatarSize: size, keepsColours: keepsColours))
+    }
 }
 
 private struct StatusBadgeModifier: ViewModifier {
     let userID: String?
     let avatarSize: CGFloat
+    let keepsColours: Bool
     @Environment(ConversationStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.displayScale) private var scale
+
+    @MainActor private func badgeImage(_ state: UserStatus, size: CGFloat) -> Image {
+        let renderer = ImageRenderer(content: StatusBadge(state: state, size: size).environment(\.colorScheme, scheme))
+        renderer.scale = scale
+        guard let picture = renderer.uiImage else { return Image(systemName: "circle") }
+        return Image(uiImage: picture).renderingMode(.original)
+    }
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottomTrailing) {
             if let userID, let status = store.status(of: userID) {
-                StatusBadge(state: status.state, size: max(12, min(avatarSize * 0.32, 18)))
+                let size = max(9, min(avatarSize * 0.32, 18))
+                Group {
+                    if keepsColours { badgeImage(status.state, size: size) } else { StatusBadge(state: status.state, size: size) }
+                }
                     .offset(x: 3, y: 3)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(status.state.title)

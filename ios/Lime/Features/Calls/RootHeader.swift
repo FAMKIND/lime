@@ -36,7 +36,7 @@ struct RootHeader: ViewModifier {
                             Button(action: search) { Image(systemName: "magnifyingglass") }
                                 .accessibilityLabel("Search")
                                 .accessibilityIdentifier(searchID)
-                            Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true) }
+                            Button { store.openMyProfile() } label: { AvatarView(person: session.mePerson, size: 30, showsStatus: true, badgeKeepsColours: true) }
                                 .accessibilityLabel("Settings")
                                 .accessibilityIdentifier("settings-button")
                         }
