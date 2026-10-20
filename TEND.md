@@ -7054,8 +7054,14 @@ Phase 0: `PLOT.md` committed first. **Phase 1 (with the user, the 13 mini, Debug
 - **Not checked:** iPad landscape on a device (arithmetic is unit-tested; the iPad runs in iPhone compatibility mode, so its window is the compatibility window); the icons' look.
 - For plot: in a landscape phone window with the keyboard up there is little room (≈ 1–2 lines); that is the arithmetic, not a bug: if it feels too tight, the alternative is to let the header scroll away, which is a design call.
 
-## LIME-176c (the expand icons really flipped) — committed with 175c; installed on the phones after 175c (see `## LIME-175c`); **the gate is yours (13 mini)**
+## LIME-176c (the expand icons really flipped) — committed with 175c; installed (with 175c's change in the same build) on the iPad and the 13 mini; Jean's iPhone refused (4016); **the gate is yours (13 mini)**
 
 - 176b's swapped symbols didn't read as flipped. Back to 176's `arrow.up.left.and.arrow.down.right` (expand) / `arrow.down.right.and.arrow.up.left` (collapse), mirrored with `.scaleEffect(x: -1, y: 1)` on the image (inside the 44 pt tap frame, so the hit area is unchanged). Labels and ids unchanged. Visual: no new test.
 - Screenshots `~/Desktop/lime-176c/expand.png` (collapsed state, ↗ pair now points to the top-right / bottom-left) and `collapse.png`; **no side-by-side with 176's** (I didn't keep a 176 build to shoot).
 - For plot: none.
+
+## LIME-175c (the ⌄ keyboard button back on the iPad) — committed; installed on the iPad and the 13 mini (**Jean's iPhone refused twice, CoreDevice 4016, locked: it still has 176**); **the gate is yours (the iPad)**
+
+- Undid 175b's iPad rule: the device-model check is gone, the button shows exactly as on the iPhone (Hide / Show). Reason (the user): lime is an iPhone app on the iPad and gets the iPhone-style keyboard, which has no hide key.
+- 175b's iPad UI test became `testOnAnIPadTheHideKeyboardButtonIsThereWhileTheKeyboardIsUp` (iPad simulator: the button exists with the keyboard up, labelled "Hide keyboard", hides it, then reads "Show keyboard"); the iPhone-only skips on the two button tests are gone, so they run on the iPad too. Passes on the iPad Pro 11" sim (all 5 175 tests). 174/175/176 UI suites and the unit suite (516 tests, 10 skipped) pass on the 13 mini sim; 0 warnings.
+- For plot: 175b's premise (the iPad keyboard has its own hide key) was true only for a native iPad app; it holds again if lime ever gets a native iPad target (`TARGETED_DEVICE_FAMILY` 1,2), where the rule would need to come back.

@@ -94,15 +94,13 @@ struct ChatComposer: View {
                     }
                     .accessibilityLabel("Formatting").accessibilityIdentifier("composer-aa")
                     .accessibilityAddTraits(model.toolbarVisible ? [.isSelected] : [])
-                    // Hides and reveals the keyboard (LIME-175); always in the row on an iPhone (the app is iPhone-only, so on an iPad the idiom says phone: the model name tells), so nothing moves. On an iPad the keyboard has its own hide key (LIME-175b),
-                    // so the button shows only while the keyboard is down.
-                    if !(UIDevice.current.model.hasPrefix("iPad") && model.editing) {
+                    // Hides and reveals the keyboard (LIME-175); always in the row, so nothing moves. Also on an iPad: the app is an iPhone app there and gets
+                    // the iPhone-style keyboard, which has no hide key of its own (LIME-175c).
                     Button { trace("composer tap keyboard"); model.toggleKeyboard() } label: {
                         Image(systemName: model.editing ? "keyboard.chevron.compact.down" : "keyboard").font(.system(size: 20)).foregroundStyle(Theme.text)
                             .frame(width: 44, height: 40)
                     }
                     .accessibilityLabel(model.editing ? "Hide keyboard" : "Show keyboard").accessibilityIdentifier("composer-hide-keyboard")
-                    }
                 }
                 .opacity(recorder.isRecording ? 0 : 1).allowsHitTesting(!recorder.isRecording)
                 Spacer(minLength: 0)
