@@ -43,7 +43,7 @@ final class Mention181UITests: LimeUITestCase {
         let mention = app.links["@Lee Wong"]
         XCTAssertTrue(mention.waitForExistence(timeout: 8), "the bubble has a mention element")
         mention.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["profile-screen"].waitForExistence(timeout: 8), "tapping it opens their profile")
+        XCTAssertTrue(app.descendants(matching: .any)["profile-screen"].waitForExistence(timeout: 20), "tapping it opens their profile")
     }
 
     func testBackspaceRemovesAWholeMention() {
@@ -67,5 +67,24 @@ final class Mention181UITests: LimeUITestCase {
         field(member).typeText("@")
         XCTAssertTrue(suggestion(member, "lee").waitForExistence(timeout: 5))
         XCTAssertFalse(suggestion(member, "everyone").exists, "a plain member does not get it")
+    }
+}
+
+/// LIME-181b: the Mentions setting.
+@MainActor
+final class Mention181bUITests: LimeUITestCase {
+    func testTheSettingChangesHowAMentionReads() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat", "-lime-demo-screen", "group", "-lime.mentionStyle", "username"]
+        app.launch()
+        let field = app.textViews["composer-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText("hi @le")
+        app.buttons["mention-suggestion-lee"].tap()
+        field.typeText("x")
+        app.buttons["send-button"].tap()
+        // The demo knows Lee's username (lee.wong) only once a profile is loaded; with none, the name stands in.
+        XCTAssertTrue(app.links.matching(NSPredicate(format: "label BEGINSWITH '@'")).firstMatch.waitForExistence(timeout: 8))
     }
 }

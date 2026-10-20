@@ -942,7 +942,7 @@ struct MessageBubble: View {
                 if message.call == nil, message.emergency == nil, !message.text.isEmpty || message.attachments.isEmpty {
                     FormattedMessageText(markdown: message.text, ink: message.isOwn ? Theme.ownBubbleInk : Theme.text,
                                          link: message.isOwn ? Theme.linkOwn : Theme.linkOther, pressed: pressedLink?.absoluteString,
-                                         find: findWords.isEmpty ? nil : FindStyle(words: findWords, current: highlighted))
+                                         find: findWords.isEmpty ? nil : FindStyle(words: findWords, current: highlighted), isOwn: message.isOwn)
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .background(message.isOwn ? Theme.ownBubble : Theme.bubbleOther,
                                     in: RoundedRectangle(cornerRadius: Theme.bubbleRadius, style: .continuous))

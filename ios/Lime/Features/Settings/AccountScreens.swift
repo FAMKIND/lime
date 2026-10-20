@@ -313,6 +313,7 @@ struct LinkedDevicesScreen: View {
 
 struct CustomizeScreen: View {
     @AppStorage(AppearanceSetting.storageKey) private var stored = AppearanceSetting.system.rawValue
+    @AppStorage(MentionStyle.storageKey) private var mentionStyle = MentionStyle.fullName.rawValue
 
     var body: some View {
         SettingsPage(title: "Customize") {
@@ -339,6 +340,29 @@ struct CustomizeScreen: View {
                 }
             }
             SettingsFootnote(text: "Appearance applies to the whole app and is kept on this iPhone.")
+            SettingsCard {
+                ForEach(MentionStyle.allCases) { option in
+                    Button { mentionStyle = option.rawValue } label: {
+                        VStack(spacing: 0) {
+                            HStack(spacing: 14) {
+                                Text(option == .fullName ? "Mentions: full name" : "Mentions: username").font(Theme.body).foregroundStyle(Theme.text)
+                                Spacer()
+                                if mentionStyle == option.rawValue {
+                                    Image(systemName: "checkmark").font(.system(size: 16, weight: .bold)).foregroundStyle(Theme.text)
+                                }
+                            }
+                            .padding(.horizontal, 18).frame(minHeight: 58)
+                            if option != MentionStyle.allCases.last { Divider().overlay(Theme.hairline).padding(.leading, 18) }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(option == .fullName ? "Mentions, full name" : "Mentions, username")
+                    .accessibilityIdentifier("mentions-\(option.rawValue)")
+                    .accessibilityAddTraits(mentionStyle == option.rawValue ? [.isSelected] : [])
+                }
+            }
+            SettingsFootnote(text: "How @mentions look on this iPhone. Others choose their own.")
             SettingsCard {
                 SettingsRow(symbol: "textformat.size", title: "Text size & font", route: .textSize, id: "settings-text-size", showsDivider: false)
             }

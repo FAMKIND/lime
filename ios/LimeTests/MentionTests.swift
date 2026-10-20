@@ -65,3 +65,63 @@ final class MentionTests: XCTestCase {
         XCTAssertEqual(String(unknown.characters), "@Jean Chung", "the written words when the person is not known")
     }
 }
+
+/// LIME-181b: how a mention reads (full name or username) and who gets the highlight.
+final class MentionStyleTests: XCTestCase {
+    private let context = MentionContext(meID: "me", name: { ["u1": "Jean Chung", "me": "Shem"][$0] },
+                                         username: { ["u1": "jean.c"][$0] }, open: { _ in })
+    private func mention(_ id: String) -> Span {
+        Span(text: "@written", bold: false, italic: false, underline: false, strike: false, code: false, link: nil, mention: id)
+    }
+    private func text(_ id: String, _ style: MentionStyle, own: Bool = false) -> AttributedString {
+        MessageRender.attributed([mention(id)], ink: .black, link: .green, mentions: context, mentionStyle: style, isOwn: own)
+    }
+
+    func testFullNameModeShowsTheNameAndUsernameModeShowsTheHandleWhenKnown() {
+        XCTAssertEqual(String(text("u1", .fullName).characters), "@Jean Chung")
+        XCTAssertEqual(String(text("u1", .username).characters), "@jean.c")
+    }
+
+    func testUsernameModeFallsBackToTheNameWhenThereIsNoHandle() {
+        XCTAssertEqual(String(text("me", .username).characters), "@Shem")
+        XCTAssertEqual(String(text("zz", .username).characters), "@written", "and to the written words when the person is not known at all")
+    }
+
+    func testOnlyAReceivedMentionOfMeOrEveryoneHasAHighlight() {
+        XCTAssertNotNil(text("me", .fullName).runs.first?.backgroundColor, "received, of me")
+        XCTAssertNotNil(text(MentionContext.everyone, .fullName).runs.first?.backgroundColor, "received, everyone")
+        XCTAssertNil(text("u1", .fullName).runs.first?.backgroundColor, "received, of someone else: coloured text")
+        XCTAssertNil(text("me", .fullName, own: true).runs.first?.backgroundColor, "my own bubble, even of myself")
+        XCTAssertNil(text(MentionContext.everyone, .fullName, own: true).runs.first?.backgroundColor)
+    }
+
+    func testSuggestionsMatchAUsernameToo() {
+        let people = [Person(id: "u1", name: "Jean Chung", tone: 0)]
+        let found = MentionCandidate.matches(for: "jean.c", people: people, everyone: false, usernames: ["u1": "jean.c"])
+        XCTAssertEqual(found.first?.username, "jean.c")
+        XCTAssertEqual(MentionCandidate.matches(for: "xyz", people: people, everyone: false, usernames: ["u1": "jean.c"]).count, 0)
+    }
+}
+
+/// LIME-181b privacy: a username is searched on this phone only, and only where the person's profile already shows it.
+final class MentionPrivacyTests: XCTestCase {
+    func testSomeoneWhoHidesFromSearchIsNotFoundByUsernameAndShowsByNameInUsernameMode() {
+        // What profile-get returns for a person who hid themselves: the name only.
+        let hidden = PublicProfile(userId: "h", displayName: "Hana Hidden", username: nil, school: nil, aboutEmoji: nil, aboutText: nil)
+        let open = PublicProfile(userId: "o", displayName: "Omar Open", username: "omar.o", school: nil, aboutEmoji: nil, aboutText: nil)
+        let usernames = MentionCandidate.usernames(from: ["h": hidden, "o": open])
+        XCTAssertNil(usernames["h"], "no username is known for them")
+        let people = [Person(id: "h", name: "Hana Hidden", tone: 0), Person(id: "o", name: "Omar Open", tone: 1)]
+        XCTAssertEqual(MentionCandidate.matches(for: "omar.o", people: people, everyone: false, usernames: usernames).map(\.id), ["o"])
+        // Even the handle they might use elsewhere does not find them: only the name does.
+        XCTAssertEqual(MentionCandidate.matches(for: "hana.h", people: people, everyone: false, usernames: usernames).map(\.id), [])
+        XCTAssertEqual(MentionCandidate.matches(for: "hana", people: people, everyone: false, usernames: usernames).map(\.id), ["h"])
+        let context = MentionContext(meID: "me", name: { $0 == "h" ? "Hana Hidden" : nil }, username: { usernames[$0] }, open: { _ in })
+        XCTAssertEqual(context.shown("h", style: .username), "@Hana Hidden", "Username mode shows their name")
+    }
+
+    func testAnEmptyUsernameCountsAsNone() {
+        let blank = PublicProfile(userId: "b", displayName: "Bo", username: "", school: nil, aboutEmoji: nil, aboutText: nil)
+        XCTAssertTrue(MentionCandidate.usernames(from: ["b": blank]).isEmpty)
+    }
+}

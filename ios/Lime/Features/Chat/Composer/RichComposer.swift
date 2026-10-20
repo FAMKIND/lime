@@ -38,6 +38,8 @@ final class RichComposerModel {
     /// The people "@" can offer (the chat's members except me), and whether "@everyone" is offered (a group's owner or admin). Set by the chat.
     var mentionPeople: [Person] = []
     var mentionEveryone = false
+    /// The usernames this phone already knows (public profiles it has fetched), by user id.
+    var mentionUsernames: [String: String] = [:]
     /// The "@word" being typed (its place in the text) and who matches it; empty when no list shows.
     private(set) var mentionQuery: (range: NSRange, text: String)?
     private(set) var mentionMatches: [MentionCandidate] = []
@@ -49,7 +51,7 @@ final class RichComposerModel {
             if mentionQuery != nil { mentionQuery = nil; mentionMatches = [] }
             return
         }
-        let matches = MentionCandidate.matches(for: trigger.query, people: mentionPeople, everyone: mentionEveryone)
+        let matches = MentionCandidate.matches(for: trigger.query, people: mentionPeople, everyone: mentionEveryone, usernames: mentionUsernames)
         if matches.isEmpty { mentionQuery = nil; mentionMatches = []; return }
         mentionQuery = (trigger.range, trigger.query)
         if matches != mentionMatches { mentionMatches = matches }
@@ -60,7 +62,8 @@ final class RichComposerModel {
     /// Puts the chosen person in place of the "@word", with a space after it.
     func pick(_ candidate: MentionCandidate) {
         guard let textView, let query = mentionQuery else { return }
-        let caret = ComposerDocument.insertMention(candidate.name, id: candidate.id, replacing: query.range, in: textView.textStorage)
+        let shown = MentionStyle.stored() == .username ? (candidate.username ?? candidate.name) : candidate.name
+        let caret = ComposerDocument.insertMention(shown, id: candidate.id, replacing: query.range, in: textView.textStorage)
         textView.selectedRange = NSRange(location: caret, length: 0)
         mentionQuery = nil
         mentionMatches = []

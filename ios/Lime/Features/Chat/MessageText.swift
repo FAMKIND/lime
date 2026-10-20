@@ -14,24 +14,27 @@ struct FormattedMessageText: View {
     var find: FindStyle? = nil
     /// Who the mentions are (LIME-181); nil outside a chat.
     @Environment(\.mentionContext) private var mentions
+    @AppStorage(MentionStyle.storageKey) private var mentionStyle = MentionStyle.fullName.rawValue
+    /// In a bubble I sent a mention is coloured text only; in one I received, a mention of me (or @everyone) has a soft highlight behind it.
+    var isOwn = false
 
     var body: some View {
         let blocks = MessageRender.blocks(markdown)
         if blocks.count == 1, case .paragraph(let spans) = blocks[0] {
             // The common case, one paragraph, is a single piece of text.
-            Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+            Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName, isOwn: isOwn)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                     switch block {
                     case .paragraph(let spans):
-                        Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+                        Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName, isOwn: isOwn)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                     case .list(let items):
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(Array(MessageRender.numbered(items).enumerated()), id: \.offset) { _, row in
                                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                                     Text(row.marker).font(Theme.body).foregroundStyle(ink).frame(minWidth: 14, alignment: .trailing)
-                                    Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
+                                    Text(MessageRender.attributed(row.item.spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName, isOwn: isOwn)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
                                 }
                                 .padding(.leading, CGFloat(min(row.item.level, maxListLevel())) * 18)
                                 .accessibilityElement(children: .combine)
@@ -63,6 +66,17 @@ struct FindStyle: Equatable {
 }
 
 /// The pure parts of drawing (so they can be tested without a screen).
+/// Settings → Customize → Mentions (LIME-181b): how @mentions read on this iPhone. Local only; the message itself carries the person's id.
+enum MentionStyle: String, CaseIterable, Identifiable {
+    case fullName, username
+    var id: String { rawValue }
+    static let storageKey = "lime.mentionStyle"
+    var title: String { self == .fullName ? "Full name" : "Username" }
+    static func stored(in defaults: UserDefaults = .standard) -> MentionStyle {
+        defaults.string(forKey: storageKey).flatMap(MentionStyle.init(rawValue:)) ?? .fullName
+    }
+}
+
 enum MessageRender {
     /// A block, in Swift's own shape (so tests and the views do not depend on the generated type's cases).
     enum DrawnBlock: Equatable {
@@ -118,11 +132,11 @@ enum MessageRender {
         return out
     }
 
-    static func attributed(_ spans: [Span], ink: Color, link linkColor: Color, pressed: String? = nil, find: FindStyle? = nil, mentions: MentionContext? = nil) -> AttributedString {
+    static func attributed(_ spans: [Span], ink: Color, link linkColor: Color, pressed: String? = nil, find: FindStyle? = nil, mentions: MentionContext? = nil, mentionStyle: MentionStyle = .fullName, isOwn: Bool = false) -> AttributedString {
         var result = AttributedString()
         for span in autoLinked(spans) {
             if let id = span.mention {
-                result.append(mention(span, id: id, ink: ink, link: linkColor, mentions: mentions))
+                result.append(mention(span, id: id, ink: ink, link: linkColor, mentions: mentions, style: mentionStyle, isOwn: isOwn))
                 continue
             }
             var piece = AttributedString(span.text)
@@ -147,14 +161,14 @@ enum MessageRender {
     }
 
     /// A mention (LIME-181): "@" and the name this phone knows now (the written words if it does not), bold in the bubble's link colour (the
-    /// weight and the @ mean it is not colour alone), not underlined. Tapping a person opens their profile; yours has a soft highlight behind it.
-    static func mention(_ span: Span, id: String, ink: Color, link linkColor: Color, mentions: MentionContext?) -> AttributedString {
-        let known = id == MentionContext.everyone ? nil : mentions?.name(id)
-        var piece = AttributedString(known.map { "@" + $0 } ?? span.text)
+    /// weight and the @ mean it is not colour alone), not underlined. Tapping a person opens their profile. A received bubble puts a soft highlight behind a mention of me or @everyone; mine never do.
+    static func mention(_ span: Span, id: String, ink: Color, link linkColor: Color, mentions: MentionContext?, style: MentionStyle = .fullName, isOwn: Bool = false) -> AttributedString {
+        let known = id == MentionContext.everyone ? nil : mentions?.shown(id, style: style)
+        var piece = AttributedString(known ?? span.text)
         piece.inlinePresentationIntent = .stronglyEmphasized
         piece.foregroundColor = linkColor
         if id != MentionContext.everyone, let url = URL(string: MentionContext.scheme + ":" + id) { piece.link = url }
-        if let mentions, id == mentions.meID || id == MentionContext.everyone { piece.backgroundColor = linkColor.opacity(0.18) }
+        if !isOwn, let mentions, id == mentions.meID || id == MentionContext.everyone { piece.backgroundColor = linkColor.opacity(0.18) }
         return piece
     }
 
@@ -195,8 +209,16 @@ struct MentionContext {
     let meID: String
     /// The name this phone knows for a person in this chat now.
     let name: (String) -> String?
+    /// The username this phone already knows for a person (their public profile, if it was fetched), or nil.
+    var username: (String) -> String? = { _ in nil }
     /// Opens a person's profile.
     let open: @MainActor (String) -> Void
+
+    /// What a mention reads as on this phone: "@Full Name", or "@username" in Username mode when one is known (else the name).
+    func shown(_ id: String, style: MentionStyle) -> String? {
+        if style == .username, let handle = username(id), !handle.isEmpty { return "@" + handle }
+        return name(id).map { "@" + $0 }
+    }
 
     static func userID(from url: URL) -> String? {
         url.scheme == scheme ? String(url.absoluteString.dropFirst(scheme.count + 1)) : nil

@@ -5,24 +5,35 @@ struct MentionCandidate: Identifiable, Equatable {
     let id: String
     let name: String
     let detail: String?
+    /// Their username, when this phone already knows it.
+    var username: String? = nil
     var isEveryone: Bool { id == MentionContext.everyone }
+
+    /// The usernames this phone can already see: only those the public profiles it fetched carry. Someone who hides from search comes back from the
+    /// server with a name only, so they have no entry here and are found, and shown, by name alone (LIME-181b).
+    static func usernames(from profiles: [String: PublicProfile]) -> [String: String] {
+        profiles.compactMapValues { $0.username.flatMap { $0.isEmpty ? nil : $0 } }
+    }
 
     private static func fold(_ text: String) -> String { text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
 
     /// The best matches for what was typed after the "@": people whose name (or private label) starts with it, or has a word that does, then
     /// those that contain it. An empty query offers everyone in order. At most `limit` (a group of 500 shows the best, not all).
-    static func matches(for query: String, people: [Person], everyone: Bool, limit: Int = 30) -> [MentionCandidate] {
+    static func matches(for query: String, people: [Person], everyone: Bool, usernames: [String: String] = [:], limit: Int = 30) -> [MentionCandidate] {
         let wanted = Self.fold(query.trimmingCharacters(in: .whitespaces))
         var starts: [MentionCandidate] = []
         var contains: [MentionCandidate] = []
         for person in people {
-            let candidate = MentionCandidate(id: person.id, name: person.name, detail: person.label)
+            let handle = usernames[person.id]
+            let candidate = MentionCandidate(id: person.id, name: person.name, detail: person.label, username: handle)
             if wanted.isEmpty { starts.append(candidate); continue }
             let name = Self.fold(person.name)
             let words = name.split(separator: " ").map(String.init)
             if name.hasPrefix(wanted) || words.contains(where: { $0.hasPrefix(wanted) }) || name.contains(" " + wanted) {
                 starts.append(candidate)
-            } else if name.contains(wanted) || Self.fold(person.label ?? "").contains(wanted) {
+            } else if handle.map({ Self.fold($0).hasPrefix(wanted) }) == true {
+                starts.append(candidate)
+            } else if name.contains(wanted) || Self.fold(person.label ?? "").contains(wanted) || handle.map({ Self.fold($0).contains(wanted) }) == true {
                 contains.append(candidate)
             }
         }
@@ -47,6 +58,9 @@ struct MentionSuggestions: View {
                     Button { pick(candidate) } label: {
                         HStack(spacing: 8) {
                             Text(candidate.isEveryone ? "@everyone" : candidate.name).font(Theme.body).foregroundStyle(Theme.text).lineLimit(1)
+                            if let handle = candidate.username {
+                                Text("@" + handle).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            }
                             if let detail = candidate.detail {
                                 Text("· " + detail).font(Theme.secondary).foregroundStyle(Theme.textSecondary).lineLimit(1)
                             }
@@ -83,6 +97,7 @@ extension ConversationStore {
         return MentionContext(
             meID: me.id,
             name: { who in who == me.id ? me.name : members.first { $0.id == who }?.name },
+            username: { [weak self] who in self?.publicProfiles[who]?.username },
             open: { [weak self] who in
                 let name = who == me.id ? me.name : members.first { $0.id == who }?.name ?? ""
                 self?.openProfile(ProfileRoute(userID: who, name: name, conversationID: id, isMe: who == me.id))
@@ -99,6 +114,9 @@ struct ComposerMentionSource: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: conversation?.members ?? [], initial: true) { _, members in model.mentionPeople = members }
+            .onChange(of: store.publicProfiles, initial: true) { _, profiles in
+                model.mentionUsernames = MentionCandidate.usernames(from: profiles)
+            }
             .task(id: conversation?.id) {
                 guard let conversation, conversation.isGroupChat else { model.mentionEveryone = false; return }
                 let role = await store.groupDetails(conversation.id)?.myRole
