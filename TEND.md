@@ -7053,3 +7053,9 @@ Phase 0: `PLOT.md` committed first. **Phase 1 (with the user, the 13 mini, Debug
 - Tests: unit (landscape 13 mini 375 pt, iPad landscape 834 pt, with/without keyboard and strip, collapsed and expanded: field + chrome + keyboard fit under the header; portrait pinned); UI `testInLandscapeTheWholeComposerFitsBetweenTheHeaderAndTheKeyboard` (13 mini sim: 40 lines → `composer-plus`/`composer-aa` hittable and above the keyboard, field top below the header, still so when expanded). All 176 UI tests, 174/175 UI suites and the unit suite pass; 0 warnings.
 - **Not checked:** iPad landscape on a device (arithmetic is unit-tested; the iPad runs in iPhone compatibility mode, so its window is the compatibility window); the icons' look.
 - For plot: in a landscape phone window with the keyboard up there is little room (≈ 1–2 lines); that is the arithmetic, not a bug: if it feels too tight, the alternative is to let the header scroll away, which is a design call.
+
+## LIME-176c (the expand icons really flipped) — committed with 175c; installed on the phones after 175c (see `## LIME-175c`); **the gate is yours (13 mini)**
+
+- 176b's swapped symbols didn't read as flipped. Back to 176's `arrow.up.left.and.arrow.down.right` (expand) / `arrow.down.right.and.arrow.up.left` (collapse), mirrored with `.scaleEffect(x: -1, y: 1)` on the image (inside the 44 pt tap frame, so the hit area is unchanged). Labels and ids unchanged. Visual: no new test.
+- Screenshots `~/Desktop/lime-176c/expand.png` (collapsed state, ↗ pair now points to the top-right / bottom-left) and `collapse.png`; **no side-by-side with 176's** (I didn't keep a 176 build to shoot).
+- For plot: none.
