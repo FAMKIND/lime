@@ -7023,14 +7023,14 @@ Phase 0: `PLOT.md` committed first. **Phase 1 (with the user, the 13 mini, Debug
 - Tests: `Composer175UITests` (4: button hides/keeps draft/field brings back; button shows again; tap on messages hides; `composer-mic` exists); 174's 9, the link-card test and both voice tests pass on the 13 mini sim. `check-warnings.sh`: 0 warnings. **Not automated:** tapping a link in a bubble with the keyboard up (left to your gate), VoiceOver/Switch Control pass, largest text size 168.
 - For plot: the brief's UI test "tap on a link still opens its confirm" is not written; it needs a demo message with a link and a reliable link hit-point. Say if you want it.
 
-## LIME-175b (no extra hide-keyboard key on the iPad) — committed; installed on the phones together with 179's build (see `## LIME-179`); **the gate is yours (the iPad)**
+## LIME-175b (no extra hide-keyboard key on the iPad) — committed; installed on all three phones in the same build as 179; **the gate is yours (the iPad)**
 
 - Per plot's ⚑ (1e252): item (1) `waveform.mid` dropped (the user accepted `waveform`); did (2) and (3).
 - **iPad:** `composer-hide-keyboard` is left out while `model.editing` on an iPad; with the keyboard down "Show keyboard" shows. **Finding:** the app is iPhone-only (`TARGETED_DEVICE_FAMILY: 1`), so on an iPad it runs in compatibility mode and `userInterfaceIdiom` says `.phone`; the check is `UIDevice.current.model.hasPrefix("iPad")` (as `GroupCallView` already does). My first version used the idiom and the test caught it.
 - Tests: `testOnAnIPadTheHideKeyboardButtonIsLeftOutWhileTheKeyboardIsUp` (iPad simulator; keyboard hidden by tapping a bubble, since the system keyboard's hide key isn't reachable by label); the two button tests skip on iPad. Unit suite (506 tests, 10 skipped, 0 failures), 174's 9 and 175's pass on the 13 mini sim; the 175 set passes on the iPad Pro 11" sim. Screenshots: `~/Desktop/lime-175b/row-light.png`, `row-dark.png`.
 - For plot: in iPad compatibility mode UI-test frames are offset (the iPhone window floats inside the iPad), so coordinate taps on the scroll view miss; tap elements, not normalised coordinates, in iPad tests. A native iPad target (family 1,2) would change all this.
 
-## LIME-179 (your status badge in the header keeps its colours) — committed; installed on the iPad and the 13 mini (Jean's iPhone: see the report; it was not unlocked); **the gate is yours (the 13 mini)**
+## LIME-179 (your status badge in the header keeps its colours) — committed; installed on all three phones (Jean's iPhone, the iPad, the 13 mini), with 175b's change in the same build; **the gate is yours (the 13 mini)**
 
 - **Cause (plot's, unverified on glass by me):** iOS 26's toolbar button paints its label in one translucent colour. **Fix:** `statusBadge(_:size:keepsColours:)` / `AvatarView(badgeKeepsColours:)`: for the two toolbar avatars (`MessagesView` ~109, `RootHeader` ~39) the badge is rendered with `ImageRenderer` (current colour scheme and display scale) to a `UIImage` shown with `.original` rendering, which a toolbar does not tint. The notch stays `Theme.canvas`. Everything else (list, profile, settings) still draws the live `StatusBadge`.
 - **Size:** minimum lowered 12 → 9 pt: the 30 pt header avatar gets a ≈ 9.6 pt badge (was 12); the 36 pt legacy-header avatar 11.5 (was 12); every avatar from 44 pt up is unchanged.
