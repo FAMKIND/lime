@@ -11,6 +11,9 @@ final class Composer175UITests: LimeUITestCase {
         return app
     }
 
+    /// The button is left out on an iPad while its keyboard is up (LIME-175b), so the tests that press it are for the iPhone.
+    private func skipOnIPad() throws { try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPhone only") }
+
     private func type(_ app: XCUIApplication, _ text: String) {
         let field = app.textViews["composer-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 8))
@@ -18,7 +21,8 @@ final class Composer175UITests: LimeUITestCase {
         field.typeText(text)
     }
 
-    func testTheKeyboardButtonHidesTheKeyboardKeepsTheDraftAndTheFieldBringsItBack() {
+    func testTheKeyboardButtonHidesTheKeyboardKeepsTheDraftAndTheFieldBringsItBack() throws {
+        try skipOnIPad()
         let app = openChat()
         type(app, "half a message")
         let button = app.buttons["composer-hide-keyboard"]
@@ -37,7 +41,8 @@ final class Composer175UITests: LimeUITestCase {
         XCTAssertEqual(app.buttons["composer-hide-keyboard"].label, "Hide keyboard")
     }
 
-    func testTheKeyboardButtonShowsTheKeyboardAgain() {
+    func testTheKeyboardButtonShowsTheKeyboardAgain() throws {
+        try skipOnIPad()
         let app = openChat()
         type(app, "abc")
         app.buttons["composer-hide-keyboard"].tap()
@@ -52,11 +57,23 @@ final class Composer175UITests: LimeUITestCase {
         let app = openChat()
         type(app, "hello")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
-        app.scrollViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        app.staticTexts["other-bubble"].firstMatch.tap()
         let gone = NSPredicate(format: "exists == false")
         expectation(for: gone, evaluatedWith: app.keyboards.firstMatch)
         waitForExpectations(timeout: 5)
         XCTAssertEqual(app.textViews["composer-field"].value as? String, "hello")
+    }
+
+    /// On an iPad the keyboard has its own hide key: no extra button while it is up; with it down, the button shows (LIME-175b).
+    func testOnAnIPadTheHideKeyboardButtonIsLeftOutWhileTheKeyboardIsUp() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom != .pad, "iPad only")
+        let app = openChat()
+        type(app, "abc")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["composer-hide-keyboard"].exists, "no extra hide key while the iPad keyboard is up")
+        app.staticTexts["other-bubble"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["composer-hide-keyboard"].waitForExistence(timeout: 5), "with the keyboard down, Show keyboard is there")
+        XCTAssertEqual(app.buttons["composer-hide-keyboard"].label, "Show keyboard")
     }
 
     func testTheVoiceButtonStillExistsAsTheMicId() {
