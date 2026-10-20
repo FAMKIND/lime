@@ -78,4 +78,27 @@ final class Composer176UITests: LimeUITestCase {
         XCTAssertFalse(app.buttons["composer-expand"].exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'line 12'")).firstMatch.waitForExistence(timeout: 5), "the whole message arrived")
     }
+
+    /// LIME-176b: in landscape the whole composer, tool row included, sits between the header and the keyboard.
+    func testInLandscapeTheWholeComposerFitsBetweenTheHeaderAndTheKeyboard() throws {
+        let app = openChat()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        sleep(2)
+        typeLong(app, lines: 40)
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        for id in ["composer-plus", "composer-aa"] {
+            let button = app.buttons[id]
+            XCTAssertTrue(button.isHittable, "\(id) is hittable in landscape")
+            XCTAssertLessThanOrEqual(button.frame.maxY, keyboard.frame.minY + 1, "\(id) is above the keyboard")
+        }
+        let field = app.textViews["composer-field"]
+        XCTAssertGreaterThan(field.frame.minY, 40, "the field's top is below the header (\(field.frame))")
+        app.buttons["composer-expand"].tap()
+        XCTAssertTrue(app.buttons["composer-collapse"].waitForExistence(timeout: 5))
+        sleep(1)
+        XCTAssertTrue(app.buttons["composer-plus"].isHittable, "expanded, the tool row is still reachable")
+        XCTAssertGreaterThan(app.textViews["composer-field"].frame.minY, 40)
+    }
 }

@@ -47,7 +47,7 @@ final class RichComposerModel {
 
     private var line: CGFloat { textView?.font?.lineHeight ?? 20 }
     var fieldCap: CGFloat {
-        ComposerSizing.maxFieldHeight(window: windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height, keyboard: keyboardHeight, bottomInset: bottomInset, strip: showsStrip, line: line)
+        ComposerSizing.maxFieldHeight(window: windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height, keyboard: keyboardHeight, topInset: topInset, bottomInset: bottomInset, strip: showsStrip, line: line)
     }
     var expandedFieldHeight: CGFloat {
         ComposerSizing.expandedFieldHeight(window: windowHeight > 0 ? windowHeight : UIScreen.main.bounds.height, keyboard: keyboardHeight, topInset: topInset, bottomInset: bottomInset, strip: showsStrip, line: line)
@@ -429,7 +429,7 @@ struct RichComposerField: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? 280
         let line = uiView.font?.lineHeight ?? 20
-        let cap = max(maxHeight ?? 0, ComposerSizing.minimumHeight(line: line))
+        let cap = max(maxHeight ?? 0, ComposerSizing.oneLineHeight(line: line))
         if fills { return CGSize(width: width, height: cap) }
         let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
         return CGSize(width: width, height: min(max(fitted, line + 16), cap))

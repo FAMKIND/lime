@@ -59,7 +59,7 @@ struct ChatComposer: View {
                 .overlay(alignment: .topTrailing) {
                     if model.isLong || model.expanded {
                         Button { trace("composer tap expand"); model.toggleExpanded() } label: {
-                            Image(systemName: model.expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            Image(systemName: model.expanded ? "arrow.down.left.and.arrow.up.right" : "arrow.up.right.and.arrow.down.left")
                                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
                                 .frame(width: 44, height: 44)
                         }
