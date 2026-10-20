@@ -16,7 +16,6 @@ struct ChatComposer: View {
     @State private var previewDraft: PreviewDraft?
     @State private var dismissedURL: URL?
     @State private var previewTask: Task<Void, Never>?
-    @State private var pickingEmoji = false
     @State private var drafts: [DraftAttachment] = []
     @State private var chooser: Chooser?
     @State private var tooLarge = false
@@ -63,10 +62,19 @@ struct ChatComposer: View {
             HStack(spacing: 2) {
                 HStack(spacing: 2) {
                     button("plus", label: "Add attachment", id: "composer-plus") {
+                        trace("composer tap plus")
                         if onSendAttachments == nil { store.comingSoon("Attachments") } else { choosing = true }
                     }
-                    button("face.smiling", label: "Emoji", id: "composer-emoji") { pickingEmoji = true }
-                    Button { model.toggleToolbar() } label: {
+                    // 😊 is a toggle (LIME-174): the emoji keyboard on the composer's own text view; tapping it again goes back to the text keyboard. It stays a
+                    // face, highlighted like Aa while the emoji keyboard shows (the keyboard button is LIME-175's).
+                    Button { trace("composer tap emoji"); model.toggleEmojiKeyboard() } label: {
+                        Image(systemName: "face.smiling").font(.system(size: 20)).foregroundStyle(Theme.text)
+                            .frame(width: 44, height: 40)
+                            .background(model.showsEmojiKeyboard ? Theme.pressed : Color.clear, in: Capsule())
+                    }
+                    .accessibilityLabel("Emoji").accessibilityIdentifier("composer-emoji")
+                    .accessibilityAddTraits(model.showsEmojiKeyboard ? [.isSelected] : [])
+                    Button { trace("composer tap Aa"); model.formattingTapped() } label: {
                         Text("Aa").font(.system(size: 17, weight: model.toolbarVisible ? .bold : .medium)).foregroundStyle(Theme.text)
                             .frame(width: 44, height: 40)
                             .background(model.toolbarVisible ? Theme.pressed : Color.clear, in: Capsule())
@@ -99,7 +107,13 @@ struct ChatComposer: View {
         .limeGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
-        .overlay { EmojiKeyboardField(isActive: $pickingEmoji) { model.insertEmoji($0) }.frame(width: 1, height: 1).opacity(0.01) }
+        // The formatting strip: under the composer, above the keyboard, in this stack, so it never covers the tool row (LIME-174).
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if model.showsStrip {
+                FormattingToolbar(model: model).transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: model.showsStrip)
         .sheet(item: $model.linkRequest) { request in LinkSheet(request: request, composer: model) }
         .sheet(isPresented: $choosing) {
             AddToMessageSheet(
@@ -272,6 +286,13 @@ struct ChatComposer: View {
                 } catch {}
             }
         }
+    }
+
+    /// A line in the Debug log (the keyboard log's neighbours); nothing in a Release build.
+    private func trace(_ line: String) {
+        #if DEBUG
+        CallDiagnostics.shared.log(line)
+        #endif
     }
 
     private func button(_ symbol: String, label: String, id: String, action: @escaping () -> Void) -> some View {

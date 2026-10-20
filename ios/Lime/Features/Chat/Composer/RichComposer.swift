@@ -22,9 +22,19 @@ final class RichComposerModel {
     private(set) var pinned = false
     var linkRequest: LinkRequest?
     weak var textView: ComposerTextView?
+    /// The emoji keyboard is up (LIME-174): the composer's own text view shows it, so there is one keyboard owner and the keyboard, its accessory and
+    /// the composer's place always agree. 😊 toggles it; the icon becomes a keyboard while it shows.
+    private(set) var showsEmojiKeyboard = false
+    /// Whether the keyboard was up (the person was writing) when 😊 was tapped: the second tap returns to that, text keyboard or none.
+    private var returnsToWriting = true
 
     /// The formatting toolbar shows while text is selected, or after Aa.
     var toolbarVisible: Bool { pinned || hasSelection }
+    /// The composer has the keyboard (set by the text view's delegate).
+    var editing = false
+    /// The strip is laid out under the composer, above the keyboard, in the composer's own stack (LIME-174: as the keyboard's accessory its height was
+    /// left out of the composer's place with the emoji keyboard, and it covered the tool row). It shows while the keyboard does.
+    var showsStrip: Bool { toolbarVisible && editing }
 
     func markdown() -> String {
         guard let textView else { return "" }
@@ -42,11 +52,62 @@ final class RichComposerModel {
         hasText = false
         plainText = ""
         hasSelection = false
-        textView.setToolbar(visible: false, model: self) // do not wait for the next view update
         refresh()
     }
 
     func focus() { textView?.becomeFirstResponder() }
+
+    // MARK: The emoji keyboard
+
+    /// 😊: the emoji keyboard on the composer's own text view; the same button again goes back to the text keyboard.
+    func toggleEmojiKeyboard() {
+        if showsEmojiKeyboard, !returnsToWriting {
+            // Reading (the keyboard was down): back to that, the keyboard closes and the whole chat shows.
+            textView?.resignFirstResponder()
+            UIAccessibility.post(notification: .announcement, argument: "Keyboard closed")
+            return
+        }
+        if !showsEmojiKeyboard { returnsToWriting = textView?.isFirstResponder ?? false }
+        setEmojiKeyboard(!showsEmojiKeyboard)
+    }
+
+    func setEmojiKeyboard(_ on: Bool) {
+        guard let textView, on != showsEmojiKeyboard else { return }
+        if on {
+            // Remember the text keyboard that is up, to come back to it (the person's own language or layout).
+            textView.textModeToReturnTo = nil
+            textView.textModeToReturnTo = textView.textInputMode ?? UITextInputMode.activeInputModes.first { $0.primaryLanguage != "emoji" }
+        }
+        showsEmojiKeyboard = on
+        textView.showsEmoji = on
+        if textView.isFirstResponder { textView.reloadInputViews() } else { _ = textView.becomeFirstResponder() }
+        #if DEBUG
+        CallDiagnostics.shared.log("composer keyboard switch to \(on ? "emoji" : "text"): input mode now \(textView.textInputMode?.primaryLanguage ?? "?")")
+        #endif
+        UIAccessibility.post(notification: .announcement, argument: on ? "Emoji keyboard" : "Text keyboard")
+        if !on {
+            // The way back is named only for the reload: afterwards the system's own choice (a language switch with the globe key) is respected again.
+            DispatchQueue.main.async { [weak textView] in textView?.textModeToReturnTo = nil }
+        }
+    }
+
+    /// The keyboard let go (a sheet, send, the person tapped away): the next focus starts on the text keyboard.
+    func keyboardEnded() {
+        showsEmojiKeyboard = false
+        textView?.showsEmoji = false
+        textView?.textModeToReturnTo = nil
+    }
+
+    /// Aa while the emoji keyboard is up: back to the text keyboard, with the formatting strip (no emoji needs picking first).
+    func formattingTapped() {
+        if showsEmojiKeyboard {
+            setEmojiKeyboard(false)
+            if !pinned { pinned = true }
+            focus()
+        } else {
+            toggleToolbar()
+        }
+    }
 
     // MARK: The toolbar
 
@@ -178,11 +239,27 @@ enum LinkInput {
 /// is the formatting toolbar.
 final class ComposerTextView: UITextView {
     static var plainTypingAttributes: [NSAttributedString.Key: Any] { [.font: ComposerDocument.baseFont(), .foregroundColor: UIColor.label] }
-    private var accessory: UIView?
     #if DEBUG
     private var keyboardObservers: [NSObjectProtocol] = []
     #endif
     weak var model: RichComposerModel?
+
+    /// Shows the emoji keyboard instead of the text one (the model flips it, then reloads the input views).
+    var showsEmoji = false
+    /// The text keyboard that was up before the emoji one, and the one to return to: iOS answers `super.textInputMode` with the mode in use, which
+    /// while emoji shows is emoji itself, so going back needs this one named (it was the bug in the first build: only the icon changed back).
+    var textModeToReturnTo: UITextInputMode?
+    override var textInputMode: UITextInputMode? {
+        if showsEmoji, let emoji = UITextInputMode.activeInputModes.first(where: { $0.primaryLanguage == "emoji" }) { return emoji }
+        if let textModeToReturnTo { return textModeToReturnTo }
+        return super.textInputMode
+    }
+
+    @discardableResult override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { model?.keyboardEnded() }
+        return resigned
+    }
 
     /// Tab and Shift-Tab on a hardware keyboard indent and outdent inside a list; elsewhere Tab does what it did.
     override var keyCommands: [UIKeyCommand]? {
@@ -210,7 +287,7 @@ final class ComposerTextView: UITextView {
                 MainActor.assumeIsolated {
                     guard let self, self.window != nil else { return }
                     let field = self.convert(self.bounds, to: nil)
-                    CallDiagnostics.shared.log("composer keyboard \(what) end=\(Int(end.minY))-\(Int(end.maxY)) accessory=\(Int(self.inputAccessoryView?.frame.height ?? -1)) field=\(Int(field.minY))-\(Int(field.maxY)) screen=\(Int(UIScreen.main.bounds.height))")
+                    CallDiagnostics.shared.log("composer keyboard \(what) responder=\(self.isFirstResponder ? "composer" : (EmojiKeyboardField.isFirstResponder ? "emoji" : "none")) end=\(Int(end.minY))-\(Int(end.maxY)) strip=\(self.model?.showsStrip == true ? 1 : 0) field=\(Int(field.minY))-\(Int(field.maxY)) screen=\(Int(UIScreen.main.bounds.height))")
                 }
             })
         }
@@ -231,58 +308,6 @@ final class ComposerTextView: UITextView {
         let room = bounds.height - adjustedContentInset.top - adjustedContentInset.bottom
         if contentSize.height <= room + 0.5, contentOffset.y != -adjustedContentInset.top { setContentOffset(CGPoint(x: 0, y: -adjustedContentInset.top), animated: false) }
     }
-
-    /// Shows or hides the toolbar that sits above the keyboard. The strip it lives in is installed once, at height 0, and only changes its height
-    /// (LIME-152a): swapping the accessory in and out and reloading the input views made the keyboard drop and come back every time the selection
-    /// started or ended, and the composer, following it, could end up half under the keyboard.
-    func setToolbar(visible: Bool, model: RichComposerModel) {
-        if accessory == nil {
-            let view = FormattingAccessory(model: model)
-            accessory = view
-            inputAccessoryView = view
-        }
-        (accessory as? FormattingAccessory)?.setShown(visible)
-    }
-}
-
-/// The toolbar's home: a clear strip the keyboard carries, holding the SwiftUI capsule.
-final class FormattingAccessory: UIView {
-    private let host: UIHostingController<FormattingToolbar>
-    static let shownHeight: CGFloat = 60
-    private var shown = false
-
-    init(model: RichComposerModel) {
-        host = UIHostingController(rootView: FormattingToolbar(model: model))
-        super.init(frame: CGRect(x: 0, y: 0, width: 320, height: 0))
-        // The pattern UIKit documents for an accessory that changes height: the autoresizing mask and an intrinsic size, no constraints on
-        // the view itself (a constraint-sized accessory fights the "encapsulated layout height" the keyboard adds, and the keyboard's frame, and
-        // so the composer's place above it, came out wrong the first time, LIME-152a-fix).
-        autoresizingMask = .flexibleHeight
-        backgroundColor = .clear
-        clipsToBounds = true
-        host.view.backgroundColor = .clear
-        host.view.alpha = 0
-        host.safeAreaRegions = []
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(host.view)
-        NSLayoutConstraint.activate([
-            host.view.leadingAnchor.constraint(equalTo: leadingAnchor), host.view.trailingAnchor.constraint(equalTo: trailingAnchor),
-            host.view.topAnchor.constraint(equalTo: topAnchor), host.view.heightAnchor.constraint(equalToConstant: Self.shownHeight),
-        ])
-    }
-
-    override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: shown ? Self.shownHeight : 0) }
-
-    /// The strip is as tall as the toolbar while it shows and nothing while it does not; only the height changes.
-    func setShown(_ on: Bool) {
-        guard shown != on else { return }
-        shown = on
-        host.view.alpha = on ? 1 : 0
-        invalidateIntrinsicContentSize()
-    }
-
-    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
-
 }
 
 struct RichComposerField: UIViewRepresentable {
@@ -309,7 +334,6 @@ struct RichComposerField: UIViewRepresentable {
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
         context.coordinator.model = model
-        view.setToolbar(visible: model.toolbarVisible, model: model)
         // A change of lime's text size or typeface (Settings → Customize → Text size) restyles what is typed.
         _ = context.environment.dynamicTypeSize
         let base = ComposerDocument.baseFont()
@@ -338,6 +362,9 @@ struct RichComposerField: UIViewRepresentable {
         /// An automatic list start that Backspace can still undo (any other edit or caret move clears it).
         private var autoStart: ComposerDocument.AutoStart?
         init(_ model: RichComposerModel) { self.model = model }
+
+        func textViewDidBeginEditing(_ textView: UITextView) { model.editing = true }
+        func textViewDidEndEditing(_ textView: UITextView) { model.editing = false }
 
         private func setTyping(_ textView: UITextView, caret: Int) {
             updating = true

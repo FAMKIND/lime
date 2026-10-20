@@ -193,6 +193,7 @@ struct ChatView: View {
             .attachmentPresenting()
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(.bottom)
+            .keepsNewestAboveKeyboard(proxy: proxy, newestID: ChatWindow.shown(ChatRow.rows(for: conversation), window: windowRows).last?.id)
             .task(id: conversationID) {
                 // Opening a chat: once its rows have been laid out, settle at the newest message. `defaultScrollAnchor` alone is not
                 // enough on every iOS version (a chat pushed at launch opened at its top on iOS 18); this is a no-op when it worked.

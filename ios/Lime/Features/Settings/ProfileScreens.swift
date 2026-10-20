@@ -220,9 +220,22 @@ struct EmojiKeyboardField: UIViewRepresentable {
     @Binding var isActive: Bool
     let onPick: (String) -> Void
 
+    /// Whether the hidden emoji field holds the keyboard now (the composer's keyboard log says who the responder is).
+    nonisolated(unsafe) static var isFirstResponder = false
+
     final class EmojiTextField: UITextField {
         override var textInputMode: UITextInputMode? {
             UITextInputMode.activeInputModes.first { $0.primaryLanguage == "emoji" } ?? super.textInputMode
+        }
+        @discardableResult override func becomeFirstResponder() -> Bool {
+            let ok = super.becomeFirstResponder()
+            if ok { EmojiKeyboardField.isFirstResponder = true }
+            return ok
+        }
+        @discardableResult override func resignFirstResponder() -> Bool {
+            let ok = super.resignFirstResponder()
+            if ok { EmojiKeyboardField.isFirstResponder = false }
+            return ok
         }
     }
 
