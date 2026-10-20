@@ -57,6 +57,20 @@ final class RichComposerModel {
 
     func focus() { textView?.becomeFirstResponder() }
 
+    /// The keyboard button (LIME-175): puts the keyboard away with the draft and caret kept, and brings the text keyboard back where the caret was.
+    func toggleKeyboard() {
+        guard let textView else { return }
+        if textView.isFirstResponder {
+            textView.resignFirstResponder()
+            UIAccessibility.post(notification: .announcement, argument: "Keyboard hidden")
+        } else {
+            textView.becomeFirstResponder()
+        }
+    }
+
+    /// Tapping the messages: the keyboard goes down (nothing else changes).
+    func hideKeyboard() { if textView?.isFirstResponder == true { textView?.resignFirstResponder() } }
+
     // MARK: The emoji keyboard
 
     /// 😊: the emoji keyboard on the composer's own text view; the same button again goes back to the text keyboard.

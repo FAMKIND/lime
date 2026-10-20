@@ -85,6 +85,7 @@ struct ThreadView: View {
                 .accessibilityIdentifier("thread-scroll")
                 .environment(\.chatConversationID, target.conversationID)
                 .scrollDismissesKeyboard(.interactively)
+                .hidesKeyboardOnTap()
                 .keepsNewestAboveKeyboard(proxy: proxy, newestID: "bottom")
                 // With replies it opens at the newest one; with none, at the top of the message they hang from (a long one reads from its first line).
                 .defaultScrollAnchor(messages.count > 1 ? .bottom : .top)

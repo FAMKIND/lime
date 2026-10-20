@@ -81,6 +81,12 @@ struct ChatComposer: View {
                     }
                     .accessibilityLabel("Formatting").accessibilityIdentifier("composer-aa")
                     .accessibilityAddTraits(model.toolbarVisible ? [.isSelected] : [])
+                    // Hides and reveals the keyboard (LIME-175); always in the row, so nothing moves.
+                    Button { trace("composer tap keyboard"); model.toggleKeyboard() } label: {
+                        Image(systemName: model.editing ? "keyboard.chevron.compact.down" : "keyboard").font(.system(size: 20)).foregroundStyle(Theme.text)
+                            .frame(width: 44, height: 40)
+                    }
+                    .accessibilityLabel(model.editing ? "Hide keyboard" : "Show keyboard").accessibilityIdentifier("composer-hide-keyboard")
                 }
                 .opacity(recorder.isRecording ? 0 : 1).allowsHitTesting(!recorder.isRecording)
                 Spacer(minLength: 0)
@@ -98,7 +104,7 @@ struct ChatComposer: View {
                 } else if voiceEnabled {
                     micButton
                 } else {
-                    button("mic", label: "Voice message", id: "composer-mic") { store.comingSoon("Voice messages") }
+                    button("waveform", label: "Voice message", id: "composer-mic") { store.comingSoon("Voice messages") }
                 }
             }
             }
@@ -164,7 +170,7 @@ struct ChatComposer: View {
 
     /// The mic: hold to record, release to send, slide left to cancel, slide up to lock and go hands-free.
     private var micButton: some View {
-        Image(systemName: "mic").font(.system(size: 20)).foregroundStyle(recorder.isRecording ? Color.white : Theme.text)
+        Image(systemName: "waveform").font(.system(size: 20)).foregroundStyle(recorder.isRecording ? Color.white : Theme.text)
             .frame(width: 44, height: 40)
             .background(recorder.isRecording ? Color.red : Color.clear, in: Circle())
             .scaleEffect(recorder.isRecording ? 1.35 : 1)

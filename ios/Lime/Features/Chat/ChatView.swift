@@ -192,6 +192,7 @@ struct ChatView: View {
             .linkOpening()
             .attachmentPresenting()
             .scrollDismissesKeyboard(.interactively)
+            .hidesKeyboardOnTap()
             .defaultScrollAnchor(.bottom)
             .keepsNewestAboveKeyboard(proxy: proxy, newestID: ChatWindow.shown(ChatRow.rows(for: conversation), window: windowRows).last?.id)
             .task(id: conversationID) {
