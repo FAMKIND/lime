@@ -10,7 +10,7 @@ final class Jam188bUITests: LimeUITestCase {
         return app
     }
 
-    private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
+    private func any(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
 
     private func card(_ app: XCUIApplication, containing text: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
@@ -98,22 +98,6 @@ final class Jam188bUITests: LimeUITestCase {
         XCTAssertLessThan(any(app, "jam-reader-subtitle").frame.minY, firstWords.frame.minY)
         XCTAssertLessThan(firstWords.frame.minY, firstPhoto.frame.minY, "the first photo stands after the first paragraph")
         if secondPhoto.exists { XCTAssertLessThan(firstPhoto.frame.minY, secondPhoto.frame.minY) }
-    }
-
-    func testRecordingAttachesAClipAndTheCardPlaysItInline() {
-        let app = launch("jam")
-        app.buttons["new-jam-post"].tap()
-        app.buttons["jam-record"].tap()
-        XCTAssertTrue(app.buttons["jam-record-video"].waitForExistence(timeout: 8))
-        XCTAssertFalse(app.buttons["jam-record-next"].isEnabled)
-        app.textFields["jam-record-title"].tap(); app.textFields["jam-record-title"].typeText("Ten seconds on fraction walls")
-        app.buttons["jam-record-video"].tap()
-        XCTAssertTrue(any(app, "jam-record-ready").waitForExistence(timeout: 8))
-        app.buttons["jam-record-next"].tap()
-        XCTAssertTrue(app.buttons["jam-recorded-0"].waitForExistence(timeout: 5), "the clip is attached")
-        app.buttons["jam-post"].tap()
-        XCTAssertTrue(card(app, containing: "Ten seconds on fraction walls").waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["jam-video"].waitForExistence(timeout: 5), "the video sits in the card")
     }
 
     func testTheFeedShowsWhatIFollowAsCardsOfThreeKindsAndAnArticleOpensToItsBody() {

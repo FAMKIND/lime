@@ -84,8 +84,8 @@ struct JamComposeSheet: View {
                 }
             }
             .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
-            .sheet(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in
-                JamRecorderSheet(title: $recordTitle, initialMode: mode.mode) { clips.append($0) }
+            .fullScreenCover(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in
+                PodcastRecorder(title: $recordTitle, coauthors: $coauthors, camera: mode.mode == 0) { clips = [$0] }
             }
             .fullScreenCover(item: $chooser) { which in
                 switch which {
@@ -208,10 +208,10 @@ struct JamComposeSheet: View {
         HStack {
             ForEach(Array(clips.enumerated()), id: \.offset) { index, clip in
                 Button { clips.remove(at: index) } label: {
-                    Label(clip.mime.hasPrefix("video/") ? "Video" : "Voice", systemImage: "xmark.circle.fill")
+                    Label("Recording \(VoiceFormat.clock(Double(clip.durationMs ?? 0) / 1000))", systemImage: "xmark.circle.fill")
                         .font(Theme.secondary).foregroundStyle(Theme.text).padding(.horizontal, 12).frame(minHeight: 36).background(Theme.surface, in: Capsule())
                 }
-                .accessibilityLabel("Remove \(clip.mime.hasPrefix("video/") ? "video" : "voice recording")").accessibilityIdentifier("jam-recorded-\(index)")
+                .accessibilityLabel("Remove the \(clip.mime.hasPrefix("video/") ? "video" : "audio") recording").accessibilityIdentifier("jam-recorded-\(index)")
             }
             Spacer()
         }
@@ -226,7 +226,7 @@ struct JamComposeSheet: View {
             if !article {
                 HStack(spacing: 8) {
                     chip("Write an article", system: "doc.text", id: "jam-write-article") { article = true }
-                    chip("Record", system: "video", id: "jam-record") { recordMode = 0 }
+                    chip("Record", system: "mic", id: "jam-record") { recordMode = 1 }
                     Spacer()
                 }
                 .padding(.horizontal, 16).padding(.bottom, 4)
@@ -307,7 +307,7 @@ struct JamComposeSheet: View {
         }
         for url in videos {
             defer { try? FileManager.default.removeItem(at: url) }
-            guard let made = try? await VideoProcessing.prepare(url, progress: { _ in }) else { problem = "Couldn\u{2019}t use that video."; continue }
+            guard let made = try? await VideoProcessing.prepare(url, maxBytes: ConversationStore.jamFileLimit - 256 * 1024, progress: { _ in }) else { problem = "Couldn\u{2019}t use that video."; continue }
             if article {
                 // A video stands in the text like a photo (its cover frame shows while you write).
                 guard articleFiles.count < 10 else { problem = ConversationStore.JamPostFailure.tooManyFiles.message; continue }
@@ -395,113 +395,6 @@ struct JamComposeSheet: View {
     }
 }
 
-/// Record (LIME-188b): a video from the camera, or a voice clip, with an optional title; **Next** hands it back to the post.
-struct JamRecorderSheet: View {
-    @Binding var title: String
-    var initialMode = 0
-    let attach: (OutgoingAttachment) -> Void
-    @Environment(ConversationStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State private var mode = 0
-    @State private var camera = false
-    @State private var voice = VoiceRecorder()
-    @State private var clip: OutgoingAttachment?
-    @State private var preparing = false
-    @State private var micDenied = false
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 18) {
-                Picker("Kind", selection: $mode) {
-                    Text("Video").tag(0)
-                    Text("Voice").tag(1)
-                }
-                .pickerStyle(.segmented).accessibilityIdentifier("jam-record-mode")
-                TextField("Title (optional)", text: $title).font(Theme.body).padding(14)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous)).accessibilityIdentifier("jam-record-title")
-                Spacer()
-                if mode == 0 { videoControls } else { voiceControls }
-                Spacer()
-                if clip != nil {
-                    Label(mode == 0 ? "Video ready" : "Recording ready", systemImage: "checkmark.circle.fill").font(Theme.secondary).foregroundStyle(Theme.text)
-                        .accessibilityIdentifier("jam-record-ready")
-                }
-            }
-            .padding(20)
-            .background(Theme.canvas)
-            .navigationTitle("Record")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { voice.cancel(); dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Next") { if let clip { attach(clip) }; dismiss() }.fontWeight(.semibold).disabled(clip == nil || preparing).accessibilityIdentifier("jam-record-next")
-                }
-            }
-            .fullScreenCover(isPresented: $camera) {
-                CameraCapturePicker(onPhoto: { _ in camera = false }, onVideo: { url in camera = false; prepare(url) }, onCancel: { camera = false }).ignoresSafeArea()
-            }
-            .alert("Microphone is off", isPresented: $micDenied) { Button("OK", role: .cancel) {} } message: { Text("Turn on the microphone for lime in Settings to record.") }
-            .onAppear {
-                mode = initialMode
-                #if DEBUG
-                voice.simulated = store.isDemo
-                #endif
-            }
-        }
-        .presentationDetents([.large])
-    }
-
-    private var videoControls: some View {
-        VStack(spacing: 12) {
-            Button { openCamera() } label: {
-                Image(systemName: preparing ? "hourglass" : "video.fill").font(.system(size: 34)).foregroundStyle(Theme.accentInk)
-                    .frame(width: 88, height: 88).background(Theme.accent, in: Circle())
-            }
-            .buttonStyle(.plain).disabled(preparing).accessibilityLabel(clip == nil ? "Record a video" : "Record again").accessibilityIdentifier("jam-record-video")
-            Text("Up to a few minutes. Front or back camera.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
-        }
-    }
-
-    private var voiceControls: some View {
-        VStack(spacing: 12) {
-            Button { toggleVoice() } label: {
-                Image(systemName: voice.phase == .idle ? "mic.fill" : "stop.fill").font(.system(size: 34)).foregroundStyle(Theme.accentInk)
-                    .frame(width: 88, height: 88).background(Theme.accent, in: Circle())
-            }
-            .buttonStyle(.plain).accessibilityLabel(voice.phase == .idle ? "Start recording" : "Stop recording").accessibilityValue(voice.phase == .idle ? "" : "Recording")
-            .accessibilityIdentifier("jam-record-voice")
-            Text(voice.phase == .idle ? "Tap to record." : "\(Int(voice.elapsed)) s").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
-        }
-    }
-
-    private func openCamera() {
-        #if DEBUG
-        if store.isDemo { clip = ChatComposer.demoVideoDraft.outgoing; return }
-        #endif
-        camera = true
-    }
-
-    private func prepare(_ url: URL) {
-        preparing = true
-        Task {
-            defer { preparing = false; try? FileManager.default.removeItem(at: url) }
-            if let made = try? await VideoProcessing.prepare(url, progress: { _ in }) { clip = made.item }
-        }
-    }
-
-    private func toggleVoice() {
-        Task {
-            if voice.phase == .idle {
-                clip = nil
-                if !(await voice.start()) { micDenied = true }
-            } else if let note = voice.finish() {
-                clip = OutgoingAttachment(bytes: note.bytes, name: "Voice message.m4a", mime: "audio/mp4", width: nil, height: nil,
-                                          durationMs: UInt32(note.durationMs), thumb: Data(note.waveform), poster: Data())
-            }
-        }
-    }
-}
-
 /// Who the post is from (LIME-188f): you. A school or subject group will be listed here when shared jams exist.
 struct PostAsSheet: View {
     @Environment(ConversationStore.self) private var store
@@ -532,6 +425,8 @@ struct PostAsSheet: View {
 /// Add co-authors (or co-hosts) from your contacts (LIME-188f/g): each is asked, and the credit shows once they accept.
 struct JamCoauthorPicker: View {
     @Binding var selected: [Person]
+    /// "Add co-hosts" for a recording; with none chosen the button says Skip.
+    var title = "Add co-author"
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -563,8 +458,8 @@ struct JamCoauthorPicker: View {
             .listStyle(.plain)
             .searchable(text: $query, prompt: "Search your contacts")
             .overlay { if store.coauthorChoices.isEmpty { Text("Your contacts show here.").font(Theme.body).foregroundStyle(Theme.textSecondary) } }
-            .navigationTitle("Add co-author").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.fontWeight(.semibold).accessibilityIdentifier("jam-coauthor-done") } }
+            .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(selected.isEmpty && title != "Add co-author" ? "Skip" : "Done") { dismiss() }.fontWeight(.semibold).accessibilityIdentifier("jam-coauthor-done") } }
             .safeAreaInset(edge: .bottom) {
                 Text("They are asked first. \u{201C}with <name>\u{201D} shows once they accept.").font(Theme.caption).foregroundStyle(Theme.textSecondary).padding(.bottom, 8)
             }

@@ -17,6 +17,10 @@ final class VoiceRecorder {
 
     private(set) var phase: Phase = .idle
     private(set) var elapsed: TimeInterval = 0
+    /// A paused recording keeps its file and its time, and adds nothing until it goes on (the podcast recorder, LIME-188g).
+    private(set) var paused = false
+    /// A podcast: up to an hour at 32 kbps (about 14 MB, inside a jam file's 24 MB). Voice messages stay at 15 minutes and 24 kbps.
+    var podcast = false
     /// Loudness samples while recording, 0 to 1, newest last.
     private(set) var levels: [Float] = []
     /// Debug demo and UI tests: no microphone, a made-up note.
@@ -46,7 +50,7 @@ final class VoiceRecorder {
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("lime-voice-\(UUID().uuidString).m4a")
             let settings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 22_050, AVNumberOfChannelsKey: 1,
-                AVEncoderBitRateKey: 24_000, AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
+                AVEncoderBitRateKey: podcast ? 32_000 : 24_000, AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
             ]
             guard let recorder = try? AVAudioRecorder(url: file, settings: settings) else { return false }
             recorder.isMeteringEnabled = true
@@ -55,6 +59,7 @@ final class VoiceRecorder {
             url = file
         }
         phase = .recording
+        paused = false
         elapsed = 0
         levels = []
         raw = []
@@ -68,7 +73,7 @@ final class VoiceRecorder {
     }
 
     private func tick() {
-        guard phase != .idle else { return }
+        guard phase != .idle, !paused else { return }
         if simulated {
             elapsed += 0.05
             let level = Float(0.35 + 0.35 * abs(sin(elapsed * 6)))
@@ -82,7 +87,23 @@ final class VoiceRecorder {
             levels.append(level)
         }
         if levels.count > 60 { levels.removeFirst(levels.count - 60) }
-        if elapsed >= Self.maxSeconds { /* the caller finishes on its next look */ }
+        if elapsed >= limit { /* the caller finishes on its next look */ }
+    }
+
+    /// The longest this recording can be.
+    var limit: TimeInterval { podcast ? Self.podcastSeconds : Self.maxSeconds }
+    static let podcastSeconds: TimeInterval = 60 * 60
+
+    func pause() {
+        guard phase != .idle, !paused else { return }
+        recorder?.pause()
+        paused = true
+    }
+
+    func resume() {
+        guard phase != .idle, paused else { return }
+        _ = recorder?.record()
+        paused = false
     }
 
     /// Hands-free: recording goes on after the finger is lifted.
@@ -114,6 +135,7 @@ final class VoiceRecorder {
         recorder?.stop()
         recorder = nil
         url = nil
+        paused = false
         phase = .idle
         if !simulated { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }

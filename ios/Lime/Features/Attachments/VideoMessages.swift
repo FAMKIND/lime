@@ -27,7 +27,7 @@ enum VideoProcessing {
     }
 
     /// Re-encodes `url` for sending. `progress` reports 0...1. The picture's metadata (place, camera) is not kept.
-    static func prepare(_ url: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> (item: OutgoingAttachment, poster: UIImage?) {
+    static func prepare(_ url: URL, maxBytes limit: Int = maxBytes, progress: @escaping @Sendable (Double) -> Void) async throws -> (item: OutgoingAttachment, poster: UIImage?) {
         let asset = AVURLAsset(url: url)
         let seconds = ((try? await asset.load(.duration)).map(CMTimeGetSeconds)) ?? 0
         guard seconds.isFinite, seconds > 0 else { throw Problem.unreadable }
@@ -39,7 +39,7 @@ enum VideoProcessing {
         session.outputURL = output
         session.outputFileType = .mp4
         session.shouldOptimizeForNetworkUse = true
-        session.fileLengthLimit = Int64(maxBytes)
+        session.fileLengthLimit = Int64(limit)
         session.metadataItemFilter = AVMetadataItemFilter.forSharing()
         nonisolated(unsafe) let exporter = session
         let watcher = Task {
@@ -55,7 +55,7 @@ enum VideoProcessing {
         progress(1)
         guard session.status == .completed else { throw Problem.unreadable }
         let data = try Data(contentsOf: output, options: .mappedIfSafe)
-        guard data.count <= maxBytes else { throw Problem.tooLarge }
+        guard data.count <= limit else { throw Problem.tooLarge }
 
         let poster = await posterFrame(asset)
         let size = await displaySize(of: asset)

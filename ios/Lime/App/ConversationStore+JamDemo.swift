@@ -48,7 +48,11 @@ extension ConversationStore {
                                  attachmentsJson: "[]", created: now - 600_000, coauthors: [], state: "ready")
         let third = JamPostInfo(postId: "demo-post-3", jamId: page.jamId, author: page.writerId, tier: "free", kind: "record", title: "Ten seconds on fraction walls", subtitle: "", markdown: "", plain: "",
                                 attachmentsJson: "[]", created: now - 60_000, coauthors: [], state: "ready")
-        jamPosts[page.jamId] = [first, second, third]
+        let fourth = JamPostInfo(postId: "demo-post-4", jamId: page.jamId, author: page.writerId, tier: "free", kind: "record", title: "Sunday planning, 18 minutes", subtitle: "", markdown: "", plain: "",
+                                 attachmentsJson: "[]", created: now - 7_200_000, coauthors: [], state: "ready")
+        demoJamAttachments["demo-post-4"] = [JamAttachmentInfo(attachmentId: "demo-audio-1", name: "Recording.m4a", mime: "audio/mp4", kind: "audio", size: 90_000, width: nil, height: nil,
+                                                               durationMs: 1_080_000, thumb: Data((0..<64).map { UInt8(40 + (($0 * 37) % 200)) }), poster: Data(), available: true)]
+        jamPosts[page.jamId] = [first, second, third, fourth]
         demoJamAttachments["demo-post-3"] = [JamAttachmentInfo(attachmentId: "demo-video-1", name: "wall.mp4", mime: "video/mp4", kind: "video", size: 90_000, width: 480, height: 270,
                                                                durationMs: 10_000, thumb: Data(), poster: Data(), available: true)]
         demoJamAttachments["demo-post-1"] = [JamAttachmentInfo(attachmentId: "demo-photo-1", name: "pizza.jpg", mime: "image/jpeg", kind: "image", size: 40_000, width: 600, height: 400,

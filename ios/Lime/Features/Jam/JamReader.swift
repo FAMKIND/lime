@@ -1,3 +1,4 @@
+import AVFoundation
 import AVKit
 import SwiftUI
 
@@ -159,72 +160,64 @@ private struct JamPhoto: View {
     }
 }
 
+/// A recording that is a video: the picture (tap to play or pause) and, under it, the same player as a podcast.
 struct JamVideo: View {
     let postID: String
     let file: JamAttachmentInfo
     @Environment(ConversationStore.self) private var store
-    @State private var player: AVPlayer?
-    @State private var loading = false
+    @State private var controller: PodcastController?
 
     var body: some View {
-        ZStack {
-            if let player {
-                VideoPlayer(player: player).aspectRatio(file.width.flatMap { w in file.height.map { CGFloat(w) / CGFloat(max($0, 1)) } } ?? 16.0 / 9, contentMode: .fit)
-            } else {
-                Button { load() } label: {
-                    ZStack {
+        let controller = self.controller ?? makeController()
+        VStack(spacing: 10) {
+            Button { Task { await controller.toggle(data: { await store.jamAttachmentData(postID, file.attachmentId) }) } } label: {
+                ZStack {
+                    if controller.simulated || controller.player == nil {
                         if let poster = UIImage(data: file.poster) { Image(uiImage: poster).resizable().scaledToFit() } else { Rectangle().fill(Theme.surface).aspectRatio(16.0 / 9, contentMode: .fit) }
-                        if loading { ProgressView() } else { Image(systemName: "play.circle.fill").font(.system(size: 52)).foregroundStyle(.white).shadow(radius: 4) }
+                    } else {
+                        PlayerLayerView(player: controller.player).aspectRatio(file.width.flatMap { w in file.height.map { CGFloat(w) / CGFloat(max($0, 1)) } } ?? 16.0 / 9, contentMode: .fit)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    if controller.loading { ProgressView() }
+                    else if !controller.isPlaying { Image(systemName: "play.circle.fill").font(.system(size: 52)).foregroundStyle(.white).shadow(radius: 4) }
                 }
-                .buttonStyle(.plain).accessibilityLabel("Play video").accessibilityIdentifier("jam-video")
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
+            .buttonStyle(.plain).accessibilityLabel(controller.isPlaying ? "Pause video" : "Play video").accessibilityIdentifier("jam-video")
+            PodcastBar(controller: controller, waveform: Data(), load: { await store.jamAttachmentData(postID, file.attachmentId) }, id: file.attachmentId)
         }
+        .onAppear { if self.controller == nil { self.controller = controller } }
     }
 
-    private func load() {
-        loading = true
-        Task {
-            if let data = await store.jamAttachmentData(postID, file.attachmentId) {
-                let url = FileManager.default.temporaryDirectory.appendingPathComponent("jam-\(file.attachmentId).mp4")
-                try? data.write(to: url)
-                player = AVPlayer(url: url)
-                player?.play()
-            }
-            loading = false
-        }
+    private func makeController() -> PodcastController {
+        let post = store.jamPost(postID)
+        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post?.title ?? "", artist: store.teacherName(post?.author ?? ""), isVideo: true)
+        #if DEBUG
+        controller.simulated = store.isDemo
+        #endif
+        return controller
     }
 }
 
-private struct JamAudio: View {
+/// A recording that is audio: the podcast player, with the waveform the writer's phone made.
+struct JamAudio: View {
     let postID: String
     let file: JamAttachmentInfo
     @Environment(ConversationStore.self) private var store
-    @State private var player: AVAudioPlayer?
-    @State private var playing = false
+    @State private var controller: PodcastController?
 
     var body: some View {
-        Button { toggle() } label: {
-            HStack(spacing: 12) {
-                Image(systemName: playing ? "pause.circle.fill" : "play.circle.fill").font(.system(size: 36)).foregroundStyle(Theme.text)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Voice clip").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
-                    Text(file.durationMs.map { "\($0 / 1000) s" } ?? "").font(Theme.caption).foregroundStyle(Theme.textSecondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .buttonStyle(.plain).accessibilityLabel(playing ? "Pause voice clip" : "Play voice clip").accessibilityIdentifier("jam-audio")
+        let controller = self.controller ?? makeController()
+        PodcastBar(controller: controller, waveform: file.thumb, load: { await store.jamAttachmentData(postID, file.attachmentId) }, id: file.attachmentId)
+            .onAppear { if self.controller == nil { self.controller = controller } }
     }
 
-    private func toggle() {
-        if let player, player.isPlaying { player.pause(); playing = false; return }
-        Task {
-            if player == nil, let data = await store.jamAttachmentData(postID, file.attachmentId) { player = try? AVAudioPlayer(data: data) }
-            player?.play(); playing = player?.isPlaying ?? false
-        }
+    private func makeController() -> PodcastController {
+        let post = store.jamPost(postID)
+        let controller = PodcastController(duration: Double(file.durationMs ?? 0) / 1000, title: post?.title ?? "", artist: store.teacherName(post?.author ?? ""))
+        #if DEBUG
+        controller.simulated = store.isDemo
+        #endif
+        return controller
     }
 }
 

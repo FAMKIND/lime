@@ -119,6 +119,9 @@ extension ConversationStore {
     }
 
     /// Why a post did not go: said in words the writer can act on, in the compose screen (a banner would sit behind it).
+    /// The most one jam file can be (24 MiB), inside the 25 MiB a blob may hold.
+    static let jamFileLimit = 24 * 1024 * 1024
+
     enum JamPostFailure: Error, Equatable {
         case noSpace, tooManyFiles, fileTooLarge, rejected, couldNotMake
         var message: String {
@@ -137,7 +140,7 @@ extension ConversationStore {
     /// by itself; nothing here waits for the network.
     func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], about: String) async -> Result<Void, JamPostFailure> {
         guard items.count <= 10 else { return .failure(.tooManyFiles) }
-        guard items.allSatisfy({ $0.bytes.count <= 24 * 1024 * 1024 }) else { return .failure(.fileTooLarge) }
+        guard items.allSatisfy({ $0.bytes.count <= Self.jamFileLimit }) else { return .failure(.fileTooLarge) }
         guard let jamID = await myJamID(about: about) else { return .failure(.couldNotMake) }
         #if DEBUG
         if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items, coauthors: coauthors); return .success(()) }
