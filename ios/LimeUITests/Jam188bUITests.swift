@@ -58,10 +58,13 @@ final class Jam188bUITests: LimeUITestCase {
         XCTAssertGreaterThan(any(app, "jam-photos").frame.minY, field.frame.minY, "under the text")
         app.buttons["jam-post"].tap()
         XCTAssertTrue(card(app, containing: "Our field trip").waitForExistence(timeout: 8), "it posts")
-        let photos = app.descendants(matching: .any).matching(identifier: "jam-photo")
-        let shown = NSPredicate(format: "count == 3")
-        expectation(for: shown, evaluatedWith: photos)
-        waitForExpectations(timeout: 8)
+        XCTAssertTrue(any(app, "jam-photo-row").waitForExistence(timeout: 8), "the photos are one row that scrolls sideways")
+        XCTAssertEqual(any(app, "jam-photo-counter").label, "1 / 3")
+        let first = app.descendants(matching: .any).matching(identifier: "jam-row-photo-0").firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 8))
+        first.tap()
+        XCTAssertTrue(any(app, "attachment-viewer").waitForExistence(timeout: 5), "a tap opens the same viewer chats use")
+        XCTAssertEqual(any(app, "attachment-viewer-count").label, "1 of 3")
     }
 
     func testAnArticleIsAPageWithPhotosPutInTheTextAndTheReaderShowsThemInOrder() {
@@ -74,7 +77,7 @@ final class Jam188bUITests: LimeUITestCase {
         title.tap(); title.typeText("Exit tickets that work")
         let subtitle = app.textFields["jam-article-subtitle"].exists ? app.textFields["jam-article-subtitle"] : app.textViews["jam-article-subtitle"]
         subtitle.tap()
-        subtitle.typeText(String(repeating: "x", count: 200))
+        subtitle.typeText(String(repeating: "x", count: 200)); sleep(1)   // the cap trims after the last key
         XCTAssertLessThanOrEqual((subtitle.value as? String ?? "").count, 160, "a subtitle never takes more than 160")
         subtitle.typeText("\n")   // Return moves to the body
         let body = app.textViews["composer-field"]
@@ -112,7 +115,7 @@ final class Jam188bUITests: LimeUITestCase {
         article.tap()
         XCTAssertEqual(any(app, "jam-reader-title").label, "Equivalent fractions in ten minutes")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Start with a pizza'")).firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(any(app, "jam-photo").waitForExistence(timeout: 8))
+        XCTAssertTrue(any(app, "jam-row-photo-0").waitForExistence(timeout: 8))
     }
 
     func testTheProfileIsTheJamPageWithACountSubscribeAndPostsThatOpenOnceSubscribed() {

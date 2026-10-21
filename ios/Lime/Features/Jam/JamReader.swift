@@ -73,16 +73,93 @@ struct JamAttachmentsView: View {
     @Environment(ConversationStore.self) private var store
 
     var body: some View {
+        let files = store.jamAttachments(postID).enumerated().filter { !skipping.contains($0.offset) }.map(\.element)
+        let photos = files.filter { $0.kind == "image" }
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(store.jamAttachments(postID).enumerated()).filter { !skipping.contains($0.offset) }.map(\.element), id: \.attachmentId) { file in
+            // Several photos are one row that scrolls sideways (LIME-188h); a tap opens them in the same viewer chats use.
+            if !photos.isEmpty { JamPhotoRow(postID: postID, files: photos, compact: compact) }
+            ForEach(files.filter { $0.kind != "image" }, id: \.attachmentId) { file in
                 switch file.kind {
-                case "image": JamPhoto(postID: postID, file: file)
                 case "video": JamVideo(postID: postID, file: file)
                 case "audio": JamAudio(postID: postID, file: file)
                 default: JamFileCard(postID: postID, file: file)
                 }
             }
         }
+    }
+}
+
+/// A post's photos in a row you swipe sideways, one page at a time with the next one peeking, and a "1 / 5" counter; a tap opens the full-screen viewer.
+struct JamPhotoRow: View {
+    let postID: String
+    let files: [JamAttachmentInfo]
+    var compact = false
+    @Environment(ConversationStore.self) private var store
+    @State private var images: [String: UIImage] = [:]
+    @State private var current: String?
+    @State private var viewing: ViewerStart?
+
+    private struct ViewerStart: Identifiable { let index: Int; var id: Int { index } }
+
+    var body: some View {
+        let height: CGFloat = compact ? 220 : 280
+        let many = files.count > 1
+        GeometryReader { geo in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 8) {
+                    ForEach(Array(files.enumerated()), id: \.element.attachmentId) { index, file in
+                        tile(file, index: index)
+                            .frame(width: many ? geo.size.width * 0.86 : geo.size.width, height: height)
+                            .id(file.attachmentId)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $current)
+        }
+        .frame(height: height)
+        .overlay(alignment: .topTrailing) {
+            if many {
+                Text("\(index + 1) / \(files.count)").font(Theme.font(.caption, weight: .semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 4).background(.black.opacity(0.55), in: Capsule()).padding(10)
+                    .accessibilityHidden(true).accessibilityIdentifier("jam-photo-counter")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("jam-photo-row")
+        .fullScreenCover(item: $viewing) { start in
+            AttachmentViewer(items: files.map(item), start: start.index, load: { await picture(for: $0.id) })
+        }
+    }
+
+    private var index: Int { files.firstIndex { $0.attachmentId == current } ?? 0 }
+
+    private func tile(_ file: JamAttachmentInfo, index: Int) -> some View {
+        ZStack {
+            Theme.surface
+            if let image = images[file.attachmentId] { Image(uiImage: image).resizable().scaledToFill() } else { ProgressView() }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { viewing = ViewerStart(index: index) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(files.count > 1 ? "Photo \(index + 1) of \(files.count)" : "Photo")
+        .accessibilityAddTraits(.isButton).accessibilityHint("Opens the photo")
+        .accessibilityIdentifier("jam-row-photo-\(index)")
+        .task { _ = await picture(for: file.attachmentId) }
+    }
+
+    private func picture(for id: String) async -> UIImage? {
+        if let image = images[id] { return image }
+        guard let data = await store.jamAttachmentData(postID, id), let image = UIImage(data: data) else { return nil }
+        images[id] = image
+        return image
+    }
+
+    private func item(_ file: JamAttachmentInfo) -> AttachmentItem {
+        AttachmentItem(id: file.attachmentId, mime: file.mime, name: file.name, size: Int64(file.size), width: file.width.map(Int.init), height: file.height.map(Int.init),
+                       durationMs: file.durationMs.map(Int.init), thumb: file.thumb, downloaded: true)
     }
 }
 

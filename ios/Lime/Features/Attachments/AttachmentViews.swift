@@ -286,6 +286,8 @@ struct AttachmentViewer: View {
     /// The message these pictures belong to: reactions go to the message (an album is one message).
     var messageID: String?
     var conversationID: Conversation.ID?
+    /// Where the pictures come from when they are not a chat's (a jam post's, LIME-188h); nil means the chat's own store.
+    var load: ((AttachmentItem) async -> UIImage?)? = nil
     @Environment(ConversationStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var page = 0
@@ -296,7 +298,7 @@ struct AttachmentViewer: View {
             Color.black.ignoresSafeArea()
             TabView(selection: $page) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    ZoomablePicture(item: item).tag(index)
+                    ZoomablePicture(item: item, load: load).tag(index)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -329,7 +331,10 @@ struct AttachmentViewer: View {
     }
 
     private func save() async {
-        guard items.indices.contains(page), let image = await store.image(for: items[page]) else { return }
+        guard items.indices.contains(page) else { return }
+        let found: UIImage?
+        if let load { found = await load(items[page]) } else { found = await store.image(for: items[page]) }
+        guard let image = found else { return }
         UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
         saved = true
         try? await Task.sleep(for: .seconds(2))
@@ -339,6 +344,7 @@ struct AttachmentViewer: View {
 
 private struct ZoomablePicture: View {
     let item: AttachmentItem
+    var load: ((AttachmentItem) async -> UIImage?)? = nil
     @Environment(ConversationStore.self) private var store
     @State private var image: UIImage?
     @State private var scale: CGFloat = 1
@@ -358,7 +364,9 @@ private struct ZoomablePicture: View {
                 ProgressView().tint(.white)
             }
         }
-        .task(id: item.id) { image = await store.image(for: item) }
+        .task(id: item.id) {
+            if let load { image = await load(item) } else { image = await store.image(for: item) }
+        }
     }
 }
 
