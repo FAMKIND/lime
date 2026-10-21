@@ -36,6 +36,7 @@ pub(crate) mod calls;
 pub(crate) mod group_calls;
 pub(crate) mod profile;
 pub(crate) mod groups;
+pub(crate) mod jam;
 pub(crate) mod message_ops;
 pub(crate) mod photos;
 
@@ -235,6 +236,8 @@ impl LimeStore {
         }
         // Group state ops (a new group, someone added or removed...) go out before the messages that follow them.
         self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
+        // A jam's posts to its subscribers, a chunk at a time (LIME-186).
+        self.deliver_jam_wires(&transport, &auth_token);
         let queued = self.with_conn(queued_messages)?;
         let mut sent = 0;
         for message in queued {
@@ -1538,7 +1541,8 @@ impl LimeStore {
         let is_status = inner.op.op_type == STATUS_CHANGED;
         let is_call = crate::store::calls::is_call_op(&inner.op.op_type);
         let is_username = inner.op.op_type == USERNAME_SET;
-        let is_control = is_share || is_changed || is_status || is_username || is_call;
+        let is_jam = crate::store::jam::is_jam_op(&inner.op.op_type);
+        let is_control = is_share || is_changed || is_status || is_username || is_call || is_jam;
         let is_message_op = crate::store::message_ops::is_message_op(&inner.op.op_type);
         let is_group_op = inner.op.op_type.starts_with("group.");
         let valid = sender != me
@@ -1551,6 +1555,9 @@ impl LimeStore {
             && if is_group_op {
                 // A group op belongs to a group conversation, whose id (a create op's own id) is the group's.
                 crate::store::groups::group_id_of(&inner.op.conversation_id).is_some()
+            } else if is_jam {
+                // A jam op belongs to a jam conversation (LIME-186).
+                crate::store::jam::jam_id_of(&inner.op.conversation_id).is_some()
             } else {
                 inner.op.conversation_id == dm_conversation_id(&sender, me)
             }
@@ -1622,6 +1629,11 @@ impl LimeStore {
                 record_key_change(conn, &sender, &cert.master_key)?;
                 return Ok(None);
             }
+            if is_jam {
+                // A jam op (LIME-186): a subscribe, a welcome with the keys, a session key, or the jam's news. Never a message.
+                self.apply_jam_op(conn, &*state, me, &sender, &inner, cert, now)?;
+                return Ok(Some(Stored::Control));
+            }
             if is_group_op {
                 // A group state op, a group's history for someone just added, or a Megolm session key.
                 self.apply_group_op(conn, me, &sender, &inner, cert, now)?;
@@ -1671,7 +1683,7 @@ impl LimeStore {
             if is_username {
                 // Someone I share a chat with told me their username (or `null`: forget it). Not a message.
                 if let Some(username) = crate::store::usernames::parse(&inner.op.payload) {
-                    crate::store::usernames::store_received(conn, &me, &sender, username.as_deref(), remote_hlc.wall)?;
+                    crate::store::usernames::store_received(conn, me, &sender, username.as_deref(), remote_hlc.wall)?;
                 }
                 return Ok(Some(Stored::Control));
             }

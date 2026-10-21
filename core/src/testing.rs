@@ -277,6 +277,10 @@ impl Transport for FakeServer {
                     .and_then(Value::as_array)
                     .cloned()
                     .unwrap_or_default();
+                // The real server takes at most 500 recipient devices per request (docs/api-v2.md).
+                if recipients.len() > 500 {
+                    return respond(413, json!({ "error": "too_many_recipients" }));
+                }
                 if user.is_empty() { state.sends_without_token += 1 } else { state.sends_with_token += 1 }
                 state.sent.push(body.clone());
                 // All or nothing: check every recipient's access before storing anything (the key first, as the real server does).

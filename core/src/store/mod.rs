@@ -25,6 +25,7 @@ pub(crate) mod link_preview;
 pub(crate) mod storage;
 pub(crate) mod status;
 pub(crate) mod usernames;
+pub(crate) mod jam;
 pub(crate) mod calls;
 pub(crate) mod emergency;
 pub(crate) mod group_calls;

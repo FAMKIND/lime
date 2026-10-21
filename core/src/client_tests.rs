@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use rusqlite::params;
+use serde_json::Value;
 
 use crate::store::LimeStore;
 use crate::testing::FakeServer;
@@ -1478,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; PRAGMA user_version = 9;",
+             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_sessions; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -5072,4 +5073,276 @@ fn an_offline_status_is_sent_kept_and_hands_over_like_the_others() {
     let of = |at: i64| bob.store.contact_statuses(at).unwrap().into_iter().map(|c| (c.user_id, c.state)).collect::<Vec<_>>();
     assert_eq!(of(now), vec![(alice.user.clone(), "offline".to_owned())]);
     assert_eq!(of(now + 1001), vec![(alice.user.clone(), "available".to_owned())]);
+}
+
+// ---------------------------------------------------------------- LIME-186: jam
+
+fn jam_posts_of(p: &Party, jam_id: &str) -> Vec<String> {
+    p.store.list_jam_posts(jam_id.to_owned()).unwrap().into_iter().map(|post| post.title).collect()
+}
+
+/// `who` asks to follow `jam`, the writer's phone takes them in and sends the welcome, and `who` receives it.
+fn join_jam(writer: &Party, who: &Party, jam_id: &str, transport: &Arc<dyn Transport>) {
+    who.store.subscribe_to_jam(jam_id.to_owned(), writer.user.clone()).unwrap();
+    deliver(who, transport);
+    sync(writer, transport);
+    deliver(writer, transport);
+    sync(who, transport);
+}
+
+fn publish(writer: &Party, jam_id: &str, title: &str, tier: &str) -> String {
+    writer.store.publish_jam_post(jam_id.to_owned(), title.to_owned(), format!("The words of **{title}**"), tier.to_owned(), "[]".to_owned()).unwrap()
+}
+
+fn new_jam(writer: &Party) -> String {
+    let conversation = writer.store.create_jam("Fractions that stick".into(), "Short lessons for grades 3 to 5".into(), vec!["Maths".into(), "Grade 4".into()]).unwrap();
+    conversation.strip_prefix("jam:").unwrap().to_owned()
+}
+
+#[test]
+fn a_jam_reaches_subscribers_and_a_late_subscriber_reads_the_whole_archive() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let (dave, _) = party(&server, "dave", 4);
+    let jam = new_jam(&alice);
+    let mine = alice.store.list_my_jams().unwrap();
+    assert_eq!((mine.len(), mine[0].title.as_str(), mine[0].topics.clone(), mine[0].subscriber_count), (1, "Fractions that stick", vec!["Maths".to_owned(), "Grade 4".to_owned()], 0));
+
+    // Anyone signed in can subscribe; the writer's phone takes them in and welcomes them with the jam's state.
+    join_jam(&alice, &bob, &jam, &transport);
+    join_jam(&alice, &carol, &jam, &transport);
+    let followed = bob.store.jam(jam.clone()).unwrap().unwrap();
+    assert_eq!((followed.status.as_str(), followed.title.as_str(), followed.writer.as_str(), followed.mine), ("active", "Fractions that stick", "alice", false));
+    assert_eq!(alice.store.list_my_jams().unwrap()[0].subscriber_count, 2);
+    assert!(bob.store.list_conversations().unwrap().iter().all(|c| !c.id.starts_with("jam:")), "a jam is not a chat in the list");
+
+    // Five posts reach both; the markdown is the core's written form.
+    for n in 1..=5 {
+        publish(&alice, &jam, &format!("post {n}"), "free");
+    }
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    let titles: Vec<String> = (1..=5).map(|n| format!("post {n}")).collect();
+    assert_eq!(jam_posts_of(&bob, &jam), titles);
+    assert_eq!(jam_posts_of(&carol, &jam), titles);
+    let read = bob.store.list_jam_posts(jam.clone()).unwrap();
+    assert_eq!((read[0].markdown.as_str(), read[0].author.as_str(), read[0].tier.as_str()), ("The words of **post 1**", "alice", "free"));
+    assert_eq!(bob.store.read_jam_post(read[0].post_id.clone()).unwrap().unwrap().plain, "The words of post 1");
+
+    // A fourth person joins later: the welcome carries the keys of every session, and the old posts follow. They read all five, and the next.
+    join_jam(&alice, &dave, &jam, &transport);
+    deliver(&alice, &transport);
+    sync(&dave, &transport);
+    assert_eq!(jam_posts_of(&dave, &jam), titles, "the whole archive");
+    publish(&alice, &jam, "post 6", "free");
+    deliver(&alice, &transport);
+    for p in [&bob, &carol, &dave] {
+        sync(p, &transport);
+        assert_eq!(jam_posts_of(p, &jam).len(), 6);
+    }
+    // A join did not rotate anything: one session for all six posts.
+    let sessions: i64 = alice.store.lock().query_row("SELECT COUNT(*) FROM jam_sessions WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
+    assert_eq!(sessions, 1);
+}
+
+#[test]
+fn removing_a_subscriber_rotates_the_session_and_they_cannot_read_what_follows() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    join_jam(&alice, &carol, &jam, &transport);
+    publish(&alice, &jam, "before", "free");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    let first_session: String = alice.store.lock().query_row("SELECT session_id FROM jam_outbound WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
+
+    alice.store.remove_jam_subscriber(jam.clone(), bob.user.clone()).unwrap();
+    publish(&alice, &jam, "after", "free");
+    let second_session: String = alice.store.lock().query_row("SELECT session_id FROM jam_outbound WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
+    assert_ne!(first_session, second_session, "a removal rotates");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    assert_eq!(jam_posts_of(&carol, &jam), vec!["before", "after"]);
+    assert_eq!(jam_posts_of(&bob, &jam), vec!["before"], "the removed phone keeps what it has and cannot read post 'after'");
+    assert_eq!(bob.store.jam(jam.clone()).unwrap().unwrap().status, "removed");
+    // They cannot come back by asking again.
+    join_jam(&alice, &bob, &jam, &transport);
+    assert_eq!(alice.store.list_jam_subscribers(jam.clone()).unwrap().iter().find(|s| s.user_id == "bob").unwrap().status, "removed");
+    assert_eq!(bob.store.jam(jam.clone()).unwrap().unwrap().status, "removed");
+}
+
+#[test]
+fn a_hundred_posts_rotate_the_session_and_everyone_keeps_reading() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    for n in 0..101 {
+        publish(&alice, &jam, &format!("p{n}"), "free");
+    }
+    let sessions: i64 = alice.store.lock().query_row("SELECT COUNT(*) FROM jam_sessions WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
+    assert_eq!(sessions, 2, "the 101st post is under a new session");
+    deliver(&alice, &transport);
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&bob, &transport);
+    assert_eq!(jam_posts_of(&bob, &jam).len(), 101);
+}
+
+#[test]
+fn a_subscribers_only_post_is_withheld_from_free_subscribers() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    join_jam(&alice, &carol, &jam, &transport);
+    // Carol is a paying subscriber (payments themselves come later): she gets the subscribers' session too.
+    alice.store.lock().execute("UPDATE jam_subscribers SET tier = 'subscribers' WHERE jam_id = ?1 AND user_id = 'carol'", params![jam]).unwrap();
+    publish(&alice, &jam, "for everyone", "free");
+    publish(&alice, &jam, "for subscribers", "subscribers");
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    sync(&carol, &transport);
+    assert_eq!(jam_posts_of(&bob, &jam), vec!["for everyone"]);
+    assert_eq!(jam_posts_of(&carol, &jam), vec!["for everyone", "for subscribers"]);
+}
+
+#[test]
+fn a_post_from_anyone_but_the_writer_is_not_kept() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (mallory, _) = party(&server, "mallory", 3);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    // Mallory sends Bob a "welcome" with a session of her own, as if she were the writer.
+    let state = mallory.store.load_or_create_account().unwrap();
+    let session = vodozemac::megolm::GroupSession::new(vodozemac::megolm::SessionConfig::version_1());
+    let payload = serde_json::json!({ "jam_id": jam, "sessions": [{ "session_id": session.session_id(), "tier": "free", "key": session.session_key().to_base64() }] });
+    {
+        let conn = mallory.store.lock();
+        let op = crate::client::jam::signed_op(&conn, &state, "jam.session", &jam, None, payload, crate::store::now_ms()).unwrap();
+        crate::store::groups::enqueue(&conn, &jam, &bob.user, &op.to_json().to_string()).unwrap();
+    }
+    deliver(&mallory, &transport);
+    sync(&bob, &transport);
+    let kept: i64 = bob.store.lock().query_row("SELECT COUNT(*) FROM jam_inbound WHERE session_id = ?1", params![session.session_id()], |r| r.get(0)).unwrap();
+    assert_eq!(kept, 0, "a session key from someone who is not the jam's writer is ignored");
+    assert!(jam_posts_of(&bob, &jam).is_empty());
+}
+
+#[test]
+fn the_thousand_and_first_subscriber_gets_a_polite_full_and_a_jam_needs_a_free_tier() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    {
+        let conn = alice.store.lock();
+        for n in 0..1000 {
+            conn.execute("INSERT INTO jam_subscribers (jam_id, user_id, since) VALUES (?1, ?2, 1)", params![jam, format!("u{n}")]).unwrap();
+        }
+    }
+    join_jam(&alice, &bob, &jam, &transport);
+    assert_eq!(bob.store.jam(jam.clone()).unwrap().unwrap().status, "full");
+    assert_eq!(alice.store.list_my_jams().unwrap()[0].subscriber_count, 1000);
+    // A jam made through the API always has the free tier; a title is required.
+    assert!(alice.store.create_jam("  ".into(), "".into(), vec![]).is_err());
+    assert_eq!(alice.store.list_my_jams().unwrap()[0].tiers, vec!["free".to_owned(), "subscribers".to_owned()]);
+}
+
+#[test]
+fn ending_a_jam_stops_posts_and_tells_the_subscribers() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    publish(&alice, &jam, "last", "free");
+    alice.store.update_jam(jam.clone(), "Renamed".into(), "About".into(), vec!["Reading".into()]).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert_eq!(bob.store.jam(jam.clone()).unwrap().unwrap().title, "Renamed");
+    alice.store.end_jam(jam.clone()).unwrap();
+    assert!(alice.store.publish_jam_post(jam.clone(), "no".into(), "no".into(), "free".into(), "[]".into()).is_err());
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    assert!(bob.store.jam(jam.clone()).unwrap().unwrap().ended);
+    assert_eq!(jam_posts_of(&bob, &jam), vec!["last"], "they keep what they have");
+}
+
+
+#[test]
+fn a_post_reaches_a_thousand_subscribers_with_two_devices_each_in_chunks_and_the_queue_survives_a_restart() {
+    let started = std::time::Instant::now();
+    let server = FakeServer::new();
+    // The writer, on a known folder so the app can be "restarted" (the store closed and opened again).
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lime.db").to_string_lossy().into_owned();
+    let transport: Arc<dyn Transport> = server.clone();
+    let token = FakeServer::token("writer");
+    let store = LimeStore::open(path.clone(), vec![9; 32]).unwrap();
+    store.register_device(transport.clone(), token.clone()).unwrap();
+    let jam = store.create_jam("Big jam".into(), "".into(), vec![]).unwrap().strip_prefix("jam:").unwrap().to_owned();
+    // A thousand teachers, each with two phones.
+    let mut devices: Vec<String> = Vec::new();
+    let mut people: Vec<Party> = Vec::new();
+    for n in 0..1000 {
+        let (p, _) = party(&server, &format!("s{n:04}"), 20);
+        devices.push(p.device.clone());
+        devices.push(add_linked_device(&server, &p));
+        people.push(p);
+    }
+    let set_up = started.elapsed();
+    {
+        let conn = store.lock();
+        for n in 0..1000 {
+            conn.execute("INSERT INTO jam_subscribers (jam_id, user_id, since) VALUES (?1, ?2, ?3)", params![jam, format!("s{n:04}"), n]).unwrap();
+        }
+    }
+    store.publish_jam_post(jam.clone(), "One post".into(), "To everyone".into(), "free".into(), "[]".into()).unwrap();
+    let progress = store.jam_send_progress(jam.clone()).unwrap();
+    assert_eq!((progress.pending, progress.total), (1000, 1000), "queued for all, nothing sent yet");
+
+    // The first pass sends the first 500 and stops; the app is "restarted"; the next pass resumes where it was.
+    let sent_before = server.state.lock().unwrap().sent.len();
+    store.deliver_queued(transport.clone(), token.clone()).unwrap();
+    let progress = store.jam_send_progress(jam.clone()).unwrap();
+    assert_eq!((progress.pending, progress.total), (500, 1000), "sending to 500 of 1,000");
+    drop(store);
+    let store = LimeStore::open(path, vec![9; 32]).unwrap();
+    assert_eq!(store.jam_send_progress(jam.clone()).unwrap().pending, 500, "the queue is in the store: it survived the restart");
+    store.deliver_queued(transport.clone(), token.clone()).unwrap();
+    assert_eq!(store.jam_send_progress(jam.clone()).unwrap().pending, 0);
+
+    // The post's ciphertext went out in chunks of 100 devices; the Olm requests are the session key given to each device once (a jam's first post).
+    let wire: String = store.lock().query_row("SELECT wire FROM jam_posts WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
+    let state_sent: Vec<Value> = server.state.lock().unwrap().sent[sent_before..].to_vec();
+    let post_sends: Vec<usize> = state_sent.iter().filter(|b| b["ciphertext"].as_str() == Some(wire.as_str())).map(|b| b["recipients"].as_array().map_or(0, Vec::len)).collect();
+    println!(
+        "the post: {} send requests (largest {} devices) for 2,000 devices; plus {} Olm requests handing each device the session key once; setup {:?}, whole test {:?}",
+        post_sends.len(), post_sends.iter().max().unwrap(), state_sent.len() - post_sends.len(), set_up, started.elapsed()
+    );
+    assert!(state_sent.iter().all(|b| b["recipients"].as_array().map_or(0, Vec::len) <= 500), "the server's cap of 500 devices per request holds");
+    assert!(post_sends.iter().all(|n| *n <= 100), "in chunks of at most 100");
+    assert_eq!(post_sends.iter().sum::<usize>(), 2000, "every device was named once");
+    let mut arrived: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for item in server.state.lock().unwrap().mailbox.iter().filter(|m| m.2 == wire) {
+        *arrived.entry(item.1.clone()).or_default() += 1;
+    }
+    assert_eq!(arrived.len(), 2000, "every device has the post");
+    assert!(arrived.values().all(|n| *n == 1), "exactly once");
+    assert!(devices.iter().all(|d| arrived.contains_key(d)));
+    drop(people);
 }

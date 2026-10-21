@@ -571,6 +571,83 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE people ADD COLUMN username_at INTEGER NOT NULL DEFAULT 0;
      CREATE TABLE my_username (id INTEGER PRIMARY KEY CHECK (id = 1), username TEXT, version INTEGER NOT NULL);
      CREATE TABLE username_sent (peer_user_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL);",
+    // 40 (LIME-186): jam. `jams` holds both the jams I write (`mine`) and the ones I follow; `jam_subscribers`, `jam_sessions` (the first-index key
+    // of every session I made, encrypted) and `jam_outbound` are the writer's; `jam_inbound` the subscriber's; `jam_posts` both (`wire` is the
+    // writer's own ciphertext, for the archive); `jam_wire_outbox` is the persistent send queue, one row per post and subscriber.
+    "CREATE TABLE jams (
+         jam_id    TEXT PRIMARY KEY NOT NULL,
+         writer    TEXT NOT NULL,
+         title     TEXT NOT NULL,
+         about     TEXT NOT NULL DEFAULT '',
+         topics    TEXT NOT NULL DEFAULT '[]',
+         tiers     TEXT NOT NULL DEFAULT '[\"free\"]',
+         state_hlc TEXT NOT NULL DEFAULT '',
+         mine      INTEGER NOT NULL DEFAULT 0,
+         status    TEXT NOT NULL,
+         ended     INTEGER NOT NULL DEFAULT 0,
+         created   INTEGER NOT NULL
+     );
+     CREATE TABLE jam_subscribers (
+         jam_id     TEXT NOT NULL,
+         user_id    TEXT NOT NULL,
+         since      INTEGER NOT NULL,
+         tier       TEXT NOT NULL DEFAULT 'free',
+         status     TEXT NOT NULL DEFAULT 'active',
+         removed_at INTEGER,
+         PRIMARY KEY (jam_id, user_id)
+     );
+     CREATE TABLE jam_sessions (
+         session_id TEXT PRIMARY KEY NOT NULL,
+         jam_id     TEXT NOT NULL,
+         tier       TEXT NOT NULL,
+         first_key  TEXT NOT NULL,
+         created    INTEGER NOT NULL,
+         rotated_at INTEGER
+     );
+     CREATE TABLE jam_outbound (
+         jam_id     TEXT NOT NULL,
+         tier       TEXT NOT NULL,
+         pickle     TEXT NOT NULL,
+         session_id TEXT NOT NULL,
+         created_at INTEGER NOT NULL,
+         posts      INTEGER NOT NULL,
+         rotate     INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (jam_id, tier)
+     );
+     CREATE TABLE jam_inbound (
+         session_id   TEXT PRIMARY KEY NOT NULL,
+         jam_id       TEXT NOT NULL,
+         owner_user   TEXT NOT NULL,
+         owner_device TEXT NOT NULL,
+         tier         TEXT NOT NULL,
+         pickle       TEXT NOT NULL
+     );
+     CREATE TABLE jam_posts (
+         post_id      TEXT PRIMARY KEY NOT NULL,
+         jam_id       TEXT NOT NULL,
+         author       TEXT NOT NULL,
+         session_id   TEXT NOT NULL,
+         idx          INTEGER NOT NULL,
+         tier         TEXT NOT NULL,
+         title        TEXT NOT NULL,
+         markdown     TEXT NOT NULL,
+         plain        TEXT NOT NULL,
+         attachments  TEXT NOT NULL DEFAULT '[]',
+         created      INTEGER NOT NULL,
+         deleted_at   INTEGER,
+         wire         TEXT,
+         fanout_total INTEGER NOT NULL DEFAULT 0
+     );
+     CREATE INDEX jam_posts_by_jam ON jam_posts (jam_id, created);
+     CREATE TABLE jam_wire_outbox (
+         id       INTEGER PRIMARY KEY AUTOINCREMENT,
+         jam_id   TEXT NOT NULL,
+         post_id  TEXT NOT NULL,
+         recipient TEXT NOT NULL,
+         attempts INTEGER NOT NULL DEFAULT 0,
+         next_at  INTEGER NOT NULL DEFAULT 0
+     );
+     CREATE INDEX jam_wire_outbox_by_post ON jam_wire_outbox (post_id, id);",
 ];
 
 /// The schema version this build writes.

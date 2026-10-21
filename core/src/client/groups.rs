@@ -616,7 +616,7 @@ impl LimeStore {
     /// One ciphertext, many recipients: everyone we hold a delivery key for goes sealed (no token), everyone else
     /// identified. A sealed request the server refuses is retried person by person, and a refused person is sent
     /// identified (LIME-96-fix).
-    fn send_group_wire(
+    pub(super) fn send_group_wire(
         &self,
         transport: &Arc<dyn Transport>,
         token: &str,
@@ -815,6 +815,10 @@ impl LimeStore {
             return Ok(Outcome::Keep(pending::INVALID));
         };
         let Ok(message) = MegolmMessage::from_base64(cipher) else { return Ok(Outcome::Keep(pending::INVALID)) };
+        // A jam's post (LIME-186): its session is the writer's, kept in the jam tables.
+        if let Some(jam_inbound) = self.with_conn(|conn| crate::store::jam::load_inbound(conn, &self.pickle_key, session_id))? {
+            return self.process_jam_message(me, session_id, &message, jam_inbound, now);
+        }
         let Some(mut inbound) = self.with_conn(|conn| groups::load_inbound(conn, &self.pickle_key, session_id))? else {
             return Ok(Outcome::Keep(pending::NO_SESSION));
         };
