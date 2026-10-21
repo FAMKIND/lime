@@ -7,11 +7,11 @@ final class JamArticleTests: XCTestCase {
 
     func testAPictureInsertedAtTheCaretBecomesAnImageBlockOfItsOwn() {
         let text = NSMutableAttributedString(string: "Before after")
-        let caret = ComposerDocument.insertImage(pixel(), index: 0, into: text, at: 6, width: 300)
+        let caret = ComposerDocument.insertImage(pixel(), index: 0, into: text, at: 7, width: 300)
         XCTAssertEqual(ComposerDocument.imageIndexes(in: text), [0])
         let markdown = ComposerDocument.markdown(from: text)
         XCTAssertEqual(markdown, "Before\n\n![](attachment:0)\n\nafter", "its own paragraph, between the words either side of the caret")
-        XCTAssertGreaterThan(caret, 6)
+        XCTAssertGreaterThan(caret, 7)
         XCTAssertFalse(markdown.contains("\u{FFFC}"), "the placeholder character never reaches the text")
     }
 
