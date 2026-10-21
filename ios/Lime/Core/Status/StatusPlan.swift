@@ -2,14 +2,19 @@ import Foundation
 
 /// The three statuses a teacher can have (LIME-108).
 enum UserStatus: String, CaseIterable, Identifiable, Codable, Sendable {
-    case available, away, dnd
+    case available, away, dnd, offline
     var id: String { rawValue }
     var title: String {
         switch self {
         case .available: "Available"
         case .away: "Away"
         case .dnd: "Do not disturb"
+        case .offline: "Offline"
         }
+    }
+    /// A line under the title in the status sheet, where the choice needs one.
+    var detail: String? {
+        self == .offline ? "Shown as offline. Messages and calls still arrive." : nil
     }
 }
 
@@ -93,6 +98,7 @@ struct StatusPlan: Equatable, Sendable {
         switch state {
         case .available: return nil
         case .away: return "Away"
+        case .offline: return "Offline"
         case .dnd:
             guard let until, until > now else { return "Do not disturb" }
             let time = until.formatted(date: .omitted, time: .shortened)

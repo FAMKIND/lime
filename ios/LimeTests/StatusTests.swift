@@ -113,3 +113,27 @@ final class QuietNotificationTests: XCTestCase {
         XCTAssertTrue(notifications.held.isEmpty, "a stranger's request is not summarised")
     }
 }
+
+/// LIME-180: the Offline status.
+final class OfflineStatusTests: XCTestCase {
+    func testOfflineIsTheFourthChoiceAfterAwayAndRoundTrips() {
+        XCTAssertEqual(UserStatus.allCases.map(\.rawValue), ["available", "away", "dnd", "offline"])
+        XCTAssertEqual(UserStatus(rawValue: "offline"), .offline)
+        XCTAssertEqual(UserStatus.offline.title, "Offline")
+        XCTAssertEqual(UserStatus.offline.detail, "Shown as offline. Messages and calls still arrive.")
+        XCTAssertNil(UserStatus.available.detail)
+        let data = try? JSONEncoder().encode(ManualStatus(state: .offline, until: nil))
+        XCTAssertEqual(data.flatMap { try? JSONDecoder().decode(ManualStatus.self, from: $0) }?.state, .offline)
+    }
+
+    func testOfflineDoesNotQuietNotificationsOrCalls() {
+        XCTAssertFalse(StatusPlan(state: .offline).isQuiet, "unlike Do not disturb, messages and calls still arrive")
+    }
+
+    func testOfflineUntilAnHourThenTheScheduleTakesOver() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let plan = StatusPlan.make(manual: ManualStatus(state: .offline, until: now.addingTimeInterval(3600)), hours: WorkHours(), now: now)
+        XCTAssertEqual(plan.state, .offline)
+        XCTAssertEqual(plan.thenState, .available)
+    }
+}

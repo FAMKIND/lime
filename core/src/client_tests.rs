@@ -5058,3 +5058,18 @@ fn someone_who_never_shared_a_username_is_not_told_that_it_is_gone() {
     sync(&bob, &transport);
     assert_eq!(bob.store.shared_username(alice.user.clone()), None);
 }
+
+#[test]
+fn an_offline_status_is_sent_kept_and_hands_over_like_the_others() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    befriend(&alice, &bob, &transport);
+    let now = 2_000_000_i64;
+    alice.store.set_my_status(crate::StatusInfo { state: "offline".into(), until: Some(now + 1000), then_state: Some("available".into()), then_until: None }).unwrap();
+    deliver(&alice, &transport);
+    sync(&bob, &transport);
+    let of = |at: i64| bob.store.contact_statuses(at).unwrap().into_iter().map(|c| (c.user_id, c.state)).collect::<Vec<_>>();
+    assert_eq!(of(now), vec![(alice.user.clone(), "offline".to_owned())]);
+    assert_eq!(of(now + 1001), vec![(alice.user.clone(), "available".to_owned())]);
+}

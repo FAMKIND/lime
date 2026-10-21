@@ -1,4 +1,4 @@
-//! Status (LIME-108): Available, Away or Do not disturb, shared only with accepted contacts as a small encrypted control op
+//! Status (LIME-108, Offline LIME-180): Available, Away, Do not disturb or Offline, shared only with accepted contacts as a small encrypted control op
 //! (`status.changed`). There is no live presence and no "last seen", and the server never learns a status: a phone only
 //! remembers what each contact last told it, and works out what is true now from the `until` times they sent.
 
@@ -9,7 +9,7 @@ use super::{db_err, LimeStore, StoreError};
 
 pub(crate) const STATUS_CHANGED: &str = "status.changed";
 
-const STATES: [&str; 3] = ["available", "away", "dnd"];
+const STATES: [&str; 4] = ["available", "away", "dnd", "offline"];
 
 /// A status and when it ends, with what follows it (so a schedule such as work hours keeps working while the phone is off).
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -170,7 +170,16 @@ mod tests {
     }
 
     #[test]
-    fn only_the_three_states_are_accepted_and_they_survive_a_round_trip() {
+    fn offline_is_a_state_like_the_others_and_hands_over_by_then() {
+        let offline = StatusInfo { state: "offline".into(), until: Some(100), then_state: Some("available".into()), then_until: None };
+        assert_eq!(parse(&payload(&offline)), Some(offline.clone()), "kept and round-trips");
+        assert_eq!(effective(&offline, 50).as_deref(), Some("offline"));
+        assert_eq!(effective(&offline, 100).as_deref(), Some("available"), "Offline until 7 am, then Available");
+        assert!(parse(&json!({ "state": "invisible" })).is_none(), "an unknown state is still not kept");
+    }
+
+    #[test]
+    fn only_the_four_states_are_accepted_and_they_survive_a_round_trip() {
         assert!(parse(&json!({ "state": "busy" })).is_none());
         assert!(parse(&json!({})).is_none());
         let s = StatusInfo { state: "dnd".into(), until: Some(5), then_state: Some("away".into()), then_until: None };

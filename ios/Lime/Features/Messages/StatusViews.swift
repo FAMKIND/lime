@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The status icon in a cut-out notch at an avatar's bottom-right: a green dot (available), a yellow moon (away), or a red badge
-/// with a "z" (do not disturb). Nothing for a contact who has not shared one.
+/// The status icon in a cut-out notch at an avatar's bottom-right: a green dot (available), a yellow moon (away), a red badge
+/// with a "z" (do not disturb), or a hollow grey ring (offline, LIME-180). Nothing for a contact who has not shared one.
 struct StatusBadge: View {
     let state: UserStatus
     var size: CGFloat = 16
@@ -20,6 +20,9 @@ struct StatusBadge: View {
             case .dnd:
                 Circle().fill(Color(red: 0.88, green: 0.28, blue: 0.30)).frame(width: size - 1, height: size - 1)
                     .overlay(Text("z").font(.system(size: size * 0.72, weight: .black, design: .rounded)).foregroundStyle(.white).offset(y: -0.5))
+            case .offline:
+                // Hollow, not filled: the cue is the shape, not only the colour (WCAG 1.4.11), and the notch behind it gives it contrast.
+                Circle().strokeBorder(Theme.textSecondary, lineWidth: max(1.5, size * 0.18)).frame(width: size - 1, height: size - 1)
             }
         }
         .frame(width: size + 4, height: size + 4)
@@ -86,7 +89,7 @@ struct StatusSheet: View {
                     Text("Only people you chat with can see it. There is no last seen.").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                     SettingsCard {
                         ForEach(UserStatus.allCases) { status in
-                            row(status.title, selected: current == status, id: "status-\(status.rawValue)", badge: status) { set(status, until: nil) }
+                            row(status.title, detail: status.detail, selected: current == status, id: "status-\(status.rawValue)", badge: status) { set(status, until: nil) }
                         }
                     }
                     SettingsFootnote(text: "Quiet until…")
@@ -129,11 +132,14 @@ struct StatusSheet: View {
         .accessibilityIdentifier("status-sheet")
     }
 
-    private func row(_ title: String, selected: Bool, id: String, badge: UserStatus? = nil, action: @escaping () -> Void) -> some View {
+    private func row(_ title: String, detail: String? = nil, selected: Bool, id: String, badge: UserStatus? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 if let badge { StatusBadge(state: badge, size: 18) }
-                Text(title).font(Theme.body).foregroundStyle(Theme.text)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Theme.body).foregroundStyle(Theme.text)
+                    if let detail { Text(detail).font(Theme.secondary).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true) }
+                }
                 Spacer()
                 if selected { Image(systemName: "checkmark").font(.system(size: 16, weight: .bold)).foregroundStyle(Theme.text) }
             }
