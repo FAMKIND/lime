@@ -35,9 +35,38 @@ struct JamPage: View {
         }
     }
 
+    /// Someone asks to credit me on their post: a calm prompt at the top of the feed.
+    private var requests: some View {
+        VStack(spacing: 8) {
+            ForEach(store.jamRequests, id: \.postId) { request in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("\(store.teacherName(request.writer)) added you as co-author of \u{201C}\(request.title)\u{201D}").font(Theme.body).foregroundStyle(Theme.text)
+                        .accessibilityIdentifier("jam-request-\(request.postId)")
+                    HStack(spacing: 10) {
+                        Button { Task { await store.answerCoauthorRequest(request, accept: true) } } label: {
+                            Text("Accept").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.accentInk).padding(.horizontal, 18).frame(minHeight: 44).background(Theme.accent, in: Capsule())
+                        }
+                        .accessibilityIdentifier("jam-request-accept-\(request.postId)")
+                        Button { Task { await store.answerCoauthorRequest(request, accept: false) } } label: {
+                            Text("Decline").font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text).padding(.horizontal, 18).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+                        }
+                        .accessibilityIdentifier("jam-request-decline-\(request.postId)")
+                    }
+                }
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .padding(.horizontal, 16).padding(.top, store.jamRequests.isEmpty ? 0 : 8)
+    }
+
     private var feed: some View {
         let posts = store.jamFeed
-        return Group {
+        return VStack(spacing: 0) { requests; feedBody(posts) }
+    }
+
+    private func feedBody(_ posts: [JamPostInfo]) -> some View {
+        Group {
             if posts.isEmpty {
                 VStack {
                     Spacer()
@@ -83,7 +112,8 @@ struct JamPostCard: View {
                         AvatarView(person: writer, size: 40).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                            Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                            Text([store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                                .accessibilityIdentifier("jam-card-byline-\(post.postId)")
                         }
                         Spacer(minLength: 0)
                     }
@@ -93,7 +123,8 @@ struct JamPostCard: View {
                 .accessibilityLabel("\(writer.name), \(JamDates.text(post.created))").accessibilityHint("Opens their profile")
                 .accessibilityIdentifier("jam-card-writer-\(post.postId)")
             } else {
-                Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                Text([store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("jam-card-byline-\(post.postId)")
             }
             Button { openPost() } label: { content.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
                 .buttonStyle(.plain)

@@ -28,6 +28,9 @@ struct JamComposeSheet: View {
     @State private var recordTitle = ""
     @State private var recordMode: Int?
     @State private var chooser: Chooser?
+    @State private var coauthors: [Person] = []
+    @State private var choosingCoauthors = false
+    @State private var postingAs = false
     @State private var article = JamDraft.shared.article
     @State private var title = JamDraft.shared.title
     @State private var subtitle = JamDraft.shared.subtitle
@@ -62,7 +65,7 @@ struct JamComposeSheet: View {
                         RichComposerField(model: composer, maxHeight: geo.size.height, fills: true)
                             .onAppear { composer.hasText = false }
                         if !composer.hasText {
-                            Text(article ? "Start writing an article\u{2026}" : "What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.textSecondary)
+                            Text(article ? "Start writing an article\u{2026}" : "What\u{2019}s on your mind?").font(Theme.body).foregroundStyle(Theme.placeholder)
                                 .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
                         }
                     }
@@ -80,6 +83,7 @@ struct JamComposeSheet: View {
                     Button("Post") { post() }.fontWeight(.semibold).disabled(!canPost).accessibilityIdentifier("jam-post")
                 }
             }
+            .sheet(isPresented: $choosingCoauthors) { JamCoauthorPicker(selected: $coauthors) }
             .sheet(item: Binding(get: { recordMode.map(RecordMode.init) }, set: { recordMode = $0?.mode })) { mode in
                 JamRecorderSheet(title: $recordTitle, initialMode: mode.mode) { clips.append($0) }
             }
@@ -111,32 +115,63 @@ struct JamComposeSheet: View {
     // MARK: Heads
 
     private var quickHead: some View {
-        HStack(spacing: 10) {
-            AvatarView(person: store.meProvider(), size: 36).accessibilityHidden(true)
-            Text(store.meProvider().name).font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.text)
-            Spacer()
+        VStack(alignment: .leading, spacing: 8) {
+            postAsChip
+            coauthorChips
         }
         .padding(.horizontal, 20).padding(.top, 12)
+    }
+
+    /// Who the post is from (LIME-188f): you, for now; the sheet is built to list a school or subject group later, when shared jams exist.
+    private var postAsChip: some View {
+        Button { postingAs = true } label: {
+            HStack(spacing: 8) {
+                AvatarView(person: store.meProvider(), size: 32).accessibilityHidden(true)
+                Text(store.meProvider().name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
+                Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.leading, 4).padding(.trailing, 12).frame(minHeight: 44).background(Theme.surface, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Posting as \(store.meProvider().name)").accessibilityHint("Choose who this post is from").accessibilityIdentifier("jam-post-as")
+        .sheet(isPresented: $postingAs) { PostAsSheet() }
+    }
+
+    @ViewBuilder
+    private var coauthorChips: some View {
+        if !coauthors.isEmpty {
+            HStack(spacing: 6) {
+                Text("With").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                ForEach(coauthors) { person in
+                    Button { coauthors.removeAll { $0.id == person.id } } label: {
+                        Label(person.name, systemImage: "xmark.circle.fill").font(Theme.secondary).foregroundStyle(Theme.text)
+                            .padding(.horizontal, 10).frame(minHeight: 36).background(Theme.surface, in: Capsule())
+                    }
+                    .accessibilityLabel("Remove co-author \(person.name)").accessibilityIdentifier("jam-coauthor-\(person.id)")
+                }
+            }
+        }
     }
 
     /// Title (large, up to 120), then a short subtitle (up to 160): Return in either moves on, neither ever holds the article.
     private var articleHead: some View {
         VStack(alignment: .leading, spacing: 4) {
-            TextField("Title", text: $title, axis: .vertical).font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
+            postAsChip.padding(.bottom, 4)
+            coauthorChips.padding(.bottom, 4)
+            TextField("Title", text: $title, prompt: Text("Title").foregroundColor(Theme.placeholder), axis: .vertical).font(Theme.font(.title2, weight: .bold)).lineLimit(1...3)
                 .focused($focus, equals: .title).submitLabel(.next).onSubmit { focus = .subtitle }
                 .onChange(of: title) { _, now in
                     if now.contains("\n") { title = now.replacingOccurrences(of: "\n", with: ""); focus = .subtitle }
                     else if now.count > Self.maxTitle { title = String(now.prefix(Self.maxTitle)) }
                 }
                 .accessibilityLabel("Title").accessibilityIdentifier("jam-article-title")
-            TextField("Add a subtitle\u{2026}", text: $subtitle, axis: .vertical).font(Theme.font(.body)).foregroundStyle(Theme.textSecondary).lineLimit(1...2)
+            TextField("Add a subtitle\u{2026}", text: $subtitle, prompt: Text("Add a subtitle\u{2026}").foregroundColor(Theme.placeholder), axis: .vertical).font(Theme.font(.body)).foregroundStyle(Theme.textSecondary).lineLimit(1...2)
                 .focused($focus, equals: .subtitle).submitLabel(.next).onSubmit { toBody() }
                 .onChange(of: subtitle) { _, now in
                     if now.contains("\n") { subtitle = now.replacingOccurrences(of: "\n", with: ""); toBody() }
                     else if now.count > Self.maxSubtitle { subtitle = String(now.prefix(Self.maxSubtitle)) }
                 }
                 .accessibilityLabel("Subtitle").accessibilityIdentifier("jam-article-subtitle")
-            Divider().overlay(Theme.hairline).padding(.top, 6)
         }
         .padding(.horizontal, 20).padding(.top, 12)
     }
@@ -201,9 +236,10 @@ struct JamComposeSheet: View {
                 tool("camera", "Camera", id: "jam-add-camera") { choose(.camera) }
                 if article { tool("paperclip", "Add a file", id: "jam-add-file") { choose(.files) } }
                 tool("textformat", "Formatting", id: "jam-format", on: composer.toolbarVisible) { composer.formattingTapped() }
+                tool("person.badge.plus", "Add co-author", id: "jam-add-coauthor", on: !coauthors.isEmpty) { choosingCoauthors = true }
                 if !article { tool("mic", "Record your voice", id: "jam-add-voice") { recordMode = 1 } }
                 Spacer()
-                if article { chipPlain("Exit article mode", id: "jam-exit-article") { article = false } }
+                if article { chipPlain("Exit article", id: "jam-exit-article") { article = false } }
                 tool(composer.editing ? "keyboard.chevron.compact.down" : "keyboard", composer.editing ? "Hide keyboard" : "Show keyboard", id: "jam-hide-keyboard") { composer.toggleKeyboard() }
             }
             .padding(.horizontal, 8).frame(minHeight: 48)
@@ -240,7 +276,10 @@ struct JamComposeSheet: View {
         if store.isDemo {
             Task {
                 if which == .files { insertIntoArticle(OutgoingAttachment(bytes: Data("demo".utf8), name: "Permission slip.pdf", mime: "application/pdf", width: nil, height: nil, durationMs: nil, thumb: Data(), poster: Data()), preview: Self.fileCard(named: "Permission slip.pdf")) }
-                else { await picked(images: [UIImage(data: store.demoJamImage("p")!)!], videos: []) }
+                else if which == .camera, article {
+                    let clip = ChatComposer.demoVideoDraft
+                    insertIntoArticle(clip.outgoing, preview: clip.preview ?? Self.fileCard(named: "Video"))
+                } else { await picked(images: [UIImage(data: store.demoJamImage("p")!)!], videos: []) }
             }
             return
         }
@@ -268,8 +307,14 @@ struct JamComposeSheet: View {
         }
         for url in videos {
             defer { try? FileManager.default.removeItem(at: url) }
-            if article { problem = "Videos go in a recording. Use Record on a new post."; continue }
-            if let made = try? await VideoProcessing.prepare(url, progress: { _ in }) { clips.append(made.item) } else { problem = "Couldn\u{2019}t use that video." }
+            guard let made = try? await VideoProcessing.prepare(url, progress: { _ in }) else { problem = "Couldn\u{2019}t use that video."; continue }
+            if article {
+                // A video stands in the text like a photo (its cover frame shows while you write).
+                guard articleFiles.count < 10 else { problem = ConversationStore.JamPostFailure.tooManyFiles.message; continue }
+                insertIntoArticle(made.item, preview: made.poster ?? Self.fileCard(named: made.item.name))
+            } else {
+                clips.append(made.item)
+            }
         }
     }
 
@@ -340,7 +385,7 @@ struct JamComposeSheet: View {
         problem = nil
         posting = true
         Task {
-            let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : "", markdown: markdown, items: files, about: session.profile?.aboutText ?? "")
+            let result = await store.publishJamPost(kind: kind, title: headline, subtitle: article ? subtitle : "", markdown: markdown, items: files, coauthors: coauthors.map(\.id), about: session.profile?.aboutText ?? "")
             posting = false
             switch result {
             case .success: JamDraft.shared.clear(); dismiss()
@@ -454,5 +499,76 @@ struct JamRecorderSheet: View {
                                           durationMs: UInt32(note.durationMs), thumb: Data(note.waveform), poster: Data())
             }
         }
+    }
+}
+
+/// Who the post is from (LIME-188f): you. A school or subject group will be listed here when shared jams exist.
+struct PostAsSheet: View {
+    @Environment(ConversationStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Button { dismiss() } label: {
+                    HStack(spacing: 12) {
+                        AvatarView(person: store.meProvider(), size: 40).accessibilityHidden(true)
+                        Text(store.meProvider().name).font(Theme.body).foregroundStyle(Theme.text)
+                        Spacer()
+                        Image(systemName: "checkmark").foregroundStyle(Theme.text)
+                    }
+                    .frame(minHeight: 48)
+                }
+                .accessibilityLabel("\(store.meProvider().name), selected").accessibilityIdentifier("jam-post-as-me")
+                Text("Posting as a school or a subject group comes with shared jams.").font(Theme.caption).foregroundStyle(Theme.textSecondary)
+            }
+            .navigationTitle("Post as").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
+/// Add co-authors (or co-hosts) from your contacts (LIME-188f/g): each is asked, and the credit shows once they accept.
+struct JamCoauthorPicker: View {
+    @Binding var selected: [Person]
+    @Environment(ConversationStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+
+    private var people: [Person] {
+        let all = store.coauthorChoices
+        let q = query.trimmingCharacters(in: .whitespaces)
+        return q.isEmpty ? all : all.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(people) { person in
+                let on = selected.contains { $0.id == person.id }
+                Button {
+                    if on { selected.removeAll { $0.id == person.id } } else if selected.count < 4 { selected.append(person) }
+                } label: {
+                    HStack(spacing: 12) {
+                        AvatarView(person: person, size: 40).accessibilityHidden(true)
+                        Text(person.name).font(Theme.body).foregroundStyle(Theme.text)
+                        Spacer()
+                        if on { Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.text) }
+                    }
+                    .frame(minHeight: 48)
+                }
+                .accessibilityAddTraits(on ? [.isSelected] : [])
+                .accessibilityIdentifier("jam-coauthor-choice-\(person.id)")
+            }
+            .listStyle(.plain)
+            .searchable(text: $query, prompt: "Search your contacts")
+            .overlay { if store.coauthorChoices.isEmpty { Text("Your contacts show here.").font(Theme.body).foregroundStyle(Theme.textSecondary) } }
+            .navigationTitle("Add co-author").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.fontWeight(.semibold).accessibilityIdentifier("jam-coauthor-done") } }
+            .safeAreaInset(edge: .bottom) {
+                Text("They are asked first. \u{201C}with <name>\u{201D} shows once they accept.").font(Theme.caption).foregroundStyle(Theme.textSecondary).padding(.bottom, 8)
+            }
+        }
+        .presentationDetents([.large])
     }
 }

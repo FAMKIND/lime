@@ -161,4 +161,51 @@ final class Jam188bUITests: LimeUITestCase {
         waitForExpectations(timeout: 8)
         XCTAssertTrue(app.buttons["jam-remove-lee"].exists)
     }
+
+    // MARK: LIME-188f
+
+    func testTheArticlePageHasPostAsExitArticleAndAVideoInTheTextAndACoauthor() {
+        let app = launch("jam")
+        app.buttons["new-jam-post"].tap()
+        XCTAssertEqual(app.buttons["jam-post-as"].label, "Posting as \(app.buttons["jam-post-as"].label.dropFirst("Posting as ".count))", "the chooser names who it is")
+        XCTAssertTrue(app.buttons["jam-post-as"].label.hasPrefix("Posting as "))
+        app.buttons["jam-write-article"].tap()
+        XCTAssertEqual(app.buttons["jam-exit-article"].label, "Exit article")
+        XCTAssertTrue(app.buttons["jam-post-as"].exists, "also in article mode")
+        let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
+        title.tap(); title.typeText("What is liming?")
+        title.typeText("\n")
+        app.typeText("\n")   // past the subtitle, into the body
+        let body = app.textViews["composer-field"]
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
+        waitForExpectations(timeout: 5)
+        body.typeText("Start of the article\n\n")
+        app.buttons["jam-add-photo"].tap()
+        app.buttons["jam-add-camera"].tap()   // in an article the camera button takes a video (demo: a made-up clip)
+        // A co-author.
+        app.buttons["jam-add-coauthor"].tap()
+        let sam = app.buttons["jam-coauthor-choice-sam"]
+        XCTAssertTrue(sam.waitForExistence(timeout: 5))
+        sam.tap()
+        app.buttons["jam-coauthor-done"].tap()
+        XCTAssertTrue(app.buttons["jam-coauthor-sam"].waitForExistence(timeout: 5), "a chip for the co-author")
+        app.buttons["jam-post"].tap()
+        let article = card(app, containing: "What is liming?")
+        XCTAssertTrue(article.waitForExistence(timeout: 8))
+        XCTAssertTrue(any(app, "jam-card-byline-\(article.identifier.dropFirst("jam-post-".count))").label.contains("with Sam Park"), "the card says who it is with")
+        article.tap()
+        XCTAssertTrue(any(app, "jam-inline-0").waitForExistence(timeout: 8), "the photo in place")
+        XCTAssertTrue(any(app, "jam-inline-1").waitForExistence(timeout: 8), "and the video, in place after the photo")
+        XCTAssertLessThan(any(app, "jam-inline-0").frame.minY, any(app, "jam-inline-1").frame.minY)
+    }
+
+    func testARequestToBeCreditedIsACalmPromptThatAcceptOrDeclineClears() {
+        let app = launch("jam-request")
+        let prompt = any(app, "jam-request-demo-request-post")
+        XCTAssertTrue(prompt.waitForExistence(timeout: 10))
+        XCTAssertTrue(prompt.label.contains("added you as co-author of") && prompt.label.contains("What is liming?"), prompt.label)
+        app.buttons["jam-request-accept-demo-request-post"].tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: prompt)
+        waitForExpectations(timeout: 5)
+    }
 }

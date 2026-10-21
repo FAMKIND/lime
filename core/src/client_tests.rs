@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_attachments; DROP TABLE jam_credits; DROP TABLE jam_credit_requests; DROP TABLE jam_credit_wires; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -5102,7 +5102,7 @@ fn catch_up(writer: &Party, subscribers: &[&Party], transport: &Arc<dyn Transpor
 }
 
 fn publish(writer: &Party, jam_id: &str, title: &str, tier: &str) -> String {
-    writer.store.publish_jam_post(jam_id.to_owned(), "article".into(), title.to_owned(), String::new(), format!("The words of **{title}**"), tier.to_owned(), vec![]).unwrap()
+    writer.store.publish_jam_post(jam_id.to_owned(), "article".into(), title.to_owned(), String::new(), format!("The words of **{title}**"), tier.to_owned(), vec![], vec![]).unwrap()
 }
 
 fn new_jam(writer: &Party) -> String {
@@ -5288,7 +5288,7 @@ fn ending_a_jam_stops_posts_and_tells_the_subscribers() {
     assert_eq!(bob.store.jam(jam.clone()).unwrap().unwrap().title, "Renamed");
     assert_eq!(server.state.lock().unwrap().jam_pages.get(&jam).unwrap().1, "Renamed", "the public page followed");
     alice.store.end_jam(jam.clone()).unwrap();
-    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "no".into(), String::new(), "no".into(), "free".into(), vec![]).is_err());
+    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "no".into(), String::new(), "no".into(), "free".into(), vec![], vec![]).is_err());
     catch_up(&alice, &[&bob], &transport);
     assert!(bob.store.jam(jam.clone()).unwrap().unwrap().ended);
     assert_eq!(jam_posts_of(&bob, &jam), vec!["last"], "they keep what they have");
@@ -5329,7 +5329,7 @@ fn a_post_reaches_a_thousand_subscribers_with_two_devices_each_in_chunks_and_the
             conn.execute("INSERT INTO jam_subscribers (jam_id, user_id, since) VALUES (?1, ?2, ?3)", params![jam, format!("s{n:04}"), n]).unwrap();
         }
     }
-    store.publish_jam_post(jam.clone(), "article".into(), "One post".into(), String::new(), "To everyone".into(), "free".into(), vec![]).unwrap();
+    store.publish_jam_post(jam.clone(), "article".into(), "One post".into(), String::new(), "To everyone".into(), "free".into(), vec![], vec![]).unwrap();
     // Queued for all: the notice for each of the thousand, and the session key for each of the thousand.
     let progress = store.jam_send_progress(jam.clone()).unwrap();
     assert_eq!((progress.pending, progress.total), (2000, 2000), "queued, nothing sent yet");
@@ -5406,7 +5406,7 @@ fn a_post_with_a_photo_and_a_file_reaches_a_late_subscriber_who_downloads_both_w
     };
     let post = alice
         .store
-        .publish_jam_post(jam.clone(), "article".into(), "Class photo".into(), String::new(), "**Look** at this".into(), "free".into(), vec![attachment(photo.clone(), "class.jpg", "image/jpeg"), attachment(file.clone(), "slip.pdf", "application/pdf")])
+        .publish_jam_post(jam.clone(), "article".into(), "Class photo".into(), String::new(), "**Look** at this".into(), "free".into(), vec![attachment(photo.clone(), "class.jpg", "image/jpeg"), attachment(file.clone(), "slip.pdf", "application/pdf")], vec![])
         .unwrap();
     deliver(&alice, &transport);
     // The writer sees their own post's files at once.
@@ -5452,7 +5452,7 @@ fn quick_posts_articles_and_recordings_keep_their_kind_and_the_rules_for_each_ho
     let jam = new_jam(&alice);
     join_jam(&alice, &bob, &jam, &transport);
     let publish_as = |kind: &str, title: &str, subtitle: &str, body: &str, files: Vec<crate::OutgoingAttachment>| {
-        alice.store.publish_jam_post(jam.clone(), kind.into(), title.into(), subtitle.into(), body.into(), "free".into(), files)
+        alice.store.publish_jam_post(jam.clone(), kind.into(), title.into(), subtitle.into(), body.into(), "free".into(), files, vec![])
     };
     let clip = |mime: &str| crate::OutgoingAttachment { bytes: vec![7; 5000], name: "clip".into(), mime: mime.into(), width: None, height: None, duration_ms: Some(10_000), thumb: vec![], poster: vec![] };
     // The rules: an article needs a title; a quick post needs words or a file and has no title; a recording needs a video or voice clip.
@@ -5504,7 +5504,7 @@ fn an_article_carries_its_photos_where_they_were_put_and_a_subtitle_has_a_limit(
     join_jam(&alice, &bob, &jam, &transport);
     let photo = |n: u8| crate::OutgoingAttachment { bytes: vec![n; 1_200_000], name: "Photo.jpg".into(), mime: "image/jpeg".into(), width: Some(2048), height: Some(1536), duration_ms: None, thumb: vec![9; 1800], poster: vec![] };
     let body = "Intro\n\n![First](attachment:0)\n\nMiddle\n\n![](attachment:1)\n\n![Last one](attachment:2)\n\nEnd";
-    let id = alice.store.publish_jam_post(jam.clone(), "article".into(), "Fold, cut, compare".into(), "Photos in place".into(), body.into(), "free".into(), (1..=5).map(photo).collect()).unwrap();
+    let id = alice.store.publish_jam_post(jam.clone(), "article".into(), "Fold, cut, compare".into(), "Photos in place".into(), body.into(), "free".into(), (1..=5).map(photo).collect(), vec![]).unwrap();
     catch_up(&alice, &[&bob], &transport);
     let read = bob.store.read_jam_post(id.clone()).unwrap().unwrap();
     assert_eq!(read.state, "ready");
@@ -5513,7 +5513,48 @@ fn an_article_carries_its_photos_where_they_were_put_and_a_subtitle_has_a_limit(
     assert_eq!(bob.store.list_jam_attachments(id).unwrap().len(), 5);
     // An image block must name a photo that is in the post; a subtitle is at most 160 characters; a chat never turns text into an image.
     let one = vec![photo(1)];
-    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "T".into(), String::new(), "![](attachment:3)".into(), "free".into(), one.clone()).is_err());
-    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "T".into(), "x".repeat(161), "body".into(), "free".into(), vec![]).is_err());
-    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "T".into(), "x".repeat(160), "body".into(), "free".into(), vec![]).is_ok());
+    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "T".into(), String::new(), "![](attachment:3)".into(), "free".into(), one.clone(), vec![]).is_err());
+    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "T".into(), "x".repeat(161), "body".into(), "free".into(), vec![], vec![]).is_err());
+    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "T".into(), "x".repeat(160), "body".into(), "free".into(), vec![], vec![]).is_ok());
+}
+
+#[test]
+fn a_co_author_is_credited_only_after_accepting_and_the_credit_reaches_the_subscribers() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let (carol, _) = party(&server, "carol", 3);
+    let (dave, _) = party(&server, "dave", 4);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let post = alice
+        .store
+        .publish_jam_post(jam.clone(), "article".into(), "What is liming?".into(), String::new(), "Words".into(), "free".into(), vec![], vec![carol.user.clone(), dave.user.clone(), alice.user.clone()])
+        .unwrap();
+    // The post goes up first, then the requests go out.
+    for _ in 0..3 {
+        catch_up(&alice, &[&bob, &carol, &dave], &transport);
+    }
+    let asked = carol.store.list_coauthor_requests().unwrap();
+    assert_eq!((asked.len(), asked[0].title.as_str(), asked[0].writer.as_str()), (1, "What is liming?", "alice"));
+    assert_eq!(dave.store.list_coauthor_requests().unwrap().len(), 1);
+    assert!(bob.store.read_jam_post(post.clone()).unwrap().unwrap().coauthors.is_empty(), "nothing is shown before an answer");
+    assert!(carol.store.list_coauthored_posts().unwrap().is_empty());
+
+    // Carol accepts, Dave declines.
+    carol.store.answer_coauthor_request(post.clone(), true).unwrap();
+    dave.store.answer_coauthor_request(post.clone(), false).unwrap();
+    assert!(carol.store.list_coauthor_requests().unwrap().is_empty(), "answered");
+    for _ in 0..3 {
+        catch_up(&carol, &[&alice], &transport);
+        catch_up(&dave, &[&alice], &transport);
+        catch_up(&alice, &[&bob], &transport);
+    }
+    assert_eq!(bob.store.read_jam_post(post.clone()).unwrap().unwrap().coauthors, vec![carol.user.clone()], "the subscriber sees the accepted co-author only");
+    assert_eq!(alice.store.read_jam_post(post.clone()).unwrap().unwrap().coauthors, vec![carol.user.clone()]);
+    // The credited post is on Carol's phone, readable, among the posts she is credited on.
+    catch_up(&alice, &[&carol], &transport);
+    let mine = carol.store.list_coauthored_posts().unwrap();
+    assert_eq!((mine.len(), mine[0].title.as_str(), mine[0].state.as_str(), mine[0].markdown.as_str()), (1, "What is liming?", "ready", "Words"));
+    assert!(dave.store.list_coauthored_posts().unwrap().is_empty(), "a declined credit keeps nothing");
 }

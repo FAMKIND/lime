@@ -509,6 +509,42 @@ pub(crate) fn cache_attachment(conn: &Connection, post_id: &str, att_id: &str, j
     Ok(())
 }
 
+// ---------------------------------------------------------------- co-authors
+
+/// A co-author the writer asked (`pending`: not sent yet, waiting for the post's blob; `requested`: sent).
+pub(crate) fn add_credit(conn: &Connection, post_id: &str, user: &str) -> Result<(), StoreError> {
+    conn.execute("INSERT OR IGNORE INTO jam_credits (post_id, user_id, state) VALUES (?1, ?2, 'pending')", params![post_id, user]).map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn credits_in_state(conn: &Connection, post_id: &str, state: &str) -> Result<Vec<String>, StoreError> {
+    let mut statement = conn.prepare("SELECT user_id FROM jam_credits WHERE post_id = ?1 AND state = ?2 ORDER BY user_id").map_err(db_err)?;
+    let rows = statement.query_map(params![post_id, state], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    Ok(rows)
+}
+
+pub(crate) fn set_credit(conn: &Connection, post_id: &str, user: &str, state: &str) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT INTO jam_credits (post_id, user_id, state) VALUES (?1, ?2, ?3) ON CONFLICT (post_id, user_id) DO UPDATE SET state = ?3",
+        params![post_id, user, state],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn credit_state(conn: &Connection, post_id: &str, user: &str) -> Result<Option<String>, StoreError> {
+    conn.query_row("SELECT state FROM jam_credits WHERE post_id = ?1 AND user_id = ?2", params![post_id, user], |r| r.get(0)).optional().map_err(db_err)
+}
+
+/// The posts whose co-authors have been asked but not yet sent the request (the blob had to be up first).
+pub(crate) fn credits_to_send(conn: &Connection) -> Result<Vec<(String, String)>, StoreError> {
+    let mut statement = conn
+        .prepare("SELECT c.post_id, c.user_id FROM jam_credits c JOIN jam_posts p ON p.post_id = c.post_id WHERE c.state = 'pending' AND p.uploaded = 1")
+        .map_err(db_err)?;
+    let rows = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    Ok(rows)
+}
+
 // ---------------------------------------------------------------- the public page on the server
 
 pub(crate) fn pages_to_publish(conn: &Connection) -> Result<Vec<JamRow>, StoreError> {
@@ -566,11 +602,14 @@ pub(crate) struct DueWire {
     pub rows: Vec<(i64, String, i64)>,
 }
 
-/// The next ciphertext with recipients due, up to `limit` of them. A post whose blob is not up yet is not due (the notice would name nothing).
+/// The next ciphertext with recipients due, up to `limit` of them. A post whose blob is not up yet is not due (the notice would name nothing); a
+/// credit announcement is always due.
 pub(crate) fn next_due(conn: &Connection, now: i64, limit: usize) -> Result<Option<DueWire>, StoreError> {
     let first: Option<String> = conn
         .query_row(
-            "SELECT o.post_id FROM jam_wire_outbox o JOIN jam_posts p ON p.post_id = o.post_id WHERE o.next_at <= ?1 AND p.uploaded = 1 ORDER BY o.id LIMIT 1",
+            "SELECT o.post_id FROM jam_wire_outbox o WHERE o.next_at <= ?1
+               AND (EXISTS (SELECT 1 FROM jam_posts p WHERE p.post_id = o.post_id AND p.uploaded = 1) OR EXISTS (SELECT 1 FROM jam_credit_wires w WHERE w.wire_id = o.post_id))
+             ORDER BY o.id LIMIT 1",
             params![now],
             |r| r.get(0),
         )
@@ -578,6 +617,10 @@ pub(crate) fn next_due(conn: &Connection, now: i64, limit: usize) -> Result<Opti
         .map_err(db_err)?;
     let Some(post_id) = first else { return Ok(None) };
     let wire: Option<String> = conn.query_row("SELECT wire FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).optional().map_err(db_err)?.flatten();
+    let wire = match wire {
+        Some(wire) => Some(wire),
+        None => conn.query_row("SELECT wire FROM jam_credit_wires WHERE wire_id = ?1", params![post_id], |r| r.get(0)).optional().map_err(db_err)?,
+    };
     let mut statement = conn
         .prepare("SELECT id, recipient, attempts FROM jam_wire_outbox WHERE post_id = ?1 AND next_at <= ?2 ORDER BY id LIMIT ?3")
         .map_err(db_err)?;

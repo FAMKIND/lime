@@ -21,11 +21,15 @@ extension ConversationStore {
             posts[jam.jamId] = (try? core.listJamPosts(jamId: jam.jamId)) ?? []
             if jam.mine, let p = try? core.jamSendProgress(jamId: jam.jamId), p.pending > 0 { progress[jam.jamId] = p }
         }
+        let requests = (try? core.listCoauthorRequests()) ?? []
+        let credited = (try? core.listCoauthoredPosts()) ?? []
+        if requests != jamRequests { jamRequests = requests }
+        if credited != coauthoredPosts { coauthoredPosts = credited }
         if mine != jamsMine { jamsMine = mine }
         if followed != jamSubscriptions { jamSubscriptions = followed }
         if posts != jamPosts { jamPosts = posts }
         if progress != jamProgress { jamProgress = progress }
-        let waiting = posts.values.joined().contains { $0.state == "fetching" } || !progress.isEmpty
+        let waiting = posts.values.joined().contains { $0.state == "fetching" } || credited.contains { $0.state == "fetching" } || !progress.isEmpty
         if waiting, link != nil, Date().timeIntervalSince(jamLastKick) > 15 {
             jamLastKick = Date()
             Task { await deliverNow() }
@@ -50,6 +54,16 @@ extension ConversationStore {
     var jamFeed: [JamPostInfo] {
         let live = Set(jamSubscriptions.filter { $0.status == "active" }.map(\.jamId) + jamsMine.map(\.jamId))
         return jamPosts.filter { live.contains($0.key) }.values.flatMap { $0 }.sorted { $0.created > $1.created }
+    }
+
+    /// "with Jean Chung and Lee Wong" for the co-authors who accepted, or nil.
+    func byline(_ post: JamPostInfo) -> String? {
+        let names = post.coauthors.map { teacherName($0) }
+        switch names.count {
+        case 0: return nil
+        case 1: return "with \(names[0])"
+        default: return "with \(names.dropLast().joined(separator: ", ")) and \(names.last ?? "")"
+        }
     }
 
     /// The posts of one writer's jam, newest first (mine, or one I follow).
@@ -121,18 +135,18 @@ extension ConversationStore {
     /// Publishes a post (a quick post, an article or a recording) to my jam, making the jam first if this is my first post: the core seals it, and
     /// the next delivery sends it. Every post is free (payments are off). The photos go up afterwards in the background, each on its own and retried
     /// by itself; nothing here waits for the network.
-    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], about: String) async -> Result<Void, JamPostFailure> {
+    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = [], about: String) async -> Result<Void, JamPostFailure> {
         guard items.count <= 10 else { return .failure(.tooManyFiles) }
         guard items.allSatisfy({ $0.bytes.count <= 24 * 1024 * 1024 }) else { return .failure(.fileTooLarge) }
         guard let jamID = await myJamID(about: about) else { return .failure(.couldNotMake) }
         #if DEBUG
-        if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items); return .success(()) }
+        if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items, coauthors: coauthors); return .success(()) }
         #endif
         guard let core else { return .failure(.couldNotMake) }
         guard StorageGuard.shared.allows(items.reduce(0) { $0 + Int64($1.bytes.count) }) else { return .failure(.noSpace) }
         do {
             _ = try await Task.detached(priority: .userInitiated) {
-                try core.publishJamPost(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items)
+                try core.publishJamPost(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items, coauthors: coauthors)
             }.value
         } catch {
             CallDiagnostics.shared.log("jam post failed: \(error)")
@@ -141,6 +155,22 @@ extension ConversationStore {
         refreshJams()
         await deliverNow()
         return .success(())
+    }
+
+    /// Answers a request to be credited: the writer is told, and an accepted post is kept with the ones I am credited on.
+    func answerCoauthorRequest(_ request: CoauthorRequest, accept: Bool) async {
+        #if DEBUG
+        if isDemo { demoAnswer(request, accept: accept); return }
+        #endif
+        guard let core else { return }
+        _ = try? await Task.detached { try core.answerCoauthorRequest(postId: request.postId, accept: accept) }.value
+        refreshJams()
+        await deliverNow()
+    }
+
+    /// The people a post could be shared with as co-author: the contacts I have accepted.
+    var coauthorChoices: [Person] {
+        conversations.filter { $0.id.hasPrefix("dm:") && !$0.isRequest }.compactMap(\.members.first)
     }
 
     func loadJamSubscribers(_ jamID: String) {

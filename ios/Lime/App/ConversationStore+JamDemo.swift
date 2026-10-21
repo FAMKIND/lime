@@ -17,7 +17,7 @@ extension ConversationStore {
                               status: "active", ended: false, subscriberCount: old.subscriberCount, postCount: old.postCount, created: old.created)
     }
 
-    func demoPublish(_ jamID: String, kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment]) {
+    func demoPublish(_ jamID: String, kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], coauthors: [String] = []) {
         let id = UUID().uuidString.lowercased()
         let info = items.map {
             JamAttachmentInfo(attachmentId: UUID().uuidString.lowercased(), name: $0.name, mime: $0.mime, kind: $0.mime.hasPrefix("image/") ? "image" : $0.mime.hasPrefix("video/") ? "video" : $0.mime.hasPrefix("audio/") ? "audio" : "file",
@@ -25,7 +25,7 @@ extension ConversationStore {
         }
         demoJamAttachments[id] = info
         let post = JamPostInfo(postId: id, jamId: jamID, author: meProvider().id, tier: "free", kind: kind, title: title, subtitle: subtitle, markdown: markdown, plain: messagePlainText(text: markdown),
-                               attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), state: "ready")
+                               attachmentsJson: "[]", created: Int64(Date().timeIntervalSince1970 * 1000), coauthors: coauthors, state: "ready")
         jamPosts[jamID, default: []].append(post)
         if let i = jamsMine.firstIndex(where: { $0.jamId == jamID }) {
             let old = jamsMine[i]
@@ -42,12 +42,12 @@ extension ConversationStore {
                                         mine: false, status: "active", ended: false, subscriberCount: 0, postCount: 2, created: now))
         let first = JamPostInfo(postId: "demo-post-1", jamId: page.jamId, author: page.writerId, tier: "free", kind: "article", title: "Equivalent fractions in ten minutes", subtitle: "Fold, cut, compare",
                                 markdown: "**Start** with a pizza.\n\n- fold it\n- cut it\n- compare the pieces", plain: "Start with a pizza.\n• fold it\n• cut it\n• compare the pieces",
-                                attachmentsJson: "[]", created: now - 3_600_000, state: "ready")
+                                attachmentsJson: "[]", created: now - 3_600_000, coauthors: ["lee"], state: "ready")
         let second = JamPostInfo(postId: "demo-post-2", jamId: page.jamId, author: page.writerId, tier: "free", kind: "quick", title: "", subtitle: "",
                                  markdown: "A quick exit ticket: ask one question at the door, *which pieces are equal?*", plain: "A quick exit ticket: ask one question at the door, which pieces are equal?",
-                                 attachmentsJson: "[]", created: now - 600_000, state: "ready")
+                                 attachmentsJson: "[]", created: now - 600_000, coauthors: [], state: "ready")
         let third = JamPostInfo(postId: "demo-post-3", jamId: page.jamId, author: page.writerId, tier: "free", kind: "record", title: "Ten seconds on fraction walls", subtitle: "", markdown: "", plain: "",
-                                attachmentsJson: "[]", created: now - 60_000, state: "ready")
+                                attachmentsJson: "[]", created: now - 60_000, coauthors: [], state: "ready")
         jamPosts[page.jamId] = [first, second, third]
         demoJamAttachments["demo-post-3"] = [JamAttachmentInfo(attachmentId: "demo-video-1", name: "wall.mp4", mime: "video/mp4", kind: "video", size: 90_000, width: 480, height: 270,
                                                                durationMs: 10_000, thumb: Data(), poster: Data(), available: true)]
@@ -67,6 +67,19 @@ extension ConversationStore {
             let old = jamsMine[i]
             jamsMine[i] = JamInfo(jamId: old.jamId, conversationId: old.conversationId, writer: old.writer, title: old.title, about: old.about, topics: old.topics, tiers: old.tiers, mine: true,
                                   status: "active", ended: false, subscriberCount: 2, postCount: old.postCount, created: old.created)
+        }
+    }
+
+    /// A made-up request to be credited, and what answering does.
+    func demoRequest() {
+        jamRequests = [CoauthorRequest(postId: "demo-request-post", jamId: "demo-sam-jam", writer: "sam", title: "What is liming?", kind: "article", created: Int64(Date().timeIntervalSince1970 * 1000))]
+    }
+
+    func demoAnswer(_ request: CoauthorRequest, accept: Bool) {
+        jamRequests.removeAll { $0.postId == request.postId }
+        if accept {
+            coauthoredPosts.insert(JamPostInfo(postId: request.postId, jamId: request.jamId, author: request.writer, tier: "free", kind: request.kind, title: request.title, subtitle: "", markdown: "Words",
+                                               plain: "Words", attachmentsJson: "[]", created: request.created, coauthors: [meProvider().id], state: "ready"), at: 0)
         }
     }
 

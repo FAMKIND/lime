@@ -57,6 +57,8 @@ pub struct JamPostInfo {
     /// The post's attachment descriptors, as received (a JSON array).
     pub attachments_json: String,
     pub created: i64,
+    /// Co-authors who accepted the credit (user ids): "with Jean Chung".
+    pub coauthors: Vec<String>,
     /// `ready` (the content is here), `fetching` (the title is known, the content is still to come from the server) or `gone` (removed from the
     /// server: the jam ended or the writer deleted it).
     pub state: String,
@@ -108,6 +110,17 @@ pub struct JamPageInfo {
 /// The largest file in a jam post (the server's blob cap is 25 MiB, and the sealed form is a little larger).
 const MAX_ATTACHMENT_BYTES: usize = 24 * 1024 * 1024;
 
+/// A request to be credited as a co-author of a post (LIME-188f): the writer, the post's title and kind.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CoauthorRequest {
+    pub post_id: String,
+    pub jam_id: String,
+    pub writer: String,
+    pub title: String,
+    pub kind: String,
+    pub created: i64,
+}
+
 /// How much of what is queued for a jam has gone out: "sending to 412 of 1,000".
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct JamSendProgress {
@@ -133,8 +146,9 @@ fn info(conn: &Connection, row: jam_store::JamRow) -> Result<JamInfo, StoreError
     })
 }
 
-fn post_info(row: jam_store::PostRow) -> JamPostInfo {
+fn post_info(conn: &Connection, row: jam_store::PostRow) -> JamPostInfo {
     JamPostInfo {
+        coauthors: jam_store::credits_in_state(conn, &row.post_id, "accepted").unwrap_or_default(),
         post_id: row.post_id,
         jam_id: row.jam_id,
         author: row.author,
@@ -343,19 +357,19 @@ impl LimeStore {
 
     /// The posts of a jam I follow or write, oldest first (a subscriber's archive included).
     pub fn list_jam_posts(&self, jam_id: String) -> Result<Vec<JamPostInfo>, StoreError> {
-        self.with_conn(|conn| Ok(jam_store::posts(conn, &jam_id)?.into_iter().map(post_info).collect()))
+        self.with_conn(|conn| Ok(jam_store::posts(conn, &jam_id)?.into_iter().map(|row| post_info(conn, row)).collect()))
     }
 
     /// One post.
     pub fn read_jam_post(&self, post_id: String) -> Result<Option<JamPostInfo>, StoreError> {
-        self.with_conn(|conn| Ok(jam_store::post(conn, &post_id)?.filter(|p| !p.deleted).map(post_info)))
+        self.with_conn(|conn| Ok(jam_store::post(conn, &post_id)?.filter(|p| !p.deleted).map(|row| post_info(conn, row))))
     }
 
     /// Publishes a post to my jam's subscribers: its content is sealed into a blob (uploaded by the next delivery pass), and a small notice is
     /// encrypted here once and queued for everyone who may read it. `tier` is `free` or `subscribers`; `attachments` are the files (already
     /// shrunk and stripped by the app; at most 10, each under 24 MiB): each becomes a jam-class blob of its own, uploaded before the post. Returns the post's id. Nothing is sent yet: the passes do that, in order and in chunks.
     #[allow(clippy::too_many_arguments)] // one field of a post each, for the app
-    pub fn publish_jam_post(&self, jam_id: String, kind: String, title: String, subtitle: String, markdown: String, tier: String, attachments: Vec<OutgoingAttachment>) -> Result<String, StoreError> {
+    pub fn publish_jam_post(&self, jam_id: String, kind: String, title: String, subtitle: String, markdown: String, tier: String, attachments: Vec<OutgoingAttachment>, coauthors: Vec<String>) -> Result<String, StoreError> {
         let state = self.load_or_create_account()?;
         let me = self.registered_user(&state)?;
         if !jam_store::valid_kind(&kind) {
@@ -449,6 +463,14 @@ impl LimeStore {
                     jam_store::insert_attachment(conn, &post_id, id, &jam_id, hash, *size, plain)?;
                 }
                 jam_store::queue_wire(conn, &jam_id, &post_id, &audience)?;
+                // People asked to be credited (at most four, never me, once each): the request goes when the post's blob is up.
+                let mut asked: Vec<&String> = Vec::new();
+                for user in &coauthors {
+                    if user != &me && !user.is_empty() && !asked.contains(&user) && asked.len() < 4 {
+                        asked.push(user);
+                        jam_store::add_credit(conn, &post_id, user)?;
+                    }
+                }
                 Ok(())
             })
         })?;
@@ -494,6 +516,61 @@ impl LimeStore {
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(db_err)?;
             Ok(rows)
+        })
+    }
+
+    /// Requests to be credited that are waiting for an answer.
+    pub fn list_coauthor_requests(&self) -> Result<Vec<CoauthorRequest>, StoreError> {
+        self.with_conn(|conn| {
+            let mut statement = conn.prepare("SELECT post_id, jam_id, writer, title, kind, created FROM jam_credit_requests WHERE state = 'pending' ORDER BY created DESC").map_err(db_err)?;
+            let rows = statement
+                .query_map([], |r| Ok(CoauthorRequest { post_id: r.get(0)?, jam_id: r.get(1)?, writer: r.get(2)?, title: r.get(3)?, kind: r.get(4)?, created: r.get(5)? }))
+                .map_err(db_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(db_err)?;
+            Ok(rows)
+        })
+    }
+
+    /// Accepts or declines a credit. Accepting keeps the post on this phone (it is listed with the posts I am credited on); the writer is told either way.
+    pub fn answer_coauthor_request(&self, post_id: String, accept: bool) -> Result<(), StoreError> {
+        let state = self.load_or_create_account()?;
+        self.registered_user(&state)?;
+        let now = now_ms();
+        self.with_conn(|conn| {
+            atomically(conn, || {
+                let (jam_id, writer, title, kind, created, blob): (String, String, String, String, i64, jam_store::BlobRef) = conn
+                    .query_row(
+                        "SELECT jam_id, writer, title, kind, created, blob_id, blob_key, blob_sha, blob_size FROM jam_credit_requests WHERE post_id = ?1 AND state = 'pending'",
+                        params![post_id],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, jam_store::BlobRef { blob_id: r.get(5)?, key: r.get(6)?, sha256: r.get(7)?, size: r.get(8)? })),
+                    )
+                    .optional()
+                    .map_err(db_err)?
+                    .ok_or(StoreError::NotFound)?;
+                conn.execute("UPDATE jam_credit_requests SET state = ?2 WHERE post_id = ?1", params![post_id, if accept { "accepted" } else { "declined" }]).map_err(db_err)?;
+                if accept {
+                    jam_store::insert_notice(conn, &post_id, &jam_id, &writer, "", 0, TIER_FREE, &title, &kind, "", created, &blob)?;
+                    conn.execute("UPDATE jam_posts SET coauthored = 1 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+                }
+                let reply = signed_op(conn, &state, "jam.coauthor.reply", &jam_id, None, json!({ "jam_id": jam_id, "post_id": post_id, "accept": accept }), now)?;
+                queue_op(conn, &jam_id, &writer, &reply)
+            })
+        })
+    }
+
+    /// The posts I am credited on (accepted), newest first.
+    pub fn list_coauthored_posts(&self) -> Result<Vec<JamPostInfo>, StoreError> {
+        self.with_conn(|conn| {
+            let mut statement = conn.prepare("SELECT post_id FROM jam_posts WHERE coauthored = 1 AND deleted_at IS NULL ORDER BY created DESC").map_err(db_err)?;
+            let ids = statement.query_map([], |r| r.get::<_, String>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+            let mut out = Vec::new();
+            for id in ids {
+                if let Some(row) = jam_store::post(conn, &id)? {
+                    out.push(post_info(conn, row));
+                }
+            }
+            Ok(out)
         })
     }
 
@@ -714,6 +791,43 @@ impl LimeStore {
                 }
                 Ok(())
             }
+            // Someone asks me to be credited on their post: kept to answer (anyone may ask; nothing is shown until I accept).
+            "jam.coauthor" => {
+                if sender == me {
+                    return Ok(());
+                }
+                let text = |k: &str| op.payload.get(k).and_then(Value::as_str);
+                let (Some(post_id), Some(title), Some(kind), Some(blob)) = (
+                    text("post_id").filter(|p| !p.is_empty() && p.len() <= 64),
+                    jam_store::clean_optional_line(text("title").unwrap_or_default(), jam_store::MAX_POST_TITLE_CHARS),
+                    text("kind").filter(|k| jam_store::valid_kind(k)),
+                    blob_text_to_ref(&op.payload),
+                ) else {
+                    return Ok(());
+                };
+                let created = op.payload.get("created").and_then(Value::as_i64).unwrap_or(now).min(now);
+                conn.execute(
+                    "INSERT OR IGNORE INTO jam_credit_requests (post_id, jam_id, writer, title, kind, created, blob_id, blob_key, blob_sha, blob_size) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![post_id, jam_id, sender, title, kind, created, blob.blob_id, blob.key, blob.sha256, blob.size],
+                )
+                .map_err(db_err)?;
+                Ok(())
+            }
+            // The person I asked answers: an accepted credit is announced to my subscribers.
+            "jam.coauthor.reply" => {
+                let Some(_jam) = jam.filter(|j| j.mine) else { return Ok(()) };
+                let Some(post_id) = op.payload.get("post_id").and_then(Value::as_str) else { return Ok(()) };
+                if jam_store::credit_state(conn, post_id, sender)?.as_deref() != Some("requested") {
+                    return Ok(());
+                }
+                if op.payload.get("accept").and_then(Value::as_bool) == Some(true) {
+                    jam_store::set_credit(conn, post_id, sender, "accepted")?;
+                    self.announce_credit(conn, state, me, jam_id, post_id, sender, now)?;
+                } else {
+                    jam_store::set_credit(conn, post_id, sender, "declined")?;
+                }
+                Ok(())
+            }
             // Everything else is the writer's, to a subscriber or someone who asked to be one.
             other => {
                 let Some(jam) = jam.filter(|j| !j.mine && j.writer == sender) else { return Ok(()) };
@@ -800,6 +914,43 @@ impl LimeStore {
         Ok(())
     }
 
+    /// Tells my subscribers, in the post's own session, that `user` is credited on it (a small signed message through the same queue as the posts).
+    #[allow(clippy::too_many_arguments)] // the context of one announcement
+    fn announce_credit(&self, conn: &Connection, state: &AccountState, me: &str, jam_id: &str, post_id: &str, user: &str, now: i64) -> Result<(), StoreError> {
+        let Some(post) = jam_store::post(conn, post_id)? else { return Ok(()) };
+        let mut outbound = self.ensure_jam_session(conn, state, jam_id, &post.tier, now)?;
+        let op = signed_op(conn, state, "jam.credit", jam_id, None, json!({ "post_id": post_id, "user": user }), now)?;
+        let inner = SealedInner { sender_user: me.to_owned(), sender_device: state.device_id.clone(), sender_cert: state.cert(), op }.to_bytes();
+        let encrypted = outbound.session.encrypt(&inner);
+        outbound.posts += 1;
+        jam_store::save_outbound(conn, &self.pickle_key, jam_id, &post.tier, &outbound)?;
+        let mut wire = vec![GROUP_WIRE];
+        wire.extend_from_slice(json!({ "s": outbound.session.session_id(), "c": encrypted.to_base64() }).to_string().as_bytes());
+        let wire_id = new_id();
+        conn.execute("INSERT INTO jam_credit_wires (wire_id, jam_id, wire) VALUES (?1, ?2, ?3)", params![wire_id, jam_id, vodozemac::base64_encode(&wire)]).map_err(db_err)?;
+        jam_store::queue_wire(conn, jam_id, &wire_id, &jam_store::audience(conn, jam_id, &post.tier)?)
+    }
+
+    /// Sends the credit requests of posts whose blob is now up (the co-author must be able to download the post if she accepts).
+    fn queue_credit_requests(&self, state: &AccountState) {
+        let now = now_ms();
+        let Ok(pending) = self.with_conn(jam_store::credits_to_send) else { return };
+        for (post_id, user) in pending {
+            let _ = self.with_conn(|conn| {
+                let Some(post) = jam_store::post(conn, &post_id)? else { return Ok(()) };
+                let blob: (Option<String>, Option<String>, Option<String>, i64) = conn
+                    .query_row("SELECT blob_id, blob_key, blob_sha, blob_size FROM jam_posts WHERE post_id = ?1", params![post_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+                    .map_err(db_err)?;
+                let (Some(blob_id), Some(key), Some(sha256)) = (blob.0, blob.1, blob.2) else { return Ok(()) };
+                let payload = json!({ "jam_id": post.jam_id, "post_id": post_id, "title": post.title, "kind": post.kind, "created": post.created,
+                                      "blob_id": blob_id, "key": key, "sha256": sha256, "size": blob.3 });
+                let op = signed_op(conn, state, "jam.coauthor", &post.jam_id, None, payload, now)?;
+                queue_op(conn, &post.jam_id, &user, &op)?;
+                jam_store::set_credit(conn, &post_id, &user, "requested")
+            });
+        }
+    }
+
     /// The archive's index from the writer: each post's title and where its content is. Entries are checked for shape; the content is fetched later.
     fn store_jam_index(&self, conn: &Connection, jam_id: &str, writer: &str, payload: &Value) -> Result<(), StoreError> {
         let Some(posts) = payload.get("posts").and_then(Value::as_array) else { return Ok(()) };
@@ -836,13 +987,34 @@ impl LimeStore {
             && inner.sender_user != me
             && cert.verify()
             && op.verify(&cert.signing_key)
-            && op.op_type == "jam.post"
+            && (op.op_type == "jam.post" || op.op_type == "jam.credit")
             && op.conversation_id == conversation;
         let payload = &op.payload;
         let text = |k: &str| payload.get(k).and_then(Value::as_str);
+        // The writer says someone accepted a credit on a post (LIME-188f): kept for the byline.
+        if valid && op.op_type == "jam.credit" {
+            let (Some(post_id), Some(user), Some(remote_hlc)) = (text("post_id").filter(|p| !p.is_empty() && p.len() <= 64), text("user").filter(|u| !u.is_empty() && u.len() <= 64), Hlc::parse(&op.hlc)) else {
+                return Ok(Outcome::Keep(pending::INVALID));
+            };
+            let author = inner.sender_user.clone();
+            let outcome = self.with_conn(|conn| {
+                let pinned: Option<String> = conn.query_row("SELECT master_key FROM peers WHERE user_id = ?1", params![author], |r| r.get(0)).optional().map_err(db_err)?;
+                let jam = jam_store::get(conn, &inbound.jam_id)?;
+                if pinned.as_deref() != Some(cert.master_key.as_str()) || jam.is_none_or(|j| j.mine || j.writer != author || matches!(j.status.as_str(), "removed" | "left")) {
+                    return Ok(Outcome::Keep(pending::INVALID));
+                }
+                jam_store::save_inbound(conn, &self.pickle_key, session_id, &inbound)?;
+                jam_store::set_credit(conn, post_id, user, "accepted")?;
+                Ok(Outcome::Duplicate)
+            })?;
+            if matches!(outcome, Outcome::Duplicate) {
+                self.with_conn(|conn| observe_hlc(conn, remote_hlc, now).map(|_| ()))?;
+            }
+            return Ok(outcome);
+        }
         let kind = text("kind").filter(|k| jam_store::valid_kind(k)).unwrap_or("article");
         let (true, Some(title), Some(subtitle), Some(blob), Some(remote_hlc)) = (
-            valid && text("post_id") == Some(op.op_id.as_str()) && text("tier") == Some(inbound.tier.as_str()),
+            valid && op.op_type == "jam.post" && text("post_id") == Some(op.op_id.as_str()) && text("tier") == Some(inbound.tier.as_str()),
             jam_store::clean_optional_line(text("title").unwrap_or_default(), jam_store::MAX_POST_TITLE_CHARS),
             jam_store::clean_optional_line(text("subtitle").unwrap_or_default(), jam_store::MAX_SUBTITLE_CHARS),
             blob_text_to_ref(payload),
@@ -884,6 +1056,7 @@ impl LimeStore {
     /// blobs up, then the public pages, then the notices, then the subscriber's own downloads. Each is paced, resumes by itself and stops quietly
     /// without internet. Never holds up the messages.
     pub(super) fn deliver_jam(&self, transport: &Arc<dyn Transport>, token: &str, state: &mut AccountState, me: &str) {
+        self.queue_credit_requests(state);
         self.deliver_jam_ops(transport, token, state, me);
         self.upload_jam_posts(transport, token);
         self.publish_jam_pages(transport, token);

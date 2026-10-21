@@ -685,6 +685,34 @@ const MIGRATIONS: &[&str] = &[
     // 43 (LIME-188b): a post has a kind (a quick post, an article, a recording) and an article a subtitle. Older posts read as articles.
     "ALTER TABLE jam_posts ADD COLUMN kind TEXT NOT NULL DEFAULT 'article';
      ALTER TABLE jam_posts ADD COLUMN subtitle TEXT NOT NULL DEFAULT '';",
+    // 44 (LIME-188f): co-authors. `jam_credits` is who is credited on a post (the writer's phone: pending/requested/accepted/declined; a subscriber's:
+    // the accepted ones, told by the writer); `jam_credit_requests` is what a co-author is asked; `jam_credit_wires` the small signed announcements
+    // ("Jean accepted") that go to the subscribers through the same queue as the posts; `coauthored` marks a post on a co-author's phone.
+    "ALTER TABLE jam_posts ADD COLUMN coauthored INTEGER NOT NULL DEFAULT 0;
+     CREATE TABLE jam_credits (
+         post_id TEXT NOT NULL,
+         user_id TEXT NOT NULL,
+         state   TEXT NOT NULL,
+         PRIMARY KEY (post_id, user_id)
+     );
+     CREATE TABLE jam_credit_requests (
+         post_id   TEXT PRIMARY KEY NOT NULL,
+         jam_id    TEXT NOT NULL,
+         writer    TEXT NOT NULL,
+         title     TEXT NOT NULL,
+         kind      TEXT NOT NULL,
+         created   INTEGER NOT NULL,
+         blob_id   TEXT NOT NULL,
+         blob_key  TEXT NOT NULL,
+         blob_sha  TEXT NOT NULL,
+         blob_size INTEGER NOT NULL,
+         state     TEXT NOT NULL DEFAULT 'pending'
+     );
+     CREATE TABLE jam_credit_wires (
+         wire_id TEXT PRIMARY KEY NOT NULL,
+         jam_id  TEXT NOT NULL,
+         wire    TEXT NOT NULL
+     );",
 ];
 
 /// The schema version this build writes.

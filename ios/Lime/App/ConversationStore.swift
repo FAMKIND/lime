@@ -77,6 +77,9 @@ final class ConversationStore {
     var jamProgress: [String: JamSendProgress] = [:]
     var jamSubscribers: [String: [JamSubscriberInfo]] = [:]
     var jamLastKick = Date.distantPast
+    /// Credits I am asked to accept, and the posts I am credited on (LIME-188f).
+    var jamRequests: [CoauthorRequest] = []
+    var coauthoredPosts: [JamPostInfo] = []
     /// Demo mode (UI tests): jam pages of other teachers by user id.
     var demoJamPages: [String: JamPageInfo] = [:]
     var demoJamAttachments: [String: [JamAttachmentInfo]] = [:]
@@ -1054,11 +1057,12 @@ final class ConversationStore {
             ])]
             path.append("dm:fmt")
         case "notif-banner": demoNotification = "banner"
-        case "jam", "jam-following", "jam-mine", "jam-mine-profile":
+        case "jam", "jam-following", "jam-mine", "jam-mine-profile", "jam-request":
             // The jam tab, with nothing yet, with a jam I follow (Sam's, two posts), or with a jam of my own (one post, two subscribers).
             section = .jam
             if screen == "jam-following", let page = demoJamPages["sam"] { demoSubscribe(page) }
             if screen == "jam-mine" || screen == "jam-mine-profile" { demoMineWithPost() }
+            if screen == "jam-request" { demoRequest() }
             if screen == "jam-mine-profile" { jamPath.append(ProfileRoute(userID: meProvider().id, name: meProvider().name, isMe: true)) }
         case "group-incoming", "group-incoming-ios-refused":
             loadDemoTeachers()

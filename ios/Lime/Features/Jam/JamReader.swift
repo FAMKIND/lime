@@ -25,7 +25,8 @@ struct JamPostView: View {
                             AvatarView(person: writer, size: 36).accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(writer.name).font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.text)
-                                Text(JamDates.text(post.created)).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                                Text([store.byline(post), JamDates.text(post.created)].compactMap { $0 }.joined(separator: " \u{00B7} ")).font(Theme.caption).foregroundStyle(Theme.textSecondary)
+                                    .accessibilityIdentifier("jam-reader-byline")
                             }
                             Spacer(minLength: 0)
                         }
@@ -106,6 +107,8 @@ struct JamInlineAttachment: View {
             VStack(alignment: .leading, spacing: 6) {
                 if file.kind == "image" {
                     JamPhoto(postID: postID, file: file, onLoaded: { full = $0 }, tapToOpen: true)
+                } else if file.kind == "video" {
+                    JamVideo(postID: postID, file: file)
                 } else {
                     JamFileCard(postID: postID, file: file)
                 }
@@ -156,7 +159,7 @@ private struct JamPhoto: View {
     }
 }
 
-private struct JamVideo: View {
+struct JamVideo: View {
     let postID: String
     let file: JamAttachmentInfo
     @Environment(ConversationStore.self) private var store
@@ -342,7 +345,8 @@ struct JamProfileSection: View {
     @ViewBuilder
     private func content(_ page: JamPageInfo) -> some View {
         let following = store.isFollowing(page.jamId)
-        let posts = store.posts(of: page.jamId)
+        // On my own page: my jam's posts and the ones I am credited on.
+        let posts = isMe ? (store.posts(of: page.jamId) + store.coauthoredPosts.filter { c in !store.posts(of: page.jamId).contains { $0.postId == c.postId } }).sorted { $0.created > $1.created } : store.posts(of: page.jamId)
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(page.title).font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).accessibilityAddTraits(.isHeader).accessibilityIdentifier("profile-jam-row")

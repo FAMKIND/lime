@@ -51,6 +51,8 @@ enum Theme {
     static let ownBubbleInk = primaryInk
     static let text = color(Name.text)
     static let textSecondary = color(Name.textSecondary)
+    /// The soft grey of an empty field's hint (LIME-188f): one grey for every placeholder, readable (4.5:1) on the canvas in light and dark.
+    static let placeholder = textSecondary
     static let hairline = color(Name.hairline)
     /// A link in someone else's bubble, and in the composer.
     static let linkOther = color(Name.linkOther)
