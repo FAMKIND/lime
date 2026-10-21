@@ -1,0 +1,134 @@
+# jam v1: encrypted subscriptions for teachers (design, LIME-185)
+
+**Status: a design to decide on. No code was written for it (the throwaway experiment in §3 was not committed).** This replaces the public, server-readable jam of LIME-110.
+
+## 0. What jam is for
+
+lime is *Education for all: a private community where teachers connect and learn from each other.* **link** connects, **call** meets, **jam is where teachers create and learn from each other** (and later **discover** finds teachers by subject, grade and expertise). So jam is designed as **professional development first**; the Substack-like mechanics (posts, a free/subscribers-only wall, an archive, optional payment later) are only the tools.
+
+- **Posts shaped for how teachers learn:** a lesson with its materials, a short classroom clip (under the student-privacy rules: no faces of students unless the teacher has the right to share), a reflection, a series. A post is the existing message format (the Markdown subset, `message-format.md`) plus attachments (api-v2, "Attachments (LIME-98c)"); no new content type is needed in v1. A "series" is a title tag on posts in v1.
+- **Discovery** by subject, grade, topics and "teachers I know". In v1 a jam page carries these as chosen metadata (§7).
+- **Room for shared jams** (a school, a district, a subject group): v1 is **one writer per jam**; the model keeps a `writers` list of length 1 so shared jams can lengthen it (§2).
+- **Evidence to design for** (the 2024 Oxford/IBO teacher-wellbeing report): peer support and feedback are what teachers value most and rarely get (71% value peer feedback, 9% give it). So: **recognition is about growth, not performance**: ♥ counts are visible **to the writer only**; no public ranking, no "top posts", no follower counts shown to others. **jam must not add workload or pressure:** quiet by default (no notification unless the teacher turns it on per jam), no streaks, no "you haven't posted" nudges, no read receipts.
+
+## 1. Decisions already made (the user, 2026-10-20)
+
+| | Decision |
+|---|---|
+| J1 | Posts are **end-to-end encrypted** to subscribers (a one-way encrypted channel built on lime's group messaging). The server cannot read posts. |
+| J2 | **Anyone signed in can subscribe** (Subscribe on a teacher's profile or jam link); the writer can remove someone. |
+| J3 | A **new subscriber gets the full archive** (handed over by the writer's side). |
+| J4 | Responses: **♥ likes**, **comments all subscribers see**, and a **private "reply to the writer"** that opens a 1:1 chat. |
+| – | **Tiers in the model from v1** (free / paid subscribers; a post is `free` or `subscribers`), **payments off in v1**. **Every jam has free posts** (a writer cannot be paywall-only). Reading even free posts needs a (free) subscription, so every post stays encrypted. |
+| – | Not v1: payments and tips; public feeds. |
+
+## 2. The model
+
+A **jam** is a new conversation kind beside `dm:` and `grp:`: `jam:<jam_id>`.
+
+**Phase 1 (a): can it sit on LIME-97's group-state log?** *The crypto and plumbing, yes; the state log itself, no.* Reuse: sender certificates and op signatures (`protocol/`), Olm delivery of control ops (`send_to_user`, sealed where we hold the delivery key), Megolm sessions shared as a `group.session`-style op (`core/src/client/groups.rs`), the conversation store, the mesh/outbox. Do **not** reuse `protocol::group` and its member roster: that log makes every member a state author, replays a full roster on every phone (`group.history` sends the whole log to a joiner, api-v2 §11), caps at `MAX_MEMBERS = 100` (`protocol/group.rs:25`) and shows everyone to everyone. A jam wants the opposite: **one author, many readers who do not need to see each other.** So:
+
+- **Jam state** (signed by the writer only, tiny): `jam.create { title, about, topics[], tiers }`, `jam.update`, `jam.remove { subscriber }`, `jam.end`. Every subscriber stores it; none holds a roster.
+- **Subscriber set** lives **only on the writer's phone** (a table `jam_subscribers(user, since, tier, removed_at)`), never sent to subscribers. (Comments reveal their authors by design; nothing else does.)
+- **Ops:** `jam.subscribe` (subscriber → writer, Olm), `jam.welcome` (writer → subscriber: the jam state, the current session key, the archive index, §3), `jam.post` (writer → subscribers, Megolm), `jam.session` (writer → subscribers, Olm: a new session key), `jam.react` and `jam.comment` (§5), `jam.remove`.
+- A post is an ordinary encrypted message body with `{ post_id, tier: free|subscribers, title, markdown, attachments[], series? }`, authored (signed) by the writer's device.
+- `writers: [user]` has length 1 in v1. A shared jam later makes it longer, each writer with their own Megolm session (as groups do per sending device).
+
+## 3. Rotation, the archive, and keys (Phase 1 b and c)
+
+**(b) Rotation.** Today `ensure_group_session` (`core/src/client/groups.rs` ~555) replaces the outbound session when `rotate` is set (set on any membership change, `store/groups.rs:144`), after **100 messages** or **7 days** (`ROTATE_AFTER_MESSAGES`, `ROTATE_AFTER_MS`), or when the recipient fingerprint changes. For a jam: since every new subscriber receives the whole archive anyway (J3), **rotating on a join protects nothing, so do not.** Rotate on **removal** (so a removed subscriber cannot read later posts), after 100 posts or 7 days as now (limits the damage of one stolen key to a window; the cost is one `jam.session` Olm message per subscriber device per rotation), and on `jam.end`. This is sound: forward secrecy for a removed person is kept, nothing else was ever protected by rotating on a join. The writer's phone keeps the **first-index key of every session it ever made** (a ~229-byte `SessionKey` each; see below) so the archive can be handed over.
+
+**(c) The archive: three options.**
+
+| | How | Server learns / holds | Cost |
+|---|---|---|---|
+| **A. Writer's phone re-sends** | On `jam.welcome` the writer re-sends every past post (and its keys) over the same encrypted channel | Nothing new (just ordinary mailbox traffic) | The writer must be online for each joiner; a 200-post archive with attachments is a big upload per joiner; joins in bursts hurt. Undelivered mailbox items last 30 days (api-v2 §2). |
+| **B. Server ciphertext archive** | Each post is uploaded **once** as an encrypted blob (the attachment pipeline, api-v2 "Attachments (LIME-98c)": AES-256-GCM, key in the post, `blobs` bucket) with a new long retention class; the writer sends subscribers only the post id + key | A blob exists: its **size, time, id** and **which accounts fetch it**, for the life of the jam (today files live ~1 h after the last fetch or 30 days: `architecture.md` ~85, so this is **new retention**). It cannot read content. | Writer need not be online; one upload per post; fan-out is a small notice. Needs a server change (retention + quota). |
+| **C. Both (recommended)** | Posts are blobs (B); the writer's phone hands a joiner the **index of post ids + keys + the session first-index keys** in `jam.welcome` (A's channel, but tiny) | As B | The welcome is a few KB for hundreds of posts. A joiner fetches blobs at its own pace, from the server, with the writer offline. The writer's phone remains the only holder of the *keys* (the server holds only ciphertext it cannot open). |
+
+**Experiment (throwaway, not committed):** with `vodozemac` 0.11.1, a subscriber given a writer session's **first-index key** (`GroupSession::session_key()` taken at creation, 229 bytes) decrypted five earlier posts **and** a later one; `InboundGroupSession::export_at(i)` produced a key that reads from index *i* on and refused earlier posts. So one stored key per session is enough to give a joiner the whole archive of that session, and a key at index *i* could give a "from here on" view if ever wanted.
+
+**Recommendation: C.** It is the only option that works while the writer is offline and does not make the writer's phone a server, and the extra the server learns (blob sizes, times, who fetches) is the same class it already learns for attachments.
+
+## 4. Scale (Phase 1 d)
+
+Limits today: groups hold **100** people (`MAX_MEMBERS`); `/v2/send` takes **500 recipient devices** per request (api-v2 §11 implementation guards) and the client chunks at **100** (`SEND_CHUNK`). For a jam of *N* subscribers with *D* devices each:
+
+- A post is encrypted **once**; the same ciphertext goes to all *N·D* devices in ⌈*N·D*/100⌉ chunked sends (the server's 500 cap is per request, so it is not a hard ceiling, only more requests). With blobs (option C) the Megolm message is only a notice with a post id and key, a few hundred bytes.
+- A rotation costs *N·D* Olm messages (key distribution), done lazily as for groups.
+- A subscribe is one Olm message in and one welcome out.
+
+**v1's honest limit: 100 subscribers per jam**, so the first build reuses the group sending code, sizes and tests as they are. The design carries to **~1,000** by chunking (≈ 20 requests per post at 2 devices each) plus a background queue; beyond that, a different distribution (a relay or a server-side fan-out of ciphertext) would be needed and is out of scope. **The product decision:** is 100 enough for teachers' first jams? (A teacher with a following larger than that is the case to watch.)
+
+## 5. Responses (Phase 1 e)
+
+- **♥ likes:** a signed `jam.react` sent **only to the writer** (Olm). The writer's phone keeps the count and the list; subscribers never see counts (wellbeing evidence, §0). Cheap and private.
+- **Private reply to the writer:** opens an ordinary 1:1 chat with the writer (`dm:`), quoting the post. Existing code.
+- **Comments all subscribers see: two options.**
+  - **E1: every commenter is a Megolm sender to all subscribers** (as in a group). Each commenter device needs its own outbound session shared with every subscriber device: at 100 subscribers that is up to 100 sessions × 100 devices of key distribution, and every subscriber learns every commenter's device; quadratic growth makes it unworkable beyond ~100.
+  - **E2 (recommended): comments go to the writer, who republishes them.** A comment is a signed op the commenter sends to the writer (Olm); the writer's phone checks the author is a subscriber and republishes it inside the jam's session as `jam.comment { author, text, post_id, author_sig }`, so subscribers can verify it is the author's own words and not the writer's invention. Cost: one session (the writer's), nothing quadratic. Trade-off: **comments appear only while the writer's phone is online**, and the writer can drop a comment (a moderation tool, but also a power).
+  
+  Recommended for v1: E2, with the limit stated in the UI ("comments appear when the writer's phone is next online").
+
+## 6. Removal and report (Phase 1 g)
+
+- **Remove a subscriber:** the writer's phone sets `removed_at`, rotates the session (§3) and does not send the new key to them; they keep what they already had (as with groups: a delete or a removal cannot unsee).
+- **Report a post or comment** (App Store rule 1.2 for user content; LIME-113's Report path): the **reporter's phone** forwards the reported item, which it can already read, with its sender signature, the jam id and the writer's id, to the abuse contact (a user-initiated disclosure; end-to-end encryption is intact for everyone else). The platform's powers are: take the **jam page** down (§7), refuse to serve the post blobs (the ciphertext, so the content is gone for new fetchers and for the archive), and ban the account. It cannot reach into subscribers' phones. This needs the Report path (LIME-113) to accept a jam item; no new mechanism.
+- **Unsubscribe:** the subscriber's phone sends nothing the server can see beyond a `jam.unsubscribe` to the writer; it keeps its archive (or deletes it locally).
+
+## 7. The jam page, and discovery (Phase 1 f, brief item i)
+
+A non-subscriber must see *something* to decide to subscribe. **Plot's lean, evaluated:** a **jam page** is the **only public, server-readable part**: name, about, topics (subject, grade, tags), the post titles the writer chooses to show, and the post count. **Posts, including free ones, stay encrypted: reading any post needs a (free) subscription, one tap.**
+
+| | Option 1 (recommended): page public, all posts encrypted | Option 2: free posts readable by any signed-in teacher |
+|---|---|---|
+| Server | reads the page (as it reads a profile today: name, school, about) | reads every free post (plain), so it can be compelled, scanned, leaked |
+| Writer | chooses what the page shows | cannot take back a free post |
+| Subscribers | learn nothing about each other | same |
+| Non-subscribers | see the page, not the posts | see free posts with no relationship |
+| Moderation | takedown of a page; posts are ciphertext | takedown of readable content, easier |
+| Fit with J1 | **keeps J1** | breaks J1 for free posts |
+
+**Recommendation: Option 1.** It is also the minimum new server metadata a **Subscribe** button needs: a `jams` table (jam id, writer id, title, about, topics, post count, created) readable by signed-in users, the same trust class as `profiles` (api-v2 §11, "Profiles"). A directory search over it (by subject, grade, topic, name) is a server query; it learns *what* is searched, as the user directory does today. "Teachers I know" is local (the contacts and groups already on the phone).
+
+**Subscribing reveals to the server** that *this account contacted that writer* (a message to a writer you may not have chatted with, an identified first send: the existing "stranger's first message" limit, api-v2 §9) and, through option C, that this account later fetches that jam's blobs. The server can therefore infer *a jam's subscribers* from blob fetches. Mitigations to weigh later: fetch blobs through the LIME-139 relay path, or serve blobs by capability without account auth. State this limit in the product copy.
+
+## 8. What each party learns (v1, option C + E2 + Option 1)
+
+| Party | Learns |
+|---|---|
+| **The server** | The jam page (public by design). That blobs exist, with sizes and times, and **which accounts fetch which blob ids** (so it can infer a jam's subscriber set statistically). The recipient sets of each notice send (the existing limit, api-v2 §9). Timing and IP addresses. **Never**: post, comment or ♥ content; titles of unlisted posts; who liked or commented. |
+| **The writer** | Everything about their jam: who subscribed (and when), every ♥, every comment, who removed. |
+| **Subscribers** | The posts (all of the archive), the comments the writer republished with their authors. Not who the other subscribers are, not who ♥'d, not how many. |
+| **Non-subscribers** | The jam page only. |
+| **A removed subscriber** | What they already received. Nothing after the rotation. |
+
+## 9. Payments, later (brief item j)
+
+No payment code in v1; the model has `tier` and `tiers` so it can arrive without a migration of posts. **Rules to design for:** Apple requires In-App Purchase for digital subscriptions in an app (Patreon was moved to IAP by 2026-11-01: 30%, 15% after the first year / small business program); US apps may link out to a web checkout after the Epic ruling (the allowed commission is still being set after the December 2025 appeal). **Options for a 0% lime cut, for a later decision:** (1) US: a "pay on the web" link to the writer's own processor (Stripe, etc.), no IAP; (2) elsewhere: IAP, with the platform's cut visible to the writer; (3) tips as one-time purchases. Whichever, **the paid-ness is enforced by the writer's phone handing out keys** (a paid subscriber gets the `subscribers` posts' keys); the server never decides who may read. Every jam still has free posts.
+
+## 10. Honest limits and open questions
+
+- 100 subscribers in v1 (§4). Comments need the writer online (§5). A subscriber's device that misses a rotation misses those posts until the writer next sends the key (same as groups).
+- The server **will** hold a ciphertext archive (new retention); this must be said in `architecture.md` when built, and retention for a deleted jam is: delete its blobs.
+- Student privacy: lime cannot see classroom clips; the writer is responsible. A one-time notice at the first clip upload ("Don't share students' faces or names without permission") is a copy decision, not a technical one.
+- Who may create a jam (any signed-in teacher? after some verification?) is undecided; spam and impersonation (a fake "famous teacher" jam) need the Report path and a verified-name policy.
+- Shared jams (school/district) change §2's `writers`, §5's comment path and the page's ownership; not v1.
+
+## 11. Proposed split into build briefs (for plot to draft; LIME-186+)
+
+1. **Core (186):** conversation kind `jam:`; `jam.*` ops and state; the writer's session store (first-index keys), rotation on removal / 100 / 7 days; `jam.subscribe` / `welcome` / `post` / `session` / `remove`; tests in the fake server. (No UI.)
+2. **Server (187), only if option C:** a `jams` page table and RLS; a long-retention blob class with quota and deletion on `jam.end`; rate limits; `docs/api-v2.md` + `architecture.md`.
+3. **iOS write and read (188):** a Jam tab: your jam (create, write a post with the existing composer + attachments, free/subscribers), subscriptions list, post reader, the archive.
+4. **Responses (189):** ♥ to the writer, private reply, comments (E2) with the "when the writer is online" copy.
+5. **Page and discovery (190):** the jam page, Subscribe, directory search by subject / grade / topic, "teachers I know".
+6. **Report and moderation (191):** Report on a jam item (LIME-113's path), takedown tooling.
+7. **Later:** payments (§9), shared jams, notifications settings per jam (off by default).
+
+## 12. The decisions this needs from the user
+
+1. **Archive:** C (blobs + welcome), as recommended, accepting the new server retention? (Or A, no server change but the writer must be online.)
+2. **Subscriber limit** in v1: 100 (the group code as is) or build chunking for ~1,000?
+3. **Comments:** E2 (the writer republishes; appear when the writer is online)?
+4. **Page vs posts:** Option 1 (public page, encrypted posts)?
+5. **Who may create a jam** in v1, and the Report/takedown policy before TestFlight.
