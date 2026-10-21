@@ -6,7 +6,7 @@ final class JamArticleTests: XCTestCase {
     private func pixel() -> UIImage { UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).image { $0.fill(CGRect(x: 0, y: 0, width: 10, height: 10)) } }
 
     func testAPictureInsertedAtTheCaretBecomesAnImageBlockOfItsOwn() {
-        let text = NSMutableAttributedString(string: "Before after")
+        let text = NSMutableAttributedString(string: "Before\nafter")
         let caret = ComposerDocument.insertImage(pixel(), index: 0, into: text, at: 7, width: 300)
         XCTAssertEqual(ComposerDocument.imageIndexes(in: text), [0])
         let markdown = ComposerDocument.markdown(from: text)
