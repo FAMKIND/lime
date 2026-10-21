@@ -98,7 +98,7 @@ struct MessageActionsHost: ViewModifier {
                 }
                 Button("Cancel", role: .cancel) { state.deleting = [] }
             } message: {
-                Text(everyoneAllowed ? "“Delete for everyone” replaces \(state.deleting.count == 1 ? "it" : "them") with “This message was deleted” on their phones. Lime can't guarantee it's gone if someone already saw or saved it."
+                Text(everyoneAllowed ? "“Delete for everyone” replaces \(state.deleting.count == 1 ? "it" : "them") with “This message was deleted” on their phones. lime can't guarantee it's gone if someone already saw or saved it."
                                      : "This removes \(state.deleting.count == 1 ? "it" : "them") from this phone only.")
             }
     }

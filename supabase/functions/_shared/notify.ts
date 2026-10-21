@@ -2,17 +2,17 @@
 // function secret (LIME_NOTIFY_RESEND_API_KEY, never in the repo); without the secret nothing is
 // sent and nothing fails. It is best effort: a failed send never blocks what triggered it.
 
-const DEFAULT_FROM = "Lime <no-reply@send.limechat.org>";
+const DEFAULT_FROM = "lime <no-reply@send.limechat.org>";
 
 export type Notice = { subject: string; text: string; html: string };
 
 /** The notice for an account whose master key was just replaced. */
 export function keysReplacedNotice(when = new Date()): Notice {
-  const text = "A new phone signed in and replaced your Lime keys. If this wasn't you, reset your password.";
+  const text = "A new phone signed in and replaced your lime keys. If this wasn't you, reset your password.";
   const detail = "Your chats on your other phones stop working until you sign in there again, and your contacts will be asked to accept your new key.";
   const stamp = when.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
   return {
-    subject: "A new phone signed in to Lime",
+    subject: "A new phone signed in to lime",
     text: `${text}\n\n${detail}\n\n${stamp}`,
     html: `<p>${text}</p><p>${detail}</p><p style="color:#666">${stamp}</p>`,
   };

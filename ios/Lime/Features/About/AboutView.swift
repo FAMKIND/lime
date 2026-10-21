@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "About Lime": the app and LimeCore versions, and a live run of LimeCore's encryption self-test
+/// "About lime": the app and LimeCore versions, and a live run of LimeCore's encryption self-test
 /// (real vodozemac Olm and Megolm round trips, in memory). Opened by long-pressing the logo.
 struct AboutView: View {
     private enum Result {
@@ -41,8 +41,8 @@ struct AboutView: View {
                 .frame(width: 72, height: 72)
                 .accessibilityHidden(true)
             VStack(spacing: 4) {
-                Text("About Lime").font(Theme.title)
-                Text("Lime \(appVersion) · Core \(coreVersion())")
+                Text("About lime").font(Theme.title)
+                Text("lime \(appVersion) · Core \(coreVersion())")
                     .font(Theme.secondary)
                     .foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("about-versions")
@@ -91,6 +91,10 @@ struct AboutView: View {
                 .foregroundStyle(Theme.text)
                 .accessibilityIdentifier("load-sample-chats")
             #endif
+            if Brand.showLegalLine {
+                Text(Brand.legalLine).font(Theme.caption).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                    .accessibilityIdentifier("legal-line")
+            }
             Button("Sign out", role: .destructive) { confirmingSignOut = true }
                 .font(Theme.font(.subheadline, weight: .semibold))
                 .accessibilityIdentifier("sign-out")
@@ -103,7 +107,7 @@ struct AboutView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.canvas.ignoresSafeArea())
         .presentationDetents([.large])
-        .confirmSheet("Sign out of Lime?", isPresented: $confirmingSignOut) {
+        .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
             Button("Sign out and remove chats from this phone", role: .destructive) {
                 dismiss()
                 Task { await session.signOut() }

@@ -1,13 +1,13 @@
 LIME ACKNOWLEDGEMENTS
 =====================
 
-Lime is built with the open-source software below. Thank you to everyone who made it.
-Lime's own code is MIT-licensed. This list is generated from the libraries linked into the app
+lime is built with the open-source software below. Thank you to everyone who made it.
+lime's own code is MIT-licensed. This list is generated from the libraries linked into the app
 (core/make-acknowledgements.py); the full text of each licence follows the list.
 
 SQLCIPHER (the encrypted local database)
 ----------------------------------------
-Lime's on-device store uses SQLCipher Community Edition by Zetetic LLC (bundled with
+lime's on-device store uses SQLCipher Community Edition by Zetetic LLC (bundled with
 libsqlite3-sys 0.38.2), which includes SQLite (public domain). Its licence:
 
 Copyright (c) 2008-2020 Zetetic LLC
@@ -37,7 +37,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 CALLS (WebRTC and LiveKit)
 --------------------------
-Lime's one-to-one calls use Google's WebRTC (packaged by stasel/WebRTC) and its group calls use the LiveKit client SDK
+lime's one-to-one calls use Google's WebRTC (packaged by stasel/WebRTC) and its group calls use the LiveKit client SDK
 for Swift with LiveKit's own build of WebRTC (livekit/webrtc-xcframework) and its small Rust library
 (livekit/livekit-uniffi-xcframework). The media server is LiveKit's open-source server. Their licences:
   WebRTC (Google, the WebRTC project authors; stasel/WebRTC and livekit/webrtc-xcframework)  [BSD-3-Clause]
@@ -54,7 +54,7 @@ for Swift with LiveKit's own build of WebRTC (livekit/webrtc-xcframework) and it
 
 TYPEFACES (Settings, Customize, Text size and font)
 ---------------------------------------------------
-Lime offers these open-source typefaces, used under the SIL Open Font License, Version 1.1 (the text follows).
+lime offers these open-source typefaces, used under the SIL Open Font License, Version 1.1 (the text follows).
 Only the Regular, Medium, SemiBold and Bold weights are bundled (Comic Neue: Regular and Bold, the weights it has).
 Figtree, Atkinson Hyperlegible Next, Newsreader, Mozilla Text and Mozilla Headline are static copies cut from the originals'
 variable fonts and reduced to Latin letters (Newsreader also has a larger line gap). Comic Neue, Lexend and Lora are the

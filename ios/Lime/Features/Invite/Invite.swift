@@ -2,7 +2,7 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import UIKit
 
-/// The invite text and link a teacher sends from their own phone. Lime's servers never send invites
+/// The invite text and link a teacher sends from their own phone. lime's servers never send invites
 /// and never learn who was invited.
 enum InviteLink {
     static let host = "limechat.org"
@@ -10,16 +10,16 @@ enum InviteLink {
     static func url(username: String) -> String { "https://\(host)/u/\(username)" }
 
     static func message(username: String) -> String {
-        "Join me on Lime, a private messenger made for teachers: \(url(username: username))"
+        "Join me on lime, a private messenger made for teachers: \(url(username: username))"
     }
 
     /// The same text for someone with no username yet: just the site.
-    static let generalMessage = "Join me on Lime, a private messenger made for teachers: https://\(host)"
+    static let generalMessage = "Join me on lime, a private messenger made for teachers: https://\(host)"
 }
 
 /// What a teacher's QR code holds: their invite link plus their identity-key fingerprint, e.g.
 /// `https://limechat.org/u/grace.h?k=A1B2C3D4E5F607182930`. A phone camera that scans it opens the
-/// invite page; Lime reads the fingerprint too.
+/// invite page; lime reads the fingerprint too.
 @MainActor
 struct QRPayload: Equatable {
     /// 20 upper-case hex digits (the first ten bytes of SHA-256 of the master key), no spaces.
@@ -37,8 +37,8 @@ struct QRPayload: Equatable {
         return link
     }
 
-    /// Reads a scanned string: only Lime's own invite links with a valid username (and, when present,
-    /// a well-formed fingerprint). Anything else is not a Lime QR code.
+    /// Reads a scanned string: only lime's own invite links with a valid username (and, when present,
+    /// a well-formed fingerprint). Anything else is not a lime QR code.
     static func decode(_ text: String) -> QRPayload? {
         guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
               components.scheme == "https",

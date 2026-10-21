@@ -289,8 +289,8 @@ final class LimeUITestsMessages: LimeUITestCase {
         XCTAssertTrue(list.waitForExistence(timeout: 10))
         // On a small screen the row is below the fold: scroll to it.
         for _ in 0..<6 where !app.buttons["action-invite"].exists { list.swipeUp() }
-        XCTAssertTrue(app.buttons["action-invite"].exists, "More → Invite teachers to Lime")
-        XCTAssertEqual(app.buttons["action-invite"].label, "Invite teachers to Lime")
+        XCTAssertTrue(app.buttons["action-invite"].exists, "More → Invite teachers to lime")
+        XCTAssertEqual(app.buttons["action-invite"].label, "Invite teachers to lime")
     }
 
     func testScanningATeachersCodeThatMatchesTheirKeyMarksThemVerifiedInPerson() {
@@ -1066,7 +1066,7 @@ final class LimeUITestsStatusAndGroupRows: LimeUITestCase {
         // Rows start at the same edge as the logo.
         let lee = app.buttons["conversation-row-dm:lee"]
         XCTAssertEqual(lee.frame.minX, 0, accuracy: 1, "rows use the full width")
-        let logo = app.buttons["Lime menu"]
+        let logo = app.buttons["lime menu"]
         let avatar = app.descendants(matching: .any)["row-avatar-dm:lee"]
         XCTAssertTrue(logo.exists && avatar.exists)
         // The logo's glass button starts at the page margin (16); its picture sits a few points inside it.
@@ -1098,7 +1098,7 @@ final class LimeUITestsStatusAndGroupRows: LimeUITestCase {
         // The pill's glass reaches 8 pt beyond its buttons; the time ends at that edge, and the avatar starts where the logo's glass does.
         // Time-boxed: the pill's glass edge differs a little by device (notch or not, iOS version), so this is loose (12 pt) rather than exact.
         XCTAssertEqual(time.frame.maxX, pill.frame.maxX + 8, accuracy: 12, "the time lines up with the right edge of the pill")
-        let logo = app.buttons["Lime menu"], avatar = app.descendants(matching: .any)["row-avatar-dm:sam"]
+        let logo = app.buttons["lime menu"], avatar = app.descendants(matching: .any)["row-avatar-dm:sam"]
         XCTAssertLessThanOrEqual(abs(avatar.frame.minX - logo.frame.minX), 12, "the avatar starts under the logo")
         // The floating + (New message) is bottom right; its clearance from the tab bar is TabBarUITests' job.
         XCTAssertGreaterThan(plus.frame.midX, window.midX)
@@ -2176,7 +2176,7 @@ final class LimeUITestsSettings: LimeUITestCase {
         let app = signedInApp()
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["messages-list"].waitForExistence(timeout: 10))
-        app.buttons["Lime menu"].press(forDuration: 1.2)
+        app.buttons["lime menu"].press(forDuration: 1.2)
         let result = app.staticTexts["self-test-result"]
         XCTAssertTrue(result.waitForExistence(timeout: 10), "the About sheet did not appear")
         let passed = NSPredicate(format: "label CONTAINS 'passed'")
@@ -2389,7 +2389,7 @@ final class LimeUITestsGroupsAndSignIn: LimeUITestCase {
         XCTAssertTrue(app.staticTexts["coming-soon-banner"].waitForExistence(timeout: 5))
 
         // Sign out (after a confirmation), then sign in with the username: password, then a new code.
-        app.buttons["Lime menu"].press(forDuration: 1.2)
+        app.buttons["lime menu"].press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 10))
         app.buttons["sign-out"].tap()
         let confirm = app.buttons.matching(identifier: "sign-out-confirm").firstMatch

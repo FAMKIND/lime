@@ -175,7 +175,7 @@ struct ChatComposer: View {
         .alert("The microphone is off", isPresented: $micDenied) {
             Button("Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("Turn on the microphone for Lime in Settings to record voice messages.") }
+        } message: { Text("Turn on the microphone for lime in Settings to record voice messages.") }
         .alert("That video can't be sent", isPresented: Binding(get: { videoProblem != nil }, set: { if !$0 { videoProblem = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(videoProblem ?? "") }

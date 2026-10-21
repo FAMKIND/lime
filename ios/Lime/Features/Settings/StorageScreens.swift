@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings → Storage (LIME-107): what Lime keeps on this iPhone, how long, and what it downloads by itself.
+/// Settings → Storage (LIME-107): what lime keeps on this iPhone, how long, and what it downloads by itself.
 struct StorageScreen: View {
     @Environment(ConversationStore.self) private var store
     @State private var summary = ConversationStore.StorageSummary()
@@ -12,12 +12,12 @@ struct StorageScreen: View {
     var body: some View {
         SettingsPage(title: "Storage") {
             SettingsCard {
-                valueRow("Lime on this iPhone", ByteCountFormatter.string(fromByteCount: summary.databaseBytes, countStyle: .file), id: "storage-total")
+                valueRow("lime on this iPhone", ByteCountFormatter.string(fromByteCount: summary.databaseBytes, countStyle: .file), id: "storage-total")
                 valueRow("Photos, videos and files", ByteCountFormatter.string(fromByteCount: summary.mediaBytes, countStyle: .file), id: "storage-media", last: true)
             }
-            SettingsFootnote(text: "Photos, videos and files you receive are kept on this iPhone, encrypted. Lime's servers delete their copy about an hour after everyone has downloaded it, so this iPhone may hold the only copy. They are not backed up to iCloud.")
+            SettingsFootnote(text: "Photos, videos and files you receive are kept on this iPhone, encrypted. lime's servers delete their copy about an hour after everyone has downloaded it, so this iPhone may hold the only copy. They are not backed up to iCloud.")
             if StorageGuard.shared.isLow {
-                SettingsFootnote(text: "Your iPhone is almost full. Lime paused downloads.").accessibilityIdentifier("storage-low")
+                SettingsFootnote(text: "Your iPhone is almost full. lime paused downloads.").accessibilityIdentifier("storage-low")
             }
 
             SettingsFootnote(text: "Keep media")

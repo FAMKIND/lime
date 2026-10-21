@@ -4,13 +4,13 @@ import SwiftUI
 
 // MARK: The people picked in Apple's contact picker
 
-/// What Lime keeps of a picked contact: only where to send the invite. Nothing is stored or uploaded.
+/// What lime keeps of a picked contact: only where to send the invite. Nothing is stored or uploaded.
 struct InviteRecipient: Equatable, Sendable {
     let phones: [String]
     let emails: [String]
 }
 
-/// Apple's own contact picker: it runs in a separate process, so Lime needs no Contacts permission and
+/// Apple's own contact picker: it runs in a separate process, so lime needs no Contacts permission and
 /// only ever receives the entries the teacher picks.
 struct ContactPicker: UIViewControllerRepresentable {
     let onPick: ([InviteRecipient]) -> Void
@@ -77,7 +77,7 @@ struct MailComposer: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> MFMailComposeViewController {
         let controller = MFMailComposeViewController()
         controller.setToRecipients(recipients)
-        controller.setSubject("Join me on Lime")
+        controller.setSubject("Join me on lime")
         controller.setMessageBody(body, isHTML: false)
         controller.mailComposeDelegate = context.coordinator
         return controller
@@ -109,7 +109,7 @@ struct ShareSheet: UIViewControllerRepresentable {
 // MARK: The invite flow
 
 /// Invite teachers: pick people in Apple's picker, choose Messages, Mail or Share, and the composer opens
-/// with the invite text already written. The invite goes from the teacher's own phone; Lime's servers
+/// with the invite text already written. The invite goes from the teacher's own phone; lime's servers
 /// never send it and never learn who was invited.
 struct InviteFlow: ViewModifier {
     @Binding var start: Bool
@@ -168,7 +168,7 @@ struct InviteFlow: ViewModifier {
                 Button("Share…") { step = .share }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("It's sent from your own phone. Lime never sees who you invite.")
+                Text("It's sent from your own phone. lime never sees who you invite.")
             }
     }
 }
@@ -179,7 +179,7 @@ extension View {
     }
 }
 
-/// The "Invite a teacher" card (shown when you have no chats yet) and the "Invite teachers to Lime" row.
+/// The "Invite a teacher" card (shown when you have no chats yet) and the "Invite teachers to lime" row.
 struct InviteCard: View {
     let action: () -> Void
 
@@ -187,7 +187,7 @@ struct InviteCard: View {
         VStack(spacing: 12) {
             Image(systemName: "person.crop.circle.badge.plus").font(.system(size: 34)).foregroundStyle(Theme.text)
             Text("Invite a teacher").font(Theme.title).foregroundStyle(Theme.text)
-            Text("Bring a colleague to Lime. Pick them from your contacts and send the invite from your own phone.")
+            Text("Bring a colleague to lime. Pick them from your contacts and send the invite from your own phone.")
                 .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
             Button(action: action) {
                 Text("Invite teachers").font(Theme.title).foregroundStyle(Theme.accentInk)

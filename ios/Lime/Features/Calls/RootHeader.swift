@@ -30,7 +30,7 @@ struct RootHeader: ViewModifier {
                                     .onLongPressGesture(minimumDuration: 0.6) { showAbout = true }
                                     #endif
                             }
-                            .accessibilityLabel("Lime menu")
+                            .accessibilityLabel("lime menu")
                         }
                         ToolbarItemGroup(placement: .topBarTrailing) {
                             Button(action: search) { Image(systemName: "magnifyingglass") }

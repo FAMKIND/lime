@@ -53,21 +53,21 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Lime
+        INFOPLIST_KEY_CFBundleDisplayName: lime
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Lime shows your most recent photos and videos in the add sheet so you can send them. They stay on your iPhone until you send them."
-        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Lime saves a photo to your library only when you ask it to."
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Lime uses the microphone to record voice messages and the sound of videos you record."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "lime shows your most recent photos and videos in the add sheet so you can send them. They stay on your iPhone until you send them."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "lime saves a photo to your library only when you ask it to."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "lime uses the microphone to record voice messages and the sound of videos you record."
         # A call keeps its audio going when the screen locks or Lime is in the background; "voip" is for the system call screen (CallKit).
         INFOPLIST_KEY_UIBackgroundModes: audio voip
-        INFOPLIST_KEY_NSCameraUsageDescription: "Lime uses the camera to scan a teacher's QR code and to take photos and videos to send."
+        INFOPLIST_KEY_NSCameraUsageDescription: "lime uses the camera to scan a teacher's QR code and to take photos and videos to send."
       configs:
         # LIME-103 (the Bluetooth field test): Bluetooth and its background modes exist in Debug builds only.
         Debug:
           INFOPLIST_FILE: Config/Info-Debug.plist
-          INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Lime uses Bluetooth to pass messages between nearby teachers when there's no internet."
+          INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "lime uses Bluetooth to pass messages between nearby teachers when there's no internet."
   LimeTests:
     type: bundle.unit-test
     platform: iOS

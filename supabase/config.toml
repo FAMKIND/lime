@@ -249,11 +249,11 @@ otp_expiry = 3600
 
 # The emails carry the 6-digit code ({{ .Token }}), not a link.
 [auth.email.template.confirmation]
-subject = "Your Lime code"
+subject = "Your lime code"
 content_path = "./supabase/templates/code.html"
 
 [auth.email.template.magic_link]
-subject = "Your Lime code"
+subject = "Your lime code"
 content_path = "./supabase/templates/code.html"
 
 # Uncomment to customize email template

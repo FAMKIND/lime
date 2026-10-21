@@ -201,7 +201,7 @@ struct NewMessageSheet: View {
                                     .font(Theme.font(.subheadline, weight: .semibold)).foregroundStyle(Theme.textSecondary)
                                     .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 4)
                                     .accessibilityAddTraits(.isHeader)
-                                actionRow("person.crop.circle.badge.plus", "Invite teachers to Lime", id: "action-invite") { inviting = true }
+                                actionRow("person.crop.circle.badge.plus", "Invite teachers to lime", id: "action-invite") { inviting = true }
                                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                                     .padding(.horizontal, 16).padding(.bottom, 12)
                             }

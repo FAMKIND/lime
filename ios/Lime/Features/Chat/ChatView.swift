@@ -1152,7 +1152,7 @@ struct LabelSheet: View {
                 .onSubmit { finish(true) }
                 .accessibilityIdentifier("label-field")
             HStack {
-                Text("Only you see this. It's never sent to Lime's servers or to \(name).").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
+                Text("Only you see this. It's never sent to lime's servers or to \(name).").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                 Spacer(minLength: 8)
                 Text("\(text.count)/\(Self.limit)").font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("label-count")
             }

@@ -5,7 +5,7 @@ import Foundation
 ///
 /// The database is **never backed up** (a restored phone would get the file but not the
 /// this-device-only Keychain key). If the store cannot be opened, the old file is moved aside and
-/// a fresh store is created; history is meant to come back through Lime's own recovery-key backup
+/// a fresh store is created; history is meant to come back through lime's own recovery-key backup
 /// and device linking, not through iCloud.
 enum StorageBootstrap {
     /// A folder for the database files and the Keychain service that holds its key. Tests use
@@ -14,15 +14,33 @@ enum StorageBootstrap {
         var directory: URL
         var keychainService: String
 
-        /// Application Support/Lime, and the app's Keychain item.
+        /// Application Support/lime, and the app's Keychain item.
         static func live() throws -> Location {
             let support = try FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            return Location(directory: support.appendingPathComponent("Lime", isDirectory: true),
+            try renameOldFolder(in: support)
+            return Location(directory: support.appendingPathComponent("lime", isDirectory: true),
                             keychainService: StorageKeychain.defaultService)
         }
 
         var databaseURL: URL { directory.appendingPathComponent("lime.db") }
+
+        /// The data folder used to be `Lime` (LIME-178 writes it `lime`). The phone's file system is case-insensitive, so `lime` would open the
+        /// same folder and it would still read `Lime` on disk: rename it in place (through a temporary name, which is what makes the case change
+        /// stick). If both really exist (a case-sensitive volume), the old one is stale and is deleted.
+        static func renameOldFolder(in support: URL, fileManager: FileManager = .default) throws {
+            let names = (try? fileManager.contentsOfDirectory(atPath: support.path)) ?? []
+            guard names.contains("Lime") else { return }
+            let old = support.appendingPathComponent("Lime", isDirectory: true)
+            if names.contains("lime") {
+                try fileManager.removeItem(at: old)
+                return
+            }
+            let temporary = support.appendingPathComponent("lime-renaming", isDirectory: true)
+            try? fileManager.removeItem(at: temporary)
+            try fileManager.moveItem(at: old, to: temporary)
+            try fileManager.moveItem(at: temporary, to: support.appendingPathComponent("lime", isDirectory: true))
+        }
     }
 
     struct Opened: Sendable {

@@ -133,7 +133,7 @@ final class NotificationTests: XCTestCase {
         let nameOnly = NotificationPolicy.content(for: m, preview: .nameOnly, sound: false)
         XCTAssertEqual(nameOnly.title, "Lee Wong"); XCTAssertEqual(nameOnly.body, "New message"); XCTAssertFalse(nameOnly.sound)
         let hidden = NotificationPolicy.content(for: m, preview: .hidden, sound: true)
-        XCTAssertEqual(hidden.title, "Lime"); XCTAssertEqual(hidden.body, "New message")
+        XCTAssertEqual(hidden.title, "lime"); XCTAssertEqual(hidden.body, "New message")
         XCTAssertFalse((hidden.title + hidden.body).contains("Lee"), "no name, no words")
     }
 

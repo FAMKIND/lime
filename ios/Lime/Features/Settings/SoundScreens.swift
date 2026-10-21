@@ -41,7 +41,7 @@ final class SoundPreview {
 }
 
 /// Add your own message or call sound: pick an audio file, choose which part to keep (at most 2 s for a message, under 30 s for a call),
-/// listen, name it, save. Lime converts it and keeps it on this phone.
+/// listen, name it, save. lime converts it and keeps it on this phone.
 struct AddSoundSheet: View {
     let kind: CustomSounds.Kind
     @Environment(\.dismiss) private var dismiss
@@ -61,7 +61,7 @@ struct AddSoundSheet: View {
             ScrollView {
                 VStack(spacing: 16) {
                     Text(kind == .message ? "Your message sound" : "Your call sound").font(Theme.font(.title3, weight: .bold)).foregroundStyle(Theme.text).padding(.top, 16)
-                    Text(kind == .message ? "Pick a short sound. Lime keeps up to 2 seconds of it." : "Pick a sound. Lime keeps up to 29 seconds of it.")
+                    Text(kind == .message ? "Pick a short sound. lime keeps up to 2 seconds of it." : "Pick a sound. lime keeps up to 29 seconds of it.")
                         .font(Theme.secondary).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
                     Button { picking = true } label: {
                         Text(source == nil ? "Choose a file…" : "Choose another file…").font(Theme.font(.body, weight: .semibold)).foregroundStyle(Theme.accentInk)
@@ -112,7 +112,7 @@ struct AddSoundSheet: View {
         // A copy in the temporary folder, so it can be read after the picker lets go.
         let copy = FileManager.default.temporaryDirectory.appendingPathComponent("pick-\(UUID().uuidString)-\(url.lastPathComponent)")
         do { try FileManager.default.copyItem(at: url, to: copy) } catch { problem = "That file could not be opened."; return }
-        guard let seconds = CustomSounds.duration(of: copy), seconds > 0.05 else { problem = "That is not a sound Lime can use."; return }
+        guard let seconds = CustomSounds.duration(of: copy), seconds > 0.05 else { problem = "That is not a sound lime can use."; return }
         problem = nil
         source = copy
         total = seconds

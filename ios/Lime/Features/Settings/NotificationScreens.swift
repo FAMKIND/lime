@@ -23,7 +23,7 @@ struct NotificationsScreen: View {
                 .padding(.horizontal, 18).frame(minHeight: 58)
                 .accessibilityIdentifier("notif-toggle")
             }
-            SettingsFootnote(text: "Calls ring only while Lime is open or was just open, until push calls arrive. When you\u{2019}re on Do Not Disturb or outside work hours, calls don\u{2019}t ring and callers are told. If someone calls twice within 3 minutes, the second call rings.")
+            SettingsFootnote(text: "Calls ring only while lime is open or was just open, until push calls arrive. When you\u{2019}re on Do Not Disturb or outside work hours, calls don\u{2019}t ring and callers are told. If someone calls twice within 3 minutes, the second call rings.")
             if settings.enabled {
                 SettingsFootnote(text: "Preview")
                 SettingsCard {
@@ -66,7 +66,7 @@ struct NotificationsScreen: View {
                 SettingsFootnote(text: "Muted chats")
                 mutedChats
             }
-            SettingsFootnote(text: "Lime has no push service yet, so alerts arrive while Lime is open, or for a short while after you leave it.")
+            SettingsFootnote(text: "lime has no push service yet, so alerts arrive while lime is open, or for a short while after you leave it.")
         }
         .task { await notifications.refreshAuthorization() }
         .sheet(isPresented: $explaining) { NotificationExplainerSheet() }
@@ -104,7 +104,7 @@ struct NotificationsScreen: View {
         case .denied:
             SettingsCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Notifications are off for Lime in iOS Settings.").font(Theme.body).foregroundStyle(Theme.text)
+                    Text("Notifications are off for lime in iOS Settings.").font(Theme.body).foregroundStyle(Theme.text)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("notif-denied")
                     Button("Open iOS Settings") {
@@ -177,7 +177,7 @@ enum MuteText {
     }
 }
 
-/// Why Lime asks, before the system's own prompt. "Not now" is respected: it is not asked again by itself.
+/// Why lime asks, before the system's own prompt. "Not now" is respected: it is not asked again by itself.
 struct NotificationExplainerSheet: View {
     @Environment(NotificationCoordinator.self) private var notifications
     @Environment(\.dismiss) private var dismiss
@@ -188,7 +188,7 @@ struct NotificationExplainerSheet: View {
             Text("Know when a teacher writes").font(Theme.font(.title2, weight: .bold)).foregroundStyle(Theme.text)
                 .accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: 10) {
-                Text("Lime can alert you to new messages. Messages are decrypted on this iPhone, so what an alert says never passes through a server.")
+                Text("lime can alert you to new messages. Messages are decrypted on this iPhone, so what an alert says never passes through a server.")
                 Text("You choose what an alert shows, its sound, and which chats to mute, in Settings.")
             }
             .font(Theme.body).foregroundStyle(Theme.textSecondary)

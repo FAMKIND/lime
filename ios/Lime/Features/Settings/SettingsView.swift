@@ -116,7 +116,7 @@ struct SettingsView: View {
         .background(Theme.canvas.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .accessibilityIdentifier("settings-root")
-        .confirmSheet("Sign out of Lime?", isPresented: $confirmingSignOut) {
+        .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
             Button("Sign out and remove messages from this iPhone", role: .destructive) {
                 dismiss()
                 Task { await session.signOut() }

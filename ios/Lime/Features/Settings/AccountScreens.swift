@@ -30,7 +30,7 @@ struct AccountScreen: View {
                 .accessibilityIdentifier("account-sign-out")
             }
         }
-        .confirmSheet("Sign out of Lime?", isPresented: $confirmingSignOut) {
+        .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
             Button("Sign out and remove messages from this iPhone", role: .destructive) {
                 onClose()
                 Task { await session.signOut() }
@@ -303,7 +303,7 @@ struct LinkedDevicesScreen: View {
                 }
                 .padding(18)
             }
-            SettingsFootnote(text: "Using Lime on more than one device is coming soon.")
+            SettingsFootnote(text: "Using lime on more than one device is coming soon.")
                 .accessibilityIdentifier("devices-note")
         }
     }
@@ -388,7 +388,7 @@ struct AboutScreen: View {
                 HStack(spacing: 14) {
                     Image("LimeLogo").resizable().scaledToFit().frame(width: 44, height: 44).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Lime").font(Theme.title).foregroundStyle(Theme.text)
+                        Text("lime").font(Theme.title).foregroundStyle(Theme.text)
                         Text("Version \(appVersion) · Core \(coreVersion())").font(Theme.secondary).foregroundStyle(Theme.textSecondary)
                             .accessibilityIdentifier("about-version")
                     }

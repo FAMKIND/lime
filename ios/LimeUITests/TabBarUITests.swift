@@ -93,12 +93,12 @@ final class TabBarUITests: XCTestCase {
         for (tab, searchID) in [("link", "messages-search-button"), ("call", "calls-search-button"), ("jam", "jam-search-button")] {
             XCTAssertTrue(app.tabBars.buttons[tab].waitForExistence(timeout: 10))
             app.tabBars.buttons[tab].tap()
-            XCTAssertTrue(app.buttons["Lime menu"].waitForExistence(timeout: 5), "\(tab): the logo")
+            XCTAssertTrue(app.buttons["lime menu"].waitForExistence(timeout: 5), "\(tab): the logo")
             XCTAssertTrue(app.buttons[searchID].exists, "\(tab): search")
             XCTAssertTrue(app.buttons["settings-button"].exists, "\(tab): the avatar")
             let bar = app.navigationBars.firstMatch
             if bar.exists {
-                let others = bar.buttons.allElementsBoundByIndex.map(\.identifier).filter { !["Lime menu", searchID, "settings-button", "back-button"].contains($0) && !$0.isEmpty }
+                let others = bar.buttons.allElementsBoundByIndex.map(\.identifier).filter { !["lime menu", searchID, "settings-button", "back-button"].contains($0) && !$0.isEmpty }
                 XCTAssertEqual(others, [], "\(tab): no other header buttons")
             }
             XCTAssertEqual(app.buttons["new-message-button"].exists, tab == "link", "\(tab): the + only on link")

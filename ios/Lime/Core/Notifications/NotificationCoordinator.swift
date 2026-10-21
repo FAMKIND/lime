@@ -4,7 +4,7 @@ import UIKit
 import UserNotifications
 import AudioToolbox
 
-/// Whether iOS lets Lime post notifications.
+/// Whether iOS lets lime post notifications.
 enum NotificationAuthorization: Equatable, Sendable { case notDetermined, denied, authorized }
 
 /// What the coordinator needs from iOS, so tests can stand in for it.
@@ -24,7 +24,7 @@ protocol ArrivalFeedback: AnyObject {
     func tick()
 }
 
-/// A banner shown at the top while Lime is open.
+/// A banner shown at the top while lime is open.
 struct IncomingBanner: Identifiable, Equatable, Sendable {
     let id: String
     let content: NotificationContent
@@ -39,7 +39,7 @@ final class NotificationCoordinator {
     let settings: NotificationSettings
     private(set) var authorization: NotificationAuthorization = .notDetermined
     private(set) var banner: IncomingBanner?
-    /// True while Lime is the app on screen.
+    /// True while lime is the app on screen.
     var isActive = true
     /// The chat or thread on screen, so it only ticks.
     var viewing: ViewingTarget?
@@ -126,7 +126,7 @@ final class NotificationCoordinator {
         let content = NotificationContent(title: "While you were away", body: body, threadIdentifier: "summary", conversationID: last.conversationID,
                                           threadRoot: nil, messageID: "summary-\(last.id)", sound: false)
         if isActive {
-            banner = IncomingBanner(id: content.messageID, content: content, sender: Person(id: "lime", name: "Lime"))
+            banner = IncomingBanner(id: content.messageID, content: content, sender: Person(id: "lime", name: "lime"))
         } else if authorization == .authorized, settings.enabled {
             await center.schedule(content)
         }
@@ -201,7 +201,7 @@ final class SystemNotifications: NSObject, LocalNotificationCenter, UNUserNotifi
         if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
     }
 
-    // A notification is never shown by iOS while Lime is open: Lime shows its own banner.
+    // A notification is never shown by iOS while lime is open: lime shows its own banner.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [] }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {

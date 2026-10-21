@@ -14,7 +14,7 @@ enum ConnectionProblem: Equatable, Sendable {
         case .sessionEnded: "Your session has ended. Please sign in again."
         case .offline: "You're offline. Check your connection and try again."
         case .busy: "Too many requests. Wait a minute and try again."
-        case .server: "Lime's server had a problem. Try again in a moment."
+        case .server: "lime's server had a problem. Try again in a moment."
         case .other: "Something went wrong. Try again."
         }
     }

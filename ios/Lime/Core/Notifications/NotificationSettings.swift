@@ -16,7 +16,7 @@ enum NotificationPreview: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// The sound for a new message: Lime's own chime (the default), the system's, none, or one of the person's own (a file they added,
+/// The sound for a new message: lime's own chime (the default), the system's, none, or one of the person's own (a file they added,
 /// kept on this phone in `Library/Sounds`).
 enum NotificationSound: Hashable, Identifiable, Sendable {
     case limeChime, systemDefault, none
@@ -50,7 +50,7 @@ enum NotificationSound: Hashable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .limeChime: "Lime chime"
+        case .limeChime: "lime chime"
         case .systemDefault: "Default"
         case .none: "None"
         case .custom: "Your sound"
@@ -67,7 +67,7 @@ enum NotificationSound: Hashable, Identifiable, Sendable {
     }
 }
 
-/// The ringtone for a call: Lime's steelpan, the system's, or a custom one (used by the in-app ringing; see `CallRingtone`).
+/// The ringtone for a call: lime's steelpan, the system's, or a custom one (used by the in-app ringing; see `CallRingtone`).
 enum CallSound: Hashable, Identifiable, Sendable {
     case limeSteelpan, systemDefault
     case custom(String)
@@ -94,7 +94,7 @@ enum CallSound: Hashable, Identifiable, Sendable {
     static let builtIns: [CallSound] = [.limeSteelpan, .systemDefault]
     var title: String {
         switch self {
-        case .limeSteelpan: "Lime steelpan"
+        case .limeSteelpan: "lime steelpan"
         case .systemDefault: "Default"
         case .custom: "Your sound"
         }
@@ -108,8 +108,8 @@ enum SoundFiles {
 }
 
 /// What CallKit plays for an incoming call (LIME-111 passes this to `CXProviderConfiguration.ringtoneSound`). CallKit documents that
-/// setting as the name of a sound in the app bundle, so a custom call sound cannot be handed to it: the custom sound plays in Lime's own
-/// ringing screen, and the system call screen uses the Lime steelpan.
+/// setting as the name of a sound in the app bundle, so a custom call sound cannot be handed to it: the custom sound plays in lime's own
+/// ringing screen, and the system call screen uses the lime steelpan.
 enum CallRingtone {
     static let callKitSoundName = SoundFiles.ring
 }
@@ -166,9 +166,9 @@ final class NotificationSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        // One source of truth for the sound: Lime's chime unless the person chose another, whatever was or was not written before.
+        // One source of truth for the sound: lime's chime unless the person chose another, whatever was or was not written before.
         defaults.register(defaults: [Keys.sound: NotificationSound.limeChime.rawValue, Keys.callSound: CallSound.limeSteelpan.rawValue])
-        // Before Lime had its own chime, "Default" was the preset, so a stored "Default" was never a choice: once, it becomes the chime.
+        // Before lime had its own chime, "Default" was the preset, so a stored "Default" was never a choice: once, it becomes the chime.
         if !defaults.bool(forKey: Keys.soundMigrated) {
             if defaults.string(forKey: Keys.sound) == NotificationSound.systemDefault.rawValue { defaults.removeObject(forKey: Keys.sound) }
             defaults.set(true, forKey: Keys.soundMigrated)

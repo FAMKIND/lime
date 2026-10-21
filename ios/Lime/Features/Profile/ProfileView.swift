@@ -163,7 +163,7 @@ struct ProfileView: View {
         } message: {
             Text("This removes it from this phone. The other person keeps their copy.")
         }
-        .confirmSheet("Sign out of Lime?", isPresented: $confirmingSignOut) {
+        .confirmSheet("Sign out of lime?", isPresented: $confirmingSignOut) {
             Button("Sign out and remove messages from this iPhone", role: .destructive) {
                 Task { await session.signOut() }
             }

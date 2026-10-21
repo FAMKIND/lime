@@ -32,9 +32,9 @@ enum Presentation: Equatable, Sendable {
     case none
     /// The message is on screen already: a subtle tick, no banner.
     case tick
-    /// Another chat while Lime is open: a banner at the top, and the sound unless it is off.
+    /// Another chat while lime is open: a banner at the top, and the sound unless it is off.
     case banner(sound: Bool)
-    /// Lime is in the background but still running: a local notification.
+    /// lime is in the background but still running: a local notification.
     case local(sound: Bool)
     /// Quiet (Do not disturb, or outside work hours): delivered silently and kept for a summary when the quiet ends.
     case held
@@ -94,7 +94,7 @@ enum NotificationPolicy {
         } else {
             switch preview {
             case .hidden:
-                title = "Lime"
+                title = "lime"
                 body = reply ? "New reply" : "New message"
             case .nameOnly:
                 title = message.conversationTitle

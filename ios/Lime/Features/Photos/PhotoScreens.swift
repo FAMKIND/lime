@@ -4,7 +4,7 @@ import UIKit
 
 // MARK: Pickers (no photo-library permission: the system picker runs out of process)
 
-/// The system photo picker: Lime receives only the one picture chosen.
+/// The system photo picker: lime receives only the one picture chosen.
 struct LibraryPicker: UIViewControllerRepresentable {
     let onPick: (UIImage) -> Void
     let onCancel: () -> Void
@@ -200,7 +200,7 @@ struct ProfilePhotoScreen: View {
             if busy { ProgressView().padding(.top, 4).accessibilityIdentifier("photo-busy") }
             SettingsFootnote(text: problem ?? "Your photo is cropped to a circle and shrunk on this iPhone. Location and camera details are never uploaded.")
             SettingsCard {
-                choice(.everyone, "Everyone on Lime", detail: "Any signed-in teacher who sees your profile can see your photo. Lime's servers keep a copy of the picture.", id: "photo-vis-everyone")
+                choice(.everyone, "Everyone on lime", detail: "Any signed-in teacher who sees your profile can see your photo. lime's servers keep a copy of the picture.", id: "photo-vis-everyone")
                 Divider().overlay(Theme.hairline).padding(.leading, 18)
                 choice(.contacts, "Only my contacts (encrypted)", detail: "Teachers you message see it. It's encrypted, the public copy is deleted, and everyone else sees your initials.", id: "photo-vis-contacts")
             }

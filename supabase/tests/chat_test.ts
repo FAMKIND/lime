@@ -212,8 +212,8 @@ Deno.test("a second device with the SAME master key is added without any reset",
 
 Deno.test("the keys-replaced notice reads as asked and goes out only when a mail key is configured", opts, async () => {
   const notice = keysReplacedNotice(new Date("2026-10-07T05:00:00Z"));
-  assertEquals(notice.subject, "A new phone signed in to Lime");
-  assert(notice.text.startsWith("A new phone signed in and replaced your Lime keys. If this wasn't you, reset your password."));
+  assertEquals(notice.subject, "A new phone signed in to lime");
+  assert(notice.text.startsWith("A new phone signed in and replaced your lime keys. If this wasn't you, reset your password."));
 
   Deno.env.delete("LIME_NOTIFY_RESEND_API_KEY");
   assertEquals(await sendNotice("someone@example.invalid", notice), false, "no key: nothing is sent, nothing fails");
@@ -230,7 +230,7 @@ Deno.test("the keys-replaced notice reads as asked and goes out only when a mail
     assertEquals(received.length, 1);
     assertEquals(received[0].auth, "Bearer test-key");
     assertEquals(received[0].body.to, ["someone@example.invalid"]);
-    assertEquals(received[0].body.subject, "A new phone signed in to Lime");
+    assertEquals(received[0].body.subject, "A new phone signed in to lime");
     assertEquals(typeof received[0].body.from, "string");
   } finally {
     Deno.env.delete("LIME_NOTIFY_RESEND_API_KEY");

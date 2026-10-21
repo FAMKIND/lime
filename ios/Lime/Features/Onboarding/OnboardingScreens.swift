@@ -40,7 +40,7 @@ struct WelcomeView: View {
             .padding(.horizontal, 24)
             Spacer(minLength: 24)
             VStack(spacing: 16) {
-                (Text("By continuing, you agree to Lime's ")
+                (Text("By continuing, you agree to lime's ")
                     + Text("[Terms](https://famkind.com)").underline()
                     + Text(" and ")
                     + Text("[Privacy Policy](https://famkind.com)").underline() + Text("."))

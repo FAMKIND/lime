@@ -108,8 +108,8 @@ enum AuthError: Error, Equatable, Sendable {
         case .badUsername(let message): message
         case .rateLimited: "Too many tries. Wait a moment and try again."
         case .emailFailed: "We couldn't send the code. Try again in a moment."
-        case .network: "Couldn't reach Lime. Check your connection and try again."
-        case .unavailable: "Lime's server had a problem. Try again in a moment."
+        case .network: "Couldn't reach lime. Check your connection and try again."
+        case .unavailable: "lime's server had a problem. Try again in a moment."
         case .notVerified: "Finish signing in first."
         case .server(let message): message
         }

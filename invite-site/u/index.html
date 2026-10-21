@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
-<title>Join me on Lime</title>
+<title>Join me on lime</title>
 <link rel="icon" href="data:,">
 <style>
   :root { --bg: #fbfaf5; --card: #ffffff; --text: #1d2a14; --muted: #5d6b50; --accent: #b7e04a; --ink: #1d2a14; --line: #e3e6d8; }
@@ -25,23 +25,26 @@
 </head>
 <body>
 <main>
-  <div class="lime" aria-hidden="true">🍋</div>
-  <h1 id="title">Join me on Lime</h1>
-  <p>Lime is a private messenger made for teachers. Messages are end-to-end encrypted, so only you and the people you message can read them.</p>
+  <div class="lime" aria-hidden="true">🍋‍🟩</div>
+  <h1 id="title">Join me on lime</h1>
+  <p>lime is a private messenger made for teachers. Messages are end-to-end encrypted, so only you and the people you message can read them.</p>
   <div class="step">
-    <b>Lime is coming soon</b>
-    The iPhone app is in testing and will be on the App Store and TestFlight soon. When it is, you will find <span id="handle" class="who">your colleague</span> by username inside Lime.
+    <b>lime is coming soon</b>
+    The iPhone app is in testing and will be on the App Store and TestFlight soon. When it is, you will find <span id="handle" class="who">your colleague</span> by username inside lime.
   </div>
   <small>This page does not track you and sends nothing anywhere.</small>
+  <!-- LIME-178: the legal line, hidden until both companies exist. Remove the comment markers to show it.
+  <small>lime is made by Lime Messenger LLC, owned by Lime Messenger Inc, a nonprofit.</small>
+  -->
 </main>
 <script>
   // The invite link is limechat.org/u/<username>[?k=<key fingerprint>]. Only the username is shown, as text;
-  // the fingerprint is for the Lime app and is never read here.
+  // the fingerprint is for the lime app and is never read here.
   (function () {
     var parts = location.pathname.split("/").filter(Boolean);
     var name = parts[0] === "u" && parts[1] ? decodeURIComponent(parts[1]) : "";
     if (/^[A-Za-z0-9._]{3,20}$/.test(name)) {
-      document.getElementById("title").textContent = "@" + name + " invited you to Lime";
+      document.getElementById("title").textContent = "@" + name + " invited you to lime";
       document.getElementById("handle").textContent = "@" + name;
     }
   })();

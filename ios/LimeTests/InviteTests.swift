@@ -8,8 +8,8 @@ final class InviteTests: XCTestCase {
 
     func testTheInviteTextNamesTheInviterAndCarriesThePersonalLink() {
         XCTAssertEqual(InviteLink.message(username: "grace.h"),
-                       "Join me on Lime, a private messenger made for teachers: https://limechat.org/u/grace.h")
-        XCTAssertTrue(InviteLink.generalMessage.hasPrefix("Join me on Lime, a private messenger made for teachers: https://limechat.org"))
+                       "Join me on lime, a private messenger made for teachers: https://limechat.org/u/grace.h")
+        XCTAssertTrue(InviteLink.generalMessage.hasPrefix("Join me on lime, a private messenger made for teachers: https://limechat.org"))
     }
 
     func testAPayloadRoundTripsThroughItsText() throws {

@@ -99,8 +99,8 @@ struct MessagesView: View {
                         .onLongPressGesture(minimumDuration: 0.6) { showAbout = true }
                         #endif
                 }
-                .accessibilityLabel("Lime menu")
-                .accessibilityHint("Press and hold for About Lime")
+                .accessibilityLabel("lime menu")
+                .accessibilityHint("Press and hold for About lime")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { store.path.append(MessagesRoute.search) } label: { Image(systemName: "magnifyingglass") }
@@ -318,7 +318,7 @@ struct MessagesView: View {
     }
 }
 
-/// Why Lime cannot reach the server right now, in true words. A session that ended asks the person to
+/// Why lime cannot reach the server right now, in true words. A session that ended asks the person to
 /// sign in again (their chats and keys stay on the phone).
 private struct ProblemBanner: View {
     @Environment(AccountSession.self) private var session
@@ -471,7 +471,7 @@ private struct EmptyChatsView: View {
             }
             VStack(spacing: 12) {
                 card("New message", detail: "Message a teacher you know", symbol: "square.and.pencil", id: "card-new-message", action: onNewMessage)
-                card("Invite a teacher", detail: "Bring a colleague to Lime", symbol: "person.badge.plus", id: "card-invite") { store.comingNext("Invite a teacher") }
+                card("Invite a teacher", detail: "Bring a colleague to lime", symbol: "person.badge.plus", id: "card-invite") { store.comingNext("Invite a teacher") }
             }
         }
         .padding(.top, 48)
@@ -507,7 +507,7 @@ private struct RecoveryNotice: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Lime couldn't open the data saved on this phone, so it started fresh. Your chats will come back when you restore from your recovery key.")
+            Text("lime couldn't open the data saved on this phone, so it started fresh. Your chats will come back when you restore from your recovery key.")
                 .font(Theme.secondary)
                 .foregroundStyle(Theme.text)
                 .fixedSize(horizontal: false, vertical: true)
@@ -543,8 +543,8 @@ struct TopControls: View {
                     .frame(width: 48, height: 48)
                     .limeGlass()
             }
-            .accessibilityLabel("Lime menu")
-            .accessibilityHint("Press and hold for About Lime")
+            .accessibilityLabel("lime menu")
+            .accessibilityHint("Press and hold for About lime")
             #if DEBUG
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in onAbout() })
             #endif
@@ -774,12 +774,12 @@ struct ConversationRow: View {
     }
 }
 
-/// Shown when the iPhone is nearly full: Lime stops downloading by itself until there is room again.
+/// Shown when the iPhone is nearly full: lime stops downloading by itself until there is room again.
 private struct LowStorageBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "externaldrive.badge.exclamationmark").font(.system(size: 18)).foregroundStyle(Theme.text)
-            Text("Your iPhone is almost full. Lime paused downloads.").font(Theme.secondary).foregroundStyle(Theme.text)
+            Text("Your iPhone is almost full. lime paused downloads.").font(Theme.secondary).foregroundStyle(Theme.text)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }

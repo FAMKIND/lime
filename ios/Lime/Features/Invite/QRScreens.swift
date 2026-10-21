@@ -33,7 +33,7 @@ struct MyQRScreen: View {
                     }
                     .frame(maxWidth: .infinity).padding(20)
                 }
-                SettingsFootnote(text: "Show this to a teacher you're with. When they scan it with Lime, they can message you and know it's really you. It holds your invite link and your key's fingerprint, nothing else.")
+                SettingsFootnote(text: "Show this to a teacher you're with. When they scan it with lime, they can message you and know it's really you. It holds your invite link and your key's fingerprint, nothing else.")
             } else if loaded {
                 Text(username == nil ? "Choose a username in Profile to get your QR code."
                                      : "This iPhone has no keys yet. They are made when you sign in.")
@@ -106,7 +106,7 @@ struct ScanQRScreen: View {
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(.horizontal, 16)
                     .accessibilityIdentifier("scan-camera")
-                Text("Point your camera at a teacher's Lime QR code.")
+                Text("Point your camera at a teacher's lime QR code.")
                     .font(Theme.secondary).foregroundStyle(Theme.textSecondary).padding(16)
                 #if DEBUG
                 TextField("Paste a code (Debug)", text: $pasted)
@@ -120,7 +120,7 @@ struct ScanQRScreen: View {
             case .checking:
                 ProgressView("Checking…").padding(.top, 60)
             case .notLime:
-                message("That isn't a Lime QR code.", id: "scan-not-lime")
+                message("That isn't a lime QR code.", id: "scan-not-lime")
             case .nobody:
                 message("No teacher found for that code. They may have changed their username or hidden themselves from search.", id: "scan-nobody")
             case .itsYou:
@@ -247,9 +247,9 @@ final class ScannerController: UIViewController, @preconcurrency AVCaptureMetada
         case .authorized: start()
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { granted in
-                DispatchQueue.main.async { granted ? self.start() : self.say("Camera access is off. Turn it on for Lime in Settings to scan a code.") }
+                DispatchQueue.main.async { granted ? self.start() : self.say("Camera access is off. Turn it on for lime in Settings to scan a code.") }
             }
-        default: say("Camera access is off. Turn it on for Lime in Settings to scan a code.")
+        default: say("Camera access is off. Turn it on for lime in Settings to scan a code.")
         }
     }
 
