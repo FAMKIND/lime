@@ -86,6 +86,12 @@ final class GroupCallManager {
     private(set) var speakerOn = false
     private(set) var startedAt: Date?
     private(set) var incoming: Incoming?
+    /// iOS's call screen is ringing for this group call, so it has the Answer and Decline (LIME-177).
+    private(set) var systemRinging = false
+    /// lime's banner shows only when iOS did not show its screen (a Focus refused it, or it never confirmed within about two seconds).
+    private(set) var answerFallback = false
+    var showsIncomingBanner: Bool { incoming != nil && answerFallback }
+    static let systemConfirmSeconds = 2.0
     private(set) var invite: Invite?
     /// Bumped when a tile's picture may have changed (the SwiftUI tile looks the track up again).
     private(set) var picturesVersion = 0
@@ -388,6 +394,7 @@ final class GroupCallManager {
     func dismissIncoming() {
         ringTimeout?.cancel()
         incoming = nil
+        systemRinging = false; answerFallback = false
     }
 
     /// A call started in a group of mine and nothing rang for it: if lime is open, idle, not silenced and the person is not already looking at
@@ -424,8 +431,21 @@ final class GroupCallManager {
         let title = core.title(of: event.conversationId)
         incoming = Incoming(callID: event.callId, conversationID: event.conversationId, title: title, callerName: event.name, video: event.video)
         diag.log("group call: ringing")
+        systemRinging = false; answerFallback = false
+        let ringID = event.callId
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.systemConfirmSeconds))
+            guard let self, self.incoming?.callID == ringID, !self.systemRinging else { return }
+            self.answerFallback = true
+        }
         system.reportIncoming(callID: Self.systemID(event.callId), name: "\(event.name) \u{00B7} \(title)", video: event.video) { [weak self] refusal in
-            if let refusal { self?.diag.log("group call: system refused the ring (\(refusal))") }
+            guard let self, self.incoming?.callID == ringID else { return }
+            if let refusal {
+                self.diag.log("group call: system refused the ring (\(refusal))")
+                self.answerFallback = true
+            } else {
+                self.systemRinging = true
+            }
         }
         ringTimeout?.cancel()
         let id = event.callId
@@ -952,6 +972,12 @@ final class GroupCallManager {
 #if DEBUG
 extension GroupCallManager {
     /// Debug demo (`-lime-demo-screen group-call-N`): a group call on screen with N people and no network, for screenshots of the layout.
+    /// UI tests (`-lime-demo-screen group-incoming` / `group-incoming-ios-refused`): a group call that is ringing, with iOS ringing or having refused.
+    func demoIncoming(systemRings: Bool, video: Bool = true) {
+        incoming = Incoming(callID: "demo-ring", conversationID: "grp:demo1", title: "Grade 4 Team", callerName: "Lee Wong", video: video)
+        systemRinging = systemRings; answerFallback = !systemRings
+    }
+
     func demoCall(people: Int, video: Bool = true, title: String = "Grade 4 Team", conversationID: String = "grp:demo", customName: Bool = false) {
         let names = ["Shem Chung", "Jean Park", "Lee Wong", "Sam Park", "Priya Nair", "Dee Ito", "Max Roy", "Ana Cruz", "Tom Lee", "Uma Das", "Vic Hale", "Wen Xu", "Yan Zhu"]
         // The demo starts from the default layout (the person's remembered choice would make tests and screenshots depend on the last run).

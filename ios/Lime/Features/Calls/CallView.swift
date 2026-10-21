@@ -270,7 +270,10 @@ struct CallView: View {
 
     @ViewBuilder
     private func controls(_ call: CallManager, landscape: Bool) -> some View {
-        if call.phase == .incoming {
+        if call.phase == .incoming && !call.showsAnswerButtons {
+            // iOS's own call screen has Answer and Decline (LIME-177): this screen only says who is calling.
+            Color.clear.frame(height: 0).accessibilityHidden(true)
+        } else if call.phase == .incoming {
             HStack(spacing: 80) {
                 round("phone.down.fill", "Decline", .red, id: "call-decline") { Task { await call.decline() } }
                 round("phone.fill", "Accept", .green, id: "call-accept") { Task { await call.accept() } }

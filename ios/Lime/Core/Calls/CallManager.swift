@@ -40,7 +40,7 @@ protocol CallSystem: AnyObject {
     /// Starts the system's incoming-call report and returns at once; `completion` says whether the system will ring (`nil` error) or refused.
     func reportIncoming(callID: String, name: String, video: Bool, completion: @escaping @MainActor (_ refusal: String?) -> Void)
     func reportOutgoing(callID: String, name: String, video: Bool)
-    /// lime's own Accept button: also answer the system's call, so the system activates the audio.
+    /// lime's fallback Accept button (shown only when iOS did not ring): also answer the system's call, so the system activates the audio.
     func requestAnswer(callID: String)
     func reportConnected(callID: String)
     func reportEnded(callID: String, answeredOrOutgoing: Bool)
@@ -53,6 +53,11 @@ protocol CallSystem: AnyObject {
 @Observable
 final class CallManager {
     private(set) var phase: CallPhase = .idle
+    /// iOS's own call screen is ringing for this incoming call (its report was accepted), so it owns Answer and Decline (LIME-177).
+    private(set) var systemRinging = false
+    /// lime's own Accept and Decline show only when iOS did not show its screen: it refused, or never confirmed within about two seconds.
+    private(set) var answerFallback = false
+    var showsAnswerButtons: Bool { phase == .incoming && answerFallback }
     private(set) var peerID = ""
     private(set) var peerName = ""
     private(set) var video = false
@@ -472,14 +477,22 @@ final class CallManager {
         armTimeout()
         // The system's report is never awaited here: on a device it can take long (or never answer) and the queue must not wait for it.
         let id = callID, began = Date()
+        systemRinging = false; answerFallback = false
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.systemConfirmSeconds))
+            guard let self, self.callID == id, self.phase == .incoming, !self.systemRinging else { return }
+            self.answerFallback = true
+        }
         system.reportIncoming(callID: id, name: peerName, video: video) { [weak self] refusal in
             guard let self else { return }
             if let refusal {
+                self.answerFallback = true
                 self.diag.log("incoming refused: \(refusal)")
                 // The system refused to ring (a Focus): a missed call.
                 if self.callID == id, self.phase == .incoming { self.finish(.missed, notify: false) }
             } else {
                 self.diag.log("incoming reported in \(Int(Date().timeIntervalSince(began) * 1000)) ms")
+                if self.callID == id, self.phase == .incoming { self.systemRinging = true }
                 // Tell the caller this phone is ringing.
                 if self.callID == id, self.phase == .incoming {
                     let peer = self.peerID
@@ -779,8 +792,12 @@ final class CallManager {
     }
     func flipCamera() { media?.flipCamera() }
 
+    /// How long lime waits for iOS to confirm its call screen before showing its own buttons.
+    static let systemConfirmSeconds = 2.0
+
     private func finish(_ outcome: CallOutcome, notify: Bool) {
         guard inCall else { return }
+        systemRinging = false; answerFallback = false
         diag.log("finish \(outcome.rawValue)")
         unavailableTask?.cancel(); unavailableTask = nil; unavailableNote = nil
         pip?.stop(); pip = nil; pictureInPictureActive = false
@@ -857,6 +874,14 @@ extension CallManager {
         self.phase = phase; startedAt = Date().addingTimeInterval(-42); remoteVideoLive = false
         self.remoteMuted = remoteMuted; remoteCameraOn = !remoteCameraOff
         verificationEmoji = callEmoji(callId: "demo-call", fpCaller: "AB:CD:EF:01:23:45:67:89", fpCallee: "01:23:45:67:89:AB:CD:EF")
+        isDemoCall = true
+    }
+
+    /// UI tests (`-lime-demo-call incoming` / `incoming-ios-refused`): the incoming screen as it is while iOS rings, or after iOS refused.
+    func demoIncoming(video: Bool, systemRings: Bool) {
+        peerID = "sam"; peerName = "Sam Rivera"; self.video = video; outgoing = false
+        phase = .incoming; startedAt = nil; callID = "demo-incoming"
+        systemRinging = systemRings; answerFallback = !systemRings
         isDemoCall = true
     }
 }

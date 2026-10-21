@@ -313,4 +313,27 @@ final class CallLoopbackTests: XCTestCase {
                         CallEventInfo(op: "call.end", callID: a.currentID, peerID: "alice", peerName: "Alice", payload: [:])])
         XCTAssertEqual(b.phase, .idle, "the end behind the stuck handler was still handled")
     }
+
+    // MARK: One answer screen (LIME-177)
+
+    func testWhileIOSRingsLimesScreenHasNoAnswerButtons() async {
+        mediaA = PairMedia(); mediaB = PairMedia(); boxA = Mailbox(me: "alice", myName: "Alice"); boxB = Mailbox(me: "bob", myName: "Bob")
+        let (a, b) = stuckPair(delay: .zero)
+        _ = await a.start(peerID: "bob", name: "Peer", video: false)
+        await wait { b.phase == .incoming && b.systemRinging }
+        XCTAssertTrue(b.systemRinging)
+        XCTAssertFalse(b.showsAnswerButtons, "iOS's screen has Answer and Decline")
+        try? await Task.sleep(for: .seconds(CallManager.systemConfirmSeconds + 0.4))
+        XCTAssertFalse(b.showsAnswerButtons, "and it stays that way while iOS is ringing")
+    }
+
+    func testIfIOSNeverConfirmsLimesOwnButtonsComeBackAfterAboutTwoSeconds() async {
+        mediaA = PairMedia(); mediaB = PairMedia(); boxA = Mailbox(me: "alice", myName: "Alice"); boxB = Mailbox(me: "bob", myName: "Bob")
+        let (a, b) = stuckPair(delay: nil)
+        _ = await a.start(peerID: "bob", name: "Peer", video: false)
+        await wait { b.phase == .incoming }
+        XCTAssertFalse(b.showsAnswerButtons, "not at once: iOS may still confirm")
+        try? await Task.sleep(for: .seconds(CallManager.systemConfirmSeconds + 0.5))
+        XCTAssertTrue(b.showsAnswerButtons, "the fallback: lime's own Accept and Decline")
+    }
 }

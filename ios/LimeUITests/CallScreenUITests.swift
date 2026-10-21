@@ -177,3 +177,42 @@ final class CallScreenUITests: XCTestCase {
         XCTAssertLessThanOrEqual(badge.maxX, width - 16, "nothing runs off the right edge")
     }
 }
+
+/// LIME-177: an incoming call has one answer screen, iOS's.
+@MainActor
+final class SingleAnswerScreenUITests: LimeUITestCase {
+    private func launch(_ extra: [String]) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-lime-skip-sign-in", "-lime-demo-chat"] + extra
+        app.launch()
+        return app
+    }
+
+    func testWhileIOSRingsALimeCallHasNoAnswerOrDeclineButtons() {
+        let app = launch(["-lime-demo-call", "incoming"])
+        XCTAssertTrue(app.staticTexts["Sam Rivera"].waitForExistence(timeout: 12), "lime still shows who is calling")
+        XCTAssertFalse(app.buttons["call-accept"].exists)
+        XCTAssertFalse(app.buttons["call-decline"].exists)
+    }
+
+    func testWhenIOSRefusedLimesOwnButtonsAreThere() {
+        let app = launch(["-lime-demo-call", "incoming-ios-refused"])
+        XCTAssertTrue(app.buttons["call-accept"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.buttons["call-decline"].exists)
+    }
+
+    func testWhileIOSRingsAGroupCallShowsNoBanner() {
+        let app = launch(["-lime-demo-screen", "group-incoming"])
+        XCTAssertTrue(app.buttons["conversation-row-grp:demo1"].waitForExistence(timeout: 12) || app.tabBars.firstMatch.waitForExistence(timeout: 12))
+        sleep(2)
+        XCTAssertFalse(app.descendants(matching: .any)["group-call-incoming"].exists)
+    }
+
+    func testWhenIOSRefusedAGroupCallShowsTheBannerWithJoinAndDecline() {
+        let app = launch(["-lime-demo-screen", "group-incoming-ios-refused"])
+        XCTAssertTrue(app.descendants(matching: .any)["group-call-incoming"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.buttons["group-call-join"].exists)
+        XCTAssertTrue(app.buttons["group-call-decline"].exists)
+        XCTAssertTrue(app.buttons["group-call-join-voice"].exists, "a video call can still be joined with sound only from here")
+    }
+}

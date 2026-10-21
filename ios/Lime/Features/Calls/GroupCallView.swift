@@ -441,12 +441,13 @@ struct GroupPeopleSheet: View {
     }
 }
 
-/// A group call that is ringing: who, which group, and Join or Decline. (The system call screen rings too, while lime is open or recent.)
+/// A group call that is ringing: who, which group, and Join or Decline, **only when iOS did not show its own call screen** (a Focus refused it, or it
+/// never confirmed): otherwise iOS's screen has the one set of buttons and nothing shows here (LIME-177).
 struct GroupIncomingBanner: View {
     @Environment(ConversationStore.self) private var store
 
     var body: some View {
-        if let ring = store.groupCalls.incoming, !store.groupCalls.inCall {
+        if let ring = store.groupCalls.incoming, store.groupCalls.showsIncomingBanner, !store.groupCalls.inCall {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(ring.callerName) started a \(ring.video ? "video" : "voice") call").font(Theme.font(.subheadline, weight: .semibold))
