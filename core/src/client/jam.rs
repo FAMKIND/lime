@@ -367,7 +367,7 @@ impl LimeStore {
         if (kind == "article" && title.is_empty()) || (kind == "record" && !attachments.iter().any(|a| a.mime.starts_with("video/") || a.mime.starts_with("audio/"))) {
             return Err(StoreError::Rejected);
         }
-        let markdown = crate::format::normalise(&markdown);
+        let markdown = crate::format::normalise_post(&markdown);
         if markdown.len() > jam_store::MAX_POST_BYTES || !jam_store::valid_tier(&tier) {
             return Err(StoreError::Rejected);
         }
@@ -375,6 +375,11 @@ impl LimeStore {
             return Err(StoreError::Rejected);
         }
         if markdown.is_empty() && attachments.is_empty() {
+            return Err(StoreError::Rejected);
+        }
+        // An image block must name a file that is in this post.
+        let file_count = attachments.len();
+        if crate::format::parse_post(&markdown).iter().any(|b| matches!(b, crate::format::Block::Image { attachment, .. } if *attachment as usize >= file_count)) {
             return Err(StoreError::Rejected);
         }
         // Each file: a fresh key, sealed in chunks into one blob (named by the file's own id), its hash and size noted in the post.
@@ -407,7 +412,7 @@ impl LimeStore {
             files.push((id, file.bytes.clone(), hash, size));
         }
         let attachments = Value::Array(descriptors);
-        let plain = crate::format::plain_text(&markdown);
+        let plain = crate::format::plain_text_post(&markdown);
         let post_id = new_id();
         let now = now_ms();
         // The blob: a fresh key and id, the content sealed (one chunk: a post is under 1 MiB), its hash and size noted for the notice.
@@ -1051,11 +1056,11 @@ impl LimeStore {
                     }
                     let attachments = value.get("attachments").cloned().unwrap_or(Value::Array(vec![]));
                     crate::store::attachments::parse_payload(&json!({ "attachments": attachments }))?;
-                    let markdown = crate::format::normalise(text("markdown")?);
+                    let markdown = crate::format::normalise_post(text("markdown")?);
                     (markdown.len() <= jam_store::MAX_POST_BYTES).then_some((markdown, attachments))
                 });
                 match content {
-                    Some((markdown, attachments)) => jam_store::set_fetched(conn, &post_id, Some((&markdown, &crate::format::plain_text(&markdown), &attachments))),
+                    Some((markdown, attachments)) => jam_store::set_fetched(conn, &post_id, Some((&markdown, &crate::format::plain_text_post(&markdown), &attachments))),
                     // Bytes that do not open as announced: gone for good (a retry would fetch the same).
                     None => jam_store::set_fetched(conn, &post_id, None),
                 }

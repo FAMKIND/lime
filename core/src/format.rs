@@ -56,7 +56,13 @@ pub enum Block {
     ItemList { items: Vec<ListItem> },
     /// A fenced code block: shown verbatim in a monospaced face.
     Code { text: String },
+    /// A picture (or file) in the place it was put in a jam post (LIME-188e): `![caption](attachment:n)` on a line of its own, `n` the post's n-th
+    /// attachment counting from 0. **Jam posts only**: a chat never parses one (it stays text), and a chat's attachments stay separate.
+    Image { caption: String, attachment: u32 },
 }
+
+/// How many attachments a post can have, so the largest `n`.
+const MAX_IMAGE_INDEX: u32 = 9;
 
 const NESTED_INDENT: usize = 2;
 
@@ -71,6 +77,42 @@ fn is_punct(c: char) -> bool {
 
 /// Text to blocks. Never fails.
 pub fn parse(text: &str) -> Vec<Block> {
+    parse_with(text, false)
+}
+
+/// A jam post's text: the same subset, and a line that is only `![caption](attachment:n)` is an image block (LIME-188e).
+pub fn parse_post(text: &str) -> Vec<Block> {
+    parse_with(text, true)
+}
+
+/// `![caption](attachment:n)` as a whole line: the caption (its escapes read) and the attachment's number; anything else is not an image.
+fn image_line(line: &str) -> Option<(String, u32)> {
+    let chars: Vec<char> = line.trim().chars().collect();
+    if chars.len() < 6 || chars[0] != '!' || chars[1] != '[' {
+        return None;
+    }
+    let mut caption = String::new();
+    let mut i = 2;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' if i + 1 < chars.len() && is_punct(chars[i + 1]) => {
+                caption.push(chars[i + 1]);
+                i += 2;
+            }
+            ']' => break,
+            c => {
+                caption.push(c);
+                i += 1;
+            }
+        }
+    }
+    let rest: String = chars.get(i..)?.iter().collect();
+    let number = rest.strip_prefix("](attachment:")?.strip_suffix(')')?;
+    let n: u32 = number.parse().ok().filter(|_| number.len() <= 2 && number.bytes().all(|b| b.is_ascii_digit()))?;
+    (n <= MAX_IMAGE_INDEX).then_some((caption, n))
+}
+
+fn parse_with(text: &str, images: bool) -> Vec<Block> {
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = text.split('\n').collect();
     let mut blocks = Vec::new();
@@ -102,7 +144,13 @@ pub fn parse(text: &str) -> Vec<Block> {
                 paragraph.push(lines[i]);
                 i += 1;
             }
-            blocks.push(Block::Paragraph { spans: parse_inline(&paragraph.join("\n")) });
+            match (images, paragraph.as_slice()) {
+                (true, [only]) if image_line(only).is_some() => {
+                    let (caption, attachment) = image_line(only).unwrap_or_default();
+                    blocks.push(Block::Image { caption, attachment });
+                }
+                _ => blocks.push(Block::Paragraph { spans: parse_inline(&paragraph.join("\n")) }),
+            }
         }
     }
     blocks
@@ -451,8 +499,17 @@ fn same_look(a: &Span, b: &Span) -> bool {
 
 /// The words without the markup: for search, list previews and notifications.
 pub fn plain_text(text: &str) -> String {
+    plain_of(parse(text))
+}
+
+/// The words of a jam post: an image reads as its caption.
+pub fn plain_text_post(text: &str) -> String {
+    plain_of(parse_post(text))
+}
+
+fn plain_of(blocks: Vec<Block>) -> String {
     let mut lines: Vec<String> = Vec::new();
-    for block in parse(text) {
+    for block in blocks {
         match block {
             Block::Paragraph { spans } => lines.push(spans.iter().map(|s| s.text.as_str()).collect()),
             Block::ItemList { items } => {
@@ -463,6 +520,11 @@ pub fn plain_text(text: &str) -> String {
                 }
             }
             Block::Code { text } => lines.push(text),
+            Block::Image { caption, .. } => {
+                if !caption.is_empty() {
+                    lines.push(caption);
+                }
+            }
         }
     }
     lines.join("\n")
@@ -495,7 +557,7 @@ pub fn restrict_mentions(text: &str, is_member: &dyn Fn(&str) -> bool, everyone_
         match block {
             Block::Paragraph { spans } => fix(spans),
             Block::ItemList { items } => items.iter_mut().for_each(|item| fix(&mut item.spans)),
-            Block::Code { .. } => {}
+            Block::Code { .. } | Block::Image { .. } => {}
         }
     }
     if changed { serialize(&blocks) } else { text.to_owned() }
@@ -558,9 +620,18 @@ pub fn serialize(blocks: &[Block]) -> String {
                 let fence = "`".repeat(longest_backtick_run(text).max(2) + 1);
                 parts.push(format!("{fence}\n{text}\n{fence}"));
             }
+            Block::Image { caption, attachment } => {
+                let caption = caption.split_whitespace().collect::<Vec<_>>().join(" ");
+                parts.push(format!("![{}](attachment:{})", escape_text(&caption), (*attachment).min(MAX_IMAGE_INDEX)));
+            }
         }
     }
     parts.join("\n\n")
+}
+
+/// A jam post's one written form (images allowed).
+pub fn normalise_post(text: &str) -> String {
+    serialize(&parse_post(text.trim()))
 }
 
 /// Parse then serialize: unknown syntax becomes text, and the result is the one written form.
@@ -789,6 +860,24 @@ pub fn parse_message_markdown(text: String) -> Vec<Block> {
     parse(&text)
 }
 
+/// A jam post's text to blocks, with image blocks (LIME-188e). A chat's `parse_message_markdown` never makes one.
+#[uniffi::export]
+pub fn parse_post_markdown(text: String) -> Vec<Block> {
+    parse_post(&text)
+}
+
+/// A jam post's one written form (images kept; everything else as for a message).
+#[uniffi::export]
+pub fn normalise_post_markdown(text: String) -> String {
+    normalise_post(&text)
+}
+
+/// The words of a jam post (an image reads as its caption).
+#[uniffi::export]
+pub fn post_plain_text(text: String) -> String {
+    plain_text_post(&text)
+}
+
 /// Blocks to the canonical text (the composer sends this).
 #[uniffi::export]
 pub fn message_markdown_from_blocks(blocks: Vec<Block>) -> String {
@@ -900,6 +989,39 @@ mod tests {
         assert_eq!(got, "[@Jean](mention:u1) @Eve @all");
         assert_eq!(restrict_mentions(text, &member, true), "[@Jean](mention:u1) @Eve [@all](mention:everyone)");
         assert_eq!(restrict_mentions("no mentions", &member, false), "no mentions");
+    }
+
+    #[test]
+    fn an_image_line_is_an_image_in_a_post_and_only_text_in_a_chat() {
+        let line = "![Our pizza wall](attachment:2)";
+        assert_eq!(parse_post(line), vec![Block::Image { caption: "Our pizza wall".into(), attachment: 2 }]);
+        assert_eq!(parse_post("![](attachment:0)"), vec![Block::Image { caption: String::new(), attachment: 0 }], "a caption is optional");
+        let chat = parse(line);
+        assert!(matches!(chat.as_slice(), [Block::Paragraph { .. }]), "a chat never makes an image block: {chat:?}");
+        // The written form is stable, and a chat's own normalising cannot turn text into an image later.
+        assert_eq!(normalise_post(line), line);
+        assert_eq!(normalise_post(&normalise_post(line)), line);
+        assert!(parse_post(&normalise(line)).iter().all(|b| !matches!(b, Block::Image { .. })), "{:?}", normalise(line));
+        assert_eq!(plain_text_post("Words\n\n![A caption](attachment:1)\n\nMore"), "Words\nA caption\nMore");
+        assert_eq!(plain_text_post("![](attachment:1)"), "");
+    }
+
+    #[test]
+    fn only_attachment_targets_are_images_and_an_image_must_stand_alone() {
+        for text in ["![x](https://example.com/a.png)", "![x](attachment:)", "![x](attachment:a)", "![x](attachment:10)", "![x](attachment:1) trailing", "text ![x](attachment:1)", "![x](attachment:1)\nnext line"] {
+            assert!(parse_post(text).iter().all(|b| !matches!(b, Block::Image { .. })), "{text}");
+        }
+        // Escapes in a caption survive the round trip.
+        let blocks = vec![Block::Image { caption: "a [b] * c".into(), attachment: 3 }];
+        assert_eq!(parse_post(&serialize(&blocks)), blocks);
+        // Mixed with words: each in its own paragraph.
+        let doc = vec![
+            Block::Paragraph { spans: vec![Span { text: "Before".into(), ..Span::default() }] },
+            Block::Image { caption: "Fig 1".into(), attachment: 0 },
+            Block::Paragraph { spans: vec![Span { text: "After".into(), ..Span::default() }] },
+        ];
+        assert_eq!(serialize(&doc), "Before\n\n![Fig 1](attachment:0)\n\nAfter");
+        assert_eq!(parse_post(&serialize(&doc)), doc);
     }
 
     #[test]

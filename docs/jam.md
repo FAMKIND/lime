@@ -30,6 +30,7 @@ The first jam tab ("Following" beside a "Your jam" area you had to set up) was c
 - **Post kinds:** a **quick post** (words and photos, no title), an **article** (title, subtitle, body) and a **recording** (a video or a voice clip, with an optional title). Go Live is later.
 - **One button: Subscribe** (free). There is no separate Follow.
 - **Remix** (Substack's "restack", renamed): a teacher re-shares another's post to their own subscribers. It needs an encryption design of its own (LIME-189b); the feed card shows a dimmed "remix" icon until then.
+- **An article is a page, and its photos stand in the text** (LIME-188e): the article page is the full composer (photo, camera and file in the bar above the keyboard, with the formatting); each picture goes **in the text at the caret** as a block of its own, written `![caption](attachment:n)` (jam posts only; see `docs/message-format.md`). The reader shows each one in place; a quick post keeps its photos as a row under the words. A subtitle is one short line (at most 160 characters) and never holds the article.
 - **Nothing to set up:** a teacher's jam is made on their **first post** (named for them, with their profile's about line); its title, about and topics are edited from their profile ("Edit jam page").
 - **The profile is the jam page:** name, username, subscriber count, **Subscribe / Subscribed**, and posts (readable once subscribed; before that the page says "Subscribe to read their posts", because the server's page holds no post text).
 

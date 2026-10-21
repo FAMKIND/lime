@@ -104,26 +104,43 @@ extension ConversationStore {
         await deliverNow()
     }
 
-    /// Publishes a post (a quick post, an article or a recording) to my jam, making the jam first if this is my first post: the core seals it, and
-    /// the next delivery sends it. Every post is free (payments are off).
-    @discardableResult
-    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], about: String) async -> Bool {
-        guard let jamID = await myJamID(about: about) else { return false }
-        #if DEBUG
-        if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items); return true }
-        #endif
-        guard let core else { return false }
-        guard StorageGuard.shared.allows(items.reduce(0) { $0 + Int64($1.bytes.count) }) else {
-            lowStorage = true
-            showBanner("Not enough space on your iPhone to send this.")
-            return false
+    /// Why a post did not go: said in words the writer can act on, in the compose screen (a banner would sit behind it).
+    enum JamPostFailure: Error, Equatable {
+        case noSpace, tooManyFiles, fileTooLarge, rejected, couldNotMake
+        var message: String {
+            switch self {
+            case .noSpace: "Not enough space on your iPhone for these photos."
+            case .tooManyFiles: "A post can have up to 10 photos and files."
+            case .fileTooLarge: "A photo or file is too large for a post (24 MB each)."
+            case .rejected: "Something in this post isn\u{2019}t allowed. Check the title and subtitle lengths."
+            case .couldNotMake: "Couldn\u{2019}t make your jam. Try again."
+            }
         }
-        let ok = (try? await Task.detached(priority: .userInitiated) {
-            try core.publishJamPost(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items)
-        }.value) != nil
+    }
+
+    /// Publishes a post (a quick post, an article or a recording) to my jam, making the jam first if this is my first post: the core seals it, and
+    /// the next delivery sends it. Every post is free (payments are off). The photos go up afterwards in the background, each on its own and retried
+    /// by itself; nothing here waits for the network.
+    func publishJamPost(kind: String, title: String, subtitle: String, markdown: String, items: [OutgoingAttachment], about: String) async -> Result<Void, JamPostFailure> {
+        guard items.count <= 10 else { return .failure(.tooManyFiles) }
+        guard items.allSatisfy({ $0.bytes.count <= 24 * 1024 * 1024 }) else { return .failure(.fileTooLarge) }
+        guard let jamID = await myJamID(about: about) else { return .failure(.couldNotMake) }
+        #if DEBUG
+        if isDemo { demoPublish(jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, items: items); return .success(()) }
+        #endif
+        guard let core else { return .failure(.couldNotMake) }
+        guard StorageGuard.shared.allows(items.reduce(0) { $0 + Int64($1.bytes.count) }) else { return .failure(.noSpace) }
+        do {
+            _ = try await Task.detached(priority: .userInitiated) {
+                try core.publishJamPost(jamId: jamID, kind: kind, title: title, subtitle: subtitle, markdown: markdown, tier: "free", attachments: items)
+            }.value
+        } catch {
+            CallDiagnostics.shared.log("jam post failed: \(error)")
+            return .failure(.rejected)
+        }
         refreshJams()
-        if ok { await deliverNow() }
-        return ok
+        await deliverNow()
+        return .success(())
     }
 
     func loadJamSubscribers(_ jamID: String) {

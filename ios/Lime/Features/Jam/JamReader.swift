@@ -39,10 +39,13 @@ struct JamPostView: View {
                         Text("This post is no longer available.").font(Theme.body).foregroundStyle(Theme.textSecondary)
                     default:
                         if !post.markdown.isEmpty {
-                            FormattedMessageText(markdown: post.markdown, ink: Theme.text, link: Theme.linkOther)
+                            // The pictures an article carries stand where the writer put them (LIME-188e).
+                            FormattedMessageText(markdown: post.markdown, ink: Theme.text, link: Theme.linkOther,
+                                                 postImage: { caption, index in AnyView(JamInlineAttachment(postID: post.postId, index: index, caption: caption)) })
                                 .accessibilityIdentifier("jam-reader-body")
                         }
-                        JamAttachmentsView(postID: post.postId)
+                        // Anything the text does not place (a quick post's photos, a recording) comes after it.
+                        JamAttachmentsView(postID: post.postId, skipping: JamInline.placed(in: post.markdown))
                     }
                 }
                 .padding(20)
@@ -63,11 +66,13 @@ struct JamAttachmentsView: View {
     let postID: String
     /// In a feed card: pictures a little smaller.
     var compact = false
+    /// Numbers of files the text already shows in place.
+    var skipping: Set<Int> = []
     @Environment(ConversationStore.self) private var store
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(store.jamAttachments(postID), id: \.attachmentId) { file in
+            ForEach(Array(store.jamAttachments(postID).enumerated()).filter { !skipping.contains($0.offset) }.map(\.element), id: \.attachmentId) { file in
                 switch file.kind {
                 case "image": JamPhoto(postID: postID, file: file)
                 case "video": JamVideo(postID: postID, file: file)
@@ -79,18 +84,65 @@ struct JamAttachmentsView: View {
     }
 }
 
+enum JamInline {
+    /// The numbers of the attachments the text puts in place, with an image block each.
+    static func placed(in markdown: String) -> Set<Int> {
+        Set(MessageRender.blocks(markdown, post: true).compactMap { if case .image(_, let index) = $0 { index } else { nil } })
+    }
+}
+
+/// One image block of an article: the picture (or a card for a file) at full width, its caption under it; a tap opens the picture full screen.
+struct JamInlineAttachment: View {
+    let postID: String
+    let index: Int
+    let caption: String
+    @Environment(ConversationStore.self) private var store
+    @State private var full: UIImage?
+
+    var body: some View {
+        let files = store.jamAttachments(postID)
+        if files.indices.contains(index) {
+            let file = files[index]
+            VStack(alignment: .leading, spacing: 6) {
+                if file.kind == "image" {
+                    JamPhoto(postID: postID, file: file, onLoaded: { full = $0 }, tapToOpen: true)
+                } else {
+                    JamFileCard(postID: postID, file: file)
+                }
+                if !caption.isEmpty { Text(caption).font(Theme.caption).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("jam-inline-caption") }
+            }
+            .padding(.vertical, 4)
+            .accessibilityIdentifier("jam-inline-\(index)")
+        }
+    }
+}
+
 private struct JamPhoto: View {
     let postID: String
     let file: JamAttachmentInfo
+    var onLoaded: ((UIImage) -> Void)? = nil
+    var tapToOpen = false
     @Environment(ConversationStore.self) private var store
     @State private var image: UIImage?
     @State private var failed = false
+    @State private var opened = false
 
     var body: some View {
         Group {
             if let image {
                 Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .accessibilityLabel(file.name.isEmpty ? "Photo" : "Photo, \(file.name)")
+                    .onTapGesture { if tapToOpen { opened = true } }
+                    .accessibilityAddTraits(tapToOpen ? .isButton : [])
+                    .fullScreenCover(isPresented: $opened) {
+                        ZStack(alignment: .topTrailing) {
+                            Color.black.ignoresSafeArea()
+                            Image(uiImage: image).resizable().scaledToFit().ignoresSafeArea()
+                            Button { opened = false } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 30)).foregroundStyle(.white).frame(width: 44, height: 44) }
+                                .padding().accessibilityLabel("Close").accessibilityIdentifier("jam-photo-close")
+                        }
+                        .onTapGesture { opened = false }
+                    }
             } else {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.surface)
                     .aspectRatio(file.width.flatMap { w in file.height.map { CGFloat(w) / CGFloat(max($0, 1)) } } ?? 1.5, contentMode: .fit)
@@ -99,7 +151,7 @@ private struct JamPhoto: View {
         }
         .accessibilityIdentifier("jam-photo")
         .task {
-            if let data = await store.jamAttachmentData(postID, file.attachmentId), let picture = UIImage(data: data) { image = picture } else { failed = true }
+            if let data = await store.jamAttachmentData(postID, file.attachmentId), let picture = UIImage(data: data) { image = picture; onLoaded?(picture) } else { failed = true }
         }
     }
 }
@@ -173,7 +225,7 @@ private struct JamAudio: View {
     }
 }
 
-private struct JamFileCard: View {
+struct JamFileCard: View {
     let postID: String
     let file: JamAttachmentInfo
     @Environment(ConversationStore.self) private var store

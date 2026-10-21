@@ -14,10 +14,12 @@ struct FormattedMessageText: View {
     var find: FindStyle? = nil
     /// Who the mentions are (LIME-181); nil outside a chat.
     @Environment(\.mentionContext) private var mentions
+    /// A jam post's text (LIME-188e): reads image blocks, drawn by this closure (caption, attachment number). A chat message never has them.
+    var postImage: ((String, Int) -> AnyView)? = nil
     @AppStorage(MentionStyle.storageKey) private var mentionStyle = MentionStyle.fullName.rawValue
 
     var body: some View {
-        let blocks = MessageRender.blocks(markdown)
+        let blocks = MessageRender.blocks(markdown, post: postImage != nil)
         if blocks.count == 1, case .paragraph(let spans) = blocks[0] {
             // The common case, one paragraph, is a single piece of text.
             Text(MessageRender.attributed(spans, ink: ink, link: link, pressed: pressed, find: find, mentions: mentions, mentionStyle: MentionStyle(rawValue: mentionStyle) ?? .fullName)).font(Theme.body).foregroundStyle(ink).fixedSize(horizontal: false, vertical: true)
@@ -39,6 +41,8 @@ struct FormattedMessageText: View {
                                 .accessibilityValue(row.item.level > 0 ? "level \(row.item.level + 1) of \(maxListLevel() + 1)" : "")
                             }
                         }
+                    case .image(let caption, let index):
+                        if let postImage { postImage(caption, index) }
                     case .code(let text):
                         ScrollView(.horizontal, showsIndicators: false) {
                             Text(text)
@@ -81,14 +85,17 @@ enum MessageRender {
         case paragraph([Span])
         case list([ListItem])
         case code(String)
+        case image(caption: String, index: Int)
     }
 
-    static func blocks(_ markdown: String) -> [DrawnBlock] {
-        parseMessageMarkdown(text: markdown).map { block in
+    /// `post`: a jam post's text, which can hold image blocks; a chat message cannot.
+    static func blocks(_ markdown: String, post: Bool = false) -> [DrawnBlock] {
+        (post ? parsePostMarkdown(text: markdown) : parseMessageMarkdown(text: markdown)).map { block in
             switch block {
             case .paragraph(let spans): .paragraph(spans)
             case .itemList(let items): .list(items)
             case .code(let text): .code(text)
+            case .image(let caption, let attachment): .image(caption: caption, index: Int(attachment))
             }
         }
     }

@@ -17,6 +17,8 @@ extension NSAttributedString.Key {
     static let limeMarker = NSAttributedString.Key("lime.marker")
     /// On the characters of a mention (LIME-181): the mentioned person's user id (or "everyone"). The characters are one unit: an edit takes all or none.
     static let limeMention = NSAttributedString.Key("lime.mention")
+    /// On the one character of a picture (or file) put into a jam article (LIME-188e): the index of the file in the post's list.
+    static let limeImage = NSAttributedString.Key("lime.image")
 }
 
 enum InlineFormat: CaseIterable {
@@ -119,6 +121,35 @@ enum ComposerDocument {
             location = NSMaxRange(paragraph)
         }
         text.endEditing()
+    }
+
+    // MARK: Pictures in an article (LIME-188e)
+
+    /// Puts a picture (or a file's card) at `location` as a paragraph of its own, full width; returns where the caret goes (after it, on a fresh line).
+    /// `index` is the file's place in the post's list.
+    @discardableResult
+    static func insertImage(_ image: UIImage, index: Int, into text: NSMutableAttributedString, at location: Int, width: CGFloat) -> Int {
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        let ratio = image.size.height / max(image.size.width, 1)
+        attachment.bounds = CGRect(x: 0, y: 0, width: width, height: min(width * ratio, 320))
+        let picture = NSMutableAttributedString(attachment: attachment)
+        picture.addAttribute(.limeImage, value: index, range: NSRange(location: 0, length: picture.length))
+        var at = min(max(location, 0), text.length)
+        let string = text.string as NSString
+        if at > 0, string.character(at: at - 1) != 0x0A { text.insert(NSAttributedString(string: "\n"), at: at); at += 1 }
+        text.insert(picture, at: at)
+        at += picture.length
+        let nextIsNewline = at < text.length && (text.string as NSString).character(at: at) == 0x0A
+        if !nextIsNewline { text.insert(NSAttributedString(string: "\n"), at: at) }
+        return at + 1
+    }
+
+    /// The pictures of an article in the order they appear, as file indexes; used to keep only the files that are still in the text.
+    static func imageIndexes(in text: NSAttributedString) -> [Int] {
+        var found: [Int] = []
+        text.enumerateAttribute(.limeImage, in: NSRange(location: 0, length: text.length)) { value, _, _ in if let index = value as? Int { found.append(index) } }
+        return found
     }
 
     // MARK: Mentions (LIME-181)
@@ -254,7 +285,10 @@ enum ComposerDocument {
                 if !spans.isEmpty { listItems.append(ListItem(level: UInt32(level), ordered: ordered, number: ordered ? max(number, 1) : 0, spans: spans)) }
             case nil:
                 flushList(); flushCode()
-                if content.length == 0 {
+                if content.length == 1, string.substring(with: content) == "\u{FFFC}", let index = text.attribute(.limeImage, at: content.location, effectiveRange: nil) as? Int {
+                    flushParagraph()
+                    blocks.append(.image(caption: "", attachment: UInt32(max(0, index))))
+                } else if content.length == 0 {
                     flushParagraph() // a blank line ends the paragraph
                 } else {
                     var lineSpans = spans(in: text, range: content)
@@ -274,7 +308,7 @@ enum ComposerDocument {
         text.enumerateAttributes(in: range) { attributes, run, _ in
             let link = (attributes[.link] as? URL)?.absoluteString ?? (attributes[.link] as? String)
             result.append(Span(
-                text: (text.string as NSString).substring(with: run),
+                text: (text.string as NSString).substring(with: run).replacingOccurrences(of: "\u{FFFC}", with: ""),
                 bold: attributes[.limeBold] != nil, italic: attributes[.limeItalic] != nil,
                 underline: attributes[.underlineStyle] != nil, strike: attributes[.strikethroughStyle] != nil,
                 code: attributes[.limeCode] != nil, link: link, mention: attributes[.limeMention] as? String))
@@ -316,6 +350,8 @@ enum ComposerDocument {
             if index > 0 { append("\n\n") }
             switch block {
             case .paragraph(let spans): appendSpans(spans)
+            case .image(_, let attachment):
+                append("\u{FFFC}", [.limeImage: Int(attachment)])
             case .code(let code):
                 let lines = code.split(separator: "\n", omittingEmptySubsequences: false)
                 for (n, line) in lines.enumerated() {

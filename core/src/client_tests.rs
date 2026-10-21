@@ -5494,3 +5494,26 @@ fn the_page_carries_the_subscriber_count_and_follows_joins_and_leaves() {
     deliver(&alice, &transport);
     assert_eq!(count(&carol), 1);
 }
+
+#[test]
+fn an_article_carries_its_photos_where_they_were_put_and_a_subtitle_has_a_limit() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    let photo = |n: u8| crate::OutgoingAttachment { bytes: vec![n; 1_200_000], name: "Photo.jpg".into(), mime: "image/jpeg".into(), width: Some(2048), height: Some(1536), duration_ms: None, thumb: vec![9; 1800], poster: vec![] };
+    let body = "Intro\n\n![First](attachment:0)\n\nMiddle\n\n![](attachment:1)\n\n![Last one](attachment:2)\n\nEnd";
+    let id = alice.store.publish_jam_post(jam.clone(), "article".into(), "Fold, cut, compare".into(), "Photos in place".into(), body.into(), "free".into(), (1..=5).map(photo).collect()).unwrap();
+    catch_up(&alice, &[&bob], &transport);
+    let read = bob.store.read_jam_post(id.clone()).unwrap().unwrap();
+    assert_eq!(read.state, "ready");
+    assert_eq!(read.markdown, body, "the image blocks are kept where they were");
+    assert_eq!(read.plain, "Intro\nFirst\nMiddle\nLast one\nEnd", "an image reads as its caption");
+    assert_eq!(bob.store.list_jam_attachments(id).unwrap().len(), 5);
+    // An image block must name a photo that is in the post; a subtitle is at most 160 characters; a chat never turns text into an image.
+    let one = vec![photo(1)];
+    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "T".into(), String::new(), "![](attachment:3)".into(), "free".into(), one.clone()).is_err());
+    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "T".into(), "x".repeat(161), "body".into(), "free".into(), vec![]).is_err());
+    assert!(alice.store.publish_jam_post(jam.clone(), "article".into(), "T".into(), "x".repeat(160), "body".into(), "free".into(), vec![]).is_ok());
+}

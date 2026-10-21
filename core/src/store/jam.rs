@@ -48,7 +48,7 @@ pub(crate) fn valid_kind(kind: &str) -> bool {
     KINDS.contains(&kind)
 }
 
-pub(crate) const MAX_SUBTITLE_CHARS: usize = 200;
+pub(crate) const MAX_SUBTITLE_CHARS: usize = 160;
 
 /// A title that may be empty (a quick post has none).
 pub(crate) fn clean_optional_line(text: &str, max: usize) -> Option<String> {

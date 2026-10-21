@@ -3,15 +3,6 @@ import SwiftUI
 /// The composer (design 04): the text above, and under it `+`, emoji and Aa on the left, mic or send on
 /// the right. Select text, or tap Aa, and the formatting toolbar appears above the keyboard. The chat and
 /// a thread both use it; `onSend` gets the message as Markdown.
-/// For the jam post editor (LIME-188): the files waiting in the composer, shared with the screen that publishes (which has its own Publish button).
-@MainActor
-@Observable
-final class ComposerDraftSink {
-    var items: [OutgoingAttachment] = []
-    /// Empties the composer's text and files.
-    var clear: (() -> Void)?
-}
-
 struct ChatComposer: View {
     @Environment(ConversationStore.self) private var store
     @Bindable var model: RichComposerModel
@@ -20,10 +11,6 @@ struct ChatComposer: View {
     var onSendAttachments: (([OutgoingAttachment], String) -> Void)? = nil
     /// Sends the written text with its link card. `nil`: this composer sends no cards.
     var onSendPreview: ((String, OutgoingPreview) -> Void)? = nil
-    /// The jam post editor reads the files from here and publishes with its own button: no send or voice button in the row.
-    var draftSink: ComposerDraftSink? = nil
-    /// The words shown while the field is empty.
-    var placeholder = "Send message\u{2026}"
     /// Settings → Privacy → "Generate link previews".
     @AppStorage(LinkPreviewSetting.key) private var previewsOn = true
     @State private var previewDraft: PreviewDraft?
@@ -70,7 +57,7 @@ struct ChatComposer: View {
                     RichComposerField(model: model, maxHeight: model.expanded ? model.expandedFieldHeight : model.fieldCap, fills: model.expanded)
                         .onAppear { model.hasText = false }
                     if !model.hasText {
-                        Text(placeholder).font(Theme.body).foregroundStyle(Theme.textSecondary)
+                        Text("Send message\u{2026}").font(Theme.body).foregroundStyle(Theme.textSecondary)
                             .padding(.leading, 4).padding(.top, 8).allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }
@@ -123,10 +110,7 @@ struct ChatComposer: View {
                 }
                 .opacity(recorder.isRecording ? 0 : 1).allowsHitTesting(!recorder.isRecording)
                 Spacer(minLength: 0)
-                if draftSink != nil {
-                    // The screen has its own Post button; the microphone stays (a voice clip is handed to the screen, not sent).
-                    if voiceEnabled && !recorder.isRecording { micButton }
-                } else if canSend && !recorder.isRecording {
+                if canSend && !recorder.isRecording {
                     Button { send() } label: {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 18, weight: .semibold))
@@ -198,8 +182,7 @@ struct ChatComposer: View {
         .alert("That file is too large", isPresented: $tooLarge) { Button("OK", role: .cancel) {} } message: { Text("Files can be up to 50 MB.") }
         .onChange(of: model.plainText) { refreshPreview() }
         .onChange(of: previewsOn) { refreshPreview() }
-        .onChange(of: drafts.count) { refreshPreview(); draftSink?.items = drafts.map(\.outgoing) }
-        .onAppear { draftSink?.clear = { drafts = []; draftSink?.items = []; model.clear() } }
+        .onChange(of: drafts.count) { refreshPreview() }
         #if DEBUG
         .task { if store.demoDrafts { drafts = ChatComposer.demoDrafts }; recorder.simulated = store.isDemo }
         #endif

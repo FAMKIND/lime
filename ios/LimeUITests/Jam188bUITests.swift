@@ -47,7 +47,24 @@ final class Jam188bUITests: LimeUITestCase {
         }
     }
 
-    func testAnArticleHasATitleASubtitleAndABodyAndTheCardShowsTheFirstTwo() {
+    func testAQuickPostWithThreePhotosPostsAndTheTextSitsAtTheTop() {
+        let app = launch("jam")
+        app.buttons["new-jam-post"].tap()
+        write(app, "Our field trip")
+        let field = app.textViews["composer-field"]
+        XCTAssertLessThan(field.frame.minY, app.windows.firstMatch.frame.height * 0.35, "the words are at the top, under the name")
+        for _ in 0..<3 { app.buttons["jam-add-photo"].tap() }
+        XCTAssertTrue(any(app, "jam-photo-2").waitForExistence(timeout: 8), "three photos in a row under the words")
+        XCTAssertGreaterThan(any(app, "jam-photos").frame.minY, field.frame.minY, "under the text")
+        app.buttons["jam-post"].tap()
+        XCTAssertTrue(card(app, containing: "Our field trip").waitForExistence(timeout: 8), "it posts")
+        let photos = app.descendants(matching: .any).matching(identifier: "jam-photo")
+        let shown = NSPredicate(format: "count == 3")
+        expectation(for: shown, evaluatedWith: photos)
+        waitForExpectations(timeout: 8)
+    }
+
+    func testAnArticleIsAPageWithPhotosPutInTheTextAndTheReaderShowsThemInOrder() {
         let app = launch("jam")
         app.buttons["new-jam-post"].tap()
         app.buttons["jam-write-article"].tap()
@@ -56,15 +73,31 @@ final class Jam188bUITests: LimeUITestCase {
         let title = app.textFields["jam-article-title"].exists ? app.textFields["jam-article-title"] : app.textViews["jam-article-title"]
         title.tap(); title.typeText("Exit tickets that work")
         let subtitle = app.textFields["jam-article-subtitle"].exists ? app.textFields["jam-article-subtitle"] : app.textViews["jam-article-subtitle"]
-        subtitle.tap(); subtitle.typeText("Five questions for the door")
-        write(app, "Ask one question as they leave.")
+        subtitle.tap()
+        subtitle.typeText(String(repeating: "x", count: 200))
+        XCTAssertLessThanOrEqual((subtitle.value as? String ?? "").count, 160, "a subtitle never takes more than 160")
+        subtitle.typeText("\n")   // Return moves to the body
+        let body = app.textViews["composer-field"]
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: body)
+        waitForExpectations(timeout: 5)   // Return in the subtitle moved the caret to the body
+        body.typeText("Ask one question as they leave.\n\n")
+        app.buttons["jam-add-photo"].tap()
+        body.typeText((1...20).map { "Line \($0) of the plan" }.joined(separator: "\n") + "\n\n")
+        app.buttons["jam-add-photo"].tap()
+        XCTAssertFalse((subtitle.value as? String ?? "").contains("Ask one question"), "the subtitle never holds the article")
         app.buttons["jam-post"].tap()
         let article = card(app, containing: "Exit tickets that work")
         XCTAssertTrue(article.waitForExistence(timeout: 8))
-        XCTAssertTrue(article.label.contains("Five questions for the door"))
         article.tap()
         XCTAssertEqual(any(app, "jam-reader-title").label, "Exit tickets that work")
-        XCTAssertEqual(any(app, "jam-reader-subtitle").label, "Five questions for the door")
+        XCTAssertEqual((any(app, "jam-reader-subtitle").label).count, 160)
+        let firstWords = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Ask one question'")).firstMatch
+        let firstPhoto = any(app, "jam-inline-0"), secondPhoto = any(app, "jam-inline-1")
+        XCTAssertTrue(firstWords.waitForExistence(timeout: 8) && firstPhoto.waitForExistence(timeout: 8))
+        XCTAssertLessThan(any(app, "jam-reader-title").frame.minY, any(app, "jam-reader-subtitle").frame.minY)
+        XCTAssertLessThan(any(app, "jam-reader-subtitle").frame.minY, firstWords.frame.minY)
+        XCTAssertLessThan(firstWords.frame.minY, firstPhoto.frame.minY, "the first photo stands after the first paragraph")
+        if secondPhoto.exists { XCTAssertLessThan(firstPhoto.frame.minY, secondPhoto.frame.minY) }
     }
 
     func testRecordingAttachesAClipAndTheCardPlaysItInline() {
