@@ -648,6 +648,28 @@ const MIGRATIONS: &[&str] = &[
          next_at  INTEGER NOT NULL DEFAULT 0
      );
      CREATE INDEX jam_wire_outbox_by_post ON jam_wire_outbox (post_id, id);",
+    // 41 (LIME-187): posts become ciphertext blobs on the server. A post row now says where its blob is and the key that opens it (the key rides in
+    // the encrypted notice, never to the server); a writer's post is `uploaded` once the blob is there, and a subscriber's `fetched` once it has
+    // been downloaded and opened. Key distribution moves onto the jam queue (`jam_op_outbox`, paced and shown in the progress), and `jams` learns
+    // how much was queued (for "sending to 412 of 1,000") and whether its public page is up to date on the server. The first-index session keys
+    // are no longer needed: the welcome hands over the index of posts instead.
+    "ALTER TABLE jam_posts ADD COLUMN blob_id TEXT;
+     ALTER TABLE jam_posts ADD COLUMN blob_key TEXT;
+     ALTER TABLE jam_posts ADD COLUMN blob_sha TEXT;
+     ALTER TABLE jam_posts ADD COLUMN blob_size INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE jam_posts ADD COLUMN uploaded INTEGER NOT NULL DEFAULT 1;
+     ALTER TABLE jam_posts ADD COLUMN fetched INTEGER NOT NULL DEFAULT 1;
+     ALTER TABLE jams ADD COLUMN queued_total INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE jams ADD COLUMN page_state TEXT NOT NULL DEFAULT 'dirty';
+     CREATE TABLE jam_op_outbox (
+         id        INTEGER PRIMARY KEY AUTOINCREMENT,
+         jam_id    TEXT NOT NULL,
+         recipient TEXT NOT NULL,
+         op_json   TEXT NOT NULL,
+         attempts  INTEGER NOT NULL DEFAULT 0,
+         next_at   INTEGER NOT NULL DEFAULT 0
+     );
+     DROP TABLE jam_sessions;",
 ];
 
 /// The schema version this build writes.

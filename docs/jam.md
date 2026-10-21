@@ -1,6 +1,6 @@
 # jam v1: encrypted subscriptions for teachers (design, LIME-185)
 
-**Status: a design to decide on. No code was written for it (the throwaway experiment in §3 was not committed).** This replaces the public, server-readable jam of LIME-110.
+**Status: the design (LIME-185), decided by the user on 2026-10-21 and built in LIME-186 (core) and LIME-187 (server): archive = option C with private fetching, 1,000 subscribers, comments via the writer, any signed-in teacher can start a jam. Where the build differs from the design below, a note says so.** This replaces the public, server-readable jam of LIME-110.
 
 ## 0. What jam is for
 
@@ -48,7 +48,7 @@ A **jam** is a new conversation kind beside `dm:` and `grp:`: `jam:<jam_id>`.
 
 **Experiment (throwaway, not committed):** with `vodozemac` 0.11.1, a subscriber given a writer session's **first-index key** (`GroupSession::session_key()` taken at creation, 229 bytes) decrypted five earlier posts **and** a later one; `InboundGroupSession::export_at(i)` produced a key that reads from index *i* on and refused earlier posts. So one stored key per session is enough to give a joiner the whole archive of that session, and a key at index *i* could give a "from here on" view if ever wanted.
 
-**Recommendation: C.** It is the only option that works while the writer is offline and does not make the writer's phone a server, and the extra the server learns (blob sizes, times, who fetches) is the same class it already learns for attachments.
+**Built (LIME-186/187): C, with private fetching.** In the build the archive travels as an **index** (`jam.index`: post id, title, blob id, key, hash, size, for each post a subscriber may read) and each post is a blob on the server fetched **without a session** (`jam-blob-get`); the welcome carries only the *current* session keys (the old first-index keys of the design are not needed, because each blob has its own key). **Recommendation was: C.** It is the only option that works while the writer is offline and does not make the writer's phone a server, and the extra the server learns (blob sizes, times, who fetches) is the same class it already learns for attachments.
 
 ## 4. Scale (Phase 1 d)
 
@@ -91,13 +91,13 @@ A non-subscriber must see *something* to decide to subscribe. **Plot's lean, eva
 
 **Recommendation: Option 1.** It is also the minimum new server metadata a **Subscribe** button needs: a `jams` table (jam id, writer id, title, about, topics, post count, created) readable by signed-in users, the same trust class as `profiles` (api-v2 §11, "Profiles"). A directory search over it (by subject, grade, topic, name) is a server query; it learns *what* is searched, as the user directory does today. "Teachers I know" is local (the contacts and groups already on the phone).
 
-**Subscribing reveals to the server** that *this account contacted that writer* (a message to a writer you may not have chatted with, an identified first send: the existing "stranger's first message" limit, api-v2 §9) and, through option C, that this account later fetches that jam's blobs. The server can therefore infer *a jam's subscribers* from blob fetches. Mitigations to weigh later: fetch blobs through the LIME-139 relay path, or serve blobs by capability without account auth. State this limit in the product copy.
+**Subscribing reveals to the server** that *this account contacted that writer* (a message to a writer you may not have chatted with, an identified first send: the existing "stranger's first message" limit, api-v2 §9). **Downloading does not reveal the account** (LIME-187): a post is fetched by its unguessable id from `jam-blob-get`, which needs **no session and no token**, so the server sees the request's network address, the time and the blob id, and **no account**. It can still guess that addresses that fetch the same jam's blobs belong together, and an address behind a school's network says little. The bucket the function limits by is the address alone (never the blob id), and the function writes no log line of its own. **What the hosting platform itself logs is not ours to switch off:** its Edge Function request log records the call (path, status, time and the client address in the request headers, not the JSON body, so not the blob id), and its **Storage request log records the signed download itself, whose path is the blob id, with the address.** So for the platform's log retention the platform can tie an address to a blob id. To be confirmed against the staging project's log settings before launch. Further mitigation to weigh later: fetch blobs through the LIME-139 relay path.
 
 ## 8. What each party learns (v1, option C + E2 + Option 1)
 
 | Party | Learns |
 |---|---|
-| **The server** | The jam page (public by design). That blobs exist, with sizes and times, and **which accounts fetch which blob ids** (so it can infer a jam's subscriber set statistically). The recipient sets of each notice send (the existing limit, api-v2 §9). Timing and IP addresses. **Never**: post, comment or ♥ content; titles of unlisted posts; who liked or commented. |
+| **The server** | The jam page (public by design). That blobs exist, with their sizes and times, **and which network addresses fetch which blob ids, but not which accounts** (the fetch carries no session). The writer's uploads (account, time, size). The recipient sets of each notice send (the existing limit, api-v2 §9). Timing and IP addresses. **Never**: post, comment or ♥ content; titles; who liked or commented. |
 | **The writer** | Everything about their jam: who subscribed (and when), every ♥, every comment, who removed. |
 | **Subscribers** | The posts (all of the archive), the comments the writer republished with their authors. Not who the other subscribers are, not who ♥'d, not how many. |
 | **Non-subscribers** | The jam page only. |
@@ -110,7 +110,8 @@ No payment code in v1; the model has `tier` and `tiers` so it can arrive without
 ## 10. Honest limits and open questions
 
 - 100 subscribers in v1 (§4). Comments need the writer online (§5). A subscriber's device that misses a rotation misses those posts until the writer next sends the key (same as groups).
-- The server **will** hold a ciphertext archive (new retention); this must be said in `architecture.md` when built, and retention for a deleted jam is: delete its blobs.
+- The server **holds** a ciphertext archive (new retention; stated in `architecture.md`); a jam that ends, or a post the writer deletes, has its blobs removed (`jam-page` end).
+- **Key distribution is the slow part of a big jam.** Every rotation and every new subscriber costs an Olm message per device, which the server limits (60 key claims and 120 items a minute): a 1,000-subscriber jam takes about 17 minutes to key everyone, though a *post* takes about two. A cheaper rotation by age or count would hand the next session's key *inside* the current session (a key chain), reserving the individual Olm messages for a removal; not built.
 - Student privacy: lime cannot see classroom clips; the writer is responsible. A one-time notice at the first clip upload ("Don't share students' faces or names without permission") is a copy decision, not a technical one.
 - Who may create a jam (any signed-in teacher? after some verification?) is undecided; spam and impersonation (a fake "famous teacher" jam) need the Report path and a verified-name policy.
 - Shared jams (school/district) change §2's `writers`, §5's comment path and the page's ownership; not v1.

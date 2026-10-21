@@ -152,9 +152,20 @@ Deno.serve(handler(async (req) => {
     }
   }
 
-  // Rate limits: recipient-items per minute, per user (identified) or per access key (sealed).
+  // Rate limits: recipient-items per minute, per user (identified) or per access key (sealed). A sealed item is charged to the RECIPIENT's key, so
+  // one post to a thousand people costs each of them one and nobody can be flooded: that stays as it was. An identified item is charged to the
+  // SENDER, which is what a jam post (a stranger subscribed, so no delivery key) would hit: for 120 a minute it would take a quarter of an hour.
+  // So an identified fan-out (the same ciphertext to `fanoutMinRecipients` or more distinct devices) is charged to its own per-minute and per-day
+  // budgets instead. The request is already one ciphertext and its recipient count is already visible to the server, so this classifies nothing
+  // new. Small sends keep exactly the limits they had; the daily budget is well under what 120 a minute allowed in a day.
+  const fanout = new Set(list.map((r) => r.to_device.toLowerCase())).size >= config.fanoutMinRecipients();
   if (identifiedItems > 0 && senderUser) {
-    await rateLimit(`send:user:${senderUser}`, identifiedItems, config.sendPerMinute(), 60);
+    if (fanout) {
+      await rateLimit(`fanout:user:${senderUser}`, identifiedItems, config.fanoutPerMinute(), 60);
+      await rateLimit(`fanout-day:user:${senderUser}`, identifiedItems, config.fanoutPerDay(), 86_400);
+    } else {
+      await rateLimit(`send:user:${senderUser}`, identifiedItems, config.sendPerMinute(), 60);
+    }
   }
   for (const [bucket, cost] of sealedCostByKey) {
     await rateLimit(bucket, cost, config.sendPerMinute(), 60);

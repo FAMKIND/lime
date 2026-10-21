@@ -1,5 +1,7 @@
 // POST blob { action, ... }: the store for CIPHERTEXT blobs (LIME-98b, api-v2.md section 6).
 //   put    { blob_id, size, expires_in_days? } -> { url }: a signed upload URL (replaces my blob of that id).
+//   put    { blob_id, size, class: "jam", jam_id } -> the same for a jam post (LIME-187): no expiry, its own quota, fetched without a session
+//          through `jam-blob-get`; removed with the jam (`jam-page` end) or by `delete`.
 //   commit { blob_id }                         -> verifies the upload (size, quota): { size }.
 //   get    { blob_id }                         -> { url, version }: a signed download URL, if committed.
 //   delete { blob_id }                         -> removes my blob.
@@ -20,8 +22,10 @@ Deno.serve(handler(async (req) => {
   if (!isUuid(body.blob_id)) throw new HttpError(400, "bad_request", "blob_id must be a UUID.");
   const id = (body.blob_id as string).toLowerCase();
   const path = `${id}`;
-  const { data: existing } = await db.from("blobs").select("owner, size, committed_at").eq("id", id).maybeSingle();
+  const { data: existing } = await db.from("blobs").select("owner, size, committed_at, class").eq("id", id).maybeSingle();
   if (body.action !== "get" && existing && existing.owner !== me) throw new HttpError(409, "id_taken", "That id is in use.");
+  const isJam = body.class === "jam";
+  if (isJam && !isUuid(body.jam_id)) throw new HttpError(400, "bad_request", "jam_id must be a UUID.");
 
   switch (body.action) {
     case "put": {
@@ -29,15 +33,22 @@ Deno.serve(handler(async (req) => {
       if (typeof size !== "number" || !Number.isInteger(size) || size < 1 || size > blobConfig.maxBlobBytes()) {
         throw new HttpError(400, "bad_request", "That file is too large.");
       }
-      const { data: mine, error } = await db.from("blobs").select("id, size").eq("owner", me).neq("id", id);
+      const klass = isJam ? "jam" : "blob";
+      if (existing && existing.class !== klass) throw new HttpError(409, "id_taken", "That id is in use.");
+      // The two classes are counted apart: a writer's posts do not eat the photo quota, and the other way round.
+      const { data: usage, error } = await db.rpc("blob_usage", { p_owner: me, p_class: klass, p_except: id });
       if (error) throw new HttpError(500, "internal");
-      const used = (mine ?? []).reduce((sum, row) => sum + row.size, 0);
-      if ((mine ?? []).length + 1 > blobConfig.quotaCount() || used + size > blobConfig.quotaBytes()) {
+      const used = Number(usage?.[0]?.bytes ?? 0);
+      const held = Number(usage?.[0]?.items ?? 0);
+      const [countLimit, bytesLimit] = isJam ? [blobConfig.jamQuotaCount(), blobConfig.jamQuotaBytes()] : [blobConfig.quotaCount(), blobConfig.quotaBytes()];
+      if (held + 1 > countLimit || used + size > bytesLimit) {
         throw new HttpError(413, "quota", "You have reached your storage limit.");
       }
-      const days = typeof body.expires_in_days === "number" && body.expires_in_days > 0 ? Math.min(body.expires_in_days, 365) : null;
+      // A jam post never expires while its jam exists; an ordinary blob may.
+      const days = !isJam && typeof body.expires_in_days === "number" && body.expires_in_days > 0 ? Math.min(body.expires_in_days, 365) : null;
       const row = {
-        id, owner: me, size, committed_at: null,
+        id, owner: me, size, committed_at: null, class: klass,
+        jam_id: isJam ? (body.jam_id as string).toLowerCase() : null,
         expires_at: days === null ? null : new Date(Date.now() + days * 86_400_000).toISOString(),
       };
       const { error: saveError } = await db.from("blobs").upsert(row, { onConflict: "id" });

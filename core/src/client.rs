@@ -237,7 +237,7 @@ impl LimeStore {
         // Group state ops (a new group, someone added or removed...) go out before the messages that follow them.
         self.deliver_group_outbox(&transport, &auth_token, &mut state, &me);
         // A jam's posts to its subscribers, a chunk at a time (LIME-186).
-        self.deliver_jam_wires(&transport, &auth_token);
+        self.deliver_jam(&transport, &auth_token, &mut state, &me);
         let queued = self.with_conn(queued_messages)?;
         let mut sent = 0;
         for message in queued {

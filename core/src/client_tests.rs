@@ -1479,7 +1479,7 @@ fn chats_accepted_before_this_version_are_given_the_delivery_key_after_the_upgra
             "DELETE FROM share_queue; DELETE FROM key_shared; DELETE FROM contact_delivery_keys;
              DROP TABLE group_ops; DROP TABLE group_members; DROP TABLE group_outbox; DROP TABLE group_outbound_sessions; DROP TABLE group_inbound_sessions; ALTER TABLE conversations DROP COLUMN group_emoji; ALTER TABLE peers DROP COLUMN verified_at; DROP TABLE profile_key; DROP TABLE contact_profile_keys; DROP TABLE my_photo; DROP TABLE photos; DROP TABLE photo_notices; DROP TABLE message_attachments; DROP TABLE attachment_parts; DROP TABLE transfers; DROP TABLE contact_labels; ALTER TABLE conversations DROP COLUMN group_photo; ALTER TABLE conversations DROP COLUMN group_ended; ALTER TABLE conversations DROP COLUMN marked_unread; ALTER TABLE conversations DROP COLUMN hidden; DROP TABLE reactions; DROP TABLE call_events; DROP TABLE call_history; DROP INDEX olm_sessions_by_peer; DROP TABLE received_ciphertexts; DROP TABLE emergency_messages; DROP TABLE emergency_settings; DROP TABLE mesh_outbox; DROP TABLE mesh_packets; DROP TABLE mesh_seen; DROP TABLE mesh_uploaded; DROP TABLE group_call_events; DROP TABLE group_call_outbox; DROP TABLE group_call_participants; DROP TABLE group_calls; DROP TABLE peer_devices; DROP TABLE my_status; DROP TABLE status_notices; DROP TABLE contact_status; DROP TABLE message_op_outbox; DROP TABLE early_message_ops; ALTER TABLE messages DROP COLUMN edited; ALTER TABLE messages DROP COLUMN edit_hlc; ALTER TABLE messages DROP COLUMN deleted; ALTER TABLE messages DROP COLUMN hidden; ALTER TABLE messages DROP COLUMN forwarded; ALTER TABLE messages DROP COLUMN link_preview;
              DROP TABLE delivery_state; DROP TABLE contact_delivery_keys; DROP TABLE share_queue; DROP TABLE key_shared;
-             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_sessions; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
+             DROP TABLE my_username; DROP TABLE username_sent; ALTER TABLE people DROP COLUMN username; ALTER TABLE people DROP COLUMN username_at; DROP TABLE jams; DROP TABLE jam_subscribers; DROP TABLE jam_op_outbox; DROP TABLE jam_outbound; DROP TABLE jam_inbound; DROP TABLE jam_posts; DROP TABLE jam_wire_outbox; PRAGMA user_version = 9;",
         )
         .unwrap();
     }
@@ -5088,6 +5088,17 @@ fn join_jam(writer: &Party, who: &Party, jam_id: &str, transport: &Arc<dyn Trans
     sync(writer, transport);
     deliver(writer, transport);
     sync(who, transport);
+    // The subscriber then downloads what the index named, with no session.
+    deliver(who, transport);
+}
+
+/// The writer sends what is waiting (the blobs go up, then the notices); a subscriber receives the notices and downloads the posts.
+fn catch_up(writer: &Party, subscribers: &[&Party], transport: &Arc<dyn Transport>) {
+    deliver(writer, transport);
+    for p in subscribers {
+        sync(p, transport);
+        deliver(p, transport);
+    }
 }
 
 fn publish(writer: &Party, jam_id: &str, title: &str, tier: &str) -> String {
@@ -5122,9 +5133,7 @@ fn a_jam_reaches_subscribers_and_a_late_subscriber_reads_the_whole_archive() {
     for n in 1..=5 {
         publish(&alice, &jam, &format!("post {n}"), "free");
     }
-    deliver(&alice, &transport);
-    sync(&bob, &transport);
-    sync(&carol, &transport);
+    catch_up(&alice, &[&bob, &carol], &transport);
     let titles: Vec<String> = (1..=5).map(|n| format!("post {n}")).collect();
     assert_eq!(jam_posts_of(&bob, &jam), titles);
     assert_eq!(jam_posts_of(&carol, &jam), titles);
@@ -5132,19 +5141,30 @@ fn a_jam_reaches_subscribers_and_a_late_subscriber_reads_the_whole_archive() {
     assert_eq!((read[0].markdown.as_str(), read[0].author.as_str(), read[0].tier.as_str()), ("The words of **post 1**", "alice", "free"));
     assert_eq!(bob.store.read_jam_post(read[0].post_id.clone()).unwrap().unwrap().plain, "The words of post 1");
 
-    // A fourth person joins later: the welcome carries the keys of every session, and the old posts follow. They read all five, and the next.
+    // A fourth person joins later: the welcome carries the current keys and the index names every old post's blob. Nothing old is sent again; they
+    // download the archive themselves, with no session, and read the next post as it comes.
+    let sent_before = server.state.lock().unwrap().sent.len();
     join_jam(&alice, &dave, &jam, &transport);
-    deliver(&alice, &transport);
-    sync(&dave, &transport);
     assert_eq!(jam_posts_of(&dave, &jam), titles, "the whole archive");
+    let read = dave.store.list_jam_posts(jam.clone()).unwrap();
+    assert!(read.iter().all(|p| p.state == "ready"), "downloaded");
+    assert_eq!(read[0].markdown, "The words of **post 1**");
+    let megolm_resends = server.state.lock().unwrap().sent[sent_before..].iter().filter(|b| b["recipients"].as_array().map_or(0, Vec::len) == 1 && b["ciphertext"].as_str().is_some_and(|c| alice.store.lock().query_row("SELECT COUNT(*) FROM jam_posts WHERE wire = ?1", params![c], |r| r.get::<_, i64>(0)).unwrap() > 0)).count();
+    assert_eq!(megolm_resends, 0, "no old notice was sent again");
     publish(&alice, &jam, "post 6", "free");
-    deliver(&alice, &transport);
+    catch_up(&alice, &[&bob, &carol, &dave], &transport);
     for p in [&bob, &carol, &dave] {
-        sync(p, &transport);
         assert_eq!(jam_posts_of(p, &jam).len(), 6);
     }
+    {
+        let state = server.state.lock().unwrap();
+        assert_eq!(state.jam_gets, 18, "three subscribers downloaded six posts each, once");
+        assert_eq!(state.jam_gets_with_token, 0, "no download carried a session");
+        let page = state.jam_pages.get(&jam).unwrap();
+        assert_eq!((page.1.as_str(), page.2, page.3), ("Fractions that stick", 6, false), "the public page on the server: title and count");
+    }
     // A join did not rotate anything: one session for all six posts.
-    let sessions: i64 = alice.store.lock().query_row("SELECT COUNT(*) FROM jam_sessions WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
+    let sessions: i64 = alice.store.lock().query_row("SELECT COUNT(DISTINCT session_id) FROM jam_posts WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
     assert_eq!(sessions, 1);
 }
 
@@ -5158,18 +5178,14 @@ fn removing_a_subscriber_rotates_the_session_and_they_cannot_read_what_follows()
     join_jam(&alice, &bob, &jam, &transport);
     join_jam(&alice, &carol, &jam, &transport);
     publish(&alice, &jam, "before", "free");
-    deliver(&alice, &transport);
-    sync(&bob, &transport);
-    sync(&carol, &transport);
+    catch_up(&alice, &[&bob, &carol], &transport);
     let first_session: String = alice.store.lock().query_row("SELECT session_id FROM jam_outbound WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
 
     alice.store.remove_jam_subscriber(jam.clone(), bob.user.clone()).unwrap();
     publish(&alice, &jam, "after", "free");
     let second_session: String = alice.store.lock().query_row("SELECT session_id FROM jam_outbound WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
     assert_ne!(first_session, second_session, "a removal rotates");
-    deliver(&alice, &transport);
-    sync(&bob, &transport);
-    sync(&carol, &transport);
+    catch_up(&alice, &[&bob, &carol], &transport);
     assert_eq!(jam_posts_of(&carol, &jam), vec!["before", "after"]);
     assert_eq!(jam_posts_of(&bob, &jam), vec!["before"], "the removed phone keeps what it has and cannot read post 'after'");
     assert_eq!(bob.store.jam(jam.clone()).unwrap().unwrap().status, "removed");
@@ -5189,12 +5205,11 @@ fn a_hundred_posts_rotate_the_session_and_everyone_keeps_reading() {
     for n in 0..101 {
         publish(&alice, &jam, &format!("p{n}"), "free");
     }
-    let sessions: i64 = alice.store.lock().query_row("SELECT COUNT(*) FROM jam_sessions WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
+    let sessions: i64 = alice.store.lock().query_row("SELECT COUNT(DISTINCT session_id) FROM jam_posts WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
     assert_eq!(sessions, 2, "the 101st post is under a new session");
-    deliver(&alice, &transport);
-    deliver(&alice, &transport);
-    sync(&bob, &transport);
-    sync(&bob, &transport);
+    for _ in 0..8 {
+        catch_up(&alice, &[&bob], &transport);
+    }
     assert_eq!(jam_posts_of(&bob, &jam).len(), 101);
 }
 
@@ -5211,9 +5226,7 @@ fn a_subscribers_only_post_is_withheld_from_free_subscribers() {
     alice.store.lock().execute("UPDATE jam_subscribers SET tier = 'subscribers' WHERE jam_id = ?1 AND user_id = 'carol'", params![jam]).unwrap();
     publish(&alice, &jam, "for everyone", "free");
     publish(&alice, &jam, "for subscribers", "subscribers");
-    deliver(&alice, &transport);
-    sync(&bob, &transport);
-    sync(&carol, &transport);
+    catch_up(&alice, &[&bob, &carol], &transport);
     assert_eq!(jam_posts_of(&bob, &jam), vec!["for everyone"]);
     assert_eq!(jam_posts_of(&carol, &jam), vec!["for everyone", "for subscribers"]);
 }
@@ -5271,15 +5284,20 @@ fn ending_a_jam_stops_posts_and_tells_the_subscribers() {
     join_jam(&alice, &bob, &jam, &transport);
     publish(&alice, &jam, "last", "free");
     alice.store.update_jam(jam.clone(), "Renamed".into(), "About".into(), vec!["Reading".into()]).unwrap();
-    deliver(&alice, &transport);
-    sync(&bob, &transport);
+    catch_up(&alice, &[&bob], &transport);
     assert_eq!(bob.store.jam(jam.clone()).unwrap().unwrap().title, "Renamed");
+    assert_eq!(server.state.lock().unwrap().jam_pages.get(&jam).unwrap().1, "Renamed", "the public page followed");
     alice.store.end_jam(jam.clone()).unwrap();
     assert!(alice.store.publish_jam_post(jam.clone(), "no".into(), "no".into(), "free".into(), "[]".into()).is_err());
-    deliver(&alice, &transport);
-    sync(&bob, &transport);
+    catch_up(&alice, &[&bob], &transport);
     assert!(bob.store.jam(jam.clone()).unwrap().unwrap().ended);
     assert_eq!(jam_posts_of(&bob, &jam), vec!["last"], "they keep what they have");
+    // The server was told the jam ended and removed every post: nothing is left to download, even by id.
+    {
+        let state = server.state.lock().unwrap();
+        assert!(state.jam_pages.get(&jam).unwrap().3, "ended on the server");
+        assert!(state.jam_blobs.is_empty(), "every post's ciphertext was removed");
+    }
 }
 
 
@@ -5312,27 +5330,32 @@ fn a_post_reaches_a_thousand_subscribers_with_two_devices_each_in_chunks_and_the
         }
     }
     store.publish_jam_post(jam.clone(), "One post".into(), "To everyone".into(), "free".into(), "[]".into()).unwrap();
+    // Queued for all: the notice for each of the thousand, and the session key for each of the thousand.
     let progress = store.jam_send_progress(jam.clone()).unwrap();
-    assert_eq!((progress.pending, progress.total), (1000, 1000), "queued for all, nothing sent yet");
+    assert_eq!((progress.pending, progress.total), (2000, 2000), "queued, nothing sent yet");
 
-    // The first pass sends the first 500 and stops; the app is "restarted"; the next pass resumes where it was.
+    // One pass sends the first 60 keys and the first 500 notices and stops; the app is "restarted"; the next passes resume where it was.
     let sent_before = server.state.lock().unwrap().sent.len();
     store.deliver_queued(transport.clone(), token.clone()).unwrap();
     let progress = store.jam_send_progress(jam.clone()).unwrap();
-    assert_eq!((progress.pending, progress.total), (500, 1000), "sending to 500 of 1,000");
+    assert_eq!((progress.pending, progress.total), (1440, 2000), "sending: 560 of 2,000 done");
     drop(store);
     let store = LimeStore::open(path, vec![9; 32]).unwrap();
-    assert_eq!(store.jam_send_progress(jam.clone()).unwrap().pending, 500, "the queue is in the store: it survived the restart");
-    store.deliver_queued(transport.clone(), token.clone()).unwrap();
-    assert_eq!(store.jam_send_progress(jam.clone()).unwrap().pending, 0);
+    assert_eq!(store.jam_send_progress(jam.clone()).unwrap().pending, 1440, "the queue is in the store: it survived the restart");
+    let mut passes = 1;
+    while store.jam_send_progress(jam.clone()).unwrap().pending > 0 {
+        store.deliver_queued(transport.clone(), token.clone()).unwrap();
+        passes += 1;
+        assert!(passes < 40, "the queue drains");
+    }
 
     // The post's ciphertext went out in chunks of 100 devices; the Olm requests are the session key given to each device once (a jam's first post).
     let wire: String = store.lock().query_row("SELECT wire FROM jam_posts WHERE jam_id = ?1", params![jam], |r| r.get(0)).unwrap();
     let state_sent: Vec<Value> = server.state.lock().unwrap().sent[sent_before..].to_vec();
     let post_sends: Vec<usize> = state_sent.iter().filter(|b| b["ciphertext"].as_str() == Some(wire.as_str())).map(|b| b["recipients"].as_array().map_or(0, Vec::len)).collect();
     println!(
-        "the post: {} send requests (largest {} devices) for 2,000 devices; plus {} Olm requests handing each device the session key once; setup {:?}, whole test {:?}",
-        post_sends.len(), post_sends.iter().max().unwrap(), state_sent.len() - post_sends.len(), set_up, started.elapsed()
+        "the post: {} send requests (largest {} devices) for 2,000 devices; plus {} Olm requests handing each device the session key once, over {} passes of at most 60 people; setup {:?}, whole test {:?}",
+        post_sends.len(), post_sends.iter().max().unwrap(), state_sent.len() - post_sends.len(), passes, set_up, started.elapsed()
     );
     assert!(state_sent.iter().all(|b| b["recipients"].as_array().map_or(0, Vec::len) <= 500), "the server's cap of 500 devices per request holds");
     assert!(post_sends.iter().all(|n| *n <= 100), "in chunks of at most 100");
@@ -5345,4 +5368,27 @@ fn a_post_reaches_a_thousand_subscribers_with_two_devices_each_in_chunks_and_the
     assert!(arrived.values().all(|n| *n == 1), "exactly once");
     assert!(devices.iter().all(|d| arrived.contains_key(d)));
     drop(people);
+}
+
+#[test]
+fn a_notice_goes_by_the_device_cache_and_a_gone_device_is_caught_and_retried_with_a_live_list() {
+    let server = FakeServer::new();
+    let (alice, transport) = party(&server, "alice", 1);
+    let (bob, _) = party(&server, "bob", 2);
+    let second = add_linked_device(&server, &bob);
+    let jam = new_jam(&alice);
+    join_jam(&alice, &bob, &jam, &transport);
+    publish(&alice, &jam, "one", "free");
+    catch_up(&alice, &[&bob], &transport);
+    // The second phone is wiped (a key reset elsewhere): Alice's cache still lists it.
+    revoke(&server, &bob.user, &second);
+    forget_requests(&server);
+    publish(&alice, &jam, "two", "free");
+    catch_up(&alice, &[&bob], &transport);
+    assert_eq!(jam_posts_of(&bob, &jam), vec!["one", "two"], "the live retry reached the phone that is still there");
+    // And a normal post reads no device list at all.
+    forget_requests(&server);
+    publish(&alice, &jam, "three", "free");
+    deliver(&alice, &transport);
+    assert!(!requests_of(&server).iter().any(|r| r == "users-devices"), "the cache was enough: {:?}", requests_of(&server));
 }

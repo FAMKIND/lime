@@ -433,6 +433,10 @@ verify_jwt = false
 
 # The sign-in steps that have no user token yet. (code-verify, code-resend, signup-set-password and
 # the profile functions keep the platform's JWT check and then require a verified session themselves.)
+# jam-blob-get has no user token by design (LIME-187): a jam post is fetched by its unguessable id, so the server cannot tie a download to an account.
+[functions.jam-blob-get]
+verify_jwt = false
+
 [functions.identify]
 verify_jwt = false
 [functions.signin-password]

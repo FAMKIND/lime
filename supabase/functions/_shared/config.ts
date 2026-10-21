@@ -12,6 +12,13 @@ export const config = {
   maxItemBytes: () => intFromEnv("LIME_MAX_ITEM_BYTES", 64 * 1024),
   /** Recipient-items per minute: per authenticated user, or per access key for sealed sends. */
   sendPerMinute: () => intFromEnv("LIME_RATE_SEND_PER_MIN", 120),
+  /** An identified send to this many distinct devices or more is a fan-out (LIME-187): a jam post, or a big group's message. The sender is
+   *  charged to its own budgets, not to the per-item bucket above (a sealed send is still charged to each recipient's key). */
+  fanoutMinRecipients: () => intFromEnv("LIME_FANOUT_MIN_RECIPIENTS", 50),
+  /** Recipient-items per minute in fan-out sends (a 1,000-subscriber, 2-device jam post is 2,000 items: about two minutes). */
+  fanoutPerMinute: () => intFromEnv("LIME_RATE_FANOUT_PER_MIN", 1500),
+  /** And per day: well under what the per-item bucket allowed over a day (172,800), so the total reach of one account does not grow. */
+  fanoutPerDay: () => intFromEnv("LIME_RATE_FANOUT_PER_DAY", 30000),
   /** One-time-key claims per minute per user. */
   claimPerMinute: () => intFromEnv("LIME_RATE_CLAIM_PER_MIN", 60),
   /** Directory lookups (exact email) per minute per user. */

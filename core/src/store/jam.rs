@@ -6,7 +6,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
-use vodozemac::megolm::{GroupSession, GroupSessionPickle, InboundGroupSession, InboundGroupSessionPickle, SessionConfig};
+use vodozemac::megolm::{GroupSession, GroupSessionPickle, InboundGroupSession, InboundGroupSessionPickle};
 
 use super::{db_err, StoreError};
 
@@ -19,6 +19,11 @@ pub(crate) const ROTATE_AFTER_MS: i64 = 7 * 24 * 3_600 * 1000;
 pub(crate) const RECIPIENTS_PER_PASS: usize = 500;
 /// Recipients that share one ciphertext, per send round.
 pub(crate) const WIRE_CHUNK: usize = 100;
+/// How many people one pass sends an Olm op to (a key, a welcome). Each costs a request per device and may claim a one-time key, which the server
+/// limits (60 claims and 120 items a minute), so a pass stays inside that and the rest waits for the next.
+pub(crate) const OPS_PER_PASS: usize = 60;
+/// How many posts one pass uploads or downloads.
+pub(crate) const BLOBS_PER_PASS: usize = 20;
 
 pub(crate) const TIER_FREE: &str = "free";
 pub(crate) const TIER_SUBSCRIBERS: &str = "subscribers";
@@ -40,7 +45,7 @@ pub(crate) fn valid_tier(tier: &str) -> bool {
     tier == TIER_FREE || tier == TIER_SUBSCRIBERS
 }
 
-/// The tiers whose keys a subscriber of `tier` may hold: a free subscriber only the free session, a paying one both.
+/// The tiers a subscriber of a tier may read: a free subscriber only the free posts, a paying one both.
 pub(crate) fn tiers_for(subscriber_tier: &str) -> &'static [&'static str] {
     if subscriber_tier == TIER_SUBSCRIBERS {
         &[TIER_FREE, TIER_SUBSCRIBERS]
@@ -209,40 +214,6 @@ pub(crate) fn delete_outbound(conn: &Connection, jam_id: &str) -> Result<(), Sto
     Ok(())
 }
 
-/// Remembers a session the writer made: its key at the first message index, kept for ever (encrypted), so any later subscriber can be handed
-/// the whole archive of that session.
-pub(crate) fn record_session(conn: &Connection, pickle_key: &[u8; 32], jam_id: &str, tier: &str, session: &GroupSession, now: i64) -> Result<(), StoreError> {
-    let first = InboundGroupSession::new(&session.session_key(), SessionConfig::version_1());
-    conn.execute(
-        "INSERT OR IGNORE INTO jam_sessions (session_id, jam_id, tier, first_key, created) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![session.session_id(), jam_id, tier, first.pickle().encrypt(pickle_key), now],
-    )
-    .map_err(db_err)?;
-    conn.execute("UPDATE jam_sessions SET rotated_at = ?3 WHERE jam_id = ?1 AND tier = ?2 AND session_id != ?4 AND rotated_at IS NULL", params![jam_id, tier, now, session.session_id()])
-        .map_err(db_err)?;
-    Ok(())
-}
-
-/// The sessions a subscriber of `tier` may hold, oldest first, as (session id, tier, first-index key in base64).
-pub(crate) fn session_keys(conn: &Connection, pickle_key: &[u8; 32], jam_id: &str, subscriber_tier: &str) -> Result<Vec<(String, String, String)>, StoreError> {
-    let mut statement = conn.prepare("SELECT session_id, tier, first_key FROM jam_sessions WHERE jam_id = ?1 ORDER BY created, session_id").map_err(db_err)?;
-    let rows = statement
-        .query_map(params![jam_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
-        .map_err(db_err)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(db_err)?;
-    let mut out = Vec::new();
-    for (session_id, tier, first_key) in rows {
-        if !tiers_for(subscriber_tier).contains(&tier.as_str()) {
-            continue;
-        }
-        let pickle = InboundGroupSessionPickle::from_encrypted(&first_key, pickle_key).map_err(|_| StoreError::BadMessage)?;
-        let session = InboundGroupSession::from_pickle(pickle);
-        out.push((session_id, tier, session.export_at_first_known_index().to_base64()));
-    }
-    Ok(out)
-}
-
 // ---------------------------------------------------------------- the subscriber's sessions
 
 pub(crate) struct Inbound {
@@ -291,9 +262,11 @@ pub(crate) struct PostRow {
     pub attachments: String,
     pub created: i64,
     pub deleted: bool,
+    /// 0 not downloaded yet, 1 ready, 2 gone from the server.
+    pub fetched: i64,
 }
 
-const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL FROM jam_posts";
+const POST: &str = "SELECT post_id, jam_id, author, tier, title, markdown, plain, attachments, created, deleted_at IS NOT NULL, fetched FROM jam_posts";
 
 fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
     Ok(PostRow {
@@ -307,6 +280,7 @@ fn read_post(r: &rusqlite::Row<'_>) -> rusqlite::Result<PostRow> {
         attachments: r.get(7)?,
         created: r.get(8)?,
         deleted: r.get(9)?,
+        fetched: r.get(10)?,
     })
 }
 
@@ -320,9 +294,19 @@ pub(crate) fn post(conn: &Connection, post_id: &str) -> Result<Option<PostRow>, 
     conn.query_row(&format!("{POST} WHERE post_id = ?1"), params![post_id], read_post).optional().map_err(db_err)
 }
 
-/// Keeps a post a subscriber received; `false` if it was already there.
+/// A post's blob on the server: where it is, the key that opens it and what it must hash to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BlobRef {
+    pub blob_id: String,
+    pub key: String,
+    pub sha256: String,
+    pub size: i64,
+}
+
+/// What a subscriber learns of a post from a notice or from the welcome's index: its title and where the content is. The content itself is fetched
+/// later, from the server, without a session. `false` if the post was already known.
 #[allow(clippy::too_many_arguments)] // one column each
-pub(crate) fn insert_received_post(
+pub(crate) fn insert_notice(
     conn: &Connection,
     post_id: &str,
     jam_id: &str,
@@ -331,28 +315,159 @@ pub(crate) fn insert_received_post(
     index: u32,
     tier: &str,
     title: &str,
-    markdown: &str,
-    plain: &str,
-    attachments: &Value,
     created: i64,
+    blob: &BlobRef,
 ) -> Result<bool, StoreError> {
     let n = conn
         .execute(
-            "INSERT OR IGNORE INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![post_id, jam_id, author, session_id, index, tier, title, markdown, plain, attachments.to_string(), created],
+            "INSERT OR IGNORE INTO jam_posts (post_id, jam_id, author, session_id, idx, tier, title, markdown, plain, attachments, created, blob_id, blob_key, blob_sha, blob_size, uploaded, fetched)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', '', '[]', ?8, ?9, ?10, ?11, ?12, 1, 0)",
+            params![post_id, jam_id, author, session_id, index, tier, title, created, blob.blob_id, blob.key, blob.sha256, blob.size],
         )
         .map_err(db_err)?;
     Ok(n > 0)
 }
 
+/// The posts whose content a subscriber has not downloaded yet, oldest first.
+pub(crate) fn to_fetch(conn: &Connection, limit: usize) -> Result<Vec<(String, BlobRef)>, StoreError> {
+    let mut statement = conn
+        .prepare("SELECT post_id, blob_id, blob_key, blob_sha, blob_size FROM jam_posts WHERE fetched = 0 AND blob_id IS NOT NULL ORDER BY created, post_id LIMIT ?1")
+        .map_err(db_err)?;
+    let rows = statement
+        .query_map(params![limit as i64], |r| Ok((r.get::<_, String>(0)?, BlobRef { blob_id: r.get(1)?, key: r.get(2)?, sha256: r.get(3)?, size: r.get(4)? })))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    Ok(rows)
+}
+
+/// A downloaded post's content (`fetched = 1`), or that it is gone from the server (`fetched = 2`).
+pub(crate) fn set_fetched(conn: &Connection, post_id: &str, content: Option<(&str, &str, &Value)>) -> Result<(), StoreError> {
+    match content {
+        Some((markdown, plain, attachments)) => conn
+            .execute("UPDATE jam_posts SET markdown = ?2, plain = ?3, attachments = ?4, fetched = 1 WHERE post_id = ?1", params![post_id, markdown, plain, attachments.to_string()])
+            .map_err(db_err)?,
+        None => conn.execute("UPDATE jam_posts SET fetched = 2 WHERE post_id = ?1", params![post_id]).map_err(db_err)?,
+    };
+    Ok(())
+}
+
+/// The writer's posts whose blob is not on the server yet, oldest first, with what is needed to make it again.
+pub(crate) struct Unuploaded {
+    pub post_id: String,
+    pub jam_id: String,
+    pub tier: String,
+    pub title: String,
+    pub markdown: String,
+    pub attachments: String,
+    pub created: i64,
+    pub blob: BlobRef,
+}
+
+pub(crate) fn to_upload(conn: &Connection, limit: usize) -> Result<Vec<Unuploaded>, StoreError> {
+    let mut statement = conn
+        .prepare(
+            "SELECT post_id, jam_id, tier, title, markdown, attachments, created, blob_id, blob_key, blob_sha, blob_size FROM jam_posts
+             WHERE uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL ORDER BY created, post_id LIMIT ?1",
+        )
+        .map_err(db_err)?;
+    let rows = statement
+        .query_map(params![limit as i64], |r| {
+            Ok(Unuploaded {
+                post_id: r.get(0)?,
+                jam_id: r.get(1)?,
+                tier: r.get(2)?,
+                title: r.get(3)?,
+                markdown: r.get(4)?,
+                attachments: r.get(5)?,
+                created: r.get(6)?,
+                blob: BlobRef { blob_id: r.get(7)?, key: r.get(8)?, sha256: r.get(9)?, size: r.get(10)? },
+            })
+        })
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    Ok(rows)
+}
+
+pub(crate) fn set_uploaded(conn: &Connection, post_id: &str, jam_id: &str) -> Result<(), StoreError> {
+    conn.execute("UPDATE jam_posts SET uploaded = 1 WHERE post_id = ?1", params![post_id]).map_err(db_err)?;
+    conn.execute("UPDATE jams SET page_state = 'dirty' WHERE jam_id = ?1 AND page_state <> 'end'", params![jam_id]).map_err(db_err)?;
+    Ok(())
+}
+
+/// The index a new subscriber is handed: every uploaded post it may read, oldest first.
+/// (post id, tier, title, created, blob)
+pub(crate) type IndexEntry = (String, String, String, i64, BlobRef);
+
+pub(crate) fn index_for(conn: &Connection, jam_id: &str, subscriber_tier: &str) -> Result<Vec<IndexEntry>, StoreError> {
+    let mut statement = conn
+        .prepare(
+            "SELECT post_id, tier, title, created, blob_id, blob_key, blob_sha, blob_size FROM jam_posts
+             WHERE jam_id = ?1 AND uploaded = 1 AND deleted_at IS NULL AND blob_id IS NOT NULL AND (?2 = 'subscribers' OR tier = 'free') ORDER BY created, post_id",
+        )
+        .map_err(db_err)?;
+    let rows = statement
+        .query_map(params![jam_id, subscriber_tier], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, BlobRef { blob_id: r.get(4)?, key: r.get(5)?, sha256: r.get(6)?, size: r.get(7)? }))
+        })
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    Ok(rows)
+}
+
+/// Posts of a jam still waiting for their blob to go up (a new subscriber is queued their notice, as the index cannot name them yet).
+pub(crate) fn not_uploaded_ids(conn: &Connection, jam_id: &str, subscriber_tier: &str) -> Result<Vec<String>, StoreError> {
+    let mut statement = conn
+        .prepare("SELECT post_id FROM jam_posts WHERE jam_id = ?1 AND uploaded = 0 AND wire IS NOT NULL AND deleted_at IS NULL AND (?2 = 'subscribers' OR tier = 'free') ORDER BY created, post_id")
+        .map_err(db_err)?;
+    let rows = statement.query_map(params![jam_id, subscriber_tier], |r| r.get(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    Ok(rows)
+}
+
+// ---------------------------------------------------------------- the public page on the server
+
+pub(crate) fn pages_to_publish(conn: &Connection) -> Result<Vec<JamRow>, StoreError> {
+    let mut statement = conn.prepare(&format!("{ROW} WHERE mine = 1 AND ended = 0 AND page_state = 'dirty'")).map_err(db_err)?;
+    let rows = statement.query_map([], read_row).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    Ok(rows)
+}
+
+pub(crate) fn pages_to_end(conn: &Connection) -> Result<Vec<JamRow>, StoreError> {
+    let mut statement = conn.prepare(&format!("{ROW} WHERE mine = 1 AND ended = 1 AND page_state = 'end'")).map_err(db_err)?;
+    let rows = statement.query_map([], read_row).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+    Ok(rows)
+}
+
+pub(crate) fn uploaded_count(conn: &Connection, jam_id: &str) -> Result<i64, StoreError> {
+    conn.query_row("SELECT COUNT(*) FROM jam_posts WHERE jam_id = ?1 AND uploaded = 1 AND deleted_at IS NULL", params![jam_id], |r| r.get(0)).map_err(db_err)
+}
+
+pub(crate) fn set_page_state(conn: &Connection, jam_id: &str, state: &str) -> Result<(), StoreError> {
+    conn.execute("UPDATE jams SET page_state = ?2 WHERE jam_id = ?1", params![jam_id, state]).map_err(db_err)?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------- the send queue
 
-/// One row per (post, subscriber) still to be sent: persistent, so it survives a restart and resumes; ordered by id.
+/// One row per (post, subscriber) still to be sent: persistent, so it survives a restart and resumes; ordered by id. (Each counts toward the
+/// jam's progress.)
 pub(crate) fn queue_wire(conn: &Connection, jam_id: &str, post_id: &str, recipients: &[String]) -> Result<(), StoreError> {
     for recipient in recipients {
         conn.execute("INSERT INTO jam_wire_outbox (jam_id, post_id, recipient) VALUES (?1, ?2, ?3)", params![jam_id, post_id, recipient]).map_err(db_err)?;
     }
+    bump_total(conn, jam_id, recipients.len() as i64)
+}
+
+/// An Olm op (a key, a welcome, the jam's news) for one person, in the jam's own queue: paced, and counted in the progress.
+pub(crate) fn queue_op(conn: &Connection, jam_id: &str, recipient: &str, op_json: &str) -> Result<(), StoreError> {
+    conn.execute("INSERT INTO jam_op_outbox (jam_id, recipient, op_json) VALUES (?1, ?2, ?3)", params![jam_id, recipient, op_json]).map_err(db_err)?;
+    bump_total(conn, jam_id, 1)
+}
+
+fn bump_total(conn: &Connection, jam_id: &str, n: i64) -> Result<(), StoreError> {
+    conn.execute("UPDATE jams SET queued_total = queued_total + ?2 WHERE jam_id = ?1", params![jam_id, n]).map_err(db_err)?;
     Ok(())
 }
 
@@ -362,9 +477,16 @@ pub(crate) struct DueWire {
     pub rows: Vec<(i64, String, i64)>,
 }
 
-/// The next ciphertext with recipients due, up to `limit` of them.
+/// The next ciphertext with recipients due, up to `limit` of them. A post whose blob is not up yet is not due (the notice would name nothing).
 pub(crate) fn next_due(conn: &Connection, now: i64, limit: usize) -> Result<Option<DueWire>, StoreError> {
-    let first: Option<String> = conn.query_row("SELECT post_id FROM jam_wire_outbox WHERE next_at <= ?1 ORDER BY id LIMIT 1", params![now], |r| r.get(0)).optional().map_err(db_err)?;
+    let first: Option<String> = conn
+        .query_row(
+            "SELECT o.post_id FROM jam_wire_outbox o JOIN jam_posts p ON p.post_id = o.post_id WHERE o.next_at <= ?1 AND p.uploaded = 1 ORDER BY o.id LIMIT 1",
+            params![now],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
     let Some(post_id) = first else { return Ok(None) };
     let wire: Option<String> = conn.query_row("SELECT wire FROM jam_posts WHERE post_id = ?1", params![post_id], |r| r.get(0)).optional().map_err(db_err)?.flatten();
     let mut statement = conn
@@ -385,28 +507,54 @@ pub(crate) fn done(conn: &Connection, ids: &[i64]) -> Result<(), StoreError> {
     Ok(())
 }
 
+fn wait_after(attempts: i64) -> i64 {
+    (30_000_i64 << attempts.clamp(0, 7)).min(3_600_000)
+}
+
 /// A failed try: wait longer each time (30 s, 1 min, 2 min... up to an hour).
 pub(crate) fn back_off(conn: &Connection, rows: &[(i64, String, i64)], now: i64) -> Result<(), StoreError> {
     for (id, _, attempts) in rows {
-        let wait = (30_000_i64 << (*attempts).clamp(0, 7)).min(3_600_000);
-        conn.execute("UPDATE jam_wire_outbox SET attempts = attempts + 1, next_at = ?2 WHERE id = ?1", params![id, now + wait]).map_err(db_err)?;
+        conn.execute("UPDATE jam_wire_outbox SET attempts = attempts + 1, next_at = ?2 WHERE id = ?1", params![id, now + wait_after(*attempts)]).map_err(db_err)?;
     }
     Ok(())
 }
 
-/// How much of what is queued for a jam has gone: (still waiting, the total those posts were queued for).
+/// The next ops due, oldest first: (row id, jam id, recipient, op json, attempts).
+/// (row id, jam id, recipient, op json, attempts)
+pub(crate) type DueOp = (i64, String, String, String, i64);
+
+pub(crate) fn next_ops(conn: &Connection, now: i64, limit: usize) -> Result<Vec<DueOp>, StoreError> {
+    let mut statement = conn
+        .prepare("SELECT id, jam_id, recipient, op_json, attempts FROM jam_op_outbox WHERE next_at <= ?1 ORDER BY id LIMIT ?2")
+        .map_err(db_err)?;
+    let rows = statement
+        .query_map(params![now, limit as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    Ok(rows)
+}
+
+pub(crate) fn done_op(conn: &Connection, id: i64) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM jam_op_outbox WHERE id = ?1", params![id]).map_err(db_err)?;
+    Ok(())
+}
+
+pub(crate) fn back_off_op(conn: &Connection, id: i64, attempts: i64, now: i64) -> Result<(), StoreError> {
+    conn.execute("UPDATE jam_op_outbox SET attempts = attempts + 1, next_at = ?2 WHERE id = ?1", params![id, now + wait_after(attempts)]).map_err(db_err)?;
+    Ok(())
+}
+
+/// How much of what is queued for a jam has gone: (still waiting, the total queued since the queue was last empty).
 pub(crate) fn progress(conn: &Connection, jam_id: &str) -> Result<(i64, i64), StoreError> {
-    let pending: i64 = conn.query_row("SELECT COUNT(*) FROM jam_wire_outbox WHERE jam_id = ?1", params![jam_id], |r| r.get(0)).map_err(db_err)?;
+    let wires: i64 = conn.query_row("SELECT COUNT(*) FROM jam_wire_outbox WHERE jam_id = ?1", params![jam_id], |r| r.get(0)).map_err(db_err)?;
+    let ops: i64 = conn.query_row("SELECT COUNT(*) FROM jam_op_outbox WHERE jam_id = ?1", params![jam_id], |r| r.get(0)).map_err(db_err)?;
+    let pending = wires + ops;
     if pending == 0 {
+        conn.execute("UPDATE jams SET queued_total = 0 WHERE jam_id = ?1", params![jam_id]).map_err(db_err)?;
         return Ok((0, 0));
     }
-    let total: i64 = conn
-        .query_row(
-            "SELECT COALESCE(SUM(fanout_total), 0) FROM jam_posts WHERE post_id IN (SELECT DISTINCT post_id FROM jam_wire_outbox WHERE jam_id = ?1)",
-            params![jam_id],
-            |r| r.get(0),
-        )
-        .map_err(db_err)?;
+    let total: i64 = conn.query_row("SELECT queued_total FROM jams WHERE jam_id = ?1", params![jam_id], |r| r.get(0)).map_err(db_err)?;
     Ok((pending, total.max(pending)))
 }
 

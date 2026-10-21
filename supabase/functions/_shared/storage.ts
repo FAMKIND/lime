@@ -20,6 +20,11 @@ export const blobConfig = {
   /** Total bytes one user may keep, and how many blobs. */
   quotaBytes: () => intFromEnv("LIME_BLOB_QUOTA_BYTES", 200 * 1024 * 1024),
   quotaCount: () => intFromEnv("LIME_BLOB_QUOTA_COUNT", 500),
+  /** A jam writer's own quota for jam posts (LIME-187), counted apart from the ordinary blobs. */
+  jamQuotaBytes: () => intFromEnv("LIME_JAM_QUOTA_BYTES", 2 * 1024 * 1024 * 1024),
+  jamQuotaCount: () => intFromEnv("LIME_JAM_QUOTA_COUNT", 20000),
+  /** Jam post downloads (no session) per minute per client address. A staff room behind one address catching up on an archive needs room. */
+  jamGetPerMinute: () => intFromEnv("LIME_RATE_JAM_BLOB_GET_PER_MIN", 600),
   /** Avatar and blob calls per minute per user. */
   perMinute: () => intFromEnv("LIME_RATE_BLOB_PER_MIN", 60),
 };

@@ -17,7 +17,7 @@ pub struct MyPhoto {
 }
 
 /// A raw (non-JSON) request: a signed Storage URL, which carries its own token.
-fn raw(transport: &Arc<dyn Transport>, method: &str, path: &str, content_type: Option<&str>, body: Vec<u8>) -> Result<(u16, Vec<u8>), StoreError> {
+pub(super) fn raw(transport: &Arc<dyn Transport>, method: &str, path: &str, content_type: Option<&str>, body: Vec<u8>) -> Result<(u16, Vec<u8>), StoreError> {
     // Uploads ask Storage's CDN to cache for a minute at most, so a deleted photo does not linger in a cache.
     let headers = content_type
         .map(|t| {

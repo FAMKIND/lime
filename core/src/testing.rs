@@ -53,6 +53,13 @@ pub(crate) struct ServerState {
     pub avatar_visibility: HashMap<String, String>,
     /// blob id to (owner, committed version)
     pub blob_rows: HashMap<String, (String, Option<i64>)>,
+    /// jam post blob id to its jam id (LIME-187)
+    pub jam_blobs: HashMap<String, String>,
+    /// jam id to (writer, title, post_count, ended): the public pages
+    pub jam_pages: HashMap<String, (String, String, i64, bool)>,
+    /// `jam-blob-get` requests that carried a user token (there must be none) and how many were made
+    pub jam_gets_with_token: usize,
+    pub jam_gets: usize,
     pub clock: i64,
     /// attachment id to (owner, chunks, recipients, committed, fetchers)
     pub attachments: HashMap<String, (String, usize, usize, bool, Vec<String>)>,
@@ -159,7 +166,7 @@ impl Transport for FakeServer {
             .and_then(|h| h.value.strip_prefix("Bearer tok-"))
             .map(str::to_owned);
         // A sealed `send` carries no token (the server learns nothing about the sender).
-        if user.is_none() && function != "send" {
+        if user.is_none() && function != "send" && function != "jam-blob-get" {
             return respond(401, json!({ "error": "unauthorized" }));
         }
         let user = user.unwrap_or_default();
@@ -485,6 +492,9 @@ impl Transport for FakeServer {
                         if state.blob_rows.get(&id).is_some_and(|(owner, _)| *owner != user) {
                             return respond(409, json!({ "error": "id_taken" }));
                         }
+                        if body.get("class").and_then(Value::as_str) == Some("jam") {
+                            state.jam_blobs.insert(id.clone(), text("jam_id"));
+                        }
                         state.blob_rows.insert(id.clone(), (user.clone(), None));
                         respond(200, json!({ "url": format!("/storage/v1/object/upload/sign/blobs/{id}?token=t") }))
                     }
@@ -506,6 +516,47 @@ impl Transport for FakeServer {
                         state.blob_rows.remove(&id);
                         state.objects.remove(&format!("blobs/{id}"));
                         respond(200, json!({ "ok": true }))
+                    }
+                    _ => respond(400, json!({ "error": "bad_request" })),
+                }
+            }
+            "jam-blob-get" => {
+                state.jam_gets += 1;
+                if !user.is_empty() {
+                    state.jam_gets_with_token += 1;
+                }
+                let id = text("blob_id");
+                match (state.jam_blobs.contains_key(&id), state.blob_rows.get(&id)) {
+                    (true, Some((_, Some(_)))) => respond(200, json!({ "url": format!("/storage/v1/object/sign/blobs/{id}?token=t") })),
+                    _ => respond(404, json!({ "error": "not_found" })),
+                }
+            }
+            "jam-page" => {
+                let jam = text("jam_id");
+                let existing = state.jam_pages.get(&jam).cloned();
+                if existing.as_ref().is_some_and(|(owner, ..)| *owner != user) {
+                    return respond(409, json!({ "error": "id_taken" }));
+                }
+                match body.get("action").and_then(Value::as_str).unwrap_or_default() {
+                    "set" => {
+                        if existing.as_ref().is_some_and(|(_, _, _, ended)| *ended) {
+                            return respond(409, json!({ "error": "ended" }));
+                        }
+                        state.jam_pages.insert(jam, (user, text("title"), body.get("post_count").and_then(Value::as_i64).unwrap_or(0), false));
+                        respond(200, json!({ "ok": true }))
+                    }
+                    "end" => {
+                        if existing.is_none() {
+                            return respond(404, json!({ "error": "not_found" }));
+                        }
+                        let gone: Vec<String> = state.jam_blobs.iter().filter(|(_, j)| **j == jam).map(|(b, _)| b.clone()).collect();
+                        for blob in &gone {
+                            state.jam_blobs.remove(blob);
+                            state.blob_rows.remove(blob);
+                            state.objects.remove(&format!("blobs/{blob}"));
+                        }
+                        state.jam_pages.insert(jam, (user, existing.map(|e| e.1).unwrap_or_default(), 0, true));
+                        respond(200, json!({ "ok": true, "removed": gone.len() }))
                     }
                     _ => respond(400, json!({ "error": "bad_request" })),
                 }

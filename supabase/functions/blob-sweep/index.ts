@@ -36,7 +36,8 @@ Deno.serve(handler(async (req) => {
     await db.from("attachments").delete().eq("id", row.id);
     attachments++;
   }
-  // Blobs (LIME-98b) with an expiry that has passed (profile photos have none).
+  // Blobs (LIME-98b) with an expiry that has passed (profile photos have none). Jam posts (LIME-187) have none either: they stay for the life
+  // of their jam and are removed by `jam-page` end or by the writer; this sweep never touches a row without an `expires_at`.
   const { data: old } = await db.from("blobs").select("id").lt("expires_at", now).limit(200);
   for (const row of old ?? []) {
     await removeObject(BLOB_BUCKET, row.id);
